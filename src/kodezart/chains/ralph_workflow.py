@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from functools import partial
+from typing import assert_never
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -43,6 +44,12 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.gating import (
     RepoVisibility,
+)
+from kodezart.types.domain.lane_entry import (
+    DeliverOnlyLane,
+    LaneEntry,
+    NewLane,
+    ResumedLane,
 )
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -408,6 +415,7 @@ class RalphWorkflowEngine:
         cache_key: str,
         run_identity: RunIdentity | None = None,
         surface_holder: str | None = None,
+        entry: LaneEntry | None = None,
     ) -> tuple[WorkflowState, RunnableConfig]:
         """Execute the full workflow pipeline.
 
@@ -415,6 +423,12 @@ class RalphWorkflowEngine:
         base its blockers imply now; the run refuses before any node when
         they differ, because a criterion graded against a base that has
         moved is about a tree that no longer exists.
+
+        *entry* is how the walker decided this lane enters.  On the native
+        arm ``None`` is read as a new lane, so a native fire started without
+        a walker still names its branches with the plain function; on the
+        authored arm it is not read at all, because that arm's own node
+        names the branch.
 
         ``cache_key`` IS the LangGraph thread id: the caller's job id
         addresses this run's checkpoints.
@@ -460,17 +474,31 @@ class RalphWorkflowEngine:
         config: RunnableConfig = {"configurable": configurable}
 
         # The native arm holds no branch-generation node, so the lane's two
-        # names are drawn here, from its issue key. A key that could not
-        # stand inside a ref refuses at this point, before any node runs.
-        feature_branch, ralph_branch = (
-            mint_lane_branches(scope.key) if scope is not None else ("", "")
-        )
+        # names come from its entry. A new lane draws them from its issue
+        # key, and a key that could not stand inside a ref refuses here,
+        # before any node runs. A recorded lane continues the branches its
+        # record named and cuts nothing: work_base_ref IS the loop branch,
+        # which is how the loop is told the branch already exists.
+        feature_branch, ralph_branch = "", ""
+        work_base_ref = base_spec.base_branch
+        if scope is not None:
+            entered: LaneEntry = entry if entry is not None else NewLane()
+            match entered:
+                case NewLane():
+                    feature_branch, ralph_branch = mint_lane_branches(scope.key)
+                case ResumedLane() | DeliverOnlyLane():
+                    feature_branch = entered.deliverable_branch
+                    ralph_branch = entered.loop_branch
+                    work_base_ref = entered.loop_branch
+                case _:  # pragma: no cover - exhaustive over LaneEntry
+                    assert_never(entered)
 
         initial_state: WorkflowState = {
             "issue_key": issue_key,
+            "lane_entry": entry,
             "feature_branch": feature_branch,
             "ralph_branch": ralph_branch,
-            "work_base_ref": base_spec.base_branch,
+            "work_base_ref": work_base_ref,
             "fire_spec": None,
             "acceptance_criteria": [],
             "criterion_set": None,

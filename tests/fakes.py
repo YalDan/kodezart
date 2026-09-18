@@ -1021,6 +1021,10 @@ class FakeWorkspaceProvider:
         self._acquire_count = 0
         self._workspace_path = workspace_path
         self.calls: list[tuple[str, ...]] = []
+        #: The full keyword arguments of each acquire, in order: a test about
+        #: WHICH branch a lane checked out, and whether it was cut, reads them
+        #: here rather than from the three-value ``calls`` summary.
+        self.acquisitions: list[dict[str, object]] = []
         self._snapshots: dict[str, WorkspaceSnapshot] = {}
         self._branches: dict[str, str | None] = {}
         self._repositories: dict[str, str] = {}
@@ -1036,6 +1040,16 @@ class FakeWorkspaceProvider:
         cache_key: str | None = None,
     ) -> str:
         self.calls.append(("acquire", repo_path or repo_url or "", ref))
+        self.acquisitions.append(
+            {
+                "repo_path": repo_path,
+                "repo_url": repo_url,
+                "ref": ref,
+                "branch_name": branch_name,
+                "create_branch": create_branch,
+                "cache_key": cache_key,
+            }
+        )
         self._acquire_count += 1
         if self._fail_acquire and self._acquire_count > self._fail_after:
             raise WorkspaceError(self._fail_acquire)

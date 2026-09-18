@@ -8,8 +8,10 @@ from kodezart.config.app import AppConfig
 from kodezart.core.protocols import DeliveryProbe, GitService, RepoCache, TrackerPort
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.base_resolver import BaseResolver
+from kodezart.services.lane_entry import LaneEntryReader
+from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.scope_runtime import ScopeWorkflowEngine
-from kodezart.types.domain.operation import RepoEntry
+from kodezart.types.domain.operation import OperationConfig, RepoEntry
 
 
 def build_scope_runtime(
@@ -22,9 +24,15 @@ def build_scope_runtime(
     cache: RepoCache,
     repositories: Sequence[RepoEntry],
     config: AppConfig,
+    operation: OperationConfig,
 ) -> ScopeWorkflowEngine:
-    """One request controller; the existing origin predicate chooses capabilities."""
+    """One request controller; the existing origin predicate chooses capabilities.
+
+    One record reader serves the whole walk: every lane's entry is decided
+    from the same reader, under the same configured marker.
+    """
     no_forge = NoForgeDeliveryProbe()
+    records = LaneRecordReader(tracker=tracker, operation=operation)
 
     def lane_for(url: str) -> NativeLaneWorkflow:
         return forge_less_lane if is_forge_less_origin(url) else forge_lane
@@ -37,6 +45,7 @@ def build_scope_runtime(
         lane_for=lane_for,
         probe_for=probe_for,
         resolver=BaseResolver(tracker=tracker, git=git, remote=config.git.remote),
+        entries=LaneEntryReader(records=records, git=git, remote=config.git.remote),
         cache=cache,
         repositories=repositories,
         git_base_url=config.git.base_url,

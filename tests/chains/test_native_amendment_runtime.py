@@ -46,7 +46,9 @@ from tests.services.test_native_amendments import (
 __all__ = ["repository"]
 
 
-async def make_runtime(repository, executor, *, configured=True, max_iterations=2):
+async def make_runtime(
+    repository, executor, *, configured=True, max_iterations=2, no_operation=False
+):
     service, _, workspace, port = await build(repository, executor)
     source = TrackerCriteria(tracker=port)
     spec = await source.read_spec(issue_key=SUBJECT)
@@ -66,13 +68,17 @@ async def make_runtime(repository, executor, *, configured=True, max_iterations=
     )
     router = build_workflow_engine(
         config=AppConfig(
-            write_back=WriteBackSettings(max_verify_rounds=2),
+            # An unconfigured write-back is the deployment that composes no
+            # amendment owner. It used to be an absent operation; a scope
+            # tracker without one is now refused at construction (KOD-684),
+            # which is asserted on its own below.
+            write_back=WriteBackSettings(max_verify_rounds=2) if configured else None,
             ticket_review_mode=TicketReviewMode.REVIEWED,
             max_iterations=max_iterations,
             retry_max_attempts=1,
             retry_initial_interval=0.1,
         ),
-        operation=operation if configured else None,
+        operation=None if no_operation else operation,
         scope_tracker=port,
         criteria=source,
         repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
@@ -128,6 +134,11 @@ async def test_native_builder_retains_reports_and_requires_the_actual_owner(
         with pytest.raises(NativeWriteRefusalError, match="precommit amendment owner"):
             await run()
         assert executor.calls == []
+        # And a scope tracker with no operation at all composes nothing: the
+        # record every lane's entry reads has no configured marker to read it
+        # under, so the deployment is refused rather than running blind.
+        with pytest.raises(ValueError, match="requires the operation config"):
+            await make_runtime(repository, executor, no_operation=True)
         return
     events = await run()
     reports = [event for event in events if isinstance(event, NativeAmendmentEvent)]

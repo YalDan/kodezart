@@ -23,6 +23,7 @@ from kodezart.domain.errors import (
     ScopePlanRefusalError,
 )
 from kodezart.domain.fire_spec import criterion_field_bodies
+from kodezart.domain.lane_entry import recorded_branches
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services.agent_service import AgentService
 from kodezart.services.lane_records import LaneRecordReader
@@ -35,7 +36,12 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
-from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
+from kodezart.types.domain.branch import (
+    BranchRole,
+    WorkRef,
+    WorkRefRole,
+    trunk_base,
+)
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -82,25 +88,32 @@ SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
 STAGED = "criteria-staged"
 
 
-def board(*, lanes=("A",), blocked=None, approved=True):
+def board(*, lanes=("A",), blocked=None, approved=True, checks=None):
+    """The scope's lanes and their criterion sub-issues.
+
+    *checks* names each lane's criteria; a lane not named there has the one
+    criterion every lane has had, under the body every test reads it by.
+    """
     rows = []
     for key in lanes:
-        rows.extend(
-            [
+        rows.append(
+            make_tracker_issue(
+                key,
+                body=f"Exact native subject {key}  with spaces\n",
+                blocked_by=(blocked or {}).get(key, ()),
+                issue_labels=frozenset({STAGED}),
+            )
+        )
+        for name in (checks or {}).get(key, ("check",)):
+            label = key if name == "check" else f"{key}/{name}"
+            rows.append(
                 make_tracker_issue(
-                    key,
-                    body=f"Exact native subject {key}  with spaces\n",
-                    blocked_by=(blocked or {}).get(key, ()),
-                    issue_labels=frozenset({STAGED}),
-                ),
-                make_tracker_issue(
-                    f"{key}/check",
+                    f"{key}/{name}",
                     parent_key=key,
                     issue_labels=frozenset({"criterion"}),
-                    body=f"**Check:** {key} live Check  bytes\n**Evidence:** —",
-                ),
-            ]
-        )
+                    body=f"**Check:** {label} live Check  bytes\n**Evidence:** —",
+                )
+            )
     return FakeTrackerPort(
         issues=rows,
         scope_memberships={SCOPE: tuple(lanes)},
@@ -145,6 +158,7 @@ class Harness:
     service: AgentService
     artifacts: FakeArtifactPersister
     saver: InMemorySaver
+    workspace: FakeWorkspaceProvider
 
 
 def runtime(
@@ -231,7 +245,7 @@ def runtime(
             criteria=TrackerCriteria(tracker=port),
             scope_tracker=port,
         )
-    return Harness(engine, port, executor, service, artifacts, saver)
+    return Harness(engine, port, executor, service, artifacts, saver, workspace)
 
 
 def drive(harness, *, job="scope-job", scope=SCOPE, origin=ORIGIN, path=None):
@@ -410,45 +424,7 @@ async def test_existing_plan_barrier_prevents_any_lane_effect():
     assert harness.executor.schema_calls == []
 
 
-async def test_completed_checkpoint_is_revalidated_before_it_can_be_replayed():
-    harness = runtime()
-    _ = [event async for event in drive(harness)]
-    owed_again(harness.port, check="materially changed Check")
-    fresh = runtime(port=harness.port, saver=harness.saver)
-    await walk_reporting(fresh, kind="FireSpecEntryError", match="evaluated snapshot")
-    assert fresh.executor.schema_calls == []
-
-
-async def test_same_job_checkpoint_replay_does_not_mint_another_branch():
-    harness = runtime()
-    _ = [event async for event in drive(harness)]
-    owed_again(harness.port)
-    fresh = runtime(port=harness.port, saver=harness.saver)
-    events = [event async for event in drive(fresh)]
-    assert fresh.executor.schema_calls == []
-    assert [
-        event.observation.dispatched
-        for event in events
-        if isinstance(event, ScopeWalkEvent)
-    ][-1] == ("A",)
-
-
-async def test_recorded_branch_without_checkpoint_refuses_instead_of_reminting():
-    port = board()
-    port.recorded_work_refs["A"] = [
-        WorkRef(
-            issue_id="A",
-            role=WorkRefRole.DELIVERABLE,
-            branch="existing-branch",
-            recorded_at=FIXTURE_EPOCH,
-        )
-    ]
-    harness = runtime(port=port)
-    await walk_reporting(harness, kind="ScopeReadError", match="cross-job reentry")
-    assert harness.executor.schema_calls == []
-
-
-@pytest.mark.parametrize("failure", ["base", "fire"])
+@pytest.mark.parametrize("failure", ["base", "record", "fire"])
 async def test_one_lanes_failure_is_reported_and_the_walk_continues(
     monkeypatch, failure
 ):
@@ -487,6 +463,17 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
             return await resolve(issue_key=issue_key, **rest)
 
         monkeypatch.setattr(resolver, "resolve", refuse_one)
+    elif failure == "record":
+        # The listing the lane's record is read from fails for this lane only:
+        # unreadable is never treated as "no record", so nothing is minted.
+        listing = port.list_comments
+
+        async def unreadable(*, issue_key):
+            if issue_key == "B":
+                raise TrackerUnavailableError("the lane record listing failed")
+            return await listing(issue_key=issue_key)
+
+        monkeypatch.setattr(port, "list_comments", unreadable)
     else:
         # A criterion carrying no Check at all: the lane's own entry refuses
         # it, before any session, the way a malformed obligation does.
@@ -507,15 +494,20 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
     # A lane that raised before its graph launched was never dispatched; one
     # that raised inside it was launched exactly once and not offered again.
     assert list(observations[-1].dispatched).count("B") == (
-        0 if failure == "base" else 1
+        1 if failure == "fire" else 0
     )
     assert [key for key in observations[-1].dispatched if key != "B"] == ["A", "C"]
     reported = observations[-1].failed_lanes
     # Exactly one entry: the lane was tried once and rested, not retried on
     # every remaining tick.
     assert [item.issue_key for item in reported] == ["B"]
-    assert reported[0].error.error_kind == (
-        "BaseResolutionError" if failure == "base" else "InvalidFireCriterionError"
+    assert (
+        reported[0].error.error_kind
+        == {
+            "base": "BaseResolutionError",
+            "record": "LaneRecordReadError",
+            "fire": "InvalidFireCriterionError",
+        }[failure]
     )
     assert reported[0].error.error
     assert not [event for event in events if isinstance(event, ErrorEvent)]
@@ -551,29 +543,6 @@ async def test_tracker_outage_between_lanes_cannot_reuse_the_previous_ready_set(
     assert len(harness.executor.execution_prompts) == 1
     assert "Exact native subject B" not in harness.executor.execution_prompts[0]
     assert port.claim_writes == []
-
-
-async def test_changed_resolved_base_refuses_the_same_job_checkpoint():
-    harness = runtime()
-    _ = [event async for event in drive(harness)]
-    owed_again(harness.port)
-    fresh = runtime(port=harness.port, saver=harness.saver, trunk="other-trunk")
-    await walk_reporting(fresh, kind="ScopeReadError", match="different scope request")
-    assert fresh.executor.schema_calls == []
-
-
-async def test_distinct_queue_jobs_never_alias_a_lane_checkpoint():
-    harness = runtime()
-    _ = [event async for event in drive(harness, job="first-job")]
-    owed_again(harness.port)
-    fresh = runtime(port=harness.port, saver=harness.saver)
-    _ = [event async for event in drive(fresh, job="second-job")]
-    assert fresh.executor.execution_prompts
-    # The second job executes rather than replaying the first job's saved
-    # graph, which is what "never alias" means here. It names its branches
-    # from the issue key, so no branch-name session is opened for it at all
-    # (KOD-839); the count used to be one, when this arm still asked.
-    assert not any("slug" in props for props in fresh.executor.schema_calls)
 
 
 async def test_approval_removed_during_preparation_prevents_any_native_node(
@@ -1351,3 +1320,158 @@ async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
         *((key, LifecycleStage.DONE) for key in rest),
         (broken, LifecycleStage.DONE),
     ]
+
+
+# ---------------------------------------------------------------------------
+# KOD-684 — re-entry driven by the record alone: the recorded branch is
+# checked out and nothing is minted.
+# ---------------------------------------------------------------------------
+
+#: Lane A with a second criterion, so one fire can finish part of its roster
+#: and the lane is still owed when the next process enters it.
+TWO_CHECKS = {"A": ("check", "second")}
+A_KEYS = ("A/check", "A/second")
+
+
+def echoes(*, passed, rounds: int = 6):
+    """Enough evaluator echoes for whatever the fire does, each passing *passed*.
+
+    A fire that fails part of its roster may take a remediation round, and the
+    number of gradings that follows is the graph's business and not this
+    fixture's; every grading of one run answers the same way.
+    """
+    return [criteria_echo(keys=A_KEYS, passed=passed) for _ in range(rounds)]
+
+
+def resumable(*, repos: WalkRepos, **rest):
+    """A runtime over one repository family that commits as a real lane does.
+
+    Two runtimes built over the SAME family are two processes against one
+    remote: the branches and their pushed heads outlive the first one, which
+    is the whole premise of entering from the record.
+    """
+    git = WalkGit(repos)
+    return runtime(
+        persister=WalkPersister(repos),
+        git=git,
+        source=WalkSource(repos),
+        workspace=WalkWorkspaces(repos, git=git),
+        **rest,
+    )
+
+
+async def first_fire(port, repos, *, passed=("A/check",)):
+    """Run one: a fire that finishes part of lane A's roster and leaves a record."""
+    harness = resumable(port=port, repos=repos, evaluations=echoes(passed=set(passed)))
+    _ = [event async for event in drive(harness, job="first-job")]
+    return harness, await lane_record(port, "A")
+
+
+def refuse_to_mint(monkeypatch):
+    """Make the branch-name function the walker path uses fail if it is called."""
+
+    def never(issue_key):
+        raise AssertionError(f"a recorded lane minted a branch name for {issue_key}")
+
+    monkeypatch.setattr("kodezart.chains.ralph_workflow.mint_lane_branches", never)
+
+
+async def test_a_recorded_lane_resumes_on_its_recorded_branch_and_mints_nothing(
+    monkeypatch,
+):
+    """A second process enters lane A from its record and nothing else.
+
+    Run one finishes one of A's two criteria and records its commit. Run two
+    shares only the board and the remote: it checks the recorded branch out
+    without cutting it, mints no name, adds its own run's association pair and
+    one more commit row to the same record, and owes only the criterion run
+    one did not finish.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    _, before = await first_fire(port, repos)
+    assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+    assert port.issues["A/second"].state_kind is WorkflowStateKind.UNSTARTED
+    deliverable = recorded_branches(record=before).deliverable_branch
+
+    refuse_to_mint(monkeypatch)
+    second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
+    _ = [event async for event in drive(second, job="second-job")]
+
+    assert not any("slug" in props for props in second.executor.schema_calls)
+    opened = second.workspace.acquisitions[0]
+    assert opened["branch_name"] == opened["ref"] == before.branch
+    assert opened["create_branch"] is False
+    after = await lane_record(port, "A")
+    assert after.branch == before.branch
+    # Exactly one more association pair, this run's, and nothing else: every
+    # branch run one recorded is still named, under run one's id.
+    assert {(item.branch, item.role, item.run_id) for item in after.associations} == {
+        *((item.branch, item.role, item.run_id) for item in before.associations),
+        (before.branch, BranchRole.LOOP, "second-job"),
+        (deliverable, BranchRole.DELIVERABLE, "second-job"),
+    }
+    assert len(after.commits) == len(before.commits) + 1
+    assert after.head_sha == repos.branches[before.branch].head
+    prompt = second.executor.execution_prompts[0]
+    assert "A/second live Check  bytes" in prompt
+    assert "A live Check  bytes" not in prompt
+    assert port.issues["A/second"].state_kind is WorkflowStateKind.COMPLETED
+
+
+async def test_a_changed_check_on_re_entry_is_owed_and_graded_again():
+    """Nothing of a previous grading is replayed on re-entry.
+
+    A criterion the first fire finished is put back the way the product puts
+    one back, carrying an amended Check. The second process reads the Todo set
+    at entry, so that criterion is owed again and the text it is graded
+    against is the amended one.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    await first_fire(port, repos)
+    owed_again(port, check="materially changed Check")
+
+    second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
+    _ = [event async for event in drive(second, job="second-job")]
+
+    prompt = second.executor.execution_prompts[0]
+    assert "materially changed Check" in prompt
+    assert "A live Check  bytes" not in prompt
+    assert "A/second live Check  bytes" in prompt
+    assert all(
+        port.issues[key].state_kind is WorkflowStateKind.COMPLETED for key in A_KEYS
+    )
+
+
+@pytest.mark.parametrize("damage", ["base", "branch"])
+async def test_a_recorded_lane_the_facts_no_longer_admit_is_reported_not_fired(
+    monkeypatch, damage
+):
+    """Neither a moved base nor a vanished branch is answered by minting.
+
+    A branch cut from a base the lane would no longer be diffed against, and a
+    recorded branch the remote no longer holds, are both refusals of this one
+    lane: nothing is minted in their place, no session opens, and the record
+    is left exactly as the first fire wrote it.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    _, before = await first_fire(port, repos)
+    refuse_to_mint(monkeypatch)
+    if damage == "branch":
+        repos.branches[before.branch].pushed = None
+
+    second = resumable(
+        port=port,
+        repos=repos,
+        evaluations=echoes(passed=set(A_KEYS)),
+        trunk="other-trunk" if damage == "base" else "trunk",
+    )
+    await walk_reporting(
+        second,
+        kind="LaneEntryError",
+        match=("is not the base" if damage == "base" else "absent from the remote"),
+    )
+    assert second.executor.schema_calls == []
+    assert await lane_record(port, "A") == before

@@ -346,6 +346,8 @@ def build_workflow_engine(
     if scope_tracker is not None:
         if criteria is None:
             raise ValueError("Scope execution requires a native criterion source")
+        if operation is None:
+            raise ValueError("Scope execution requires the operation config")
         scoped_arm = build_scope_runtime(
             tracker=scope_tracker,
             forge_lane=build_native_lane_workflow(
@@ -375,6 +377,7 @@ def build_workflow_engine(
             cache=cache,
             repositories=repositories,
             config=config,
+            operation=operation,
         )
     return OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,

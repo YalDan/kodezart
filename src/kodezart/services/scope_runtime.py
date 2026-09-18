@@ -18,8 +18,9 @@ from kodezart.core.protocols import DeliveryProbe, RepoCache, TrackerPort
 from kodezart.domain.errors import ScopedExecutionUnavailableError, ScopeReadError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.services.base_resolver import BaseResolver
+from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
-from kodezart.types.domain.branch import BaseSpec, WorkRefRole
+from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.dispatch import ExclusionClause, IssueExclusion
 from kodezart.types.domain.native_delivery import (
     NativeDeliveryState,
@@ -64,6 +65,7 @@ class ScopeWorkflowEngine:
         lane_for: Callable[[str], NativeLaneWorkflow],
         probe_for: Callable[[str], DeliveryProbe | None],
         resolver: BaseResolver,
+        entries: LaneEntryReader,
         cache: RepoCache,
         repositories: Sequence[RepoEntry],
         git_base_url: str,
@@ -73,6 +75,7 @@ class ScopeWorkflowEngine:
         self._lane_for = lane_for
         self._probe_for = probe_for
         self._resolver = resolver
+        self._entries = entries
         self._cache = cache
         self._repositories = repositories
         self._git_base_url = git_base_url
@@ -217,7 +220,21 @@ class ScopeWorkflowEngine:
                     continue
                 if await probe.open_delivery_exists(repo_url=url, issue_key=key):
                     continue
+                # The lane's own record, and the remote head of the branch it
+                # names, decide how this fire enters. Asked before EVERY fire:
+                # nothing about a lane is remembered in this process, so a
+                # second fire inside one invocation takes the path a new
+                # process takes.
+                entry = await self._entries.read(
+                    issue_key=key,
+                    open_criteria=[row.issue_key for row in current.gap],
+                    repo_path=path,
+                    resolved_base=spec.base_branch,
+                )
+                if entry is None:
+                    continue
                 fire_state, config = lane.fire.prepare(
+                    entry=entry,
                     prompt=current.issue.body or current.issue.title,
                     issue_key=key,
                     scope=ScopeRef(kind=ScopeKind.ISSUE, key=key),
@@ -308,15 +325,7 @@ class ScopeWorkflowEngine:
                             saved_state, reader=lane.fire.criteria
                         )
                         initial = None
-                if initial is not None:
-                    refs = await self._tracker.work_refs(issue_key=key)
-                    if any(ref.role is WorkRefRole.DELIVERABLE for ref in refs):
-                        raise ScopeReadError(
-                            "recorded branch requires validated cross-job reentry; "
-                            "refusing to mint",
-                            ref=scope,
-                        )
-                # Probe, checkpoint and work-ref reads can yield to changed approval,
+                # Probe, checkpoint and record reads can yield to changed approval,
                 # membership or blockers. Admission must still hold at graph launch.
                 launch_ready = await read_scope_ready(ref=scope, tracker=self._tracker)
                 if current not in launch_ready.ready:

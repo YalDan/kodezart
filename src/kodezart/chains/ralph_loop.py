@@ -337,6 +337,10 @@ class RalphLoop:
         writer = get_stream_writer()
         iteration = state["iteration"] + 1
         is_first = iteration == 1
+        # A first iteration whose work base IS the loop branch is continuing a
+        # branch that already exists, so it checks that branch out instead of
+        # cutting it again; iterations 2..n have always done exactly this.
+        cut = is_first and ctx.work_base_ref != ctx.ralph_branch
 
         prompt = ctx.prompt
         if not is_first:
@@ -378,7 +382,7 @@ class RalphLoop:
             prompt=prompt,
             repo_path=ctx.repo_path,
             repo_url=ctx.repo_url,
-            base_branch=(ctx.work_base_ref if is_first else ctx.ralph_branch),
+            base_branch=(ctx.work_base_ref if cut else ctx.ralph_branch),
             branch_name=ctx.feature_branch,
             ralph_branch=ctx.ralph_branch,
             permission_mode=ctx.permission_mode,
@@ -388,7 +392,7 @@ class RalphLoop:
             run_identity=ctx.run_identity,
             session_policy=self._prompts.session_policy(PromptKey.IMPLEMENTATION),
             visibility=ctx.repo_visibility,
-            create_branch=is_first,
+            create_branch=cut,
             cache_key=ctx.cache_key,
             native_guard=native_guard,
             after_publish=after_publish,

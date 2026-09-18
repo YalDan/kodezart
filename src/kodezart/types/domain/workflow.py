@@ -23,6 +23,7 @@ from kodezart.types.domain.criteria import (
 from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.fire_spec import FireSpec, TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.lane_entry import LaneEntry
 from kodezart.types.domain.ralph_outcome import RalphOutcome
 from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
 from kodezart.types.domain.run_records import RunIdentity
@@ -157,6 +158,14 @@ class RalphLoopContext(ExecutionContext):
     feature branch — after that a remediation round is BUILT ON that
     work while its scope is still read against the lane's recorded base,
     which is why they are separate values and not one.
+
+    ONE RULE lives on this field: when ``work_base_ref`` IS
+    ``ralph_branch``, the loop branch already exists and the first
+    iteration checks it out instead of cutting it.  That is how a lane
+    resumed from its record continues the branch the record names, and it
+    adds no field to say so.  Anything that writes ``work_base_ref`` has
+    to know the rule: a remediation round sets a NEW loop branch and
+    leaves this on the deliverable, so it cuts, which is correct.
     """
 
     feature_branch: str = Field(min_length=1)
@@ -244,6 +253,11 @@ class WorkflowState(TypedDict):
     commits nothing would otherwise make a run that plainly did work look
     as though it had done none.
 
+    ``lane_entry`` is how this run entered: ``None`` on the authored arm
+    and on a native fire prepared without a walker, which is the same as a
+    new lane.  It is carried on the state because the route after
+    re-validation and the loop's first iteration both read it.
+
     ``work_base_ref`` is the ref the next loop cuts its ralph branch
     from.  It starts as the run's base and becomes the feature branch
     the moment a consolidation puts work there — written by the node
@@ -255,6 +269,7 @@ class WorkflowState(TypedDict):
     """
 
     issue_key: str | None
+    lane_entry: LaneEntry | None
     feature_branch: str
     ralph_branch: str
     work_base_ref: str
