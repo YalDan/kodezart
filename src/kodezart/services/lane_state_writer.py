@@ -20,9 +20,14 @@ from kodezart.domain.comment_markers import (
 from kodezart.domain.criterion_cross_off import (
     HELD_CRITERION_STATE,
     require_tickable,
+    tick_anchor,
 )
 from kodezart.domain.criterion_evidence import apply_evidence
-from kodezart.domain.errors import LaneRecordReadError, LaneRecordWriteError
+from kodezart.domain.errors import (
+    LaneRecordReadError,
+    LaneRecordWriteError,
+    StaleWriteError,
+)
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.domain.lane_record import (
     RUN_STATE_PURPOSE,
@@ -374,6 +379,11 @@ class TrackerLaneStateWriter:
         if issue.state_kind is not HELD_CRITERION_STATE:
             return
         require_tickable(issue=issue, criterion=criterion)
+        # The row the act ends by setting is a precondition of the write it
+        # starts with: a body this grading's Evidence row cannot be set on
+        # refuses here, while the sub-issue still reads as the pass it was,
+        # rather than after the move back has already taken it.
+        self._evidence_body(issue=issue, criterion=criterion, cross_off=cross_off)
         event = LaneRunEvent(
             kind=RunEventKind.CRITERION_REFUTED,
             lane_key=lane.lane_key,
@@ -401,12 +411,15 @@ class TrackerLaneStateWriter:
     ) -> None:
         """Put one grading's facts on a criterion's Evidence row, and nothing else.
 
-        The only function in the source that applies Evidence. The row says
-        what the last grading of this criterion read and at which commit, so a
-        second writer of it would be a second answer to that one question.
+        The one write of that row in the source. The row says what the last
+        grading of this criterion read and at which commit, so a second
+        writer of it would be a second answer to that one question; the body
+        it sets is composed by the one function below.
         """
         body = await self._gate_exact(
-            body=apply_evidence(body=issue.body, evidence=cross_off.evidence),
+            body=self._evidence_body(
+                issue=issue, criterion=criterion, cross_off=cross_off
+            ),
             lane=lane,
             destination=OutboundDestination.TRACKER_DESCRIPTION,
         )
@@ -415,6 +428,32 @@ class TrackerLaneStateWriter:
                 target=criterion.id, expected=issue.body, replacement=body
             )
         )
+
+    def _evidence_body(
+        self,
+        *,
+        issue: TrackerIssue,
+        criterion: TrackerCriterion,
+        cross_off: CriterionCrossOff,
+    ) -> str:
+        """The body this grading's Evidence row leaves, or this write's refusal.
+
+        The only function in the source that applies Evidence, and the whole
+        precondition of setting that row: the codec refuses a body whose
+        Evidence row it cannot read back as exactly one row, and a body
+        carrying an unclosed fence or an unclosed HTML comment before that
+        row is such a body — the row the edit writes is hidden by them and
+        reads back as no row at all. That is knowable from the body alone,
+        so it is asked as the same stale-write refusal every other condition
+        of this write makes, before a byte is written and not as an untyped
+        failure out of the codec once the grading session has already run.
+        """
+        try:
+            return apply_evidence(body=issue.body, evidence=cross_off.evidence)
+        except ValueError as exc:
+            raise StaleWriteError(
+                target=criterion.id, expected=tick_anchor(criterion)
+            ) from exc
 
     async def _gate_exact(
         self,

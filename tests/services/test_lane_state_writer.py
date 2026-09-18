@@ -1047,6 +1047,55 @@ async def test_a_tick_on_a_sub_issue_carrying_a_field_twice_writes_nothing(secon
     assert port.workflow_writes == []
 
 
+def unsettable(key: str, *, hiding: str) -> str:
+    """A criterion body no Evidence row can be set on, and why it reads so.
+
+    The Check is the one the verdict was reached against and no template
+    field is written twice, so every condition the rows alone answer is met.
+    What the edit cannot do is set the Evidence row: *hiding* opens a fenced
+    block or an HTML comment that nothing closes, so the row this write
+    appends is inside it and reads back as no row at all.
+    """
+    return (
+        f"**Check:** {check_of(key)}\n"
+        f"**Do:** the build {key} names\n"
+        f"{hiding}\n"
+        "**Evidence:** —"
+    )
+
+
+#: The two openings a body can carry that swallow every line after them.
+HIDING = [
+    pytest.param("```", id="unclosed-fence-in-do"),
+    pytest.param("<!--", id="unclosed-comment-in-do"),
+]
+
+
+@pytest.mark.parametrize("hiding", HIDING)
+async def test_a_tick_on_a_body_no_evidence_row_can_be_set_on_writes_nothing(hiding):
+    """The edit the tick makes is the whole precondition of making it.
+
+    A body admitted at entry — one Check row, nothing written twice — can
+    still be one the Evidence row cannot be set on, because the row the edit
+    appends is hidden by an opening the body never closes. The write asks
+    the edit itself before it touches the board, so such a body refuses as
+    the same typed stale write as every other condition, rather than as an
+    untyped failure raised after the grading session has already run.
+    """
+    ambiguous = CRITERIA[0]
+    port = criteria_board(bodies={ambiguous: unsettable(ambiguous, hiding=hiding)})
+    lane_state = writer(port, lane_repo())
+    before = board_shape(port)
+
+    with pytest.raises(StaleWriteError) as caught:
+        await tick(lane_state, sha="e" * 40)
+
+    assert caught.value.target == ambiguous
+    assert board_shape(port) == before
+    assert port.issue_writes == []
+    assert port.workflow_writes == []
+
+
 async def test_a_tick_on_a_sub_issue_with_no_evidence_row_writes_one():
     """A criterion nothing has recorded Evidence on is finished like any other.
 
@@ -1184,6 +1233,37 @@ async def test_a_regression_on_a_sub_issue_that_drifted_takes_nothing_back(
         await tick(lane_state, sha="2" * 40, failed=[drifted])
 
     assert caught.value.target == drifted
+    assert board_shape(port) == finished
+    assert (port.issue_writes, port.workflow_writes) == writes
+    assert refutations(port) == []
+
+
+@pytest.mark.parametrize("hiding", HIDING)
+async def test_a_regression_on_a_body_no_evidence_row_can_be_set_on_is_refused(hiding):
+    """The act's last write is a precondition of its first one.
+
+    A body edited into a shape the Evidence row cannot be set on is refused
+    before the move back rather than after it: the criterion is still the
+    pass it was, carrying the grading that finished it, and the board holds
+    nothing that says otherwise. Asked after the move back, the same
+    refusal would leave the criterion unstarted for a fault that was
+    knowable while it was still finished.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    drifted = CRITERIA[0]
+    await tick(lane_state, sha="1" * 40)
+    port.issues[drifted] = port.issues[drifted].model_copy(
+        update={"body": unsettable(drifted, hiding=hiding)}
+    )
+    finished = board_shape(port)
+    writes = (list(port.issue_writes), list(port.workflow_writes))
+
+    with pytest.raises(StaleWriteError) as caught:
+        await tick(lane_state, sha="2" * 40, failed=[drifted])
+
+    assert caught.value.target == drifted
+    assert port.issues[drifted].state_kind is WorkflowStateKind.COMPLETED
     assert board_shape(port) == finished
     assert (port.issue_writes, port.workflow_writes) == writes
     assert refutations(port) == []

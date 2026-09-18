@@ -114,6 +114,11 @@ def _criterion_rows(body: str) -> tuple[tuple[str, int], ...]:
     return tuple(rows)
 
 
+def _duplicated(names: Sequence[str]) -> tuple[str, ...]:
+    """The labels *names* holds more than once, over rows already read."""
+    return tuple(sorted({name for name in names if names.count(name) > 1}))
+
+
 def duplicated_row_labels(body: str) -> tuple[str, ...]:
     """The template row labels *body* carries more than one row for.
 
@@ -121,10 +126,10 @@ def duplicated_row_labels(body: str) -> tuple[str, ...]:
     single row and cannot say which of two it means; a writer that is about
     to make that edit asks the same question first, so such a body refuses
     before the write instead of raising out of this codec once the work it
-    would record has already been done.
+    would record has already been done. The edit itself has the rows in
+    hand and asks the inner form, so one body is never scanned twice.
     """
-    names = [name for name, _ in _criterion_rows(body)]
-    return tuple(sorted({name for name in names if names.count(name) > 1}))
+    return _duplicated([name for name, _ in _criterion_rows(body)])
 
 
 def replace_criterion_fields(
@@ -138,7 +143,7 @@ def replace_criterion_fields(
     """
     rows = _criterion_rows(body)
     names = [name for name, _ in rows]
-    if duplicated_row_labels(body):
+    if _duplicated(names):
         raise ValueError("criterion amendment requires unambiguous template rows")
     result = body
     for index in range(len(rows) - 1, -1, -1):

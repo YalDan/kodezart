@@ -25,7 +25,6 @@ from tests.fakes import make_tracker_issue
 from tests.identity_guards import model_value_sites
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
-OWNER = SOURCE_ROOT / "domain" / "criterion_cross_off.py"
 WRITER = SOURCE_ROOT / "services" / "lane_state_writer.py"
 GRADED_SHA = "9" * 40
 KEY = "lane/first"
@@ -278,10 +277,12 @@ def test_a_move_to_done_made_under_an_alias_is_reported(module):
 def test_exactly_one_function_applies_evidence_and_moves_a_criterion_to_done():
     """One function per half of a tick, and nothing else writes either half.
 
-    The Evidence row is written by one function because a tick and the
-    refutation that takes it back both say what the last grading of that
-    criterion read (KOD-690); the move into the finished state is written by
-    another, because only a tick makes it.
+    The Evidence row a body carries is applied by one function because a
+    tick and the refutation that takes it back both say what the last
+    grading of that criterion read (KOD-690), and both reach that row
+    through it — the refutation asks it before its first write, because the
+    edit is the precondition of making it (KOD-712). The move into the
+    finished state is written by another, because only a tick makes it.
 
     What the guard covers: every ``.py`` file under ``src/kodezart/``,
     parsed, looking for calls named after the two halves as the code itself
@@ -296,10 +297,13 @@ def test_exactly_one_function_applies_evidence_and_moves_a_criterion_to_done():
     that composes the Evidence row itself instead of calling the codec, a
     transition issued through ``restore_workflow_state``, which names a
     backend state rather than a lifecycle stage, and a stage reached
-    through a function call or as an attribute of an object rather than
-    bound to a name. The first two are covered from the other side by the
+    through a function call, as an attribute of an object, or arriving as a
+    parameter of the function that makes the move, rather than bound to a
+    name. The first two are covered from the other side by the
     construction-site guard above, since neither can produce a cross-off
-    without building one.
+    without building one; the forwarded parameter is covered from the other
+    side by the adoption register in ``tests/chains/test_write_back_adoption.py``,
+    which reaches every production write of the port.
     """
     trees = {path: ast.parse(source) for path, source in sources().items()}
     applying = {
@@ -316,7 +320,7 @@ def test_exactly_one_function_applies_evidence_and_moves_a_criterion_to_done():
     }
 
     assert {path: found for path, found in applying.items() if found} == {
-        WRITER: ["TrackerLaneStateWriter._stamp"]
+        WRITER: ["TrackerLaneStateWriter._evidence_body"]
     }
     assert {path: found for path, found in moving.items() if found} == {
         WRITER: ["TrackerLaneStateWriter._write_one"]
