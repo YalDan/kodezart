@@ -1,10 +1,14 @@
 """What a lane's own commits leave on its issue, driven through the real loop."""
 
+import ast
 import json
+from pathlib import Path
 
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.chains.ralph_loop import RalphLoop
+from kodezart.core.protocols import LaneStateWriter
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.criterion_cross_off import UNDEMONSTRATED_REASON
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
@@ -33,6 +37,7 @@ from tests.chains.test_native_fire import (
     native_operation,
     tracker,
 )
+from tests.domain.test_criterion_cross_off import callers_of
 from tests.lane_fixture import (
     LaneGit,
     LanePersister,
@@ -49,6 +54,11 @@ FEATURE = "feature/fire-subject"
 JOB = "actual-parent-job"
 CACHE = "actual-parent-cache"
 REPO_URL = "https://github.com/owner/repo"
+#: The source tree a static guard over the write site derives itself from.
+SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
+LOOP = SOURCE_ROOT / "chains" / "ralph_loop.py"
+#: The subject this lane's fire is addressed to, as a scope of one issue.
+SCOPE_OF_SUBJECT = ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
 #: A local bare repository: an origin a forge API cannot be asked about.
 FORGE_LESS_ORIGIN = "file:///srv/lanes/repo.git"
 
@@ -650,3 +660,102 @@ async def test_the_evaluation_is_graded_in_a_workspace_the_loop_owns():
     assert lane.repo.head in acquired
     assert BRANCH not in acquired
     assert [call[0] for call in provider.calls].count("release") == len(acquired)
+
+
+def written(port) -> tuple[int, int]:
+    """How much this board has been written: state moves and body edits."""
+    return len(port.workflow_writes), len(port.issue_writes)
+
+
+@pytest.mark.parametrize(
+    "fixture,crossed_off",
+    [
+        pytest.param(
+            # One for the loop's iteration, one for the post-merge review.
+            {"evaluations": [native_evaluation(), native_evaluation()]},
+            set(OWED_KEYS),
+            id="accepted",
+        ),
+        pytest.param(
+            {"evaluations": [native_evaluation(failed=True)]},
+            set(),
+            id="rejected-at-the-cap",
+        ),
+        pytest.param(
+            {
+                "evaluations": [native_evaluation(failed=True) for _ in range(3)],
+                "max_iterations": 3,
+            },
+            set(),
+            id="never-accepted-over-three-iterations",
+        ),
+    ],
+)
+async def test_no_step_after_the_loop_writes_a_cross_off(fixture, crossed_off):
+    """Whatever the loop ends as, the cross-offs are all it left behind.
+
+    The whole fire is driven, so consolidation, the post-merge review and the
+    terminal step all run after the loop's last iteration event. What the
+    board has been written is counted at that event and again at the end, and
+    the two are equal: the terminal aggregates and reports and is the first
+    writer of nothing.
+    """
+    lane = Lane(**fixture)
+    at_last_iteration: list[tuple[int, int]] = []
+
+    async for event in lane.fire.run(
+        prompt="Implement the requested behavior",
+        issue_key=None,
+        repo_path="/tmp/fire",
+        repo_url=REPO_URL,
+        base_spec=trunk_base("main"),
+        scope=SCOPE_OF_SUBJECT,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=ToolPreset.IMPLEMENTATION,
+        cache_key=CACHE,
+    ):
+        if isinstance(event, WorkflowIterationEvent):
+            at_last_iteration.append(written(lane.port))
+
+    assert at_last_iteration
+    assert written(lane.port) == at_last_iteration[-1]
+    # Not vacuous: the accepted fixture did write cross-offs, and they were
+    # already there when its last iteration event went out.
+    assert completed(lane.port) == crossed_off
+    assert (written(lane.port) != (0, 0)) is bool(crossed_off)
+
+
+def test_the_evaluator_step_is_the_only_caller_of_write_cross_offs():
+    """The write site is inside the loop's evaluator step and nowhere else.
+
+    What the guard covers: every ``.py`` file under ``src/kodezart/``, parsed,
+    looking for calls named after the port member and after the loop's own
+    private that makes them — both taken from the code rather than spelled
+    here, so renaming either moves the guard with it.
+
+    What it does not see, and what review has to read from the code: a call
+    reached by reflection, and a second writer that reproduces the two tracker
+    calls a cross-off is made of instead of calling this member. The latter is
+    covered from the other side by the guards over the Evidence application
+    and the finished-state move, which no such writer could avoid.
+    """
+    sources = {
+        path: ast.parse(path.read_text()) for path in sorted(SOURCE_ROOT.rglob("*.py"))
+    }
+    member = LaneStateWriter.write_cross_offs.__name__
+    private = RalphLoop._cross_off.__name__
+
+    assert {
+        path: found
+        for path, found in (
+            (path, callers_of(tree, name=member)) for path, tree in sources.items()
+        )
+        if found
+    } == {LOOP: [f"{RalphLoop.__name__}.{private}"]}
+    assert {
+        path: found
+        for path, found in (
+            (path, callers_of(tree, name=private)) for path, tree in sources.items()
+        )
+        if found
+    } == {LOOP: [f"{RalphLoop.__name__}._evaluate_node"]}
