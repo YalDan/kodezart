@@ -1528,6 +1528,7 @@ async def test_the_digest_is_pinned_at_the_first_record_write(monkeypatch):
     repos = WalkRepos()
     port = board(lanes=("A",), checks=TWO_CHECKS)
     reads = subject_reads(port, monkeypatch)
+    minted = mint_spy(monkeypatch)
     _, record = await first_fire(port, repos)
 
     assert (
@@ -1535,6 +1536,10 @@ async def test_the_digest_is_pinned_at_the_first_record_write(monkeypatch):
         == hashlib.sha256(port.issues["A"].body.encode("utf-8")).hexdigest()
     )
     assert reads == ["A"]
+    # The spy every "mints nothing" assertion rests on sees the one mint a
+    # first fire makes: a spy that saw nothing here would answer "uncalled"
+    # for every resumed lane too.
+    assert minted == ["A"]
 
 
 def unpin_digest(port, key: str) -> None:

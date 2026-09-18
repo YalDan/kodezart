@@ -207,7 +207,9 @@ def test_optional_reference_absence_is_none_not_an_empty_string():
         LaneRunState.model_validate(data)
 
 
-@pytest.mark.parametrize("digest", ["a" * 40, "A" * 64, "g" * 64])
+@pytest.mark.parametrize(
+    "digest", ["a" * 40, "a" * 65, "A" * 64, "g" * 64, "x" + "a" * 64]
+)
 def test_a_digest_of_another_shape_refuses_at_the_read(digest):
     """The recorded digest carries the shape of the algorithm that made it.
 
