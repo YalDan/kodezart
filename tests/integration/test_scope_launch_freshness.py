@@ -28,8 +28,13 @@ async def test_re_entry_rechecks_readiness_after_the_awaited_record_read(
     so that is where a board is changed under it here: the record listing for
     lane A yields, the board moves, and the launch must not happen. Run one
     leaves A a record and one criterion still owed, which is the state a killed
-    process leaves behind (KOD-785 and the 2026-09-16 steer: the delivery probe
-    is no longer the preparation that matters).
+    process leaves behind (KOD-785, KOD-806: the record read is the awaited
+    preparation).
+
+    The unchanged case asserts what the fire did rather than how many times it
+    graded: the exact-count clause this test used to carry is replaced by the
+    completion assertions below, because where the awaited preparation sits no
+    longer decides the number of gradings.
     """
     repos = WalkRepos()
     port = board(lanes=("A",), checks=TWO_CHECKS)

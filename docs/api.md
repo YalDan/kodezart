@@ -266,9 +266,10 @@ and unresolved criterion keys remain explicit in `scope_walk.observation`.
 
 This request route executes eligible lanes serially once per invocation. Scheduled
 configured-scope lookup, concurrent lane marks, cross-job branch recovery and a
-scope terminal verdict are separate requirements. Same-job checkpoint replay
-validates the original scope, repository, resolved base and run identity, and
-checks current criterion authority before replaying a completed judgment. The
+scope terminal verdict are separate requirements. A lane re-enters from its own
+tracker record and the remote head of the branch that record names; no graph
+state is persisted for the scope path, so nothing is replayed and a killed
+process changes nothing about the next decision (KOD-684, KOD-840). The
 HTTP API does not yet expose a request to resume an existing job.
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,

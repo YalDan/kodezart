@@ -697,8 +697,8 @@ async def test_current_closed_blocker_unlocks_next_lane_using_its_actual_work_re
         ("B/check", LifecycleStage.DONE),
     ]
     # The base B was actually prepared with, read off the run's own base event
-    # rather than a checkpoint's request metadata (KOD-776 and the 2026-09-16
-    # steer: the scope path persists no graph state).
+    # rather than a checkpoint's request metadata (KOD-776, KOD-806: the scope
+    # path persists no graph state).
     bases = {
         event.lane_key: event.event.base_branch
         for event in events
@@ -1454,22 +1454,31 @@ async def test_a_recorded_lane_the_facts_no_longer_admit_is_reported_not_fired(
 
 
 async def test_the_scoped_arm_holds_no_checkpointer_while_the_authored_arm_keeps_it():
-    """Three graphs on the scope path, none of them compiled with a saver.
+    """Every graph of BOTH scoped lanes, none compiled with a saver.
 
-    A saver IS configured for this deployment, and the authored arm still
-    holds it, so the scope path's absence of one is a composition choice and
+    The scoped arm holds two lanes, one per origin shape, and each has its own
+    fire engine: a test that inspected only the origin this harness runs on
+    would say nothing about the other, and a forge-origin run would persist
+    lane state unnoticed. A saver IS configured for this deployment, and the
+    authored arm still holds it, so the absence is a composition choice and
     not an unconfigured deployment (KOD-840). A whole scoped run then writes
     nothing to it.
     """
     saver = InMemorySaver()
     harness = runtime(saver=saver)
-    lane = lane_of(harness)
 
-    assert lane.graph.checkpointer is None
-    assert lane.fire.native_graph is not None
-    assert lane.fire.native_graph.checkpointer is None
-    assert lane.fire.checkpointer is None
-    assert lane.fire.implementation._quality_gate._checkpointer is None
+    for url in (ORIGIN, FORGE_ORIGIN):
+        lane = harness.engine._scoped_arm._lane_for(url)
+        assert lane.graph.checkpointer is None
+        assert lane.fire.native_graph is not None
+        assert lane.fire.native_graph.checkpointer is None
+        assert lane.fire.checkpointer is None
+        assert lane.fire.implementation._quality_gate._checkpointer is None
+    # The two are different engines, so the loop above asserted twice about
+    # two things and not twice about one.
+    assert harness.engine._scoped_arm._lane_for(ORIGIN) is not (
+        harness.engine._scoped_arm._lane_for(FORGE_ORIGIN)
+    )
     # Not vacuous: the arm a run without a scope takes still holds it.
     authored = harness.engine.arm_for(None).fire
     assert authored.graph.checkpointer is saver
