@@ -7,7 +7,13 @@ import ast
 #: is the house idiom, so it is the shape a second writer would take.
 BUILDING_METHODS = frozenset({"model_construct", "model_copy"})
 #: The model methods that make a value out of serialized bytes or a mapping.
-PARSING_METHODS = frozenset({"model_validate", "model_validate_json"})
+PARSING_METHODS = frozenset(
+    {"model_validate", "model_validate_json", "model_validate_strings"}
+)
+#: A receiver whose type nothing states.  Held beside the types a name is
+#: given so that an assignment from an unannotated source cannot excuse it:
+#: silence about a receiver is not a statement that it is something else.
+UNSTATED = "<unstated>"
 
 
 def _constructor_names(tree: ast.AST, identity: str) -> set[str]:
@@ -62,76 +68,172 @@ def construction_sites(source: str, *, identity: str = "RulingId") -> tuple[int,
     )
 
 
-def _stated_types(tree: ast.AST) -> dict[str, set[str]]:
-    """Every annotation each name is declared with, by the name it addresses."""
-    stated: dict[str, set[str]] = {}
+def _parameters(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.arg, ...]:
+    """Every parameter of *function*, in one sequence."""
+    return tuple(
+        argument
+        for argument in (
+            *function.args.posonlyargs,
+            *function.args.args,
+            *function.args.kwonlyargs,
+            function.args.vararg,
+            function.args.kwarg,
+        )
+        if argument is not None
+    )
 
-    def note(name: str, annotation: ast.expr | None) -> None:
-        if annotation is not None:
-            stated.setdefault(name, set()).add(ast.unparse(annotation))
 
-    returns: dict[str, ast.expr] = {}
+def _mentions(annotation: ast.expr | None, names: set[str]) -> bool:
+    """Whether *annotation* names one of *names* anywhere inside itself."""
+    if annotation is None:
+        return False
+    return any(
+        (isinstance(node, ast.Name) and node.id in names)
+        or (isinstance(node, ast.Attribute) and node.attr in names)
+        or (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value in names
+        )
+        for node in ast.walk(annotation)
+    )
+
+
+def _carriers(tree: ast.AST, names: set[str]) -> set[str]:
+    """Every name in *tree* whose own annotations hand one of *names* around.
+
+    A function whose parameter or return names the value carries it; so does
+    a class declaring a field of it, and so does the class a carrying method
+    belongs to, because the class is the name another module imports.
+    """
+    carriers: set[str] = set()
+    owners = {
+        id(statement): node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+        for statement in node.body
+    }
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            if node.returns is not None:
-                returns[node.name] = node.returns
-            for argument in (
-                *node.args.posonlyargs,
-                *node.args.args,
-                *node.args.kwonlyargs,
-                node.args.vararg,
-                node.args.kwarg,
+            if any(
+                _mentions(annotation, names)
+                for annotation in (
+                    node.returns,
+                    *(argument.annotation for argument in _parameters(node)),
+                )
             ):
-                if argument is not None:
-                    note(argument.arg, argument.annotation)
-        elif isinstance(node, ast.AnnAssign):
-            note(ast.unparse(node.target), node.annotation)
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Assign)
-            and isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Name)
-            and node.value.func.id in returns
+                carriers.add(node.name)
+                owner = owners.get(id(node))
+                if owner is not None:
+                    carriers.add(owner.name)
+        elif isinstance(node, ast.ClassDef) and any(
+            isinstance(statement, ast.AnnAssign)
+            and _mentions(statement.annotation, names)
+            for statement in node.body
         ):
-            for target in node.targets:
-                note(ast.unparse(target), returns[node.value.func.id])
-    return stated
+            carriers.add(node.name)
+    return carriers
 
 
-def model_value_sites(source: str, *, identity: str) -> dict[str, tuple[str, ...]]:
-    """Where a module holding *identity* builds one of its values, and parses one.
+def value_holders(sources: dict[str, str], *, identity: str) -> dict[str, ast.Module]:
+    """Every module that can hold one of *identity*'s values, as a fixed point.
 
-    Derived from the source rather than from a list of names: a module
-    counts when it imports or declares the identity, and inside such a
-    module a receiver is excused only where its own annotation states a
-    different type.  An unannotated receiver is reported, because a guard
-    that trusted silence would be answered by dropping the annotation.
-    Each site is named by the function that encloses it, so the assertion
-    reads as the surface rather than as line numbers.
+    A module holds the value when it imports or declares the identity, or
+    reaches it as an attribute of a module it imports.  It also holds the
+    value when it imports a CARRIER — a function, method, class or field
+    whose own annotation mentions the identity, or mentions a carrier — since
+    a caller handed the value back holds it without ever naming its type.
+    Carriers and holders are grown together until neither changes, so the
+    scanned surface is derived from the tree and never listed here.
     """
-    tree = ast.parse(source)
-    if not any(
+    trees = {path: ast.parse(source) for path, source in sources.items()}
+    carried = {identity}
+    holders: dict[str, ast.Module] = {}
+    changed = True
+    while changed:
+        changed = False
+        for path, tree in trees.items():
+            if path not in holders and _holds(tree, carried, identity=identity):
+                holders[path] = tree
+                changed = True
+        for tree in holders.values():
+            grown = _carriers(tree, carried | _constructor_names(tree, identity))
+            if grown - carried:
+                carried |= grown
+                changed = True
+    return holders
+
+
+def _holds(tree: ast.AST, carried: set[str], *, identity: str) -> bool:
+    return any(
         (
             isinstance(node, ast.ImportFrom)
-            and any(alias.name == identity for alias in node.names)
+            and any(alias.name in carried for alias in node.names)
         )
         or (isinstance(node, ast.ClassDef) and node.name == identity)
+        or (isinstance(node, ast.Attribute) and node.attr == identity)
         for node in ast.walk(tree)
-    ):
-        return {"build": (), "parse": ()}
+    )
+
+
+def model_value_sites(
+    sources: dict[str, str], *, identity: str
+) -> dict[str, tuple[str, ...]]:
+    """Where the tree builds one of *identity*'s values, and where it parses one.
+
+    Every module that can hold the value is scanned, and inside one a
+    receiver is excused only where its ENCLOSING function states another
+    type for it — its parameters, its own annotated assignments, its class's
+    annotations for a ``self`` receiver, and what a plain assignment
+    inherits from those.  An unannotated receiver is reported, because a
+    guard that trusted silence would be answered by dropping the
+    annotation.  Each site is named by the module and the function holding
+    it, so the assertion reads as the surface rather than as line numbers.
+    """
+    sites: dict[str, list[str]] = {"build": [], "parse": []}
+    for path, tree in sorted(value_holders(sources, identity=identity).items()):
+        for form, function in _module_sites(tree, identity=identity):
+            sites[form].append(f"{path}::{function}")
+    return {name: tuple(sorted(found)) for name, found in sites.items()}
+
+
+def _module_sites(tree: ast.Module, *, identity: str) -> list[tuple[str, str]]:
+    """Each construction in one module, as its form and the function holding it."""
     constructors = _constructor_names(tree, identity)
-    stated = _stated_types(tree)
     parents = {
         id(child): parent
         for parent in ast.walk(tree)
         for child in ast.iter_child_nodes(parent)
     }
+    returns = {
+        node.name: node.returns
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.returns is not None
+    }
+    # A name this module imports, or declares as a class, addresses that type:
+    # the import or the declaration says what it is as plainly as an
+    # annotation would, and the identity's own names are resolved before it.
+    addressed = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import | ast.ImportFrom)
+        for alias in node.names
+    } | {node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)}
 
-    def enclosing(node: ast.AST) -> str:
+    def owner_of(node: ast.AST, kinds: type | tuple[type, ...]) -> ast.AST | None:
         while id(node) in parents:
             node = parents[id(node)]
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                return node.name
+            if isinstance(node, kinds):
+                return node
+        return None
+
+    def enclosing(node: ast.AST) -> str:
+        function = owner_of(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        if isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+            return function.name
         return "<module>"
 
     def is_constructor(node: ast.AST) -> bool:
@@ -139,35 +241,134 @@ def model_value_sites(source: str, *, identity: str) -> dict[str, tuple[str, ...
             isinstance(node, ast.Attribute) and node.attr == identity
         )
 
-    def holds_another_type(node: ast.expr) -> bool:
-        annotations = stated.get(ast.unparse(node))
-        return annotations is not None and all(
-            identity not in annotation for annotation in annotations
+    def excused(receiver: ast.expr, node: ast.AST) -> bool:
+        function = owner_of(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        stated = (
+            {}
+            if function is None
+            else _stated_types(function, returns, owner_of(function, ast.ClassDef))
+        )
+        name = ast.unparse(receiver)
+        types = stated.get(name)
+        if types is None:
+            return name in addressed and name not in constructors
+        return UNSTATED not in types and all(
+            identity not in stated_type for stated_type in types
         )
 
-    def form(node: ast.Call) -> str | None:
+    def call_form(node: ast.Call) -> str | None:
+        """Which form, if any, this call makes one of the value's own by."""
         if is_constructor(node.func):
             return "build"
-        if (
-            isinstance(node.func, ast.Call)
-            and isinstance(node.func.func, ast.Name)
-            and node.func.func.id == "type"
+        if any(
+            is_constructor(argument)
+            for argument in (*node.args, *(word.value for word in node.keywords))
         ):
+            # An adapter or a partial application built around the class makes
+            # values of it from wherever the result is called.
             return "build"
-        if isinstance(node.func, ast.Attribute) and not holds_another_type(
-            node.func.value
-        ):
-            if node.func.attr in BUILDING_METHODS:
-                return "build"
-            if node.func.attr in PARSING_METHODS:
-                return "parse"
-        return None
+        if isinstance(node.func, ast.Call) and _names(node.func.func) == "type":
+            return "build"
+        if not isinstance(node.func, ast.Attribute):
+            return None
+        if node.func.attr == "__class__":
+            return "build"
+        if is_constructor(node.func.value) or excused(node.func.value, node):
+            # The first is already counted at the attribute itself; the second
+            # is a receiver its own function states another type for.
+            return None
+        if node.func.attr in BUILDING_METHODS:
+            return "build"
+        return "parse" if node.func.attr in PARSING_METHODS else None
 
-    sites: dict[str, list[str]] = {"build": [], "parse": []}
+    found: list[tuple[str, str]] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and (found := form(node)) is not None:
-            sites[found].append(enclosing(node))
-    return {name: tuple(found) for name, found in sites.items()}
+        if isinstance(node, ast.ClassDef) and any(
+            is_constructor(base) for base in node.bases
+        ):
+            # A subclass of the value is another way to make one of its own.
+            found.append(("build", enclosing(node)))
+        elif isinstance(node, ast.Attribute) and is_constructor(node.value):
+            # Counted whether or not it is called here: the same attribute
+            # bound to a name is the call site this walk would not see.
+            if node.attr in BUILDING_METHODS:
+                found.append(("build", enclosing(node)))
+            elif node.attr in PARSING_METHODS:
+                found.append(("parse", enclosing(node)))
+        elif isinstance(node, ast.Call) and (form := call_form(node)) is not None:
+            found.append((form, enclosing(node)))
+    return found
+
+
+def _names(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    return node.attr if isinstance(node, ast.Attribute) else None
+
+
+def _stated_types(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    returns: dict[str, ast.expr],
+    owner: ast.AST | None,
+) -> dict[str, set[str]]:
+    """Every type *function* itself states for a name it uses.
+
+    Scoped to this function because a name is a receiver in the function
+    that uses it: another function annotating the same word says nothing
+    about this one, and read module-wide it would excuse a receiver here on
+    the strength of an annotation somewhere else.  A plain assignment
+    inherits what its source states, and inherits ``UNSTATED`` where the
+    source states nothing.
+    """
+    stated: dict[str, set[str]] = {}
+
+    def note(name: str, annotation: ast.expr | None) -> None:
+        stated.setdefault(name, set()).add(
+            UNSTATED if annotation is None else ast.unparse(annotation)
+        )
+
+    if isinstance(owner, ast.ClassDef):
+        for statement in owner.body:
+            if isinstance(statement, ast.AnnAssign) and isinstance(
+                statement.target, ast.Name
+            ):
+                note(f"self.{statement.target.id}", statement.annotation)
+    for argument in _parameters(function):
+        note(argument.arg, argument.annotation)
+    body = [
+        node
+        for statement in function.body
+        for node in ast.walk(statement)
+        if isinstance(node, ast.AnnAssign | ast.Assign)
+    ]
+    for node in body:
+        if isinstance(node, ast.AnnAssign):
+            note(ast.unparse(node.target), node.annotation)
+    changed = True
+    while changed:
+        changed = False
+        for node in body:
+            if not isinstance(node, ast.Assign):
+                continue
+            inherited = _value_types(node.value, stated, returns)
+            for target in node.targets:
+                name = ast.unparse(target)
+                if not inherited <= stated.get(name, set()):
+                    stated.setdefault(name, set()).update(inherited)
+                    changed = True
+    return stated
+
+
+def _value_types(
+    value: ast.expr, stated: dict[str, set[str]], returns: dict[str, ast.expr]
+) -> set[str]:
+    """What an assignment's right-hand side states about the name it binds."""
+    if isinstance(value, ast.Name | ast.Attribute):
+        return set(stated.get(ast.unparse(value), {UNSTATED}))
+    called = _names(value.func) if isinstance(value, ast.Call) else None
+    if called in returns:
+        return {ast.unparse(returns[called])}
+    return {UNSTATED}
 
 
 def invalid_ruling_fields(source: str) -> tuple[int, ...]:

@@ -302,23 +302,36 @@ def test_exactly_one_site_constructs_the_lane_run_state():
     assert len(construction_sites(second, identity=RECORD)) == 2
 
 
-def record_value_sites() -> dict[str, list[str]]:
-    """Every place the source builds a lane record, and every place it parses one."""
-    found: dict[str, list[str]] = {"build": [], "parse": []}
-    for path in sorted(SOURCE_ROOT.rglob("*.py")):
-        sites = model_value_sites(path.read_text(), identity=RECORD)
-        for form, functions in sites.items():
-            found[form].extend(
-                f"{path.relative_to(SOURCE_ROOT).as_posix()}::{function}"
-                for function in functions
-            )
-    return found
+def source_tree() -> dict[str, str]:
+    """The production tree, keyed the way a guard's report names a module."""
+    return {
+        path.relative_to(SOURCE_ROOT).as_posix(): path.read_text()
+        for path in sorted(SOURCE_ROOT.rglob("*.py"))
+    }
 
 
 def test_one_site_builds_the_lane_run_state_and_one_site_parses_it():
-    assert record_value_sites() == {
-        "build": ["domain/lane_record.py::next_lane_record"],
-        "parse": ["domain/lane_record.py::parse_lane_record"],
+    """The record has one writer, and the guard finds it without being told.
+
+    What the guard covers: every module that imports or declares the record,
+    reaches it through a module it imports, or imports something whose own
+    annotations hand the value around — grown as a fixed point, so a reader
+    that never names the type is scanned too. Inside such a module it counts
+    the class call, a subclass of it, the parsing and constructing methods
+    however they are reached, an adapter or partial built around the class,
+    ``type(x)(...)`` and ``x.__class__(...)``, and a copy whose receiver its
+    own function does not state another type for.
+
+    What it does not see, and what review has to read from the code: a class
+    or a method reached by runtime reflection — ``globals()[name]``,
+    ``getattr(module, name)`` — since no annotation and no import names it;
+    a value rebuilt field by field into some other model that renders the
+    same bytes; and a module that holds the value only by receiving it as an
+    unannotated argument from a holder.
+    """
+    assert model_value_sites(source_tree(), identity=RECORD) == {
+        "build": ("domain/lane_record.py::next_lane_record",),
+        "parse": ("domain/lane_record.py::parse_lane_record",),
     }
 
 
@@ -328,21 +341,135 @@ def test_one_site_builds_the_lane_run_state_and_one_site_parses_it():
         f"{RECORD}(lane_key='second')",
         f"{RECORD}.model_validate({{'laneKey': 'second'}})",
         f"{RECORD}.model_validate_json('{{}}')",
+        f"{RECORD}.model_validate_strings({{'laneKey': 'second'}})",
         f"{RECORD}.model_construct(lane_key='second')",
+        f"TypeAdapter({RECORD}).validate_python({{}})",
+        f"partial({RECORD}.model_validate)",
         "prior.model_copy(update={'head_sha': sha})",
         "type(prior)(lane_key='second')",
+        "prior.__class__(lane_key='second')",
     ],
 )
 def test_a_second_site_in_any_of_the_construction_forms_is_reported(form):
-    owner = (SOURCE_ROOT / "domain" / "lane_record.py").read_text()
-    poller = f"{owner}\n\ndef _poll(prior, sha):\n    return {form}\n"
-    sites = model_value_sites(poller, identity=RECORD)
-    assert "_poll" in sites["build"] + sites["parse"]
+    sources = source_tree()
+    sources["services/second_writer.py"] = (
+        f"from kodezart.types.domain.run_state import {RECORD}\n"
+        "\n"
+        "def _poll(prior, sha):\n"
+        f"    return {form}\n"
+    )
+    sites = model_value_sites(sources, identity=RECORD)
+    assert "services/second_writer.py::_poll" in sites["build"] + sites["parse"]
 
 
-def test_a_module_that_does_not_hold_the_record_states_nothing_about_it():
-    borrowed = "def _poll(prior, sha):\n    return prior.model_copy(update={})\n"
-    assert model_value_sites(borrowed, identity=RECORD) == {"build": (), "parse": ()}
+@pytest.mark.parametrize(
+    "module",
+    [
+        f"class {RECORD}:\n    pass\n\ndef _poll(prior, sha):\n    return {RECORD}()\n",
+        "from kodezart.types.domain import run_state\n"
+        "\n"
+        "def _poll(prior, sha):\n"
+        f"    return run_state.{RECORD}.model_validate({{}})\n",
+        f"from kodezart.types.domain.run_state import {RECORD}\n"
+        "\n"
+        f"class _Polled({RECORD}):\n"
+        "    pass\n",
+    ],
+)
+def test_a_module_reaching_the_record_without_importing_the_name_is_scanned(module):
+    """Importing the bare name is one way a module holds the value, not the way.
+
+    A module that declares the class, or reaches it through the module it
+    lives in, holds it as surely as one that imports it, and a guard keyed on
+    the import would report nothing about either.
+    """
+    sources = source_tree()
+    sources["services/second_writer.py"] = module
+    sites = model_value_sites(sources, identity=RECORD)
+    assert [
+        place
+        for place in sites["build"] + sites["parse"]
+        if place.startswith("services/second_writer.py")
+    ]
+
+
+IMPORTS = (
+    "from kodezart.types.domain.run_state import LaneRunState\n"
+    "from kodezart.types.domain.tracker import TrackerComment\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("body", "reported"),
+    [
+        (
+            # Another function's annotation of the same word excuses nothing.
+            "class Sources:\n"
+            "    comment: TrackerComment\n"
+            "\n"
+            "def _poll(prior: LaneRunState, sha):\n"
+            "    comment = prior\n"
+            "    return comment.model_copy(update={'head_sha': sha})\n",
+            True,
+        ),
+        (
+            "def _read() -> TrackerComment: ...\n"
+            "\n"
+            "def _poll(sha):\n"
+            "    comment = _read()\n"
+            "    return comment.model_copy(update={'body': sha})\n",
+            False,
+        ),
+        (
+            "def _read() -> LaneRunState: ...\n"
+            "\n"
+            "def _poll(sha):\n"
+            "    record = _read()\n"
+            "    return record.model_copy(update={'head_sha': sha})\n",
+            True,
+        ),
+        (
+            "def _read() -> TrackerComment: ...\n"
+            "\n"
+            "def _poll(prior: LaneRunState, sha):\n"
+            "    comment: TrackerComment = _read()\n"
+            "    comment = prior\n"
+            "    return comment.model_copy(update={'head_sha': sha})\n",
+            True,
+        ),
+    ],
+)
+def test_a_receiver_is_excused_only_by_what_its_own_function_states(body, reported):
+    """The excuse is the receiver's own type, and every type it is given.
+
+    Read across the module, a common local name would be excused wherever any
+    other function annotated that word with something else. Read as "any of
+    its types is something else", a name holding the record on one line and
+    another value on the next would be excused by the second.
+    """
+    sources = source_tree()
+    sources["services/second_writer.py"] = IMPORTS + body
+    sites = model_value_sites(sources, identity=RECORD)
+    assert ("services/second_writer.py::_poll" in sites["build"]) is reported
+
+
+def test_a_module_holding_the_record_only_through_its_reader_is_scanned():
+    """The value reaches a module that never names its type, and it is scanned.
+
+    The reader's own signature hands a record back, so importing the reader
+    is holding the value: the copy idiom in such a module composes a complete
+    second record, which is the exact shape the one-writer rule forbids.
+    """
+    sources = source_tree()
+    sources["services/second_writer.py"] = (
+        "from kodezart.services.lane_records import LaneRecordReader\n"
+        "\n"
+        "async def _poll(reader: LaneRecordReader, sha):\n"
+        "    _, record = await reader.read(issue_key='i', lane_key='l')\n"
+        "    return record.model_copy(update={'head_sha': sha})\n"
+    )
+    sites = model_value_sites(sources, identity=RECORD)
+    assert "services/second_writer.py::_poll" in sites["build"]
 
 
 def test_next_record_appends_one_row_and_keeps_prior_associations():
@@ -475,7 +602,7 @@ def test_a_run_rebased_onto_another_base_refuses_before_composing_a_record():
         run_id=lane.run_id,
         visibility=lane.visibility,
     )
-    with pytest.raises(LaneRecordWriteError, match="another-base"):
+    with pytest.raises(LaneRecordWriteError) as refusal:
         next_lane_record(
             prior=first,
             lane=rebased,
@@ -485,6 +612,10 @@ def test_a_run_rebased_onto_another_base_refuses_before_composing_a_record():
             changeset=changeset(commits=2, files=1),
             subject="Second change",
         )
+    # Both readings, so the refusal says what the record holds as well as
+    # what this commit brought: one of them alone names no disagreement.
+    assert lane.base_ref in str(refusal.value)
+    assert "another-base" in str(refusal.value)
 
 
 def test_a_head_that_returns_to_an_earlier_sha_is_recorded_as_its_own_act():

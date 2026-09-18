@@ -437,6 +437,36 @@ async def test_a_lane_naming_no_repository_refuses_before_any_read():
     assert port.comments == []
 
 
+async def test_a_run_rebound_to_another_deliverable_leaves_the_board_untouched():
+    """The refusal reaches the board's writer, not only the model.
+
+    It is knowable only from the stored record, so it necessarily follows the
+    push; what it must not follow is a write. The record that stands is the
+    one the run was bound to, and the rebound commit adds nothing to it.
+    """
+    port, repo = board(), lane_repo()
+    lane_state = writer(port, repo)
+    await make_commit(lane_state, repo, 1)
+    before = [(comment.comment_key, comment.body) for comment in port.comments]
+    rebound = LaneBinding(
+        lane_key=LANE,
+        loop_branch=binding().loop_branch,
+        deliverable_branch="feature/another",
+        base_ref=binding().base_ref,
+        repo_url=REPO_URL,
+        repo_path=None,
+        run_id=binding().run_id,
+        visibility=RepoVisibility.PRIVATE,
+    )
+
+    with pytest.raises(LaneRecordWriteError, match="feature/another"):
+        await make_commit(lane_state, repo, 2, lane=rebound)
+
+    assert [(comment.comment_key, comment.body) for comment in port.comments] == before
+    events = await port.lane_run_events(issue_key=LANE, lane_key=LANE)
+    assert [event.kind for event in events] == [RunEventKind.FIRST_PUSH]
+
+
 async def stored_record(port: FakeTrackerPort):
     """The record as the board holds it, read back the way a cold lane reads it."""
     _, record = await LaneRecordReader(tracker=port, operation=lane_operation()).read(
