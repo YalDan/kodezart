@@ -327,8 +327,9 @@ def dispatched_keys(prompt: str, port) -> list[str]:
     ]
 
 
+@pytest.mark.parametrize("upheld_rounds", [1, 2], ids=["one-upheld", "two-upheld"])
 async def test_a_criterion_crossed_off_before_an_upheld_round_is_graded_after_it(
-    repository,
+    repository, upheld_rounds
 ):
     """A round that graded nothing does not shrink what the loop is judged against.
 
@@ -340,18 +341,25 @@ async def test_a_criterion_crossed_off_before_an_upheld_round_is_graded_after_it
     graded, it is Done and outside the entry roster, so nothing would
     re-grade it and a regression of it would be absorbed while the lane
     delivered.
+
+    Two upheld rounds in a row are the same case one round later: the
+    second refusal carries the roster the first one carried, not the one an
+    evaluated outcome would have handed it, so the roster must survive a
+    refusal whose predecessor was itself a refusal.
     """
     port = None
     dispatched: list[list[str]] = []
     writes = 0
+    upheld = set(range(3, 3 + upheld_rounds))
 
     async def answers(title, payload, kwargs):
         nonlocal writes
         if title == "NativeWriterOutput":
             writes += 1
-            # Only the third round claims a departure, and the independent
-            # judgment does not reproduce it, so that round ends upheld.
-            if writes != 3:
+            # From the third round on, one round per parametrized upheld
+            # round claims a departure the independent judgment does not
+            # reproduce, so each of those rounds ends upheld.
+            if writes not in upheld:
                 payload["claims"] = []
         elif title == "AcceptanceCriteriaOutput":
             if not dispatched:
@@ -371,7 +379,7 @@ async def test_a_criterion_crossed_off_before_an_upheld_round_is_graded_after_it
 
     executor = Executor(mutate=answers)
     fire, spec, current, _, workspace, port = await make_runtime(
-        repository, executor, max_iterations=4
+        repository, executor, max_iterations=3 + upheld_rounds
     )
     entry = {criterion.id for criterion in current.criteria}
     try:
@@ -386,7 +394,7 @@ async def test_a_criterion_crossed_off_before_an_upheld_round_is_graded_after_it
         assert {
             row.criterion_id for row in iteration.evaluation.criteria_results
         } == entry | {ADDED_OWED}
-        assert iteration.iteration == 4
+        assert iteration.iteration == 3 + upheld_rounds
         assert port.issues[ADDED_OWED].state_kind is WorkflowStateKind.COMPLETED
     finally:
         await cleanup(workspace)
