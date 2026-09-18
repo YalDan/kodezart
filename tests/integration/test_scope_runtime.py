@@ -75,7 +75,7 @@ from tests.fakes import (
     make_prompt_provider,
     make_tracker_issue,
 )
-from tests.lane_fixture import TRUNK_BRANCHES, TRUNK_SHA, LaneRepo
+from tests.lane_fixture import TRUNK_BRANCHES, TRUNK_SHA, LaneRepo, criteria_echo
 
 ORIGIN = "file:///scope-repository.git"
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
@@ -1060,15 +1060,16 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
     repos = WalkRepos()
     port = board(lanes=("A", "B"), blocked={"B": ("A",)})
     git = WalkGit(repos)
+    source = WalkSource(repos)
     harness = runtime(
         port=port,
         lanes=("A", "B"),
         persister=WalkPersister(repos),
         git=git,
-        source=WalkSource(repos),
+        source=source,
         workspace=WalkWorkspaces(repos, git=git),
     )
-    mid_walk: dict[str, tuple[str, str, str, str | None]] = {}
+    mid_walk: dict[str, tuple[str, str, str, str | None, str]] = {}
 
     events = []
     async for event in drive(harness):
@@ -1086,6 +1087,10 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
                     ).graded_sha,
                     record.head_sha,
                     record.pushed_head_sha,
+                    # The repository's own head at this instant: read here
+                    # rather than at the end, the comparison is to the tree
+                    # this lane stood at when the cross-off was written.
+                    repos.branches[record.branch].head,
                 )
         if isinstance(event.event, LaneDeliveryEvent):
             port.recorded_work_refs[event.lane_key] = [
@@ -1104,9 +1109,9 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
         criterion = port.issues[f"{lane}/check"]
         record = await lane_record(port, lane)
         own_head = heads[record.branch]
-        state_name, graded_sha, head, pushed = mid_walk[lane]
+        state_name, graded_sha, head, pushed, head_then = mid_walk[lane]
         assert state_name == LifecycleStage.DONE.value
-        assert graded_sha == head == pushed
+        assert graded_sha == head == pushed == head_then
         assert criterion.state_kind is WorkflowStateKind.COMPLETED
         assert parse_criterion_evidence(criterion.body).graded_sha == own_head
         assert record.head_sha == record.pushed_head_sha == own_head
@@ -1125,6 +1130,11 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
     # Push status is per branch: a branch this walk never pushed is reported
     # as unpushed, so no lane's push is ever read off another lane's branch.
     assert await git.remote_branch_sha("/w", repos.remote, "never-pushed") is None
+    # And a ref no repository of this walk holds is a read the source refuses:
+    # answered with the current head, a grading of a ref nobody wrote would
+    # read as a grading of the lane's own branch.
+    with pytest.raises(GitSourceReadError):
+        await source.resolve_commit(cwd="/w", ref="no-such-ref")
     observations = [
         event.observation for event in events if isinstance(event, ScopeWalkEvent)
     ]
@@ -1150,21 +1160,6 @@ def lane_with_three_criteria() -> FakeTrackerPort:
     return port
 
 
-def walk_grade(keys, passed) -> dict:
-    """One evaluator echo per criterion of *keys*, passing exactly *passed*."""
-    return {
-        "criteriaResults": [
-            {
-                "criterionId": key,
-                "criterion": "an evaluator echo",
-                "passed": key in passed,
-                "reasoning": "Observed the selected check.",
-            }
-            for key in keys
-        ]
-    }
-
-
 async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
     """The regression, in process, over the whole walk.
 
@@ -1184,10 +1179,10 @@ async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
         port=port,
         lanes=("A",),
         evaluations=[
-            walk_grade(keys, {broken}),
-            walk_grade(keys, set(rest)),
-            walk_grade(keys, set(keys)),
-            walk_grade(keys, set(keys)),
+            criteria_echo(keys=keys, passed={broken}),
+            criteria_echo(keys=keys, passed=set(rest)),
+            criteria_echo(keys=keys, passed=set(keys)),
+            criteria_echo(keys=keys, passed=set(keys)),
         ],
         persister=WalkPersister(repos),
         git=git,
@@ -1195,7 +1190,7 @@ async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
         workspace=WalkWorkspaces(repos, git=git),
         max_iterations=3,
     )
-    at_iteration: dict[int, tuple[str, str, list[str | None]]] = {}
+    at_iteration: dict[int, tuple[str, str, list[str | None], str]] = {}
 
     async for event in drive(harness):
         if not isinstance(event, ScopeLaneEvent):
@@ -1212,14 +1207,17 @@ async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
                     )
                     if posted.kind is RunEventKind.CRITERION_REFUTED
                 ],
+                repos.branches[event.event.branch].head,
             )
         if isinstance(event.event, LaneDeliveryEvent):
             port.recorded_work_refs["A"] = [deliverable_of(repos, "A")]
 
     heads = [repo.head for repo in repos.branches.values()]
     assert len(heads) == 1
-    refuted_at = at_iteration[2][1]
-    assert at_iteration[2] == ("Todo", refuted_at, [refuted_at])
+    # The refuting sha is the branch's own head at that iteration, captured
+    # from the repository rather than read back off the row it was written on.
+    refuted_at = at_iteration[2][3]
+    assert at_iteration[2] == ("Todo", refuted_at, [refuted_at], refuted_at)
     assert at_iteration[1][0] == LifecycleStage.DONE.value
     assert refuted_at != at_iteration[1][1]
 
@@ -1234,3 +1232,14 @@ async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
     assert all(
         port.issues[key].state_kind is WorkflowStateKind.COMPLETED for key in keys
     )
+    # Nothing wrote the issue that owns them, and the state moves are exactly
+    # the four a tick makes: one per criterion, plus the criterion this walk
+    # broke and finished again. The move back out of the finished state is not
+    # among them — the double ledgers it in neither write log — so the row's
+    # own state and the stream above are what carry it.
+    assert port.issues["A"].state_kind is WorkflowStateKind.UNSTARTED
+    assert port.workflow_writes == [
+        (broken, LifecycleStage.DONE),
+        *((key, LifecycleStage.DONE) for key in rest),
+        (broken, LifecycleStage.DONE),
+    ]

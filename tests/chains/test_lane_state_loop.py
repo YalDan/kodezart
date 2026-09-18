@@ -61,6 +61,7 @@ from tests.lane_fixture import (
     LanePersister,
     LaneRepo,
     LaneSource,
+    criteria_echo,
     lane_forge,
 )
 
@@ -546,18 +547,8 @@ async def test_a_lane_killed_between_its_push_and_its_record_write_reads_one_beh
 
 
 def graded(passed, keys=OWED_KEYS) -> dict:
-    """One evaluator echo per criterion of *keys*, passing exactly *passed*."""
-    return {
-        "criteriaResults": [
-            {
-                "criterionId": key,
-                "criterion": "an evaluator echo",
-                "passed": key in passed,
-                "reasoning": "Observed the selected check.",
-            }
-            for key in keys
-        ]
-    }
+    """The shared echo builder over this module's own roster by default."""
+    return criteria_echo(keys=keys, passed=passed)
 
 
 def closure(port) -> SubtreeClosure:
@@ -1130,18 +1121,8 @@ def wide_board(keys=WIDE_CRITERIA):
 
 
 def wide_evaluation(passing) -> dict:
-    """One echo per criterion of the long set, passing exactly *passing*."""
-    return {
-        "criteriaResults": [
-            {
-                "criterionId": key,
-                "criterion": "an evaluator echo",
-                "passed": key in passing,
-                "reasoning": "Observed the selected check.",
-            }
-            for key in WIDE_CRITERIA
-        ]
-    }
+    """The same echo builder over the long set."""
+    return criteria_echo(keys=WIDE_CRITERIA, passed=passing)
 
 
 async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_events():

@@ -6,7 +6,7 @@ or a comment — every recorded fact has to come from a real observation of
 this repository through the production reader it is written by.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Container, Sequence
 
 import httpx
 
@@ -67,6 +67,27 @@ class LaneRepo:
     def publish(self) -> None:
         """Record that the remote now holds this branch at its current head."""
         self.pushed = self.head
+
+
+def criteria_echo(*, keys: Sequence[str], passed: Container[str]) -> dict:
+    """One evaluator echo per criterion of *keys*, passing exactly *passed*.
+
+    The raw agent answer, as the only thing a lane test scripts: which of the
+    criteria a grading passed is the whole variable, so every test that drives
+    a loop or a walk builds its evaluations here rather than repeating the
+    shape of an echo.
+    """
+    return {
+        "criteriaResults": [
+            {
+                "criterionId": key,
+                "criterion": "an evaluator echo",
+                "passed": key in passed,
+                "reasoning": "Observed the selected check.",
+            }
+            for key in keys
+        ]
+    }
 
 
 class LaneGit(FakeGitService):
@@ -181,7 +202,7 @@ class RecordingAfterPublish:
 
 
 class LaneSource(NativeSourceReader):
-    """Resolves this lane's refs, HEAD included, against the repository."""
+    """Resolves this lane's refs; a ref it does not hold answers as the head."""
 
     def __init__(self, repo: LaneRepo) -> None:
         self.repo = repo
