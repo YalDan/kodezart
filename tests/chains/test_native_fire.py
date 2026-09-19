@@ -1672,7 +1672,7 @@ async def test_one_criterion_that_is_not_done_refuses_and_is_named(kind, name):
 
     assert caught.value.issue_key == SUBJECT
     assert NESTED_OWED in caught.value.reason
-    assert "not Done" in caught.value.reason
+    assert "not finished" in caught.value.reason
     # Only the offender is named: the four that are Done are not.
     for key in ALL_CRITERIA:
         if key != NESTED_OWED:

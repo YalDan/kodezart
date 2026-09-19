@@ -2101,7 +2101,7 @@ async def test_a_reopened_criterion_refuses_a_deliver_only_entry(monkeypatch):
             "FireSpecEntryError"
         ]
         assert "A/check" in failures[0].error.error
-        assert "not Done" in failures[0].error.error
+        assert "not finished" in failures[0].error.error
         # Nothing was published and nothing was executed on the way to the
         # refusal: it lands before the lane does anything at all.
         assert wire.creates == []

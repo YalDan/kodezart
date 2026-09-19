@@ -253,8 +253,13 @@ class TrackerCriteria:
         if unfinished:
             raise FireSpecEntryError(
                 issue_key=spec.subject,
+                # Named as the state this reading holds them to, never as the
+                # board's word for it: the label a team spells that state with
+                # is configuration, and a message spelling it here would be a
+                # second place it lives.
                 reason=(
-                    f"a criterion of the subtree is not Done: {', '.join(unfinished)}"
+                    "a criterion of the subtree is not finished: "
+                    f"{', '.join(unfinished)}"
                 ),
             )
         return _criterion_set(
