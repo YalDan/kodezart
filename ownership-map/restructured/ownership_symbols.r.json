@@ -27382,6 +27382,27 @@
    "note": "introduced b94a63ab..9d425ec4",
    "owner": "M4",
    "sym_kind": "method"
+  },
+  "WorkRefReader": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9d425ec4..44bacf63",
+   "owner": "M3",
+   "sym_kind": "class"
+  },
+  "WorkRefReader.work_refs": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9d425ec4..44bacf63",
+   "owner": "M3",
+   "sym_kind": "method"
+  },
+  "FireCriteriaSource.read_finished": {
+   "consumers": {},
+   "kind": "added",
+   "note": "introduced 9d425ec4..44bacf63",
+   "owner": "M3",
+   "sym_kind": "method"
   }
  },
  "src/kodezart/core/retry.py": {

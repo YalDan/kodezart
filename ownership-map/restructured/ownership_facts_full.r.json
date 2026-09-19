@@ -11918,5 +11918,23 @@
   "kind": "test_py",
   "first_seen": "union-9d425ec4",
   "imports": []
+ },
+ {
+  "path": "tests/services/test_scope_runtime.py",
+  "status": "A",
+  "added": 119,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-44bacf63",
+  "imports": []
+ },
+ {
+  "path": "tests/tracker/test_recorded_deliverable_refs.py",
+  "status": "A",
+  "added": 205,
+  "deleted": 0,
+  "kind": "test_py",
+  "first_seen": "union-44bacf63",
+  "imports": []
  }
 ]

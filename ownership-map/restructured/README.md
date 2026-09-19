@@ -143,3 +143,19 @@ alias `McpToolResult` in `core/protocols.py` is absent from `ownership_symbols.r
 since the base; present in every view), and `annotate_r.py`'s head table must be repointed per run
 (`annotate_r_newheads6.py`). Per-run reports under `recut-2026-09-18/run6/`; the accepted run's
 maps, `heads.txt`, PR bodies and `publish_result.json` are the ones at the top of this directory.
+
+## Re-cut 2026-09-19 03:20 UTC from union 44bacf63 (run 7)
+
+Slice 2b landed (`9d425ec4` → `44bacf63`); maps extended once for that range (2 new files, 3
+symbols added, 4 re-marked); the seven views were re-cut and published on the first run. Heads:
+M1 `94182bb3` (#133), M4 `eef43469` (#124), M3 `cb7fe7a0` (#125), M2 `6caa3c44` (#126),
+M5 `2d8b7cfc` (#127), M6 `77c5b091` (#128), M7 `fe637124` (#129).
+
+Refutation: donor mismatches 0, ownership violations 0, definitions leaking donor text 0, parse
+failures 0, own-model failures 0, coverage unmapped 0 / whole-missing 0 (split-symbol misses 74,
+unchanged), the one known `operation.py` insertion conflict, the recomposed tree loads. The
+refuter returned REJECT on two counts that are the recorded whole-import-block limit — the
+`CIWatchResult` alias import at heads without `check_observation.py` (as in run 6) and 658
+import statements of off-path modules, which this refuter counted as "off-path members" (run 6's
+refuter counted definitions only, 0). Accepted on the baseline gates; the refuter prompt now
+states both rules precisely. Per-run reports under `recut-2026-09-19/run7/`.

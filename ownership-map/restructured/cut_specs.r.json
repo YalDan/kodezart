@@ -25978,7 +25978,10 @@
     "FireCriteriaSource.read_spec",
     "TrackerContextReader",
     "TrackerContextReader.list_issue_assets",
-    "TrackerContextReader.read_document"
+    "TrackerContextReader.read_document",
+    "WorkRefReader",
+    "WorkRefReader.work_refs",
+    "FireCriteriaSource.read_finished"
    ],
    "remove": [
     "ContentScanner",
@@ -26123,7 +26126,10 @@
     "import:from kodezart.types.domain.tracker import ( ClaimResult, IssuePriority, IssueQuery, MappingOutcome, MappingRef, ReviewQuery, TrackerAsset, TrackerComment, TrackerIssue, TrackerIssueRevision, TrackerIssueStateChange, TrackerReview, )",
     "import:from kodezart.types.domain.tracker_writes import DescriptionEditResult",
     "import:from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission",
-    "import:from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot"
+    "import:from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot",
+    "WorkRefReader",
+    "WorkRefReader.work_refs",
+    "FireCriteriaSource.read_finished"
    ]
   },
   "src/kodezart/core/retry.py": {
