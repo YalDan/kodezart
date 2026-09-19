@@ -301,7 +301,14 @@ class RalphWorkflowEngine:
                 graph.add_edge("persist_artifacts", "run_ralph_loop")
         else:
             graph.add_edge("resolve_visibility", "revalidate_criteria")
-            graph.add_edge("revalidate_criteria", "run_ralph_loop")
+            graph.add_conditional_edges(
+                "revalidate_criteria",
+                self._route_after_revalidation,
+                {
+                    "run_ralph_loop": "run_ralph_loop",
+                    "merge_to_feature": "merge_to_feature",
+                },
+            )
         graph.add_edge("run_ralph_loop", "merge_to_feature")
         graph.add_conditional_edges(
             "merge_to_feature",
@@ -335,6 +342,28 @@ class RalphWorkflowEngine:
             if self.implementation.persists_artifacts
             else "run_ralph_loop"
         )
+
+    def _route_after_revalidation(self, state: WorkflowState) -> str:
+        """A lane entered to deliver goes to consolidation, never to the loop.
+
+        What that lane is missing is not work: its record shows every
+        criterion crossed off and no pull request, so what it never reached
+        is the consolidation, review and delivery that follow the loop, and
+        an iteration would open a session to close an obligation nobody
+        holds it to.
+
+        A remediation round is the exception, and is not a special case of
+        this entry: the round is a fresh obligation drafted against what the
+        review rejected, so it takes the loop exactly as it does for any
+        other entry, and the loop continues the recorded branch rather than
+        cutting a new one.
+        """
+        if (
+            isinstance(state["lane_entry"], DeliverOnlyLane)
+            and state["remediation_ticket"] is None
+        ):
+            return "merge_to_feature"
+        return "run_ralph_loop"
 
     def _route_after_merge(self, state: WorkflowState) -> str:
         """Only review merged code; land what a loop exit produced.
@@ -481,15 +510,29 @@ class RalphWorkflowEngine:
         # which is how the loop is told the branch already exists.
         feature_branch, ralph_branch = "", ""
         work_base_ref = base_spec.base_branch
+        accept_verdict = AcceptVerdict.rejected
         if scope is not None:
             entered: LaneEntry = entry if entry is not None else NewLane()
             match entered:
                 case NewLane():
                     feature_branch, ralph_branch = mint_lane_branches(scope.key)
-                case ResumedLane() | DeliverOnlyLane():
+                case ResumedLane():
                     feature_branch = entered.deliverable_branch
                     ralph_branch = entered.loop_branch
                     work_base_ref = entered.loop_branch
+                case DeliverOnlyLane():
+                    # The same two recorded branches a resumed lane
+                    # continues, plus the one thing this entry asserts and
+                    # a resumed one does not: every criterion of the
+                    # subtree is finished, which is what acceptance means
+                    # once the lane's own evaluation crossed them off. The
+                    # gate consolidation opens with reads that verdict, and
+                    # the step before it reads this entry's kind off the
+                    # state to route there at all.
+                    feature_branch = entered.deliverable_branch
+                    ralph_branch = entered.loop_branch
+                    work_base_ref = entered.loop_branch
+                    accept_verdict = AcceptVerdict.accepted
                 case _:
                     assert_never(entered)
 
@@ -505,7 +548,7 @@ class RalphWorkflowEngine:
             "criteria_validation": None,
             "criteria_regeneration_rounds": 0,
             "criteria_infeasible": False,
-            "accept_verdict": AcceptVerdict.rejected,
+            "accept_verdict": accept_verdict,
             "flagged_items": [],
             "total_iterations": 0,
             "feature_tip_sha": None,

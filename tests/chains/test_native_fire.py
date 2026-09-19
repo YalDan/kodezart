@@ -54,6 +54,7 @@ from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.lane_entry import DeliverOnlyLane, NewLane, ResumedLane
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.ralph_outcome import PendingRalphOutcome
@@ -1549,3 +1550,215 @@ async def test_a_native_remediation_round_keeps_its_roster():
     assert all(
         port.issues[key].state_kind is WorkflowStateKind.COMPLETED for key in OWED_KEYS
     )
+
+
+# ---------------------------------------------------------------------------
+# A lane with nothing left to execute enters to deliver: the roster it stands
+# on is its finished subtree, and the step before the loop routes it past it.
+# ---------------------------------------------------------------------------
+
+RECORDED_DELIVERABLE = "kodezart/fire/subject-1234abcd"
+RECORDED_LOOP = f"{RECORDED_DELIVERABLE}-ralph-0"
+RECORDED_HEAD = "c" * 40
+
+ALL_CRITERIA = (
+    DIRECT_OWED,
+    DIRECT_DONE,
+    NESTED_OWED,
+    DIRECT_OWED_TOO,
+    NESTED_DONE,
+)
+
+
+def entry_of(kind: str):
+    """One of the three ways a lane enters, named by kind."""
+    if kind == "new":
+        return NewLane()
+    shape = ResumedLane if kind == "resumed" else DeliverOnlyLane
+    return shape(
+        deliverable_branch=RECORDED_DELIVERABLE,
+        loop_branch=RECORDED_LOOP,
+        head_sha=RECORDED_HEAD,
+        body_digest=None,
+    )
+
+
+def prepared(fire: RalphWorkflowEngine, *, entry):
+    """The state the walker's entry produces, without streaming the graph."""
+    state, _ = fire.prepare(
+        prompt="Implement the requested behavior",
+        issue_key=None,
+        repo_path="/tmp/fire",
+        repo_url="https://github.com/owner/repo",
+        base_spec=trunk_base("main"),
+        scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=["Bash"],
+        cache_key="native-fire",
+        surface_holder="native-fire",
+        entry=entry,
+    )
+    return state
+
+
+async def finished_subtree():
+    """The board of a lane whose every criterion is Done, and its spec."""
+    port = tracker()
+    source = TrackerCriteria(tracker=port)
+    spec = await source.read_spec(issue_key=SUBJECT)
+    for key in OWED_KEYS:
+        finished(port, key)
+    return port, source, spec
+
+
+async def test_the_finished_roster_is_the_whole_subtree_not_a_todo_selection():
+    """What a delivering lane stands on is every criterion under it.
+
+    The owed reading answers nothing at all on this board — there is no Todo
+    criterion left for it to return — while this one answers all five, the
+    two that were Done before the lane arrived included: the fact the
+    delivery rests on is about the subtree, not about which criteria this
+    lane happened to take on.
+    """
+    _, source, spec = await finished_subtree()
+
+    roster = await source.read_finished(spec=spec)
+
+    assert [criterion.id for criterion in roster.criteria] == sorted(ALL_CRITERIA)
+    assert {criterion.id: criterion.text for criterion in roster.criteria} == {
+        key: check_of(key) for key in ALL_CRITERIA
+    }
+    with pytest.raises(FireSpecEntryError, match="no Todo criteria"):
+        await source.read_current(spec=spec)
+
+
+async def test_the_finished_roster_carries_the_barrier_that_follows_it():
+    """The roster read here is the one every later barrier re-reads.
+
+    The barriers between this step and the pull request compare the state's
+    roster with the owed reading taken against it, so a roster shaped
+    differently here would refuse the lane at the first of them. Read the
+    barrier with this roster and it passes; the comparison is the whole
+    reason both readings are shaped in one place.
+    """
+    _, source, spec = await finished_subtree()
+
+    roster = await source.read_finished(spec=spec)
+
+    await require_current_native_snapshot(snapshot_state(spec, roster), reader=source)
+    assert await source.read_current(spec=spec, held=roster) == roster
+
+
+@pytest.mark.parametrize(
+    "kind,name",
+    [
+        (WorkflowStateKind.UNSTARTED, "Todo"),
+        (WorkflowStateKind.STARTED, "In Progress"),
+        (WorkflowStateKind.CANCELED, "Canceled"),
+    ],
+)
+async def test_one_criterion_that_is_not_done_refuses_and_is_named(kind, name):
+    """A criterion reopened before the entry refuses, and says which one.
+
+    Any state but the held one is an open obligation, so the lane is not
+    deliverable and the refusal names the criterion rather than leaving a
+    reader to diff two rosters.
+    """
+    port, source, spec = await finished_subtree()
+    moved(port, NESTED_OWED, kind=kind, name=name)
+
+    with pytest.raises(FireSpecEntryError) as caught:
+        await source.read_finished(spec=spec)
+
+    assert caught.value.issue_key == SUBJECT
+    assert NESTED_OWED in caught.value.reason
+    assert "not Done" in caught.value.reason
+    # Only the offender is named: the four that are Done are not.
+    for key in ALL_CRITERIA:
+        if key != NESTED_OWED:
+            assert key not in caught.value.reason
+
+
+async def test_a_subtree_holding_no_criterion_has_nothing_to_deliver():
+    """An empty roster is a refusal, never a vacuously finished lane.
+
+    Every criterion of no criteria is Done, so a reading that only checked
+    the state would hand a delivery an empty obligation to discharge. The
+    readiness read refuses such a member for the same reason; this is the
+    same refusal made where the fire enters.
+    """
+    port = board([make_tracker_issue(SUBJECT, issue_labels=frozenset({STAGE_KEY}))])
+    spec = TrackerSpec(
+        subject=SUBJECT,
+        body="the subject's own text",
+        criteria=(),
+        read_at_version="1",
+    )
+
+    with pytest.raises(FireSpecEntryError, match="no criteria to deliver"):
+        await TrackerCriteria(tracker=port).read_finished(spec=spec)
+
+
+@pytest.mark.parametrize("kind", ["new", "resumed", "deliver_only"])
+def test_only_a_lane_entered_to_deliver_is_prepared_already_accepted(kind) -> None:
+    """The verdict states the entry's own fact, and only that entry's.
+
+    A deliver-only entry exists because every criterion of the subtree is
+    Done, which is what acceptance means once the evaluation crossed them
+    off, so consolidation's gate can read it off the state. A new or resumed
+    lane has work left and must earn the verdict in the loop.
+    """
+    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
+
+    state = prepared(fire, entry=entry_of(kind))
+
+    expected = (
+        AcceptVerdict.accepted if kind == "deliver_only" else AcceptVerdict.rejected
+    )
+    assert state["accept_verdict"] is expected
+    if kind == "new":
+        assert state["feature_branch"] != RECORDED_DELIVERABLE
+        assert state["work_base_ref"] == "main"
+    else:
+        # Both recorded entries continue the same two branches and cut
+        # nothing; the verdict above is the only difference between them.
+        assert state["feature_branch"] == RECORDED_DELIVERABLE
+        assert state["ralph_branch"] == RECORDED_LOOP
+        assert state["work_base_ref"] == RECORDED_LOOP
+    # A fire prepared without a walker is a new lane, and earns its verdict.
+    assert prepared(fire, entry=None)["accept_verdict"] is AcceptVerdict.rejected
+
+
+@pytest.mark.parametrize(
+    "kind,remediating,destination",
+    [
+        ("new", False, "run_ralph_loop"),
+        ("resumed", False, "run_ralph_loop"),
+        ("deliver_only", False, "merge_to_feature"),
+        ("deliver_only", True, "run_ralph_loop"),
+    ],
+)
+def test_the_step_before_the_loop_routes_a_delivering_lane_past_it(
+    kind, remediating, destination
+) -> None:
+    """Only a lane with nothing to execute skips the loop, and not on a round.
+
+    A remediation round on such a lane is a fresh obligation the review
+    drafted, so it takes the loop like any other round; the entry kind alone
+    does not send it to consolidation.
+    """
+    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
+    state = prepared(fire, entry=entry_of(kind))
+    if remediating:
+        state["remediation_ticket"] = RemediationPlan(
+            instructions="close what the review named, under the same Checks"
+        )
+
+    assert fire._route_after_revalidation(state) == destination
+
+    # The route the parameters above choose between is one the graph holds:
+    # consolidation is reachable from the step without the loop at all.
+    assert fire.native_graph is not None
+    edges = {(edge.source, edge.target) for edge in fire.native_graph.get_graph().edges}
+    assert ("revalidate_criteria", "merge_to_feature") in edges
+    assert ("revalidate_criteria", "run_ralph_loop") in edges

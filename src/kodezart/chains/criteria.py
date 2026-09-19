@@ -1,6 +1,6 @@
 """Capture native subjects and read current obligations at fire barriers."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from langchain_core.runnables import RunnableConfig
 
@@ -24,6 +24,7 @@ from kodezart.types.domain.criteria import (
     TrackerCriterionSet,
 )
 from kodezart.types.domain.fire_spec import TrackerSpec
+from kodezart.types.domain.lane_entry import DeliverOnlyLane
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from kodezart.types.domain.workflow import WorkflowState
@@ -35,6 +36,36 @@ from kodezart.types.domain.workflow import WorkflowState
 #: worked somewhere else, and re-validating it here would put this fire on
 #: the hook for an obligation the board does not hold it to.
 OWED_CRITERION_STATE = WorkflowStateKind.UNSTARTED
+
+#: What a tracker read failing to arrive looks like, named once.
+#:
+#: Every reading in this module turns the same transport classes into the
+#: same typed refusal, so an outage can never be mistaken for an answer
+#: about what a subtree holds. Naming the tuple once keeps the three
+#: readings from drifting into disagreeing about which failures those are.
+_TRANSPORT_FAILURES = (
+    ConnectionError,
+    TimeoutError,
+    TransientAPIError,
+    TrackerUnavailableError,
+    TrackerAccessDeniedError,
+)
+
+
+def _criterion_set(checks: Mapping[str, str]) -> TrackerCriterionSet:
+    """The one shaping of a reading's result, so the readings compare equal.
+
+    A barrier compares the set it holds with the set a later reading
+    answers, by identity and Check text in order; two construction sites
+    could order or spell them differently and turn a lane that is exactly
+    on track into a refusal.
+    """
+    return TrackerCriterionSet(
+        criteria=[
+            TrackerCriterion(id=CriterionId(key), text=check)
+            for key, check in checks.items()
+        ],
+    )
 
 
 def held_roster(criteria: Sequence[ExecutionCriterion]) -> TrackerCriterionSet | None:
@@ -94,10 +125,18 @@ class TrackerCriteria:
         current = await self.read_current(spec=spec)
         return {criterion.id: criterion.text for criterion in current.criteria}
 
-    async def _read_owed_criteria(
-        self, spec: TrackerSpec, held: frozenset[str]
-    ) -> dict[str, str]:
-        """Refresh current criterion Checks without recapturing the subject."""
+    async def _read_subtree_criteria(
+        self, spec: TrackerSpec
+    ) -> dict[str, TrackerIssue]:
+        """Every criterion sub-issue under the subject, keyed and at head.
+
+        The extent both readings are taken over, read once: what the fire
+        owes is a selection from this roster by state, and what a lane
+        delivers on is this roster entire. Two subtree reads could answer
+        two different rosters for the same subject and the barrier that
+        compares their selections would refuse a lane nothing is wrong
+        with.
+        """
         issue_key = spec.subject
         subtree = await read_scope_members(
             tracker=self._tracker,
@@ -115,6 +154,14 @@ class TrackerCriteria:
                     criterion_key=named,
                     reason="the spec names a criterion the subtree does not hold",
                 )
+        return criteria
+
+    async def _read_owed_criteria(
+        self, spec: TrackerSpec, held: frozenset[str]
+    ) -> dict[str, str]:
+        """Refresh current criterion Checks without recapturing the subject."""
+        issue_key = spec.subject
+        criteria = await self._read_subtree_criteria(spec)
         owed = {
             key: criterion_check(criterion=issue, issue_key=issue_key)
             for key, issue in sorted(criteria.items())
@@ -135,13 +182,7 @@ class TrackerCriteria:
         """Capture the admitted subject; an outage is never cached authority."""
         try:
             return await self._tracker.read_fire_spec(issue_key=issue_key)
-        except (
-            ConnectionError,
-            TimeoutError,
-            TransientAPIError,
-            TrackerUnavailableError,
-            TrackerAccessDeniedError,
-        ) as exc:
+        except _TRANSPORT_FAILURES as exc:
             raise FireSpecEntryError(
                 issue_key=issue_key,
                 reason="the tracker subject spec could not be read",
@@ -163,13 +204,7 @@ class TrackerCriteria:
         )
         try:
             owed = await self._read_owed_criteria(spec, keys)
-        except (
-            ConnectionError,
-            TimeoutError,
-            TransientAPIError,
-            TrackerUnavailableError,
-            TrackerAccessDeniedError,
-        ) as exc:
+        except _TRANSPORT_FAILURES as exc:
             raise FireSpecEntryError(
                 issue_key=spec.subject,
                 reason="current tracker criteria could not be read",
@@ -179,11 +214,54 @@ class TrackerCriteria:
                 issue_key=spec.subject,
                 reason="the subtree has no Todo criteria to execute",
             )
-        return TrackerCriterionSet(
-            criteria=[
-                TrackerCriterion(id=CriterionId(key), text=check)
-                for key, check in owed.items()
-            ],
+        return _criterion_set(owed)
+
+    async def read_finished(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
+        """The subject's whole subtree of criteria, while every one is finished.
+
+        A lane that owes nothing has no unstarted criterion for the owed
+        reading to answer with, so the roster it stands on is the subtree
+        entire, and the fact that makes it deliverable is that every
+        criterion in it is finished — which is what this lane's own
+        cross-offs recorded.
+
+        So this reading takes no selection by state and instead refuses
+        unless the state holds for all of them, naming the ones it does not
+        hold for: a criterion reopened between a lane being chosen and its
+        entry is exactly that refusal, and it lands before any session
+        opens. A subtree carrying no criterion at all is refused for the
+        same reason the readiness read refuses such a member — there is no
+        obligation for a delivery to be the discharge of.
+        """
+        try:
+            criteria = await self._read_subtree_criteria(spec)
+        except _TRANSPORT_FAILURES as exc:
+            raise FireSpecEntryError(
+                issue_key=spec.subject,
+                reason="current tracker criteria could not be read",
+            ) from exc
+        if not criteria:
+            raise FireSpecEntryError(
+                issue_key=spec.subject,
+                reason="the subtree has no criteria to deliver",
+            )
+        unfinished = sorted(
+            key
+            for key, issue in criteria.items()
+            if issue.state_kind is not HELD_CRITERION_STATE
+        )
+        if unfinished:
+            raise FireSpecEntryError(
+                issue_key=spec.subject,
+                reason=(
+                    f"a criterion of the subtree is not Done: {', '.join(unfinished)}"
+                ),
+            )
+        return _criterion_set(
+            {
+                key: criterion_check(criterion=issue, issue_key=spec.subject)
+                for key, issue in sorted(criteria.items())
+            }
         )
 
 
@@ -224,16 +302,26 @@ async def revalidate_criteria(
     if not isinstance(spec, TrackerSpec) or spec.subject != issue_key:
         raise ValueError("The native fire spec must match its addressed subject")
     require_unamended_subject(issue_key=issue_key, entry=state["lane_entry"], spec=spec)
-    return {
-        "fire_spec": spec,
-        "criterion_set": await source.read_current(
+    recorded = recorded_native_roster(state["criterion_set"])
+    # A lane entered to deliver owes nothing, so the owed reading would
+    # refuse it for having no unstarted criterion. Its roster is its whole
+    # finished subtree, read once at its first pass through this step; a
+    # later pass — a remediation round the review sent back — carries the
+    # roster this run already holds and revalidates it like any other.
+    if (
+        isinstance(state["lane_entry"], DeliverOnlyLane)
+        and state["criterion_set"] is None
+    ):
+        criterion_set = await source.read_finished(spec=spec)
+    else:
+        criterion_set = await source.read_current(
             spec=spec,
             # A first entry carries no roster and reads the Todo set; a
             # remediation re-entry or a replayed checkpoint carries the one
             # this run was already judged against.
-            held=recorded_native_roster(state["criterion_set"]),
-        ),
-    }
+            held=recorded,
+        )
+    return {"fire_spec": spec, "criterion_set": criterion_set}
 
 
 async def require_current_native_snapshot(

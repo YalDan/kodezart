@@ -1827,6 +1827,18 @@ class FireCriteriaSource(FireCriteriaReader, Protocol):
         """Capture tracker-authored subject data or raise a typed refusal."""
         ...
 
+    async def read_finished(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
+        """Return the subject's whole subtree of criteria, every one finished.
+
+        The reading a lane owing nothing enters on. It holds no unstarted
+        criterion for :meth:`read_current` to answer with, and what its
+        delivery stands on is instead that every criterion of its subtree
+        is finished, which is what the cross-offs of its own earlier work
+        mean. One criterion still open, or a subtree holding none at all,
+        is a typed refusal here rather than a smaller roster downstream.
+        """
+        ...
+
 
 @runtime_checkable
 class QualityGate(Protocol):
