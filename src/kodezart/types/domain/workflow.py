@@ -1,27 +1,38 @@
 """Workflow state definitions for the ralph loop and outer pipeline."""
 
 from typing import NotRequired, Self, TypedDict
-
 from langchain_core.runnables import RunnableConfig
-from pydantic import ConfigDict, Field
-
+from pydantic import ConfigDict, Field, model_validator
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.amendment import AmendmentReport
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriteriaValidation,
     CriterionFailure,
+    ExecutionCriterion,
     GeneratedCriterion,
-    ValidatedCriterion,
+    TrackerCriterion,
+    TrackerCriterionSet,
 )
+from kodezart.types.domain.delivery import CheckRedClass
+from kodezart.types.domain.fire_spec import FireSpec, TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.lane_entry import LaneEntry
+from kodezart.types.domain.ralph_outcome import RalphOutcome
+from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
+
+
+
 
 _LANGGRAPH_RESERVED_PREFIX = "__pregel_"
 _LANGGRAPH_RESERVED_KEYS: frozenset[str] = frozenset(
@@ -32,6 +43,28 @@ _LANGGRAPH_RESERVED_KEYS: frozenset[str] = frozenset(
         "checkpoint_map",
     }
 )
+
+
+class WorkflowSubmission(CamelCaseModel):
+    """Validated workflow input shared by HTTP and dispatcher producers.
+
+    The producer supplies the recorded base or explicitly constructs a
+    trunk base. Scope absence is explicit so producers cannot lose an
+    addressed scope by relying on a downstream default.
+
+    ``issue_key`` records the dispatched issue independently of prompt
+    text and scope. HTTP submissions may have no tracker identity.
+    """
+
+    prompt: str = Field(min_length=1)
+    issue_key: str | None = None
+    repo_path: str | None
+    repo_url: str | None
+    base_spec: BaseSpec
+    implied_base: BaseSpec | None
+    scope: ScopeRef | None
+    permission_mode: PermissionMode
+    allowed_tools: AllowedTools
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +134,7 @@ class RemediationRequest(CamelCaseModel):
     pr_url: str | None = None
     total_iterations: int = Field(ge=0)
     trajectory: LoopTrajectory | None = None
-    criteria: list[ValidatedCriterion]
+    criteria: list[ExecutionCriterion]
     failure_evidence: str = Field(min_length=1)
 
 

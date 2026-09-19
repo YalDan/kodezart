@@ -10,10 +10,10 @@ format:
 	uv run ruff check --select I --fix src/ tests/
 
 format-check:
-	uv run ruff format --check src/ tests/
+	uv run --locked ruff format --check src/ tests/
 
 lint:
-	uv run ruff check src/ tests/
+	uv run --locked ruff check src/ tests/
 
 lint-fix:
 	uv run ruff check --fix src/ tests/
@@ -28,14 +28,14 @@ lint-fix:
 # being one (it said 149 in 23 files while the truth was near triple that).
 # `uv run mypy src tests` names the current set whenever anybody wants it.
 type-check:
-	uv run mypy src/
+	uv run --locked mypy src/
 
 test:
-	uv run pytest
+	uv run --locked pytest
 
 verify-no-origin-literal:
-	@if grep -rnE '"origin[/"]' src/kodezart --include='*.py' | grep -v 'config/app.py' ; then \
-		echo 'ERROR: literal "origin" found in src/kodezart outside config/app.py' ; \
+	@if grep -rnE '"origin[/"]' src/kodezart --include='*.py' | grep -v 'config/git.py' ; then \
+		echo 'ERROR: literal "origin" found in src/kodezart outside config/git.py' ; \
 		exit 1 ; \
 	fi
 

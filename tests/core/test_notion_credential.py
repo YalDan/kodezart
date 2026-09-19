@@ -25,7 +25,15 @@ from kodezart.main import create_app, lifespan
 _FIXTURE_BODY: Final[str] = "Z9" * 24
 _FIXTURE_CREDENTIAL: Final[str] = "ntn_" + _FIXTURE_BODY
 
-_ENV_VAR: Final[str] = "KODEZART_KNOWLEDGE_MCP_TOKEN"
+_ENV_VAR: Final[str] = "KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL"
+
+
+@pytest.fixture(autouse=True)
+def _http_connection(monkeypatch):
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "http")
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL", "https://knowledge.invalid/mcp"
+    )
 
 
 def test_the_credential_resolves_from_its_kodezart_env_var(
@@ -34,7 +42,10 @@ def test_the_credential_resolves_from_its_kodezart_env_var(
     """The field is env-sourced under the shared prefix."""
     monkeypatch.setenv(_ENV_VAR, _FIXTURE_CREDENTIAL)
 
-    assert AppConfig().knowledge_mcp_token.get_secret_value() == _FIXTURE_CREDENTIAL
+    assert (
+        AppConfig().knowledge.connection.credential.get_secret_value()
+        == _FIXTURE_CREDENTIAL
+    )
 
 
 def test_an_unset_environment_yields_none_not_a_placeholder(
@@ -43,7 +54,7 @@ def test_an_unset_environment_yields_none_not_a_placeholder(
     """Absence is ``None`` — never an empty string standing in for a value."""
     monkeypatch.delenv(_ENV_VAR, raising=False)
 
-    assert AppConfig().knowledge_mcp_token is None
+    assert AppConfig().knowledge.connection.credential is None
 
 
 def test_an_unknown_sibling_key_still_trips_extra_forbid() -> None:
@@ -74,7 +85,10 @@ def test_the_field_is_still_readable_after_being_excluded(
     """
     monkeypatch.setenv(_ENV_VAR, _FIXTURE_CREDENTIAL)
 
-    assert AppConfig().knowledge_mcp_token.get_secret_value() == _FIXTURE_CREDENTIAL
+    assert (
+        AppConfig().knowledge.connection.credential.get_secret_value()
+        == _FIXTURE_CREDENTIAL
+    )
 
 
 async def test_no_boot_log_line_carries_the_credential(

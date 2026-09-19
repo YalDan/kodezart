@@ -4,36 +4,60 @@ Moved verbatim from the composition root, which imports and wires rather
 than defines.
 """
 
-from collections.abc import AsyncIterator
-
+from collections.abc import AsyncIterator, Sequence
 from langgraph.checkpoint.base import BaseCheckpointSaver
-
+from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 from kodezart.adapters.github.api import GitHubAPIClient
+from kodezart.chains.authored_checks import AuthoredChecks
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
+from kodezart.chains.authored_publication import AuthoredPublication
+from kodezart.chains.fire_consolidation import FireConsolidation
+from kodezart.chains.fire_implementation import FireImplementation
+from kodezart.chains.fire_remediation import FireRemediation
+from kodezart.chains.fire_review import FireReview
+from kodezart.chains.fire_specification import FireSpecification
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.composition.delivery import build_native_lane_workflow
+from kodezart.composition.scope_runtime import build_scope_runtime
 from kodezart.config.app import AppConfig
 from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     ArtifactPersister,
     BranchMerger,
+    FireCriteriaSource,
     GitService,
     OutboundContentGate,
     PromptSetProvider,
     RefPublisher,
     RepoCache,
+    TrackerPort,
     WorkflowEngine,
     WorkspaceProvider,
 )
 from kodezart.core.retry import DelayFloor
-from kodezart.domain.errors import RateLimitError
+from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
+from kodezart.services.lane_state_writer import TrackerLaneStateWriter
+from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.operation import (
+    OperationConfig,
+    OperationMemberAbsentError,
+    RepoEntry,
+)
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.skills import SkillsSelection
+
+
+
 
 
 class OriginRoutedWorkflowEngine:
@@ -141,6 +165,7 @@ def rate_limit_delay_floor(config: AppConfig) -> DelayFloor:
 def build_workflow_engine(
     *,
     config: AppConfig,
+    repositories: Sequence[RepoEntry],
     agent_service: AgentService,
     git: GitService,
     cache: RepoCache,
@@ -153,36 +178,93 @@ def build_workflow_engine(
     gate: OutboundContentGate,
     github_api: GitHubAPIClient | None,
     checkpointer: BaseCheckpointSaver[str] | None,
+    criteria: FireCriteriaSource | None = None,
+    scope_tracker: TrackerPort | None = None,
+    operation: OperationConfig | None = None,
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.
 
-    All three are built here rather than by the engine, because all three
-    are ports to it: substituting any of them is a wiring decision and the
-    engine holds them by protocol.  None of the three touches a forge, so
-    both arms share them.
+    The real loops and remediator are constructed here and shared by both
+    origin arms. Each concrete phase receives only the collaborators its
+    node behavior uses; the graph owners receive those phases.
 
     ``arm`` binds every forge-touching capability the engine takes to ONE
     value, so no capability can be chosen apart from the others, and the
     router is the only thing that chooses between the arms.  ``github_api``
-    answers three of those protocols at once, and passing it three times is
-    what the engine's signature asks for rather than a duplication this
-    could remove.
+    answers the narrow protocols used by specification, publication and
+    checks; each receives the same selected adapter.
     """
+    # Authored construction needs no tracker. Native entry refuses without
+    # this capability, and each consumer independently requires its reader.
     delay_floor_for = rate_limit_delay_floor(config)
-    ralph_loop = RalphLoop(
-        service=agent_service,
-        max_iterations=config.max_iterations,
-        plateau_window=config.loop_plateau_window,
-        git=git,
-        cache=cache,
-        prompts=prompts,
-        skills=skills,
-        checkpointer=checkpointer,
-        retry_max_attempts=config.retry_max_attempts,
-        retry_initial_interval=config.retry_initial_interval,
-        delay_floor_for=delay_floor_for,
-        fan_in_max_attempts=config.fan_in_max_attempts,
+    native_source = SubprocessGitSourceReader()
+    # One writer for every lane write of this deployment: the committing loop's
+    # record and cross-offs and the delivering step's pull request are writes
+    # of one record under one marker, and a second instance would be a second
+    # copy of the refusals that record's reader makes.
+    lane_state = (
+        TrackerLaneStateWriter(
+            tracker=scope_tracker,
+            operation=operation,
+            git=git,
+            git_remote=config.git.remote,
+            forge=github_api,
+            gate=gate,
+        )
+        if scope_tracker is not None and operation is not None
+        else None
     )
+
+    def loop(saver: BaseCheckpointSaver[str] | None) -> RalphLoop:
+        """The quality gate, with whatever the arm it serves persists to.
+
+        The scoped arm persists nothing: its state is the tracker, so its loop
+        is built with no saver at all rather than given one it must not write
+        to (KOD-840).
+        """
+        return RalphLoop(
+            source=native_source,
+            lane_state=lane_state,
+            amendments=(
+                NativeAmendments(
+                    tracker=scope_tracker,
+                    operation=operation,
+                    criteria=criteria,
+                    git=git,
+                    source=native_source,
+                    workspace=workspace,
+                    runner=agent_service,
+                    prompts=prompts,
+                    skills=skills,
+                    repositories=repositories,
+                    gate=gate,
+                    max_verify_rounds=config.write_back.max_verify_rounds,
+                    lease_seconds=config.tracker.surface_lease_seconds,
+                )
+                if scope_tracker is not None
+                and operation is not None
+                and criteria is not None
+                and config.write_back is not None
+                else None
+            ),
+            criteria_reader=criteria,
+            workspace=workspace,
+            service=agent_service,
+            max_iterations=config.max_iterations,
+            plateau_window=config.loop_plateau_window,
+            git=git,
+            cache=cache,
+            prompts=prompts,
+            skills=skills,
+            checkpointer=saver,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_initial_interval=config.retry_initial_interval,
+            delay_floor_for=delay_floor_for,
+            fan_in_max_attempts=config.fan_in_max_attempts,
+        )
+
+    authored_loop = loop(checkpointer)
+
     ticket_generator = TicketGenerationLoop(
         service=agent_service,
         workspace=workspace,
@@ -196,40 +278,146 @@ def build_workflow_engine(
         delay_floor_for=delay_floor_for,
     )
     remediator = RemediationChain(
+        criteria_reader=criteria,
         service=agent_service,
         prompts=prompts,
         skills=skills,
     )
 
-    def arm(forge: GitHubAPIClient | None) -> RalphWorkflowEngine:
+    def fire(
+        forge: GitHubAPIClient | None,
+        *,
+        quality_gate: RalphLoop,
+        saver: BaseCheckpointSaver[str] | None,
+    ) -> RalphWorkflowEngine:
+        """One fire engine, with the loop and the saver its arm was chosen with.
+
+        The two are one choice: an engine compiled with a saver whose loop was
+        built without one would persist half a fire.
+        """
         return RalphWorkflowEngine(
-            service=agent_service,
-            quality_gate=ralph_loop,
-            ticket_generator=ticket_generator,
-            merger=merger,
-            git_base_url=config.git_base_url,
-            git_remote=config.git_remote,
-            git=git,
-            cache=cache,
-            prompts=prompts,
-            skills=skills,
-            gate=gate,
-            visibility_resolver=forge,
-            checkpointer=checkpointer,
+            criteria=criteria,
+            specification=FireSpecification(
+                service=agent_service,
+                ticket_generator=ticket_generator,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                visibility_resolver=forge,
+                criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
+                fan_in_max_attempts=config.fan_in_max_attempts,
+            ),
+            implementation=FireImplementation(
+                criteria_reader=criteria,
+                quality_gate=quality_gate,
+                prompts=prompts,
+                artifact_persister=artifact_persister,
+                gate=gate,
+            ),
+            consolidation=FireConsolidation(
+                merger=merger,
+                git=git,
+                cache=cache,
+                git_remote=config.git.remote,
+                ref_publisher=ref_publisher if forge is not None else None,
+            ),
+            review=FireReview(
+                criteria_reader=criteria,
+                service=agent_service,
+                prompts=prompts,
+                skills=skills,
+                git=git,
+                cache=cache,
+                fan_in_max_attempts=config.fan_in_max_attempts,
+            ),
+            remediation=FireRemediation(
+                remediator=remediator,
+                remediation_max_rounds=config.remediation_max_rounds,
+            ),
+            git_base_url=config.git.base_url,
+            checkpointer=saver,
             retry_max_attempts=config.retry_max_attempts,
             retry_initial_interval=config.retry_initial_interval,
             delay_floor_for=delay_floor_for,
-            pr_creator=forge,
-            ci_monitor=forge,
-            ref_publisher=ref_publisher,
-            remediator=remediator,
-            remediation_max_rounds=config.remediation_max_rounds,
-            criteria_max_regeneration_rounds=config.criteria_max_regeneration_rounds,
-            fan_in_max_attempts=config.fan_in_max_attempts,
-            artifact_persister=artifact_persister,
         )
 
+    def arm(forge: GitHubAPIClient | None) -> AuthoredDeliveryCoordinator:
+        return AuthoredDeliveryCoordinator(
+            fire=fire(forge, quality_gate=authored_loop, saver=checkpointer),
+            publication=AuthoredPublication(
+                service=agent_service,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                pr_creator=forge,
+                artifact_persister=artifact_persister,
+                ref_publisher=ref_publisher,
+                remediation_max_rounds=config.remediation_max_rounds,
+            ),
+            checks=AuthoredChecks(
+                ci_monitor=forge,
+                git_base_url=config.git.base_url,
+                repositories=repositories,
+                max_concurrent_watches=config.delivery_max_concurrent_watches,
+                red_rerun_max_attempts=config.delivery_red_rerun_max_attempts,
+            ),
+        )
+
+    forge_arm = arm(github_api)
+    forge_less_arm = arm(None)
+    scoped_arm = None
+    if scope_tracker is not None:
+        if criteria is None:
+            raise ValueError("Scope execution requires a native criterion source")
+        if operation is None:
+            # The marker every lane's record is read and written under comes
+            # from here, so this is the typed absence refusal the rest of
+            # composition makes rather than a bare ValueError.
+            raise OperationMemberAbsentError(
+                missing="marker prefixes for a lane run-state record",
+                stops=(
+                    "no lane's entry can be read and no lane can record its own state"
+                ),
+            )
+        # The scoped arm's own engines, with no saver anywhere: the lane's
+        # state is its tracker record, so nothing here writes a checkpoint
+        # and nothing reads one (KOD-840).
+        native_loop = loop(None)
+        scoped_arm = build_scope_runtime(
+            tracker=scope_tracker,
+            forge_lane=build_native_lane_workflow(
+                fire=fire(github_api, quality_gate=native_loop, saver=None),
+                config=config,
+                service=agent_service,
+                git=git,
+                forge=github_api,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                repositories=repositories,
+                lane_state=lane_state,
+            ),
+            forge_less_lane=build_native_lane_workflow(
+                fire=fire(None, quality_gate=native_loop, saver=None),
+                config=config,
+                service=agent_service,
+                git=git,
+                forge=None,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                repositories=repositories,
+                lane_state=lane_state,
+            ),
+            forge_probe=github_api,
+            git=git,
+            cache=cache,
+            repositories=repositories,
+            config=config,
+            operation=operation,
+        )
     return OriginRoutedWorkflowEngine(
-        forge_arm=arm(github_api),
-        forge_less_arm=arm(None),
+        forge_arm=forge_arm,
+        forge_less_arm=forge_less_arm,
+        scoped_arm=scoped_arm,
     )
