@@ -2863,3 +2863,74 @@ async def test_a_lane_larger_than_one_fires_budget_converges_across_fires():
         ("A/check", LifecycleStage.DONE),
         ("A/second", LifecycleStage.DONE),
     ]
+
+
+async def walk_marking(harness, *, mark, **rest):
+    """Every event of one bounded walk, with *mark* read at each tick's observation.
+
+    A lane fired twice in one invocation leaves two fires' workspace
+    acquisitions, prompts and mints in one list each, and which entries belong
+    to the fire a given tick launched is the whole question a resumed fire is
+    read by. A tick's observation is yielded before that tick acts on its
+    selection, so everything after tick n's mark is tick n's fire and no other.
+    """
+    marks: list[tuple[int, ...]] = []
+    events = []
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in drive(harness, **rest):
+            if isinstance(event, ScopeWalkEvent):
+                marks.append(mark())
+            events.append(event)
+    return events, marks
+
+
+async def test_a_budget_exhausted_lane_resumes_on_its_recorded_branch(monkeypatch):
+    """The second fire of one invocation enters the way a second process does.
+
+    Nothing about a lane is remembered between its fires: the record and the
+    remote head of the branch it names are read again before each of them, so
+    the fire that follows an exhausted budget takes exactly the path a fresh
+    process takes. It checks the recorded loop branch out without cutting it,
+    mints no name beside it, and is graded against the criterion its last fire
+    left open rather than the one that fire closed (KOD-723).
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    minted = mint_spy(monkeypatch)
+    harness = budget_bound_lane(repos, port=port)
+    events, marks = await walk_marking(
+        harness,
+        job="converging-job",
+        mark=lambda: (
+            len(harness.workspace.acquisitions),
+            len(harness.executor.execution_prompts),
+            len(minted),
+        ),
+    )
+
+    # The same three ticks and the same two fires the convergence case drives,
+    # asserted again here because everything below is about the second of them.
+    assert len(ticks_of(events)) == 3
+    assert lane_failures(events) == ()
+    assert ticks_of(events)[-1].dispatched == ("A", "A")
+    assert ticks_of(events)[-1].ready == ()
+    record = await lane_record(port, "A")
+    acquired, prompted, mints = marks[1]
+
+    # One mint in the whole invocation, and the first fire made it. The spy
+    # records rather than raises, so the statement is the count beside a walk
+    # that otherwise ran: an uncalled spy would say the same about both fires.
+    assert minted == ["A"]
+    assert mints == 1
+    # The second fire checked the branch the record names OUT, and did not cut
+    # it: a fire that minted a second branch beside a recorded one would lose
+    # the work the record names (KOD-684).
+    opened = harness.workspace.acquisitions[acquired]
+    assert opened["branch_name"] == opened["ref"] == record.branch
+    assert opened["create_branch"] is False
+    # And it implemented the criterion still owed, not the one already
+    # satisfied: the roster is read from the board at entry, so a satisfied
+    # criterion is not in it and no session is spent on it again.
+    prompt = harness.executor.execution_prompts[prompted]
+    assert "A/second live Check  bytes" in prompt
+    assert "A live Check  bytes" not in prompt
