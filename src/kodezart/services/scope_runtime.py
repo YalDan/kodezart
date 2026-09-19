@@ -97,9 +97,10 @@ class ScopeWorkflowEngine:
     """The sole lane selector inside a scope request.
 
     No child is submitted to the queue that is already running this scope.
-    This owner writes neither tracker state nor approval/claim marks, and it
+    This owner writes no approval or claim mark and no lifecycle stage, and it
     persists no graph state: where a lane stands is its own tracker record,
-    read again before every fire.
+    read again before every fire. The one state it writes is the put-back of a
+    lane whose fire closed nothing of what that lane owed (KOD-460).
 
     A lane that owes nothing is selected first, and only where the origin's
     lane can deliver. On an origin with no forge behind it such a lane could
@@ -280,8 +281,9 @@ class ScopeWorkflowEngine:
         criterion identities the lane owed when it was fired the subtree now
         carries as closed. Closed something, and the lane is a candidate again
         on this tick, entering from its record like any other fire. Closed
-        nothing, and it rests: an identical fire would say what this one said,
-        and the invocation has other lanes to spend itself on (KOD-460,
+        nothing, and the lane's issue goes back where the work it still owes
+        stands and the lane rests: an identical fire would say what this one
+        said, and the invocation has other lanes to spend itself on (KOD-460,
         KOD-724).
 
         ``ready.criteria`` is every criterion of the whole scope, which is a
@@ -311,8 +313,37 @@ class ScopeWorkflowEngine:
         )
         if not fire_plateaued(ticks=(tick_record,), plateau_bound=PLATEAU_BOUND):
             return
+        await self._put_back(key=last.issue_key, gap=row.gap)
         rested.append(last.issue_key)
         await self._log.ainfo("scope_lane_plateaued", lane=last.issue_key)
+
+    async def _put_back(self, *, key: str, gap: Sequence[TrackerIssue]) -> None:
+        """Put the lane's issue back where the work it still owes stands.
+
+        The state is named by a tracker fact read on this same tick and by no
+        configured vocabulary: the ``state_name`` of the first criterion the
+        lane still owes whose kind is unstarted. The walk itself moves no lane
+        issue forward, so on a board where nobody else moved it either the
+        port's own restore finds the issue already in that state, writes
+        nothing and leaves no history entry behind.
+
+        A gap every open criterion of which has been started names no unstarted
+        state. Inventing one is not this walker's business: the lane rests
+        whatever this reads, and the write not made is stated in the log by
+        name rather than passed over in silence.
+        """
+        state_name = next(
+            (
+                row.state_name
+                for row in gap
+                if row.state_kind is WorkflowStateKind.UNSTARTED
+            ),
+            None,
+        )
+        if state_name is None:
+            await self._log.ainfo("scope_lane_put_back_skipped", lane=key)
+            return
+        await self._tracker.restore_workflow_state(issue_key=key, state_name=state_name)
 
     async def run(
         self,

@@ -737,6 +737,7 @@ class Production:
 
 
 LIFECYCLE = "services/tracker_lifecycle.py"
+WALKER = "services/scope_runtime.py"
 #: The founder's ruling KOD-806 holds the lifecycle writer's state moves
 #: outside this check while the seam it covers is undecided.  They are
 #: named as call sites and compared exactly: once the ruling is lifted and
@@ -762,6 +763,15 @@ KOD_806_STATE_MOVES = frozenset(
         CallSite(
             module=LIFECYCLE,
             function="TrackerLifecycleWriter.on_run_failed",
+            method="restore_workflow_state",
+        ),
+        # The walk's own put-back is the same kind of move under the same
+        # decision: a lane whose fire closed none of the criteria it owed goes
+        # back to the state name a reader found on its own open work, which
+        # carries no authored content and nothing to judge (KOD-460).
+        CallSite(
+            module=WALKER,
+            function="ScopeWorkflowEngine._put_back",
             method="restore_workflow_state",
         ),
     }

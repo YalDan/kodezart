@@ -2934,3 +2934,157 @@ async def test_a_budget_exhausted_lane_resumes_on_its_recorded_branch(monkeypatc
     prompt = harness.executor.execution_prompts[prompted]
     assert "A/second live Check  bytes" in prompt
     assert "A live Check  bytes" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# KOD-460 — a fire that closed none of the criteria its lane owed ends that
+# lane's turn: the issue goes back where its open work stands, the lane rests,
+# and the walk spends the rest of the invocation on the other lanes.
+# ---------------------------------------------------------------------------
+
+#: The gradings a fire that closes nothing asks for, observed rather than
+#: assumed: the first grading is red, so the fire takes a remediation round and
+#: is graded again, and the one-iteration budget ends there.
+STALLED_FIRE_GRADINGS = 2
+
+
+async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_on():
+    """Lane A closes nothing, gives up its turn, and lane B still runs (KOD-460).
+
+    Nothing A's fire produced satisfied the criterion A owed, so the tick after
+    it reads that none of the identities A owed is closed and stops firing A:
+    an identical second fire would say what the first said. What that leaves on
+    the board is the pull request A's own stall exit opened, on A's record
+    (KOD-776), and A's issue back in the state its open criterion is in — a
+    state name read off that criterion on this tick, so the walk needs no
+    configured vocabulary of its own to put an issue back.
+
+    The invocation is not over: B is selected on the very next tick and closes
+    its own criterion, which is the difference between one lane giving up and a
+    walk giving up.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A", "B"))
+    # Somebody moved A's own issue while it was being worked. The put-back is
+    # observable only against a board that holds the issue somewhere else: a
+    # restore onto the state an issue is already in writes nothing at all.
+    port.issues["A"] = port.issues["A"].model_copy(
+        update={"state_name": "In Progress", "state_kind": WorkflowStateKind.STARTED}
+    )
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        harness = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=[
+                *(
+                    criteria_echo(keys=("A/check",), passed=set())
+                    for _ in range(STALLED_FIRE_GRADINGS)
+                ),
+                *one_check_echoes("B", rounds=2),
+            ],
+        )
+        with structlog.testing.capture_logs() as logs:
+            events = await bounded_walk(harness, job="only-job", origin=FORGE_ORIGIN)
+
+        # Four ticks: A's fire, the tick that reads it closed nothing and hands
+        # the turn to B, the tick that offers B for its delivery alone and finds
+        # its pull request already recorded, and the tick with nothing to offer.
+        assert len(ticks_of(events)) == 4
+        assert lane_failures(events) == ()
+        assert ticks_of(events)[-1].dispatched == ("A", "B")
+        assert list(ticks_of(events)[-1].dispatched).count("A") == 1
+        # A rests from the tick that read its fire, and every later tick still
+        # offers it nothing; B rests only once its delivery is on its record.
+        assert [tick.rested_lanes for tick in ticks_of(events)] == [
+            (),
+            ("A",),
+            ("A",),
+            ("A", "B"),
+        ]
+        assert ticks_of(events)[-1].ready == ("A",)
+        assert [
+            event["lane"]
+            for event in logs
+            if event.get("event") == "scope_lane_plateaued"
+        ] == ["A"]
+        # The put-back, named exactly: one write, on the lane's own issue, to
+        # the state name its open criterion carries. Nothing put a criterion
+        # back and no lifecycle stage was written for A at all.
+        assert port.restored_states == [("A", "Todo")]
+        assert port.issues["A"].state_name == "Todo"
+        assert port.issues["A/check"].state_kind is WorkflowStateKind.UNSTARTED
+        assert port.workflow_writes == [("B/check", LifecycleStage.DONE)]
+        # And the stall exit's pull request is on A's record, from A's own head.
+        record = await lane_record(port, "A")
+        assert record.pr is not None
+        deliverable = recorded_branches(record=record).deliverable_branch
+        assert [create["head"] for create in wire.creates] == [
+            deliverable,
+            recorded_branches(record=await lane_record(port, "B")).deliverable_branch,
+        ]
+        assert record.pr.number == wire._numbers[deliverable]
+        # The walk went on: B closed its own criterion in this same invocation.
+        assert port.issues["B/check"].state_kind is WorkflowStateKind.COMPLETED
+    finally:
+        await forge.close()
+
+
+async def test_a_closed_lane_whose_record_cannot_be_read_is_not_offered_again(
+    monkeypatch,
+):
+    """A lane whose own turn raised is rested, and resting is what stops it.
+
+    Being fired no longer keeps a lane from being selected again (KOD-724), so
+    the boundary's own rest carries the whole guarantee for a lane that failed
+    before it ever launched: this one is a finished lane offered for its
+    delivery alone whose record listing fails, and the tick after it has
+    nothing left to offer. Were it offered again, the walk would spend the
+    invocation on the same unreadable listing, which the bound here catches as
+    a failure rather than a hang. The lane's refusal is stated in the log under
+    its own name as well as on the observation.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A",))
+    finish_by_hand(port, "A")
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        harness = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A",),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+        )
+        listing = port.list_comments
+
+        async def unreadable(*, issue_key):
+            if issue_key == "A":
+                raise TrackerUnavailableError("the lane record listing failed")
+            return await listing(issue_key=issue_key)
+
+        monkeypatch.setattr(port, "list_comments", unreadable)
+        with structlog.testing.capture_logs() as logs:
+            events = await bounded_walk(harness, job="only-job", origin=FORGE_ORIGIN)
+
+        # Two ticks: the turn that failed, and the one with nothing to offer.
+        assert len(ticks_of(events)) == 2
+        assert ticks_of(events)[-1].rested_lanes == ("A",)
+        assert ticks_of(events)[-1].dispatched == ()
+        failures = lane_failures(events)
+        assert [failure.issue_key for failure in failures] == ["A"]
+        assert failures[0].error.error_kind == "LaneRecordReadError"
+        assert [
+            event["lane"] for event in logs if event.get("event") == "scope_lane_failed"
+        ] == ["A"]
+        # Nothing was delivered for it either: the turn ended before a session.
+        assert wire.creates == []
+    finally:
+        await forge.close()
