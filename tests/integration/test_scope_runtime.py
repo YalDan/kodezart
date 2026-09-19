@@ -2441,6 +2441,13 @@ async def test_a_dependent_lane_opens_its_pull_request_against_its_blockers_bran
         # and every state read this run made names B's.
         assert pull_numbers_read(wire) == {str(ScopeForgeWire.FIRST_NUMBER)}
         assert wire._numbers[wire.creates[-1]["head"]] == ScopeForgeWire.FIRST_NUMBER
+        # And B's own delivery completed: it did not merely reach the create
+        # while its blocker's turn failed. A lane whose delivery was refused
+        # anywhere after the create would fail with A and carry no pull
+        # request on its record either.
+        delivered = await lane_record(port, "B")
+        assert delivered.pr is not None
+        assert delivered.pr.number == ScopeForgeWire.FIRST_NUMBER
     finally:
         await forge.close()
 
