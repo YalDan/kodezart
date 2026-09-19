@@ -970,9 +970,6 @@ class WorkflowCompleteEvent(AgentEvent):
     merged: bool = False
     final_commit_sha: str | None = None
     merge_error: str | None = None
-    pr_url: str | None = None
-    pr_number: int | None = None
-    ci_status: CIStatus = CIStatus.not_monitored
     trajectory: LoopTrajectory | None = None
     criteria_validation: CriteriaValidation | None = None
 

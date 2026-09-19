@@ -49,6 +49,16 @@ class CheckObservationError(Exception):
         self.reason = reason
         super().__init__(f"Cannot read watched checks for {repo_url}@{ref}: {reason}")
 
+class PRTrackerIdentityError(Exception):
+    """The publishable PR body lost its required tracker identity."""
+
+    def __init__(self, *, issue_key: str) -> None:
+        self.issue_key = issue_key
+        super().__init__(
+            "gated PR body does not retain the fixed tracker issue identity "
+            f"{issue_key!r}"
+        )
+
 class RunShapeReadError(Exception):
     """Recorded observations cannot establish a run-shape predicate."""
 
@@ -215,6 +225,26 @@ class LaneEntryError(Exception):
         named = f" ({', '.join(self.branches)})" if self.branches else ""
         super().__init__(f"lane {issue_key!r} cannot be entered: {reason}{named}")
 
+class LaneRecordReadError(Exception):
+    """A lane's branch record cannot be read from its addressed tracker comment."""
+
+    def __init__(
+        self,
+        *,
+        issue_key: str,
+        lane_key: str,
+        record_ref: str | None,
+        reason: str,
+    ) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.record_ref = record_ref
+        self.reason = reason
+        super().__init__(
+            f"lane record {record_ref!r} on {issue_key!r} "
+            f"for {lane_key!r} could not be read: {reason}"
+        )
+
 class LaneRecordWriteError(Exception):
     """One of the lane's own tracker writes cannot be made as asked.
 
@@ -326,6 +356,10 @@ class ScopeCycleError(Exception):
     that merely lead into it. No edge is removed or invented to produce an
     order; the caller receives the tracker keys that require repair.
     """
+
+    def __init__(self, *, issue_keys: Sequence[str]) -> None:
+        self.issue_keys: tuple[str, ...] = tuple(issue_keys)
+        super().__init__(f"scope dependency cycle: {', '.join(self.issue_keys)}")
 
 class ScopeReadError(Exception):
     """A scope cannot be resolved without inventing membership or metadata."""
@@ -555,6 +589,26 @@ class AssetFetchError(Exception):
         self.reason: str = reason
         self.asset_key: str | None = asset_key
 
+class DeliveryHeadError(Exception):
+    """A delivery branch no longer has the head whose evidence was supplied."""
+
+    def __init__(
+        self,
+        *,
+        issue_id: str,
+        branch: str,
+        expected_sha: str,
+        observed_sha: str | None,
+    ) -> None:
+        super().__init__(
+            f"Delivery head changed for {issue_id} on {branch}: "
+            f"expected {expected_sha}, observed {observed_sha!r}"
+        )
+        self.issue_id = issue_id
+        self.branch = branch
+        self.expected_sha = expected_sha
+        self.observed_sha = observed_sha
+
 
 class BaseResolutionError(Exception):
     """Raised when a lane's base cannot be resolved. The lane does not dispatch.
@@ -698,11 +752,41 @@ class StaleBaseError(Exception):
 class CheckChainExecutionError(Exception):
     """The configured chain could not be observed as command results."""
 
+    def __init__(self, *, cwd: str, step_name: str | None, reason: str) -> None:
+        self.cwd = cwd
+        self.step_name = step_name
+        self.reason = reason
+        super().__init__(f"Cannot execute check chain in {cwd!r}: {reason}")
+
 class UnionHeadReadError(Exception):
     """Current remote heads could not establish a complete union snapshot."""
 
+    def __init__(self, *, scope_key: str, branch: str | None, reason: str) -> None:
+        self.scope_key = scope_key
+        self.branch = branch
+        self.reason = reason
+        super().__init__(f"Union head observation for {scope_key!r} refused: {reason}")
+
 class UnionUnstableError(Exception):
     """Every allowed union attempt was superseded by current remote heads."""
+
+    def __init__(
+        self,
+        *,
+        scope_key: str,
+        attempts: int,
+        lane_keys: tuple[str, ...],
+        measured_shas: tuple[str, ...],
+        current_shas: tuple[str, ...],
+    ) -> None:
+        self.scope_key = scope_key
+        self.attempts = attempts
+        self.lane_keys = lane_keys
+        self.measured_shas = measured_shas
+        self.current_shas = current_shas
+        super().__init__(
+            f"Union heads for {scope_key!r} changed across {attempts} attempts"
+        )
 
 class AuditClaimReadError(ValueError):
     """The claim's source or remote head cannot support this observation."""
