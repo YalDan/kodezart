@@ -695,6 +695,16 @@ class StaleBaseError(Exception):
         self.implied_ref: str = implied_ref
         self.changed_inputs: list[str] = list(changed_inputs)
 
+class OrganizeAdmissionIdentityError(Exception):
+    """The judgment did not address the source issue that was dispatched."""
+
+    def __init__(self, *, expected: str, observed: str) -> None:
+        self.expected = expected
+        self.observed = observed
+        super().__init__(
+            f"organize admission returned issue {observed!r}, expected {expected!r}"
+        )
+
 class CheckChainExecutionError(Exception):
     """The configured chain could not be observed as command results."""
 
@@ -721,3 +731,25 @@ class OrganizeWriteRefusalError(Exception):
         self.issue_key = issue_key
         self.reason = reason
         super().__init__(f"organize write for {issue_key!r} refused: {reason}")
+
+class OrganizeHaltError(Exception):
+    """A completed Organize tick retains its exact addressed halt report."""
+
+    def __init__(self, *, scope: ScopeRef, report: OrganizeReport) -> None:
+        if report.halt is None:
+            raise ValueError("an Organize halt requires a halted report")
+        self.scope = scope
+        self.report = report
+        super().__init__(
+            f"Organize for {scope.kind.value} {scope.key!r} halted: "
+            f"{report.halt.cause.value}"
+        )
+
+class OrganizeDecisionRequiredError(Exception):
+    """An author found a human decision, before proposing any permitted write."""
+
+    def __init__(self, *, issue_key: str, question: str, evidence: str) -> None:
+        self.issue_key, self.question, self.evidence = issue_key, question, evidence
+        super().__init__(
+            f"organize author for {issue_key!r} needs a decision: {question}"
+        )
