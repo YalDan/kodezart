@@ -184,8 +184,12 @@ The actual scoped entry then calls `read_scope_ready`. It requires all three
 semantic classifications (`criterion`, `tracker`, `decision`) through the shared
 `require_issue_classification_reads` declaration, reads current
 approval through the issue's real ancestry, and selects only native scope
-deliverables with a nonempty criterion gap. Record issues and criteria are never
-selected; an approved deliverable without its own criteria refuses. Deliverable
+deliverables with a nonempty criterion gap. It also reports, separately from
+those, the approved members whose criterion gap is EMPTY: they are no lane to
+work, and on an origin whose lane can deliver the walker dispatches them for
+their delivery alone, before it fires any ready lane (KOD-844). Record issues
+and criteria are never selected and never reported that way either; an approved
+deliverable without its own criteria refuses. Deliverable
 workflow state does not decide either gap or subtree closure. An in-scope blocker
 closes only when all its criterion children and every deliverable child's full
 subtree close, including children outside a container's membership filter.
@@ -222,8 +226,22 @@ lane's two names and cuts its loop branch from the base that resolves now; no
 record with an empty gap is nothing to do. A record with an open gap resumes on
 the recorded LOOP and DELIVERABLE branches at the REMOTE head, whether or not a
 pull request is recorded; a record whose gap is empty and that carries no pull
-request is a deliver-only entry, which a later slice selects; a record carrying
-a pull request with an empty gap is nothing to do.
+request is a deliver-only entry, which the walker selects and dispatches for
+its delivery alone; a record carrying a pull request with an empty gap is
+nothing to do.
+
+A lane the facts leave nothing to do RESTS. The walker states it by name under
+`scope_lane_nothing_to_do` and does not offer that lane again in the same
+invocation, so a reading that keeps reporting the lane cannot make the walk
+spin on it. A deliver-only entry enters the fire graph already accepted — the
+verdict states the entry's own fact, that every criterion of the subtree is
+Done — reads its roster as the whole finished subtree through
+`FireCriteriaSource.read_finished`, and is routed past the loop to
+consolidation: what such a lane is missing is not work but the consolidation,
+review and pull request that follow one. A criterion reopened between the walk's
+selection and that reading refuses with `FireSpecEntryError` naming it, before
+any session opens. A remediation round on such a lane takes the loop like any
+other round.
 
 Every damaged or mismatched fact is a typed refusal of that one lane, made
 before any session and with nothing minted: an unreadable, duplicated or
@@ -744,6 +762,25 @@ inputs keep the existing resolution path, including a typed refusal when
 their branch is missing. Multiple deliverable records refuse as ambiguous
 before choosing a base.
 
+On the scope path those deliverable refs do not come from refs recorded against
+the blocker's issue. `WorkRefReader` is the one read role base resolution makes
+them through, and the scoped composition serves it from the blocker's own lane
+run-state record: one ref per record, at the DELIVERABLE branch the record's
+associations name, and no landing, so it reads unknown and keeps the existing
+resolution path (KOD-776, KOD-842). The per-issue pass keeps the port itself.
+
+The assumed-landed arm — a closed blocker carrying no deliverable ref anywhere
+on its ancestor chain contributes no input, because its work reached the trunk
+outside this operation's delivery loop — is reached only after one
+`open_delivery_exists` read about that blocker answered that no open delivery
+holds its work. The walker makes that read, once per named blocker per turn and
+before the base is resolved: an open delivery refuses the lane with the
+resolution error the base would otherwise have been wrong about, no open
+delivery states the assumption in the log under `base_input_no_open_delivery`,
+and a forge that cannot answer raises its own typed error, which is neither
+answer (KOD-721, KOD-777). The resolver names the blockers and holds no forge
+collaborator that could settle them.
+
 `commits_ahead_of_record` compares four projections from one lane record:
 lane key, declared head, commits-ahead count and ordered `LaneCommit` rows.
 Each frozen row carries exactly `sha`, `subject` and `issue_id`. Either
@@ -1119,15 +1156,16 @@ and publication remain separate consumers.
 
 ## Scoped execution boundary
 
-The public workflow router raises `ScopedExecutionUnavailableError` immediately
-for every addressed scope. It does not read the tracker, clone a repository,
-resolve a remote head, start a judgment session or dispatch an authored loop.
-Unscoped authored jobs keep their existing forge routing and execution.
+An addressed scope is routed to the scoped arm, which walks the scope one lane
+at a time: what it offers, how a lane enters, what rests it and what refuses it
+are stated above, with `read_scope_ready`, `LaneEntryReader` and the record's
+own writer. Unscoped authored jobs keep their existing forge routing and
+execution.
 
 Scope readers, planning and readiness remain available to their current
-consumers. A tracker-native execution loop is still unfinished. The former
-preparation, feasibility and ruling-proposal stack ran work only to refuse;
-its exclusive ports, transient schema and prompt role have been retired.
+consumers. The former preparation, feasibility and ruling-proposal stack ran
+work only to refuse; its exclusive ports, transient schema and prompt role have
+been retired.
 They are not an alternate execution path or evidence of a completed fire.
 
 The scheduled pass gate keeps its vendor timestamp window for reply and
