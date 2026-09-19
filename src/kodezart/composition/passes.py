@@ -124,7 +124,7 @@ def delivery_probe_for(repo_url: str, *, forge: DeliveryProbe) -> DeliveryProbe:
     forge behind it — and unlike the visibility resolver, the delivery
     probe has no containment, so that exception unwound the whole dispatch
     tick.  Every 300 seconds for half an hour on the first live run, before
-    any claim was attempted (KOD-145).
+    any claim was attempted.
 
     Selection lives HERE because this is where origins are known.  It is
     not a fallback inside the forge client, which keeps raising loudly on
@@ -156,8 +156,7 @@ def build_gate(
     no boot can hand this half of a tracker.  The port and its write ledger
     are one fact — the writer and the reader of the same issues — and while
     the ledger could go missing on its own this returned ``None``, and the
-    pass it guards ran ungated at full session cost with nothing saying so
-    (KOD-175, KOD-289).
+    pass it guards ran ungated at full session cost with nothing saying so.
 
     *team_keys* and *repo_urls* are the containers the pass is scoped to —
     the boards its issue signals ask within and the repositories its review
@@ -273,42 +272,30 @@ async def build_prompt_passes(
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
+    organize: OrganizeTick | None,
 ) -> list[ScheduledPass]:
-    """The scheduled prompt passes — one table row each, and nothing in between.
+    """Bind the configured Organize owner and remaining legacy prompt passes.
 
-    A row is a prompt key, its cadence, and the signals its gate asks; all
-    three are configuration.  The cron fires, the prompt renders from the
-    operation configuration, and the rendered text goes to the query path
-    as one session.  **Adding a pass is a row and its config fields** — no
-    second render path to keep in parity with the first, which is the
-    defect this shape exists to remove.
-
-    Wired only over a config that carries a ROSTER.  Every shipped template
-    enumerates the declared teams and the declared repositories, so a pass
-    scheduled over an operation declaring neither would render a hole every
-    interval, on a board nobody is watching.  Loading such a config stays
-    legitimate — an empty board boots — and what it costs is named here
-    rather than paid silently: the collections that are empty are logged,
-    and no pass is registered.  The boot render that guards the passes this
-    DOES wire is :func:`verify_pass_preflight`'s (KOD-150).
-
-    The ``PromptKey`` is still what the tick is bound to, not the rendered
-    string: the render stays inside the tick, where the gate has already
-    said there is work, so a quiet board pays for neither.
-    ``functools.partial`` rather than a closure, because a closure over
-    the loop variable would hand every pass the LAST key and one prompt
-    would silently never be sent.
-
-    A prompt pass acts on the whole operation, so its gate is scoped to
-    every declared team and every declared repository — the narrowing the
-    per-repository dispatch pass makes is a property of that pass, not of
-    the mechanism.
-
-    *dialled* is the tracker AND the ledger of this process's own writes,
-    as one value: a pass gated on a port whose self-writes it cannot
-    recognise wakes on the operation's own churn every tick (KOD-289).
+    Organize uses the existing grooming cadence and report identity, with its
+    own fresh scope reads and explicit repository bindings. The remaining
+    prompt rows require the legacy team/repository roster and use their
+    configured signal gates. Preflight validates exactly those active rows.
     """
     log: BoundLogger = get_logger(__name__)
+    schedule = prompt_pass_schedule(config)
+    scheduled: list[ScheduledPass] = []
+    if organize is not None:
+        key = PromptKey.GROOMING_PASS
+        row = schedule.pop(key)
+        scheduled.append(
+            ScheduledPass(
+                name=key.value,
+                interval_seconds=row.interval_seconds,
+                timeout_seconds=row.timeout_seconds,
+                run=organize.run,
+                report=run_report(recorder, _record_kind_for(key), key.value),
+            )
+        )
     absent = absent_roster(operation)
     if absent:
         await log.ainfo(
@@ -316,17 +303,16 @@ async def build_prompt_passes(
             operation_config_present=True,
             absent=list(absent),
         )
-        return []
+        return scheduled
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
-    schedule = prompt_pass_schedule(config)
     # Read only where a gate will actually be built: naming the operation's
     # teams REFUSES when it declares none, and a deployment whose passes are
     # all ungated has no scan for that refusal to be about.
     gated = dialled is not None and any(row.signals for row in schedule.values())
     team_keys = operation.team_keys() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
-    return [
+    return scheduled + [
         ScheduledPass(
             name=key.value,
             interval_seconds=row.interval_seconds,
@@ -336,7 +322,7 @@ async def build_prompt_passes(
                 # The record identity's other two thirds, read from the same
                 # two pure functions of the key the report below reads, so
                 # the title the session is given and the title the runner
-                # verifies by are one string (KOD-290).
+                # verifies by are one string.
                 kind=_record_kind_for(key),
                 key=key,
                 prompts=prompts,
@@ -367,13 +353,13 @@ async def build_prompt_passes(
     ]
 
 
-def fire_report(dispatchers: Mapping[str, FireDispatcher]) -> FireReport:
+def fire_report(dispatchers: Mapping[str, DispatchProducer]) -> FireReport:
     """Every dispatcher on the lane hears every finished fire.
 
     The watcher is one object over N repositories and knows nothing about
     which of them started a given run.  Each dispatcher does — it holds
     the job it enqueued — so the fan-out is total here and the filtering
-    is the dispatcher's own (KOD-174).  A watcher told to route would need
+    is the dispatcher's own.  A watcher told to route would need
     a second copy of the routing the passes already compute.
 
     A dispatcher that RAISES on the news is contained per dispatcher, and
@@ -381,7 +367,7 @@ def fire_report(dispatchers: Mapping[str, FireDispatcher]) -> FireReport:
     the tracker, so one repository's dispatcher meeting a refused
     credential would otherwise abort the fan-out and leave every
     dispatcher after it in the iteration order unaware that its own fire
-    ended (KOD-276).
+    ended.
     """
 
     log: BoundLogger = get_logger(__name__)
@@ -429,7 +415,7 @@ async def build_dispatch_passes(
     declared surface unserved with nothing saying so.  A repository no
     team is bound to is the other arm and it is NAMED rather than
     silent — it gets no pass, because a tick that scans nothing is noise
-    every interval forever (KOD-157).
+    every interval forever.
 
     *delivery* is the FORGE probe, and it reaches only the repositories
     whose origin has a forge; the rest get the probe that can answer for
@@ -444,10 +430,10 @@ async def build_dispatch_passes(
         max_bytes=config.tracker_asset_max_bytes,
         fetch_timeout_seconds=config.tracker_asset_fetch_timeout_seconds,
     )
-    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git_remote)
+    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git.remote)
     # ONE cooldown for the whole operation: its dispatchers are one per
     # repository over a single provider account, so the limit one of them
-    # meets is the limit all of them would meet next (KOD-281).
+    # meets is the limit all of them would meet next.
     cooldown = LaneCooldown(
         cooldown_seconds=config.dispatch_rate_limit_cooldown_seconds,
     )
@@ -483,11 +469,16 @@ async def build_dispatch_passes(
     # writes belongs to the ISSUE, and an issue is not a per-repository
     # thing. A watcher per pass would be N watchers over one tracker.
     # Built after the dispatchers because a finished fire is reported back
-    # into them (KOD-174).
+    # into them.
     lifecycle = LifecycleWatcher(
         queue=queue,
         registry=registry,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
+        writer=TrackerLifecycleWriter(
+            tracker=tracker,
+            gate=gate,
+            marker_prefixes=operation.marker_prefixes,
+            surface_lease_seconds=config.tracker.surface_lease_seconds,
+        ),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
             holder=config.dispatch_holder,

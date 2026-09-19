@@ -27,14 +27,16 @@ from kodezart.core.prompt_rendering import (
 from kodezart.core.protocols import PromptProvider
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.criteria_prompt import render_validation_findings
-from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.prompt_variables import (
+    changeset_variables,
+    execution_criteria_variables,
+)
 from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.types.domain.agent import FileChange, TicketDraftOutput
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
     CriteriaValidation,
-    CriterionClass,
     CriterionFailure,
     CriterionFeasibility,
     CriterionVerdict,
@@ -79,11 +81,9 @@ MINTED_CRITERIA = list(
         [
             DraftedCriterion(
                 text="First criterion",
-                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text="Second criterion",
-                criterion_class=CriterionClass.soft_signal,
             ),
         ]
     )
@@ -100,7 +100,6 @@ def make_criteria(*texts: str) -> list:
             [
                 DraftedCriterion(
                     text=text,
-                    criterion_class=CriterionClass.hard_gate,
                 )
                 for text in texts
             ]
@@ -180,19 +179,22 @@ RENDER_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "implementation": (PromptKey.IMPLEMENTATION, {"task_md": TASK_MD}),
     "evaluation": (
         PromptKey.EVALUATION,
-        {"criteria": CRITERIA, **changeset_variables(DIGEST)},
+        {**execution_criteria_variables(CRITERIA), **changeset_variables(DIGEST)},
     ),
     "post_merge_review": (
         PromptKey.POST_MERGE_REVIEW,
-        {"criteria": CRITERIA, **changeset_variables(DIGEST)},
+        {**execution_criteria_variables(CRITERIA), **changeset_variables(DIGEST)},
     ),
     "evaluation__empty_changeset": (
         PromptKey.EVALUATION,
-        {"criteria": CRITERIA, **changeset_variables(EMPTY_DIGEST)},
+        {**execution_criteria_variables(CRITERIA), **changeset_variables(EMPTY_DIGEST)},
     ),
     "evaluation__no_file_paths": (
         PromptKey.EVALUATION,
-        {"criteria": CRITERIA, **changeset_variables(NO_FILES_DIGEST)},
+        {
+            **execution_criteria_variables(CRITERIA),
+            **changeset_variables(NO_FILES_DIGEST),
+        },
     ),
     "iteration_feedback": (
         PromptKey.ITERATION_FEEDBACK,
@@ -760,7 +762,7 @@ def test_utility_keys_declare_an_empty_skills_loadout() -> None:
 
 
 def test_prompt_resolution_never_reads_the_model_knob() -> None:
-    """D-7: KODEZART_MODEL is not an input to prompt resolution.
+    """D-7: KODEZART_AGENT__MODEL is not an input to prompt resolution.
 
     The per-key session-model table (KOD-161) rides the registry too — but
     on the POLICY object a dispatch carries, never as an input to which
@@ -785,9 +787,9 @@ def test_set_selection_is_independent_of_model_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Changing the model knob does not change the resolution table."""
-    monkeypatch.setenv("KODEZART_MODEL", "some-other-engine")
+    monkeypatch.setenv("KODEZART_AGENT__MODEL", "some-other-engine")
     before = load_registry().resolution_table()
-    monkeypatch.delenv("KODEZART_MODEL")
+    monkeypatch.delenv("KODEZART_AGENT__MODEL")
     after = load_registry().resolution_table()
     assert before == after
 

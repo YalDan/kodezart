@@ -22,6 +22,16 @@ class GitRepositoryError(ValueError):
 class GitOperationError(RuntimeError):
     """A Git command failed or returned an invalid provider response."""
 
+
+class GitSourceReadError(Exception):
+    """The requested immutable repository object cannot supply source bytes."""
+
+    def __init__(self, *, ref: str, path: str | None, reason: str) -> None:
+        self.ref = ref
+        self.path = path
+        self.reason = reason
+        super().__init__(f"source {ref!r}:{path!r} could not be read: {reason}")
+
 class AuditEvidenceReadError(Exception):
     """A criterion's recorded grading cannot establish one current observation."""
 
@@ -249,6 +259,11 @@ class CriterionResolutionError(ValueError):
 class FireSpecEntryError(Exception):
     """The current subject lacks its machine completion or human approval."""
 
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"fire subject {issue_key!r} cannot enter: {reason}")
+
 class SubjectAmendedError(FireSpecEntryError):
     """The subject text read at entry differs from the digest on the record.
 
@@ -274,8 +289,21 @@ class SubjectAmendedError(FireSpecEntryError):
 class EmptyFireCriteriaError(Exception):
     """A successful tracker spec read found no criterion sub-issues."""
 
+    def __init__(self, *, issue_key: str) -> None:
+        self.issue_key = issue_key
+        super().__init__(f"fire subject {issue_key!r} has no criterion sub-issues")
+
 class InvalidFireCriterionError(Exception):
     """A criterion cannot supply its required specification at fire entry."""
+
+    def __init__(self, *, issue_key: str, criterion_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(
+            f"criterion {criterion_key!r} of fire subject {issue_key!r} "
+            f"cannot be consumed: {reason}"
+        )
 
 class DuplicateIssueIdentityError(Exception):
     """Several issues claim one scope-and-deliverable identity."""
@@ -291,12 +319,60 @@ class DuplicateIssueIdentityError(Exception):
         self.deliverable_key = deliverable_key
         self.issue_keys = tuple(issue_keys)
 
+class ScopeCycleError(Exception):
+    """A cycle in the scope's dependency graph prevents any plan being returned.
+
+    ``issue_keys`` is one offending directed cycle, without unrelated issues
+    that merely lead into it. No edge is removed or invented to produce an
+    order; the caller receives the tracker keys that require repair.
+    """
+
 class ScopeReadError(Exception):
     """A scope cannot be resolved without inventing membership or metadata."""
 
     def __init__(self, message: str, *, ref: ScopeRef) -> None:
         super().__init__(f"{message} (scope: {ref.kind.value}:{ref.key})")
         self.ref: ScopeRef = ref
+
+class ScopePlanRefusalError(ScopeReadError):
+    """Live scope facts violate the stage barrier before dispatch can begin."""
+
+    def __init__(
+        self,
+        *,
+        ref: ScopeRef,
+        open_decisions: Sequence[str],
+        backlog_criteria: Sequence[str],
+        cross_subtree_edges: Sequence[tuple[str, str]],
+    ) -> None:
+        self.open_decisions = tuple(open_decisions)
+        self.backlog_criteria = tuple(backlog_criteria)
+        self.cross_subtree_edges = tuple(cross_subtree_edges)
+        details = []
+        if self.open_decisions:
+            details.append("open decisions: " + ", ".join(self.open_decisions))
+        if self.backlog_criteria:
+            details.append("backlog-kind criteria: " + ", ".join(self.backlog_criteria))
+        if self.cross_subtree_edges:
+            details.append(
+                "cross-subtree criterion edges: "
+                + ", ".join(
+                    f"{source} -> {target}"
+                    for source, target in self.cross_subtree_edges
+                )
+            )
+        super().__init__("scope plan refused; " + "; ".join(details), ref=ref)
+
+class ScopeSupersessionReadError(ScopeReadError):
+    """Readiness needs a cancellation reference without an established reader."""
+
+    def __init__(self, *, ref: ScopeRef, criterion_keys: Sequence[str]) -> None:
+        self.criterion_keys = tuple(criterion_keys)
+        super().__init__(
+            "criterion supersession resolution is unavailable: "
+            + ", ".join(self.criterion_keys),
+            ref=ref,
+        )
 
 class ScopedExecutionUnavailableError(Exception):
     """An addressed scope cannot execute through the legacy workflow pipeline."""

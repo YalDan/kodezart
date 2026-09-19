@@ -1,10 +1,17 @@
 """Resolving a lane's base from the tracker graph, and building it if needed.
 
 The rule lives in :mod:`kodezart.domain.base_resolution` and is pure.  This
-service is the I/O half: it reads the ``blockedBy`` edges and the recorded
-work refs through ``TrackerPort``, asks ``GitService`` which refs contain
-which, hands the resolved values to the rule, and — on the combined arm only
-— constructs the integration ref the rule named.
+service is the I/O half: it reads the ``blockedBy`` edges through
+``TrackerPort`` and a blocker's recorded work refs through ``WorkRefReader``,
+asks ``GitService`` which refs contain which, hands the resolved values to
+the rule, and — on the combined arm only — constructs the integration ref
+the rule named.
+
+The ref read is its own role because the two passes answer it from
+different carriers: the per-issue pass from the refs recorded on the issue
+(the port satisfies the role, so it is also the default), the scope path
+from the blocker's lane run-state record (KOD-842).  Nothing here knows
+which, and nothing here derives a role or an issue from a branch name.
 
 Two things it deliberately does NOT do.  It never reads a pull request's
 merge or open/closed state: under the standing ruling an open unmerged pull
@@ -16,16 +23,23 @@ not dispatch.
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import assert_never
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import GitService, TrackerPort
+from kodezart.core.protocols import GitService, TrackerPort, WorkRefReader
 from kodezart.domain.base_resolution import BasePlan, resolve_base
 from kodezart.domain.errors import (
     BaseIntegrationConflictError,
     BaseResolutionError,
     MergeConflictError,
 )
-from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.branch import (
+    BaseInput,
+    BaseSpec,
+    WorkRef,
+    WorkRefLanding,
+    WorkRefRole,
+)
 from kodezart.types.domain.tracker import IssueRelationKind, is_open
 
 
@@ -38,10 +52,15 @@ class BaseResolver:
         tracker: TrackerPort,
         git: GitService,
         remote: str,
+        refs: WorkRefReader | None = None,
     ) -> None:
         self._tracker: TrackerPort = tracker
         self._git: GitService = git
         self._remote: str = remote
+        # The port answers the ref read unless a caller names another
+        # carrier for it, so every composition that has one collaborator
+        # keeps one and the scope path substitutes the record.
+        self._refs: WorkRefReader = refs if refs is not None else tracker
         self._log: BoundLogger = get_logger(__name__)
 
     async def resolve(
@@ -88,6 +107,37 @@ class BaseResolver:
             )
         return plan.spec
 
+    async def unrecorded_closed_blockers(self, *, issue_key: str) -> tuple[str, ...]:
+        """The blockers whose work this resolution would assume is on the trunk.
+
+        Exactly the set ``_input_for`` takes its assumed-landed arm for, from
+        the same two reads that arm makes: a blocker carrying no deliverable
+        ref anywhere on its ancestor chain, whose own issue is no longer open.
+        In the order the issue names its blockers, each named once.
+
+        Stated for a caller that has a question this module must not ask.  The
+        assumption is wrong in one observable case — the blocker's work is
+        sitting in a delivery nobody merged yet — and the reading that settles
+        it belongs to the forge, which nothing here holds a collaborator for
+        (KOD-721, KOD-777).  Naming the blockers the assumption is about is
+        all this module can honestly do; the caller asks its own question of
+        them and refuses the lane on what it learns.
+        """
+        seen: set[str] = set()
+        assumed: list[str] = []
+        for blocker_key in await self._blocker_keys(issue_key):
+            if blocker_key in seen:
+                continue
+            seen.add(blocker_key)
+            ref = await self._nearest_deliverable_ref(blocker_key, issue_key=issue_key)
+            if ref is not None:
+                continue
+            blocker = await self._tracker.read_issue(issue_key=blocker_key)
+            if is_open(blocker.state_kind):
+                continue
+            assumed.append(blocker_key)
+        return tuple(assumed)
+
     async def _blocker_keys(self, issue_key: str) -> tuple[str, ...]:
         issue = await self._tracker.read_issue(issue_key=issue_key)
         return tuple(
@@ -109,7 +159,7 @@ class BaseResolver:
         A resolution assuming otherwise would refuse to dispatch a lane
         whose premise is in fact present.
 
-        ``None`` is the ASSUMED-LANDED arm (KOD-169): a blocker that is
+        ``None`` is the ASSUMED-LANDED arm: a blocker that is
         TERMINAL and carries no deliverable ref anywhere on its ancestor
         chain finished outside kodezart's own delivery loop — the
         founder's boards merge pull requests by hand — so its work is on
@@ -119,7 +169,7 @@ class BaseResolver:
         one here means the graph moved under the pass, and dispatching
         over it would build on a premise that does not exist yet.
         """
-        ref = await self._nearest_deliverable_ref(blocker_key)
+        ref = await self._nearest_deliverable_ref(blocker_key, issue_key=issue_key)
         if ref is None:
             blocker = await self._tracker.read_issue(issue_key=blocker_key)
             if not is_open(blocker.state_kind):
@@ -135,6 +185,15 @@ class BaseResolver:
                 issue_id=issue_key,
                 blocker_issue_ids=(blocker_key,),
             )
+        match ref.landing:
+            case WorkRefLanding.LANDED:
+                return None
+            case WorkRefLanding.NOT_LANDED:
+                pass
+            case WorkRefLanding.UNKNOWN:
+                pass
+            case _:
+                assert_never(ref.landing)
         if ref.pushed_head_sha is None:
             raise BaseResolutionError(
                 "the blocker's deliverable ref has never been pushed",
@@ -148,14 +207,27 @@ class BaseResolver:
             sha=ref.pushed_head_sha,
         )
 
-    async def _nearest_deliverable_ref(self, blocker_key: str) -> WorkRef | None:
+    async def _nearest_deliverable_ref(
+        self, blocker_key: str, *, issue_key: str
+    ) -> WorkRef | None:
         seen: set[str] = set()
         cursor: str | None = blocker_key
         while cursor is not None and cursor not in seen:
             seen.add(cursor)
-            for ref in await self._tracker.work_refs(issue_key=cursor):
-                if ref.role is WorkRefRole.DELIVERABLE:
-                    return ref
+            deliverables = [
+                ref
+                for ref in await self._refs.work_refs(issue_key=cursor)
+                if ref.role is WorkRefRole.DELIVERABLE
+            ]
+            if len(deliverables) > 1:
+                raise BaseResolutionError(
+                    f"multiple deliverable refs are recorded on {cursor}",
+                    issue_id=issue_key,
+                    blocker_issue_ids=(blocker_key,),
+                    branches=tuple(ref.branch for ref in deliverables),
+                )
+            if deliverables:
+                return deliverables[0]
             cursor = (await self._tracker.read_issue(issue_key=cursor)).parent_key
         return None
 

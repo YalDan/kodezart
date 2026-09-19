@@ -123,6 +123,23 @@ curl -X POST http://localhost:8000/api/v1/agent/fire \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Add input validation", "repoUrl": "owner/repo"}'
 ```
+### Response — `202 Accepted` (`FireAcceptedResponse`)
+
+```json
+{
+  "jobId": "3fa85f6457174562b3fc2c963f66afa6",
+  "lane": "workflow",
+  "state": "queued",
+  "queuePosition": 1,
+  "submittedAt": "2026-01-01T00:00:00Z",
+  "statusUrl": "/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6",
+  "streamUrl": "/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6/stream"
+}
+```
+
+`queuePosition` is `null` once the run has left the queue. A lane at
+`KODEZART_QUEUE__MAX_DEPTH_PER_LANE` rejects the submission with `429`.
+
 ## GET /api/v1/jobs/{jobId}
 
 Registry facts for a queued or running job, plus the checkpointed run state.

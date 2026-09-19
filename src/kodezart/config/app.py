@@ -160,10 +160,6 @@ class AppConfig(BaseSettings):
         default="INFO",
         description="Logging level (DEBUG, INFO, WARNING, ERROR).",
     )
-    api_v1_prefix: str = Field(
-        default="/api/v1",
-        description="URL prefix for all v1 API routes.",
-    )
     github_token: str | None = Field(
         default=None,
         min_length=1,
@@ -176,13 +172,6 @@ class AppConfig(BaseSettings):
         ),
     )
     git: GitSettings = Field(default_factory=GitSettings)
-    integration_workspace_dir: str = Field(
-        default="/tmp/kodezart-integration",
-        description=(
-            "Local directory the base resolver builds integration refs in. "
-            "One worktree per construction, removed when the ref is pushed."
-        ),
-    )
     git_base_url: str = Field(
         default="https://github.com",
         description="Base URL for resolving owner/repo shorthand.",
@@ -306,39 +295,8 @@ class AppConfig(BaseSettings):
         default=None,
         description="Claude model override. None uses SDK default.",
     )
-    fallback_model: str | None = Field(
-        default=None,
-        description=(
-            "Engine a session falls back to when the primary declines a "
-            "request. None declares no fallback, which is not a default "
-            "naming an engine: an installation that has not decided which "
-            "second engine it may reach sends none."
-        ),
-    )
-    session_models: dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "JSON object mapping a prompt function key to the engine its "
-            "sessions run on, overriding the global model for those keys "
-            "only (KOD-161). Engine choice is deployment-shaped, so the "
-            "table lives here rather than in a prompt set, which only "
-            "DECLARES intended engines. Empty — the default — changes "
-            "nothing: every key resolves as before. No engine name is "
-            "defaulted anywhere."
-        ),
-    )
 
 
-    claude_output_style: str | None = Field(
-        default=None,
-        description=(
-            "Claude Code output style every engine session runs under. None "
-            "sends no style at all and the CLI's own default stands; no "
-            "style is ever picked in code. A declared style the session's "
-            "own opening message does not confirm fails that session rather "
-            "than running it under some other system prompt."
-        ),
-    )
 
     remediation_max_rounds: int = Field(
         default=1,
@@ -467,22 +425,6 @@ class AppConfig(BaseSettings):
         description="Base URL for code hosting platform REST API.",
     )
     tracker: TrackerSettings = Field(default_factory=TrackerSettings)
-    tracker_mcp_sse_read_timeout_seconds: float = Field(
-        default=300.0,
-        ge=30.0,
-        le=3600.0,
-        description=(
-            "Seconds the tracker MCP session's event stream may go quiet "
-            "before its read is abandoned. The third bound on this "
-            "transport and the only one about the STREAM: "
-            "KODEZART_TRACKER_TIMEOUT_SECONDS bounds one HTTP exchange's "
-            "connect and write phases, KODEZART_TRACKER_MCP_CALL_TIMEOUT_"
-            "SECONDS bounds the wait for one answer, and this bounds how "
-            "long the long-lived streamable-HTTP response may say nothing "
-            "at all. The default is the value the session ran on while the "
-            "bound came from a private vendor constant."
-        ),
-    )
     tracker_claim_lease_seconds: float = Field(
         default=900.0,
         ge=60.0,
@@ -689,49 +631,8 @@ class AppConfig(BaseSettings):
         description="Knowledge session grants and typed MCP connection.",
     )
     agent: AgentSettings = Field(default_factory=AgentSettings)
-    knowledge_mcp_token: SecretStr | None = Field(
-        default=None,
-        exclude=True,
-        description=(
-            "Credential for the knowledge MCP server. "
-            "Environment only, and excluded from serialization: a dumped "
-            "config is copied into logs, fixtures and error payloads."
-        ),
-    )
-    knowledge_session_grants: list[SessionType] = Field(
-        default_factory=list,
-        description=(
-            "Session types the knowledge MCP server is attached to, "
-            "named one by one. There is no wildcard value. Ships empty: "
-            "the mechanism ships and the grant is operator configuration. "
-            "A non-empty list with neither KODEZART_KNOWLEDGE_MCP_TOKEN nor "
-            "KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN set aborts boot rather "
-            "than attaching an unauthenticated server."
-        ),
-    )
 
 
-    knowledge_mcp_server_url: str | None = Field(
-        default=None,
-        min_length=1,
-        description=(
-            "Endpoint of the knowledge MCP server a granted session dials "
-            "under the http transport. Unset means no knowledge server "
-            "endpoint is configured; a granted http session then aborts "
-            "boot naming the absence."
-        ),
-    )
-    knowledge_mcp_sse_read_timeout_seconds: float = Field(
-        default=300.0,
-        ge=30.0,
-        le=3600.0,
-        description=(
-            "Seconds the knowledge MCP session's event stream may go quiet "
-            "before its read is abandoned, when the record path is reached "
-            "over HTTP. The same bound the tracker transport carries, on "
-            "the same transport class."
-        ),
-    )
     checkpoint_url: str | None = Field(
         default=None,
         description="LangGraph checkpoint URL. :memory: or PostgreSQL.",
@@ -776,31 +677,6 @@ class AppConfig(BaseSettings):
         ),
     )
 
-    skills_mode: SkillsMode = Field(
-        default=SkillsMode.NONE,
-        description=(
-            "Three-state skill selection: NONE suppresses every skill, ALL "
-            "loads every discovered skill, EXPLICIT loads the allowlist."
-        ),
-    )
-    skills_allowlist: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Skill names loaded under EXPLICIT mode. Must be empty in every "
-            "other mode. Names are host-provisioned at user scope."
-        ),
-    )
-    setting_sources: list[SettingSource] = Field(
-        default_factory=lambda: [
-            SettingSource.USER,
-            SettingSource.PROJECT,
-            SettingSource.LOCAL,
-        ],
-        description=(
-            "Settings sources passed explicitly to agent sessions so enabling "
-            "the skills knob never silently narrows loaded settings."
-        ),
-    )
     # Credentials are the one category that ships populated: a credential
     # leaving the process is never acceptable regardless of deployment. The
     # shapes come from the table the wire-egress scrubber reads too, so a
@@ -914,12 +790,6 @@ class AppConfig(BaseSettings):
 
 
 
-    def skills_selection(self) -> SkillsSelection:
-        """The typed three-state selection threaded to executor sessions."""
-        return SkillsSelection(
-            mode=self.skills_mode,
-            allowlist=tuple(self.skills_allowlist),
-        )
 
     def explicit_max_reviews(self) -> int | None:
         """``max_reviews`` when the deployment configured one, else ``None``.
@@ -932,40 +802,6 @@ class AppConfig(BaseSettings):
         """
         return self.max_reviews if "max_reviews" in self.model_fields_set else None
 
-    def knowledge_grant(self, *, knowledge_map: str) -> KnowledgeGrant:
-        """The resolved grant threaded to executor sessions.
-
-        *knowledge_map* is the rendered what-lives-where prelude a granted
-        session's prompt receives — supplied by the caller rather than
-        derived here, because rendering it needs the prompt registry and
-        this model knows nothing about prompts.  It has no default: a
-        defaulted map is a grant that silently attaches a server and tells
-        the session nothing about what it reaches.
-        """
-        if self.knowledge_mcp_transport is KnowledgeTransport.STDIO:
-            return KnowledgeGrant(
-                granted=tuple(self.knowledge_session_grants),
-                transport=KnowledgeTransport.STDIO,
-                server_name=self.knowledge_mcp_server_name,
-                command=self.knowledge_mcp_command,
-                args=tuple(self.knowledge_mcp_args),
-                env=dict(self.knowledge_mcp_env),
-                credential_env=self.knowledge_mcp_credential_env,
-                credential=self.knowledge_mcp_token,
-                knowledge_map=knowledge_map,
-            )
-        return KnowledgeGrant(
-            granted=tuple(self.knowledge_session_grants),
-            transport=KnowledgeTransport.HTTP,
-            server_name=self.knowledge_mcp_server_name,
-            server_url=self.knowledge_mcp_server_url,
-            auth_header=self.knowledge_mcp_auth_header,
-            auth_scheme=self.knowledge_mcp_auth_scheme,
-            credential=self.knowledge_mcp_token,
-            gateway_credential=self.knowledge_mcp_gateway_token,
-            interactive_auth_hosts=tuple(self.knowledge_mcp_interactive_auth_hosts),
-            knowledge_map=knowledge_map,
-        )
 
     @classmethod
     def from_env(cls) -> Self:

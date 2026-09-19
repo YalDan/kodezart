@@ -324,6 +324,18 @@ class TaskUsageInfo(CamelCaseModel):
     tool_uses: int
     duration_ms: int
 
+class NodeSessionStartedEvent(AgentEvent):
+    """An actual native opening, emitted by its addressed harness invocation.
+
+    This stream value does not assert that a tracker event was published.
+    Durable publication remains a separate leased and gated write.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    type: Literal[RunEventKind.NODE_SESSION_STARTED] = RunEventKind.NODE_SESSION_STARTED
+    invocation: NodeInvocation
+    session_id: str = Field(min_length=1, pattern=r"\S")
+
 
 class UserMessageEvent(AgentEvent):
     """User message echoed back in the SSE stream."""
@@ -968,6 +980,8 @@ class AuthoredWorkflowCompleteEvent(WorkflowCompleteEvent):
     """Existing authored HTTP terminal after external delivery completes."""
 
     pr_url: str | None = None
+    pr_number: int | None = None
+    ci_status: CIStatus = CIStatus.not_monitored
 
 
 class WorkflowVisibilityEvent(AgentEvent):
@@ -1002,11 +1016,11 @@ class JobAcceptedEvent(AgentEvent):
     """
 
     type: Literal["job_accepted"] = "job_accepted"
-    job_id: str
-    lane: str
-    queue_position: int
-    status_url: str
-    stream_url: str
+    job_id: AcceptanceHandle
+    lane: AcceptanceHandle
+    queue_position: AcceptedQueuePosition
+    status_url: JobLink
+    stream_url: JobLink
 
 
 class WorkflowCriteriaEvent(AgentEvent):
@@ -1067,7 +1081,9 @@ class WorkflowTicketEvent(AgentEvent):
 class NativeAmendmentEvent(AgentEvent):
     """Independent precommit findings; upheld departures were not actioned."""
 
+    type: Literal["native_amendment"] = "native_amendment"
     report: AmendmentReport
+    repeated: tuple[RepeatedUpheld, ...] = ()
 
 type NativeFireProgressEvent = Annotated[
     UserMessageEvent
@@ -1116,6 +1132,7 @@ CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
 )
 # Schema for structured ticket draft output
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
+REMEDIATION_SCHEMA: dict[str, object] = RemediationPlan.model_json_schema()
 # Schema for structured ticket review output
 TICKET_REVIEW_SCHEMA: dict[str, object] = TicketReviewOutput.model_json_schema()
 PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema()
@@ -1128,9 +1145,14 @@ AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema
 
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
 
+ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
+
+NATIVE_WRITER_SCHEMA: dict[str, object] = NativeWriterOutput.model_json_schema()
+
 AMENDMENT_JUDGMENT_SCHEMA: dict[str, object] = AmendmentJudgment.model_json_schema()
 
 AMENDMENT_TEXT_SCHEMA: dict[str, object] = AmendmentTextOutput.model_json_schema()
+ORGANIZE_PROPOSAL_SCHEMA: dict[str, object] = OrganizeProposal.model_json_schema()
 
 WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
 

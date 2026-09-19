@@ -127,15 +127,13 @@ async def _branch_from(
     return sha
 
 
-def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
+def _engine(repo: Path, tmp_path: Path) -> AuthoredDeliveryCoordinator:
     """The real engine over real git, with only the model scripted."""
     git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="test",
-        committer_email="t@t.dev",
     )
     persister = GitChangePersister(
         gate=PassThroughGate(),
@@ -163,7 +161,10 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
         workspace=workspace,
         persister=persister,
     )
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),

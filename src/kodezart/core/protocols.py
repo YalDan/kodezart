@@ -704,6 +704,18 @@ class TrackerCriteriaReader(Protocol):
         """
         ...
 
+@runtime_checkable
+class TrackerContextReader(Protocol):
+    """Read the documents referenced by a fire's issue."""
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        """Attachment and document metadata referenced by the issue."""
+        ...
+
+    async def read_document(self, *, document_key: str) -> str:
+        """The document's text content."""
+        ...
+
 
 @runtime_checkable
 class TrackerPort(
@@ -1407,6 +1419,20 @@ class TrackerPort(
         """
         ...
 
+@runtime_checkable
+class WorkRefReader(Protocol):
+    """The one read base resolution makes to find a blocker's branch.
+
+    A role narrowed out of the port rather than a widening of it:
+    ``TrackerPort`` satisfies it structurally and remains the answer on the
+    per-issue pass, while the scope path serves the same question from the
+    lane's own run-state record (KOD-842).  Either way the caller asks
+    *which refs deliver issue X, in which roles, at which shas* and derives
+    nothing from a branch name.
+    """
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]: ...
+
 AfterPublish = Callable[[str, PersistResult], Awaitable[None]]
 
 @runtime_checkable
@@ -1719,6 +1745,24 @@ class FireCriteriaReader(Protocol):
 class FireCriteriaSource(FireCriteriaReader, Protocol):
     """Capture an admitted native subject once and refresh its obligations."""
 
+    async def read_spec(self, *, issue_key: str) -> TrackerSpec:
+        """Capture tracker-authored subject data or raise a typed refusal."""
+        ...
+
+    async def read_finished(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
+        """Return the subtree's counting criteria, every one of them finished.
+
+        The reading a lane owing nothing enters on. It holds no unstarted
+        criterion for :meth:`read_current` to answer with, and what its
+        delivery stands on is instead that every criterion of its subtree
+        that counts is finished, which is what the cross-offs of its own
+        earlier work mean. A criterion the board Canceled or closed as a
+        Duplicate counts for nothing and refuses nothing (KOD-794). One
+        criterion still open, or a counting roster that comes out empty,
+        is a typed refusal here rather than a smaller roster downstream.
+        """
+        ...
+
 
 @runtime_checkable
 class QualityGate(Protocol):
@@ -1843,6 +1887,10 @@ class DispatchProducer(Protocol):
     to know which of them did would be a second copy of the routing the
     passes already compute.
     """
+
+    async def run_pass(self) -> DispatchReport:
+        """Run one selection pass and report exactly what it did."""
+        ...
 
     async def record_run_outcome(
         self,

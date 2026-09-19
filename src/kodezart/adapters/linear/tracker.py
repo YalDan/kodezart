@@ -1210,6 +1210,17 @@ class LinearMcpTracker:
             body_digest=body_digest(issue.body),
         )
 
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        """Resolve live container membership or an issue's whole subtree."""
+        return await LinearScopeReader(
+            call=self._call,
+            read_issue=self.read_issue,
+        ).scope_issues(ref=ref)
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve configured label presence through fresh native ancestry."""
+        _, approved = await self._read_execution_approval(issue_key=issue_key)
+        return approved
+
     def _scope_label_members(self, labels: Sequence[str]) -> frozenset[ScopeLabel]:
         return frozenset(
             member
@@ -1972,6 +1983,10 @@ class LinearMcpTracker:
             arguments["description"] = body
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
         return self._saved_issue(payload, written=arguments)
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        _, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return criteria
 
     async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
         if self._criteria_stage_label_key is not None and not self._issue_labels.get(

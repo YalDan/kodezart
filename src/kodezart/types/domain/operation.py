@@ -285,6 +285,7 @@ class CheckPrerequisite(StrEnum):
     """Environment facts that a repository may explicitly declare."""
 
     REPOSITORY_HISTORY = "repository_history"
+    NETWORK = "network"
     CREDENTIALS = "credentials"
 
 
@@ -492,17 +493,6 @@ class RecordDestination(OperationModel):
         return self
 
 
-class Initiative(OperationModel):
-    """An initiative the operation is steering toward.
-
-    ``target_date`` is optional because a real initiative frequently has
-    none.  A required field forced every config to invent one, and a pass
-    rendered from an invented date reports a distance to a commitment the
-    tracker does not hold — an assertion about the operation manufactured
-    by its own configuration model.
-    """
-
-    id: str
 
 
 
@@ -548,7 +538,6 @@ class OperationConfig(OperationModel):
     records: dict[str, RecordDestination] = Field(default_factory=dict)
     knowledge: dict[str, str] = Field(default_factory=dict)
     endpoints: dict[str, str] = Field(default_factory=dict)
-    initiatives: list[Initiative] = Field(default_factory=list)
     # Prose describing the CLASS of thing this operation treats as private,
     # never a list of instances. Prose generalizes to instances the operator
     # never enumerated, and it lives operator-side, which together is the
