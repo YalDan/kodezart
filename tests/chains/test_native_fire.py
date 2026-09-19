@@ -1654,15 +1654,16 @@ async def test_the_finished_roster_carries_the_barrier_that_follows_it():
     [
         (WorkflowStateKind.UNSTARTED, "Todo"),
         (WorkflowStateKind.STARTED, "In Progress"),
-        (WorkflowStateKind.CANCELED, "Canceled"),
+        (WorkflowStateKind.BACKLOG, "Backlog"),
+        (WorkflowStateKind.TRIAGE, "Triage"),
     ],
 )
 async def test_one_criterion_that_is_not_done_refuses_and_is_named(kind, name):
     """A criterion reopened before the entry refuses, and says which one.
 
-    Any state but the held one is an open obligation, so the lane is not
-    deliverable and the refusal names the criterion rather than leaving a
-    reader to diff two rosters.
+    Every OPEN kind is an open obligation, not the two a fire usually moves
+    a criterion between, so the lane is not deliverable and the refusal
+    names the criterion rather than leaving a reader to diff two rosters.
     """
     port, source, spec = await finished_subtree()
     moved(port, NESTED_OWED, kind=kind, name=name)
@@ -1677,6 +1678,60 @@ async def test_one_criterion_that_is_not_done_refuses_and_is_named(kind, name):
     for key in ALL_CRITERIA:
         if key != NESTED_OWED:
             assert key not in caught.value.reason
+
+
+@pytest.mark.parametrize(
+    "kind,name",
+    [
+        (WorkflowStateKind.CANCELED, "Canceled"),
+        (WorkflowStateKind.DUPLICATE, "Duplicate"),
+    ],
+)
+async def test_a_canceled_criterion_is_non_counting_and_the_lane_still_delivers(
+    kind, name
+):
+    """A criterion nobody owes any more neither counts nor refuses (KOD-794).
+
+    The arithmetic that decides a lane owes nothing reads state alone, and a
+    criterion the board Canceled — or closed as a Duplicate of another — is
+    not an obligation it holds anybody to. The roster this reading answers
+    is therefore the finished criteria only, with the abandoned one left
+    out, and the lane delivers on it. A reading that refused instead would
+    hold such a lane refused on every invocation, for a criterion no
+    readiness read counts either.
+    """
+    port, source, spec = await finished_subtree()
+    moved(port, NESTED_OWED, kind=kind, name=name)
+
+    roster = await source.read_finished(spec=spec)
+
+    counting = sorted(key for key in ALL_CRITERIA if key != NESTED_OWED)
+    assert [criterion.id for criterion in roster.criteria] == counting
+    assert {criterion.id: criterion.text for criterion in roster.criteria} == {
+        key: check_of(key) for key in counting
+    }
+    # The barrier that follows the entry compares equal to this roster, so
+    # the lane reaches its delivery rather than refusing at the first one.
+    await require_current_native_snapshot(snapshot_state(spec, roster), reader=source)
+    assert await source.read_current(spec=spec, held=roster) == roster
+
+
+async def test_a_subtree_whose_criteria_were_all_abandoned_has_nothing_to_deliver():
+    """A roster that counts nothing is refused, not delivered as empty.
+
+    Non-counting criteria refuse nothing one at a time, which would leave a
+    subtree of only abandoned criteria reading as a vacuously finished lane.
+    It is refused where a subtree holding no criterion at all is, and for the
+    same reason: there is no obligation for the delivery to discharge.
+    """
+    port, source, spec = await finished_subtree()
+    for key in ALL_CRITERIA:
+        moved(port, key, kind=WorkflowStateKind.CANCELED, name="Canceled")
+
+    with pytest.raises(FireSpecEntryError, match="no criteria to deliver") as caught:
+        await source.read_finished(spec=spec)
+
+    assert caught.value.issue_key == SUBJECT
 
 
 async def test_a_subtree_holding_no_criterion_has_nothing_to_deliver():

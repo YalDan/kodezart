@@ -26,7 +26,7 @@ from kodezart.types.domain.criteria import (
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.lane_entry import DeliverOnlyLane
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind, is_open
 from kodezart.types.domain.workflow import WorkflowState
 
 #: The state a criterion the fire still owes sits in at head.
@@ -217,21 +217,27 @@ class TrackerCriteria:
         return _criterion_set(owed)
 
     async def read_finished(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
-        """The subject's whole subtree of criteria, while every one is finished.
+        """The counting criteria of the subject's subtree, all of them finished.
 
         A lane that owes nothing has no unstarted criterion for the owed
-        reading to answer with, so the roster it stands on is the subtree
-        entire, and the fact that makes it deliverable is that every
-        criterion in it is finished — which is what this lane's own
-        cross-offs recorded.
+        reading to answer with, so the roster it stands on is read off the
+        subtree rather than selected by this lane's own work, and the fact
+        that makes it deliverable is that every criterion that counts is
+        finished — which is what this lane's own cross-offs recorded.
 
-        So this reading takes no selection by state and instead refuses
-        unless the state holds for all of them, naming the ones it does not
-        hold for: a criterion reopened between a lane being chosen and its
-        entry is exactly that refusal, and it lands before any session
-        opens. A subtree carrying no criterion at all is refused for the
-        same reason the readiness read refuses such a member — there is no
-        obligation for a delivery to be the discharge of.
+        Which criteria count is decided by state alone, the three closed
+        kinds apart (KOD-794): a criterion the board Canceled, or closed as
+        a Duplicate of another, is no obligation of anybody's, so it neither
+        joins the roster nor refuses the lane. Every OPEN kind does refuse,
+        naming the criteria it holds for: a criterion reopened between a
+        lane being chosen and its entry is exactly that refusal, and it
+        lands before any session opens.
+
+        A counting roster that comes out empty is refused — a subtree
+        holding no criterion at all, and equally one whose criteria were
+        every one of them abandoned — for the same reason the readiness read
+        refuses such a member: there is no obligation for a delivery to be
+        the discharge of.
         """
         try:
             criteria = await self._read_subtree_criteria(spec)
@@ -240,15 +246,8 @@ class TrackerCriteria:
                 issue_key=spec.subject,
                 reason="current tracker criteria could not be read",
             ) from exc
-        if not criteria:
-            raise FireSpecEntryError(
-                issue_key=spec.subject,
-                reason="the subtree has no criteria to deliver",
-            )
         unfinished = sorted(
-            key
-            for key, issue in criteria.items()
-            if issue.state_kind is not HELD_CRITERION_STATE
+            key for key, issue in criteria.items() if is_open(issue.state_kind)
         )
         if unfinished:
             raise FireSpecEntryError(
@@ -262,12 +261,17 @@ class TrackerCriteria:
                     f"{', '.join(unfinished)}"
                 ),
             )
-        return _criterion_set(
-            {
-                key: criterion_check(criterion=issue, issue_key=spec.subject)
-                for key, issue in sorted(criteria.items())
-            }
-        )
+        roster = {
+            key: criterion_check(criterion=issue, issue_key=spec.subject)
+            for key, issue in sorted(criteria.items())
+            if issue.state_kind is HELD_CRITERION_STATE
+        }
+        if not roster:
+            raise FireSpecEntryError(
+                issue_key=spec.subject,
+                reason="the subtree has no criteria to deliver",
+            )
+        return _criterion_set(roster)
 
 
 async def current_native_criteria(
