@@ -241,9 +241,15 @@ def test_the_ref_read_role_is_exactly_one_method() -> None:
     answer — and the scope path's carrier answers from a lane record, which
     can answer this question and no other. The read role widening is how the
     port creeps back in, so the width is asserted and not merely intended.
+
+    Asserted over the bases too, because a class body is only one of the two
+    ways to widen a Protocol: inheriting a broader one obliges every carrier
+    to answer whatever that one declares, and the names a role's own body
+    binds say nothing about it.
     """
     assert declared_on(_TwoOfItsOwn) == {"work_refs", "read_issue"}
     assert declared_on(WorkRefReader) == {"work_refs"}
+    assert WorkRefReader.__bases__ == (Protocol,)
 
 
 # ---------------------------------------------------------------------------
