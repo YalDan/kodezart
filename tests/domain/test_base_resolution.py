@@ -17,9 +17,11 @@ import sys
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from types import FrameType
+from typing import Protocol, runtime_checkable
 
 import pytest
 
+from kodezart.core.protocols import WorkRefReader
 from kodezart.domain.base_resolution import resolve_base
 from kodezart.domain.errors import (
     BaseIntegrationConflictError,
@@ -205,6 +207,43 @@ async def test_the_port_is_the_ref_reader_when_no_other_is_named() -> None:
 
     with pytest.raises(PortRefReadError, match="B-1"):
         await resolve(tracker, FakeGitService())
+
+
+@runtime_checkable
+class _NothingOfItsOwn(Protocol):
+    """A runtime-checkable Protocol declaring nothing, to subtract.
+
+    Whatever ``vars`` shows on this is what the machinery puts on every
+    Protocol, so the names a role declares are derived rather than listed and
+    a Python release that changes the bookkeeping does not need this file
+    edited.
+    """
+
+
+@runtime_checkable
+class _TwoOfItsOwn(Protocol):
+    """The detector's control: a role with a second method must show both."""
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]: ...
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue: ...
+
+
+def declared_on(role: type) -> set[str]:
+    """The names *role*'s own class body binds, bookkeeping subtracted."""
+    return set(vars(role)) - set(vars(_NothingOfItsOwn))
+
+
+def test_the_ref_read_role_is_exactly_one_method() -> None:
+    """The role is one question, and a role is only narrow while it stays one.
+
+    A second method here is a second thing every carrier of the role must
+    answer — and the scope path's carrier answers from a lane record, which
+    can answer this question and no other. The read role widening is how the
+    port creeps back in, so the width is asserted and not merely intended.
+    """
+    assert declared_on(_TwoOfItsOwn) == {"work_refs", "read_issue"}
+    assert declared_on(WorkRefReader) == {"work_refs"}
 
 
 # ---------------------------------------------------------------------------

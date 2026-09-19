@@ -249,7 +249,7 @@ def test_roles_are_resolved_from_associations_not_names() -> None:
 
 
 @pytest.mark.parametrize(
-    ("extra", "reason"),
+    ("extra", "reason", "named"),
     [
         (
             (
@@ -261,6 +261,7 @@ def test_roles_are_resolved_from_associations_not_names() -> None:
                 ),
             ),
             "deliverable branches, not one",
+            ("another-deliverable", DELIVERABLE),
         ),
         (
             (
@@ -272,18 +273,26 @@ def test_roles_are_resolved_from_associations_not_names() -> None:
                 ),
             ),
             "bases, not one",
+            ("another-base", BASE),
         ),
     ],
     ids=["two-deliverables", "two-bases"],
 )
-def test_associations_that_do_not_resolve_refuse(extra, reason) -> None:
+def test_associations_that_do_not_resolve_refuse(extra, reason, named) -> None:
     """Asked of the record alone, which is what puts it before the remote read.
 
     ``tests/services/test_lane_entry.py`` pins that order over the reader;
     here it is the refusal itself.
+
+    The refusal names the two the record could not settle between, sorted, so
+    a person reading the failure knows what to repair; *named* is written out
+    in that order rather than built from the fixture, so a refusal that
+    answered in association order is visible here.
     """
-    with pytest.raises(LaneEntryError, match=reason):
+    with pytest.raises(LaneEntryError, match=reason) as caught:
         recorded_branches(record=record(extra=extra))
+
+    assert caught.value.branches == named
 
 
 def test_a_loop_association_with_no_derived_from_refuses() -> None:

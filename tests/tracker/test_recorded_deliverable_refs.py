@@ -34,6 +34,10 @@ OPERATION = OperationConfig(
 BLOCKER = "KOD-842"
 LOOP = "kodezart/KOD-842-0a1b2c3d-ralph-11112222"
 DELIVERABLE = "kodezart/KOD-842-0a1b2c3d"
+#: A second deliverable one record names beside the first.  Sorts BEFORE
+#: ``DELIVERABLE``, so the refusal's tuple is asserted in one order and a
+#: reader that answered in association order would be visible.
+ANOTHER_DELIVERABLE = "another-deliverable"
 BASE = "fixture-trunk"
 HEAD = "a" * 40
 #: Deliberately not the head: only what the remote holds can carry another
@@ -48,12 +52,14 @@ def record(
     lane: str = BLOCKER,
     deliverable: str | None = DELIVERABLE,
     pushed: str | None = PUSHED,
+    extra: tuple[BranchAssociation, ...] = (),
 ) -> LaneRunState:
     """One lane's record, as the committing loop leaves it after a push.
 
     *deliverable* of ``None`` is a record whose loop association names no
     deliverable at all — the associations settle nothing, which is a fact of
-    the record alone.
+    the record alone.  *extra* appends associations a later run left beside
+    the first run's pair.
     """
     return LaneRunState(
         lane_key=lane,
@@ -83,6 +89,7 @@ def record(
                 derived_from=deliverable,
                 run_id="first-job",
             ),
+            *extra,
         ],
     )
 
@@ -150,6 +157,43 @@ async def test_a_record_whose_associations_settle_no_deliverable_refuses():
     body = render_lane_record(record=record(deliverable=None), marker_prefixes=PREFIXES)
     with pytest.raises(LaneEntryError):
         await refs(board(body=body)).work_refs(issue_key=BLOCKER)
+
+
+async def test_a_record_naming_two_deliverable_branches_refuses_naming_both():
+    """Two deliverables settle nothing, and the refusal says which two.
+
+    Read through the role, which is the only way base resolution asks: a
+    reader that answered with whichever deliverable came first would resolve
+    a base and look right, and one that refused without naming the two would
+    leave a person with nothing to repair the record from.  The two LOOP
+    associations are a real record's shape — each run records its own pair —
+    so each deliverable carries the DELIVERABLE association naming its base.
+    """
+    body = render_lane_record(
+        record=record(
+            extra=(
+                BranchAssociation(
+                    branch=ANOTHER_DELIVERABLE,
+                    role=BranchRole.DELIVERABLE,
+                    derived_from=BASE,
+                    run_id="second-job",
+                ),
+                BranchAssociation(
+                    branch=LOOP,
+                    role=BranchRole.LOOP,
+                    derived_from=ANOTHER_DELIVERABLE,
+                    run_id="second-job",
+                ),
+            )
+        ),
+        marker_prefixes=PREFIXES,
+    )
+
+    with pytest.raises(LaneEntryError) as caught:
+        await refs(board(body=body)).work_refs(issue_key=BLOCKER)
+
+    assert caught.value.branches == (ANOTHER_DELIVERABLE, DELIVERABLE)
+    assert caught.value.issue_key == BLOCKER
 
 
 async def test_an_unpushed_record_carries_no_sha_for_another_lane_to_stand_on():
