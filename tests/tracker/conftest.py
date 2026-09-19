@@ -53,6 +53,9 @@ class FixtureClock:
     def __call__(self) -> datetime:
         return self.now
 
+    def advance(self, *, seconds: float) -> None:
+        self.now += timedelta(seconds=seconds)
+
 def _frozen_now() -> datetime:
     """The instant every caller that states no clock of its own reads."""
     return FIXTURE_NOW
@@ -388,8 +391,12 @@ class TrackerWorkspace:
 
 
 #: Real adapters — every one must serve the fixture workspace unchanged.
-TRACKER_ADAPTERS: dict[str, Callable[[FakeLinearMcpServer], TrackerPort]] = {
-    "linear-mcp": linear_over_fake_mcp,
+TRACKER_ADAPTERS: dict[str, Callable[[TrackerWorkspace], TrackerPort]] = {
+    "linear-mcp": lambda workspace: linear_over_fake_mcp(
+        workspace.server,
+        scope_labels=workspace.scope_labels,
+        clock=workspace.clock,
+    ),
 }
 
 #: Test doubles that consumers are tested on.  They run the SAME suite, per
