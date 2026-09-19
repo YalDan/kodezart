@@ -4,7 +4,9 @@ import asyncio
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
+import httpx
 import pytest
 import structlog.testing
 from langgraph.checkpoint.memory import InMemorySaver
@@ -2140,3 +2142,182 @@ async def test_a_forge_less_origin_never_selects_a_finished_lane():
     # request, which on a delivering origin is the entry the walk fires.
     assert (await lane_record(port, "A")).pr is None
     assert recorded_branches(record=killed).deliverable_branch
+
+
+# ---------------------------------------------------------------------------
+# KOD-328 — a dependent lane's pull request stands on its blocker's recorded
+# branch, and a base the remote does not hold refuses instead of trunk.
+# ---------------------------------------------------------------------------
+
+
+class RefusingCreate(ScopeForgeWire):
+    """A forge that will not open a pull request for one lane's branch.
+
+    Which one is refused is decided by the head the request names, because a
+    native lane's deliverable branch carries its own issue key. So the lane
+    whose delivery fails is chosen, and every other lane's request — the
+    dependent lane's own create included — is answered as usual.
+    """
+
+    def __init__(self, *, refuses: str, **rest) -> None:
+        super().__init__(**rest)
+        self.refuses = refuses
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path.endswith("/pulls"):
+            head = json.loads(request.content)["head"]
+            if head.startswith(f"kodezart/{self.refuses}-"):
+                self.requests.append(request)
+                return httpx.Response(422, json={"message": "no pull request here"})
+        return super().__call__(request)
+
+
+def bases_of(events):
+    """The base each lane was actually prepared with, off the run's own event."""
+    return {
+        event.lane_key: event.event.base_branch
+        for event in events
+        if isinstance(event, ScopeLaneEvent)
+        and isinstance(event.event, WorkflowScopeBaseEvent)
+    }
+
+
+def pull_numbers_read(wire) -> set[str]:
+    """The pull requests whose own state this wire was asked about."""
+    return {request.url.path.rsplit("/", 1)[-1] for request in wire.pr_reads}
+
+
+async def test_a_dependent_lane_opens_its_pull_request_against_its_blockers_branch():
+    """B's pull request is opened against the branch A's record names.
+
+    A's own delivery is refused by the forge, so A holds no pull request at
+    all when B delivers: nothing about B's base can have come from reading
+    one. What B stands on is the deliverable branch A's record names, which is
+    what B's pull request is then opened against — and the only pull request
+    whose state this run reads is B's own.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    wire = RefusingCreate(refuses="A", head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        harness = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=[
+                *one_check_echoes("A", rounds=4),
+                *one_check_echoes("B", rounds=4),
+            ],
+        )
+        events = [
+            event
+            async for event in drive(harness, job="stacked-job", origin=FORGE_ORIGIN)
+        ]
+
+        record = await lane_record(port, "A")
+        deliverable = recorded_branches(record=record).deliverable_branch
+        # A's turn ended in the forge's own error, and A was offered once: a
+        # failed lane is rested for the rest of the invocation.
+        failures = lane_failures(events)
+        assert [failure.issue_key for failure in failures] == ["A"]
+        assert [failure.error.error_kind for failure in failures] == ["ForgeAPIError"]
+        final = [
+            event.observation for event in events if isinstance(event, ScopeWalkEvent)
+        ][-1]
+        assert final.dispatched == ("A", "B")
+        assert record.pr is None
+        # One pull request exists, B's, and it stands on A's recorded branch —
+        # not on A's loop branch and not on the trunk.
+        assert len(wire.creates) == 1
+        assert wire.creates[-1]["base"] == deliverable
+        assert wire.creates[-1]["head"] == (
+            recorded_branches(record=await lane_record(port, "B")).deliverable_branch
+        )
+        assert deliverable != record.branch
+        assert bases_of(events)["B"] == deliverable
+        assert bases_of(events)["B"] not in TRUNK_BRANCHES
+        # Nothing read a pull request of A's to settle any of that: A has none,
+        # and every state read this run made names B's.
+        assert pull_numbers_read(wire) == {str(ScopeForgeWire.FIRST_NUMBER)}
+        assert wire._numbers[wire.creates[-1]["head"]] == ScopeForgeWire.FIRST_NUMBER
+    finally:
+        await forge.close()
+
+
+async def test_a_blocker_branch_absent_from_the_remote_refuses_without_trunk():
+    """A base that resolved and is not on the remote is a refusal, never trunk.
+
+    A delivers and its record names its deliverable branch; the branch is then
+    gone from the remote, as a branch somebody deleted is. B's base resolution
+    located the premise and cannot find it published, so B refuses. Falling
+    back to the trunk would diff and deliver B against a tree A's work is not
+    in, and look like a lane that simply had no blocker.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        harness = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=[
+                *one_check_echoes("A", rounds=4),
+                *one_check_echoes("B", rounds=4),
+            ],
+        )
+        deleted: list[str] = []
+        events = []
+        async for event in drive(harness, job="stacked-job", origin=FORGE_ORIGIN):
+            events.append(event)
+            if (
+                isinstance(event, ScopeLaneEvent)
+                and isinstance(event.event, LaneDeliveryEvent)
+                and event.lane_key == "A"
+                and not deleted
+            ):
+                # A delivered, so its branch is published and its record names
+                # it. Now the remote holds it no longer: what the repository
+                # committed locally is untouched, which is what a branch
+                # somebody deleted on the remote leaves behind.
+                branch = recorded_branches(
+                    record=await lane_record(port, "A")
+                ).deliverable_branch
+                repos.branches[branch].pushed = None
+                deleted.append(branch)
+
+        assert deleted
+        assert (await lane_record(port, "A")).pr is not None
+        failures = lane_failures(events)
+        assert [failure.issue_key for failure in failures] == ["B"]
+        assert [failure.error.error_kind for failure in failures] == [
+            "BaseResolutionError"
+        ]
+        assert "absent from the remote" in failures[0].error.error
+        # The branch is on the refusal itself. The walk's report carries a
+        # typed error's message and not its fields, so the error is asked for
+        # again here, from the resolver this walk holds and over the board and
+        # remote it left: the premise it names is A's own recorded branch.
+        with pytest.raises(BaseResolutionError) as caught:
+            await harness.engine._scoped_arm._resolver.resolve(
+                issue_key="B",
+                repo_path="/tmp/walk",
+                integration_workspace="/tmp/walk-integration",
+                trunk="main",
+                now=datetime.now(tz=UTC),
+            )
+        assert caught.value.branches == (deleted[0],)
+        # B never reached a base at all, so nothing named the trunk for it,
+        # and A's is the only pull request this run opened.
+        assert "B" not in bases_of(events)
+        assert [create["head"] for create in wire.creates] == [deleted[0]]
+    finally:
+        await forge.close()
