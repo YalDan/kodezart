@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from kodezart.chains.criteria import (
     TrackerCriteria,
     require_current_native_snapshot,
+    revalidate_criteria,
 )
 from kodezart.chains.fire_consolidation import FireConsolidation
 from kodezart.chains.fire_implementation import FireImplementation
@@ -1817,3 +1818,61 @@ def test_the_step_before_the_loop_routes_a_delivering_lane_past_it(
     edges = {(edge.source, edge.target) for edge in fire.native_graph.get_graph().edges}
     assert ("revalidate_criteria", "merge_to_feature") in edges
     assert ("revalidate_criteria", "run_ralph_loop") in edges
+
+
+class CountingSource:
+    """The criteria source, answering as usual and recording which reading ran.
+
+    Which of the two readings this step takes is the whole subject of the
+    test below, and both answer a roster the state cannot tell apart, so the
+    fact is unobservable on the result alone.
+    """
+
+    def __init__(self, source: TrackerCriteria) -> None:
+        self._source = source
+        #: Every reading made, by name, with the roster it was held to.
+        self.calls: list[tuple[str, TrackerCriterionSet | None]] = []
+
+    async def read_spec(self, *, issue_key: str):
+        self.calls.append(("read_spec", None))
+        return await self._source.read_spec(issue_key=issue_key)
+
+    async def read_current(self, *, spec, held=None):
+        self.calls.append(("read_current", held))
+        return await self._source.read_current(spec=spec, held=held)
+
+    async def read_finished(self, *, spec):
+        self.calls.append(("read_finished", None))
+        return await self._source.read_finished(spec=spec)
+
+
+@pytest.mark.parametrize("round_two", [False, True])
+async def test_a_delivering_lane_reads_its_finished_roster_once_and_then_holds_it(
+    round_two,
+):
+    """The finished reading is the entry's, and a later pass revalidates it.
+
+    A lane entered to deliver owes nothing, so its first pass reads the
+    roster its subtree finished. A remediation round the review sent back
+    re-enters the same step carrying that roster, and revalidating it is the
+    owed reading held to it — the barrier every other pass makes. Reading the
+    finished roster again there would take the entry's reading twice and
+    answer a question about the subtree instead of about this run.
+    """
+    port, source, spec = await finished_subtree()
+    roster = await source.read_finished(spec=spec)
+    counting = CountingSource(source)
+    state = {
+        "issue_key": SUBJECT,
+        "fire_spec": spec,
+        "lane_entry": entry_of("deliver_only"),
+        "criterion_set": roster if round_two else None,
+    }
+
+    result = await revalidate_criteria(state, {}, source=counting)
+
+    expected = ("read_current", roster) if round_two else ("read_finished", None)
+    assert counting.calls == [expected]
+    assert result["criterion_set"] == roster
+    assert result["fire_spec"] is spec
+    assert port.issues[DIRECT_DONE].state_kind is WorkflowStateKind.COMPLETED

@@ -24,6 +24,7 @@ from kodezart.domain.errors import (
     BaseResolutionError,
     ForgeAPIError,
     GitSourceReadError,
+    LaneRecordWriteError,
     ScopePlanRefusalError,
 )
 from kodezart.domain.fire_spec import criterion_field_bodies
@@ -33,6 +34,7 @@ from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services import scope_runtime
 from kodezart.services.agent_service import AgentService
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import (
     ResultEvent,
     SystemEvent,
@@ -1942,6 +1944,27 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
 # ---------------------------------------------------------------------------
 
 
+#: The seconds a walk of this section is allowed before the test fails.
+#:
+#: A lane the walk selects and neither dispatches nor rests is offered again
+#: on the next tick, forever: the regression answers nothing rather than
+#: answering wrongly, and an unbounded test would hang a whole run instead of
+#: failing one case. The bound is orders above what these walks take and far
+#: under anything a reader would wait out.
+WALK_BOUND_SECONDS = 60
+
+
+async def bounded_walk(harness, **rest):
+    """Every event of one walk, or a failure where the walk does not end."""
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        return [event async for event in drive(harness, **rest)]
+
+
+def ticks_of(events):
+    """One entry per tick the walk observed, which is one per selection read."""
+    return [event.observation for event in events if isinstance(event, ScopeWalkEvent)]
+
+
 async def stopped_at_consolidation(port, repos, *, origin, forge=None):
     """Run one of lane A, ended the instant its loop branch was consolidated.
 
@@ -2002,10 +2025,7 @@ async def test_a_finished_lane_without_a_pull_request_is_delivered_without_a_loo
             trunk="main",
             evaluations=one_check_echoes("A", rounds=4),
         )
-        events = [
-            event
-            async for event in drive(second, job="second-job", origin=FORGE_ORIGIN)
-        ]
+        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
 
         assert lane_failures(events) == ()
         # No iteration, and no session an iteration would have opened: the
@@ -2021,6 +2041,10 @@ async def test_a_finished_lane_without_a_pull_request_is_delivered_without_a_loo
         # loop branch the record stands on.
         assert [create["head"] for create in wire.creates] == [deliverable]
         assert killed.branch != deliverable
+        # And its checks were watched, at that same head and once: what the
+        # record carries is a delivery whose checks were observed, not a pull
+        # request somebody opened.
+        assert wire.watches == [f"/repos/owner/repo/commits/{deliverable}/check-runs"]
         delivered = await lane_record(port, "A")
         assert delivered.pr is not None
         assert delivered.pr.number == ScopeForgeWire.FIRST_NUMBER
@@ -2040,14 +2064,14 @@ async def test_a_finished_lane_without_a_pull_request_is_delivered_without_a_loo
             evaluations=one_check_echoes("A", rounds=4),
         )
         with structlog.testing.capture_logs() as logs:
-            after = [
-                event
-                async for event in drive(third, job="third-job", origin=FORGE_ORIGIN)
-            ]
+            after = await bounded_walk(third, job="third-job", origin=FORGE_ORIGIN)
 
-        settled = [
-            event.observation for event in after if isinstance(event, ScopeWalkEvent)
-        ]
+        settled = ticks_of(after)
+        # Two ticks and no more: the one that selects the lane and rests it,
+        # and the one that finds nothing left to offer. A lane the walk failed
+        # to rest would be selected again on every tick, so the count is what
+        # tells a rested lane from a walk spinning on it.
+        assert len(settled) == 2
         assert settled[-1].dispatched == ()
         assert lane_failures(after) == ()
         assert third.executor.execution_prompts == []
@@ -2151,6 +2175,170 @@ async def test_a_forge_less_origin_never_selects_a_finished_lane():
     # request, which on a delivering origin is the entry the walk fires.
     assert (await lane_record(port, "A")).pr is None
     assert recorded_branches(record=killed).deliverable_branch
+
+
+def open_listings(wire, *, after: int) -> list[httpx.Request]:
+    """Every unfiltered open-pull-request listing this wire answered since *after*.
+
+    That listing is the one question an origin is asked about lanes in
+    general — which of them a delivery is already open for — and asking it
+    about a lane selected for its delivery alone is exactly what a finished
+    candidate must not go through. A listing filtered by head is a different
+    question, asked by the delivery about its own branch.
+    """
+    return [
+        request
+        for request in wire.requests[after:]
+        if request.method == "GET"
+        and request.url.path.endswith("/pulls")
+        and request.url.params.get("state") == "open"
+        and "head" not in request.url.params
+    ]
+
+
+async def test_a_pull_request_opened_but_not_recorded_is_reused_and_recorded(
+    monkeypatch,
+):
+    """The lane whose process died between the create and the record write.
+
+    Run one really delivers A: the pull request is opened on the forge and the
+    write that would put it on A's record is lost. What that leaves is a lane
+    whose criteria are all Done and whose record carries no pull request —
+    indistinguishable, on the board, from a lane that never delivered at all.
+
+    So run two selects it for its delivery alone again, and neither delivery
+    probe is asked about it: what that probe excludes is a lane a pull request
+    is already open for, which is this lane exactly. The delivery finds its
+    own open pull request by the head it stands on, reuses it rather than
+    opening a second one, and the record finally carries it.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A",))
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    record_pull_request = TrackerLaneStateWriter.record_pull_request
+    lost: list[str] = []
+
+    async def losing(self, *, lane_key, pr, visibility):
+        """The first record write of the run, lost after the create it follows."""
+        if not lost:
+            lost.append(lane_key)
+            raise LaneRecordWriteError(
+                lane_key=lane_key, reason="the record write did not reach the board"
+            )
+        return await record_pull_request(
+            self, lane_key=lane_key, pr=pr, visibility=visibility
+        )
+
+    try:
+        first = resumable(
+            port=port,
+            repos=repos,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("A", rounds=4),
+        )
+        monkeypatch.setattr(TrackerLaneStateWriter, "record_pull_request", losing)
+        opened = await bounded_walk(first, job="first-job", origin=FORGE_ORIGIN)
+
+        assert lost == ["A"]
+        killed = await lane_record(port, "A")
+        deliverable = recorded_branches(record=killed).deliverable_branch
+        # The premise, asserted rather than assumed: the pull request IS open
+        # on the forge, the lane's turn failed, and its record says nothing
+        # about the pull request.
+        assert [create["head"] for create in wire.creates] == [deliverable]
+        assert [failure.issue_key for failure in lane_failures(opened)] == ["A"]
+        assert killed.pr is None
+        assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+
+        answered = len(wire.requests)
+        second = resumable(
+            port=port,
+            repos=repos,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("A", rounds=4),
+        )
+        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+
+        assert lane_failures(events) == ()
+        assert ticks_of(events)[-1].dispatched == ("A",)
+        # Delivery only, again: no session opened for a lane that owes nothing.
+        assert second.executor.execution_prompts == []
+        # Reused, not re-opened: one create in both runs together.
+        assert len(wire.creates) == 1
+        recorded = await lane_record(port, "A")
+        assert recorded.pr is not None
+        assert recorded.pr.number == ScopeForgeWire.FIRST_NUMBER
+        # And the lane was never put through the probe that would have
+        # excluded it for the very pull request it exists to finish.
+        assert open_listings(wire, after=answered) == []
+    finally:
+        await forge.close()
+
+
+async def test_a_criterion_reopened_on_readmission_turns_the_lane_into_a_ready_one(
+    monkeypatch,
+):
+    """The criterion reopened between the selection read and the readmission.
+
+    A lane selected for its delivery alone is readmitted by the question its
+    selection asked — is this issue still reported finished — and here the
+    answer changes under it: the criterion is put back the way an amendment
+    puts one back. The turn ends there, unfired, and the lane is not rested:
+    it owes work now, so the next tick offers it as a ready lane and it runs
+    the loop, delivers, and records its pull request. Readmitting it anyway
+    would carry an entry that owes nothing into a graph whose own reading of
+    the roster refuses, and the lane would be reported failed instead.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A",))
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        await stopped_at_consolidation(port, repos, origin=FORGE_ORIGIN, forge=forge)
+
+        second = resumable(
+            port=port,
+            repos=repos,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("A", rounds=6),
+        )
+        ready_read = scope_runtime.read_scope_ready
+        reads = []
+
+        async def reopening(**rest):
+            """Reopen the criterion the instant the selection read has answered."""
+            answered = await ready_read(**rest)
+            reads.append(answered)
+            if len(reads) == 1:
+                owed_again(port)
+            return answered
+
+        monkeypatch.setattr(scope_runtime, "read_scope_ready", reopening)
+        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+
+        # The window is the one the test claims: the lane was selected as a
+        # finished one and the very next read no longer reports it so.
+        assert [issue.issue_key for issue in reads[0].closed] == ["A"]
+        assert reads[1].closed == ()
+        assert [row.issue.issue_key for row in reads[1].ready] == ["A"]
+        # Fired as a ready lane, once, on the tick after the one that dropped
+        # it: one implementation session, no failure, one pull request.
+        assert lane_failures(events) == ()
+        assert ticks_of(events)[-1].dispatched == ("A",)
+        assert len(second.executor.execution_prompts) == 1
+        assert len(wire.creates) == 1
+        delivered = await lane_record(port, "A")
+        assert delivered.pr is not None
+        assert delivered.pr.number == ScopeForgeWire.FIRST_NUMBER
+    finally:
+        await forge.close()
 
 
 # ---------------------------------------------------------------------------

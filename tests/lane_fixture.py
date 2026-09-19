@@ -332,6 +332,12 @@ class ScopeForgeWire:
     a scope opens one per lane, so the request a read is about is decided by
     the head branch it names rather than by there being only one.
 
+    A pull request keeps the title and body the request that opened it wrote,
+    and serves them wherever it is served: unfiltered, filtered by head, and
+    read by number. The reference a lane's delivery is identified by lives in
+    that body, so a wire that answered without it would let a probe read as
+    honest while it could never recognise any lane's pull request.
+
     *head_sha_of* answers what the remote holds for a branch. A delivery
     compares the pull request's head with the tip its own consolidation
     published, so over repositories that actually commit a fixed sha makes
@@ -349,6 +355,13 @@ class ScopeForgeWire:
     #: The sha a delivered head stands at where no repository answers for it.
     HEAD_SHA = "a" * 40
     FIRST_NUMBER = 17
+    #: What a pull request carries where the request that opened it named none.
+    #:
+    #: Production always names both, so this stands in for nothing a test
+    #: drives; it keeps a hand-posted request from reading as a pull request
+    #: whose title and body were deliberately empty.
+    UNSTATED_TITLE = "Lane pull request"
+    UNSTATED_BODY = ""
 
     def __init__(
         self, *, head_sha_of: Callable[[str], str | None] | None = None
@@ -382,6 +395,11 @@ class ScopeForgeWire:
             "number": number,
             "html_url": pull["html_url"],
             "title": pull["title"],
+            # Served wherever a pull request is served, because the reference
+            # an origin identifies a lane's pull request by is written in the
+            # body: a listing that dropped it could answer no honest question
+            # about whose delivery is already open.
+            "body": pull["body"],
             "state": "open",
             "merged": False,
             "head": {
@@ -402,7 +420,8 @@ class ScopeForgeWire:
             self._pulls[number] = {
                 "head": body["head"],
                 "base": body["base"],
-                "title": body.get("title", "Lane pull request"),
+                "title": body.get("title", self.UNSTATED_TITLE),
+                "body": body.get("body", self.UNSTATED_BODY),
                 "html_url": f"https://github.com/owner/repo/pull/{number}",
             }
             self._numbers[body["head"]] = number
