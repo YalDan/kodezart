@@ -4236,6 +4236,21 @@ class FakeTrackerPort:
         self._wrote(issue_key)
         self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
         return updated
+
+    async def set_queue_state(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.queue_states == frozenset({state}):
+            return issue
+        self.queue_writes.append((issue_key, state))
+        updated = issue.model_copy(update={"queue_states": frozenset({state})})
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
     async def set_issue_classification(
         self, *, issue_key: str, classification: str, holder: str | None = None
     ) -> TrackerIssue:
