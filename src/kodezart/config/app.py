@@ -467,25 +467,6 @@ class AppConfig(BaseSettings):
         description="Base URL for code hosting platform REST API.",
     )
     tracker: TrackerSettings = Field(default_factory=TrackerSettings)
-    tracker_mcp_server_name: str = Field(
-        default="linear",
-        description=(
-            "Identity of the vendor MCP server the tracker adapter dials. Two "
-            "consumers: the transport factory building the programmatic client "
-            "on the deterministic path, which stamps this name on every "
-            "transport log line and error, and the tracker-side record sink "
-            "(KOD-170), whose verification refusals carry the same name."
-        ),
-    )
-    tracker_token: SecretStr | None = Field(
-        default=None,
-        exclude=True,
-        description=(
-            "Tracker credential for the MCP server. Environment only, "
-            "excluded from serialization, and masked in repr: a dumped "
-            "config is copied into logs, fixtures and error payloads."
-        ),
-    )
     tracker_mcp_sse_read_timeout_seconds: float = Field(
         default=300.0,
         ge=30.0,
@@ -730,11 +711,6 @@ class AppConfig(BaseSettings):
     )
 
 
-    knowledge_mcp_server_name: str = Field(
-        default="notion",
-        min_length=1,
-        description="Identity the knowledge MCP server carries in a granted session.",
-    )
     knowledge_mcp_server_url: str | None = Field(
         default=None,
         min_length=1,
@@ -743,91 +719,6 @@ class AppConfig(BaseSettings):
             "under the http transport. Unset means no knowledge server "
             "endpoint is configured; a granted http session then aborts "
             "boot naming the absence."
-        ),
-    )
-    knowledge_mcp_auth_header: str = Field(
-        default="Authorization",
-        min_length=1,
-        description="Request header the knowledge credential is presented in.",
-    )
-    knowledge_mcp_auth_scheme: str | None = Field(
-        default="Bearer",
-        min_length=1,
-        description=(
-            "Scheme prefixing the knowledge credential in its auth header. "
-            "The literal value null means no scheme: the credential rides "
-            "raw in its header."
-        ),
-    )
-    knowledge_mcp_transport: KnowledgeTransport = Field(
-        default=KnowledgeTransport.HTTP,
-        description=(
-            "How a granted session reaches the knowledge MCP server: http "
-            "dials the configured endpoint with headers, stdio spawns the "
-            "configured command. The route is stated, never inferred from "
-            "which optional fields happen to be set."
-        ),
-    )
-    knowledge_mcp_gateway_token: SecretStr | None = Field(
-        default=None,
-        exclude=True,
-        description=(
-            "Gateway credential a client presents to a SELF-HOSTED knowledge "
-            "server, as a bearer in the Authorization header. Distinct from "
-            "the upstream credential the server uses against the vendor API. "
-            "Environment only, and excluded from serialization."
-        ),
-    )
-    knowledge_mcp_command: str | None = Field(
-        default=None,
-        description=(
-            "Absolute path of the self-hosted knowledge server binary a "
-            "granted session spawns under the stdio transport. Package "
-            "runners are refused by name: they resolve or fetch their "
-            "payload at spawn time, in a working directory a cloned "
-            "repository controls."
-        ),
-    )
-    knowledge_mcp_args: list[str] = Field(
-        default_factory=list,
-        description="Arguments the stdio knowledge server is spawned with.",
-    )
-    knowledge_mcp_env: dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "Non-secret environment entries for the stdio knowledge server. "
-            "The credential never rides here — it is delivered separately, "
-            "under the entry KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV names."
-        ),
-    )
-    knowledge_mcp_credential_env: str | None = Field(
-        default=None,
-        min_length=1,
-        description=(
-            "Name of the environment entry the stdio knowledge server reads "
-            "its credential from. The value comes from "
-            "KODEZART_KNOWLEDGE_MCP_TOKEN; this names only where it lands."
-        ),
-    )
-    knowledge_mcp_timeout_seconds: float = Field(
-        default=30.0,
-        ge=5.0,
-        le=120.0,
-        description=(
-            "Timeout the knowledge MCP transport gives one HTTP exchange "
-            "with the server on the programmatic record path."
-        ),
-    )
-    knowledge_mcp_call_timeout_seconds: float = Field(
-        default=60.0,
-        ge=1.0,
-        le=120.0,
-        description=(
-            "Seconds one knowledge MCP tool call may wait for its answer "
-            "before it is abandoned as the typed transport failure. The "
-            "same bound the tracker transport carries, on the same "
-            "transport class: a record write on a torn-down session hangs "
-            "the pass holding it exactly as a tracker scan does."
         ),
     )
     knowledge_mcp_sse_read_timeout_seconds: float = Field(
@@ -839,26 +730,6 @@ class AppConfig(BaseSettings):
             "before its read is abandoned, when the record path is reached "
             "over HTTP. The same bound the tracker transport carries, on "
             "the same transport class."
-        ),
-    )
-    knowledge_mcp_error_detail_limit: int = Field(
-        default=500,
-        ge=80,
-        le=8000,
-        description=(
-            "Characters of the server's OWN error text carried into a "
-            "knowledge MCP transport failure on the programmatic record "
-            "path."
-        ),
-    )
-    knowledge_mcp_stderr_tail_limit: int = Field(
-        default=2000,
-        ge=200,
-        le=20000,
-        description=(
-            "Bytes of the spawned knowledge MCP server's OWN stderr carried "
-            "into the process log when its session fails or ends. The TAIL, "
-            "because a server that dies says why in its last lines."
         ),
     )
     checkpoint_url: str | None = Field(

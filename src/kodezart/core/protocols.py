@@ -115,6 +115,20 @@ class LogEmitter(Protocol):
 
     async def aexception(self, event: str, **kwargs: object) -> None: ...
 
+@runtime_checkable
+class GitSourceReader(Protocol):
+    """Read pinned Git objects without checking out or running repository code."""
+
+    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+        """Resolve a commit-ish once to its complete immutable object identity."""
+        ...
+
+    async def read_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob:
+        """Read exact regular-file bytes; missing/unsupported objects refuse."""
+        ...
+
 
 @runtime_checkable
 class GitService(Protocol):
@@ -666,6 +680,28 @@ class ManagedMcpToolCaller(McpToolCaller, Protocol):
 
     async def close(self) -> None:
         """Close the session. Closing a closed caller is a no-op."""
+        ...
+
+@runtime_checkable
+class TrackerCommentReader(Protocol):
+    """Read complete native comments without granting a writer."""
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        """Every comment on the issue, oldest first."""
+        ...
+
+@runtime_checkable
+class TrackerCriteriaReader(Protocol):
+    """Read current native criterion families with their full source."""
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        """Read exactly the currently labelled direct criterion sub-issues.
+
+        Their own issue keys carry identity; full bodies and workflow states
+        carry specification and evidence. A successful empty read returns
+        an empty sequence. A failed or incomplete lookup raises; it never
+        becomes an empty answer. No parent-body syntax supplies membership.
+        """
         ...
 
 
@@ -1371,6 +1407,105 @@ class TrackerPort(
         """
         ...
 
+AfterPublish = Callable[[str, PersistResult], Awaitable[None]]
+
+@runtime_checkable
+class LaneStateTracker(TrackerCommentReader, Protocol):
+    """Exactly the tracker calls the lane state writer makes.
+
+    A role narrowed out of the port rather than a widening of it: the
+    writer states what it needs, and ``TrackerPort`` satisfies this
+    structurally without declaring one more member.
+    """
+
+    async def upsert_comment(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
+    ) -> TrackerComment: ...
+
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent: ...
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue: ...
+
+    async def edit_description(
+        self, *, target: str, expected: str, replacement: str
+    ) -> DescriptionEditResult: ...
+
+    async def set_workflow_state(
+        self, *, issue_key: str, stage: LifecycleStage
+    ) -> TrackerIssue: ...
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str | None = None
+    ) -> TrackerIssue: ...
+
+@runtime_checkable
+class LaneStateWriter(Protocol):
+    """The lane's own tracker writes; the committing loop needs nothing else."""
+
+    def require_writable(self, *, lane: LaneBinding) -> None:
+        """Refuse now whatever would refuse at the write, and read nothing.
+
+        Everything this answers is knowable from the binding and the
+        configuration: the two marker identities the lane writes under and
+        the address its branch is recorded at.  A caller asks before it
+        opens a session, so a lane that could not record its commit is
+        refused before there is a commit to record.
+        """
+        ...
+
+    async def record_commit(
+        self, *, lane: LaneBinding, workspace_path: str, receipt: PersistResult
+    ) -> LaneRunState:
+        """Record the commit *receipt* just pushed, as the lane's one record.
+
+        The record is the whole answer to "where is this lane now", so it
+        is rewritten in place under its own marker and never appended to.
+        """
+        ...
+
+    async def record_pull_request(
+        self, *, lane_key: str, pr: LanePR, visibility: RepoVisibility
+    ) -> LaneRunState:
+        """Set *pr* on the lane's one record, editing that record in place.
+
+        Where a lane's delivery is retained is its record, so the step that
+        delivered writes it there. A lane with no record refuses: a delivery
+        is no basis for composing a first record. A pull request the record
+        already carries writes nothing.
+
+        *visibility* is the run's resolved visibility, the same one the
+        commit write gated that record body under: one record body asked one
+        question, so a body admitted when a commit recorded it is not refused
+        when a delivery edits it.
+        """
+        ...
+
+    async def write_cross_offs(
+        self,
+        *,
+        lane: LaneBinding,
+        dispatched: Sequence[TrackerCriterion],
+        cross_offs: Sequence[CriterionCrossOff],
+    ) -> None:
+        """Write the whole attempt's verdict onto the criterion sub-issues.
+
+        *cross_offs* answers *dispatched* one for one, in order: a verdict
+        is a reading of the roster it was graded against, and a partial
+        one is no reading of it. A criterion this attempt passed gets its
+        graded sha on its Evidence row and is then moved to
+        ``LifecycleStage.DONE``, in that order;
+        nothing else is written anywhere, least of all a parent's state.
+        """
+        ...
+
 
 @runtime_checkable
 class ArtifactPersister(Protocol):
@@ -1513,6 +1648,41 @@ class NativeWriteGuard(Protocol):
         """Restore the same original authority and recheck its actual sources."""
         ...
 
+    async def judge(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        output: NativeWriterOutput,
+    ) -> AmendmentReport:
+        """Independently reconcile actual writer claims before persistence."""
+        ...
+    async def require_current(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        """Refuse changed HEAD, Checks or rulings after an awaited boundary."""
+        ...
+    async def require_publishable(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        authorized_commit_sha: str,
+    ) -> None:
+        """Recheck current authority against the harness's actual commit receipt."""
+        ...
+    async def require_unchanged_head(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        """Check local evidence before failed writer cleanup, without tracker I/O."""
+        ...
+
 
 @runtime_checkable
 class GitAuth(Protocol):
@@ -1524,6 +1694,25 @@ class GitAuth(Protocol):
 
     def subprocess_env(self) -> dict[str, str]:
         """Return env vars for git subprocess (e.g. GIT_ASKPASS). Empty if none."""
+        ...
+
+@runtime_checkable
+class FireCriteriaReader(Protocol):
+    """Read current native obligations against the run's frozen subject spec.
+
+    This is a runtime dependency. Checkpoints carry the spec and criterion
+    data only; transport failures refuse instead of returning cached Checks.
+    """
+
+    async def read_current(
+        self, *, spec: TrackerSpec, held: TrackerCriterionSet | None = None
+    ) -> TrackerCriterionSet:
+        """Return one complete current Check snapshot or a typed refusal.
+
+        *held* is the roster the caller entered with. A criterion of that
+        roster the caller has since finished stays in the snapshot; one
+        finished before the caller entered is in no roster and stays out.
+        """
         ...
 
 @runtime_checkable

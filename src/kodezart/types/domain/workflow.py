@@ -152,6 +152,7 @@ class RalphLoopContext(ExecutionContext):
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
+    resumed_head_sha: str | None = None
     acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
     repo_visibility: RepoVisibility
 
@@ -225,6 +226,7 @@ class WorkflowState(TypedDict):
     ``base_spec`` on the execution context.
     """
 
+    lane_entry: LaneEntry | None
     feature_branch: str
     ralph_branch: str
     work_base_ref: str

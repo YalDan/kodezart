@@ -540,7 +540,7 @@ class RunRecordWriteError(Exception):
     whose system holds it, and which of the three failure classes it was.
     The measured boot logged a bare error string per failed write, so a
     dead knowledge session and a refused page read identically and neither
-    named the log that went unwritten (KOD-177).
+    named the log that went unwritten.
 
     The fields are plain strings — the enum VALUES their producers carry —
     because this module is under the domain vocabulary rather than over

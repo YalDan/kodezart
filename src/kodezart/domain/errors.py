@@ -39,6 +39,15 @@ class CheckObservationError(Exception):
         self.reason = reason
         super().__init__(f"Cannot read watched checks for {repo_url}@{ref}: {reason}")
 
+class RunShapeReadError(Exception):
+    """Recorded observations cannot establish a run-shape predicate."""
+
+    def __init__(self, *, signal: str, source_ref: str, reason: str) -> None:
+        self.signal = signal
+        self.source_ref = source_ref
+        self.reason = reason
+        super().__init__(f"{signal} cannot read {source_ref!r}: {reason}")
+
 class SurfaceLeaseError(Exception):
     """A surface acquisition or write lacks the required live lease.
 
@@ -163,6 +172,20 @@ class StaleCommentWriteError(Exception):
             f"cannot be amended: {reason}"
         )
 
+class RulingRecordReadError(Exception):
+    """The addressed issue's ruling records are unreadable or ambiguous."""
+
+    def __init__(self, *, issue_key: str, lane_key: str | None, reason: str) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.reason = reason
+        region = (
+            "across its recorded lanes" if lane_key is None else f"for {lane_key!r}"
+        )
+        super().__init__(
+            f"rulings on {issue_key!r} {region} could not be read: {reason}"
+        )
+
 class LaneEntryError(Exception):
     """A lane cannot be entered from the facts it presents, and nothing is minted.
 
@@ -181,6 +204,21 @@ class LaneEntryError(Exception):
         self.branches: tuple[str, ...] = tuple(branches)
         named = f" ({', '.join(self.branches)})" if self.branches else ""
         super().__init__(f"lane {issue_key!r} cannot be entered: {reason}{named}")
+
+class LaneRecordWriteError(Exception):
+    """One of the lane's own tracker writes cannot be made as asked.
+
+    Raised before the write whenever the facts it would state are not the
+    facts the observation holds: a record is never composed from an unread
+    prior or from a head the receipt did not name, and a verdict that
+    answers some other roster than the one it was dispatched against
+    reaches no criterion sub-issue at all.
+    """
+
+    def __init__(self, *, lane_key: str, reason: str) -> None:
+        self.lane_key = lane_key
+        self.reason = reason
+        super().__init__(f"lane record for {lane_key!r} could not be written: {reason}")
 
 class EscalationReadError(Exception):
     """Resolution cannot be established from a readable, unique escalation."""
@@ -235,6 +273,9 @@ class SubjectAmendedError(FireSpecEntryError):
 
 class EmptyFireCriteriaError(Exception):
     """A successful tracker spec read found no criterion sub-issues."""
+
+class InvalidFireCriterionError(Exception):
+    """A criterion cannot supply its required specification at fire entry."""
 
 class DuplicateIssueIdentityError(Exception):
     """Several issues claim one scope-and-deliverable identity."""
@@ -589,6 +630,10 @@ class UnionUnstableError(Exception):
 
 class AuditClaimReadError(ValueError):
     """The claim's source or remote head cannot support this observation."""
+
+
+class WriteBackReadError(ValueError):
+    """An addressed artifact cannot be re-read completely for verification."""
 
 class PRStateReadError(ValueError):
     """A native PR observation cannot establish the requested identity."""
