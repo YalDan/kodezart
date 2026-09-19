@@ -251,7 +251,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `delivered` |
 | `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
-| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed lane keys, unresolved criterion keys, unapproved lane keys and exclusions |
+| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed/rested lane keys, unresolved criterion keys, unapproved lane keys and exclusions |
 | `scope_lane`                   | `laneKey`, `event`: the complete typed inner event, including its discriminator |
 
 An addressed scope request uses one queue job. Each fresh walk reports current
@@ -264,7 +264,13 @@ When this controller invocation finishes, the job is `terminal` with a null
 outcome; this does not certify scope convergence. Unapproved and skipped lanes
 and unresolved criterion keys remain explicit in `scope_walk.observation`.
 
-This request route executes eligible lanes serially once per invocation. Scheduled
+This request route executes eligible lanes serially, and a lane is fired again in
+the same invocation while its last fire closed a previously open criterion of its
+subtree: one fire's iteration budget is smaller than some lanes are, so a lane
+larger than that budget converges across fires rather than waiting for the next
+invocation. A fire that closed none of them rests the lane, and rested lanes are
+reported in `scope_walk.observation`; `dispatched` carries one entry per fire, so
+a lane named twice there was fired twice. Scheduled
 configured-scope lookup, concurrent lane marks, cross-job branch recovery and a
 scope terminal verdict are separate requirements. A lane re-enters from its own
 tracker record and the remote head of the branch that record names; no graph

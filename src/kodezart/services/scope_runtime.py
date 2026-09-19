@@ -1,4 +1,4 @@
-"""Run a live scope inside its existing queue job, one fresh lane per tick."""
+"""Run a live scope inside its existing queue job, one freshly read lane per tick."""
 
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
@@ -20,6 +20,7 @@ from kodezart.domain.errors import (
     ScopedExecutionUnavailableError,
     ScopeReadError,
 )
+from kodezart.domain.fire_plateau import fire_plateaued, observe_tick
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
@@ -48,6 +49,16 @@ from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 _NATIVE_STATE = TypeAdapter(NativeDeliveryState)
 _NATIVE_PROGRESS: TypeAdapter[ScopeLaneProgress] = TypeAdapter(ScopeLaneProgress)
 
+#: How many of a lane's consecutive fires may close none of the criteria the
+#: lane owed before the walk stops firing it in this invocation.
+#:
+#: One, and a constant rather than a setting: a fire that closed nothing of
+#: what its lane owed has said everything the next identical fire would say,
+#: and the walk has other lanes to spend the invocation on (KOD-468). The
+#: quantity the bound counts is a set difference over criterion identities, so
+#: a fire that closed one while surfacing three still cleared it.
+PLATEAU_BOUND = 1
+
 
 @dataclass(frozen=True, slots=True)
 class _LaneTurn:
@@ -67,6 +78,19 @@ class _LaneTurn:
     def finished(self) -> bool:
         """Whether this lane was selected for its delivery alone."""
         return self.ready_row is None
+
+
+@dataclass(frozen=True, slots=True)
+class _LastFire:
+    """The lane the previous tick fired, and what its subtree owed then.
+
+    The identities and not their number: the next tick asks which of them the
+    fire closed, and a count could not tell a tick that closed one criterion
+    while surfacing two from a tick that moved nothing at all.
+    """
+
+    issue_key: str
+    open_criteria: frozenset[str]
 
 
 class ScopeWorkflowEngine:
@@ -207,6 +231,89 @@ class ScopeWorkflowEngine:
             return None
         return _ready_turn(current)
 
+    def _select(
+        self, *, ready: ScopeReadySet, delivers: bool, rested: Sequence[str]
+    ) -> _LaneTurn | None:
+        """The lane this tick offers, or ``None`` when nothing is left to offer.
+
+        A lane that owes nothing goes first. Its delivery is what a lane
+        blocked on it waits for, so publishing the blocker's branch in this
+        same invocation is what lets the dependent lane stand on it instead of
+        waiting for the next one. Only where the origin's lane can deliver: see
+        the class docstring.
+
+        The only lanes passed over are the resting ones. A lane already fired
+        in this invocation is offered again, because a fire's budget is smaller
+        than some lanes are: what stops a lane is the plateau reading, which
+        rests it, and not the bare fact that it has run (KOD-724).
+
+        Nothing here reads a fire's outcome, its verdict or its delivery phase.
+        The facts are the ready read, the lanes resting and whether this
+        origin's lane can deliver at all (KOD-725).
+        """
+        if delivers:
+            for finished in ready.closed:
+                if finished.issue_key in rested:
+                    continue
+                # No delivery probe here, by decision. What that probe excludes
+                # is a lane a pull request is already open for, and that is
+                # exactly the lane a delivery-only turn exists to finish: the
+                # delivery reuses the open pull request and the record finally
+                # carries it (KOD-431).
+                return _LaneTurn(issue=finished, gap=(), ready_row=None)
+        # No delivery probe here either, and for the same reason: a lane whose
+        # pull request is already open is the lane whose next commits that
+        # pull request receives (KOD-431, KOD-785). Where a lane stands is its
+        # own tracker record, which the entry reading asks before every fire.
+        for candidate in ready.ready:
+            if candidate.issue.issue_key in rested:
+                continue
+            return _ready_turn(candidate)
+        return None
+
+    async def _settle(
+        self, *, last: _LastFire | None, ready: ScopeReadySet, rested: list[str]
+    ) -> None:
+        """Fire the last lane again, or stop firing it — read from the gap alone.
+
+        The reading is one tick of the fire's own plateau: which of the
+        criterion identities the lane owed when it was fired the subtree now
+        carries as closed. Closed something, and the lane is a candidate again
+        on this tick, entering from its record like any other fire. Closed
+        nothing, and it rests: an identical fire would say what this one said,
+        and the invocation has other lanes to spend itself on (KOD-460,
+        KOD-724).
+
+        ``ready.criteria`` is every criterion of the whole scope, which is a
+        superset of the lane's subtree; the reading intersects, so what it
+        answers is the lane's own previously open criteria and no other lane's.
+
+        A lane the ready read no longer offers is not read at all: it finished,
+        or it is closed, or the board moved it, and none of those is this
+        reading's business. Neither is a lane already resting, which has no
+        next turn to decide.
+
+        No fire outcome, no verdict and no delivery phase is read here either
+        (KOD-725).
+        """
+        if last is None or last.issue_key in rested:
+            return
+        row = next(
+            (row for row in ready.ready if row.issue.issue_key == last.issue_key),
+            None,
+        )
+        if row is None:
+            return
+        tick_record = observe_tick(
+            previously_open=sorted(last.open_criteria),
+            subtree_criteria=ready.criteria,
+            open_criteria=row.gap,
+        )
+        if not fire_plateaued(ticks=(tick_record,), plateau_bound=PLATEAU_BOUND):
+            return
+        rested.append(last.issue_key)
+        await self._log.ainfo("scope_lane_plateaued", lane=last.issue_key)
+
     async def run(
         self,
         *,
@@ -258,10 +365,16 @@ class ScopeWorkflowEngine:
         skipped: list[str] = []
         rested: list[str] = []
         failed: list[LaneFailure] = []
+        last: _LastFire | None = None
         tick = 0
         while True:
             tick += 1
             ready = await read_scope_ready(ref=scope, tracker=self._tracker)
+            # The previous tick's fire is read against this tick's facts before
+            # anything is selected, and read once: the reading is what decides
+            # whether the lane it fired is a candidate again.
+            await self._settle(last=last, ready=ready, rested=rested)
+            last = None
             exclusions = [
                 IssueExclusion(
                     issue_key=blocked.issue_key,
@@ -271,40 +384,9 @@ class ScopeWorkflowEngine:
                 for blocked in ready.blocked
                 for key in blocked.blocker_keys
             ]
-            selected: _LaneTurn | None = None
-            # A lane that owes nothing goes first. Its delivery is what a
-            # lane blocked on it waits for, so publishing the blocker's
-            # branch in this same invocation is what lets the dependent lane
-            # stand on it instead of waiting for the next one. Only where the
-            # origin's lane can deliver: see the class docstring.
-            if lane.delivers:
-                for finished in ready.closed:
-                    if finished.issue_key in dispatched or finished.issue_key in rested:
-                        continue
-                    # No delivery probe here, by decision. What that probe
-                    # excludes is a lane a pull request is already open for,
-                    # and that is exactly the lane a delivery-only turn
-                    # exists to finish: the delivery reuses the open pull
-                    # request and the record finally carries it.
-                    selected = _LaneTurn(issue=finished, gap=(), ready_row=None)
-                    break
-            # No delivery probe here either, and for the same reason one lane
-            # further up: a lane whose pull request is already open is the lane
-            # whose next commits that pull request receives (KOD-431, KOD-785).
-            # Excluding such a candidate left a scope whose deliveries are all
-            # open with nothing to walk at all, and the answer was about the
-            # forge where the question is about the lane — where it stands is
-            # its own tracker record, which the entry reading below asks.
-            if selected is None:
-                for candidate in ready.ready:
-                    if candidate.issue.issue_key in dispatched:
-                        continue
-                    if candidate.issue.issue_key in rested:
-                        continue
-                    selected = _ready_turn(candidate)
-                    break
+            selected = self._select(ready=ready, delivers=lane.delivers, rested=rested)
             yield _observation(
-                scope, tick, ready, dispatched, skipped, failed, exclusions
+                scope, tick, ready, dispatched, skipped, rested, failed, exclusions
             )
             if selected is None:
                 return
@@ -385,6 +467,13 @@ class ScopeWorkflowEngine:
             if await self._readmitted(scope=scope, selected=selected) is None:
                 continue
             dispatched.append(key)
+            # What this fire finds open is what the next tick measures it
+            # against. A turn selected for its delivery alone owes nothing, so
+            # it carries no identities and the next tick has nothing to read.
+            last = _LastFire(
+                issue_key=key,
+                open_criteria=frozenset(row.issue_key for row in selected.gap),
+            )
             async with self._lane_boundary(key, failed=failed, rested=rested):
                 final: NativeDeliveryState | None = None
                 async for namespace, mode, payload in lane.graph.astream(
@@ -409,6 +498,14 @@ class ScopeWorkflowEngine:
                     )
                 if isinstance(final["delivery"], SkippedLaneDelivery):
                     skipped.append(key)
+                    if selected.finished:
+                        # A skipped delivery records no pull request, so the
+                        # entry reading would answer the same way next tick and
+                        # the lane would be consolidated and reviewed once per
+                        # tick for the rest of the invocation. Nothing about it
+                        # moved, so nothing is written: it rests.
+                        rested.append(key)
+                        await self._log.ainfo("scope_lane_delivery_skipped", lane=key)
 
 
 def _ready_turn(row: ScopeReadyLane) -> _LaneTurn:
@@ -431,6 +528,7 @@ def _observation(
     ready: ScopeReadySet,
     dispatched: list[str],
     skipped: list[str],
+    rested: list[str],
     failed: list[LaneFailure],
     exclusions: list[IssueExclusion],
 ) -> ScopeWalkEvent:
@@ -442,6 +540,7 @@ def _observation(
             dispatched=tuple(dispatched),
             skipped_lanes=tuple(skipped),
             failed_lanes=tuple(failed),
+            rested_lanes=tuple(rested),
             unresolved_criteria=tuple(
                 row.issue_key
                 for row in ready.criteria

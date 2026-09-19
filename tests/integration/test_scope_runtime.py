@@ -502,9 +502,14 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
         and isinstance(event.event, WorkflowIterationEvent)
     ]
     assert iterations == ["A", "C"]
-    # A is selected at tick 1, B at tick 2 and fails, C at tick 3, and tick 4
-    # closes the walk: the failure is on the observation of the tick right
-    # after it and on every later one, not only on the terminal one.
+    # Four ticks: A is selected at tick 1 and its one criterion closes, so tick
+    # 2 no longer offers it and selects B, which fails; C is selected at tick 3
+    # and closes its own, and tick 4 has nothing left to offer. Every lane here
+    # owes exactly one criterion, so no fire of this walk leaves its lane owing
+    # anything for the next tick to offer it for again (KOD-724). The failure is
+    # on the observation of the tick right after B's and on every later one, not
+    # only on the terminal one.
+    assert len(observations) == 4
     assert [
         observation.tick for observation in observations if observation.failed_lanes
     ] == [3, 4]
@@ -518,6 +523,10 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
         1 if failure == "fire" else 0
     )
     assert [key for key in observations[-1].dispatched if key != "B"] == ["A", "C"]
+    # What keeps B from being offered again is that it RESTS. Being dispatched
+    # no longer stops a lane being selected, so the resting is load bearing:
+    # B is the one lane resting, and it is named once however it failed.
+    assert observations[-1].rested_lanes == ("B",)
     reported = observations[-1].failed_lanes
     # Exactly one entry: the lane was tried once and rested, not retried on
     # every remaining tick.
@@ -1452,9 +1461,27 @@ def resumable(*, repos: WalkRepos, **rest):
 
 
 async def first_fire(port, repos, *, passed=("A/check",)):
-    """Run one: a fire that finishes part of lane A's roster and leaves a record."""
+    """Run one: one fire, which finishes part of lane A's roster and records it.
+
+    Ended at the observation of the tick that follows that fire, because a lane
+    whose fire closed a criterion it owed is offered again in the same
+    invocation (KOD-724) and A still owes one here. What every test built on
+    this fixture re-enters is ONE fire's record: a second fire inside run one
+    would put a second entry's work on it and leave the re-entry these tests
+    are about with nothing left to tell apart.
+    """
     harness = resumable(port=port, repos=repos, evaluations=echoes(passed=set(passed)))
-    _ = [event async for event in drive(harness, job="first-job")]
+    stream = drive(harness, job="first-job")
+    observed = 0
+    async for event in stream:
+        if isinstance(event, ScopeWalkEvent):
+            observed += 1
+            if observed == 2:
+                break
+    await stream.aclose()
+    # The walk really reached the tick after the fire, so what follows is that
+    # fire's record and not the record of a walk that ended some other way.
+    assert observed == 2
     return harness, await lane_record(port, "A")
 
 
@@ -1885,13 +1912,17 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
 
         monkeypatch.setattr(second.executor, "stream", recording)
         # Bounded: a walk that offered a lane forever would hang here instead
-        # of failing, and a hang is not an assertion. This run is four ticks.
+        # of failing, and a hang is not an assertion. This run is five ticks:
+        # A and B are offered for a delivery they already recorded and rest,
+        # C fires and closes its last criterion, C is offered for a delivery it
+        # then records too and rests, and the fifth has nothing left to offer.
         async with asyncio.timeout(60):
             events = [
                 event
                 async for event in drive(second, job="second-job", origin=FORGE_ORIGIN)
             ]
 
+        assert len(ticks_of(events)) == 5
         assert [
             event.lane_key
             for event in events
@@ -1928,9 +1959,9 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
         assert "C live Check  bytes" not in prompt
         # No pull request's own state was read to decide any of that: the entry
         # reads the record and the remote head, and a delivery's own read comes
-        # after the lane has already worked. The open-delivery LISTING is read
-        # before the session and is counted separately here; removing it from
-        # selection is slice 2c's criterion, not this one's.
+        # after the lane has already worked. The unfiltered open-delivery
+        # listing is a different request and is not counted here at all; since
+        # KOD-431 the walk reads it for no candidate anyway.
         assert reads_at_first_session
         assert reads_at_first_session[0] == before_re_entry
         # And C's own delivery does make its three, after the lane has worked.
@@ -2660,10 +2691,13 @@ async def test_a_scope_whose_pull_requests_are_all_open_still_walks_to_completio
         )
         events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
 
-        # Three ticks: one per lane, and the one that finds nothing left.
-        assert len(ticks_of(events)) == 3
+        # Five ticks: each lane's fire, the tick after it that offers the lane
+        # for its delivery alone and finds its pull request already recorded,
+        # and the tick with nothing left to offer.
+        assert len(ticks_of(events)) == 5
         assert lane_failures(events) == ()
         assert ticks_of(events)[-1].dispatched == ("A", "B")
+        assert ticks_of(events)[-1].rested_lanes == ("A", "B")
         assert ticks_of(events)[-1].unresolved_criteria == ()
         # Not one candidate was passed over for a delivery, and the listing
         # that would have passed it over was never read.
@@ -2689,8 +2723,9 @@ async def test_a_done_blocker_with_no_pull_request_unlocks_its_dependent():
     (KOD-721, KOD-777). B itself carries an open pull request from the run
     before, and that is no longer a reason to pass it over: the dependent is
     unlocked exactly as it was when the candidate probes stood in the way of
-    nothing here. The origin is asked once in the whole walk, about the
-    blocker; B fires on the trunk and its pull request receives the commit.
+    nothing here. The origin is asked once per turn, about the blocker and
+    never about the candidate; B fires on the trunk and its own pull request
+    receives the commit.
     """
     repos = WalkRepos(url=FORGE_ORIGIN)
     port = board(lanes=("A", "B"), blocked={"B": ("A",)})
@@ -2732,21 +2767,99 @@ async def test_a_done_blocker_with_no_pull_request_unlocks_its_dependent():
         with structlog.testing.capture_logs() as logs:
             events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
 
-        # Three ticks: A has no record to deliver from and rests, B fires, and
-        # the third finds nothing left to offer.
-        assert len(ticks_of(events)) == 3
+        # Four ticks: A has no record to deliver from and rests, B fires, B is
+        # offered for its delivery alone and its pull request is already on its
+        # record, and the fourth finds nothing left to offer.
+        assert len(ticks_of(events)) == 4
         assert lane_failures(events) == ()
         assert ticks_of(events)[-1].dispatched == ("B",)
+        assert ticks_of(events)[-1].rested_lanes == ("A", "B")
         assert bases_of(events)["B"] == "main"
-        # Stated by name, once: the assumption the gate's own read licensed.
+        # Stated by name, once per turn B took: the assumption the gate's own
+        # read licensed, for the fire and again for the delivery-only turn the
+        # tick after it offers.
         assert [
             event["lane"]
             for event in logs
             if event.get("event") == "base_input_no_open_delivery"
-        ] == ["B"]
-        # One question, the gate's. B's own open delivery was asked about never.
-        assert len(open_listings(wire, after=answered)) == 1
+        ] == ["B", "B"]
+        # And exactly as many listings as there were gate reads. B's own open
+        # delivery — which the origin does report — was asked about never, and
+        # firing B at all is what says so: a candidate read would have passed
+        # it over on the very pull request its next commit belongs in.
+        assert len(open_listings(wire, after=answered)) == 2
         assert len(wire.creates) == 1
         assert port.issues["B/check"].state_kind is WorkflowStateKind.COMPLETED
     finally:
         await forge.close()
+
+
+# ---------------------------------------------------------------------------
+# KOD-724 — a lane larger than one fire's budget is fired again in the same
+# invocation, while its last fire closed a criterion the lane owed.
+# ---------------------------------------------------------------------------
+
+#: The gradings lane A's first fire asks for, observed rather than assumed.
+#:
+#: Stated because the echoes the SECOND fire is answered with begin after them:
+#: a fire resumed on one open criterion is graded against that criterion alone,
+#: and an echo naming the one its last fire already closed is not an answer to
+#: the question this one asked.
+FIRST_FIRE_GRADINGS = 2
+
+
+def budget_bound_lane(repos, *, port):
+    """Lane A, two checks and a budget of one iteration: two fires to converge.
+
+    One iteration closes one of the two criteria and the budget ends there, so
+    the lane is larger than one fire. The merger is the walk's own, which is
+    unbounded: the default one supplies a single consolidation per lane and a
+    second fire of the same lane would find none left.
+    """
+    return resumable(
+        port=port,
+        repos=repos,
+        max_iterations=1,
+        evaluations=[
+            *(
+                criteria_echo(keys=A_KEYS, passed={"A/check"})
+                for _ in range(FIRST_FIRE_GRADINGS)
+            ),
+            *(criteria_echo(keys=("A/second",), passed={"A/second"}) for _ in range(4)),
+        ],
+    )
+
+
+async def test_a_lane_larger_than_one_fires_budget_converges_across_fires():
+    """Two criteria, a one-iteration budget, and one invocation (KOD-724).
+
+    The first fire closes one criterion and its budget ends; the lane still owes
+    the other, and having been fired is no longer what stops it being offered.
+    The tick after reads which of the criteria the lane owed the subtree now
+    carries as closed, finds one of them there, and offers the lane again. The
+    second fire closes the rest, so the scope converges inside this invocation
+    instead of owing the remainder to the next one.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    harness = budget_bound_lane(repos, port=port)
+    events = await bounded_walk(harness, job="converging-job")
+
+    # Three ticks: the two fires, and the one with nothing left to offer. The
+    # lane leaves the ready set when its gap empties, so nothing rests here and
+    # the walk ends because there is no candidate rather than because it gave up.
+    assert len(ticks_of(events)) == 3
+    assert lane_failures(events) == ()
+    assert [tick.ready for tick in ticks_of(events)] == [("A",), ("A",), ()]
+    assert ticks_of(events)[-1].dispatched == ("A", "A")
+    assert ticks_of(events)[-1].rested_lanes == ()
+    assert ticks_of(events)[-1].unresolved_criteria == ()
+    assert all(
+        port.issues[key].state_kind is WorkflowStateKind.COMPLETED for key in A_KEYS
+    )
+    # One criterion per fire, in the order the fires closed them: a walk that
+    # closed both in one fire would converge for another reason entirely.
+    assert port.workflow_writes == [
+        ("A/check", LifecycleStage.DONE),
+        ("A/second", LifecycleStage.DONE),
+    ]

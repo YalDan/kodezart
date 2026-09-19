@@ -35,6 +35,13 @@ class ScopeWalkObservation(CamelCaseModel):
     contains one lane's failure reports it here and keeps going, so an empty
     ready set with entries here is a walk that stopped offering lanes rather
     than a scope at rest.
+
+    ``dispatched`` carries one entry per fire, so a lane named twice is a lane
+    fired twice in this invocation. ``rested_lanes`` carries the lanes the walk
+    will not offer again in it — one whose fire closed none of what it owed,
+    one the facts left nothing to do, one whose own work raised — so an empty
+    ready set beside entries here says which lanes stopped being offered and
+    which of them were never offered at all.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -45,6 +52,7 @@ class ScopeWalkObservation(CamelCaseModel):
     dispatched: tuple[str, ...]
     skipped_lanes: tuple[str, ...] = ()
     failed_lanes: tuple[LaneFailure, ...] = ()
+    rested_lanes: tuple[str, ...] = ()
     unresolved_criteria: tuple[str, ...]
     unapproved_lanes: tuple[str, ...]
     exclusions: tuple[IssueExclusion, ...]
