@@ -72,6 +72,18 @@ class NativeLaneWorkflow:
             NativeDeliveryState, None, NativeDeliveryState, NativeDeliveryState
         ] = graph.compile(checkpointer=fire.checkpointer)
 
+    @property
+    def delivers(self) -> bool:
+        """Whether this lane can open a pull request at all.
+
+        The composition decides it once, from whether the origin has a forge
+        behind it, and the coordinator it built or did not build is private.
+        This is the one public statement of the fact, so a caller choosing
+        what to dispatch reads it here instead of inferring the origin's
+        capabilities a second time.
+        """
+        return self._delivery is not None
+
     @staticmethod
     def prepare(state: WorkflowState) -> NativeDeliveryState:
         """Initialize the outer phase while preserving every prepared fire field."""

@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -42,10 +43,30 @@ from kodezart.types.domain.scope_runtime import (
     ScopeWalkObservation,
 )
 from kodezart.types.domain.session import AllowedTools, PermissionMode
-from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 _NATIVE_STATE = TypeAdapter(NativeDeliveryState)
 _NATIVE_PROGRESS: TypeAdapter[ScopeLaneProgress] = TypeAdapter(ScopeLaneProgress)
+
+
+@dataclass(frozen=True, slots=True)
+class _LaneTurn:
+    """The lane a tick selected, and what readmission must still find.
+
+    A lane that owes criteria IS the row the ready read answered, and its
+    readmission compares that row entire, gap included. A finished lane has
+    no such row and no gap, because no topology ordered it; what must still
+    hold for it is that the same issue is still reported finished.
+    """
+
+    issue: TrackerIssue
+    gap: tuple[TrackerIssue, ...]
+    ready_row: ScopeReadyLane | None
+
+    @property
+    def finished(self) -> bool:
+        """Whether this lane was selected for its delivery alone."""
+        return self.ready_row is None
 
 
 class ScopeWorkflowEngine:
@@ -55,6 +76,12 @@ class ScopeWorkflowEngine:
     This owner writes neither tracker state nor approval/claim marks, and it
     persists no graph state: where a lane stands is its own tracker record,
     read again before every fire.
+
+    A lane that owes nothing is selected first, and only where the origin's
+    lane can deliver. On an origin with no forge behind it such a lane could
+    never record a pull request, so nothing about it would change and every
+    invocation would consolidate and review it again; there it waits for a
+    person instead.
     """
 
     def __init__(
@@ -142,13 +169,16 @@ class ScopeWorkflowEngine:
             )
 
     async def _readmitted(
-        self, *, scope: ScopeRef, selected: ScopeReadyLane
-    ) -> ScopeReadyLane | None:
+        self, *, scope: ScopeRef, selected: _LaneTurn
+    ) -> _LaneTurn | None:
         """The candidate as the board holds it NOW, or ``None`` when it moved.
 
         Every await a lane's turn makes can yield to a board that changes, so
         admission is asked again rather than inherited from the tick that
-        selected the lane: the same lane, with the same gap, or nothing.
+        selected the lane: the same lane, with the same gap, or nothing. A
+        lane selected for delivery alone is readmitted by the same question
+        its selection asked — is this issue still reported finished — so a
+        criterion reopened under it ends the turn here.
 
         This read is the SCOPE's own and is made OUTSIDE the lane boundary,
         wherever in a lane's turn it falls: an outage here says nothing about
@@ -156,6 +186,8 @@ class ScopeWorkflowEngine:
         that lane's fault and resting it.
         """
         refreshed = await read_scope_ready(ref=scope, tracker=self._tracker)
+        if selected.finished:
+            return selected if selected.issue in refreshed.closed else None
         current = next(
             (
                 row
@@ -164,7 +196,9 @@ class ScopeWorkflowEngine:
             ),
             None,
         )
-        return current if current == selected else None
+        if current is None or current != selected.ready_row:
+            return None
+        return _ready_turn(current)
 
     async def run(
         self,
@@ -230,24 +264,41 @@ class ScopeWorkflowEngine:
                 for blocked in ready.blocked
                 for key in blocked.blocker_keys
             ]
-            selected = None
-            for candidate in ready.ready:
-                if candidate.issue.issue_key in dispatched:
-                    continue
-                if candidate.issue.issue_key in rested:
-                    continue
-                if await probe.open_delivery_exists(
-                    repo_url=url, issue_key=candidate.issue.issue_key
-                ):
-                    exclusions.append(
-                        IssueExclusion(
-                            issue_key=candidate.issue.issue_key,
-                            clause=ExclusionClause.OPEN_DELIVERY,
+            selected: _LaneTurn | None = None
+            # A lane that owes nothing goes first. Its delivery is what a
+            # lane blocked on it waits for, so publishing the blocker's
+            # branch in this same invocation is what lets the dependent lane
+            # stand on it instead of waiting for the next one. Only where the
+            # origin's lane can deliver: see the class docstring.
+            if lane.delivers:
+                for finished in ready.closed:
+                    if finished.issue_key in dispatched or finished.issue_key in rested:
+                        continue
+                    # No delivery probe here, by decision. What that probe
+                    # excludes is a lane a pull request is already open for,
+                    # and that is exactly the lane a delivery-only turn
+                    # exists to finish: the delivery reuses the open pull
+                    # request and the record finally carries it.
+                    selected = _LaneTurn(issue=finished, gap=(), ready_row=None)
+                    break
+            if selected is None:
+                for candidate in ready.ready:
+                    if candidate.issue.issue_key in dispatched:
+                        continue
+                    if candidate.issue.issue_key in rested:
+                        continue
+                    if await probe.open_delivery_exists(
+                        repo_url=url, issue_key=candidate.issue.issue_key
+                    ):
+                        exclusions.append(
+                            IssueExclusion(
+                                issue_key=candidate.issue.issue_key,
+                                clause=ExclusionClause.OPEN_DELIVERY,
+                            )
                         )
-                    )
-                    continue
-                selected = candidate
-                break
+                        continue
+                    selected = _ready_turn(candidate)
+                    break
             yield _observation(
                 scope, tick, ready, dispatched, skipped, failed, exclusions
             )
@@ -281,7 +332,9 @@ class ScopeWorkflowEngine:
                 continue
             launch: tuple[NativeDeliveryState, RunnableConfig] | None = None
             async with self._lane_boundary(key, failed=failed, rested=rested):
-                if await probe.open_delivery_exists(repo_url=url, issue_key=key):
+                if not selected.finished and await probe.open_delivery_exists(
+                    repo_url=url, issue_key=key
+                ):
                     continue
                 # The lane's own record, and the remote head of the branch it
                 # names, decide how this fire enters. Asked before EVERY fire:
@@ -295,6 +348,13 @@ class ScopeWorkflowEngine:
                     resolved_base=spec.base_branch,
                 )
                 if entry is None:
+                    # The facts leave this lane nothing to do: a record whose
+                    # pull request is already open, or a member somebody
+                    # finished by hand with nothing recorded to deliver. It
+                    # rests, so the next tick's reading does not offer it
+                    # again and the walk cannot spin on it.
+                    rested.append(key)
+                    await self._log.ainfo("scope_lane_nothing_to_do", lane=key)
                     continue
                 fire_state, config = lane.fire.prepare(
                     entry=entry,
@@ -349,6 +409,11 @@ class ScopeWorkflowEngine:
                     )
                 if isinstance(final["delivery"], SkippedLaneDelivery):
                     skipped.append(key)
+
+
+def _ready_turn(row: ScopeReadyLane) -> _LaneTurn:
+    """The turn of a lane the ready read answered, keeping its row to compare."""
+    return _LaneTurn(issue=row.issue, gap=row.gap, ready_row=row)
 
 
 def _lane_namespace(job_id: str, lane_key: str) -> str:

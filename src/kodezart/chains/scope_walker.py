@@ -65,6 +65,7 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
     closure = SubtreeClosure(facts=facts, ref=ref)
     approved: dict[str, bool] = {}
     gaps: dict[str, tuple[TrackerIssue, ...]] = {}
+    closed: dict[str, TrackerIssue] = {}
     for key, issue in members.items():
         if "criterion" in issue.issue_labels or issue.issue_labels & RECORD_KINDS:
             continue
@@ -73,6 +74,13 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
             gap = closure.gap(key)
             if gap:
                 gaps[key] = gap
+            else:
+                # The same arithmetic, read the other way. A member owing
+                # nothing is not a candidate for the topology — there is no
+                # iteration to order — but it is a member a delivery may
+                # still be owed for, and the reading that drops it is the
+                # reason nothing could ever notice.
+                closed[key] = issue
     blockers = {
         blocker
         for key in gaps
@@ -108,6 +116,7 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
         criteria=tuple(
             issue for issue in facts.values() if "criterion" in issue.issue_labels
         ),
+        closed=tuple(closed.values()),
     )
 
 

@@ -326,6 +326,27 @@ async def test_no_forge_reports_explicit_skip_without_fabricating_pr():
     assert executor.remediation_prompts == []
 
 
+@pytest.mark.parametrize("forge_present", [True, False])
+async def test_a_lane_states_whether_it_can_deliver_at_all(forge_present):
+    """The origin's one capability, stated publicly and read-only.
+
+    The composition decides it once, from whether there is a forge behind the
+    origin, and the coordinator it built or did not build is private. A caller
+    choosing what to dispatch reads the fact here rather than working the
+    origin out a second time, and cannot set it.
+    """
+    lane, _, _, _, forge, *_ = composed(forge_present=forge_present)
+    try:
+        assert lane.delivers is forge_present
+        # The composition's decision and nothing beside it.
+        assert lane.delivers is (lane._delivery is not None)
+        with pytest.raises(AttributeError):
+            lane.delivers = not forge_present
+    finally:
+        if forge is not None:
+            await forge.close()
+
+
 async def test_a_delivering_lane_without_its_record_writer_refuses_at_construction():
     """A lane that can deliver can record where it delivered to, or is not built.
 

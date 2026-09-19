@@ -526,3 +526,65 @@ async def test_closed_record_blocker_has_no_deliverable_gap(ready_fixture, label
     assert keys(selection) == ["lane"]
     assert selection.blocked == ()
     fixture.assert_read_only()
+
+
+async def test_an_approved_member_owing_nothing_is_reported_closed_and_nowhere_else(
+    ready_fixture,
+):
+    """A member with an empty gap is reported, and reported as what it is.
+
+    It is not a ready lane — there is no iteration for a topology to order —
+    and it is not blocked, unapproved or a criterion. Until it was reported at
+    all, the one fact that says a delivery may still be owed for it reached no
+    reader.
+    """
+    fixture = await ready_fixture(pair())
+    fixture.state("blocker-check", "completed")
+
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+
+    assert [issue.issue_key for issue in selection.closed] == ["blocker"]
+    assert keys(selection) == ["lane"]
+    assert selection.blocked == ()
+    assert selection.unapproved == ()
+    assert "blocker" not in {issue.issue_key for issue in selection.criteria}
+    fixture.assert_read_only()
+
+
+async def test_an_unapproved_member_owing_nothing_is_not_reported_closed(
+    ready_fixture,
+):
+    """Approval gates this reading exactly as it gates the ready one.
+
+    A member nobody approved is not a lane this walk may act on, and owing
+    nothing does not make it one: it is reported as unapproved and nothing
+    else, so no delivery could be dispatched for it.
+    """
+    fixture = await ready_fixture(pair(), approved=False)
+    fixture.state("blocker-check", "completed")
+
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+
+    assert selection.closed == ()
+    assert selection.ready == ()
+    assert set(selection.unapproved) == {"blocker", "lane"}
+    fixture.assert_read_only()
+
+
+@pytest.mark.parametrize("label", ["tracker", "decision"])
+async def test_a_record_member_owing_nothing_is_not_reported_closed(
+    ready_fixture, label
+):
+    """A record issue has no gap because it owes nothing to begin with.
+
+    It is skipped before approval is even asked, so the reading that reports
+    finished members must skip it too — a delivery of a recorded question is
+    not a thing.
+    """
+    fixture = await ready_fixture([row("record", label=label, kind="completed")])
+
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+
+    assert selection.closed == ()
+    assert selection.ready == selection.blocked == ()
+    fixture.assert_read_only()
