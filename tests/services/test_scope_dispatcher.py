@@ -18,7 +18,7 @@ import pytest
 from kodezart.chains import scope_walker
 from kodezart.domain import issue_tree, topology
 from kodezart.domain.errors import ScopeSupersessionReadError
-from kodezart.services import scope_dispatcher
+from kodezart.services import scope_dispatcher, scope_runtime
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -516,8 +516,15 @@ def test_no_module_the_walk_can_reach_holds_a_merge_state_call_site():
 
 
 def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():
-    """No module on the walk can ask a pull request anything, statically."""
-    modules = [scope_walker, topology, issue_tree, scope_dispatcher]
+    """No module on the walk can ask a pull request anything, statically.
+
+    ``scope_runtime`` is on the list because it is the one module of the walk
+    that holds a forge probe at all: the carve-out's open-delivery read is
+    made there (KOD-721, KOD-777), and the probe it is handed answers merge
+    state on the same object. Nothing but a type checker stood between that
+    call site and a merge-state read until this list named the module.
+    """
+    modules = [scope_walker, topology, issue_tree, scope_dispatcher, scope_runtime]
     forbidden_names = {"PRStateReader", "PRState", "PRLifecycle"}
     for module in modules:
         tree = ast.parse(inspect.getsource(module))

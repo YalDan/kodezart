@@ -156,11 +156,18 @@ class ScopeWorkflowEngine:
         then takes that arm unchanged. A forge that cannot answer raises its
         own typed error, which is neither answer; every one of the three is a
         fact about this lane and is contained by the boundary around it.
+
+        The refusal names the blocker twice over, and both namings are load
+        bearing. ``blocker_issue_ids`` is the field a caller reads; the
+        message carries it too because the lane failure this becomes on the
+        walk observation keeps only ``str(exc)``, so a reader of the walk
+        would otherwise see which lane refused and never which blocker
+        refused it.
         """
         for blocker in await self._resolver.unrecorded_closed_blockers(issue_key=key):
             if await probe.open_delivery_exists(repo_url=url, issue_key=blocker):
                 raise BaseResolutionError(
-                    "an unrecorded open delivery exists for the blocker",
+                    f"an unrecorded open delivery exists for the blocker {blocker}",
                     issue_id=key,
                     blocker_issue_ids=(blocker,),
                 )

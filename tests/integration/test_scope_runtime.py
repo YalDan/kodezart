@@ -781,6 +781,11 @@ async def test_a_closed_blocker_with_no_record_is_gated_by_one_open_delivery_rea
     # The blocker was asked about exactly once, whatever the answer was: the
     # read is made per blocker per turn and the lane is not offered again.
     assert probe.calls.count("A") == 1
+    # The carve-out is one OPEN-delivery read and nothing else. The probe the
+    # walk is handed answers merge state as readily as the native client does,
+    # so an empty list is a fact about the walker and not about an unreachable
+    # double (KOD-721: no code path derives landedness from the forge).
+    assert probe.merge_state.calls == []
     fired = [
         event.lane_key
         for event in events
@@ -817,6 +822,10 @@ async def test_a_closed_blocker_with_no_record_is_gated_by_one_open_delivery_rea
         "true": "an unrecorded open delivery exists for the blocker",
         "unreadable": "the delivery listing failed",
     }[answer] in failures[0].error.error
+    if answer == "true":
+        # A reader of the walk sees which blocker refused the lane. The failure
+        # carries str(exc) alone, so the message is the only place it can.
+        assert "A" in failures[0].error.error
 
 
 async def test_actual_http_sse_preserves_nested_progress_and_delivery_discriminators():
