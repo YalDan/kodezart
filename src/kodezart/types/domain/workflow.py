@@ -282,10 +282,8 @@ class WorkflowState(TypedDict):
     ralph_branch: str
     work_base_ref: str
     fire_spec: FireSpec | None
-    ticket: TicketDraftOutput | None
     acceptance_criteria: list[GeneratedCriterion]
     criterion_set: CriteriaArtifact | TrackerCriterionSet | None
-    criteria_artifact: CriteriaArtifact | None
     criteria_validation: CriteriaValidation | None
     criteria_regeneration_rounds: int
     criteria_infeasible: bool
@@ -303,10 +301,16 @@ class WorkflowState(TypedDict):
     remediation_ticket: TicketDraftOutput | RemediationPlan | None
     remediation_entry: RemediationEntry | None
     best_iteration_sha: str | None
+    repo_url: str | None
+    repo_visibility: RepoVisibility
+    trajectory: LoopTrajectory | None
+
+class AuthoredWorkflowState(WorkflowState):
+    """Outer authored delivery state, never passed into the fire graph."""
+
     pr_url: str | None
     pr_number: int | None
     ci_status: CIStatus
     ci_summary: str | None
-    repo_url: str | None
-    repo_visibility: RepoVisibility
-    trajectory: LoopTrajectory | None
+    ci_red_class: NotRequired[CheckRedClass | None]
+    ci_run_absent: NotRequired[bool]

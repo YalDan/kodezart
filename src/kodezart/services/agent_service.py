@@ -177,3 +177,146 @@ class AgentService:
                     update={"branch": effective_branch},
                 )
             yield event
+
+    async def _run_in_workspace(
+        self,
+        *,
+        prompt: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        ref: str,
+        branch_name: str | None = None,
+        create_branch: bool = True,
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
+        skills: SkillsSelection,
+        session_type: SessionType,
+        run_identity: RunIdentity | None = None,
+        agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
+        session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
+        visibility: RepoVisibility = RepoVisibility.UNKNOWN,
+        session_id: str | None = None,
+        output_format: dict[str, object] | None = None,
+        persist_branch: str | None = None,
+        cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
+        after_publish: AfterPublish | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        if repo_url is not None:
+            repo_url = resolve_repo_url(repo_url, self._git_base_url)
+
+        if native_guard is not None:
+            if (
+                self._persister is None
+                or not persist_branch
+                or branch_name != persist_branch
+            ):
+                raise NativeWriteRefusalError(
+                    "Native persistence is not configured for this branch"
+                )
+            if after_publish is None:
+                raise NativeWriteRefusalError(
+                    "Native persistence requires its lane record write"
+                )
+            execution = NativeExecution(
+                executor=self._executor,
+                workspace=self._workspace,
+                persister=self._persister,
+                guard=native_guard,
+                after_publish=after_publish,
+                request=NativeExecutionRequest(
+                    prompt=prompt,
+                    repo_path=repo_path,
+                    repo_url=repo_url,
+                    ref=ref,
+                    branch=persist_branch,
+                    create_branch=create_branch,
+                    permission_mode=permission_mode,
+                    allowed_tools=allowed_tools,
+                    skills=skills,
+                    session_type=session_type,
+                    run_identity=run_identity,
+                    agents=agents,
+                    session_policy=session_policy,
+                    session_id=session_id,
+                    visibility=visibility,
+                    cache_key=cache_key,
+                ),
+            )
+            async for event in execution.stream():
+                yield event
+            return
+
+        try:
+            workspace_path = await self._workspace.acquire(
+                repo_path=repo_path,
+                repo_url=repo_url,
+                ref=ref,
+                branch_name=branch_name,
+                create_branch=create_branch,
+                cache_key=cache_key,
+            )
+        except WorkspaceError as exc:
+            # Log at exception level BEFORE yielding the typed
+            # ``ErrorEvent``.  Never silently downgrade a failed
+            # workspace acquire to a bare yielded event with no log
+            # line — that masks the failure in production observability.
+            # ``exc_info=sys.exc_info()`` is passed explicitly to harden
+            # against async-executor context loss
+            # (hynek/structlog#488 class).
+            await self._log.aexception(
+                "agent_service_workspace_acquire_failed",
+                error=str(exc),
+                error_kind=type(exc).__name__,
+                exc_info=sys.exc_info(),
+            )
+            yield build_error_event(exc)
+            return
+
+        try:
+            buffered_result: ResultEvent | None = None
+            async for event in self._executor.stream(
+                prompt=prompt,
+                cwd=workspace_path,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                skills=skills,
+                session_type=session_type,
+                run_identity=run_identity,
+                agents=agents,
+                session_policy=session_policy,
+                session_id=session_id,
+                output_format=output_format,
+            ):
+                if isinstance(event, ResultEvent):
+                    buffered_result = event
+                else:
+                    yield event
+
+            if persist_branch and self._persister and buffered_result:
+                backup_ref_id_prefix = (session_id or generate_workspace_id())[:8]
+                persist_result = await self._persister.persist(
+                    workspace_path=workspace_path,
+                    branch=persist_branch,
+                    executor=self._executor,
+                    backup_ref_id_prefix=backup_ref_id_prefix,
+                    skills=skills,
+                    visibility=visibility,
+                )
+                if persist_result:
+                    buffered_result = buffered_result.model_copy(
+                        update={
+                            "commit_sha": persist_result.commit_sha,
+                            "branch": persist_branch,
+                        },
+                    )
+            if buffered_result:
+                yield buffered_result
+        finally:
+            try:
+                await self._workspace.release(workspace_path)
+            except Exception as cleanup_exc:
+                await self._log.awarning(
+                    "workspace_cleanup_failed",
+                    error=str(cleanup_exc),
+                )
