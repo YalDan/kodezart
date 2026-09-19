@@ -2589,3 +2589,164 @@ async def test_a_blocker_branch_absent_from_the_remote_refuses_without_trunk():
         assert [create["head"] for create in wire.creates] == [deleted[0]]
     finally:
         await forge.close()
+
+
+# ---------------------------------------------------------------------------
+# KOD-431 — the walk asks an origin nothing about a candidate. Where a lane
+# stands is its own tracker record, never the forge's list of open deliveries.
+# ---------------------------------------------------------------------------
+
+
+def probe_of(harness, *, origin: str):
+    """The origin's own delivery reader, as the walk's composition built it."""
+    return harness.engine._scoped_arm._probe_for(origin)
+
+
+async def test_a_scope_whose_pull_requests_are_all_open_still_walks_to_completion():
+    """Every lane's delivery is open and every lane fires anyway (KOD-431).
+
+    Run one delivers both lanes, so the origin holds one open pull request per
+    lane. Their criteria are then owed again the way an amendment owes one
+    again, which is the board a scope under review carries: every lane is
+    ready, and every lane's own delivery is open. That the origin reports each
+    of them open is read here through the shipped reader, so the premise is the
+    forge's answer and not a guess about how a pull request names its lane.
+
+    The walk then fires both, excludes no candidate for a delivery, and asks
+    the origin what it already has not once. Each lane's existing pull request
+    receives the next commits rather than a second one being opened (KOD-785).
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A", "B"))
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        first = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=[
+                *one_check_echoes("A", rounds=4),
+                *one_check_echoes("B", rounds=4),
+            ],
+        )
+        opened = await bounded_walk(first, job="first-job", origin=FORGE_ORIGIN)
+
+        assert lane_failures(opened) == ()
+        assert len(wire.creates) == 2
+        reader = probe_of(first, origin=FORGE_ORIGIN)
+        for key in ("A", "B"):
+            assert (await lane_record(port, key)).pr is not None
+            assert await reader.open_delivery_exists(
+                repo_url=FORGE_ORIGIN, issue_key=key
+            )
+            owed_again(port, lane=key)
+
+        answered = len(wire.requests)
+        second = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=[
+                *one_check_echoes("A", rounds=4),
+                *one_check_echoes("B", rounds=4),
+            ],
+        )
+        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+
+        # Three ticks: one per lane, and the one that finds nothing left.
+        assert len(ticks_of(events)) == 3
+        assert lane_failures(events) == ()
+        assert ticks_of(events)[-1].dispatched == ("A", "B")
+        assert ticks_of(events)[-1].unresolved_criteria == ()
+        # Not one candidate was passed over for a delivery, and the listing
+        # that would have passed it over was never read.
+        assert not [
+            exclusion for tick in ticks_of(events) for exclusion in tick.exclusions
+        ]
+        assert open_listings(wire, after=answered) == []
+        # The same two pull requests, each carrying the second run's work.
+        assert len(wire.creates) == 2
+        assert all(
+            port.issues[f"{key}/check"].state_kind is WorkflowStateKind.COMPLETED
+            for key in ("A", "B")
+        )
+    finally:
+        await forge.close()
+
+
+async def test_a_done_blocker_with_no_pull_request_unlocks_its_dependent():
+    """The gate's one read stays the only question the walk asks (KOD-431).
+
+    B stands on A, which is Done and recorded nothing, so base resolution
+    assumes A's work reached the trunk — after the one read that settles it
+    (KOD-721, KOD-777). B itself carries an open pull request from the run
+    before, and that is no longer a reason to pass it over: the dependent is
+    unlocked exactly as it was when the candidate probes stood in the way of
+    nothing here. The origin is asked once in the whole walk, about the
+    blocker; B fires on the trunk and its pull request receives the commit.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    finish_by_hand(port, "A")
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        first = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("B", rounds=4),
+        )
+        opened = await bounded_walk(first, job="first-job", origin=FORGE_ORIGIN)
+
+        assert lane_failures(opened) == ()
+        assert len(wire.creates) == 1
+        reader = probe_of(first, origin=FORGE_ORIGIN)
+        assert await reader.open_delivery_exists(repo_url=FORGE_ORIGIN, issue_key="B")
+        # And nothing is open for the blocker, which is the arm the gate takes.
+        assert not await reader.open_delivery_exists(
+            repo_url=FORGE_ORIGIN, issue_key="A"
+        )
+        owed_again(port, lane="B")
+
+        answered = len(wire.requests)
+        second = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("B", rounds=4),
+        )
+        with structlog.testing.capture_logs() as logs:
+            events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+
+        # Three ticks: A has no record to deliver from and rests, B fires, and
+        # the third finds nothing left to offer.
+        assert len(ticks_of(events)) == 3
+        assert lane_failures(events) == ()
+        assert ticks_of(events)[-1].dispatched == ("B",)
+        assert bases_of(events)["B"] == "main"
+        # Stated by name, once: the assumption the gate's own read licensed.
+        assert [
+            event["lane"]
+            for event in logs
+            if event.get("event") == "base_input_no_open_delivery"
+        ] == ["B"]
+        # One question, the gate's. B's own open delivery was asked about never.
+        assert len(open_listings(wire, after=answered)) == 1
+        assert len(wire.creates) == 1
+        assert port.issues["B/check"].state_kind is WorkflowStateKind.COMPLETED
+    finally:
+        await forge.close()

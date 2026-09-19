@@ -288,21 +288,18 @@ class ScopeWorkflowEngine:
                     # request and the record finally carries it.
                     selected = _LaneTurn(issue=finished, gap=(), ready_row=None)
                     break
+            # No delivery probe here either, and for the same reason one lane
+            # further up: a lane whose pull request is already open is the lane
+            # whose next commits that pull request receives (KOD-431, KOD-785).
+            # Excluding such a candidate left a scope whose deliveries are all
+            # open with nothing to walk at all, and the answer was about the
+            # forge where the question is about the lane — where it stands is
+            # its own tracker record, which the entry reading below asks.
             if selected is None:
                 for candidate in ready.ready:
                     if candidate.issue.issue_key in dispatched:
                         continue
                     if candidate.issue.issue_key in rested:
-                        continue
-                    if await probe.open_delivery_exists(
-                        repo_url=url, issue_key=candidate.issue.issue_key
-                    ):
-                        exclusions.append(
-                            IssueExclusion(
-                                issue_key=candidate.issue.issue_key,
-                                clause=ExclusionClause.OPEN_DELIVERY,
-                            )
-                        )
                         continue
                     selected = _ready_turn(candidate)
                     break
@@ -339,10 +336,6 @@ class ScopeWorkflowEngine:
                 continue
             launch: tuple[NativeDeliveryState, RunnableConfig] | None = None
             async with self._lane_boundary(key, failed=failed, rested=rested):
-                if not selected.finished and await probe.open_delivery_exists(
-                    repo_url=url, issue_key=key
-                ):
-                    continue
                 # The lane's own record, and the remote head of the branch it
                 # names, decide how this fire enters. Asked before EVERY fire:
                 # nothing about a lane is remembered in this process, so a
