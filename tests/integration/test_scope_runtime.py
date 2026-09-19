@@ -826,8 +826,10 @@ async def test_a_closed_blocker_with_no_record_is_gated_by_one_open_delivery_rea
     }[answer] in failures[0].error.error
     if answer == "true":
         # A reader of the walk sees which blocker refused the lane. The failure
-        # carries str(exc) alone, so the message is the only place it can.
-        assert "A" in failures[0].error.error
+        # carries str(exc) alone, so the message is the only place it can. The
+        # rendered tail is matched rather than the key on its own: one capital
+        # letter is in half the sentences a rewording could produce.
+        assert failures[0].error.error.endswith("for the blocker A")
 
 
 async def test_actual_http_sse_preserves_nested_progress_and_delivery_discriminators():
@@ -1965,8 +1967,8 @@ def ticks_of(events):
     return [event.observation for event in events if isinstance(event, ScopeWalkEvent)]
 
 
-async def stopped_at_consolidation(port, repos, *, origin, forge=None):
-    """Run one of lane A, ended the instant its loop branch was consolidated.
+async def stopped_at_consolidation(port, repos, *, origin, forge=None, lane="A"):
+    """Run one of one lane, ended the instant its loop branch was consolidated.
 
     The stream is closed where a process dies, and generator close is a
     ``BaseException`` the lane boundary does not contain, so the run really
@@ -1980,7 +1982,7 @@ async def stopped_at_consolidation(port, repos, *, origin, forge=None):
         origin=origin,
         forge=forge,
         trunk="main",
-        evaluations=one_check_echoes("A", rounds=4),
+        evaluations=one_check_echoes(lane, rounds=4),
     )
     stream = drive(harness, job="first-job", origin=origin)
     async for event in stream:
@@ -1989,8 +1991,8 @@ async def stopped_at_consolidation(port, repos, *, origin, forge=None):
         ):
             break
     await stream.aclose()
-    assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
-    record = await lane_record(port, "A")
+    assert port.issues[f"{lane}/check"].state_kind is WorkflowStateKind.COMPLETED
+    record = await lane_record(port, lane)
     assert record.pr is None
     return harness, record
 
@@ -2337,6 +2339,68 @@ async def test_a_criterion_reopened_on_readmission_turns_the_lane_into_a_ready_o
         delivered = await lane_record(port, "A")
         assert delivered.pr is not None
         assert delivered.pr.number == ScopeForgeWire.FIRST_NUMBER
+    finally:
+        await forge.close()
+
+
+# ---------------------------------------------------------------------------
+# KOD-721 on the delivery-only path — a lane selected for its delivery alone
+# stands on a base too, so the gate on its blockers is owed there as well.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_finished_candidates_blockers_are_gated_like_a_ready_ones():
+    """The lane selected to deliver is gated on its blockers before it resolves.
+
+    B owes nothing and holds a record with no pull request, so it is selected
+    for its delivery alone; A is closed and recorded nothing, so B's base
+    resolution would assume A's work reached the trunk. That assumption is
+    wrong in one observable case, and it is wrong the same way for a lane
+    delivering as for a lane about to run: the pull request B would open
+    stands on the base this gate is about. The gate asks once, B is refused
+    by the resolution error naming A, and nothing is opened for it.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    finish_by_hand(port, "A")
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        _, killed = await stopped_at_consolidation(
+            port, repos, origin=FORGE_ORIGIN, forge=forge, lane="B"
+        )
+        assert killed.pr is None
+
+        second = resumable(
+            port=port,
+            repos=repos,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("B", rounds=4),
+        )
+        probe = FakeDeliveryProbe(delivered=("A",))
+        second.engine._scoped_arm._probe_for = lambda _: probe
+        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+
+        # The premise, asserted: no lane on this board owes a criterion, so the
+        # walk's ready set is empty on every tick and B can only have been
+        # selected as a candidate for its delivery alone.
+        assert [tick.ready for tick in ticks_of(events)] == [(), (), ()]
+        failures = lane_failures(events)
+        assert [failure.issue_key for failure in failures] == ["B"]
+        assert [failure.error.error_kind for failure in failures] == [
+            "BaseResolutionError"
+        ]
+        assert failures[0].error.error.endswith("for the blocker A")
+        # Asked once, about the blocker, and about merge state never.
+        assert probe.calls.count("A") == 1
+        assert probe.merge_state.calls == []
+        # Refused before anything was published: the delivery this lane was
+        # selected for never ran.
+        assert wire.creates == []
+        assert (await lane_record(port, "B")).pr is None
+        assert second.executor.execution_prompts == []
     finally:
         await forge.close()
 

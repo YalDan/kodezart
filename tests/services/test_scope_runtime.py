@@ -100,7 +100,10 @@ async def test_an_open_delivery_refusal_names_the_blocker() -> None:
 
     assert caught.value.issue_id == LANE
     assert caught.value.blocker_issue_ids == (BLOCKER,)
-    assert BLOCKER in str(caught.value)
+    # The rendered tail, not the key anywhere in the text: a key of one
+    # character is in half the sentences a rewording could produce, and the
+    # assertion is about the message naming the blocker it refused for.
+    assert str(caught.value).endswith(f"for the blocker {BLOCKER}")
     # The one read the carve-out allows, about the blocker and not the lane.
     assert probe.calls == [BLOCKER]
     assert probe.merge_state.calls == []
