@@ -27,6 +27,8 @@ import pytest
 
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import (
     IssuePriority,
     IssueQuery,
@@ -42,6 +44,11 @@ from tests.tracker.conftest import (
     fixture_server,
     linear_over_fake_mcp,
 )
+from tests.tracker.connected_app_label_contract import (
+    CONNECTED_APP_LABEL_ARGUMENTS,
+    CONNECTED_APP_LABEL_REQUIRED,
+)
+from tests.tracker.lease_fixtures import leased_comment
 
 
 @dataclass(frozen=True)
@@ -84,6 +91,14 @@ LIVE_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
             },
         ),
         required=frozenset({"id"}),
+    ),
+    "get_user": ToolSchema(
+        properties=frozenset(
+            {
+                "query",
+            },
+        ),
+        required=frozenset({"query"}),
     ),
     "get_issue": ToolSchema(
         properties=frozenset(
@@ -241,6 +256,7 @@ LIVE_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
     "save_issue": ToolSchema(
         properties=frozenset(
             {
+                "addLabels",
                 "addReleases",
                 "assignee",
                 "blockedBy",
@@ -289,6 +305,19 @@ LIVE_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
 #: declared team's issue was dispatched.
 KNOWN_UNMET_REQUIREMENTS: Mapping[str, frozenset[str]] = {}
 
+#: Original service capture plus separately measured connected-app label
+#: declarations. The latter do not establish service credential access.
+DECLARED_INPUT_SCHEMAS: Mapping[str, ToolSchema] = {
+    **LIVE_INPUT_SCHEMAS,
+    **{
+        tool: ToolSchema(
+            properties=properties,
+            required=CONNECTED_APP_LABEL_REQUIRED[tool],
+        )
+        for tool, properties in CONNECTED_APP_LABEL_ARGUMENTS.items()
+    },
+}
+
 
 async def sent_arguments() -> Mapping[str, set[str]]:
     """Every argument key the adapter hands the transport, by tool.
@@ -307,6 +336,20 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         ),
     )
     await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    await tracker.writer_identity()
+    keyed = await tracker.upsert_issue(
+        scope_key=ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope"),
+        deliverable_key="fixture-deliverable",
+        title="keyed",
+        body="keyed body",
+        team_key="engineering",
+        priority=IssuePriority.LOW,
+    )
+    await tracker.read_issue_identity(issue_key=keyed.issue_key)
+    await tracker.read_criteria(issue_key=keyed.issue_key)
+    await tracker.set_issue_classification(
+        issue_key=CLAIMED_ISSUE, classification="criterion"
+    )
     await tracker.create_issue(
         title="t",
         body="b",
@@ -314,20 +357,53 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         priority=IssuePriority.LOW,
     )
     await tracker.update_issue(issue_key=CLAIMED_ISSUE, title="x", body="y")
+    await tracker.edit_description(target=CLAIMED_ISSUE, expected="y", replacement="z")
     await tracker.set_workflow_state(
         issue_key=CLAIMED_ISSUE,
         stage=LifecycleStage.DONE,
     )
     await tracker.set_queue_state(issue_key=CLAIMED_ISSUE, state=QueueState.DONE)
     await tracker.post_comment(issue_key=CLAIMED_ISSUE, body="hi")
+    await leased_comment(
+        tracker, target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="first"
+    )
+    await leased_comment(
+        tracker, target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="changed"
+    )
     await tracker.list_comments(issue_key=CLAIMED_ISSUE)
     await tracker.claim_issue(
         issue_key=CLAIMED_ISSUE,
         holder="holder",
         lease_seconds=60.0,
     )
+    await tracker.renew_claim(
+        issue_key=CLAIMED_ISSUE,
+        holder="holder",
+        lease_seconds=120.0,
+    )
     await tracker.active_claim(issue_key=CLAIMED_ISSUE)
     await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="holder")
+    # A lease spanning an issue and a container exercises both comment
+    # parents the vendor accepts a marker under.
+    spanning = frozenset(
+        {
+            WritableSurface(
+                kind=SurfaceKind.ISSUE_DESCRIPTION,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+            ),
+            WritableSurface(
+                kind=SurfaceKind.CONTAINER_DESCRIPTION,
+                ref=ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope"),
+            ),
+        },
+    )
+    await tracker.acquire_surfaces(
+        surfaces=spanning, holder="job-arguments", lease_seconds=60.0
+    )
+    await tracker.renew_surfaces(
+        surfaces=spanning, holder="job-arguments", lease_seconds=120.0
+    )
+    await tracker.release_surfaces(surfaces=spanning, holder="job-arguments")
     await tracker.list_issue_assets(issue_key=CLAIMED_ISSUE)
     await tracker.read_document(document_key=DOCUMENT_KEY)
     await tracker.record_work_ref(
@@ -359,6 +435,11 @@ async def sent_arguments() -> Mapping[str, set[str]]:
                 scope="fixture-team",
             ),
             MappingRef(
+                kind=MappingKind.SCOPE_LABEL,
+                name="approved",
+                identifier="scope:brand-new",
+            ),
+            MappingRef(
                 kind=MappingKind.DOCUMENT,
                 name="a document nobody holds",
                 scope="fixture-team",
@@ -380,7 +461,7 @@ async def test_the_sweep_reaches_every_tool_the_adapter_names(
     sent: Mapping[str, set[str]],
 ) -> None:
     """A vacuous sweep would pass every assertion below it."""
-    assert set(sent) == set(LIVE_INPUT_SCHEMAS)
+    assert set(sent) == set(DECLARED_INPUT_SCHEMAS)
 
 
 async def test_every_argument_key_is_a_declared_property(
@@ -388,9 +469,9 @@ async def test_every_argument_key_is_a_declared_property(
 ) -> None:
     """The check that would have caught the boot failure before sending it."""
     undeclared: dict[str, Sequence[str]] = {
-        tool: sorted(keys - LIVE_INPUT_SCHEMAS[tool].properties)
+        tool: sorted(keys - DECLARED_INPUT_SCHEMAS[tool].properties)
         for tool, keys in sorted(sent.items())
-        if keys - LIVE_INPUT_SCHEMAS[tool].properties
+        if keys - DECLARED_INPUT_SCHEMAS[tool].properties
     }
     assert undeclared == {}
 
@@ -406,9 +487,9 @@ async def test_every_required_argument_is_sent(
     a new omission fails here instead of on the workspace.
     """
     unmet = {
-        tool: LIVE_INPUT_SCHEMAS[tool].required - keys
+        tool: DECLARED_INPUT_SCHEMAS[tool].required - keys
         for tool, keys in sorted(sent.items())
-        if LIVE_INPUT_SCHEMAS[tool].required - keys
+        if DECLARED_INPUT_SCHEMAS[tool].required - keys
     }
     assert unmet == {}
     assert KNOWN_UNMET_REQUIREMENTS == {}
@@ -485,3 +566,15 @@ async def test_a_team_the_workspace_does_not_hold_is_refused_by_name() -> None:
         )
     assert caught.value.tool == "create_issue_label"
     assert server.tool_calls("create_issue_label") == []
+
+
+async def test_guarded_description_write_sends_no_state_or_unrelated_fields():
+    server = fixture_server()
+    tracker = linear_over_fake_mcp(server)
+    current = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    await tracker.edit_description(
+        target=CLAIMED_ISSUE, expected=current.body, replacement="amended description"
+    )
+    assert server.tool_calls("save_issue") == [
+        {"id": CLAIMED_ISSUE, "description": "amended description"}
+    ]
