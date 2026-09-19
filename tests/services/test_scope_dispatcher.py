@@ -15,9 +15,10 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from kodezart.chains import scope_walker
-from kodezart.domain import issue_tree, topology
+from kodezart.chains import native_delivery, scope_walker
+from kodezart.domain import fire_plateau, issue_tree, lane_entry, topology
 from kodezart.domain.errors import ScopeSupersessionReadError
+from kodezart.services import lane_entry as lane_entry_reader
 from kodezart.services import scope_dispatcher, scope_runtime
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
@@ -41,6 +42,7 @@ from kodezart.types.domain.dispatch import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_records import RunOutcome
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import (
     IssuePriority,
@@ -552,29 +554,61 @@ def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():
 
 
 def fire_outcome_vocabulary() -> frozenset[str]:
-    """The fire-level outcome vocabulary, read off the enum rather than listed.
+    """The fire-level outcome vocabulary, read off the enums rather than listed.
 
     A member appended later is covered by the assertion below without the
     assertion being touched, which is the whole point of deriving the set
-    from the enum: a hand-written list would only forbid what the author of
+    from the enums: a hand-written list would only forbid what the author of
     the list happened to know about.
+
+    Two enums and two derivations of one, because a fire's ending is spelled
+    in four places: ``WorkflowOutcome`` is how a lane's own run ended,
+    ``RunOutcome`` how the scheduler and the watcher say the same thing, and
+    ``classify_outcome`` and ``accept_verdict`` are the two readings that turn
+    a finished fire's state into either of them.
+
+    Blind spots, stated rather than hidden. A name reached through
+    ``getattr(module, "outcome")`` is a string constant this does catch, but
+    one assembled from parts is not. A member bound to a local under another
+    name, and an enum imported ``as`` something else, are read under the new
+    name and pass. And the match is by spelling alone, so a member of an
+    unrelated enum spelled like one of these reads as a hit: over-inclusion,
+    deliberately, until the resolving scan KOD-725's own branch carries lands
+    on top of this one.
     """
     return frozenset(
         {WorkflowOutcome.__name__}
         | {member.name for member in WorkflowOutcome}
         | {member.value for member in WorkflowOutcome}
+        | {RunOutcome.__name__}
+        | {member.name for member in RunOutcome}
+        | {member.value for member in RunOutcome}
+        | {"classify_outcome", "accept_verdict"}
     )
 
 
-def outcome_references(source: str) -> frozenset[str]:
+#: The bare names forbidden in the walker's own decision and nowhere else.
+#:
+#: They are what a fire's ending is called where it is legitimately held — a
+#: state key, a field of the phase a delivery ended in — so forbidding them
+#: over a whole module would forbid the walker's post-fire bookkeeping, which
+#: reads a delivery phase on purpose and outside every decision. Inside the
+#: three units that decide what to offer next, either name is a fire-level
+#: outcome reaching the dispatch decision (KOD-725).
+DECISION_ONLY_NAMES = frozenset({"outcome", "delivery"})
+
+
+def outcome_references(
+    source: str, *, also: frozenset[str] = frozenset()
+) -> frozenset[str]:
     """Every fire-level outcome the parsed *source* names, however it names it.
 
     Imports, bare names, attribute reads and the wire strings themselves all
     count: a predicate that compared ``report.outcome == "scope_converged"``
     would be reading a fire outcome just as surely as one that imported the
-    enum.
+    enum. *also* adds the names forbidden in this one source alone.
     """
-    vocabulary = fire_outcome_vocabulary()
+    vocabulary = fire_outcome_vocabulary() | also
     found: set[str] = set()
     for node in ast.walk(ast.parse(textwrap.dedent(source))):
         if isinstance(node, ast.Name) and node.id in vocabulary:
@@ -590,16 +624,36 @@ def outcome_references(source: str) -> frozenset[str]:
     return frozenset(found)
 
 
+#: The units of the live walker that decide what it offers next.
+#:
+#: Named apart because these three, and no other source scanned here, also
+#: forbid ``DECISION_ONLY_NAMES``.
+WALK_DECISION_UNITS = (
+    "ScopeWorkflowEngine._select",
+    "ScopeWorkflowEngine._settle",
+    "ScopeWorkflowEngine._put_back",
+)
+
+
 def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
     """The source of everything that decides whether a lane is dispatchable.
 
-    The decision is the ready set and the gap arithmetic under it, plus the
-    pass that walks the result: the subtree closure that says what a
-    candidate still owes, the topology that partitions candidates into ready
-    and blocked, the walker that assembles the ready set from both, the type
-    that carries it, and the one pass method that turns it into a launch.
+    The decision is the ready set and the gap arithmetic under it, plus what
+    walks the result: the subtree closure that says what a candidate still
+    owes, the topology that partitions candidates into ready and blocked, the
+    walker that assembles the ready set from both, the type that carries it,
+    and the one pass method that turns it into a launch.
     ``record_run_outcome`` is deliberately absent — it records how a fire
     that already ran ended, which is the one place a run outcome belongs.
+
+    The live walk's own decision is here too, in four parts: the two methods
+    that choose the lane a tick offers and read the last fire against this
+    tick's gap, the one that puts a given-up lane's issue back, and the entry
+    reading all three stand on — a lane's record and the branch it names
+    decide how a fire enters, and neither reading may consult how the fire
+    before it ended (KOD-724, KOD-725). The plateau arithmetic is scanned
+    whole for the same reason: it is the quantity ``_settle`` reads, and it
+    counts criterion identities and nothing else.
     """
     return (
         ("SubtreeClosure", inspect.getsource(issue_tree.SubtreeClosure)),
@@ -607,12 +661,34 @@ def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
         ("scope_ready", inspect.getsource(scope_ready)),
         ("scope_walker", inspect.getsource(scope_walker)),
         ("run_pass", inspect.getsource(ScopeDispatcher.run_pass)),
+        (
+            "ScopeWorkflowEngine._select",
+            inspect.getsource(scope_runtime.ScopeWorkflowEngine._select),
+        ),
+        (
+            "ScopeWorkflowEngine._settle",
+            inspect.getsource(scope_runtime.ScopeWorkflowEngine._settle),
+        ),
+        (
+            "ScopeWorkflowEngine._put_back",
+            inspect.getsource(scope_runtime.ScopeWorkflowEngine._put_back),
+        ),
+        ("services/lane_entry", inspect.getsource(lane_entry_reader)),
+        ("domain/lane_entry", inspect.getsource(lane_entry)),
+        ("fire_plateau", inspect.getsource(fire_plateau)),
     )
 
 
 def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
-    """The positive control: the same scan over a predicate that does read one."""
+    """The positive control: the same scan over a predicate that does read one.
+
+    One shape per name the scan forbids, because a vocabulary is only as good
+    as the reading that consumes it: a detector that missed the scheduler's
+    spelling of a fire's ending, or the two readings that produce either
+    spelling, would report the same empty set over the real sources below.
+    """
     member = next(iter(WorkflowOutcome))
+    ran = next(iter(RunOutcome))
     reading_enum = f"""
         from kodezart.types.domain.outcome import WorkflowOutcome
 
@@ -622,6 +698,28 @@ def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
     reading_wire_string = f"""
         def dispatchable(lane):
             return lane.last_outcome != "{member.value}"
+    """
+    reading_the_run_enum = f"""
+        from kodezart.types.domain.run_records import RunOutcome
+
+        def dispatchable(lane):
+            return lane.last_run is not RunOutcome.{ran.name}
+    """
+    reading_the_run_wire_string = f"""
+        def dispatchable(lane):
+            return lane.last_run != "{ran.value}"
+    """
+    reading_a_classification = """
+        def dispatchable(lane):
+            return classify_outcome(lane.state) is None
+    """
+    reading_a_verdict = """
+        def dispatchable(lane):
+            return lane.state["accept_verdict"] is None
+    """
+    reading_the_bare_names = """
+        def dispatchable(lane):
+            return lane.outcome is None and lane.delivery is None
     """
 
     reading_the_gap = """
@@ -634,7 +732,30 @@ def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
         member.name,
     }
     assert outcome_references(reading_wire_string) >= {member.value}
+    assert outcome_references(reading_the_run_enum) >= {
+        RunOutcome.__name__,
+        ran.name,
+    }
+    assert outcome_references(reading_the_run_wire_string) >= {ran.value}
+    assert outcome_references(reading_a_classification) == {"classify_outcome"}
+    assert outcome_references(reading_a_verdict) == {"accept_verdict"}
+    # The two bare names are forbidden where the walk decides and nowhere
+    # else, so the scan finds them only when it is asked to: a source that
+    # holds a delivery phase outside every decision is not a hit.
+    assert outcome_references(reading_the_bare_names) == frozenset()
+    assert (
+        outcome_references(reading_the_bare_names, also=DECISION_ONLY_NAMES)
+        == DECISION_ONLY_NAMES
+    )
     assert outcome_references(reading_the_gap) == frozenset()
+    assert outcome_references(reading_the_gap, also=DECISION_ONLY_NAMES) == frozenset()
+    # And alive over real source, not only over the shapes written here: the
+    # step that classifies a finished fire reads exactly what the decisions
+    # below may not, and the scan says so about the shipped module.
+    assert outcome_references(inspect.getsource(native_delivery)) >= {
+        "classify_outcome",
+        "accept_verdict",
+    }
 
 
 def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
@@ -645,6 +766,15 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     read as a lane finished, and one that ended ``shutdown_abandoned`` can
     never be read as a lane abandoned: the arithmetic has no access to either
     fact in the first place.
+
+    The live walk is held to it twice over. Its selection asks only which
+    lanes the ready read offers and which are resting; the reading that
+    decides whether a fired lane is offered again asks only which criterion
+    identities its subtree now carries as closed. A fire that ended
+    ``loop_not_accepted`` and a fire that ended ``ci_passed`` reach both of
+    them as the same fact — the gap they left — which is what lets a lane be
+    fired twice in one invocation without any state machine over its exits
+    (KOD-724, KOD-725).
     """
     scanned = dispatchability_predicate_sources()
 
@@ -654,9 +784,17 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
         "scope_ready",
         "scope_walker",
         "run_pass",
+        *WALK_DECISION_UNITS,
+        "services/lane_entry",
+        "domain/lane_entry",
+        "fire_plateau",
     }
+    # Every source really carries source: a label whose text came back empty
+    # would satisfy the assertion below without scanning anything.
+    assert all(source.strip() for _, source in scanned)
     for label, source in scanned:
-        assert outcome_references(source) == frozenset(), label
+        also = DECISION_ONLY_NAMES if label in WALK_DECISION_UNITS else frozenset()
+        assert outcome_references(source, also=also) == frozenset(), label
 
 
 def re_entry_board():
