@@ -190,12 +190,18 @@ def closure(
     *,
     root: pathlib.Path = SOURCE_ROOT,
     first_party: str = "kodezart",
+    leaves: tuple[str, ...] = (),
 ) -> dict[str, Scanned]:
     """The transitive first-party import closure of *entry_points*.
 
     A source-tree walk: nothing here is imported at runtime, so *root* and
     *first_party* are all it takes to point the same walker at a tree written
     for a test.
+
+    *leaves* are modules the walk reaches and does not descend into. That is
+    what makes "reached ONLY through this module" derivable: the same walk with
+    a module as a leaf reaches everything the entry points reach by any other
+    route, so what that walk misses is exactly what this one alone leads to.
     """
     scanned: dict[str, Scanned] = {}
     pending = list(entry_points)
@@ -208,6 +214,8 @@ def closure(
             continue
         found = _scan(path, first_party=first_party)
         scanned[module] = found
+        if module in leaves:
+            continue
         pending.extend(
             imported for imported in found.modules if imported.startswith(first_party)
         )
@@ -230,7 +238,24 @@ def test_the_supervisor_reaches_no_adapter_no_process_and_no_repository_role():
     """
     scanned = closure()
     assert set(ENTRY_POINTS) <= set(scanned)
-    port_allowed = {PORT_HOLDING_ROOT} | set(closure(WALKER_READ_PATH))
+    # Every rule below is a disjointness, which an empty closure satisfies, so
+    # the walk is required to have gone past the points it started from. The
+    # bound is derived from those points rather than written as a count the tree
+    # would then have to keep agreeing with.
+    assert len(scanned) > len(ENTRY_POINTS), sorted(scanned)
+    # Where the whole port may be held: the composition root, which narrows it
+    # by design; the walker's read path, which this slice left holding it; and
+    # the modules the supervisor reaches ONLY through that read path. The last
+    # set is derived — the walker's own closure, less everything the same walk
+    # reaches with the walker treated as a leaf — so a module the supervisor
+    # imports itself is outside the allowance however deep the walker goes into
+    # it as well.
+    reached_without_the_walker = set(closure(ENTRY_POINTS, leaves=WALKER_READ_PATH))
+    port_allowed = (
+        {PORT_HOLDING_ROOT}
+        | set(WALKER_READ_PATH)
+        | (set(closure(WALKER_READ_PATH)) - reached_without_the_walker)
+    )
 
     for module, found in scanned.items():
         assert not module.startswith("kodezart.adapters"), module
@@ -257,22 +282,32 @@ def test_the_closure_walker_flags_an_adapter_reached_through_one_more_import(tmp
     same walker at a tree written to hold an adapter one import deeper than the
     entry point and requires it to arrive there. Nothing here is imported; it
     is read as source, which is why the probe may name an adapter freely.
+
+    Both import forms are covered, and the guarded tree's own form is one of
+    them: a control shaped only like ``import probe.inner`` would stay green for
+    a walker that followed plain imports and nothing else, while the tree this
+    guards reaches every one of its modules through ``from ... import ...`` and
+    none through a plain import at all.
     """
     package = tmp_path / "probe"
     package.mkdir()
     (package / "__init__.py").write_text("", encoding="utf-8")
-    (package / "entry.py").write_text("import probe.inner\n", encoding="utf-8")
-    (package / "inner.py").write_text(
-        "from kodezart.adapters.linear import tracker\n", encoding="utf-8"
+    (package / "entry.py").write_text(
+        "from probe import inner\nimport probe.plain\n", encoding="utf-8"
     )
+    for reached in ("inner", "plain"):
+        (package / f"{reached}.py").write_text(
+            "from kodezart.adapters.linear import tracker\n", encoding="utf-8"
+        )
 
     scanned = closure(("probe.entry",), root=tmp_path, first_party="probe")
 
-    assert "probe.inner" in scanned, sorted(scanned)
-    assert any(
-        imported.startswith("kodezart.adapters")
-        for imported in scanned["probe.inner"].modules
-    )
+    for reached in ("probe.inner", "probe.plain"):
+        assert reached in scanned, sorted(scanned)
+        assert any(
+            imported.startswith("kodezart.adapters")
+            for imported in scanned[reached].modules
+        )
 
 
 def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
