@@ -77,27 +77,20 @@ def test_the_legacy_set_stays_complete_when_the_default_names_another_set(
     assert set(table.values()) == {DEFAULT_SET}
 
 
-@pytest.mark.parametrize(
-    "missing",
-    [
-        PromptKey.FIX,
-        PromptKey.EVALUATION,
-        PromptKey.KNOWLEDGE_MAP,
-        PromptKey.ORGANIZE_ASSESS,
-        PromptKey.ORGANIZE_AUTHOR,
-        PromptKey.ORGANIZE_VERIFY,
-        PromptKey.ORGANIZE_CRITERIA_AUTHOR,
-        PromptKey.FIRE_TIME_RULING,
-    ],
-)
+@pytest.mark.parametrize("missing", list(PromptKey))
 def test_a_set_missing_one_key_raises_the_typed_boot_error(
     missing: PromptKey,
     tmp_path: Path,
 ) -> None:
-    """Removing one key from a set names that key in the typed boot error."""
+    """Removing one key from a set names that key in the typed boot error.
+
+    The skills table stays complete, so the member file is the only thing the
+    set no longer supplies: a registry that stopped looking for the member and
+    trusted the table alone would pass otherwise.
+    """
     members = complete_members("fixture")
     del members[missing.value]
-    write_set(tmp_path, "fixture", members)
+    write_set(tmp_path, "fixture", members, skills={key.value: [] for key in PromptKey})
 
     with pytest.raises(PromptResolutionError) as excinfo:
         load_registry(sets_root=tmp_path, default_set="fixture")

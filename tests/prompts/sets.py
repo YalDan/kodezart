@@ -12,6 +12,7 @@ authoring rather than of test setup.
 from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.prompt_namespaces import operation_bindings
+from kodezart.domain.rulings import EMPTY_REGISTRY
 from kodezart.types.domain.prompts import PromptKey
 from tests.fakes import pass_render_variables
 from tests.prompts.test_prompt_wiring import (
@@ -107,7 +108,7 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
         {
             "issue_key": "external/42",
             "task_md": TASK_MD,
-            "pinned_rulings": "Confirmed empty ruling registry.",
+            "pinned_rulings": EMPTY_REGISTRY,
         },
     ),
     "fire_prep_pass": (
