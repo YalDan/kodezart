@@ -46,6 +46,31 @@ SUPERVISOR_ROLE_MEMBERS = frozenset(
         "post_run_event",
     }
 )
+#: The slice's own three modules. The clock rules below are scoped to these
+#: rather than to the whole closure, because the scheduler that drives the tick
+#: legitimately holds a clock and an event loop; what is refused is a second
+#: one, of the observation's own.
+OWN_MODULES = (
+    "kodezart.services.supervisor_pass",
+    "kodezart.services.tally_supervisor",
+    "kodezart.composition.supervisor",
+)
+#: Waiting, scheduling and reading the time are the scheduler's, so a module of
+#: the observation importing one of these is taking a second opinion on when.
+CLOCK_MODULES = frozenset({"time", "asyncio", "threading", "sched"})
+#: Reading a clock or arming a timer, whichever module it came from.
+CLOCK_CALLS = frozenset(
+    {
+        "sleep",
+        "monotonic",
+        "perf_counter",
+        "now",
+        "utcnow",
+        "call_later",
+        "call_at",
+        "Timer",
+    }
+)
 #: The calls that move a run's state. The role is narrowed out of the port, so
 #: the port satisfies any widening of it and neither mypy nor a behavioural
 #: test would notice one of these arriving.
@@ -112,6 +137,34 @@ def test_the_supervisor_reaches_no_adapter_no_process_and_no_repository_role():
         ), module
         assert modules.isdisjoint(FORBIDDEN_MODULES), (module, modules)
         assert names.isdisjoint(FORBIDDEN_ROLES), (module, names & FORBIDDEN_ROLES)
+
+
+def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
+    """The tick waits for nothing and times nothing: the scheduler does both.
+
+    A pass that slept, armed a timer, or read a clock of its own would have a
+    cadence and a notion of elapsed time that no configuration names, and a
+    short sleep is invisible to a bounded integration tick. The rule is scoped
+    to the observation's own three modules: the scheduler it is registered on
+    holds the event loop and the one clock, which is where they belong.
+
+    ``from datetime import datetime`` stays admissible — it is the type of the
+    stamp the tick is handed — while ``datetime.now()`` is an attribute call
+    named among the clock reads and is refused.
+    """
+    for module in OWN_MODULES:
+        path = _module_path(module)
+        assert path is not None, module
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        modules, _ = _imports(path)
+
+        assert modules.isdisjoint(CLOCK_MODULES), (module, modules & CLOCK_MODULES)
+        called = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert called.isdisjoint(CLOCK_CALLS), (module, called & CLOCK_CALLS)
 
 
 def test_the_supervisor_role_names_no_state_moving_method():
