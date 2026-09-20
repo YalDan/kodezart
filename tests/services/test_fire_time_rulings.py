@@ -12,6 +12,7 @@ from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.agent import mint_ruling_id
+from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import RulingUnrecordedError
 from kodezart.domain.prompt_variables import tracker_checks_section
 from kodezart.domain.rulings import EMPTY_REGISTRY, ruling_marker
@@ -299,14 +300,41 @@ async def test_a_record_the_tracker_accepted_but_does_not_list_is_not_pinned(
     """A write that returned is not a record a later reader can find."""
 
     class HidingPort(type(tracker())):
+        """Lists the record until it is told to stop, and not afterwards."""
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.hide = False
+
         async def list_comments(self, *, issue_key: str):
             listed = await super().list_comments(issue_key=issue_key)
+            if not self.hide:
+                return listed
             prefix = native_operation().marker_prefixes["ruling"]
             return tuple(
                 comment
                 for comment in listed
                 if not comment.body.startswith(f"[{prefix}")
             )
+
+    class HidesOnJudgement(Executor):
+        """Stops the board listing the record once the judgement opens.
+
+        The window reads the artifact it wrote before that judgement, so the
+        window itself completes and the only read left to fail is the step's
+        own cold one.
+        """
+
+        def __init__(self, sessions, *, port):
+            super().__init__(sessions)
+            self._port = port
+
+        async def stream(self, **kwargs):
+            schema = (kwargs.get("output_format") or {}).get("schema", {})
+            if schema.get("title") == "WriteBackFinding":
+                self._port.hide = True
+            async for event in super().stream(**kwargs):
+                yield event
 
     source = tracker(bodies={DIRECT_OWED: ambiguous_body()})
     port = HidingPort(
@@ -315,7 +343,7 @@ async def test_a_record_the_tracker_accepted_but_does_not_list_is_not_pinned(
         marker_prefixes=native_operation().marker_prefixes,
         scope_label_members=source.scope_label_members,
     )
-    executor = Executor([[one_answer()]])
+    executor = HidesOnJudgement([[one_answer()]], port=port)
     step, spec, current, _, port, _, repo_path, base = await build(
         repository, executor, port=port
     )
@@ -324,8 +352,24 @@ async def test_a_record_the_tracker_accepted_but_does_not_list_is_not_pinned(
         await run(step, spec, current, repo_path, base)
 
     assert caught.value.issue_key == SUBJECT
-    # The write did happen; what failed is the confirmation of it.
+    # The write did happen, and so did the judgement of what it landed; what
+    # failed is the step's own read-back of it.
     assert port.comment_writes
+    assert len(executor.judged_artifacts) == 1
+
+
+@pytest.mark.parametrize("holder", [None, "  "], ids=["None", "blank"])
+async def test_a_blank_holder_is_refused_before_any_session(repository, holder) -> None:
+    """No parent job to write under: refused before any backend is reached."""
+    executor = Executor([[one_answer()]])
+    step, spec, current, _, port, _, repo_path, base = await build(repository, executor)
+
+    with pytest.raises(NativeWriteRefusalError):
+        await run(step, spec, current, repo_path, base, holder=holder)
+
+    assert executor.calls == []
+    assert port.leases == {}
+    assert port.comment_writes == []
 
 
 # ---------------------------------------------------------------------------
