@@ -17,7 +17,8 @@ from kodezart.domain.organize import stage_rows
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
-from kodezart.types.domain.organize import AdmissionVerdict, SpecFinding
+from kodezart.types.domain.organize import AdmissionVerdict, MandateKind, SpecFinding
+from kodezart.types.domain.organize_owner import StageHaltCause
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import ToolPreset
 from tests.chains.test_organize import (
@@ -147,6 +148,7 @@ def factory(
     gate=None,
     under_approval=False,
     criteria=("Check prepared bytes",),
+    phases=None,
 ):
     board = _Board()
     operation_fields = declared_operation().model_dump()
@@ -189,6 +191,9 @@ def factory(
         criteria=criteria,
     )
     workspace = RecordingWorkspace()
+    rows = stage_rows(
+        operation.resolve_organize_mandates(), under_approval=under_approval
+    )
     constructor = build_organize_tick if tick else build_organize_owner
     owner = constructor(
         config=settings
@@ -219,10 +224,10 @@ def factory(
             if tick
             else {
                 "repo_url": "https://example.invalid/repository",
-                "phases": stage_rows(
-                    operation.resolve_organize_mandates(),
-                    under_approval=under_approval,
-                ),
+                # *phases* narrows the table this owner runs, through the same
+                # public constructor: a case about one row's own pre-check
+                # states its table rather than reaching into the built owner.
+                "phases": rows if phases is None else phases(rows),
             }
         ),
     )
@@ -1075,3 +1080,80 @@ async def test_an_escalated_member_holds_its_stage_by_name_before_any_session():
         "body complete",
         "criteria complete",
     }
+
+
+#: A body an admission is granted on, so the stage reaches its marker loop.
+PREPARED_BODY = "Prepared body grounded in the source."
+
+
+async def test_a_phase_that_leaves_a_member_unlabelled_does_not_reach_the_next(
+    monkeypatch,
+):
+    """The barrier reads a fresh snapshot after the stage's own writes.
+
+    Admission shuts between the pre-check and the marker loop, so nobody is
+    marked. The stage neither completes nor advances: it names every member
+    that still owes its marker, under its own name, and the next stage never
+    opens a session — so that stage's marker never lands either.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = factory(under_approval=True, body=PREPARED_BODY)
+    board.server.issues["second"] = FakeMcpIssue(
+        id="second", parent_id=CLAIMED_ISSUE, description=PREPARED_BODY
+    )
+    original = executor.stream
+
+    async def withdrawn(**kwargs):
+        if "Adversarially verify the current issue" in kwargs["prompt"]:
+            labels = board.server.issues[CLAIMED_ISSUE].labels
+            if "approved scope" in labels:
+                labels.remove("approved scope")
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", withdrawn)
+    report = await run_owner(owner)
+
+    assert report.halt is not None
+    assert report.halt.cause is StageHaltCause.STAGE_INCOMPLETE
+    assert report.halt.phase.value == "ticket"
+    assert set(report.halt.unlabelled_issue_ids) == {CLAIMED_ISSUE, "second"}
+    assert report.completed_phases == ()
+    assert not set(board.server.issues[CLAIMED_ISSUE].labels) & {
+        "body complete",
+        "criteria complete",
+    }
+    assert not [
+        call
+        for call in executor.calls
+        if "Author criterion sub-issue proposals" in call["prompt"]
+    ]
+
+
+async def test_the_criteria_stage_opens_no_session_without_the_ticket_label():
+    """The second run stage is gated on the first's marker, per member.
+
+    Built over that row alone, with a member the first stage never marked:
+    the stage counts and names it before anything opens, and writes nothing.
+    """
+    owner, board, executor = factory(
+        under_approval=True,
+        body=PREPARED_BODY,
+        phases=lambda rows: tuple(
+            row for row in rows if row.spec.kind is MandateKind.CRITERIA
+        ),
+    )
+    report = await run_owner(owner)
+
+    assert report.halt is not None
+    assert report.halt.cause is StageHaltCause.STAGE_INCOMPLETE
+    assert report.halt.phase.value == "criteria"
+    assert report.halt.unlabelled_issue_ids == (CLAIMED_ISSUE,)
+    assert executor.calls == []
+    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+    # Free as well as named: the stage refuses on its first reading of the
+    # roster. A check that let the stage through here would reach the
+    # post-stage barrier and read the whole roster a second time to say the
+    # same thing.
+    assert [name for name, _ in board.calls].count("list_issues") == 1
