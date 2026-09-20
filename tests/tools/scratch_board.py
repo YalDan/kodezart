@@ -56,7 +56,9 @@ class ScratchBoardServer(ManagedFakeLinearMcpServer):
         names, kinds = _statuses(operation)
         actor = operation.agent_identities[0] if operation.agent_identities else "agent"
         super().__init__(
-            users=[actor],
+            # Every declared identity, not only the dialled one: boot resolves
+            # each spelling of the writer against the workspace.
+            users=list(operation.agent_identities) or [actor],
             teams=[team],
             statuses={team: names},
             state_types=kinds,
