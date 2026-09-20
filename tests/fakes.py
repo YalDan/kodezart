@@ -3778,6 +3778,10 @@ class FakeTrackerPort:
                 raise ScopeReadError("scope label identity changed", ref=ref)
         else:
             await self.container_metadata(ref=ref)
+            if ref.kind is ScopeKind.MILESTONE:
+                # No native object of this kind carries a label, so no read of
+                # one can answer with members whatever the backing data holds.
+                return frozenset()
         return self.scope_label_members.get(ref, frozenset())
 
     async def update_issue_graph(
