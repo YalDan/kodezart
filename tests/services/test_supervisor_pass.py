@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+import structlog.testing
 
 from kodezart.domain.tally_record import is_raised
 from kodezart.services.lane_records import LaneRecordReader
@@ -66,7 +67,10 @@ def pass_over(port, *, readings, tally=None):
 
     async def read_ready(ref):
         answer = readings[ref]
-        if isinstance(answer, Exception):
+        # Any raisable answer is raised, a stop included: a double that could
+        # only fail the way the tick contains failures could never show a stop
+        # coming back out of the scope read.
+        if isinstance(answer, BaseException):
             raise answer
         return answer
 
@@ -201,27 +205,44 @@ async def test_a_blocked_member_is_not_observed_and_its_raise_stands(monkeypatch
     ]
 
 
-async def test_cancellation_is_not_swallowed():
-    """The lane boundary contains a lane's failure, never the caller's stop."""
+@pytest.mark.parametrize("stopped", ["the lane observation", "the scope read"])
+async def test_cancellation_is_not_swallowed(stopped):
+    """Neither boundary contains the caller's stop, only a lane's own failure.
+
+    The tick draws two: one around a lane's observation and one around a
+    scope's read. A stop is not the failure of the lane or the scope it
+    arrived in, so it comes straight back out of the tick — nothing is written
+    down as having failed and no scope is counted as unobserved.
+    """
     port = await board(lanes=LANES)
 
     class Cancelling(TallySupervisor):
         async def observe(self, **_):
             raise asyncio.CancelledError
 
-    cancelling = Cancelling(
-        tracker=port,
-        records=LaneRecordReader(tracker=port, operation=operation()),
-        marker_prefixes=PREFIXES,
-        max_commits_without_closure=BOUND,
-        holder="kodezart/supervisor",
-        lease_seconds=LEASE_SECONDS,
-    )
-
-    with pytest.raises(asyncio.CancelledError):
-        await pass_over(port, readings={REF: ready_set()}, tally=cancelling).run(
-            FIXTURE_EPOCH
+    if stopped == "the scope read":
+        readings = {REF: asyncio.CancelledError()}
+        tally = supervisor(port)
+    else:
+        readings = {REF: ready_set()}
+        tally = Cancelling(
+            tracker=port,
+            records=LaneRecordReader(tracker=port, operation=operation()),
+            marker_prefixes=PREFIXES,
+            max_commits_without_closure=BOUND,
+            holder="kodezart/supervisor",
+            lease_seconds=LEASE_SECONDS,
         )
+
+    with structlog.testing.capture_logs() as logs:
+        with pytest.raises(asyncio.CancelledError):
+            await pass_over(port, readings=readings, tally=tally).run(FIXTURE_EPOCH)
+
+    assert [
+        entry
+        for entry in logs
+        if entry["event"] in {"supervisor_scope_failed", "supervisor_lane_failed"}
+    ] == []
 
 
 def test_a_blank_holder_refuses_before_any_read():
