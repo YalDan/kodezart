@@ -14,6 +14,9 @@ def classify_outcome(state: WorkflowState) -> WorkflowOutcome:
     review_passed = state["review_passed"]
     trajectory = state["trajectory"]
 
+    if state.get("ruling_unrecorded", False):
+        return WorkflowOutcome.ruling_unrecorded
+
     if state["criteria_infeasible"]:
         return WorkflowOutcome.criteria_infeasible
 

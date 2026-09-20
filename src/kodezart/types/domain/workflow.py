@@ -304,6 +304,10 @@ class WorkflowState(TypedDict):
     repo_url: str | None
     repo_visibility: RepoVisibility
     trajectory: LoopTrajectory | None
+    #: Set by the pre-loop question step, and by nothing else, when an open
+    #: question it raised carries no confirmed answer on the tracker. Absent
+    #: on every other path, so every existing state literal stays valid.
+    ruling_unrecorded: NotRequired[bool]
 
 
 class AuthoredWorkflowState(WorkflowState):

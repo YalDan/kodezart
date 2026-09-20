@@ -385,3 +385,33 @@ def test_unclassifiable_state_raises_there_is_no_default_arm() -> None:
 )
 def test_delivery_outcomes_append_with_exact_wire_values(name):
     assert WorkflowOutcome[name].value == name
+
+
+def test_an_unconfirmed_pin_outranks_every_other_classification() -> None:
+    """The pre-loop halt is read first, whatever else the state would match."""
+    halted = _state(
+        verdict=AcceptVerdict.accepted,
+        merged=True,
+        review_passed=True,
+        criteria_infeasible=True,
+    )
+    # Non-vacuous: without the flag this very state classifies as something
+    # else, so the arm above is a precedence statement and not a tautology.
+    assert classify_outcome(halted) is not WorkflowOutcome.ruling_unrecorded
+
+    halted["ruling_unrecorded"] = True
+
+    assert classify_outcome(halted) is WorkflowOutcome.ruling_unrecorded
+    # Absence is the ordinary case and reads as false, never as unknown.
+    assert "ruling_unrecorded" not in _state()
+
+
+def test_the_new_member_appends_with_its_exact_wire_value() -> None:
+    """A member is a wire contract: appended, and spelled as its own name."""
+    member = WorkflowOutcome.ruling_unrecorded
+
+    assert member.value == "ruling_unrecorded"
+    assert list(WorkflowOutcome).index(member) > list(WorkflowOutcome).index(
+        WorkflowOutcome.ci_no_run_at_ref
+    )
+    assert member not in QUEUE_ASSIGNED

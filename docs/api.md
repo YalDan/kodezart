@@ -319,9 +319,11 @@ outcome and reason without inventing a PR. The completed result names the lane
 and issue, head/base branches, final commit SHA, PR, coherent check observation,
 red classification and outcome. Completed delivery can still report failed or
 unverifiable checks; it does not establish scope acceptance. Internal pending
-remediation never appears as a terminal delivery event. Consumers evaluating a
-later scope result must use these actual delivery records and current tracker
-obligations.
+remediation never appears as a terminal delivery event. A `skipped` delivery may
+carry the `ruling_unrecorded` outcome, which means the fire stopped before its
+first iteration because an open question raised on its own text carries no
+confirmed answer on the tracker. Consumers evaluating a later scope result must
+use these actual delivery records and current tracker obligations.
 
 ### Native Amendment Events (1)
 

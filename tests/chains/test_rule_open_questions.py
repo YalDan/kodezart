@@ -9,11 +9,15 @@ graph is untouched, and no generation node runs on either path through here.
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.core.errors import NoStructuredOutputError, TrackerUnavailableError
 from kodezart.domain.amendment import NativeWriteRefusalError
-from kodezart.domain.errors import FireSpecEntryError
+from kodezart.domain.errors import FireSpecEntryError, SurfaceLeaseError
+from kodezart.types.domain.agent import ResultEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.tracker import TrackerComment
 from tests.chains.test_native_fire import (
     DIRECT_DONE,
     DIRECT_OWED,
@@ -30,10 +34,12 @@ from tests.chains.test_native_fire import (
     entry_of,
     finished,
     native_evaluation,
+    native_operation,
     prepared,
     reachable,
     tracker,
 )
+from tests.fakes import FakeGitService, FakeTrackerPort, FakeWorkspaceProvider
 
 #: Every criterion a finished subtree's roster carries, so a delivering
 #: lane's review can be answered without inventing an id.
@@ -243,3 +249,184 @@ def test_the_prepared_state_carries_nothing_the_step_produces() -> None:
     state = prepared(staged(), entry=None)
 
     assert "ruling_unrecorded" not in state
+
+
+# ---------------------------------------------------------------------------
+# An answer that cannot be confirmed on the tracker ends the fire here.
+# ---------------------------------------------------------------------------
+
+RULING_PREFIX = native_operation().marker_prefixes["ruling"]
+
+#: One answer, addressed to the Check whose own text would raise it.
+ANSWER = {
+    "issueRef": DIRECT_OWED,
+    "question": "Is a queue holding only failed items drained?",
+    "rulingClass": "pin_reading",
+    "resolution": "A queue holding failed items is not drained.",
+    "rejectedAlternative": "Treating failed items as drained.",
+    "repoEvidence": ["policy.py — the queue predicate this tree already has"],
+}
+
+REFUTED = {
+    "verdict": "refuted",
+    "evidence": "The landed text names a predicate this tree does not hold.",
+    "cited_refs": ["policy.py"],
+}
+
+
+def is_record(comment: TrackerComment) -> bool:
+    return comment.body.startswith(f"[{RULING_PREFIX}")
+
+
+class WriteFails(FakeTrackerPort):
+    """The record's own write fails; every other write of the board is fine."""
+
+    async def upsert_comment(self, *, target, marker, body, holder=None, expected=None):
+        if marker.startswith(f"[{RULING_PREFIX}"):
+            raise TrackerUnavailableError("the record write is unavailable")
+        return await super().upsert_comment(
+            target=target, marker=marker, body=body, holder=holder, expected=expected
+        )
+
+
+class LeaseRefused(FakeTrackerPort):
+    """The write set cannot be held, so nothing is attempted under it."""
+
+    async def acquire_surfaces(self, *, surfaces, holder, lease_seconds):
+        raise SurfaceLeaseError(
+            "another run holds this write set",
+            surface=next(iter(surfaces)),
+            current_holder="another-job",
+        )
+
+
+class HidesRecord(FakeTrackerPort):
+    """The write returns and a later reader cannot find what it wrote."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.hide = False
+
+    async def list_comments(self, *, issue_key: str):
+        listed = await super().list_comments(issue_key=issue_key)
+        if not self.hide:
+            return listed
+        return tuple(comment for comment in listed if not is_record(comment))
+
+
+class AltersRecord(FakeTrackerPort):
+    """The write returns and the text a later reader finds is not the text sent."""
+
+    async def list_comments(self, *, issue_key: str):
+        return tuple(
+            comment.model_copy(update={"body": comment.body + "\ntampered"})
+            if is_record(comment)
+            else comment
+            for comment in await super().list_comments(issue_key=issue_key)
+        )
+
+
+def variant(cls, **changes):
+    """One of the boards above, over the fixture subtree the fire reads."""
+    source = tracker()
+    return cls(
+        issues=list(source.issues.values()),
+        criteria_stage_label_key=source.criteria_stage_label_key,
+        marker_prefixes=native_operation().marker_prefixes,
+        scope_label_members=source.scope_label_members,
+        **changes,
+    )
+
+
+def unconfirmed(shape):
+    """The board and the executor one way of failing to confirm needs."""
+    executor = NativeExecutor([])
+    executor.question_answers = [{"rulings": [ANSWER]}]
+    if shape == "judged_refuted":
+        executor.findings = [dict(REFUTED)]
+        return variant(FakeTrackerPort), executor
+    if shape == "write_fails":
+        return variant(WriteFails), executor
+    if shape == "lease_refused":
+        return variant(LeaseRefused), executor
+    if shape == "read_back_changed":
+        return variant(AltersRecord), executor
+    port = variant(HidesRecord)
+    port.hide = True
+    return port, executor
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "write_fails",
+        "lease_refused",
+        "judged_refuted",
+        "read_back_empty",
+        "read_back_changed",
+    ],
+)
+async def test_an_unconfirmed_pin_halts_before_the_loop_with_its_own_outcome(
+    shape,
+) -> None:
+    """Five ways to fail, one terminal: the loop was never entered."""
+    port, executor = unconfirmed(shape)
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        real_loop=True,
+        git=git,
+        workspace=workspace,
+    )
+
+    events = await drive(fire, scope=SCOPE)
+
+    terminal = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
+    assert terminal.outcome is WorkflowOutcome.ruling_unrecorded
+    assert terminal.total_iterations == 0
+    # The loop is what did not happen: no execution session, no grading, and
+    # no branch cut or checked out.
+    assert executor.execution_prompts == []
+    assert not any("criteriaResults" in props for props in executor.schema_calls)
+    assert all(call.get("branch_name") is None for call in workspace.acquisitions)
+    # And the question pass itself did run, so the halt is about its answer.
+    assert len(executor.question_prompts) == 1
+
+
+async def test_a_session_failure_is_not_the_unrecorded_answer_outcome() -> None:
+    """A pass that answered nothing is the graph's failure, not the tracker's."""
+
+    class Silent(NativeExecutor):
+        async def stream(self, **kwargs):
+            properties = (kwargs.get("output_format") or {}).get("schema", {}).get(
+                "properties"
+            ) or {}
+            if "rulings" in properties:
+                self.schema_calls.append(properties)
+                self.question_prompts.append(kwargs["prompt"])
+                yield ResultEvent(
+                    subtype="result",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="native-session",
+                    structured_output=None,
+                )
+                return
+            async for event in super().stream(**kwargs):
+                yield event
+
+    executor = Silent([])
+    fire = engine(
+        criteria=TrackerCriteria(tracker=variant(FakeTrackerPort)),
+        executor=executor,
+    )
+    state, config = prepare(fire)
+
+    with pytest.raises(NoStructuredOutputError):
+        await executed(fire, state, config)
+
+    assert len(executor.question_prompts) == 1
