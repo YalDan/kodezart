@@ -49,6 +49,12 @@ class WorkflowOutcome(StrEnum):
 
     The ``scope_`` outcomes classify convergence of a scope. They extend
     this same vocabulary so wire consumers never switch between enums.
+
+    ``ruling_unrecorded`` is the second pre-loop halt, beside
+    ``criteria_infeasible``: an open question was raised on the fire's own
+    text and its pinned answer could not be confirmed on the tracker, so the
+    loop was never entered. It is a statement about the tracker rather than
+    about the work — nothing the first iteration would have read is there.
     """
 
     merge_divergent = "merge_divergent"
@@ -74,3 +80,4 @@ class WorkflowOutcome(StrEnum):
     ci_failed_environment_prerequisite = "ci_failed_environment_prerequisite"
     ci_failed_unclassified = "ci_failed_unclassified"
     ci_no_run_at_ref = "ci_no_run_at_ref"
+    ruling_unrecorded = "ruling_unrecorded"
