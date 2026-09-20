@@ -19,7 +19,7 @@ from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.core.protocols import PRCreator
-from kodezart.domain.agent import mint_lane_branches
+from kodezart.domain.agent import generate_ralph_branch_name, mint_lane_branches
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     BaseResolutionError,
@@ -58,8 +58,10 @@ from kodezart.types.domain.consolidation import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.native_delivery import LaneDeliveryEvent
 from kodezart.types.domain.operation import LifecycleStage, RepoEntry, ScopeLabel
+from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
@@ -1212,6 +1214,19 @@ async def lane_record(port, key: str):
     return record
 
 
+async def recorded_so_far(port, key: str):
+    """The same record, or ``None`` where the walk has not written one yet.
+
+    A reading taken DURING a walk cannot assume a record exists: the tick that
+    precedes a lane's first fire is a tick the lane has no record at, and a
+    reading that refused there could not be taken at every tick.
+    """
+    located = await LaneRecordReader(tracker=port, operation=native_operation()).find(
+        issue_key=key, lane_key=key
+    )
+    return None if located is None else located[1]
+
+
 def deliverable_of(repos: WalkRepos, key: str) -> WorkRef:
     """The ref a delivery records, published on the remote as a delivery does."""
     branch, sha = f"recorded-{key}", "a" * 40
@@ -1499,7 +1514,7 @@ async def first_fire(port, repos, *, passed=("A/check",)):
 
 
 def mint_spy(monkeypatch) -> list[str]:
-    """Record every branch-name mint the walker path makes, and mint as usual.
+    """Record every mint of a LANE'S TWO NAMES, and mint as usual.
 
     Patched at the definition AND at the alias the fire holds: a mint through
     either name is a mint, and a spy on one name only answers "uncalled" for a
@@ -1507,6 +1522,10 @@ def mint_spy(monkeypatch) -> list[str]:
     test states is the empty list beside a walk that otherwise ran — a raising
     spy would be contained at the lane boundary and read as some other
     failure.
+
+    A lane's pair of names is not the only name a fire can draw: a remediation
+    round draws a fresh LOOP name of its own, which ``loop_name_spy`` below
+    records and this one cannot see.
     """
     calls: list[str] = []
 
@@ -1517,6 +1536,34 @@ def mint_spy(monkeypatch) -> list[str]:
     for name in (
         "kodezart.domain.agent.mint_lane_branches",
         "kodezart.chains.ralph_workflow.mint_lane_branches",
+    ):
+        monkeypatch.setattr(name, recording)
+    return calls
+
+
+def loop_name_spy(monkeypatch) -> list[str]:
+    """Record every draw of a fresh LOOP branch name, and draw as usual.
+
+    The other mint. A lane's pair of names is drawn once, but a remediation
+    round draws a new loop name beside the pair, so a fire that re-entered a
+    recorded lane on a freshly cut loop branch could pass a count of lane mints
+    and lose the work the record names (KOD-684).
+
+    Patched at the definition and at both aliases a caller holds, so a draw
+    through any of the three is recorded. The definition is where minting a
+    lane's pair draws its loop name too, which makes this spy demonstrably
+    live in the same walk: a fire that minted a pair shows one draw here.
+    """
+    calls: list[str] = []
+
+    def recording(feature_branch):
+        calls.append(feature_branch)
+        return generate_ralph_branch_name(feature_branch)
+
+    for name in (
+        "kodezart.domain.agent.generate_ralph_branch_name",
+        "kodezart.chains.fire_remediation.generate_ralph_branch_name",
+        "kodezart.chains.fire_specification.generate_ralph_branch_name",
     ):
         monkeypatch.setattr(name, recording)
     return calls
@@ -3037,23 +3084,60 @@ async def test_a_lane_larger_than_one_fires_budget_converges_across_fires():
     ]
 
 
+@dataclass(frozen=True)
+class TickMark:
+    """What one tick's observation found, before that tick acted on its selection.
+
+    The counts say where in each list the fire that tick launches begins; the
+    record is what that fire will read its branches out of. Both are read at the
+    observation and neither afterwards: the walk yields a tick's observation
+    before the tick fires anything, so a fact read here is a fact about what the
+    fire ENTERS ON, while the same fact read at the end of the walk is the fire's
+    own output and comparing a fire with it says nothing (KOD-723).
+    """
+
+    acquisitions: int
+    prompts: int
+    lane_mints: int
+    loop_names: int
+    record: LaneRunState | None
+
+
 async def walk_marking(harness, *, mark, **rest):
-    """Every event of one bounded walk, with *mark* read at each tick's observation.
+    """Every event of one bounded walk, with *mark* awaited at each observation.
 
     A lane fired twice in one invocation leaves two fires' workspace
     acquisitions, prompts and mints in one list each, and which entries belong
     to the fire a given tick launched is the whole question a resumed fire is
     read by. A tick's observation is yielded before that tick acts on its
     selection, so everything after tick n's mark is tick n's fire and no other.
+
+    The mark is AWAITED, because some of what a tick found has to be read from
+    the board rather than counted in the process: a lane's record above all.
     """
-    marks: list[tuple[int, ...]] = []
+    marks: list[TickMark] = []
     events = []
     async with asyncio.timeout(WALK_BOUND_SECONDS):
         async for event in drive(harness, **rest):
             if isinstance(event, ScopeWalkEvent):
-                marks.append(mark())
+                marks.append(await mark())
             events.append(event)
     return events, marks
+
+
+def lane_events_after(events, *, tick: int):
+    """Every event of one tick's turn: after its observation, before the next.
+
+    A fire's own events sit between two observations, so which fire a delivery
+    or an iteration belongs to is read off that window rather than off a fixed
+    index into the whole walk.
+    """
+    observed = [
+        index for index, event in enumerate(events) if isinstance(event, ScopeWalkEvent)
+    ]
+    start = observed[tick - 1]
+    end = observed[tick] if tick < len(observed) else len(events)
+    return events[start + 1 : end]
 
 
 async def test_a_budget_exhausted_lane_resumes_on_its_recorded_branch(monkeypatch):
@@ -3063,22 +3147,33 @@ async def test_a_budget_exhausted_lane_resumes_on_its_recorded_branch(monkeypatc
     remote head of the branch it names are read again before each of them, so
     the fire that follows an exhausted budget takes exactly the path a fresh
     process takes. It checks the recorded loop branch out without cutting it,
-    mints no name beside it, and is graded against the criterion its last fire
-    left open rather than the one that fire closed (KOD-723).
+    mints no name of either kind beside it, and is graded against the criterion
+    its last fire left open rather than the one that fire closed (KOD-723).
+
+    The branch it entered on is compared with the record read at the SECOND
+    TICK'S OBSERVATION, before that fire acts. Compared with the record read at
+    the end of the walk the statement would be self-fulfilling: the second fire
+    writes the record, so whatever branch it ran on is the branch the record
+    names by then — and this lane really does have two loop branches to tell
+    apart, because the first fire's remediation round drew a second one and
+    only the later is recorded.
     """
     repos = WalkRepos()
     port = board(lanes=("A",), checks=TWO_CHECKS)
     minted = mint_spy(monkeypatch)
+    loop_names = loop_name_spy(monkeypatch)
     harness = budget_bound_lane(repos, port=port)
-    events, marks = await walk_marking(
-        harness,
-        job="converging-job",
-        mark=lambda: (
-            len(harness.workspace.acquisitions),
-            len(harness.executor.execution_prompts),
-            len(minted),
-        ),
-    )
+
+    async def mark() -> TickMark:
+        return TickMark(
+            acquisitions=len(harness.workspace.acquisitions),
+            prompts=len(harness.executor.execution_prompts),
+            lane_mints=len(minted),
+            loop_names=len(loop_names),
+            record=await recorded_so_far(port, "A"),
+        )
+
+    events, marks = await walk_marking(harness, job="converging-job", mark=mark)
 
     # The same three ticks and the same two fires the convergence case drives,
     # asserted again here because everything below is about the second of them.
@@ -3086,24 +3181,40 @@ async def test_a_budget_exhausted_lane_resumes_on_its_recorded_branch(monkeypatc
     assert lane_failures(events) == ()
     assert ticks_of(events)[-1].dispatched == ("A", "A")
     assert ticks_of(events)[-1].ready == ()
-    record = await lane_record(port, "A")
-    acquired, prompted, mints = marks[1]
+    entered = marks[1]
+    assert entered.record is not None
 
-    # One mint in the whole invocation, and the first fire made it. The spy
-    # records rather than raises, so the statement is the count beside a walk
-    # that otherwise ran: an uncalled spy would say the same about both fires.
+    # The premise of the whole case, off the first fire's own terminal event:
+    # that fire ended because its iteration budget ran out with the roster
+    # unmet, not because it finished or failed.
+    assert [
+        event.event.delivery.outcome
+        for event in lane_events_after(events, tick=1)
+        if isinstance(event, ScopeLaneEvent)
+        and isinstance(event.event, LaneDeliveryEvent)
+    ] == [WorkflowOutcome.remediation_budget_exhausted]
+
+    # Two names were drawn in the whole invocation and the FIRST fire drew
+    # both: the lane's own pair, and the fresh loop name its remediation round
+    # takes. The second fire's slice of either spy is empty — the counts have
+    # not moved since the mark it started from. The spies record rather than
+    # raise, so the statement is these counts beside a walk that otherwise ran:
+    # an uncalled spy would say the same about both fires.
     assert minted == ["A"]
-    assert mints == 1
-    # The second fire checked the branch the record names OUT, and did not cut
-    # it: a fire that minted a second branch beside a recorded one would lose
-    # the work the record names (KOD-684).
-    opened = harness.workspace.acquisitions[acquired]
-    assert opened["branch_name"] == opened["ref"] == record.branch
+    assert len(loop_names) == 2
+    assert (entered.lane_mints, entered.loop_names) == (len(minted), len(loop_names))
+    # The second fire checked the branch THE RECORD NAMED AT ITS ENTRY out, and
+    # did not cut it: a fire that minted a second branch beside a recorded one
+    # would lose the work the record names (KOD-684).
+    opened = harness.workspace.acquisitions[entered.acquisitions]
+    assert opened["branch_name"] == opened["ref"] == entered.record.branch
     assert opened["create_branch"] is False
+    # And it left the lane on that same branch rather than moving it elsewhere.
+    assert (await lane_record(port, "A")).branch == entered.record.branch
     # And it implemented the criterion still owed, not the one already
     # satisfied: the roster is read from the board at entry, so a satisfied
     # criterion is not in it and no session is spent on it again.
-    prompt = harness.executor.execution_prompts[prompted]
+    prompt = harness.executor.execution_prompts[entered.prompts]
     assert "A/second live Check  bytes" in prompt
     assert "A live Check  bytes" not in prompt
 
