@@ -1,14 +1,15 @@
 # Configuration Reference
 
-Tracker deployments require a complete `[run_event_states]` table. Its keys
-are the single `RunEventKind` vocabulary; startup names every missing or
-undeclared key before opening the tracker transport. `DERIVED` and
-`NO_TRANSITION` retain their ruled meanings, including `NO_TRANSITION` for
-both supervisor events and `node_session_started`. Other rows select an
-existing semantic workflow state. The table classifies events; it does not
-introduce a workflow-state writer or override criterion rollup. An operation
-without a configured tracker can retain an absent table. The annotated operation
-example shows the complete declaration; the minimal floor keeps collections empty.
+The `[run_event_states]` table is optional, and dialling the tracker does not
+consult it. A table that IS declared must be total: its keys are the single
+`RunEventKind` vocabulary, and loading the file names every missing or
+undeclared key. `DERIVED` and `NO_TRANSITION` retain their meanings, including
+`NO_TRANSITION` for both supervisor events and `node_session_started`. Other
+rows select an existing semantic workflow state. The table classifies events; it
+does not introduce a workflow-state writer or override criterion rollup — a run
+event's comment is rendered from `[marker_prefixes]` alone, so a deployment that
+declares no table still posts and reads its events. The annotated operation
+example shows the complete declaration; the minimal floor keeps it out.
 
 ## Overview
 

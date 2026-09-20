@@ -219,7 +219,6 @@ async def boot_tracker(
             tracker_token_present=settings.token is not None,
         )
         return None
-    operation.require_run_event_table()
     token = settings.token.get_secret_value()
     refuse_foreign_credential(backend=settings.backend, token=token)
     caller = make_mcp_tool_caller(settings=settings, token=token)

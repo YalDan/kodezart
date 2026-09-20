@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.composition.tracker import boot_tracker
+from kodezart.composition.tracker import DialledTracker, boot_tracker
 from kodezart.config.app import AppConfig
 from kodezart.core.errors import OperationConfigError
 from kodezart.types.domain.operation import OperationConfig
@@ -14,9 +14,13 @@ from kodezart.types.domain.run_event import (
     RUN_EVENT_PUBLISHERS,
     RunEventKind,
     RunEventPublisher,
-    RunEventTableError,
 )
+from tests.fakes import ManagedFakeLinearMcpServer
 from tests.run_events import RUN_EVENT_STATES, RUN_EVENT_TOML
+
+#: The non-human writer the dialling case declares and the backend reports, so
+#: the boot's attribution check passes on a credential nobody has to invent.
+ACTOR = "fixture-actor"
 
 
 def operation(**updates):
@@ -97,18 +101,35 @@ def test_actual_file_loading_rejects_missing_and_extra_rows(tmp_path):
     assert "rogue" in str(raised.value.failures)
 
 
-async def test_tracker_boot_refuses_absent_table_before_dialing(monkeypatch):
-    dial = AsyncMock()
-    monkeypatch.setattr("kodezart.composition.tracker.make_mcp_tool_caller", dial)
-    with pytest.raises(RunEventTableError) as raised:
-        await boot_tracker(
-            settings=AppConfig(tracker={"token": "lin_api_" + "0" * 40}).tracker,
-            operation=operation(run_event_states={}),
-            log=AsyncMock(),
-        )
-    assert "node_session_started" in str(raised.value)
-    assert len(raised.value.failures) == len(RUN_EVENT_STATES)
-    dial.assert_not_called()
+async def test_tracker_boot_dials_without_a_run_event_table(monkeypatch):
+    """The dial asks for no event table, because nothing it reaches reads one.
+
+    Events are still posted and read on the scope path; their comment is
+    rendered from `marker_prefixes` alone. The table's only readers are the
+    load validator above and a prompt pass of the per-issue flow, so a
+    deployment that declares no table dials, reconciles and runs.
+
+    Replaces the case that asserted the opposite. That assertion stood for a
+    boot gate the v0.2 flow needed; nothing carried into the scope flow reads
+    the table, and the load-time cases below keep a DECLARED table total
+    (KOD-806, KOD-766; the dial half of KOD-402 is superseded).
+    """
+    server = ManagedFakeLinearMcpServer(users=[ACTOR], teams=[], labels=[], actor=ACTOR)
+    monkeypatch.setattr(
+        "kodezart.composition.tracker.make_mcp_tool_caller",
+        lambda **_: server,
+    )
+    log = AsyncMock()
+    dialled = await boot_tracker(
+        settings=AppConfig(tracker={"token": "lin_api_" + "0" * 40}).tracker,
+        operation=operation(run_event_states={}, agent_identities=[ACTOR]),
+        log=log,
+    )
+    assert isinstance(dialled, DialledTracker)
+    assert server.lifecycle == ["probe", "open"]
+    assert "tracker_mappings_reconciled" in [
+        call.args[0] for call in log.ainfo.await_args_list
+    ]
 
 
 async def test_an_unconfigured_tracker_does_not_invent_an_event_table():
