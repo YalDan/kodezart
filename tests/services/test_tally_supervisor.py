@@ -14,7 +14,6 @@ from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.run_event import RunEventKind
 from tests.fakes import FakeTrackerPort, make_tracker_issue
 from tests.services.lane_tally_fixtures import (
-    BOARDS,
     HEAD,
     HOLDER,
     LEASE_SECONDS,
@@ -22,8 +21,8 @@ from tests.services.lane_tally_fixtures import (
     SCOPE,
     alarm_marker,
     allow_foreign_write,
-    assert_every_write_is_inside_the_declared_set,
     checks,
+    declared_set_fixture,
     events_on,
     lane_state,
     operation,
@@ -41,17 +40,7 @@ FIRST, SECOND = checks(LANE)
 SUBJECT = subject(LANE)
 
 
-@pytest.fixture(autouse=True)
-def every_write_of_a_tick_is_inside_the_declared_set():
-    """The module-wide surface assertion: nothing outside the alarm's own set.
-
-    Applied to every fixture rather than to a named one, so a tick that grew a
-    write somewhere else cannot pass by being exercised in a test that only
-    asked about something adjacent.
-    """
-    BOARDS.clear()
-    yield
-    assert_every_write_is_inside_the_declared_set()
+every_write_of_a_tick_is_inside_the_declared_set = declared_set_fixture()
 
 
 async def one_lane(*, commits=("sha-one", "sha-two"), prefixes=PREFIXES):

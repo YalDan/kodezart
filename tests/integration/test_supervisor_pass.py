@@ -40,7 +40,13 @@ from tests.integration.test_scope_runtime import board as walk_fixture
 from tests.integration.test_scope_runtime import lane_record as walk_record
 from tests.lane_fixture import criteria_echo
 from tests.prompts.test_operation_config import EXAMPLE
-from tests.services.lane_tally_fixtures import BOUND, PREFIXES, board, subject
+from tests.services.lane_tally_fixtures import (
+    BOUND,
+    PREFIXES,
+    board,
+    declared_set_fixture,
+    subject,
+)
 from tests.services.test_prompt_pass import example_config
 from tests.services.test_prompt_passes import _runtime
 
@@ -53,6 +59,8 @@ LANES = ("LANE-B", "LANE-C")
 INTERVAL = 611.0
 TIMEOUT = 97.0
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
+
+every_write_of_a_tick_is_inside_the_declared_set = declared_set_fixture()
 
 
 def declared(*, scopes):

@@ -6,6 +6,8 @@ one board rather than two that happen to agree.
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
@@ -290,3 +292,21 @@ def assert_every_write_is_inside_the_declared_set():
         assert port.classification_writes == []
         assert port.claim_writes == []
         assert [lease for lease in port.leases.values() if lease.holder == HOLDER] == []
+
+
+def declared_set_fixture():
+    """The autouse fixture every module that builds a board applies.
+
+    Coverage is every board built through :func:`board`, in whichever module
+    built it, so a tick that grew a write somewhere else cannot pass by being
+    exercised in a module that only asked about something adjacent. A board
+    built by hand rather than through the helper is outside it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def every_write_of_a_tick_is_inside_the_declared_set():
+        BOARDS.clear()
+        yield
+        assert_every_write_is_inside_the_declared_set()
+
+    return every_write_of_a_tick_is_inside_the_declared_set

@@ -23,6 +23,7 @@ from tests.services.lane_tally_fixtures import (
     SCOPE,
     alarm_marker,
     board,
+    declared_set_fixture,
     events_on,
     operation,
     records_on,
@@ -35,6 +36,8 @@ from tests.services.lane_tally_fixtures import (
 REF = ScopeRef(kind=ScopeKind.PROJECT, key=SCOPE)
 OTHER = ScopeRef(kind=ScopeKind.PROJECT, key="another-project")
 LANES = ("LANE-B", "LANE-C")
+
+every_write_of_a_tick_is_inside_the_declared_set = declared_set_fixture()
 
 
 def ready_set(*, ref=REF, lanes=LANES, closed=()):
