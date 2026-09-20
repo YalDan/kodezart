@@ -21,7 +21,14 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import RulingAuthor
-from kodezart.types.domain.gating import ContentClass, RepoVisibility
+from kodezart.types.domain.gating import (
+    ContentClass,
+    GateDecision,
+    GateVerdict,
+    OutboundDestination,
+    RepoVisibility,
+    WriterShape,
+)
 from kodezart.types.domain.prompts import PromptKey
 from tests.chains.test_native_fire import (
     DIRECT_OWED,
@@ -376,6 +383,63 @@ async def test_a_refuted_judgement_is_refused_under_the_fires_subject(
 
     assert caught.value.issue_key == SUBJECT
     assert DIRECT_OWED in caught.value.reason
+
+
+async def test_a_gate_that_alters_the_answer_refuses_the_pin_as_the_fires_own(
+    repository,
+) -> None:
+    """A redacted variant of a record is a different answer, so none is written.
+
+    The record's worth is its exactness: the identity a later reader mints is
+    the question's, and a body that came back changed would stand under that
+    identity as the answer this fire pinned. So the write is refused with the
+    step's own error, under the fire's subject, and the board keeps nothing.
+    """
+
+    class AlteringGate(PassThroughGate):
+        """Returns a redacted body rather than the bytes it was given."""
+
+        async def gate(
+            self,
+            *,
+            content: str,
+            visibility: RepoVisibility,
+            shape: WriterShape,
+            destination: OutboundDestination,
+            content_class: ContentClass,
+        ) -> GateDecision:
+            await super().gate(
+                content=content,
+                visibility=visibility,
+                shape=shape,
+                destination=destination,
+                content_class=content_class,
+            )
+            return GateDecision(
+                verdict=GateVerdict.REDACTED, content=content.replace('"', "*", 1)
+            )
+
+    executor = Executor([[one_answer()]])
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor, gate=AlteringGate()
+    )
+
+    with pytest.raises(RulingUnrecordedError) as caught:
+        await run(step, spec, current, repo_path, base)
+
+    assert caught.value.issue_key == SUBJECT
+    assert DIRECT_OWED in caught.value.reason
+    # Nothing landed under the record's own marker, so there is no answer for
+    # a later reader to find — and the gate was reached, so the refusal is
+    # about what it returned and not about never having been asked.
+    prefix = native_operation().marker_prefixes["ruling"]
+    assert [
+        write for write in port.comment_writes if write[1].startswith(f"[{prefix}")
+    ] == []
+    assert [
+        comment for comment in port.comments if comment.body.startswith(f"[{prefix}")
+    ] == []
+    assert ContentClass.AUTHORED in gate.content_classes
 
 
 @pytest.mark.parametrize("holder", [None, "  "], ids=["None", "blank"])
