@@ -684,9 +684,10 @@ the workspace; an unreadable namespace cannot establish a valid observation.
 ### Scoped workflow requests
 
 A scoped request runs when a tracker is dialled. Without one there is no scoped
-arm, and the request refuses before tracker, repository or judgment work. There
-is no fire-time ruling prompt setting or preparation-only session. Authored
-workflow prompt configuration is unchanged. See
+arm, and the request refuses before tracker, repository or judgment work. The
+`fire_time_ruling` role the pre-loop question step dispatches resolves through
+the same set precedence as every other key and has no setting of its own.
+Authored workflow prompt configuration is unchanged. See
 [running a scope](running-a-scope.md) for a deployment that runs them.
 
 ## Queue environment migration

@@ -47,7 +47,11 @@ async def test_task_cancel_during_initial_authority_read_releases_owned_workspac
             await task
         assert task.cancelled()
         assert observed_paths
-        assert not executor.calls
+        # The pre-loop question pass is the only session this cancellation
+        # can have reached: no writer opened, so no writer session ran.
+        assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
+            "RulingOutput"
+        ]
         assert not port.comments
         assert not workspace._workspaces, (
             "pre-writer cancellation leaks acquired ownership"

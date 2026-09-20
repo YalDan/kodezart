@@ -134,6 +134,9 @@ async def test_review_fix_upheld_keeps_branch_head_and_records_blocking_ruling(
         titles = [c["output_format"]["schema"]["title"] for c in executor.calls]
         assert titles == [
             "RemediationPlan",
+            # The round passes the question step again on its way back to the
+            # loop, and the board already carries every answer it raises.
+            "RulingOutput",
             "NativeWriterOutput",
             "AmendmentJudgment",
             "WriteBackFinding",

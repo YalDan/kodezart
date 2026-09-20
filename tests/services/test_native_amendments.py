@@ -136,6 +136,8 @@ class Executor:
                     "The independently reproduced ground requires this text change."
                 ),
             }
+        elif title == "RulingOutput":
+            payload = {"rulings": []}
         elif title == "CommitMessageOutput":
             payload = {"title": "fix: implementation", "body": "Reviewed change."}
         else:

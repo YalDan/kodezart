@@ -25,6 +25,7 @@ from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.composition.scope_runtime import build_scope_runtime
 from kodezart.config.app import AppConfig
+from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
@@ -45,6 +46,7 @@ from kodezart.core.retry import DelayFloor
 from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
+from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import AgentEvent
@@ -173,6 +175,29 @@ def rate_limit_delay_floor(config: AppConfig) -> DelayFloor:
     return floor_for
 
 
+def _native_writes(
+    *,
+    scope_tracker: TrackerPort | None,
+    operation: OperationConfig | None,
+    criteria: FireCriteriaSource | None,
+    config: AppConfig,
+) -> tuple[TrackerPort, OperationConfig, FireCriteriaSource, WriteBackSettings] | None:
+    """The four capabilities a native write needs, or nothing at all.
+
+    Stated once and returned as a tuple rather than as a boolean, because
+    every consumer of the answer needs the four values narrowed to their
+    non-optional types and a boolean would leave each one re-testing them.
+    """
+    if (
+        scope_tracker is None
+        or operation is None
+        or criteria is None
+        or config.write_back is None
+    ):
+        return None
+    return scope_tracker, operation, criteria, config.write_back
+
+
 def build_workflow_engine(
     *,
     config: AppConfig,
@@ -214,6 +239,30 @@ def build_workflow_engine(
     # record and cross-offs and the delivering step's pull request are writes
     # of one record under one marker, and a second instance would be a second
     # copy of the refusals that record's reader makes.
+    native_writes = _native_writes(
+        scope_tracker=scope_tracker,
+        operation=operation,
+        criteria=criteria,
+        config=config,
+    )
+    # One question step for every fire this deployment compiles: it holds
+    # no run state, so the subject, the tree and the holder all arrive per
+    # call and four engines can share one object.
+    rulings = (
+        FireTimeRulings(
+            tracker=native_writes[0],
+            operation=native_writes[1],
+            runner=agent_service,
+            workspace=workspace,
+            git=git,
+            prompts=prompts,
+            skills=skills,
+            gate=gate,
+            lease_seconds=config.tracker.surface_lease_seconds,
+        )
+        if native_writes is not None
+        else None
+    )
     lane_state = (
         TrackerLaneStateWriter(
             tracker=scope_tracker,
@@ -239,9 +288,9 @@ def build_workflow_engine(
             lane_state=lane_state,
             amendments=(
                 NativeAmendments(
-                    tracker=scope_tracker,
-                    operation=operation,
-                    criteria=criteria,
+                    tracker=native_writes[0],
+                    operation=native_writes[1],
+                    criteria=native_writes[2],
                     git=git,
                     source=native_source,
                     workspace=workspace,
@@ -250,13 +299,10 @@ def build_workflow_engine(
                     skills=skills,
                     repositories=repositories,
                     gate=gate,
-                    max_verify_rounds=config.write_back.max_verify_rounds,
+                    max_verify_rounds=native_writes[3].max_verify_rounds,
                     lease_seconds=config.tracker.surface_lease_seconds,
                 )
-                if scope_tracker is not None
-                and operation is not None
-                and criteria is not None
-                and config.write_back is not None
+                if native_writes is not None
                 else None
             ),
             criteria_reader=criteria,
@@ -309,6 +355,7 @@ def build_workflow_engine(
         """
         return RalphWorkflowEngine(
             criteria=criteria,
+            rulings=rulings,
             specification=FireSpecification(
                 service=agent_service,
                 ticket_generator=ticket_generator,
