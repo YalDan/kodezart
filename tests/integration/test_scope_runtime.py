@@ -1204,6 +1204,9 @@ async def test_every_scoped_fire_pins_its_open_questions_before_its_first_iterat
     assert CLAUSE_3_RESOLUTION in first_prompt
     assert len(records_on(port, "A/check")) == 1
     assert records_on(port, "A") == []
+    # A lane this walk converged is not offered again, so the other half of the
+    # clause — a re-entered pass writing nothing — is pinned where one lane does
+    # fire twice in one invocation: test_a_second_fire_of_a_pinned_lane_adds_no_record.
 
     # B fired with nothing open and carries no record.
     assert wrote_for(executor, "B")
@@ -3395,20 +3398,22 @@ async def test_a_second_fire_of_a_pinned_lane_adds_no_record():
     port = board(lanes=("A",), checks=TWO_CHECKS)
     harness = budget_bound_lane(repos, port=port)
     prefix = native_operation().marker_prefixes["ruling"]
-    harness.executor.question_answers = [
-        {
-            "rulings": [
-                {
-                    "issueRef": "A/check",
-                    "question": "Does the Check's byte run include its marker?",
-                    "rulingClass": "pin_reading",
-                    "resolution": "The marker is not part of the Check's bytes.",
-                    "rejectedAlternative": "Reading the marker as Check text.",
-                    "repoEvidence": ["lane-0.py"],
-                }
-            ]
-        }
-    ]
+    answers = {
+        "rulings": [
+            {
+                "issueRef": "A/check",
+                "question": "Does the Check's byte run include its marker?",
+                "rulingClass": "pin_reading",
+                "resolution": "The marker is not part of the Check's bytes.",
+                "rejectedAlternative": "Reading the marker as Check text.",
+                "repoEvidence": ["lane-0.py"],
+            }
+        ]
+    }
+    # Every pass answers the same question again, so what stops the second and
+    # third writing is the identity its own earlier pass minted and nothing
+    # else — a pass handed no answer would owe nothing whatever the board holds.
+    harness.executor.question_answers = [answers] * 3
 
     events = await bounded_walk(harness, job="converging-job")
 
@@ -3423,6 +3428,9 @@ async def test_a_second_fire_of_a_pinned_lane_adds_no_record():
     assert [
         write for write in port.comment_writes if write[1].startswith(f"[{prefix}")
     ] == [(records[0].comment_key, records[0].body)]
+    # One judged write across the three passes: a re-write of identical text
+    # leaves that journal alone, a second judgement does not.
+    assert len(harness.executor.judge_sessions) == 1
     # And every pass after the first was shown what the first one pinned.
     assert all(
         "The marker is not part of the Check's bytes." in prompt
