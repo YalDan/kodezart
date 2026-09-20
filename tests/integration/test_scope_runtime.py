@@ -25,8 +25,10 @@ from kodezart.domain.errors import (
     ForgeAPIError,
     GitSourceReadError,
     LaneRecordWriteError,
+    ScopedExecutionUnavailableError,
     ScopeNotApprovedError,
     ScopePlanRefusalError,
+    ScopeReadError,
 )
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.git_url import resolve_repo_url
@@ -441,9 +443,19 @@ async def test_an_unapproved_scope_is_refused_and_a_scope_at_rest_is_observed():
 
     for name in ("scope_issues", "read_planning_issue", "read_issue"):
         setattr(port, name, refuse(name))
+    events = []
     with pytest.raises(ScopeNotApprovedError) as caught:
-        _ = [event async for event in drive(harness)]
+        async for event in drive(harness):
+            events.append(event)
+    # Collected outside the comprehension: a comprehension inside the raises
+    # block discards whatever was yielded before the raise, so it cannot say
+    # that nothing was yielded at all.
+    assert events == []
     assert caught.value.ref == SCOPE
+    # The refusal's type and rendering are what the job's error event and the
+    # lane-failure path carry, so both are contract, not incidental.
+    assert isinstance(caught.value, ScopeReadError)
+    assert str(caught.value) == "scope is not approved (scope: project:scoped-project)"
     assert harness.executor.schema_calls == []
 
     rested = board()
@@ -460,6 +472,47 @@ async def test_an_unapproved_scope_is_refused_and_a_scope_at_rest_is_observed():
     assert len(walks) == 1
     assert walks[0].observation.dispatched == ()
     assert walks[0].observation.unresolved_criteria == ()
+
+
+async def test_a_configuration_refusal_precedes_the_approval_read():
+    """A typed configuration refusal costs no tracker read.
+
+    The request that names no repository cannot execute whatever the board
+    says, so the refusal is answered from configuration alone. Hoisting the
+    approval read above it would spend three reads to reach the same no.
+    """
+    port = board(approved=False)
+    harness = runtime(port=port)
+
+    def refuse(name):
+        async def read(**kwargs):
+            raise AssertionError(f"the approval was read before the refusal: {name}")
+
+        return read
+
+    for name in ("read_scope_labels", "execution_approved", "container_metadata"):
+        setattr(port, name, refuse(name))
+
+    with pytest.raises(ScopedExecutionUnavailableError):
+        _ = [event async for event in drive(harness, origin=None)]
+
+
+async def test_a_missing_container_is_a_read_error_not_a_refusal():
+    """The entry does not relabel an unreadable scope as an unapproved one.
+
+    One layer down this is pinned on every implementation; here it is that
+    the entry passes the read error through rather than reporting the scope
+    as carrying no approval.
+    """
+    port = board(approved=False)
+    del port.scope_containers[SCOPE]
+    harness = runtime(port=port)
+
+    with pytest.raises(ScopeReadError) as caught:
+        _ = [event async for event in drive(harness)]
+
+    assert not isinstance(caught.value, ScopeNotApprovedError)
+    assert "container metadata is missing" in str(caught.value)
 
 
 async def test_existing_plan_barrier_prevents_any_lane_effect():
