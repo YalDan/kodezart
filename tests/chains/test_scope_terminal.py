@@ -10,6 +10,7 @@ Every walk here is bounded by the fixture's own ``bounded_walk``, and each
 tick count is a literal observed from the run before it was written down.
 """
 
+import ast
 import asyncio
 import inspect
 
@@ -28,21 +29,28 @@ from kodezart.types.domain.scope_terminal import (
     ScopeTerminalEvent,
     derive_scope_outcome,
 )
+from tests.adapters.test_github_api import _make_client
 from tests.chains.test_write_back_adoption import (
     Journal,
     RecordingTracker,
     artifact_writes,
 )
 from tests.integration.test_scope_runtime import (
+    FORGE_ORIGIN,
     ORIGIN,
     SCOPE,
     WALK_BOUND_SECONDS,
+    WalkRepos,
     board,
     bounded_walk,
     drive,
+    lane_record,
+    resumable,
     runtime,
     ticks_of,
 )
+from tests.lane_fixture import ScopeForgeWire
+from tests.tracker.test_linear_tool_roster import SOURCE_ROOT
 
 
 def terminals(events):
@@ -354,3 +362,148 @@ def test_the_terminals_source_names_one_write_and_it_is_the_status_update():
     source = inspect.getsource(terminal_module)
     named = {method for method in artifact_writes() if method in source}
     assert named == {"post_status_update"}
+
+
+# ---------------------------------------------------------------------------
+# KOD-480, first clause — a scope whose lanes all hold open, unmerged pull
+# requests derives the finished outcome, and no merge fact is read.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_scope_of_open_unmerged_pull_requests_derives_the_finished_outcome():
+    """Every lane's terminal act is complete; none of them is merged.
+
+    Over repositories that actually commit and a forge that actually opens a
+    pull request per lane, so the open-and-unmerged state is the fixture's own
+    observation rather than a value written here. The wire raises on a merge,
+    which is what makes the absence of one a fact about the run.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A", "B"))
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        harness = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+        )
+
+        # Marked at every observation, so what the terminal itself asked the
+        # forge is separable from what each lane's delivery asked it.
+        reads: list[int] = []
+        events = []
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            async for event in drive(harness, origin=FORGE_ORIGIN):
+                events.append(event)
+                if isinstance(event, ScopeWalkEvent):
+                    reads.append(len(wire.pr_reads))
+
+        report = terminals(events)[0]
+        assert [lane.done for lane in report.lanes] == [True, True]
+        assert report.outcome is WorkflowOutcome.scope_converged
+        # One pull request per lane, open, recorded on that lane's own record.
+        assert len(wire.creates) == 2
+        for lane in report.lanes:
+            assert lane.pr is not None
+            assert lane.pr.state == "open"
+            recorded = await lane_record(port, lane.issue)
+            assert recorded.pr == lane.pr
+        # The deliveries read their own pull requests; the terminal read none,
+        # and nothing merged — the wire raises on a merge, so its absence from
+        # the requests is a fact about this run rather than an omission.
+        assert wire.pr_reads, "a run that asked the forge nothing controls nothing"
+        assert len(wire.pr_reads) == reads[-1]
+        assert not [
+            request for request in wire.requests if request.url.path.endswith("/merge")
+        ]
+    finally:
+        await forge.close()
+
+
+async def test_a_lane_with_no_open_pull_request_still_derives_from_its_criteria():
+    """The reading is criterion states, so a lane with no delivery is done too.
+
+    The counterpart of the case above and the reason the outcome cannot be a
+    function of a merge: this fixture has no forge behind its origin, so no
+    lane could ever record a pull request, and the scope is finished anyway.
+    """
+    harness = runtime(port=board(lanes=("A",)))
+
+    report = terminals(await bounded_walk(harness))[0]
+
+    assert [(lane.done, lane.pr) for lane in report.lanes] == [(True, None)]
+    assert report.outcome is WorkflowOutcome.scope_converged
+
+
+#: How a merge, or a pull request's own lifecycle, is named in this source.
+MERGE_STATE_NAMES = frozenset(
+    {"PRState", "PRStateReader", "PRLifecycle", "read_pr_state", "lifecycle", "merged"}
+)
+
+#: The modules the terminal is made of: the vector, the readings and the act.
+TERMINAL_MODULES = (
+    "types/domain/scope_terminal.py",
+    "domain/scope_terminal.py",
+    "services/scope_terminal.py",
+)
+
+
+def merge_state_sites(source: str, *, label: str) -> list[str]:
+    """Every place *source* names a merge or a pull request's lifecycle."""
+    tree = ast.parse(source)
+    sites: list[str] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "kodezart.types.domain.pr_state"
+        ):
+            sites.append(f"{label}:{node.lineno}: pr_state import")
+        elif isinstance(node, ast.ImportFrom | ast.Import):
+            sites.extend(
+                f"{label}:{node.lineno}: {alias.name}"
+                for alias in node.names
+                if alias.name in MERGE_STATE_NAMES
+            )
+        elif isinstance(node, ast.Attribute) and node.attr in MERGE_STATE_NAMES:
+            sites.append(f"{label}:{node.lineno}: .{node.attr}")
+        elif isinstance(node, ast.Name) and node.id in MERGE_STATE_NAMES:
+            sites.append(f"{label}:{node.lineno}: {node.id}")
+    return sites
+
+
+def test_no_module_of_the_terminal_names_a_merge_or_a_pull_request_lifecycle():
+    offenders = {
+        module: sites
+        for module in TERMINAL_MODULES
+        if (
+            sites := merge_state_sites(
+                (SOURCE_ROOT / module).read_text(encoding="utf-8"), label=module
+            )
+        )
+    }
+    assert offenders == {}
+
+
+def test_the_merge_state_detector_finds_the_modules_that_do_name_one():
+    """The control, derived from the tree rather than picked.
+
+    Every production module naming the lifecycle enum at all is a module this
+    detector must see; a detector finding nothing there would report the same
+    empty set over the terminal and say nothing.
+    """
+    controls = [
+        path
+        for path in sorted(SOURCE_ROOT.rglob("*.py"))
+        if "PRLifecycle" in path.read_text(encoding="utf-8")
+    ]
+    assert controls, "no production module names a pull request's lifecycle"
+    unseen = [
+        path.name
+        for path in controls
+        if not merge_state_sites(path.read_text(encoding="utf-8"), label=path.name)
+    ]
+    assert unseen == []
