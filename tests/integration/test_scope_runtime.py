@@ -1102,6 +1102,8 @@ class QuestionedExecutor(ObservedNativeExecutor):
         #: One entry per writer session: its prompt and the record count of
         #: every issue on the board at the moment it opened.
         self.records_at_execution: list[tuple[str, dict[str, int]]] = []
+        #: The run identity each writer session was opened under, in order.
+        self.execution_identities: list[object] = []
 
     async def stream(self, **kwargs):
         properties = (kwargs.get("output_format") or {}).get("schema", {}).get(
@@ -1111,6 +1113,7 @@ class QuestionedExecutor(ObservedNativeExecutor):
             subject = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])[-1]
             self.question_answers = [{"rulings": self._answers.get(subject, [])}]
         if "claims" in properties:
+            self.execution_identities.append(kwargs.get("run_identity"))
             reader = RulingRecordReader(
                 tracker=self._port, operation=native_operation()
             )
@@ -1193,6 +1196,13 @@ async def test_every_scoped_fire_pins_its_open_questions_before_its_first_iterat
     # judgment helper takes no run identity.
     named = {row.name for row in executor.run_identities if row is not None}
     assert named and named <= set(CLAUSE_3_LANES)
+    # Each writer session in particular: attribution is what a session carries,
+    # so a walk that opened one without it fails here rather than passing on
+    # the strength of some other session that was attributed. A and B fired; C
+    # never entered its loop.
+    assert executor.execution_identities
+    assert all(row is not None for row in executor.execution_identities)
+    assert {row.name for row in executor.execution_identities} == {"A", "B"}
 
     # A's first iteration opened after its record was on the board, and it was
     # shown the subject body, the live Check bytes and the pinned text.
