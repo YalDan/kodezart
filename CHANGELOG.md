@@ -11,6 +11,12 @@ concerns.
 
 ### Changed
 
+- An operation that declares `[[organize_scopes]]` schedules the organize tick
+  and the audit pass only. The periodic dispatch pass, the fire-prep and
+  grooming prompt passes and the lifecycle watcher are withheld, and the
+  existing `scheduled_passes_not_wired` and `prompt_passes_not_wired` events
+  each carry a new `organize_scopes_declared` boolean saying so. Boot probes no
+  gate signal and renders no template for a withheld pass.
 - `[run_event_states]` is optional in an operation file, and dialling the
   tracker no longer requires it. A declared table is still total at load time.
   Nothing on the scope path reads the table: a run event's comment is rendered

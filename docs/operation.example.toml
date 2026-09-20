@@ -29,6 +29,9 @@ organize_mandates = []
 # Explicit scope-to-repository bindings for the native Organize owner.
 # Each row names scope = { kind = "issue", key = "native-parent-key" }
 # and repo_url matching one declared [[repos]] URL; no cross-product is inferred.
+# Declaring any row withholds the per-issue machine: no dispatch pass, no
+# fire-prep or grooming session pass and no lifecycle watcher is scheduled,
+# because that deployment is worked scope by scope. Empty keeps them.
 organize_scopes = []
 # Independent native Audit roster. Each row declares scope, repo_url and
 # report_issue_key (the actual tracker issue receiving the verified summary).

@@ -744,6 +744,15 @@ repository binding; duplicates and ambiguous mappings refuse configuration.
 These bindings require the full configured mandate table. No team/repository
 cross-product is inferred.
 
+Declaring `[[organize_scopes]]` also withholds the per-issue machine. Such a
+deployment is worked scope by scope, and the periodic dispatch pass and the two
+remaining prompt passes scan whole boards, so none of the three is scheduled and
+no lifecycle watcher is built; `scheduled_passes_not_wired` and
+`prompt_passes_not_wired` each carry `organize_scopes_declared: true` so the
+reason is in the log rather than inferred from an empty schedule. Boot also asks
+nothing of those passes: no gate signal they configure is probed and no template
+they would send is rendered.
+
 When those bindings are configured, set both
 `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
 `KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` to positive integers. Neither bound
