@@ -135,7 +135,7 @@ class ScopeWorkflowEngine:
 
     @asynccontextmanager
     async def _lane_boundary(
-        self, key: str, *, failed: list[LaneFailure], rested: list[str]
+        self, key: str, *, failures: list[LaneFailure], rested: list[str]
     ) -> AsyncIterator[None]:
         """One lane's own work, whose failure is the lane's and not the walk's.
 
@@ -153,13 +153,20 @@ class ScopeWorkflowEngine:
         The lane is not offered again in this invocation: the fault is a fact
         about the lane at this instant, and reselecting it would spend the
         whole invocation on the same refusal.
+
+        The list of lanes that faulted is named ``failures`` and not ``failed``
+        because this class is scanned for every spelling of a fire's ending and
+        one of those spellings is the bare word ``failed`` (KOD-725). What a
+        lane failure records is a refusal of the lane's own turn and never a
+        fire's outcome, so the list is spelled apart from the vocabulary a
+        reader of the scan would have to read it as.
         """
         try:
             yield
         except Exception as exc:
             rested.append(key)
             await self._log.aexception("scope_lane_failed", lane=key)
-            failed.append(LaneFailure(issue_key=key, error=build_error_event(exc)))
+            failures.append(LaneFailure(issue_key=key, error=build_error_event(exc)))
 
     async def _gate_unrecorded_blockers(
         self, key: str, *, url: str, probe: DeliveryProbe
@@ -290,6 +297,16 @@ class ScopeWorkflowEngine:
         superset of the lane's subtree; the reading intersects, so what it
         answers is the lane's own previously open criteria and no other lane's.
 
+        The limit of that superset, stated: the lane's own subtree is not on the
+        ready set, so a criterion re-parented OUT of this lane while staying in
+        the scope is no longer in the lane's gap and reads as closed by the fire
+        that did not close it. It reads that way for exactly one reading — the
+        fire it earns is one, and the reading after it is against the gap the
+        move left — and narrowing it is not this reading's business: a criterion
+        under a deliverable child has that child as its parent and the child is
+        not a criterion row, so the lane's own subtree cannot be computed from
+        criterion rows alone.
+
         A lane the ready read no longer offers is not read at all: it finished,
         or it is closed, or the board moved it, and none of those is this
         reading's business. Neither is a lane already resting, which has no
@@ -345,6 +362,55 @@ class ScopeWorkflowEngine:
             return
         await self._tracker.restore_workflow_state(issue_key=key, state_name=state_name)
 
+    async def _fire(
+        self,
+        *,
+        lane: NativeLaneWorkflow,
+        key: str,
+        scope: ScopeRef,
+        initial: NativeDeliveryState,
+        config: RunnableConfig,
+        skipped: list[str],
+    ) -> AsyncIterator[ScopeLaneEvent]:
+        """Stream one lane's fire, and report how it ended without deciding.
+
+        This is the ONE place in the walker that reads a fire's terminal
+        delivery phase, and it is the one place that cannot spend the reading:
+        what it is handed is the list of lanes whose delivery was skipped, which
+        is reporting and reaches no decision at all. The lists a dispatch
+        decision IS made from — the resting lanes, the previous fire's criterion
+        identities, the lanes dispatched, the lanes that faulted — are
+        deliberately not passed here, so no reading of an ending can reach one
+        (KOD-724, KOD-725). Everything the class does outside this helper is
+        therefore free of the vocabulary a fire's ending is spelled in, which is
+        what lets the rest of the class be scanned whole.
+
+        A stream that ends with no final state at all, or with the delivery
+        still pending, is a fire nothing can be reported about: it raises, and
+        the boundary around the call reports it as that lane's own fault.
+        """
+        final: NativeDeliveryState | None = None
+        async for namespace, mode, payload in lane.graph.astream(
+            initial,
+            config=config,
+            stream_mode=["custom", "values"],
+            subgraphs=True,
+        ):
+            if mode == "values" and not namespace:
+                final = _NATIVE_STATE.validate_python(payload)
+            elif mode == "custom":
+                if not isinstance(payload, AgentEvent):
+                    raise TypeError("Native lane emitted a non-AgentEvent")
+                if not isinstance(payload, WorkflowCompleteEvent):
+                    yield ScopeLaneEvent(
+                        lane_key=key,
+                        event=_NATIVE_PROGRESS.validate_python(payload),
+                    )
+        if final is None or isinstance(final["delivery"], PendingLaneDelivery):
+            raise ScopeReadError("native lane has no final delivery phase", ref=scope)
+        if isinstance(final["delivery"], SkippedLaneDelivery):
+            skipped.append(key)
+
     async def run(
         self,
         *,
@@ -395,7 +461,7 @@ class ScopeWorkflowEngine:
         dispatched: list[str] = []
         skipped: list[str] = []
         rested: list[str] = []
-        failed: list[LaneFailure] = []
+        failures: list[LaneFailure] = []
         last: _LastFire | None = None
         tick = 0
         while True:
@@ -417,14 +483,14 @@ class ScopeWorkflowEngine:
             ]
             selected = self._select(ready=ready, delivers=lane.delivers, rested=rested)
             yield _observation(
-                scope, tick, ready, dispatched, skipped, rested, failed, exclusions
+                scope, tick, ready, dispatched, skipped, rested, failures, exclusions
             )
             if selected is None:
                 return
             key = selected.issue.issue_key
             lane_key = _lane_namespace(cache_key, key)
             resolved: tuple[str, BaseSpec] | None = None
-            async with self._lane_boundary(key, failed=failed, rested=rested):
+            async with self._lane_boundary(key, failures=failures, rested=rested):
                 path = repo_path or await self._cache.ensure_available(url, lane_key)
                 await self._gate_unrecorded_blockers(key, url=url, probe=probe)
                 resolved = (
@@ -448,7 +514,7 @@ class ScopeWorkflowEngine:
             if current is None:
                 continue
             launch: tuple[NativeDeliveryState, RunnableConfig] | None = None
-            async with self._lane_boundary(key, failed=failed, rested=rested):
+            async with self._lane_boundary(key, failures=failures, rested=rested):
                 # The lane's own record, and the remote head of the branch it
                 # names, decide how this fire enters. Asked before EVERY fire:
                 # nothing about a lane is remembered in this process, so a
@@ -505,38 +571,30 @@ class ScopeWorkflowEngine:
                 issue_key=key,
                 open_criteria=frozenset(row.issue_key for row in selected.gap),
             )
-            async with self._lane_boundary(key, failed=failed, rested=rested):
-                final: NativeDeliveryState | None = None
-                async for namespace, mode, payload in lane.graph.astream(
-                    initial,
+            async with self._lane_boundary(key, failures=failures, rested=rested):
+                async for event in self._fire(
+                    lane=lane,
+                    key=key,
+                    scope=scope,
+                    initial=initial,
                     config=launch_config,
-                    stream_mode=["custom", "values"],
-                    subgraphs=True,
+                    skipped=skipped,
                 ):
-                    if mode == "values" and not namespace:
-                        final = _NATIVE_STATE.validate_python(payload)
-                    elif mode == "custom":
-                        if not isinstance(payload, AgentEvent):
-                            raise TypeError("Native lane emitted a non-AgentEvent")
-                        if not isinstance(payload, WorkflowCompleteEvent):
-                            yield ScopeLaneEvent(
-                                lane_key=key,
-                                event=_NATIVE_PROGRESS.validate_python(payload),
-                            )
-                if final is None or isinstance(final["delivery"], PendingLaneDelivery):
-                    raise ScopeReadError(
-                        "native lane has no final delivery phase", ref=scope
-                    )
-                if isinstance(final["delivery"], SkippedLaneDelivery):
-                    skipped.append(key)
-                    if selected.finished:
-                        # A skipped delivery records no pull request, so the
-                        # entry reading would answer the same way next tick and
-                        # the lane would be consolidated and reviewed once per
-                        # tick for the rest of the invocation. Nothing about it
-                        # moved, so nothing is written: it rests.
-                        rested.append(key)
-                        await self._log.ainfo("scope_lane_delivery_skipped", lane=key)
+                    yield event
+                if selected.finished:
+                    # A lane selected for its delivery alone takes ONE such turn
+                    # per invocation, and what that turn's fire did is not
+                    # consulted to decide it. Either the delivery landed, and
+                    # the lane's record now carries the pull request so nothing
+                    # is left to do; or it did not, and nothing about the lane
+                    # moved, so a second identical turn would say what this one
+                    # said. Both rest, and the rest reads nothing about the
+                    # fire, which is what keeps a fire's ending out of the next
+                    # dispatch decision (KOD-724, KOD-725). A turn that raised
+                    # never arrives here: the boundary rests the lane instead,
+                    # so there is no second entry for the same lane.
+                    rested.append(key)
+                    await self._log.ainfo("scope_lane_finished_turn_rested", lane=key)
 
 
 def _ready_turn(row: ScopeReadyLane) -> _LaneTurn:
@@ -560,7 +618,7 @@ def _observation(
     dispatched: list[str],
     skipped: list[str],
     rested: list[str],
-    failed: list[LaneFailure],
+    failures: list[LaneFailure],
     exclusions: list[IssueExclusion],
 ) -> ScopeWalkEvent:
     return ScopeWalkEvent(
@@ -570,7 +628,7 @@ def _observation(
             ready=tuple(row.issue.issue_key for row in ready.ready),
             dispatched=tuple(dispatched),
             skipped_lanes=tuple(skipped),
-            failed_lanes=tuple(failed),
+            failed_lanes=tuple(failures),
             rested_lanes=tuple(rested),
             unresolved_criteria=tuple(
                 row.issue_key

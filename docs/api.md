@@ -271,7 +271,11 @@ larger than that budget converges across fires rather than waiting for the next
 invocation. A fire that closed none of them puts the issue back to the state its
 own open work stands in, through the port's own restore, and rests the lane, and
 rested lanes are reported in `scope_walk.observation`; `dispatched` carries one
-entry per fire, so a lane named twice there was fired twice. Scheduled
+entry per fire, so a lane named twice there was fired twice. A lane whose
+criteria are all Done takes ONE delivery-only turn per invocation and rests
+after it, whatever that turn's fire did: either the pull request is on the
+lane's record and nothing is left to do, or nothing about the lane moved and an
+identical turn would say the same. Scheduled
 configured-scope lookup, concurrent lane marks, cross-job branch recovery and a
 scope terminal verdict are separate requirements. A lane re-enters from its own
 tracker record and the remote head of the branch that record names; no graph

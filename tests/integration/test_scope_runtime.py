@@ -1450,12 +1450,15 @@ def echoes(*, passed, rounds: int = 6):
     return [criteria_echo(keys=A_KEYS, passed=passed) for _ in range(rounds)]
 
 
-def resumable(*, repos: WalkRepos, **rest):
+def resumable(*, repos: WalkRepos, merger=None, **rest):
     """A runtime over one repository family that commits as a real lane does.
 
     Two runtimes built over the SAME family are two processes against one
     remote: the branches and their pushed heads outlive the first one, which
     is the whole premise of entering from the record.
+
+    *merger* defaults to the family's own consolidating double; a test about a
+    consolidation that answers something else supplies its own.
     """
     git = WalkGit(repos)
     return runtime(
@@ -1463,7 +1466,7 @@ def resumable(*, repos: WalkRepos, **rest):
         git=git,
         source=WalkSource(repos),
         workspace=WalkWorkspaces(repos, git=git),
-        merger=WalkMerger(repos),
+        merger=WalkMerger(repos) if merger is None else merger,
         **rest,
     )
 
@@ -2124,6 +2127,92 @@ async def test_a_finished_lane_without_a_pull_request_is_delivered_without_a_loo
             for event in logs
             if event.get("event") == "scope_lane_nothing_to_do"
         ] == ["A"]
+    finally:
+        await forge.close()
+
+
+class DivergentConsolidation(FakeBranchMerger):
+    """A consolidation that answers "the two branches diverged", moving nothing.
+
+    Divergence is one of the four answers the merger is a total function over
+    and it raises nothing: the fire routes straight to its terminal without
+    reviewing or delivering, so what the turn leaves is a lane that reached no
+    pull request at all and a board holding exactly what it held before.
+    """
+
+    def __init__(self, repos: WalkRepos) -> None:
+        super().__init__()
+        self.repos = repos
+
+    async def consolidate(self, *, source_branch, **rest):
+        self.calls.append(
+            {"method": "consolidate", "source_branch": source_branch, **rest}
+        )
+        head = self.repos.head_of(source_branch)
+        # The sha is the one this walk's repositories hold for the branch the
+        # consolidation was asked about: a made-up tip would let a later read
+        # stand on a head no repository of the walk carries.
+        assert head is not None, source_branch
+        return ConsolidationOutcome(
+            status=ConsolidationStatus.DIVERGENT, feature_tip_sha=head
+        )
+
+
+async def test_a_delivery_only_turn_that_reaches_no_pull_request_rests_the_lane():
+    """The finished lane whose one delivery-only turn opens nothing (KOD-724).
+
+    Its consolidation answers that the recorded branches diverged, so the fire
+    ends with no delivery: nothing is published, nothing is recorded, and the
+    board holds what it held before the turn. The lane rests all the same,
+    because a lane selected for its delivery alone takes ONE such turn per
+    invocation whatever that turn's fire did — an identical second turn would
+    say what this one said — and resting it is what keeps the walk from
+    consolidating and reviewing the lane once per tick for the rest of the
+    invocation. Nothing about the fire's ending is read to decide it (KOD-725).
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A",))
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        _, killed = await stopped_at_consolidation(
+            port, repos, origin=FORGE_ORIGIN, forge=forge
+        )
+        assert wire.creates == []
+
+        second = resumable(
+            port=port,
+            repos=repos,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("A", rounds=4),
+            merger=DivergentConsolidation(repos),
+        )
+        with structlog.testing.capture_logs() as logs:
+            events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+
+        # Two ticks: the delivery-only turn, and the one with nothing left to
+        # offer. A lane the walk failed to rest would be offered on every tick
+        # forever, which the bound catches as a failure rather than a hang.
+        assert len(ticks_of(events)) == 2
+        assert lane_failures(events) == ()
+        assert ticks_of(events)[-1].dispatched == ("A",)
+        assert ticks_of(events)[-1].rested_lanes == ("A",)
+        # The turn was really fired and its fire really reached no delivery.
+        assert ticks_of(events)[-1].skipped_lanes == ("A",)
+        assert [
+            event["lane"]
+            for event in logs
+            if event.get("event") == "scope_lane_finished_turn_rested"
+        ] == ["A"]
+        # No session was opened for it either — the lane owed no work — and
+        # nothing about the lane moved: no pull request on the forge, none on
+        # the record, and the deliverable branch the kill left still named.
+        assert second.executor.execution_prompts == []
+        assert wire.creates == []
+        assert (await lane_record(port, "A")).pr is None
+        assert recorded_branches(record=killed).deliverable_branch
     finally:
         await forge.close()
 

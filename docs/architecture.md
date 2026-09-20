@@ -244,7 +244,14 @@ stands in — the state name the first unstarted criterion it still owes carries
 written through the port's own restore, which reads first and writes nothing
 when the issue is already there — and rests the lane, under
 `scope_lane_plateaued`; where the gap names no unstarted state the write is not
-made and `scope_lane_put_back_skipped` says so. Every lane resting is reported
+made and `scope_lane_put_back_skipped` says so. A lane selected for its delivery
+alone takes ONE such turn per invocation and rests after it, under
+`scope_lane_finished_turn_rested`, whatever that turn's fire did: a delivery that
+landed leaves the pull request on the lane's record and nothing further to do,
+and a fire that reached no delivery moved nothing about the lane, so a second
+identical turn would say what the first said. How the fire ended is not read to
+decide any of it — what the walker offers next follows from the board and from
+its own resting lanes (KOD-724, KOD-725). Every lane resting is reported
 on the walk observation, and `dispatched` carries one entry per fire. The walker
 asks the forge nothing about a candidate at all, neither at selection nor at the
 lane's own boundary: where a lane stands is its own record, and a lane whose
