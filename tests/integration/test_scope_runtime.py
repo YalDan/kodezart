@@ -797,9 +797,11 @@ async def test_a_closed_blocker_with_no_record_is_gated_by_one_open_delivery_rea
     with structlog.testing.capture_logs() as logs:
         events = [event async for event in drive(harness)]
 
-    # The blocker was asked about exactly once, whatever the answer was: the
-    # read is made per blocker per turn and the lane is not offered again.
-    assert probe.calls.count("A") == 1
+    # The blocker was asked about exactly once and nothing else was asked
+    # about at all, whatever the answer was: the read is made per blocker per
+    # turn, and the whole sequence is the assertion because a count of one key
+    # cannot see a read about another (KOD-431).
+    assert probe.calls == ["A"]
     # The carve-out is one OPEN-delivery read and nothing else. The probe the
     # walk is handed answers merge state as readily as the native client does,
     # so an empty list is a fact about the walker and not about an unreachable
@@ -2521,8 +2523,9 @@ async def test_a_finished_candidates_blockers_are_gated_like_a_ready_ones():
             "BaseResolutionError"
         ]
         assert failures[0].error.error.endswith("for the blocker A")
-        # Asked once, about the blocker, and about merge state never.
-        assert probe.calls.count("A") == 1
+        # Asked once, about the blocker and about nothing else, and about
+        # merge state never: the whole sequence, not one key's count.
+        assert probe.calls == ["A"]
         assert probe.merge_state.calls == []
         # Refused before anything was published: the delivery this lane was
         # selected for never ran.
@@ -2812,6 +2815,75 @@ async def test_a_scope_whose_pull_requests_are_all_open_still_walks_to_completio
         await forge.close()
 
 
+async def test_a_dependent_behind_a_blocker_with_an_open_pull_request_is_unlocked():
+    """The whole graph walks while the blocker's delivery sits open (KOD-431).
+
+    A fires, closes its criterion and opens its pull request; nobody merges it,
+    and nothing about this walk could. B stands on A, so the deadlock this
+    criterion exists to exclude is B held until A's delivery lands: the ready
+    set has no landing and no merge precondition, and a blocker whose criteria
+    are Done discharges its dependents whatever its pull request is doing.
+
+    B is therefore fired in the same invocation, on the deliverable branch A's
+    own record names — the branch A's delivery published, not the trunk and not
+    a merge commit that does not exist — and opens its own pull request against
+    it.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        harness = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=[
+                *one_check_echoes("A", rounds=4),
+                *one_check_echoes("B", rounds=4),
+            ],
+        )
+        events = await bounded_walk(harness, job="only-job", origin=FORGE_ORIGIN)
+
+        assert lane_failures(events) == ()
+        # Five ticks: A's fire, the delivery-only turn that rests A now that
+        # its pull request is on its record, B's fire, B's own such turn, and
+        # the tick with nothing left to offer.
+        assert len(ticks_of(events)) == 5
+        # The premise, read through the shipped reader and through the record:
+        # the origin reports A's delivery OPEN, A's record carries it, and
+        # nothing merged it — no request of this walk asked anything to.
+        record = await lane_record(port, "A")
+        assert record.pr is not None
+        assert await probe_of(harness, origin=FORGE_ORIGIN).open_delivery_exists(
+            repo_url=FORGE_ORIGIN, issue_key="A"
+        )
+        assert [
+            request for request in wire.requests if request.url.path.endswith("/merge")
+        ] == []
+        # And B was fired anyway, on A's recorded deliverable branch.
+        assert "B" in ticks_of(events)[-1].dispatched
+        deliverable = recorded_branches(record=record).deliverable_branch
+        assert bases_of(events)["B"] == deliverable
+        assert bases_of(events)["B"] not in TRUNK_BRANCHES
+        assert deliverable != record.branch
+        assert len(wire.creates) == 2
+        assert port.issues["B/check"].state_kind is WorkflowStateKind.COMPLETED
+        # B's own delivery really completed at the head it published: its
+        # checks were watched there, and the run reported them COMPLETED.
+        opened_for_b = recorded_branches(
+            record=await lane_record(port, "B")
+        ).deliverable_branch
+        assert wire.watches[-1] == (
+            f"/repos/owner/repo/commits/{opened_for_b}/check-runs"
+        )
+    finally:
+        await forge.close()
+
+
 async def test_a_done_blocker_with_no_pull_request_unlocks_its_dependent():
     """The gate's one read stays the only question the walk asks (KOD-431).
 
@@ -2869,6 +2941,9 @@ async def test_a_done_blocker_with_no_pull_request_unlocks_its_dependent():
         # record, and the fourth finds nothing left to offer.
         assert len(ticks_of(events)) == 4
         assert lane_failures(events) == ()
+        # B is admitted on the very first tick: its blocker is Done, and a Done
+        # blocker discharges its dependents on the same tick it is read.
+        assert ticks_of(events)[0].ready == ("B",)
         assert ticks_of(events)[-1].dispatched == ("B",)
         assert ticks_of(events)[-1].rested_lanes == ("A", "B")
         assert bases_of(events)["B"] == "main"
