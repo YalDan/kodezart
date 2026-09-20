@@ -21,6 +21,7 @@ from tests.services.lane_tally_fixtures import (
     PREFIXES,
     SCOPE,
     alarm_marker,
+    allow_foreign_write,
     assert_every_write_is_inside_the_declared_set,
     checks,
     events_on,
@@ -272,6 +273,10 @@ async def test_a_lane_fire_holding_the_record_marker_and_the_supervisor_both_wri
         prefixes=port.marker_prefixes, purpose=RUN_STATE_PURPOSE, lane=LANE
     )
     fire_surface = run_alarm_surface(issue_key=LANE, marker=record_marker)
+    # The fire's own rewrite of the lane record is the one write on this board
+    # that the supervisor's declared set does not cover, so it is named here
+    # rather than admitted by widening the set.
+    allow_foreign_write(port, lane=LANE, marker=record_marker)
 
     async with RunSurfaceLease(
         tracker=port,

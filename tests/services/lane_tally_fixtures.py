@@ -4,6 +4,8 @@ Shared by the observer's own tests and the scheduled tick's, so both describe
 one board rather than two that happen to agree.
 """
 
+from dataclasses import dataclass, field
+
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
@@ -32,10 +34,26 @@ PREFIXES = {
 #: fixtures spell it, so a scoped read of this board selects them.
 STAGED = "criteria-staged"
 
+
+@dataclass
+class Board:
+    """One board built through :func:`board`, and what may be written to it.
+
+    *allowed* holds the ``(lane, marker)`` pairs a test names for a writer
+    other than the supervisor, so a legitimate foreign write is admitted by
+    being declared rather than by widening the set every board is checked
+    against.
+    """
+
+    port: FakeTrackerPort
+    lanes: tuple[str, ...]
+    allowed: set[tuple[str, str]] = field(default_factory=set)
+
+
 #: Every board built through this module, with the lanes it was built for, so a
 #: surface assertion can be applied to every fixture rather than to the ones
 #: that remembered to ask for it.
-BOARDS: list[tuple[FakeTrackerPort, tuple[str, ...]]] = []
+BOARDS: list[Board] = []
 
 
 def checks(lane):
@@ -145,8 +163,19 @@ async def board(
             ),
         )
     port.comment_writes.clear()
-    BOARDS.append((port, tuple(lanes)))
+    BOARDS.append(Board(port=port, lanes=tuple(lanes)))
     return port
+
+
+def allow_foreign_write(port, *, lane, marker):
+    """Name one write on *port* that a holder other than the supervisor makes.
+
+    The declared-set check reads the tick's own writes, so a write a test
+    makes on purpose has to be named before it is made. Naming it keeps the
+    set every other board is checked against as narrow as the design's.
+    """
+    entry = next(row for row in BOARDS if row.port is port)
+    entry.allowed.add((lane, marker))
 
 
 def rewrite_record(port, lane, *, commits):
@@ -205,26 +234,55 @@ def snapshot(port):
     return (list(port.comments), list(port.comment_writes), list(port.lease_writes))
 
 
+def declared_pairs(entry):
+    """The ``(lane, marker)`` pairs this board's ticks may write under.
+
+    Per lane: the lane's run-event stream, and the alarm marker when the board
+    configures an alarm prefix. The lane record's own marker is not among them
+    — the supervisor holds no surface there — so a write under it is outside
+    the set unless a test named it.
+    """
+    pairs = [
+        (
+            lane,
+            compose_comment_marker(
+                prefixes=entry.port.marker_prefixes,
+                purpose=RUN_EVENT_PURPOSE,
+                lane=lane,
+            ),
+        )
+        for lane in entry.lanes
+    ]
+    if MARKER_PURPOSE in entry.port.marker_prefixes:
+        pairs.extend((lane, alarm_marker(entry.port, lane)) for lane in entry.lanes)
+    return pairs
+
+
 def assert_every_write_is_inside_the_declared_set():
     """Every board built this test: nothing written outside the lane's own set.
+
+    The writes read are the tick's own — ``board()`` clears the write log once
+    it has posted the lane records, and the fake appends to it only from its
+    post and upsert paths — so the set is the design's rather than one widened
+    to admit the fixture's own setup. Each write is checked as a whole address,
+    issue key and marker together, because a body under a declared marker
+    landing on another issue is a write outside the set too.
 
     The set is derived from the purposes the board actually configures, so a
     board declaring no alarm prefix is checked against what it does declare
     rather than skipped.
     """
-    for port, lanes in BOARDS:
-        declared = [
-            compose_comment_marker(
-                prefixes=port.marker_prefixes, purpose=purpose, lane=lane
-            )
-            for lane in lanes
-            for purpose in (RUN_EVENT_PURPOSE, RUN_STATE_PURPOSE)
-        ]
-        if MARKER_PURPOSE in port.marker_prefixes:
-            declared.extend(alarm_marker(port, lane) for lane in lanes)
-        assert all(row.body.startswith(tuple(declared)) for row in port.comments), [
-            row.body.split("\n", 1)[0] for row in port.comments
-        ]
+    for entry in BOARDS:
+        port = entry.port
+        allowed = [*declared_pairs(entry), *sorted(entry.allowed)]
+        rows = {row.comment_key: row for row in port.comments}
+        for comment_key, body in port.comment_writes:
+            row = rows[comment_key]
+            written = (row.issue_key, body.split("\n", 1)[0])
+            assert any(
+                written[0] == lane and written[1].startswith(marker)
+                for lane, marker in allowed
+            ), (written, allowed)
         assert port.issue_writes == []
         assert port.workflow_writes == []
         assert port.restored_states == []
