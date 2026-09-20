@@ -13,6 +13,7 @@ from kodezart.composition.jobs import build_job_queue
 from kodezart.config.app import AppConfig
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.session import PermissionMode
+from tests.fakes import FakeScopeStatusWriter
 
 
 class LifecycleError(Exception):
@@ -52,7 +53,12 @@ def resources(monkeypatch):
 
     async def tracker_boot(**kwargs):
         await tracker.open()
-        return SimpleNamespace(tracker=object(), caller=tracker, operation=None)
+        return SimpleNamespace(
+            tracker=object(),
+            caller=tracker,
+            operation=None,
+            status=FakeScopeStatusWriter(),
+        )
 
     async def recorder(**kwargs):
         await step("recorder")
