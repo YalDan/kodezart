@@ -841,10 +841,15 @@ async def build_dispatch_runtime(
             )
         )
     else:
+        # The roster is read off the same copy the gate above reads: the
+        # reconciled one when a tracker was dialled, the raw one only when
+        # there is no reconciled copy to read. A log line reading the other
+        # copy would be a second opinion on the very fact it reports.
+        declaring = operation if dialled is None else dialled.operation
         await log.ainfo(
             "supervisor_pass_not_wired",
             tracker_present=dialled is not None,
-            scopes_declared=bool(operation is not None and operation.supervisor_scopes),
+            scopes_declared=bool(declaring is not None and declaring.supervisor_scopes),
         )
     if operation is not None:
         if dialled is None and (

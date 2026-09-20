@@ -73,9 +73,22 @@ def declared(*, scopes):
     )
 
 
-@pytest.mark.parametrize(
-    "wiring", ["declared_with_tracker", "declared_without_tracker", "undeclared"]
-)
+#: Each wiring: the roster handed in raw, the roster the dialled tracker's
+#: reconciled copy carries (``None`` when no tracker is dialled at all), and the
+#: two facts the absent-arm log must state — or ``None`` where a tick registers.
+#: The last two cases are the ones that tell the copies apart: the gate and the
+#: log both read the reconciled one, so a roster reconciliation added registers
+#: a tick and a roster it removed registers none.
+WIRINGS = {
+    "declared_with_tracker": ((SCOPE,), (SCOPE,), None),
+    "declared_without_tracker": ((SCOPE,), None, (False, True)),
+    "undeclared": ((), (), (True, False)),
+    "reconciled_declares": ((), (SCOPE,), None),
+    "only_raw_declares": ((SCOPE,), (), (True, False)),
+}
+
+
+@pytest.mark.parametrize("wiring", list(WIRINGS))
 async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracker(
     tmp_path: Path, wiring: str
 ) -> None:
@@ -85,11 +98,20 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     tick; either one absent registers none and says which was missing in the
     boot log, so an operator reads the reason rather than deducing it from a
     schedule with no supervisor in it.
+
+    The roster read is the reconciled copy's, which is the only copy anything
+    downstream may read. Two of the cases below make the two copies disagree,
+    so the gate and the absent-arm log are each shown to read that one and not
+    the copy handed in raw.
     """
-    operation = declared(scopes=() if wiring == "undeclared" else (SCOPE,))
+    raw_scopes, reconciled_scopes, absent = WIRINGS[wiring]
+    operation = declared(scopes=raw_scopes)
+    reconciled = (
+        None if reconciled_scopes is None else declared(scopes=reconciled_scopes)
+    )
     tracker = (
         None
-        if wiring == "declared_without_tracker"
+        if reconciled_scopes is None
         else FakeTrackerPort(issues=[], marker_prefixes=operation.marker_prefixes)
     )
 
@@ -99,6 +121,7 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
             tracker=tracker,
             runner=FakeAgentRunner(events=[]),
             operation=operation,
+            reconciled=reconciled,
             supervisor_pass_interval_seconds=INTERVAL,
             supervisor_pass_timeout_seconds=TIMEOUT,
         )
@@ -106,17 +129,18 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     registered = list(runtime.scheduler.passes)
     ticks = [entry for entry in registered if entry.name == SUPERVISOR_TICK_NAME]
     unwired = [entry for entry in logs if entry["event"] == "supervisor_pass_not_wired"]
-    if wiring == "declared_with_tracker":
+    if absent is None:
         assert len(ticks) == 1
         assert ticks[0].interval_seconds == INTERVAL
         assert ticks[0].timeout_seconds == TIMEOUT
         assert ticks[0].report is None
         assert unwired == []
     else:
+        tracker_present, scopes_declared = absent
         assert ticks == []
         assert len(unwired) == 1
-        assert unwired[0]["tracker_present"] is (tracker is not None)
-        assert unwired[0]["scopes_declared"] is (wiring == "declared_without_tracker")
+        assert unwired[0]["tracker_present"] is tracker_present
+        assert unwired[0]["scopes_declared"] is scopes_declared
 
     # Every other pass is as it was: the arm adds one registration and edits
     # no other, so the rest of the schedule is the same set either way. Asserted
