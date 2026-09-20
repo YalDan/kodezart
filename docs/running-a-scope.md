@@ -136,13 +136,13 @@ names the member and what it stops.
 | `issue_labels.criterion` | the first act of the first tick, before any tracker call | `OperationMemberAbsentError` |
 | `issue_labels.decision` | the same first act | `OperationMemberAbsentError` |
 | `issue_labels.tracker` | the same first act | `OperationMemberAbsentError` |
-| `scope_labels.approved` | resolving whether the scope is approved, on the first tick | `OperationMemberAbsentError` |
-| `issue_labels.criteria` | reading a lane's fire specification, after the clone | `FireSpecEntryError` |
+| `scope_labels.approved` | loading the file once the table is declared; with no table, resolving approval on the first tick | `OperationConfigError`, `OperationMemberAbsentError` |
+| `issue_labels.criteria` | loading the file: the criteria mandate row's terminal_marker_key must resolve | `OperationConfigError` |
 | `marker_prefixes.run_state` | recording where the lane stands | `OperationMemberAbsentError` |
 | `marker_prefixes.run_event` | posting the lane's own run events | `OperationMemberAbsentError` |
 | `marker_prefixes.amendment` | writing back what the fire amended | `OperationMemberAbsentError` |
-| `workflow_states.done` | crossing a criterion off, after a session and a commit | `TrackerProtocolError` |
-| `write_back.max_verify_rounds` | the top of the fire's execution step, before a criteria read | `OperationMemberAbsentError` |
+| `workflow_states.done` | loading the file once the table is declared; with no table, the first cross-off, after a session and a commit | `OperationConfigError`, `TrackerProtocolError` |
+| `write_back.max_verify_rounds` | boot, before the scheduler starts, as the write_back section a configured organize owner requires | `OperationMemberAbsentError` |
 | the declared repository | matching the request's origin, before the first read | `ScopeReadError` |
 | the forge token | selecting a delivery reader for the origin | `ScopedExecutionUnavailableError` |
 | the criterion's team | taking a refuted criterion back | `CriterionReadError` |
