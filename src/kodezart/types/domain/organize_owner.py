@@ -164,6 +164,7 @@ class StageHaltCause(StrEnum):
     CONVERGENCE_EXHAUSTED = "convergence_exhausted"
     ESCALATION_UNRECORDED = "escalation_unrecorded"
     HUMAN_DECISION = "human_decision"
+    STAGE_INCOMPLETE = "stage_incomplete"
 
 
 class OrganizeBoundEvidence(CamelCaseModel):
@@ -204,6 +205,8 @@ class _HaltEvidence(CamelCaseModel):
     write_back_results: tuple[WriteBackResult, ...] = ()
     questions: tuple[UnresolvedProposal, ...] = ()
     unrecorded_escalation_issue_ids: tuple[str, ...] = ()
+    phase: MandateKind | None = None
+    unlabelled_issue_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _retained_write_back_is_unsettled(self) -> Self:
@@ -219,6 +222,8 @@ class AdmissionExhaustedHalt(_HaltEvidence):
     bound: OrganizeBoundEvidence
     questions: tuple[()] = ()
     unrecorded_escalation_issue_ids: tuple[()] = ()
+    phase: None = None
+    unlabelled_issue_ids: tuple[()] = ()
 
     @model_validator(mode="after")
     def _admission_bound_matches_its_evidence(self) -> Self:
@@ -241,6 +246,8 @@ class ConvergenceExhaustedHalt(_HaltEvidence):
     questions: tuple[()] = ()
     write_back_results: tuple[()] = ()
     unrecorded_escalation_issue_ids: tuple[()] = ()
+    phase: None = None
+    unlabelled_issue_ids: tuple[()] = ()
 
     @model_validator(mode="after")
     def _convergence_bound_is_its_own(self) -> Self:
@@ -257,6 +264,8 @@ class HumanDecisionHalt(_HaltEvidence):
     surviving_findings: tuple[()] = ()
     write_back_results: tuple[()] = ()
     unrecorded_escalation_issue_ids: tuple[()] = ()
+    phase: None = None
+    unlabelled_issue_ids: tuple[()] = ()
 
     @model_validator(mode="after")
     def _human_choice_is_recorded(self) -> Self:
@@ -278,13 +287,38 @@ class EscalationUnrecordedHalt(_HaltEvidence):
     unrecorded_escalation_issue_ids: tuple[
         Annotated[str, Field(min_length=1, pattern=r"\S")], ...
     ] = Field(min_length=1)
+    phase: None = None
+    unlabelled_issue_ids: tuple[()] = ()
+
+
+class StageIncompleteHalt(_HaltEvidence):
+    """Members that owe this stage its marker and did not receive it.
+
+    Escalated, unapproved, or left unlabelled after the marker loop. No
+    session was spent on them, and no escalation is written for them: the
+    label they lack is the whole record, and a person removing an
+    escalation label is what returns one to the roster.
+    """
+
+    cause: Literal[StageHaltCause.STAGE_INCOMPLETE]
+    phase: MandateKind
+    unlabelled_issue_ids: tuple[
+        Annotated[str, Field(min_length=1, pattern=r"\S")], ...
+    ] = Field(min_length=1)
+    bound: None = None
+    admission_results: tuple[()] = ()
+    surviving_findings: tuple[()] = ()
+    write_back_results: tuple[()] = ()
+    questions: tuple[()] = ()
+    unrecorded_escalation_issue_ids: tuple[()] = ()
 
 
 type StageHalt = Annotated[
     AdmissionExhaustedHalt
     | ConvergenceExhaustedHalt
     | HumanDecisionHalt
-    | EscalationUnrecordedHalt,
+    | EscalationUnrecordedHalt
+    | StageIncompleteHalt,
     Field(discriminator="cause"),
 ]
 
@@ -321,6 +355,14 @@ class StageHaltReport(RootModel[StageHalt]):
     @property
     def unrecorded_escalation_issue_ids(self) -> tuple[str, ...]:
         return self.root.unrecorded_escalation_issue_ids
+
+    @property
+    def phase(self) -> MandateKind | None:
+        return self.root.phase
+
+    @property
+    def unlabelled_issue_ids(self) -> tuple[str, ...]:
+        return self.root.unlabelled_issue_ids
 
 
 class OrganizeReport(CamelCaseModel):

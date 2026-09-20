@@ -4,7 +4,7 @@ An owner runs the rows it is given: the pre-approval row for the scheduled
 pass, the two run-stage rows for the scope run.
 """
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from hashlib import sha256
@@ -35,7 +35,14 @@ from kodezart.domain.errors import (
     SurfaceLeaseError,
     WriteBackReadError,
 )
-from kodezart.domain.organize import admission_route, is_organize_subject, organize_gap
+from kodezart.domain.organize import (
+    admission_route,
+    is_organize_subject,
+    organize_gap,
+    owes_stage_label,
+    stage_pending,
+    stage_unlabelled,
+)
 from kodezart.domain.organize_graph import (
     graph_peers,
     graph_snapshot,
@@ -82,6 +89,7 @@ from kodezart.types.domain.organize_owner import (
     OrganizeReport,
     StageHaltCause,
     StageHaltReport,
+    StageIncompleteHalt,
     UnavailableProposal,
     UnresolvedProposal,
 )
@@ -983,6 +991,60 @@ class OrganizeOwner:
             }
         )
 
+    def _roster(
+        self,
+        *,
+        phase: ResolvedMandateSpec,
+        issues: Sequence[TrackerIssue],
+        unlabelled: Sequence[str],
+        finding_keys: set[str],
+    ) -> tuple[str, ...]:
+        """The members whose admission this round has to read, and no others.
+
+        A pre-approval phase needs every member that owes its marker at all,
+        because whether it is open here is decided by who is admitted. A run
+        stage needs the unlabelled ones plus any labelled member a finding of
+        this run names.
+        """
+        if not phase.role.runs_under_approval:
+            return tuple(issue.issue_key for issue in issues if owes_stage_label(issue))
+        return tuple(dict.fromkeys((*unlabelled, *sorted(finding_keys))))
+
+    async def _admissions_for(
+        self,
+        *,
+        keys: Sequence[str],
+        by_key: Mapping[str, TrackerIssue],
+        phase: ResolvedMandateSpec,
+        scope_labels: frozenset[ScopeLabel],
+    ) -> dict[str, bool]:
+        """One admission reading per named member, through the one predicate."""
+        return {
+            key: await self._admitted(
+                by_key[key], phase=phase, scope_labels=scope_labels
+            )
+            for key in keys
+        }
+
+    def _stage_incomplete(
+        self,
+        *,
+        completed: Sequence[MandateKind],
+        phase: ResolvedMandateSpec,
+        owed: tuple[str, ...],
+    ) -> OrganizeReport:
+        """The report-shaped halt for members this stage did not label."""
+        return OrganizeReport(
+            completed_phases=tuple(completed),
+            halt=StageHaltReport(
+                StageIncompleteHalt(
+                    cause=StageHaltCause.STAGE_INCOMPLETE,
+                    phase=phase.spec.kind,
+                    unlabelled_issue_ids=owed,
+                )
+            ),
+        )
+
     async def run(
         self,
         *,
@@ -997,20 +1059,49 @@ class OrganizeOwner:
             admissions = self._admissions.setdefault(phase.spec.kind, {})
             classes: set[str] = set()
             findings: tuple[SpecFinding, ...] = ()
+            marker = split_label_key(phase.spec.terminal_marker_key)[1]
+            active = False
             for _convergence_round in range(self._policy.max_convergence_rounds):
                 snapshot = await self._snapshot(scope)
-                members = {r.issue.issue_key for r in snapshot}
+                issues = [r.issue for r in snapshot]
+                by_key = {issue.issue_key: issue for issue in issues}
+                members = set(by_key)
                 scope_labels = await self._tracker.read_scope_labels(ref=scope)
-                subjects = [
-                    r.issue
-                    for r in snapshot
-                    if is_organize_subject(r.issue)
-                    and await self._admitted(
-                        r.issue, phase=phase, scope_labels=scope_labels
-                    )
-                ]
-                if not subjects:
+                unlabelled = stage_unlabelled(issues=issues, marker=marker)
+                finding_keys = {f.issue_id for f in findings}
+                admitted = await self._admissions_for(
+                    keys=self._roster(
+                        phase=phase,
+                        issues=issues,
+                        unlabelled=unlabelled,
+                        finding_keys=finding_keys & members,
+                    ),
+                    by_key=by_key,
+                    phase=phase,
+                    scope_labels=scope_labels,
+                )
+                pending = stage_pending(
+                    unlabelled=unlabelled,
+                    admitted=admitted,
+                    under_approval=phase.role.runs_under_approval,
+                )
+                if pending is None:
+                    # Nobody is admitted here: an approved scope on the
+                    # pre-approval row, or one whose gate is absent. No work,
+                    # no completion, no halt.
                     break
+                active = True
+                blocked = tuple(
+                    key
+                    for key in pending
+                    if not admitted.get(key, False)
+                    or not is_organize_subject(by_key[key])
+                )
+                if blocked:
+                    # Counted, named and free, before any session opens.
+                    return self._stage_incomplete(
+                        completed=completed, phase=phase, owed=blocked
+                    )
                 gap = organize_gap(
                     revisions=snapshot,
                     admissions=tuple(
@@ -1023,6 +1114,18 @@ class OrganizeOwner:
                     open_findings=findings,
                     body_marker_key=self._body_marker,
                 )
+                # A member already carrying the marker is out of the roster
+                # unless a finding of this run names it: the label is the
+                # durable record of the admission test that set it.
+                subjects = [
+                    issue
+                    for issue in issues
+                    if is_organize_subject(issue)
+                    and admitted.get(issue.issue_key, False)
+                    and (issue.issue_key in pending or issue.issue_key in finding_keys)
+                ]
+                if not subjects:
+                    break
                 work = {issue.issue_key for issue in gap}
                 for issue in subjects:
                     if issue.issue_key not in work:
@@ -1271,7 +1374,6 @@ class OrganizeOwner:
                                 issue_key=issue.issue_key,
                                 reason="phase marker remains unverified",
                             )
-                    completed.append(phase.spec.kind)
                     break
             else:
                 halt = await self._halt(
@@ -1291,4 +1393,26 @@ class OrganizeOwner:
                     visibility=visibility,
                 )
                 return OrganizeReport(completed_phases=tuple(completed), halt=halt)
+            if not active:
+                continue
+            # The barrier: read the board again and require the marker on
+            # every member that owes it, whatever its admission now.
+            settled = [revision.issue for revision in await self._snapshot(scope)]
+            settled_labels = await self._tracker.read_scope_labels(ref=scope)
+            owed = stage_unlabelled(issues=settled, marker=marker)
+            left = stage_pending(
+                unlabelled=owed,
+                admitted=await self._admissions_for(
+                    keys=owed,
+                    by_key={issue.issue_key: issue for issue in settled},
+                    phase=phase,
+                    scope_labels=settled_labels,
+                ),
+                under_approval=phase.role.runs_under_approval,
+            )
+            if left:
+                return self._stage_incomplete(
+                    completed=completed, phase=phase, owed=left
+                )
+            completed.append(phase.spec.kind)
         return OrganizeReport(completed_phases=tuple(completed))

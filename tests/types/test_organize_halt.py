@@ -138,6 +138,35 @@ def write_back():
             "unrecorded_escalation_issue_ids": ["native-child"],
             "bound": bound(),
         },
+        {"cause": "stage_incomplete", "phase": "ticket"},
+        {
+            "cause": "stage_incomplete",
+            "phase": "ticket",
+            "unlabelled_issue_ids": [],
+        },
+        {
+            "cause": "stage_incomplete",
+            "phase": "ticket",
+            "unlabelled_issue_ids": [" "],
+        },
+        {"cause": "stage_incomplete", "unlabelled_issue_ids": ["native-child"]},
+        {
+            "cause": "stage_incomplete",
+            "phase": "ticket",
+            "unlabelled_issue_ids": ["native-child"],
+            "bound": bound(),
+        },
+        {
+            "cause": "stage_incomplete",
+            "phase": "ticket",
+            "unlabelled_issue_ids": ["native-child"],
+            "admission_results": [admission()],
+        },
+        {
+            "cause": "human_decision",
+            "questions": [question()],
+            "phase": "ticket",
+        },
     ],
 )
 def test_wrong_cause_or_missing_evidence_refuses(payload):
@@ -163,6 +192,11 @@ def test_wrong_cause_or_missing_evidence_refuses(payload):
             "unrecorded_escalation_issue_ids": ["native-child"],
             "write_back_results": [write_back()],
         },
+        {
+            "cause": "stage_incomplete",
+            "phase": "ticket",
+            "unlabelled_issue_ids": ["native-child"],
+        },
     ],
 )
 def test_valid_halt_roundtrips_the_existing_flat_json(payload):
@@ -176,6 +210,8 @@ def test_valid_halt_roundtrips_the_existing_flat_json(payload):
         "writeBackResults",
         "questions",
         "unrecordedEscalationIssueIds",
+        "phase",
+        "unlabelledIssueIds",
     }
     assert StageHaltReport.model_validate(serialized) == report
     assert StageHaltReport(**payload) == report

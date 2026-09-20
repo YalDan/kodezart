@@ -1,6 +1,6 @@
 """Admission actions computed from verdict data before any tracker write."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from kodezart.domain.dispatch import blocker_keys
 from kodezart.types.domain.organize import (
@@ -82,6 +82,58 @@ def stage_rows(
 def is_organize_subject(issue: TrackerIssue) -> bool:
     """The phase work roster excludes criteria and record-shaped issues."""
     return not bool(issue.issue_labels & {"criterion", "tracker", "decision"})
+
+
+def owes_stage_label(issue: TrackerIssue) -> bool:
+    """Every member a stage must label: not a criterion, not a tracker record.
+
+    An escalated member owes the label and is not a work subject: a stage
+    counts it, names it, and spends no session on it. Workflow state is not
+    read — removing the escalation label is the act that returns the member
+    to the roster, and nothing else does.
+    """
+    return not bool(issue.issue_labels & {"criterion", "tracker"})
+
+
+def stage_unlabelled(*, issues: Sequence[TrackerIssue], marker: str) -> tuple[str, ...]:
+    """Keys of the members that owe *marker* and do not carry it.
+
+    In snapshot order. Refuses a blank marker and a repeated key, for the
+    reason the gap computation refuses them: a roster over an incoherent
+    snapshot is not a smaller roster, it is a wrong one.
+    """
+    if not marker.strip():
+        raise ValueError("a stage roster requires a nonempty marker key")
+    seen: set[str] = set()
+    owed: list[str] = []
+    for issue in issues:
+        if issue.issue_key in seen:
+            raise ValueError("a stage roster requires one record per issue")
+        seen.add(issue.issue_key)
+        if owes_stage_label(issue) and marker not in issue.issue_labels:
+            owed.append(issue.issue_key)
+    return tuple(owed)
+
+
+def stage_pending(
+    *,
+    unlabelled: Sequence[str],
+    admitted: Mapping[str, bool],
+    under_approval: bool,
+) -> tuple[str, ...] | None:
+    """What the phase still owes here.
+
+    A run stage owes every unlabelled member, whatever its admission: the
+    stage is complete only when every member carries its marker, and one
+    that cannot be admitted holds it rather than being filtered out. A
+    pre-approval phase owes only the admitted ones, and is not open here at
+    all (``None``) when it admits nobody — an approved scope, or one whose
+    gate is absent, has no pre-approval work and no pre-approval failure.
+    """
+    if under_approval:
+        return tuple(unlabelled)
+    open_here = tuple(key for key in unlabelled if admitted.get(key, False))
+    return open_here or None
 
 
 def organize_gap(

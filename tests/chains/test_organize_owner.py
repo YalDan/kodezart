@@ -270,9 +270,13 @@ async def test_the_pre_approval_owner_grooms_alone_and_reentry_writes_nothing():
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
 
 
-async def test_the_run_stage_owner_does_ticket_then_criteria_and_rewrites_nothing():
-    """Both run stages over an approved scope, in the governed order."""
-    owner, board, _ = factory(under_approval=True)
+async def test_the_run_stage_owner_does_ticket_then_criteria_and_replays_dry():
+    """Both run stages over an approved scope, in the governed order.
+
+    The replay is the label-as-record contract: every member already carries
+    both markers, so both stages complete with no session and no write.
+    """
+    owner, board, executor = factory(under_approval=True)
     report = await run_owner(owner)
     assert report.halt is None
     assert [phase.value for phase in report.completed_phases] == ["ticket", "criteria"]
@@ -288,10 +292,12 @@ async def test_the_run_stage_owner_does_ticket_then_criteria_and_rewrites_nothin
     assert children[0].description.endswith("**Evidence:**\n")
     assert parent.labels.count("approved scope") == 1
     board.calls.clear()
+    sessions = len(executor.calls)
     second = await run_owner(owner)
     assert second.halt is None
     assert [phase.value for phase in second.completed_phases] == ["ticket", "criteria"]
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+    assert len(executor.calls) == sessions
 
 
 async def test_single_admission_round_stops_with_durable_refusal_and_no_completion():
@@ -1039,3 +1045,33 @@ async def test_approval_withdrawn_during_a_stage_author_write_refuses_the_write(
     with pytest.raises(OrganizeWriteRefusalError, match="ticket is not admitted"):
         await run_owner(owner)
     assert not [(name, args) for name, args in board.calls if name == "save_issue"]
+
+
+async def test_an_escalated_member_holds_its_stage_by_name_before_any_session():
+    """A member carrying the escalation label owes the stage label and lacks it.
+
+    It is counted, named in the halt, and no session is spent on it — and the
+    next stage is never reached, so its own marker never lands either.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = factory(under_approval=True)
+    board.server.issues["escalated-child"] = FakeMcpIssue(
+        id="escalated-child",
+        parent_id=CLAIMED_ISSUE,
+        description="A member a person still has to decide about.",
+        labels=["needs decision"],
+    )
+    report = await run_owner(owner)
+    assert report.completed_phases == ()
+    assert report.halt.cause == "stage_incomplete"
+    assert report.halt.phase.value == "ticket"
+    assert report.halt.unlabelled_issue_ids == ("escalated-child",)
+    assert report.halt.bound is None
+    assert report.halt.admission_results == ()
+    assert executor.calls == []
+    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+    assert not set(board.server.issues[CLAIMED_ISSUE].labels) & {
+        "body complete",
+        "criteria complete",
+    }
