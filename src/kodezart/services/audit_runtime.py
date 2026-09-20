@@ -493,6 +493,7 @@ class AuditScheduledPass:
                 writes=tuple(writes),
                 unavailable=tuple(unavailable),
                 deferred=tuple(deferred),
+                repair_inputs=tuple(interrupted),
                 observations=_all_reports((*observations, *repair_observations)),
                 raw_observations=_raw_observations(
                     (*observations, *repair_observations)
