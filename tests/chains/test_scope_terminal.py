@@ -507,3 +507,64 @@ def test_the_merge_state_detector_finds_the_modules_that_do_name_one():
         if not merge_state_sites(path.read_text(encoding="utf-8"), label=path.name)
     ]
     assert unseen == []
+
+
+# ---------------------------------------------------------------------------
+# KOD-832 clause 6 — a scratch-shaped scope ends with exactly one status
+# update carrying the per-lane vector and the derived outcome, and no other
+# terminal write.
+# ---------------------------------------------------------------------------
+
+#: A project scope of three lanes, the second held by the first, which is the
+#: shape the recorded acceptance run walks. Doubles only: nothing here reaches
+#: a live workspace, and the recorded run is that clause's own evidence.
+SCRATCH = ScopeRef(kind=ScopeKind.PROJECT, key="scratch-project")
+SCRATCH_LANES = ("DUC-1209", "DUC-1210", "DUC-1211")
+
+
+async def test_a_scratch_shaped_scope_ends_with_exactly_one_status_update():
+    """One status update on the container, and no other write of the terminal's.
+
+    The whole clause in one walk: three lanes, the second held by the first,
+    on a project scope. Doubles only — nothing here reaches a live workspace.
+    """
+    repos = WalkRepos()
+    board_port = board(lanes=SCRATCH_LANES, blocked={"DUC-1210": ("DUC-1209",)})
+    board_port.scope_memberships[SCRATCH] = SCRATCH_LANES
+    journal = Journal()
+    harness = resumable(
+        port=RecordingTracker(board_port, journal),
+        repos=repos,
+        lanes=SCRATCH_LANES,
+    )
+
+    events, writes = await attributed(harness, journal, scope=SCRATCH)
+
+    # Exactly one report, and it is the last thing the stream carries.
+    reports = terminals(events)
+    assert len(reports) == 1
+    assert events[-1] is reports[0]
+    report = reports[0]
+
+    # Exactly one status update, on the scope's own container, carrying the
+    # per-lane vector and the derived outcome.
+    assert len(harness.status.posts) == 1
+    posted_ref, body = harness.status.posts[0]
+    assert posted_ref == SCRATCH
+    assert body == render_scope_status(report)
+    assert body.splitlines()[0] == f"Scope outcome: {report.outcome.value}"
+    assert [
+        line.split()[2] for line in body.splitlines() if line.startswith("- [")
+    ] == [*SCRATCH_LANES]
+
+    # The vector covers every lane of the reading, with each lane's own
+    # recorded branch read back off that lane's record.
+    assert [lane.issue for lane in report.lanes] == [*SCRATCH_LANES]
+    assert report.outcome is WorkflowOutcome.scope_converged
+    for lane in report.lanes:
+        assert lane.branch == (await lane_record(board_port, lane.issue)).branch
+
+    # And nothing else: no write on any issue surface and none on the
+    # container description is attributable to the terminal.
+    assert writes == []
+    assert journal.writes, "a walk that wrote nothing states nothing about the terminal"
