@@ -2,10 +2,17 @@
 
 import pytest
 
-from kodezart.domain.lane_record import render_lane_record
-from kodezart.domain.run_alarm_record import run_alarm_marker
+from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
+from kodezart.domain.run_alarm_record import (
+    MARKER_PURPOSE,
+    run_alarm_marker,
+    run_alarm_surface,
+)
+from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
 from kodezart.domain.tally_record import is_raised
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.services.tally_supervisor import SIGNAL, TallySupervisor
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
 from kodezart.types.domain.operation import (
@@ -87,6 +94,42 @@ def lane_state(*, commits):
     )
 
 
+#: Every board this module built, so the surface check below can be applied to
+#: every fixture rather than to the ones that remembered to ask for it.
+BOARDS: list[FakeTrackerPort] = []
+
+
+@pytest.fixture(autouse=True)
+def every_write_of_a_tick_is_inside_the_declared_set():
+    """The module-wide surface assertion: nothing outside the alarm's own set.
+
+    Applied to every fixture rather than to a named one, so a tick that grew a
+    write somewhere else cannot pass by being exercised in a test that only
+    asked about something adjacent.
+    """
+    BOARDS.clear()
+    yield
+    for port in BOARDS:
+        declared = [
+            compose_comment_marker(
+                prefixes=port.marker_prefixes, purpose=purpose, lane=LANE
+            )
+            for purpose in (RUN_EVENT_PURPOSE, RUN_STATE_PURPOSE)
+        ]
+        if MARKER_PURPOSE in port.marker_prefixes:
+            declared.append(alarm_marker(port))
+        assert all(row.body.startswith(tuple(declared)) for row in port.comments), [
+            row.body.split("\n", 1)[0] for row in port.comments
+        ]
+        assert port.issue_writes == []
+        assert port.workflow_writes == []
+        assert port.restored_states == []
+        assert port.queue_writes == []
+        assert port.classification_writes == []
+        assert port.claim_writes == []
+        assert [lease for lease in port.leases.values() if lease.holder == HOLDER] == []
+
+
 async def board(*, commits=("sha-one", "sha-two"), prefixes=PREFIXES):
     """A lane issue, its criterion family, and the record its loop left."""
     port = FakeTrackerPort(
@@ -100,6 +143,7 @@ async def board(*, commits=("sha-one", "sha-two"), prefixes=PREFIXES):
         ),
     )
     port.comment_writes.clear()
+    BOARDS.append(port)
     return port
 
 
@@ -360,3 +404,63 @@ def test_a_blank_holder_refuses_before_any_read():
             holder="   ",
             lease_seconds=LEASE_SECONDS,
         )
+
+
+async def test_the_supervisor_leases_exactly_the_alarm_marker_on_the_lane_issue():
+    port = await board()
+    tally = supervisor(port)
+    expected = run_alarm_surface(issue_key=LANE, marker=alarm_marker(port))
+
+    await observe(tally)
+    await observe(tally, closed=(SECOND,))
+
+    leased = [lease for lease in port.lease_writes if lease.holder == HOLDER]
+    assert leased, "a leased write with no lease states nothing about its surface"
+    assert [lease.surfaces for lease in leased] == [frozenset({expected})] * len(leased)
+
+
+async def test_a_lane_fire_holding_the_record_marker_and_the_supervisor_both_write():
+    """Two holders, two surfaces, one issue: neither excludes the other."""
+    port = await board()
+    record_marker = compose_comment_marker(
+        prefixes=port.marker_prefixes, purpose=RUN_STATE_PURPOSE, lane=LANE
+    )
+    fire_surface = run_alarm_surface(issue_key=LANE, marker=record_marker)
+
+    async with RunSurfaceLease(
+        tracker=port,
+        job_id="fire/lane-one",
+        surfaces=frozenset({fire_surface}),
+        lease_seconds=LEASE_SECONDS,
+    ):
+        await observe(supervisor(port))
+        rewritten = render_lane_record(
+            record=lane_state(commits=("sha-one", "sha-two", "sha-three")),
+            marker_prefixes=PREFIXES,
+        )
+        await port.upsert_comment(
+            target=LANE,
+            marker=record_marker,
+            body=rewritten.split("\n", 1)[1],
+            holder="fire/lane-one",
+        )
+
+    assert len(records_on(port)) == 1
+    assert {lease.holder for lease in port.lease_writes} == {HOLDER, "fire/lane-one"}
+    _, state = await LaneRecordReader(
+        tracker=port,
+        operation=OperationConfig(
+            operation_name="fixture", workspace="fixture", marker_prefixes=PREFIXES
+        ),
+    ).read(issue_key=LANE, lane_key=LANE)
+    assert len(state.commits) == 3
+
+
+async def test_the_alarm_marker_shares_no_prefix_with_any_other_configured_purpose():
+    port = await board()
+    marker = alarm_marker(port)
+
+    for purpose, prefix in port.marker_prefixes.items():
+        if purpose == MARKER_PURPOSE:
+            continue
+        assert not marker.startswith(f"[{prefix}")
