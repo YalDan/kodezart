@@ -73,6 +73,7 @@ from tests.integration.test_scope_runtime import (
     SCOPE,
     WALK_BOUND_SECONDS,
     WalkRepos,
+    approve_container,
     board,
     bounded_walk,
     drive,
@@ -81,6 +82,7 @@ from tests.integration.test_scope_runtime import (
     resumable,
     runtime,
     ticks_of,
+    unapproved_members,
 )
 from tests.lane_fixture import ScopeForgeWire
 from tests.services.test_scope_runtime_static import imported_modules, path_of
@@ -132,7 +134,7 @@ async def test_the_scope_outcome_is_the_derivation_of_the_vector_it_reports():
 
 async def test_a_lane_that_owes_criteria_at_the_exit_reports_not_done():
     """An unapproved lane is never read for a gap, so it never owes nothing."""
-    harness = runtime(port=board(lanes=("A",), approved=False))
+    harness = runtime(port=unapproved_members(lanes=("A",)))
 
     events = await bounded_walk(harness)
 
@@ -442,7 +444,7 @@ def two_converged_lanes():
 
 
 def unapproved_lane():
-    return recorded(board(lanes=("A",), approved=False)), {}, 1, nothing_to_close
+    return recorded(unapproved_members(lanes=("A",))), {}, 1, nothing_to_close
 
 
 def blocked_lane():
@@ -531,7 +533,7 @@ def all_done_open_prs():
 
 def initiative_scope():
     scope = ScopeRef(kind=ScopeKind.INITIATIVE, key="scoped-initiative")
-    port = board(lanes=("A",))
+    port = approve_container(board(lanes=("A",)), scope)
     port.scope_memberships[scope] = ("A",)
     return recorded(port), {"scope": scope}, 1, nothing_to_close
 
@@ -947,7 +949,9 @@ async def test_a_scratch_shaped_scope_ends_with_exactly_one_status_update():
     Doubles only — nothing here reaches a live workspace.
     """
     repos = WalkRepos(url=FORGE_ORIGIN)
-    board_port = board(lanes=SCRATCH_LANES, blocked={"DUC-1210": ("DUC-1209",)})
+    board_port = approve_container(
+        board(lanes=SCRATCH_LANES, blocked={"DUC-1210": ("DUC-1209",)}), SCRATCH
+    )
     board_port.scope_memberships[SCRATCH] = SCRATCH_LANES
     journal = Journal()
     wire = ScopeForgeWire(head_sha_of=repos.head_of)

@@ -494,6 +494,18 @@ class ScopeSupersessionReadError(ScopeReadError):
         )
 
 
+class ScopeNotApprovedError(ScopeReadError):
+    """The addressed scope carries no approval, on it or above it.
+
+    A ``ScopeReadError`` because it is what one: a live scope fact read at
+    entry, refusing the run before any member is read. Not approved and
+    nothing to do are then different outcomes, and neither is silence.
+    """
+
+    def __init__(self, *, ref: ScopeRef) -> None:
+        super().__init__("scope is not approved", ref=ref)
+
+
 class ScopedExecutionUnavailableError(Exception):
     """An addressed scope cannot execute through the legacy workflow pipeline."""
 

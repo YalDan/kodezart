@@ -40,6 +40,7 @@ from kodezart.domain.errors import BaseResolutionError, ScopedExecutionUnavailab
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.scope_entry import ScopeEntry
 from kodezart.services.scope_runtime import (
     ScopeWorkflowEngine,
     _LastFire,
@@ -50,7 +51,7 @@ from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, RepoEntry, ScopeLabel
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import LaneFailure, ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -137,6 +138,7 @@ def engine(
             status=FakeScopeStatusWriter(),
             gate=PassThroughGate(),
         ),
+        entry=ScopeEntry(approvals=port, stages_for=lambda _url: None),
         cache=FakeRepoCache(),
         repositories=repositories,
         git_base_url="https://forge.invalid",
@@ -275,9 +277,25 @@ def scope_board(*rows, lanes=("A",), children=()):
         scope_memberships={SCOPE: tuple(lanes)},
         criteria_stage_label_key=STAGED,
         marker_prefixes=OPERATION.marker_prefixes,
+        # The addressed scope is a container, and a run passes its entry's
+        # approval question before any lane of it is read, so the container
+        # and its own approval are seeded beside the per-member ones.
+        scope_containers=[
+            ScopeContainer(
+                ref=SCOPE,
+                name="fixture scope",
+                description="",
+                url="https://tracker.invalid/project/fixture-scope",
+            )
+        ],
         scope_label_members={
-            ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
-            for key in lanes
+            SCOPE: frozenset({ScopeLabel.APPROVED}),
+            **{
+                ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset(
+                    {ScopeLabel.APPROVED}
+                )
+                for key in lanes
+            },
         },
     )
 

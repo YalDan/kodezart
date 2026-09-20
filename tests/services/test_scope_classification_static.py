@@ -14,10 +14,11 @@ not.
 
 **The reading.** For each scope service — derived, see below — let S be every
 function in the module that LOADS ``self._tracker``. A function is ANCHORED when
-its first ``await`` in source order is a call to
-``read_scope_ready(..., tracker=self._tracker)``. A function is COVERED when it
-is anchored, or when it is called somewhere in the module and every one of those
-call sites is after the anchoring await of an anchored function or inside a
+the first of its own awaits that this module could place a tracker call in — one
+naming ``self._tracker``, or a call to a function this module defines — is a call
+to ``read_scope_ready(..., tracker=self._tracker)``. A function is COVERED when
+it is anchored, or when it is called somewhere in the module and every one of
+those call sites is after the anchoring await of an anchored function or inside a
 covered function. Every member of S must be covered, and every public coroutine
 of the class that loads ``self._tracker`` must be anchored — a caller reaching
 one of those has no earlier statement of this module's to stand behind.
@@ -25,9 +26,12 @@ one of those has no earlier statement of this module's to stand behind.
 **Blind spots, stated rather than hidden.**
 
 * A tracker call made through a collaborator this module was CONSTRUCTED with is
-  invisible here: ``self._entries``, ``self._resolver`` and the lane workflows
-  reach their own ports, and what orders those reads is the graph they belong
-  to, not this scan.
+  invisible here: ``self._entry``, ``self._entries``, ``self._resolver`` and the
+  lane workflows reach their own ports, and what orders those reads is the graph
+  they belong to, not this scan. An await ON such a collaborator is therefore
+  skipped when the anchoring await is looked for — it carries no tracker call
+  this scan can see, and treating it as the anchoring position would report a
+  module for awaiting a collaborator the scan has already declared opaque.
 * It is a name scan. A load reached through ``getattr(self, "_tracker")``, or a
   call assembled at runtime, is not seen.
 * Call sites are matched by NAME within the module, so a member handed on as a
@@ -151,13 +155,38 @@ def _loads_tracker(fn: Function, owners: dict[ast.AST, Function | None]) -> bool
     )
 
 
+def _reaches_module(node: ast.Await, *, defined: frozenset[str]) -> bool:
+    """Whether *node* is an await this module could place a tracker call in.
+
+    True when the awaited expression names ``self._tracker`` anywhere, or
+    when it calls a function this module defines — the two ways a tracker
+    call of this module's own can hide behind an await. An await on a
+    collaborator the module was constructed with is neither, and the scan
+    already states that such a call is invisible to it.
+    """
+    if any(
+        isinstance(inner, ast.Attribute) and inner.attr == TRACKER_ATTR
+        for inner in ast.walk(node)
+    ):
+        return True
+    return any(
+        isinstance(inner, ast.Call) and _call_name(inner.func) in defined
+        for inner in ast.walk(node)
+    )
+
+
 def _first_await(
-    fn: Function, owners: dict[ast.AST, Function | None]
+    fn: Function,
+    owners: dict[ast.AST, Function | None],
+    *,
+    defined: frozenset[str],
 ) -> ast.Await | None:
     awaits = [
         node
         for node in ast.walk(fn)
-        if isinstance(node, ast.Await) and owners.get(node) is fn
+        if isinstance(node, ast.Await)
+        and owners.get(node) is fn
+        and _reaches_module(node, defined=defined)
     ]
     return min(awaits, key=_position) if awaits else None
 
@@ -174,9 +203,14 @@ def _is_ready_read(node: ast.expr) -> bool:
     )
 
 
-def _anchor(fn: Function, owners: dict[ast.AST, Function | None]) -> ast.Await | None:
+def _anchor(
+    fn: Function,
+    owners: dict[ast.AST, Function | None],
+    *,
+    defined: frozenset[str],
+) -> ast.Await | None:
     """The ready read this function opens with, when it opens with one."""
-    first = _first_await(fn, owners)
+    first = _first_await(fn, owners, defined=defined)
     if first is None or not _is_ready_read(first.value):
         return None
     return first
@@ -194,7 +228,8 @@ def offenders(tree: ast.Module) -> list[str]:
         for node in ast.walk(tree)
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
     ]
-    anchors = {fn.name: _anchor(fn, owners) for fn in functions}
+    defined = frozenset(fn.name for fn in functions)
+    anchors = {fn.name: _anchor(fn, owners, defined=defined) for fn in functions}
     sites: dict[str, list[ast.Call]] = {fn.name: [] for fn in functions}
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and (name := _call_name(node.func)) in sites:
@@ -332,6 +367,20 @@ class Runner:
         await self._tracker.restore_workflow_state(issue_key="k", state_name="s")
 """,
     ),
+    (
+        "a tracker call behind a collaborator await",
+        # The skip that lets a collaborator await pass over the anchoring
+        # position must skip THAT await and nothing else: the tracker call
+        # behind it is still the first await this scan can see, so the
+        # function is unanchored and reported.
+        """
+class Runner:
+    async def run(self, ref):
+        await self._entry.admit(ref=ref)
+        await self._tracker.restore_workflow_state(issue_key="k", state_name="s")
+        ready = await read_scope_ready(ref=ref, tracker=self._tracker)
+""",
+    ),
 )
 
 
@@ -359,6 +408,27 @@ class Runner:
         await self._settle(ready=ready)
 
     async def _settle(self, *, ready):
+        await self._put_back(key=ready)
+
+    async def _put_back(self, *, key):
+        await self._tracker.restore_workflow_state(issue_key=key, state_name="s")
+"""
+    assert offenders(ast.parse(source)) == []
+
+
+def test_a_source_that_awaits_a_collaborator_before_its_anchor_is_accepted() -> None:
+    """The shape ``scope_runtime`` has: an entry step ahead of the ready read.
+
+    The entry is a collaborator this module is constructed with, so the call
+    it makes is one the blind spot above already states this scan cannot see
+    — and an await on it is not the anchoring position. The ready read still
+    is, and the helper behind it still stands there.
+    """
+    source = """
+class Runner:
+    async def run(self, ref):
+        await self._entry.admit(ref=ref)
+        ready = await read_scope_ready(ref=ref, tracker=self._tracker)
         await self._put_back(key=ready)
 
     async def _put_back(self, *, key):

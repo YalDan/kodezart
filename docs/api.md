@@ -107,6 +107,16 @@ refusal names an origin with no delivery reader behind it. An addressed scope
 never falls back to the prompt workflow. These rules also apply to `/fire`.
 See [running a scope](running-a-scope.md) for the configuration one needs.
 
+A scoped job that does reach the scoped arm can still end before it walks
+anything, at its entry, and each of those endings is typed and carries the
+addressed scope. `ScopeNotApprovedError` means the addressed scope carries no
+approval, on itself or on any container above it: nothing about the scope was
+read and no member was touched. `OrganizeHaltError` means an organize stage of
+the approved run stopped and retains its exact halt report. Both terminate the
+job with outcome `engine_error`; no event type or event field is added for
+them. The first `scope_walk` observation of a run follows its entry, so an
+observation is evidence that the entry passed.
+
 ### Example
 
 ```bash

@@ -32,6 +32,7 @@ from kodezart.domain.errors import (
     ForgeAPIError,
     GitSourceReadError,
     LaneRecordWriteError,
+    ScopeNotApprovedError,
     ScopePlanRefusalError,
 )
 from kodezart.domain.fire_spec import criterion_field_bodies
@@ -70,7 +71,7 @@ from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneRunState
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
 from kodezart.types.domain.scope_terminal import ScopeLaneEntry
 from kodezart.types.domain.session import PermissionMode
@@ -165,6 +166,14 @@ def board(
                     body=f"**Check:** {label} live Check  bytes\n**Evidence:** —",
                 )
             )
+    # The addressed scope is a container, so the entry's approval question is
+    # asked of it; the per-member seeds stay, because the fixture's issues
+    # carry no project and the ready read still asks each of them (KOD-425).
+    members = {
+        ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
+        for key in lanes
+        if approved
+    }
     return FakeTrackerPort(
         issues=rows,
         scope_memberships={SCOPE: tuple(lanes)},
@@ -172,12 +181,51 @@ def board(
         # The board reads its markers under the operation the engine writes
         # them under; a port with no prefixes could answer for no lane.
         marker_prefixes=operation.marker_prefixes,
-        scope_label_members={
-            ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
-            for key in lanes
+        scope_containers=[
+            ScopeContainer(
+                ref=SCOPE,
+                name="scoped project",
+                description="",
+                url="https://tracker.invalid/project/scoped-project",
+            )
+        ],
+        scope_label_members=(
+            {**members, SCOPE: frozenset({ScopeLabel.APPROVED})}
             if approved
-        },
+            else members
+        ),
     )
+
+
+def approve_container(port, ref):
+    """Seed *ref* on *port* as a container the entry admits, and return *port*.
+
+    A case addressing a run at a scope other than ``SCOPE`` has to say about
+    it the two things the board says about ``SCOPE``: the container metadata
+    the entry's approval question reads, and the approval carried on it.
+    """
+    port.scope_containers[ref] = ScopeContainer(
+        ref=ref,
+        name=f"{ref.kind.value} {ref.key}",
+        description="",
+        url=f"https://tracker.invalid/{ref.kind.value}/{ref.key}",
+    )
+    port.scope_label_members[ref] = frozenset({ScopeLabel.APPROVED})
+    return port
+
+
+def unapproved_members(**rest):
+    """A board whose container carries the approval and whose members do not.
+
+    The entry asks the ADDRESSED scope, which is the container, so a run of
+    this board passes it and every lane is then filtered at the per-lane
+    approval read — the state a case about that filter needs. ``approved=False``
+    alone withholds the container's label too, and such a run is refused before
+    it reads a member.
+    """
+    port = board(approved=False, **rest)
+    port.scope_label_members[SCOPE] = frozenset({ScopeLabel.APPROVED})
+    return port
 
 
 def opened_branch(acquisitions, *, after: int = 0):
@@ -491,12 +539,39 @@ async def test_next_lane_uses_current_approval_membership_and_check(change):
         assert "B live Check  bytes" not in harness.executor.execution_prompts[-1]
 
 
-async def test_unapproved_scope_observation_cannot_equal_closed_scope():
+async def test_an_unapproved_scope_is_refused_and_a_scope_at_rest_is_observed():
+    """Three different outcomes, and none of them is silence.
+
+    A scope nobody approved is refused by type before a single member is
+    read, so no observation is produced at all. An approved container whose
+    member is unapproved passes the entry and is filtered one lane at a time,
+    which is reported and leaves the lane owing. A scope that IS approved
+    throughout and has nothing left to do is observed once, with nothing
+    dispatched. The old assertion here compared the first two observations;
+    each of the three now stands on its own.
+    """
     port = board(approved=False)
     harness = runtime(port=port)
+
+    def refuse(name):
+        async def read(**kwargs):
+            raise AssertionError(f"a member was read before the refusal: {name}")
+
+        return read
+
+    for name in ("scope_issues", "read_planning_issue", "read_issue"):
+        setattr(port, name, refuse(name))
+    with pytest.raises(ScopeNotApprovedError) as caught:
+        _ = await bounded_walk(harness)
+    assert caught.value.ref == SCOPE
+    assert harness.executor.schema_calls == []
+
+    # The container carries the approval and its one member does not, so the
+    # entry passes and the per-lane filter is what reports the member.
+    harness = runtime(port=unapproved_members())
     events = await bounded_walk(harness)
     assert len(ticks_of(events)) == 1
-    observation = events[0].observation
+    observation = ticks_of(events)[0]
     assert observation.unapproved_lanes == ("A",)
     assert observation.unresolved_criteria == ("A/check",)
     assert observation.dispatched == ()
@@ -508,6 +583,21 @@ async def test_unapproved_scope_observation_cannot_equal_closed_scope():
     assert events[-1].lanes[0] == ScopeLaneEntry(
         issue="A", done=False, branch=None, pr=None
     )
+
+    rested = board()
+    for issue in list(rested.issues.values()):
+        if "criterion" in issue.issue_labels:
+            rested.issues[issue.issue_key] = issue.model_copy(
+                update={
+                    "state_name": "Done",
+                    "state_kind": WorkflowStateKind.COMPLETED,
+                }
+            )
+    events = await bounded_walk(runtime(port=rested))
+    walks = ticks_of(events)
+    assert len(walks) == 1
+    assert walks[0].dispatched == ()
+    assert walks[0].unresolved_criteria == ()
 
 
 async def test_existing_plan_barrier_prevents_any_lane_effect():
@@ -1186,6 +1276,7 @@ async def test_every_scoped_fire_pins_its_open_questions_before_its_first_iterat
         scope_memberships={SCOPE: CLAUSE_3_LANES},
         criteria_stage_label_key=STAGED,
         marker_prefixes=native_operation().marker_prefixes,
+        scope_containers=list(rows.scope_containers.values()),
         scope_label_members=dict(rows.scope_label_members),
     )
     harness = runtime(port=port, lanes=CLAUSE_3_LANES)
