@@ -871,48 +871,120 @@ SCRATCH_LANES = ("DUC-1209", "DUC-1210", "DUC-1211")
 
 
 async def test_a_scratch_shaped_scope_ends_with_exactly_one_status_update():
-    """One status update on the container, and no other write of the terminal's.
+    """One status update per clean exit, and no other write of the terminal's.
 
-    The whole clause in one walk: three lanes, the second held by the first,
-    on a project scope. Doubles only — nothing here reaches a live workspace.
+    The whole clause in one fixture: three lanes, the second held by the first,
+    on a project scope over a forge that actually opens a pull request per
+    lane — so the converged state the vector reports is the stacked one, with
+    every lane holding an open, unmerged delivery, and the recorded columns are
+    the fixture's own observations rather than values written here.
+
+    Driven twice over the same board and the same status writer, because
+    exactly-one is a property of the terminal running once at a clean exit and
+    not of a mark it holds: the second invocation walks the same finished scope
+    and posts again, byte-identically, leaving the first update untouched.
+
+    Doubles only — nothing here reaches a live workspace.
     """
-    repos = WalkRepos()
+    repos = WalkRepos(url=FORGE_ORIGIN)
     board_port = board(lanes=SCRATCH_LANES, blocked={"DUC-1210": ("DUC-1209",)})
     board_port.scope_memberships[SCRATCH] = SCRATCH_LANES
     journal = Journal()
-    harness = resumable(
-        port=RecordingTracker(board_port, journal),
-        repos=repos,
-        lanes=SCRATCH_LANES,
-    )
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        harness = resumable(
+            port=RecordingTracker(board_port, journal),
+            repos=repos,
+            lanes=SCRATCH_LANES,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+        )
 
-    events, writes, _ = await attributed(harness, journal, scope=SCRATCH)
+        # Marked at every observation, so what the terminal itself asked the
+        # forge and put on the container is separable from what the lanes did.
+        marks: list[int] = []
+        asked: list[int] = []
+        posted: list[int] = []
+        posts_when_reported: int | None = None
+        events = []
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            async for event in drive(harness, scope=SCRATCH, origin=FORGE_ORIGIN):
+                events.append(event)
+                if isinstance(event, ScopeWalkEvent):
+                    marks.append(len(journal.writes))
+                    asked.append(len(wire.requests))
+                    posted.append(len(harness.status.posts))
+                elif isinstance(event, ScopeTerminalEvent):
+                    posts_when_reported = len(harness.status.posts)
+        assert marks, "a walk that observed nothing states nothing about attribution"
+        writes = journal.writes[marks[-1] :]
 
-    # Exactly one report, and it is the last thing the stream carries.
-    reports = terminals(events)
-    assert len(reports) == 1
-    assert events[-1] is reports[0]
-    report = reports[0]
+        # Exactly one report, and it is the last thing the stream carries.
+        reports = terminals(events)
+        assert len(reports) == 1
+        assert events[-1] is reports[0]
+        report = reports[0]
 
-    # Exactly one status update, on the scope's own container, carrying the
-    # per-lane vector and the derived outcome.
-    assert len(harness.status.posts) == 1
-    posted_ref, body = harness.status.posts[0]
-    assert posted_ref == SCRATCH
-    assert body == render_scope_status(report)
-    assert body.splitlines()[0] == f"Scope outcome: {report.outcome.value}"
-    assert [
-        line.split()[2] for line in body.splitlines() if line.startswith("- [")
-    ] == [*SCRATCH_LANES]
+        # Exactly one status update, on the scope's own container, carrying the
+        # per-lane vector and the derived outcome.
+        assert len(harness.status.posts) == 1
+        posted_ref, body = harness.status.posts[0]
+        assert posted_ref == SCRATCH
+        assert body == render_scope_status(report)
+        assert body.splitlines()[0] == f"Scope outcome: {report.outcome.value}"
+        assert [
+            line.split()[2] for line in body.splitlines() if line.startswith("- [")
+        ] == [*SCRATCH_LANES]
 
-    # The vector covers every lane of the reading, with each lane's own
-    # recorded branch read back off that lane's record.
-    assert [lane.issue for lane in report.lanes] == [*SCRATCH_LANES]
-    assert report.outcome is WorkflowOutcome.scope_converged
-    for lane in report.lanes:
-        assert lane.branch == (await lane_record(board_port, lane.issue)).branch
+        # The post lands before the event reaches a consumer: nothing was on
+        # the container at the walk's last observation, and the update is there
+        # by the time the report arrives.
+        assert posted[-1] == 0
+        assert posts_when_reported == 1
 
-    # And nothing else: no write on any issue surface and none on the
-    # container description is attributable to the terminal.
-    assert writes == []
-    assert journal.writes, "a walk that wrote nothing states nothing about the terminal"
+        # The vector covers every lane of the reading, with each lane's own
+        # recorded branch and open delivery read back off that lane's record.
+        assert [lane.issue for lane in report.lanes] == [*SCRATCH_LANES]
+        assert report.outcome is WorkflowOutcome.scope_converged
+        for lane in report.lanes:
+            recorded = await lane_record(board_port, lane.issue)
+            assert lane.branch == recorded.branch
+            assert lane.pr is not None
+            assert lane.pr.state == "open"
+            assert lane.pr == recorded.pr
+
+        # The terminal asked the forge nothing, and nothing merged: the wire
+        # raises on a merge, so the absence of one from the requests is a fact
+        # about this run rather than an omission.
+        assert wire.creates, "a run that opened no delivery controls nothing"
+        assert len(wire.requests) == asked[-1]
+        assert not [
+            request for request in wire.requests if request.url.path.endswith("/merge")
+        ]
+
+        # And nothing else: no write on any issue surface and none on the
+        # container description is attributable to the terminal.
+        assert writes == []
+        assert journal.writes, "a walk that wrote nothing states nothing here"
+        first_post = harness.status.posts[0]
+
+        # The second clean exit over the same harness. Four ticks, each
+        # offering nothing: a lane that is finished and already holds an open
+        # delivery is walked past rather than dispatched again.
+        second, second_writes, _ = await attributed(
+            harness, journal, scope=SCRATCH, origin=FORGE_ORIGIN, job="second-job"
+        )
+        assert len(ticks_of(second)) == 4
+        assert [tick.dispatched for tick in ticks_of(second)] == [()] * 4
+        assert len(terminals(second)) == 1
+        assert len(harness.status.posts) == 2
+        assert harness.status.posts[0] == first_post
+        assert harness.status.posts[1] == (
+            SCRATCH,
+            render_scope_status(terminals(second)[0]),
+        )
+        assert second_writes == []
+    finally:
+        await forge.close()
