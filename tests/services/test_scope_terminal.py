@@ -514,3 +514,50 @@ async def test_a_lane_owing_a_criterion_is_not_done_whatever_its_pull_request_sa
     )
     assert event.outcome is WorkflowOutcome.scope_stopped_short
     assert len(status.posts) == 1
+
+
+@pytest.mark.parametrize("state", ["open", "closed", "merged"])
+async def test_a_lane_owing_nothing_is_done_whatever_its_pull_request_says(
+    state: str,
+) -> None:
+    """A delivery that reads merged or closed does not undo a done lane.
+
+    The sibling above holds the owing direction: a lane that owes work is not
+    done whatever its record says.  This is the other direction over the same
+    fixture, and it is the one a merge could reach — a lane the reading placed
+    in the owing-nothing group is done, so a row whose recorded pull request
+    reads closed or merged would be the only place a merge fact could enter
+    the vector.  It does not: the done column is the reading's own, the
+    recorded state is carried onto the row untouched, and the scope reads
+    finished for all three states.
+
+    The posted body is asserted for the same reason and is the same bytes for
+    all three: the rendering names the delivery by number, so no state reaches
+    the container either.
+    """
+    status = FakeScopeStatusWriter()
+    pr = LanePR(
+        url="https://forge.invalid/fixture/repo/pull/12", number=12, state=state
+    )
+    record = lane_record(lane="A", pr=pr)
+    unit = terminal(
+        status=status, records=RecordedRecordReader(lane="A", record=record)
+    )
+
+    event = await unit.report(ready=reading(closed=("A", "B")))
+
+    assert event.lanes == (
+        ScopeLaneEntry(issue="A", done=True, branch=record.branch, pr=pr),
+        ScopeLaneEntry(issue="B", done=True, branch=None, pr=None),
+    )
+    assert event.lanes[0].pr is not None
+    assert event.lanes[0].pr.state == state
+    assert event.outcome is WorkflowOutcome.scope_converged
+    assert [ref for ref, _ in status.posts] == [PROJECT]
+    assert status.posts[0][1] == render_scope_status(event)
+    assert status.posts[0][1].splitlines() == [
+        "Scope outcome: scope_converged",
+        "",
+        f"- [x] A — branch {LANE_BRANCH} — pull request #12",
+        "- [x] B — no branch recorded — no pull request recorded",
+    ]
