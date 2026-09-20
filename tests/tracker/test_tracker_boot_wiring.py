@@ -8,6 +8,7 @@ that would otherwise need a live workspace.  Delete the wiring from
 """
 
 import ast
+import asyncio
 import inspect
 import json
 import textwrap
@@ -29,6 +30,10 @@ from kodezart.core.errors import (
 from kodezart.core.protocols import ManagedMcpToolCaller
 from kodezart.main import create_app, lifespan
 from kodezart.services.pass_scheduler import PassScheduler
+from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.operation import OperationMemberAbsentError
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from tests.fakes import FakeMcpDocument, ManagedFakeLinearMcpServer
 from tests.run_events import RUN_EVENT_TOML
 from tests.tracker.conftest import (
@@ -60,6 +65,16 @@ RUN_LOG_TITLE = "Run log"
 
 #: The single board every case here runs on unless it needs two.
 ONE_TEAM: dict[str, str] = {"engineering": "fixture-team"}
+
+#: The scope one case addresses a run at.  Its identity never reaches the
+#: backend: the read that would resolve it refuses on the operation's own
+#: configuration first, which is the point of that case.
+SCOPED_PROJECT = "fixture-project"
+
+#: The seconds a scoped read is allowed before that case fails.  The refusal
+#: it waits for is a configuration answer with no round trip behind it, so any
+#: bound at all only keeps a regression from hanging a whole run.
+WALK_BOUND_SECONDS = 30
 
 #: Two boards of the fixture workspace, both declared.  An operation
 #: declaring several teams needs its queue vocabulary on EACH of them —
@@ -797,3 +812,58 @@ async def test_a_preflight_refusal_strands_no_queue_and_no_open_transport(
     assert wired.closes == 1
     assert not hasattr(app.state, "job_queue")
     assert not hasattr(app.state, "pass_scheduler")
+
+
+async def test_a_boot_without_a_criterion_mapping_refuses_the_first_scoped_read(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """KOD-465: the refusal is the first scoped READ's, and it costs no write.
+
+    The fixture operation declares no ``[issue_labels]`` at all, so the first
+    classification the scoped path asks for is ``criterion``. Boot itself is
+    untouched by that: it dials, reconciles every mapping it does own, and says
+    which backend under ``tracker_mappings_reconciled`` — the same process that
+    then refuses. Nothing is checked at boot for the scoped path, which is what
+    puts the refusal at the read (KOD-766).
+
+    What the refusal costs is asserted as ZERO tool calls after the mark, not as
+    zero writes: a read the port makes before it notices the mapping is absent
+    would be a fact about a board the operation cannot classify, and the check
+    is the read's first statement so there is none.
+    """
+    monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
+    _configure(monkeypatch, tmp_path, _operation_toml())
+    app = create_app()
+    async with lifespan(app):
+        reconciled = [
+            event
+            for event in _events(capsys.readouterr().out)
+            if event.get("event") == "tracker_mappings_reconciled"
+        ]
+        assert len(reconciled) == 1
+        assert reconciled[0]["backend"] == "linear"
+        # Nothing on the scope path holds graph state, and the recipe a scope
+        # operator follows leaves the checkpoint url unset.
+        assert app.state.checkpointer is None
+
+        mark = len(wired.calls)
+        walk = app.state.workflow_engine.run(
+            prompt="",
+            repo_path=None,
+            repo_url="https://example.invalid/repo",
+            base_spec=trunk_base("unused-request-default"),
+            scope=ScopeRef(kind=ScopeKind.PROJECT, key=SCOPED_PROJECT),
+            permission_mode=PermissionMode.UNATTENDED,
+            allowed_tools=[],
+            cache_key="scoped-boot",
+        )
+        with pytest.raises(OperationMemberAbsentError) as caught:
+            async with asyncio.timeout(WALK_BOUND_SECONDS):
+                await anext(aiter(walk))
+        await walk.aclose()
+
+    assert caught.value.missing == "issue_labels['criterion']"
+    assert wired.calls[mark:] == []
