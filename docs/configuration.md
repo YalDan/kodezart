@@ -782,8 +782,7 @@ The retired flat `write_back_max_verify_rounds` field and its uppercase
 `KODEZART_` environment spelling are refused; migrate to the nested spelling.
 Deployments without a configured tracker-writing owner can leave the section
 absent. A configured owner with no verification budget refuses at startup. The
-field has no default, and a scope run needs it: a lane's fire refuses at the top
-of its execution step without one, before a criteria read, a session or a commit.
+field has no default, and a scope run needs it.
 
 
 ## Native Audit scheduling
