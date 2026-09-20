@@ -40,6 +40,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.lane_entry import recorded_branches
+from kodezart.domain.organize import stage_rows
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services import scope_runtime
 from kodezart.services.agent_service import AgentService
@@ -69,6 +70,7 @@ from kodezart.types.domain.consolidation import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.native_delivery import LaneDeliveryEvent
 from kodezart.types.domain.operation import LifecycleStage, RepoEntry, ScopeLabel
+from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.run_event import RunEventKind
@@ -126,6 +128,7 @@ def board(
     checks=None,
     priorities=None,
     operation=None,
+    staged=True,
 ):
     """The scope's lanes and their criterion sub-issues.
 
@@ -144,9 +147,22 @@ def board(
     SHIPPED operation file walks a board labelled the way that file says.
     The fixture operation declares no organize mandates and therefore no
     criteria stage, so it keeps this module's own constant.
+
+    *staged* is the board a walk starts from: every lane already carries the
+    run-stage markers. Every one of them, read off the operation's own table:
+    a lane holding the criteria marker and not the ticket marker would make
+    the run's first stage open a session, so a board meant to be past the
+    stages has to carry each stage's marker. A test about the stages
+    themselves passes False, so the markers are what the run has to put there.
     """
     operation = native_operation() if operation is None else operation
-    staged = criteria_stage_label_key(operation) or STAGED
+    stage_key = criteria_stage_label_key(operation) or STAGED
+    stage_markers = frozenset(
+        split_label_key(row.spec.terminal_marker_key)[1]
+        for row in stage_rows(
+            operation.resolve_organize_mandates(), under_approval=True
+        )
+    ) or frozenset({stage_key})
     rows = []
     for key in lanes:
         rows.append(
@@ -154,7 +170,7 @@ def board(
                 key,
                 body=f"Exact native subject {key}  with spaces\n",
                 blocked_by=(blocked or {}).get(key, ()),
-                issue_labels=frozenset({staged}),
+                issue_labels=stage_markers if staged else frozenset(),
                 priority=(priorities or {}).get(key, IssuePriority.NONE),
             )
         )
@@ -179,7 +195,7 @@ def board(
     return FakeTrackerPort(
         issues=rows,
         scope_memberships={SCOPE: tuple(lanes)},
-        criteria_stage_label_key=staged,
+        criteria_stage_label_key=stage_key,
         # The board reads its markers under the operation the engine writes
         # them under; a port with no prefixes could answer for no lane.
         marker_prefixes=operation.marker_prefixes,
@@ -303,6 +319,8 @@ def runtime(
     max_iterations=1,
     operation=None,
     status=None,
+    organize=None,
+    executor=None,
 ):
     """The composed engine over external doubles.
 
@@ -312,13 +330,17 @@ def runtime(
     observation of one.
     """
     port = port or board(lanes=lanes)
-    executor = ObservedNativeExecutor(
-        evaluations
-        or [
-            native_evaluation(checks={f"{key}/check": f"{key} live Check  bytes"})
-            for key in lanes
-            for _ in range(2)
-        ]
+    executor = (
+        ObservedNativeExecutor(
+            evaluations
+            or [
+                native_evaluation(checks={f"{key}/check": f"{key} live Check  bytes"})
+                for key in lanes
+                for _ in range(2)
+            ]
+        )
+        if executor is None
+        else executor
     )
     git = git if git is not None else RemoteGit()
     # The workspace reports its identity through the same Git double the rest
@@ -363,6 +385,7 @@ def runtime(
                 max_iterations=max_iterations,
                 retry_max_attempts=1,
                 retry_initial_interval=0.1,
+                **({} if organize is None else {"organize": organize}),
             ),
             repositories=(RepoEntry(url=origin, trunk=trunk),),
             agent_service=service,

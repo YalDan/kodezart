@@ -16,6 +16,7 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import criteria_stage_label_key
+from kodezart.config.organize import OrganizeSettings
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.main import create_app, lifespan
 from kodezart.services.tracker_boot import owned_mappings
@@ -82,7 +83,17 @@ async def test_the_shipped_scope_config_walks_one_lane_to_a_crossed_off_criterio
     # and say nothing about the shipped file.
     assert criteria_stage_label_key(loaded) in port.issues["A"].issue_labels
     assert port.marker_prefixes == loaded.marker_prefixes
-    harness = resumable(repos=repos, port=port, operation=loaded, origin=ORIGIN)
+    harness = resumable(
+        repos=repos,
+        port=port,
+        operation=loaded,
+        origin=ORIGIN,
+        # The file declares run stages, so the run's entry builds their owner
+        # and the owner needs its bounds. The lane already carries every stage
+        # marker, so each stage is complete on arrival and opens no session —
+        # what this case is about starts at the walk.
+        organize=OrganizeSettings(max_admission_rounds=2, max_convergence_rounds=2),
+    )
     events = await bounded_walk(harness, origin=ORIGIN)
     assert lane_failures(events) == ()
     criterion = port.issues["A/check"]
