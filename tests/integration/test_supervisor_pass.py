@@ -235,9 +235,13 @@ async def test_a_whole_tick_dispatches_no_agent_and_touches_no_repository(monkey
     takes none. Doubles handed to nothing would have recorded nothing whatever
     the tick did.
 
-    The other half of the claim — that the runner records zero dispatches and
-    the version-control service zero calls — is pinned over doubles that ARE
-    wired, by the acceptance test's per-double call counts around each tick.
+    The other half of the claim — zero dispatches and zero version-control calls
+    — is pinned by this process seam together with the static scan of what the
+    tick's modules can reach at all. The acceptance test's per-double call counts
+    are a different and weaker claim: those doubles are wired to the walk, not to
+    the observation, which is built with the tracker alone, so what the counts
+    say is that the tick does not set the walk's collaborators going through the
+    tracker state the two share.
     """
     port = await board(lanes=LANES, scope=SCOPE)
     operation = declared(scopes=(SCOPE,))
