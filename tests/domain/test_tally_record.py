@@ -353,10 +353,19 @@ def event(kind, *, subject_key=AlarmSignal.TALLY_UNMOVED.value):
 
 
 def test_the_event_due_is_read_from_this_signals_own_events():
-    """Another signal's clear on the same lane is not this signal clearing."""
-    foreign = event(RunEventKind.RUN_ALARM_CLEARED, subject_key="escalation_ageing")
+    """Another signal's entries on the same lane are not this signal speaking.
 
-    due = alarm_event_due(record=RAISED_STORED, events=(foreign,))
+    Both directions have to be read, because an unkeyed reader is wrong both
+    ways: another signal's raise would answer for this signal's owed raise,
+    and another signal's clear would answer for its owed clear. Only entries
+    keyed to this signal count, so a foreign raise leaves the owed raise owed
+    and a foreign clear leaves the owed clear owed.
+    """
+    foreign_raised = event(
+        RunEventKind.RUN_ALARM_RAISED, subject_key="escalation_ageing"
+    )
+
+    due = alarm_event_due(record=RAISED_STORED, events=(foreign_raised,))
 
     assert due is not None
     assert due.kind is RunEventKind.RUN_ALARM_RAISED
@@ -364,7 +373,21 @@ def test_the_event_due_is_read_from_this_signals_own_events():
     assert due.subject_key == AlarmSignal.TALLY_UNMOVED.value
     # The stream already agreeing with the record owes nothing, however many
     # ticks the condition goes on firing for.
-    assert alarm_event_due(record=RAISED_STORED, events=(foreign, due)) is None
+    assert alarm_event_due(record=RAISED_STORED, events=(foreign_raised, due)) is None
+
+    foreign_cleared = event(
+        RunEventKind.RUN_ALARM_CLEARED, subject_key="escalation_ageing"
+    )
+
+    owed_clear = alarm_event_due(
+        record=QUIET_STORED,
+        events=(event(RunEventKind.RUN_ALARM_RAISED), foreign_cleared),
+    )
+
+    assert owed_clear is not None
+    assert owed_clear.kind is RunEventKind.RUN_ALARM_CLEARED
+    assert owed_clear.lane_key == LANE.lane_key
+    assert owed_clear.subject_key == AlarmSignal.TALLY_UNMOVED.value
 
 
 @pytest.mark.parametrize(
