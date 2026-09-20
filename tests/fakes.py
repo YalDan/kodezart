@@ -2426,6 +2426,10 @@ class FakeMcpIssue:
     attachments: list[FakeMcpAsset] = field(default_factory=list)
     documents: list[FakeMcpAsset] = field(default_factory=list)
     parent_id: str | None = None
+    #: The owning project, by display name and by id.  Both, because the
+    #: vendor reports both on an issue that has one: a fixture setting the
+    #: id alone would let a reader pass on a payload no workspace sends.
+    project: str | None = None
     project_id: str | None = None
     milestone_id: str | None = None
     assignee: str | None = None
@@ -2460,6 +2464,7 @@ class FakeMcpIssue:
             "teamId": f"{self.team}-id",
             "labels": list(self.labels),
             "parentId": self.parent_id,
+            "project": self.project,
             "projectId": self.project_id,
             "projectMilestone": {"id": self.milestone_id, "name": self.milestone_id}
             if self.milestone_id is not None
@@ -2602,6 +2607,7 @@ class FakeLinearMcpServer:
         comment_instants: Sequence[datetime] = (),
         comment_clock: Callable[[], datetime] | None = None,
         projects: Mapping[str, Mapping[str, object]] | None = None,
+        milestones: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
         transient_failures: Mapping[str, int] | None = None,
         transport_failures: Mapping[str, int] | None = None,
         tool_errors: Mapping[str, str] | None = None,
@@ -2640,6 +2646,13 @@ class FakeLinearMcpServer:
         #: with (a project id).  Raw payloads, because the shape is the
         #: vendor's own (KOD-169).
         self.projects: dict[str, Mapping[str, object]] = dict(projects or {})
+        #: ``list_milestones`` answers, keyed by the project they belong to.
+        #: A declared project with no entry has no milestones, which is a
+        #: different fact from a project the workspace does not hold: the
+        #: listing answers the first and refuses the second.
+        self.milestones: dict[str, list[Mapping[str, object]]] = {
+            project: list(entries) for project, entries in (milestones or {}).items()
+        }
         self.actor: str = actor
         self.calls: list[tuple[str, Mapping[str, object]]] = []
         self.comment_instants: list[datetime] = list(comment_instants)
@@ -2973,6 +2986,23 @@ class FakeLinearMcpServer:
             msg = f"fake workspace has no project {query!r}"
             raise LookupError(msg)
         return project
+
+    def _tool_list_milestones(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """The milestone listing of a project this workspace holds.
+
+        A workspace whose issues report a project is asked for that
+        project's milestones by every reader assembling their context, so
+        a fake serving the project read and not this one would refuse a
+        call the live backend answers.
+        """
+        project = str(arguments["project"])
+        if project not in self.projects:
+            msg = f"fake workspace has no project {project!r}"
+            raise LookupError(msg)
+        return {"milestones": list(self.milestones.get(project, ()))}
 
     def _tool_list_comments(
         self,

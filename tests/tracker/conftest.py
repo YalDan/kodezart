@@ -18,12 +18,12 @@ from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.surface import (
     SurfaceKind,
     WritableSurface,
 )
-from kodezart.types.domain.tracker import IssueQuery, ReviewQuery
+from kodezart.types.domain.tracker import IssueQuery, ReviewQuery, TrackerIssue
 from tests.fakes import (
     FakeLinearMcpServer,
     FakeMcpAsset,
@@ -269,17 +269,42 @@ def fixture_server(
     )
 
 
+#: The classification vocabulary a workspace is dialled with unless a case
+#: states its own: the operation's classifications plus the run-stage
+#: marker the fire read is keyed on.
+FIXTURE_ISSUE_LABELS: dict[str, str] = {
+    **ISSUE_LABELS,
+    FIRE_STAGE_KEY: FIRE_STAGE_LABEL,
+}
+
+
 def linear_over_fake_mcp(
     server: FakeLinearMcpServer,
     *,
     scope_labels: Mapping[str, str] | None = None,
+    issue_labels: Mapping[str, str] | None = None,
+    criteria_stage_label_key: str | None = None,
     clock: Callable[[], datetime] = _frozen_now,
 ) -> TrackerPort:
-    """The shipped Linear adapter, dialing the in-process fake MCP server."""
+    """The shipped Linear adapter, dialing the in-process fake MCP server.
+
+    *issue_labels* and *criteria_stage_label_key* are the classification
+    vocabulary and the run-stage marker key this workspace is dialled
+    with. A case stating an organize mandate table of its own has to dial
+    the marker keys that table names, and it has to dial them into EVERY
+    registered implementation rather than into an adapter it built beside
+    the case — which is what threading them through the workspace is for.
+    """
     return LinearMcpTracker(
         marker_prefixes=MARKER_PREFIXES,
-        issue_labels={**ISSUE_LABELS, FIRE_STAGE_KEY: FIRE_STAGE_LABEL},
-        criteria_stage_label_key=FIRE_STAGE_KEY,
+        issue_labels=dict(
+            issue_labels if issue_labels is not None else FIXTURE_ISSUE_LABELS
+        ),
+        criteria_stage_label_key=(
+            criteria_stage_label_key
+            if criteria_stage_label_key is not None
+            else FIRE_STAGE_KEY
+        ),
         scope_labels=scope_labels if scope_labels is not None else SCOPE_LABELS,
         caller=server,
         queue_state_labels=QUEUE_STATE_LABELS,
@@ -291,6 +316,37 @@ def linear_over_fake_mcp(
     )
 
 
+async def _container_ancestry(
+    source: TrackerPort, *, issues: Sequence[TrackerIssue]
+) -> dict[ScopeRef, ScopeContainer]:
+    """The approval containers the snapshot's own members report, read through.
+
+    A member reporting a project puts that project's label level into
+    every approval reading made about it, so a double seeded from a
+    workspace whose issues carry one has to hold the container too or it
+    answers a question the adapter answers from the backend. Read rather
+    than restated, for the reason the rest of the snapshot is read.
+
+    The walk is bounded by the refs already seen: a backend answering a
+    cycle of parents ends the walk instead of extending it.
+    """
+    frontier = [
+        ScopeRef(kind=ScopeKind.PROJECT, key=key)
+        for issue in issues
+        if (key := issue.project_id) is not None
+    ]
+    containers: dict[ScopeRef, ScopeContainer] = {}
+    while frontier:
+        ref = frontier.pop()
+        if ref in containers:
+            continue
+        container = await source.container_metadata(ref=ref)
+        containers[ref] = container
+        if container.parent is not None:
+            frontier.append(container.parent)
+    return containers
+
+
 async def _snapshot(
     source: TrackerPort, *, clock: Callable[[], datetime]
 ) -> FakeTrackerPort:
@@ -300,6 +356,7 @@ async def _snapshot(
         for issue in await source.scan_issues(query=IssueQuery(page_size=PAGE_SIZE))
     ]
     issues = [await source.read_issue(issue_key=key) for key in keys]
+    containers = await _container_ancestry(source, issues=issues)
     # Probed rather than declared, for the reason the rest of this snapshot
     # is read rather than restated: the double must refuse exactly what the
     # workspace behind it refuses.
@@ -307,6 +364,7 @@ async def _snapshot(
     port = FakeTrackerPort(
         issues=issues,
         marker_prefixes=MARKER_PREFIXES,
+        scope_containers=list(containers.values()),
         assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
         documents={
             DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),
@@ -352,18 +410,30 @@ async def _snapshot(
     return port
 
 
-def approval_classifications(scope_labels: Mapping[str, str] | None) -> frozenset[str]:
+def approval_classifications(
+    scope_labels: Mapping[str, str] | None,
+    *,
+    issue_labels: Mapping[str, str] | None = None,
+) -> frozenset[str]:
     """The classifications this workspace resolves to the approved member.
 
     Empty for the ordinary vocabulary, where the two namespaces spell
     different labels. A workspace that maps them onto one label has an
     ordinary classification write that would grant admission, and every
     implementation has to know which one that is.
+
+    Both namespaces are read from the workspace rather than one of them
+    from the module default: a case that remaps its classifications and a
+    case that remaps its admission vocabulary ask the same question, and
+    an answer derived from half the workspace would be right for one of
+    them by accident.
     """
     approved = (scope_labels or SCOPE_LABELS).get(ScopeLabel.APPROVED.value)
     return frozenset(
         key
-        for key, label in ISSUE_LABELS.items()
+        for key, label in (
+            issue_labels if issue_labels is not None else ISSUE_LABELS
+        ).items()
         if approved is not None and label == approved
     )
 
@@ -373,6 +443,8 @@ async def fake_port_over_fixture(
     *,
     clock: Callable[[], datetime] = _frozen_now,
     scope_labels: Mapping[str, str] | None = None,
+    issue_labels: Mapping[str, str] | None = None,
+    criteria_stage_label_key: str | None = None,
 ) -> TrackerPort:
     """The consumer double, seeded from the SAME fixture workspace.
 
@@ -383,17 +455,34 @@ async def fake_port_over_fixture(
     for. Use pytest's loop: an ``asyncio.run`` here displaces its current
     loop and can leak that loop's selector sockets between cases.
     """
-    port = await _snapshot(
-        linear_over_fake_mcp(server, scope_labels=scope_labels, clock=clock),
+    adapter = linear_over_fake_mcp(
+        server,
+        scope_labels=scope_labels,
+        issue_labels=issue_labels,
+        criteria_stage_label_key=criteria_stage_label_key,
         clock=clock,
     )
-    port.criteria_stage_label_key = FIRE_STAGE_KEY
-    port.approval_classifications = approval_classifications(scope_labels)
+    port = await _snapshot(adapter, clock=clock)
+    port.criteria_stage_label_key = (
+        criteria_stage_label_key
+        if criteria_stage_label_key is not None
+        else FIRE_STAGE_KEY
+    )
+    port.approval_classifications = approval_classifications(
+        scope_labels, issue_labels=issue_labels
+    )
+    approved_label = (scope_labels or SCOPE_LABELS).get(ScopeLabel.APPROVED.value)
     port.scope_label_members = {
         ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
         for key, issue in server.issues.items()
-        if FIRE_SCOPE_LABEL in issue.labels
+        if approved_label is not None and approved_label in issue.labels
     }
+    # The container label levels, read through the adapter for the reason
+    # the containers themselves are: approval on a project is what covers
+    # that project's members, and a double blind to it would answer every
+    # cascade reading "absent" while the adapter answered from the board.
+    for ref in port.scope_containers:
+        port.scope_label_members[ref] = await adapter.read_scope_labels(ref=ref)
     return port
 
 
@@ -410,6 +499,12 @@ class TrackerWorkspace:
     server: FakeLinearMcpServer
     clock: FixtureClock
     scope_labels: Mapping[str, str] | None = None
+    #: The classification vocabulary and the run-stage marker key. A case
+    #: running the organize stages states the mandate table's own marker
+    #: keys here, so both arms are dialled with the one vocabulary the
+    #: table names instead of the adapter arm carrying it alone.
+    issue_labels: Mapping[str, str] | None = None
+    criteria_stage_label_key: str | None = None
 
 
 #: Real adapters — every one must serve the fixture workspace unchanged.
@@ -417,6 +512,8 @@ TRACKER_ADAPTERS: dict[str, Callable[[TrackerWorkspace], TrackerPort]] = {
     "linear-mcp": lambda workspace: linear_over_fake_mcp(
         workspace.server,
         scope_labels=workspace.scope_labels,
+        issue_labels=workspace.issue_labels,
+        criteria_stage_label_key=workspace.criteria_stage_label_key,
         clock=workspace.clock,
     ),
 }
@@ -429,6 +526,8 @@ TRACKER_DOUBLES: dict[str, Callable[[TrackerWorkspace], Awaitable[TrackerPort]]]
         workspace.server,
         clock=workspace.clock,
         scope_labels=workspace.scope_labels,
+        issue_labels=workspace.issue_labels,
+        criteria_stage_label_key=workspace.criteria_stage_label_key,
     ),
 }
 
