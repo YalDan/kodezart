@@ -807,8 +807,10 @@ class NativeExecutor(FakeAgentExecutor):
         self.question_answers = []
         self.question_prompts = []
         self.question_sessions = []
-        #: One judgement per landed record; the default upholds what landed.
+        #: One judgement per landed record; the default upholds what landed,
+        #: and each judgement's whole call is kept beside the answer.
         self.findings = []
+        self.judge_sessions = []
 
     async def stream(self, **kwargs):
         output_format = kwargs.get("output_format")
@@ -835,6 +837,7 @@ class NativeExecutor(FakeAgentExecutor):
                 else {"rulings": []}
             )
         elif "citedRefs" in properties:
+            self.judge_sessions.append(kwargs)
             output = (
                 self.findings.pop(0)
                 if self.findings

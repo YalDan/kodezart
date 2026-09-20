@@ -9,6 +9,7 @@ graph is untouched, and no generation node runs on either path through here.
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import NoStructuredOutputError, TrackerUnavailableError
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import FireSpecEntryError, SurfaceLeaseError
@@ -18,7 +19,8 @@ from kodezart.types.domain.agent import ResultEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.session import PermissionMode, ToolPreset
+from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.tracker import TrackerComment
 from tests.chains.test_native_fire import (
     DIRECT_DONE,
@@ -41,7 +43,12 @@ from tests.chains.test_native_fire import (
     reachable,
     tracker,
 )
-from tests.fakes import FakeGitService, FakeTrackerPort, FakeWorkspaceProvider
+from tests.fakes import (
+    FakeChangePersister,
+    FakeGitService,
+    FakeTrackerPort,
+    FakeWorkspaceProvider,
+)
 
 #: Every criterion a finished subtree's roster carries, so a delivering
 #: lane's review can be answered without inventing an id.
@@ -553,3 +560,109 @@ async def test_the_first_iteration_prompt_carries_the_pinned_answer(
         for value in prepared(fire, entry=None).values()
     )
     assert events
+
+
+# ---------------------------------------------------------------------------
+# The step writes zero code: read-only sessions, a detached tree, no commit.
+# ---------------------------------------------------------------------------
+
+#: Every Git verb that could move a head, by the name the service uses.
+MOVING = ("commit", "push", "add_all", "reset_hard", "create_branch")
+
+
+class StepWatchingExecutor(NativeExecutor):
+    """Records how many trees were open when each of the step's passes ran.
+
+    The graph goes on past the step, and later nodes open trees of their own,
+    so "the trees this step opened" has to be read at the step rather than off
+    the whole run's list.
+    """
+
+    def __init__(self, evaluations, *, workspace):
+        super().__init__(evaluations)
+        self._workspace = workspace
+        self.trees_at_step: list[int] = []
+
+    async def stream(self, **kwargs):
+        properties = (kwargs.get("output_format") or {}).get("schema", {}).get(
+            "properties"
+        ) or {}
+        if "rulings" in properties or "citedRefs" in properties:
+            self.trees_at_step.append(len(self._workspace.acquisitions))
+        async for event in super().stream(**kwargs):
+            yield event
+
+
+@pytest.mark.parametrize("kind", ["new", "resumed"])
+async def test_the_question_session_is_read_only_and_moves_no_branch(kind) -> None:
+    """The pass and its judge both run under the evaluation configuration."""
+    port = variant(FakeTrackerPort)
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    executor = StepWatchingExecutor(
+        [native_evaluation(reconciled=True) for _ in range(4)], workspace=workspace
+    )
+    executor.question_answers = [{"rulings": [ANSWER]}]
+    persister = FakeChangePersister()
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        git=git,
+        workspace=workspace,
+        persister=persister,
+    )
+    state, config = prepare(fire, entry=entry_of(kind))
+    before = await git.remote_branch_sha("/tmp/fire", "origin", "main")
+
+    await executed(fire, state, config)
+
+    for call in (*executor.question_sessions, *executor.judge_sessions):
+        assert call["permission_mode"] is EVAL_PERMISSION_MODE
+        assert call["allowed_tools"] is ToolPreset.EVALUATION
+        assert call["agents"] == NO_SUBAGENTS
+    assert executor.question_sessions and executor.judge_sessions
+    # Every tree the step opened is detached and names no branch.
+    opened = workspace.acquisitions[: max(executor.trees_at_step)]
+    assert len(opened) == 2
+    for call in opened:
+        assert call["create_branch"] is False
+        assert call["branch_name"] is None
+    # The step's own tree stands at the ref the run entered on: the base for a
+    # new lane, the recorded branch for one continuing its own work. The
+    # judge's stands at the exact commit that tree reported.
+    assert opened[0]["ref"] == state["work_base_ref"]
+    assert opened[1]["ref"] == "a" * 40
+    # Nothing was committed, pushed or reset, nothing was persisted, and every
+    # remote head is where it was.
+    assert not [name for name, *_ in git.calls if name in MOVING]
+    assert persister.calls == []
+    assert await git.remote_branch_sha("/tmp/fire", "origin", "main") == before
+
+
+async def test_the_judge_is_built_from_one_repository_source() -> None:
+    """Both a path and a URL are in hand, and the judge takes exactly one."""
+    port = variant(FakeTrackerPort)
+    executor = NativeExecutor([native_evaluation(reconciled=True)])
+    executor.question_answers = [{"rulings": [ANSWER]}]
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        git=git,
+        workspace=workspace,
+    )
+
+    # ``drive`` hands the fire both a repo_path and a repo_url.
+    await drive(fire, scope=SCOPE)
+
+    assert executor.judge_sessions
+    # Every tree of this path is cut from the path; the judge's own, which is
+    # the one built with exactly one source, took the path and not the URL.
+    assert workspace.acquisitions
+    assert all(call["repo_path"] == "/tmp/fire" for call in workspace.acquisitions)
+    judged = [call for call in workspace.acquisitions if call["repo_url"] is None]
+    assert judged == [
+        call for call in workspace.acquisitions if call["ref"] == "a" * 40
+    ]
+    assert [c for c in port.comments if is_record(c)]
