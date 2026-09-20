@@ -14,6 +14,7 @@ from kodezart.domain.tally_record import is_raised
 from kodezart.services.supervisor_pass import SUPERVISOR_TICK_NAME
 from kodezart.services.tally_supervisor import SIGNAL
 from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_alarm import LaneSubject
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -118,8 +119,13 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
         assert unwired[0]["scopes_declared"] is (wiring == "declared_without_tracker")
 
     # Every other pass is as it was: the arm adds one registration and edits
-    # no other, so the rest of the schedule is the same set either way.
-    assert [entry.name for entry in registered if entry.name != SUPERVISOR_TICK_NAME]
+    # no other, so the rest of the schedule is the same set either way. Asserted
+    # as that set rather than as "not empty", because an arm that cleared the
+    # schedule before appending its own would leave a non-empty list of one.
+    assert {entry.name for entry in registered} - {SUPERVISOR_TICK_NAME} == {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
 
 
 def test_the_example_operation_declares_the_roster_the_tick_reads() -> None:
