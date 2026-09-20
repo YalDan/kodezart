@@ -639,6 +639,19 @@ REPORTING_HELPER = "_fire"
 WALK_DECISION_UNIT = f"scope_runtime minus {REPORTING_HELPER}"
 
 
+def also_for(label: str) -> frozenset[str]:
+    """The extra names forbidden in the scanned unit called *label*.
+
+    One function rather than a conditional written inline at the scan, so that
+    the selection the live scan makes is the selection the controls below read:
+    a selection that stopped adding the bare names would leave the walk scanned
+    more loosely than this file says it is, and a control comparing the answer
+    for the walker with the answer for any other unit would still pass if each
+    side were computed by its own copy of the rule (KOD-725).
+    """
+    return DECISION_ONLY_NAMES if label == WALK_DECISION_UNIT else frozenset()
+
+
 def walker_decision_source(*, unit_source: str, helper_source: str) -> str:
     """*unit_source* with the exact text of the reporting helper removed once.
 
@@ -703,9 +716,15 @@ def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
     * A member bound to a name under another spelling and read by identity is
       read under that spelling and passes, wherever the binding is written.
     * A direct ``import X as Y`` is caught only where the import STATEMENT
-      itself is inside the scanned text. For every unit scanned here it is: a
-      module's source carries its own imports. A unit scanned method by method,
-      or class by class, would not carry them, and the alias would pass there.
+      itself is inside the scanned text, which here means the six units scanned
+      as whole modules: the walk's decision, the ready read, the walker, both
+      lane entry readings and the plateau arithmetic each carry their own
+      imports. It is NOT caught for the three units that are a class, a
+      function and a method — ``SubtreeClosure``, ``plan_topology`` and
+      ``run_pass`` — whose modules' import statements lie outside the text
+      scanned for them, so an aliased import would pass in those three. A
+      member bound to a local under another name is missed everywhere, whatever
+      the unit's shape.
     * The match is by spelling, so it over-includes; see
       ``fire_outcome_vocabulary``.
     """
@@ -921,6 +940,22 @@ def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
     }
 
 
+def test_the_bare_names_are_added_for_the_walk_and_for_no_other_unit():
+    """The selection the live scan applies, pinned per unit.
+
+    Spelled out rather than compared with ``DECISION_ONLY_NAMES``, so that a
+    selection which added nothing anywhere fails here: the walk's own text is
+    scanned for the two bare words as well as the vocabulary, and the plateau
+    arithmetic — a real scanned unit, named here so the second answer is about
+    something the scan actually visits — is scanned for the vocabulary alone,
+    because outside the walk's decision either word is what a fire's ending is
+    legitimately called (KOD-725).
+    """
+    assert also_for(WALK_DECISION_UNIT) == {"outcome", "delivery"}
+    assert also_for("fire_plateau") == frozenset()
+    assert "fire_plateau" in {label for label, _ in dispatchability_predicate_sources()}
+
+
 def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     """A lane's admissibility is decided without any fire's ending being read.
 
@@ -977,8 +1012,7 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     )
     assert f"def {REPORTING_HELPER}(" not in walker
     for label, source in scanned:
-        also = DECISION_ONLY_NAMES if label == WALK_DECISION_UNIT else frozenset()
-        assert outcome_references(source, also=also) == frozenset(), label
+        assert outcome_references(source, also=also_for(label)) == frozenset(), label
 
 
 def re_entry_board():
