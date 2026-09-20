@@ -1,5 +1,6 @@
 """Actual native audit publication receipts and incomplete coverage evidence."""
 
+from enum import StrEnum
 from typing import Annotated, Literal, Self
 
 from pydantic import ConfigDict, Field, model_validator
@@ -144,10 +145,37 @@ class AuditUnavailable(CamelCaseModel):
     reason: str = Field(min_length=1, pattern=r"\S")
 
 
+class AuditDeferral(StrEnum):
+    """Why a scope member carries nothing to audit on this tick.
+
+    A deferral is the member's own tracker state answering "there is no
+    claim here yet", so it is neither a judgment nor a coverage failure.
+    """
+
+    CLAIM_NOT_MADE = "claim_not_made"
+    TERMINAL_NOT_REACHED = "terminal_not_reached"
+    GRADED_BEHIND_HEAD = "graded_behind_head"
+
+
+class AuditDeferred(CamelCaseModel):
+    """One covered identity whose own state carried nothing to judge."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    subject: ScopeRef
+    reason: AuditDeferral
+
+
 class _AuditScopeReport(CamelCaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     scope: ScopeRef
     writes: tuple[WriteBackResult, ...]
+    deferred: tuple[AuditDeferred, ...] = Field(
+        default=(),
+        description=(
+            "Covered members whose own tracker state carried nothing to "
+            "audit on this tick, each with the reason it carried nothing."
+        ),
+    )
     observations: tuple[AuditPublication, ...] = Field(
         default=(),
         description=(
@@ -251,6 +279,13 @@ class AuditScopeSummary(CamelCaseModel):
         description=(
             "Exact addressed native artifacts reread before publication, supplying "
             "the referenced record contents to the independent canonical judge."
+        ),
+    )
+    deferred: tuple[AuditDeferred, ...] = Field(
+        default=(),
+        description=(
+            "Covered members this summary judged nothing about, so the "
+            "durable record does not read as if every member was judged."
         ),
     )
 

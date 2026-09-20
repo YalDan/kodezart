@@ -9,6 +9,7 @@ from datetime import datetime
 from kodezart.chains.audit_sweep import AuditReadObservation, AuditReadSweep
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
+from kodezart.domain.audit_claims import audit_deferral
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.tracker_writes import marked_comment_body
@@ -32,6 +33,8 @@ from kodezart.types.domain.audit_forge import AuditForgeObservation
 from kodezart.types.domain.audit_overclaim import AuditOverclaimObservation
 from kodezart.types.domain.audit_runtime import (
     AuditClaimPublication,
+    AuditDeferral,
+    AuditDeferred,
     AuditForgePublication,
     AuditOverclaimPublication,
     AuditPublication,
@@ -50,6 +53,7 @@ from kodezart.types.domain.audit_terminal import AuditTerminalObservation
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import (
     AuditScopeBinding,
+    LifecycleStage,
     OperationConfig,
     RepoEntry,
     RunKind,
@@ -267,6 +271,9 @@ class AuditScheduledPass:
         self._targets, self._coverage = tuple(targets), coverage
         self._tracker, self._operation = tracker, operation
         self._git, self._cache, self._remote = git, cache, remote
+        # The same source the read sweep reads the review state from, so a
+        # deferral and the sweep's own arms cannot disagree about it.
+        self._review_state = operation.workflow_states.get(LifecycleStage.IN_REVIEW)
         self._log = get_logger(__name__)
         self._last_report: AuditRunReport | None = None
 
@@ -281,12 +288,16 @@ class AuditScheduledPass:
         writes: list[WriteBackResult] = []
         interrupted: list[AuditRepairInput] = []
         unavailable: list[AuditUnavailable] = []
+        deferred: list[AuditDeferred] = []
         observations: list[AuditReadObservation] = []
         repair_observations: list[AuditReadObservation] = []
         scope = target.binding.scope
 
         def refuse(subject: ScopeRef, reason: str) -> None:
             unavailable.append(AuditUnavailable(subject=subject, reason=reason))
+
+        def defer(subject: ScopeRef, reason: AuditDeferral) -> None:
+            deferred.append(AuditDeferred(subject=subject, reason=reason))
 
         try:
             snapshot = await target.sweep.prepare()
@@ -303,10 +314,20 @@ class AuditScheduledPass:
             by_key = {item.issue.issue_key: item for item in snapshot.targets}
 
             async def visit(candidate: AuditCandidate) -> None:
-                observations.append(
-                    await target.sweep.observe_target(
-                        snapshot=snapshot, target=by_key[candidate.issue_key]
+                item = by_key[candidate.issue_key]
+                reason = audit_deferral(
+                    issue=item.issue, review_state=self._review_state
+                )
+                if reason is not None:
+                    # Nothing to audit yet, decided from the member's own
+                    # state: no session, no git read and no forge read is
+                    # spent on it, and no write addresses it.
+                    defer(
+                        ScopeRef(kind=ScopeKind.ISSUE, key=item.issue.issue_key), reason
                     )
+                    return
+                observations.append(
+                    await target.sweep.observe_target(snapshot=snapshot, target=item)
                 )
 
             async def require_current() -> None:
@@ -321,6 +342,16 @@ class AuditScheduledPass:
                     subject = ScopeRef(
                         kind=ScopeKind.ISSUE, key=observation.target.issue.issue_key
                     )
+                    if (
+                        observation.evidence is not None
+                        and observation.evidence.is_lapse
+                    ):
+                        # A grading behind the head is the member's own state
+                        # saying its claim was made about another commit. It
+                        # is decided before the side arms are read, because
+                        # their readings about it are discarded either way.
+                        defer(subject, AuditDeferral.GRADED_BEHIND_HEAD)
+                        continue
                     reasons = (
                         observation.unavailable_reason,
                         observation.overclaim_unavailable_reason,
@@ -330,16 +361,6 @@ class AuditScheduledPass:
                     for reason in reasons:
                         if reason is not None:
                             refuse(subject, reason)
-                    if (
-                        observation.evidence is not None
-                        and observation.evidence.is_lapse
-                    ):
-                        refuse(
-                            subject,
-                            "native lapse classification and its state authority "
-                            "are unavailable",
-                        )
-                        continue
                     for publication in _reports(observation):
                         try:
                             await self._publish(
@@ -362,6 +383,7 @@ class AuditScheduledPass:
                                     scope=scope,
                                     writes=tuple(writes),
                                     unavailable=tuple(unavailable),
+                                    deferred=tuple(deferred),
                                     repair_inputs=tuple(interrupted),
                                     observations=_all_reports(
                                         (*observations, *repair_observations)
@@ -373,82 +395,15 @@ class AuditScheduledPass:
                             ),
                         )
                     )
-                await require_current()
-                repository = await ensure_repository(
-                    cache=self._cache, repo_url=target.repository.url, cache_key=None
-                )
-                head = await read_remote_head(
-                    git=self._git,
-                    repository=repository,
-                    remote=self._remote,
-                    branch=target.repository.trunk,
-                )
-                if head is None:
-                    raise AuditClaimReadError(
-                        "the audit summary repository has no remote trunk head"
-                    )
-                destination = await self._tracker.read_issue(
-                    issue_key=target.binding.report_issue_key
-                )
-                if destination.issue_key != target.binding.report_issue_key:
-                    raise AuditClaimReadError(
-                        "the audit report destination returned another identity"
-                    )
-                summary = AuditScopeSummary(
+                await self._summarize(
+                    target=target,
+                    context=context,
                     identity=identity,
                     coverage=coverage,
-                    record_refs=tuple(result.artifact.native_ref for result in writes),
-                    records=tuple(result.artifact for result in writes),
-                )
-
-                async def require_summary_sources() -> None:
-                    await require_current()
-                    for expected in summary.records:
-                        current = await read_tracker_artifact(
-                            tracker=self._tracker, surface=expected.surface
-                        )
-                        if current != expected:
-                            raise AuditClaimReadError(
-                                "a previously verified audit record changed before "
-                                "summary publication"
-                            )
-
-                async def summary_body(_finding: WriteBackFinding | None) -> str:
-                    await require_summary_sources()
-                    return summary.model_dump_json()
-
-                async def accept_summary() -> None:
-                    context.snapshot = _accept_own_write(
-                        context.snapshot,
-                        await target.sweep.prepare(),
-                        destination.issue_key,
-                        classification=False,
-                    )
-
-                summary_result = await target.publisher.publish(
-                    issue_key=destination.issue_key,
-                    marker=compose_comment_marker(
-                        prefixes=self._operation.marker_prefixes,
-                        purpose="audit",
-                        lane=f"{scope.kind.value}:{scope.key}",
-                        occurrence_key=identity.title(),
-                    ),
-                    ref=head,
-                    job_id=identity.title(),
-                    visibility=self._operation.board_visibility(destination.team_key),
-                    compose=summary_body,
-                    require_current=require_summary_sources,
-                    accept_write=accept_summary,
+                    deferred=deferred,
+                    writes=writes,
                     interrupted=interrupted,
                 )
-                writes.append(summary_result)
-                await accept_summary()
-                _require_payload(summary_result, summary.model_dump_json())
-                if summary_result.verdict is not AuditVerdict.HOLDS:
-                    raise AuditClaimReadError(
-                        "the audit summary exhausted canonical write verification"
-                    )
-                await require_summary_sources()
 
             coverage = await self._coverage.cover(
                 scope=scope,
@@ -461,6 +416,7 @@ class AuditScheduledPass:
                 scope=scope,
                 coverage=coverage,
                 writes=tuple(writes),
+                deferred=tuple(deferred),
                 observations=_all_reports((*observations, *repair_observations)),
                 raw_observations=_raw_observations(
                     (*observations, *repair_observations)
@@ -474,12 +430,110 @@ class AuditScheduledPass:
                 scope=scope,
                 writes=tuple(writes),
                 unavailable=tuple(unavailable),
-                repair_inputs=tuple(interrupted),
+                deferred=tuple(deferred),
                 observations=_all_reports((*observations, *repair_observations)),
                 raw_observations=_raw_observations(
                     (*observations, *repair_observations)
                 ),
             )
+
+    async def _summarize(
+        self,
+        *,
+        target: AuditTarget,
+        context: _AuditAttempt,
+        identity: RunIdentity,
+        coverage: AuditCoverageResult,
+        deferred: Sequence[AuditDeferred],
+        writes: list[WriteBackResult],
+        interrupted: list[AuditRepairInput],
+    ) -> None:
+        """Publish the scope's one verified summary of what this tick did."""
+        scope = target.binding.scope
+
+        async def require_current() -> None:
+            await target.sweep.require_current(
+                context.snapshot,
+                (*context.observations, *context.repair_observations),
+            )
+
+        await require_current()
+        repository = await ensure_repository(
+            cache=self._cache, repo_url=target.repository.url, cache_key=None
+        )
+        head = await read_remote_head(
+            git=self._git,
+            repository=repository,
+            remote=self._remote,
+            branch=target.repository.trunk,
+        )
+        if head is None:
+            raise AuditClaimReadError(
+                "the audit summary repository has no remote trunk head"
+            )
+        destination = await self._tracker.read_issue(
+            issue_key=target.binding.report_issue_key
+        )
+        if destination.issue_key != target.binding.report_issue_key:
+            raise AuditClaimReadError(
+                "the audit report destination returned another identity"
+            )
+        summary = AuditScopeSummary(
+            identity=identity,
+            coverage=coverage,
+            record_refs=tuple(result.artifact.native_ref for result in writes),
+            records=tuple(result.artifact for result in writes),
+            deferred=tuple(deferred),
+        )
+
+        async def require_summary_sources() -> None:
+            await require_current()
+            for expected in summary.records:
+                current = await read_tracker_artifact(
+                    tracker=self._tracker, surface=expected.surface
+                )
+                if current != expected:
+                    raise AuditClaimReadError(
+                        "a previously verified audit record changed before "
+                        "summary publication"
+                    )
+
+        async def summary_body(_finding: WriteBackFinding | None) -> str:
+            await require_summary_sources()
+            return summary.model_dump_json()
+
+        async def accept_summary() -> None:
+            context.snapshot = _accept_own_write(
+                context.snapshot,
+                await target.sweep.prepare(),
+                destination.issue_key,
+                classification=False,
+            )
+
+        summary_result = await target.publisher.publish(
+            issue_key=destination.issue_key,
+            marker=compose_comment_marker(
+                prefixes=self._operation.marker_prefixes,
+                purpose="audit",
+                lane=f"{scope.kind.value}:{scope.key}",
+                occurrence_key=identity.title(),
+            ),
+            ref=head,
+            job_id=identity.title(),
+            visibility=self._operation.board_visibility(destination.team_key),
+            compose=summary_body,
+            require_current=require_summary_sources,
+            accept_write=accept_summary,
+            interrupted=interrupted,
+        )
+        writes.append(summary_result)
+        await accept_summary()
+        _require_payload(summary_result, summary.model_dump_json())
+        if summary_result.verdict is not AuditVerdict.HOLDS:
+            raise AuditClaimReadError(
+                "the audit summary exhausted canonical write verification"
+            )
+        await require_summary_sources()
 
     async def _publish(
         self,
