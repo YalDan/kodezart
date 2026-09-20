@@ -430,6 +430,23 @@ reference. Such a gate reads the per-issue cascade, never the addressed
 scope's own labels. No row may use approval as a completion marker, and no
 row may reach it through an alias: nothing machine-written is approval.
 
+Each run stage ends on a barrier. Every member that owes the stage its marker
+— every member that is neither a criterion sub-issue nor a tracker record — must
+carry it before the next stage begins. A member that does not is named in a
+report-shaped halt carrying the stage, so the run ends with the halt its caller
+already knows and nothing else is spent on it. An escalated member owes the
+marker and is not a work subject, so it holds the stage before any session
+opens: counted, named, and free. Workflow state decides none of this; removing
+the escalation label is what returns a member to the roster.
+
+The label is the record. A member already carrying a stage's marker is out of
+that stage's work roster unless a finding of this run names it, so a run
+re-entered from tracker facts alone works exactly what the labels leave — and a
+stage whose every member is already labelled completes with no session and no
+write. The work set itself always comes from the one gap computation, which is
+entered on every pass through a stage, including a replay with nothing left to
+do.
+
 One predicate answers whether a phase may act on a member now, and every gate
 read and approval read in the owner is that predicate: a run stage is admitted
 by approval and by its gate, a pre-approval phase by its gate while approval

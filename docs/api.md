@@ -112,7 +112,9 @@ anything, at its entry, and each of those endings is typed and carries the
 addressed scope. `ScopeNotApprovedError` means the addressed scope carries no
 approval, on itself or on any container above it: nothing about the scope was
 read and no member was touched. `OrganizeHaltError` means an organize stage of
-the approved run stopped and retains its exact halt report. Both terminate the
+the approved run stopped and retains its exact halt report — including the halt
+that names the members a stage did not label, which is how a run ends when one
+member of the scope cannot be carried through a stage. Both terminate the
 job with outcome `engine_error`; no event type or event field is added for
 them. The first `scope_walk` observation of a run follows its entry, so an
 observation is evidence that the entry passed.
