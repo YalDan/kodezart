@@ -12,7 +12,6 @@ from kodezart.config.app import AppConfig
 from kodezart.domain.errors import LaneRecordReadError
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.tally_record import is_raised
-from kodezart.services.supervisor_pass import SUPERVISOR_TICK_NAME
 from kodezart.services.tally_supervisor import SIGNAL
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.prompts import PromptKey
@@ -158,7 +157,10 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
         )
 
     registered = list(runtime.scheduler.passes)
-    ticks = [entry for entry in registered if entry.name == SUPERVISOR_TICK_NAME]
+    # The name is written out here rather than read off the production constant:
+    # the claim is that the tick answers to this name, and a selection that
+    # imported the name would follow it wherever it was moved to.
+    ticks = [entry for entry in registered if entry.name == "supervisor"]
     unwired = [entry for entry in logs if entry["event"] == "supervisor_pass_not_wired"]
     if absent is None:
         assert len(ticks) == 1
@@ -181,7 +183,7 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     expected = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
     if dispatching:
         expected |= {f"dispatch:{REPO}"}
-    assert {entry.name for entry in registered} - {SUPERVISOR_TICK_NAME} == expected
+    assert {entry.name for entry in registered} - {"supervisor"} == expected
 
     # "As before" is the same deployment declaring no roster at all, so the
     # comparison is against the schedule this boot would have had rather than
@@ -194,7 +196,7 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
             reconciled_roster=None if reconciled_scopes is None else (),
         )
 
-    assert {entry.name for entry in registered} - {SUPERVISOR_TICK_NAME} == {
+    assert {entry.name for entry in registered} - {"supervisor"} == {
         entry.name for entry in as_before.scheduler.passes
     }
 

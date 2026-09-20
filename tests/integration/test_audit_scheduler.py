@@ -101,9 +101,10 @@ def dependencies():
     return config, operation, server, tracker, forge
 
 
-async def runtime(
+async def schedule_over(
     config, operation, server, tracker, forge, *, verdict="holds", gate=None
 ):
+    """Every pass this deployment registers, and the executor standing behind it."""
     workspace = RecordingWorkspace()
     executor = RecordingExecutor(
         [
@@ -144,13 +145,45 @@ async def runtime(
         recorder=RunRecorder(records={}, sinks={}),
         log=get_logger(__name__),
     )
-    (scheduled,) = [entry for entry in built.scheduler.passes if entry.name == "audit"]
+    return list(built.scheduler.passes), executor
+
+
+async def runtime(
+    config, operation, server, tracker, forge, *, verdict="holds", gate=None
+):
+    registered, executor = await schedule_over(
+        config, operation, server, tracker, forge, verdict=verdict, gate=gate
+    )
+    (scheduled,) = [entry for entry in registered if entry.name == "audit"]
     return scheduled, executor
 
 
-async def test_actual_scheduled_audit_collects_and_verifies_native_summary():
+@pytest.mark.parametrize("observing", [False, True])
+async def test_actual_scheduled_audit_collects_and_verifies_native_summary(observing):
+    """The configured audit is registered, runs, and reports once per window.
+
+    The observing arm declares an observation roster on the same operation, so
+    this deployment registers the observation tick as well. The tick is
+    registered after the audit and appends itself to the same schedule, so the
+    audit registration is only safe if nothing in that arm edits what stands
+    before it: both names are asserted, and the audit pass read below and
+    everything asserted about it are the same either way.
+    """
     config, operation, server, tracker, forge = dependencies()
-    scheduled, executor = await runtime(config, operation, server, tracker, forge)
+    if observing:
+        operation = OperationConfig.model_validate(
+            {
+                **operation.model_dump(),
+                "supervisor_scopes": [EMPTY_PROJECT.model_dump()],
+            }
+        )
+    registered, executor = await schedule_over(
+        config, operation, server, tracker, forge
+    )
+    names = {entry.name for entry in registered}
+    assert "audit" in names
+    assert ("supervisor" in names) is observing
+    (scheduled,) = [entry for entry in registered if entry.name == "audit"]
     assert scheduled.interval_seconds == 60
     assert scheduled.timeout_seconds == 17
     assert scheduled.report is not None
