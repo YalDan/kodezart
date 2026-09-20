@@ -10,14 +10,18 @@ import pytest
 
 from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.errors import RulingUnrecordedError
-from kodezart.domain.rulings import ruling_marker
+from kodezart.domain.prompt_variables import tracker_checks_section
+from kodezart.domain.rulings import EMPTY_REGISTRY, ruling_marker
+from kodezart.domain.ticket import format_fire_spec
 from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import RulingAuthor
 from kodezart.types.domain.gating import ContentClass, RepoVisibility
+from kodezart.types.domain.prompts import PromptKey
 from tests.chains.test_native_fire import (
     DIRECT_OWED,
     SUBJECT,
@@ -104,12 +108,58 @@ class Executor:
         yield result(structured_output=payload)
 
 
-async def build(repository, executor, *, port=None, gate=None):
+class RecordingPrompts:
+    """The provider port, recording which key each ask named.
+
+    *override* stands in for one key's template only, so a prompt the
+    executor received that carries it can only have come through the port
+    under that key.
+    """
+
+    def __init__(self, inner, *, override: str | None = None) -> None:
+        self._inner = inner
+        self._override = override
+        self.templates: list[PromptKey] = []
+        self.policies: list[PromptKey] = []
+        self.skills: list[PromptKey] = []
+
+    def template_for(self, key: PromptKey) -> PromptTemplate:
+        self.templates.append(key)
+        if self._override is not None and key is PromptKey.FIRE_TIME_RULING:
+            return PromptTemplate(
+                key=key, source="fixture", body=self._override, bindings={}
+            )
+        return self._inner.template_for(key)
+
+    def resolution_table(self):
+        return self._inner.resolution_table()
+
+    def declared_skills(self, key: PromptKey):
+        return self._inner.declared_skills(key)
+
+    def definitions(self):
+        return self._inner.definitions()
+
+    def system_prompt_append(self):
+        return self._inner.system_prompt_append()
+
+    def session_skills(self, key: PromptKey, configured):
+        self.skills.append(key)
+        return self._inner.session_skills(key, configured)
+
+    def session_policy(self, key: PromptKey):
+        self.policies.append(key)
+        return self._inner.session_policy(key)
+
+
+async def build(repository, executor, *, port=None, gate=None, prompts=None):
     """The step, its subject and the tracker Checks, wired as composition does."""
     repo, base = repository
     git_service = SubprocessGitService(remote="origin")
     workspace = Workspaces(git_service, FakeRepoCache(str(repo)))
-    prompts = load_registry(default_set="claude-opus")
+    prompts = (
+        prompts if prompts is not None else load_registry(default_set="claude-opus")
+    )
     service = AgentService(
         executor=executor,
         workspace=workspace,
@@ -194,6 +244,53 @@ async def test_an_ambiguous_check_yields_one_pinned_answer_naming_both_readings(
     # The step opened exactly one tree of its own, and never a branch.
     assert [call["create_branch"] for _, call in workspace.acquired] == [False, False]
     assert all(call.get("branch_name") is None for _, call in workspace.acquired)
+
+
+async def test_the_question_prompt_is_the_providers_rendering_of_its_own_key(
+    repository,
+) -> None:
+    """The role is resolved through the port under FIRE_TIME_RULING, not imported."""
+    registry = load_registry(default_set="claude-opus")
+    executor = Executor([[]])
+    prompts = RecordingPrompts(registry)
+    step, spec, current, _, _, _, repo_path, base = await build(
+        repository, executor, prompts=prompts
+    )
+
+    await run(step, spec, current, repo_path, base)
+
+    assert executor.question_prompts == [
+        registry.template_for(PromptKey.FIRE_TIME_RULING).render(
+            {
+                "issue_key": SUBJECT,
+                "task_md": format_fire_spec(spec)
+                + "\n\n"
+                + tracker_checks_section(current),
+                "pinned_rulings": EMPTY_REGISTRY,
+            }
+        )
+    ]
+    assert PromptKey.FIRE_TIME_RULING in prompts.templates
+    assert prompts.policies == [PromptKey.FIRE_TIME_RULING]
+    assert prompts.skills == [PromptKey.FIRE_TIME_RULING]
+
+
+async def test_a_template_the_provider_serves_for_the_key_is_what_reaches_the_pass(
+    repository,
+) -> None:
+    """No import path can supply it: overriding the port's answer changes it."""
+    sentinel = "A stand-in body the shipped set does not carry."
+    executor = Executor([[]])
+    prompts = RecordingPrompts(
+        load_registry(default_set="claude-opus"), override=sentinel
+    )
+    step, spec, current, _, _, _, repo_path, base = await build(
+        repository, executor, prompts=prompts
+    )
+
+    await run(step, spec, current, repo_path, base)
+
+    assert executor.question_prompts == [sentinel]
 
 
 async def test_a_record_the_tracker_accepted_but_does_not_list_is_not_pinned(
