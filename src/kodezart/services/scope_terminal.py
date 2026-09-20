@@ -6,6 +6,7 @@ from kodezart.core.protocols import OutboundContentGate, ScopeStatusWriter
 from kodezart.domain.errors import LaneRecordReadError, ScopeStatusError
 from kodezart.domain.scope_terminal import lane_roster, render_scope_status
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.lane_reports import assert_lane_roster
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
@@ -58,9 +59,25 @@ class ScopeTerminal:
         raises ends the job with no terminal event on its stream and the next
         invocation reports again — rather than leaving a stream that claims a
         report nothing carries.
+
+        The roster arity is asserted before either: a vector that does not
+        cover its reading is an alarm and not an ending, so it raises here and
+        nothing is posted, rather than a short report being published as a
+        complete one.
         """
         roster = lane_roster(ready)
         entries = [await self._entry(issue_key=key, done=done) for key, done in roster]
+        # The coverage clause, asked at this boundary and before any write: the
+        # vector covers every lane of the reading it was built from, compared
+        # by identity so a lane reported twice or under another key is caught
+        # as well as one dropped. The roster is the reading's, never the
+        # invocation's memory of what it fired: a lane that never fired is
+        # exactly the row a report could silently lose, and a lane the board
+        # moved mid-run is not a hole in the report (KOD-481).
+        assert_lane_roster(
+            dispatched_lane_keys=[key for key, _ in roster],
+            reported_lane_keys=[entry.issue for entry in entries],
+        )
         event = ScopeTerminalEvent(
             scope=ready.scope.ref,
             lanes=tuple(entries),
