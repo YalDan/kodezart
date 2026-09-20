@@ -245,6 +245,34 @@ def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
     )
 
 
+def runs_scope_flow(operation: OperationConfig) -> bool:
+    """Whether this operation declares scopes the organize owner walks.
+
+    Such an operation is worked scope by scope: a scope is approved, the
+    organize step maps its workflow, and the walker runs the lanes. The
+    per-issue dispatcher and the two remaining prompt passes scan whole boards
+    and are no part of that flow — declaring the one team and the one
+    repository a scope run needs would otherwise schedule all three over that
+    team's entire board.
+
+    Read off the existing roster rather than a switch of its own: a lane cannot
+    fire without the criteria mandate's terminal marker, which only an organize
+    stage writes, so every deployment that walks scopes declares them here.
+    """
+    return bool(operation.organize_scopes)
+
+
+def session_passes_wire(operation: OperationConfig) -> bool:
+    """Whether the two legacy prompt passes run as agent sessions here.
+
+    Both conditions, named once: a roster a template could not render over, and
+    a deployment that works scope by scope. Three sites ask the same question —
+    the wiring, the gate probe and the render preflight — and a second copy of
+    it is a second opinion about which passes this deployment schedules.
+    """
+    return not runs_scope_flow(operation) and not absent_roster(operation)
+
+
 def _record_kind_for(key: PromptKey) -> RunKind:
     """The record kind a scheduled prompt pass reports as — total, or loud.
 
@@ -276,9 +304,14 @@ async def build_prompt_passes(
     """Bind the configured Organize owner and remaining legacy prompt passes.
 
     Organize uses the existing grooming cadence and report identity, with its
-    own fresh scope reads and explicit repository bindings. The remaining
-    prompt rows require the legacy team/repository roster and use their
-    configured signal gates. Preflight validates exactly those active rows.
+    own fresh scope reads and explicit repository bindings, and is scheduled
+    FIRST so a deployment that keeps nothing else keeps it.
+
+    The remaining prompt rows belong to the per-issue flow: they scan whole
+    boards from the legacy team/repository roster and use their configured
+    signal gates. They wire only where :func:`session_passes_wire` holds — an
+    operation that declares ``organize_scopes`` gets the organize tick and
+    neither of them. Preflight validates exactly those active rows.
     """
     log: BoundLogger = get_logger(__name__)
     schedule = prompt_pass_schedule(config)
@@ -296,11 +329,16 @@ async def build_prompt_passes(
             )
         )
     absent = absent_roster(operation)
-    if absent:
+    withheld = runs_scope_flow(operation)
+    if absent or withheld:
+        # Two reasons, one event, one field each: a roster a template could not
+        # render over, and a deployment whose work is a scope walk. An operator
+        # reading the log for "why no prompt pass?" finds which it is.
         await log.ainfo(
             "prompt_passes_not_wired",
             operation_config_present=True,
             absent=list(absent),
+            organize_scopes_declared=withheld,
         )
         return scheduled
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
@@ -531,7 +569,9 @@ async def _verify_wired_gates(
     Exactly the gates about to be wired, on the same predicates the
     builders themselves use: a signal configured for a pass this deployment
     does not schedule is not a capability it needs, and refusing boot over
-    one would hold a deployment hostage to a knob nothing reads.
+    one would hold a deployment hostage to a knob nothing reads. A deployment
+    that declares ``organize_scopes`` schedules neither session pass and no
+    per-issue dispatch pass, so it needs none of their signals.
 
     Every refused signal is named at once, with the passes it gates and the
     backend's own diagnosis, because an operator fixing one scope at a time
@@ -540,16 +580,14 @@ async def _verify_wired_gates(
     if tracker is None or operation is None:
         return
     wired: dict[str, Sequence[PassSignal]] = (
-        {}
-        if absent_roster(operation)
-        else {
-            key.value: row.signals
-            for key, row in prompt_pass_schedule(config).items()
-            if key is not PromptKey.GROOMING_PASS or not operation.organize_scopes
-        }
+        {key.value: row.signals for key, row in prompt_pass_schedule(config).items()}
+        if session_passes_wire(operation)
+        else {}
     )
-    if github_api is not None and any(
-        operation.teams_scanned_by(repo.url) for repo in operation.repos
+    if (
+        github_api is not None
+        and not runs_scope_flow(operation)
+        and any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
     ):
         wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
     passes_by_signal: dict[PassSignal, list[str]] = {}
@@ -693,13 +731,15 @@ async def verify_pass_preflight(
     in hand, the gate probe is a round trip, and the renders are local.
 
     The render half applies to exactly the passes that will WIRE.  An
-    operation with no roster schedules none of them (see
-    :func:`build_prompt_passes`), and rendering a template it will never
-    send would refuse a boot over a hole nothing reaches.
+    operation with no roster, and one that declares ``organize_scopes``,
+    schedules none of them (see :func:`build_prompt_passes`), and rendering a
+    template it will never send would refuse a boot over a hole nothing
+    reaches.
     """
-    organize = verify_organize_configuration(
-        config=config, operation=operation, tracker=tracker
-    )
+    # Called for its refusals, which are the point: a partial Organize
+    # configuration must not reach a scheduler. Its answer is read nowhere
+    # here, because which templates render is decided by the wiring predicate.
+    verify_organize_configuration(config=config, operation=operation, tracker=tracker)
     verify_audit_configuration(
         config=config, operation=operation, tracker=tracker, forge=audit_forge
     )
@@ -710,11 +750,9 @@ async def verify_pass_preflight(
         tracker=tracker,
         github_api=github_api,
     )
-    if operation is None or absent_roster(operation):
+    if operation is None or not session_passes_wire(operation):
         return
     for key in prompt_pass_schedule(config):
-        if organize and key is PromptKey.GROOMING_PASS:
-            continue
         _assert_renders(key=key, prompts=prompts)
 
 
@@ -755,12 +793,18 @@ async def build_dispatch_runtime(
     beside a live port skipped every dispatch pass and ran every prompt
     pass ungated, and the log said the tracker was present.
     """
-    # Cadence is scheduler configuration and nothing else. Three
-    # states, none silent: no tracker, or no delivery probe to answer
-    # "is this issue already delivered?", and the passes do not run —
-    # named, never inferred from an empty schedule.
+    # Cadence is scheduler configuration and nothing else. Four
+    # states, none silent: no tracker, no operation config, no delivery probe
+    # to answer "is this issue already delivered?", or an operation that works
+    # scope by scope and has no use for a pass that scans a whole board — and
+    # the passes do not run, named, never inferred from an empty schedule.
     built: DispatchPasses | None = None
-    if dialled is not None and operation is not None and github_api is not None:
+    if (
+        dialled is not None
+        and operation is not None
+        and github_api is not None
+        and not runs_scope_flow(operation)
+    ):
         built = await build_dispatch_passes(
             config=config,
             operation=operation,
@@ -781,6 +825,8 @@ async def build_dispatch_runtime(
             tracker_present=dialled is not None,
             operation_config_present=operation is not None,
             delivery_probe_present=github_api is not None,
+            organize_scopes_declared=operation is not None
+            and runs_scope_flow(operation),
         )
     # The prompt passes need no tracker port to RUN: the session reaches
     # the tracker itself. They need one only to be GATED. What they cannot
@@ -877,6 +923,7 @@ async def build_dispatch_runtime(
             "prompt_passes_not_wired",
             operation_config_present=False,
             absent=[],
+            organize_scopes_declared=False,
         )
     return DispatchRuntime(
         scheduler=PassScheduler(passes=tuple(scheduled)),

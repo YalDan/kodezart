@@ -27,6 +27,10 @@ layers:
 All cross-layer dependencies point inward through protocols defined in
 `core/protocols.py`. Infrastructure adapters are wired in the composition root
 (`main.py` `lifespan()`).
+Dialling the tracker consults no run-event table; a declared one is checked when
+the operation file loads. An operation that declares `[[organize_scopes]]`
+schedules the organize tick and the audit pass only — the per-issue dispatch
+pass, the two remaining prompt passes and the lifecycle watcher are withheld.
 The lifespan registers each acquired resource with an `AsyncExitStack`.
 Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
 their records, then closes their transports; the checkpointer retains its
