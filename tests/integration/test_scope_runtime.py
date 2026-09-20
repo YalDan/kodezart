@@ -104,11 +104,15 @@ SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
 STAGED = "criteria-staged"
 
 
-def board(*, lanes=("A",), blocked=None, approved=True, checks=None):
+def board(*, lanes=("A",), blocked=None, approved=True, checks=None, staged=True):
     """The scope's lanes and their criterion sub-issues.
 
     *checks* names each lane's criteria; a lane not named there has the one
     criterion every lane has had, under the body every test reads it by.
+
+    *staged* is the board a walk starts from: every lane already carries the
+    run-stage markers. A test about the stages themselves passes False, so
+    the markers are what the run has to put there.
     """
     rows = []
     for key in lanes:
@@ -117,7 +121,7 @@ def board(*, lanes=("A",), blocked=None, approved=True, checks=None):
                 key,
                 body=f"Exact native subject {key}  with spaces\n",
                 blocked_by=(blocked or {}).get(key, ()),
-                issue_labels=frozenset({STAGED}),
+                issue_labels=frozenset({STAGED}) if staged else frozenset(),
             )
         )
         for name in (checks or {}).get(key, ("check",)):
@@ -209,6 +213,8 @@ def runtime(
     merger=None,
     max_iterations=1,
     operation=None,
+    organize=None,
+    executor=None,
 ):
     """The composed engine over external doubles.
 
@@ -218,13 +224,17 @@ def runtime(
     observation of one.
     """
     port = port or board(lanes=lanes)
-    executor = ObservedNativeExecutor(
-        evaluations
-        or [
-            native_evaluation(checks={f"{key}/check": f"{key} live Check  bytes"})
-            for key in lanes
-            for _ in range(2)
-        ]
+    executor = (
+        ObservedNativeExecutor(
+            evaluations
+            or [
+                native_evaluation(checks={f"{key}/check": f"{key} live Check  bytes"})
+                for key in lanes
+                for _ in range(2)
+            ]
+        )
+        if executor is None
+        else executor
     )
     git = git if git is not None else RemoteGit()
     # The workspace reports its identity through the same Git double the rest
@@ -254,6 +264,7 @@ def runtime(
                 max_iterations=max_iterations,
                 retry_max_attempts=1,
                 retry_initial_interval=0.1,
+                **({} if organize is None else {"organize": organize}),
             ),
             repositories=(RepoEntry(url=origin, trunk=trunk),),
             agent_service=service,
