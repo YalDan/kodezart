@@ -220,7 +220,7 @@ which was missing in the boot log.
 | `KODEZART_CI_POLL_INTERVAL_SECONDS` | `float` | `30.0` | >= 5.0, <= 300.0 | Seconds between CI status check polls. |
 | `KODEZART_CI_POLL_MAX_ATTEMPTS` | `int` | `60` | >= 1, <= 600 | Maximum CI status check poll attempts before timeout. |
 | `KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` | `float` | `3600.0` | >= 60.0, <= 86400.0 | Seconds between audit delta ticks on the existing scheduler. |
-| `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `float` | `300.0` | 60-86400 | Seconds between supervisor observation ticks on the existing scheduler. |
+| `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `float` | `300.0` | >= 60.0, <= 86400.0 | Seconds between supervisor observation ticks on the existing scheduler. |
 | `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` | `float` | `120.0` | > 0 | Wall-clock bound for one supervisor observation tick over every declared scope. |
 | `KODEZART_AUDIT_FULL_SWEEP_INTERVAL_SECONDS` | `float` | `86400.0` | >= 60.0, <= 86400.0 | Full coverage interval, no shorter than the audit tick interval. |
 | `KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES` | `int` | `4` | >= 1, <= 32 | Maximum simultaneous delivery check watches across lanes. |

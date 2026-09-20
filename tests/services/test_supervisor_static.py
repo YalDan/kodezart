@@ -90,19 +90,24 @@ OWN_MODULES = (
 #: Waiting, scheduling and reading the time are the scheduler's, so a module of
 #: the observation importing one of these is taking a second opinion on when.
 CLOCK_MODULES = frozenset({"time", "asyncio", "threading", "sched"})
-#: Reading a clock or arming a timer, whichever module it came from.
+#: Waiting and arming a timer, whichever module it came from. Reading the time
+#: off ``datetime`` is not listed here: that one admissible import is refused as
+#: a whole below, so ``now``, ``utcnow``, ``today``, ``fromtimestamp`` and
+#: ``strptime`` are refused at once rather than named one at a time.
 CLOCK_CALLS = frozenset(
     {
         "sleep",
         "monotonic",
         "perf_counter",
-        "now",
-        "utcnow",
         "call_later",
         "call_at",
         "Timer",
     }
 )
+#: The one clock-carrying name these modules may import: ``datetime`` is the
+#: type of the stamp the tick is handed, so the import stands and every call
+#: THROUGH it is refused.
+CLOCK_CARRIER = "datetime"
 #: The calls that move a run's state. The role is narrowed out of the port, so
 #: the port satisfies any widening of it and neither mypy nor a behavioural
 #: test would notice one of these arriving.
@@ -126,12 +131,16 @@ class Scanned:
     adapters`` is seen as ``kodezart.adapters`` rather than as ``kodezart``.
     *plain* carries the modules imported as whole modules, which is how a role
     can be reached without its name ever appearing in an import.
+    *carrier_calls* carries every attribute called on the clock-carrying name,
+    so the rule about it is "nothing through this name" rather than a list of
+    the attributes somebody thought of.
     """
 
     modules: frozenset[str]
     names: frozenset[str]
     plain: frozenset[str]
     calls: frozenset[str]
+    carrier_calls: frozenset[str]
 
 
 def _module_path(module: str, *, root: pathlib.Path) -> pathlib.Path | None:
@@ -149,6 +158,7 @@ def _scan(path: pathlib.Path, *, first_party: str) -> Scanned:
     names: set[str] = set()
     plain: set[str] = set()
     calls: set[str] = set()
+    carrier_calls: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module is not None:
             modules.add(node.module)
@@ -161,6 +171,9 @@ def _scan(path: pathlib.Path, *, first_party: str) -> Scanned:
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute):
                 calls.add(node.func.attr)
+                target = node.func.value
+                if isinstance(target, ast.Name) and target.id == CLOCK_CARRIER:
+                    carrier_calls.add(node.func.attr)
             elif isinstance(node.func, ast.Name):
                 calls.add(node.func.id)
     return Scanned(
@@ -168,6 +181,7 @@ def _scan(path: pathlib.Path, *, first_party: str) -> Scanned:
         names=frozenset(names),
         plain=frozenset(plain),
         calls=frozenset(calls),
+        carrier_calls=frozenset(carrier_calls),
     )
 
 
@@ -271,8 +285,11 @@ def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
     holds the event loop and the one clock, which is where they belong.
 
     ``from datetime import datetime`` stays admissible — it is the type of the
-    stamp the tick is handed — while ``datetime.now()`` is an attribute call
-    named among the clock reads and is refused.
+    stamp the tick is handed — and the rule about it is derived from that one
+    admission rather than listed: NO call through that name, so ``now``,
+    ``utcnow``, ``today``, ``fromtimestamp`` and ``strptime`` are each refused
+    without any of them having been thought of here. What is left listed is
+    waiting and arming a timer through any other object.
     """
     for module in OWN_MODULES:
         path = _module_path(module, root=SOURCE_ROOT)
@@ -284,6 +301,7 @@ def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
             found.modules & CLOCK_MODULES,
         )
         assert found.calls.isdisjoint(CLOCK_CALLS), (module, found.calls & CLOCK_CALLS)
+        assert found.carrier_calls == frozenset(), (module, found.carrier_calls)
 
 
 def test_the_supervisor_role_names_no_state_moving_method():
