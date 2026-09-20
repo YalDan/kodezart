@@ -69,20 +69,78 @@ def test_the_event_round_trips_through_its_own_wire_form() -> None:
     assert parsed == original
 
 
-def test_an_outcome_the_vector_does_not_derive_refuses() -> None:
-    """A finished claim its own entries do not support never reaches the wire."""
+#: One vector per reading the derivation produces, so both directions of the
+#: refusal are stated: a finished claim an open lane does not support, and an
+#: unfinished claim a closed one does not.
+FIXED_VECTORS = (
+    (entry("A", done=False),),
+    (entry("A", done=True),),
+)
+
+#: Every member the vector does not derive, over the whole enum rather than a
+#: few picked ones: an outcome is arithmetic over the vector, so any other
+#: value is authored and every one of them is refused.
+UNDERIVED = [
+    (lanes, member)
+    for lanes in FIXED_VECTORS
+    for member in WorkflowOutcome
+    if member is not derive_scope_outcome(lanes)
+]
+
+
+@pytest.mark.parametrize(
+    ("lanes", "outcome"),
+    UNDERIVED,
+    ids=[f"{lanes[0].done}-{member.name}" for lanes, member in UNDERIVED],
+)
+def test_an_outcome_the_vector_does_not_derive_refuses(lanes, outcome) -> None:
+    """A claim its own entries do not support never reaches the wire."""
     with pytest.raises(ValidationError, match="derivation of its own lane vector"):
-        ScopeTerminalEvent(
-            scope=SCOPE,
-            lanes=(entry("A", done=False),),
-            outcome=WorkflowOutcome.scope_converged,
-        )
-    with pytest.raises(ValidationError, match="derivation of its own lane vector"):
-        ScopeTerminalEvent(
-            scope=SCOPE,
-            lanes=(entry("A", done=True),),
-            outcome=WorkflowOutcome.scope_stopped_short,
-        )
+        ScopeTerminalEvent(scope=SCOPE, lanes=lanes, outcome=outcome)
+
+
+def test_every_member_but_the_derived_one_is_covered() -> None:
+    """Non-vacuity: the table is the whole enum bar one value per vector."""
+    assert len(UNDERIVED) == len(FIXED_VECTORS) * (len(WorkflowOutcome) - 1)
+
+
+#: Every shape a lane's recorded delivery can take, including two that differ
+#: only in the value a merge would be read off.
+RECORDED_DELIVERIES = (
+    None,
+    LanePR(url="https://forge.invalid/fixture/repo/pull/12", number=12, state="open"),
+    LanePR(url="https://forge.invalid/fixture/repo/pull/12", number=12, state="closed"),
+    LanePR(url="https://forge.invalid/fixture/repo/pull/12", number=12, state="merged"),
+    LanePR(url="https://forge.invalid/fixture/repo/pull/13", number=13, state="open"),
+)
+
+
+@pytest.mark.parametrize(
+    "pr", RECORDED_DELIVERIES, ids=["none", "open", "closed", "merged", "another open"]
+)
+@pytest.mark.parametrize("branch", [None, "fixture/A"], ids=["no branch", "branch"])
+def test_the_outcome_is_independent_of_every_pull_request_and_branch_value(
+    pr, branch
+) -> None:
+    """The derivation reads the done column and nothing else on the row.
+
+    Both recorded columns are held at every value they can take while the done
+    column is held fixed, in the pure function and on the validated event, so
+    neither can move the outcome in either direction.
+    """
+    open_scope = (
+        entry("A", done=True, branch=branch, pr=pr),
+        entry("B", done=False, branch=branch, pr=pr),
+    )
+    assert derive_scope_outcome(open_scope) is WorkflowOutcome.scope_stopped_short
+    assert event(*open_scope).outcome is WorkflowOutcome.scope_stopped_short
+
+    finished = (
+        entry("A", done=True, branch=branch, pr=pr),
+        entry("B", done=True, branch=branch, pr=pr),
+    )
+    assert derive_scope_outcome(finished) is WorkflowOutcome.scope_converged
+    assert event(*finished).outcome is WorkflowOutcome.scope_converged
 
 
 def test_the_residual_member_is_parseable_and_unproducible_here() -> None:
