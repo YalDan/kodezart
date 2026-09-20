@@ -565,8 +565,12 @@ formatting for local development.
 
 ## Checkpointing
 
-LangGraph workflow state can be checkpointed for resumability. Configure via
-`KODEZART_CHECKPOINT_URL`:
+LangGraph workflow state can be checkpointed for resumability. What a configured
+checkpointer reaches is the authored HTTP workflow, the ticket generator and the
+job service's run-state reader. The scope path compiles and runs no graph that
+holds one: where a lane stands is its own tracker record, read again before every
+fire, so a scope deployment leaves this unset and needs no database. Configure
+via `KODEZART_CHECKPOINT_URL`:
 
 | Value               | Behavior                                                    |
 | ------------------- | ----------------------------------------------------------- |
@@ -679,9 +683,11 @@ the workspace; an unreadable namespace cannot establish a valid observation.
 
 ### Scoped workflow requests
 
-Scoped execution is currently unavailable and refuses before tracker,
-repository or judgment work. There is no fire-time ruling prompt setting or
-preparation-only session. Authored workflow prompt configuration is unchanged.
+A scoped request runs when a tracker is dialled. Without one there is no scoped
+arm, and the request refuses before tracker, repository or judgment work. There
+is no fire-time ruling prompt setting or preparation-only session. Authored
+workflow prompt configuration is unchanged. See
+[running a scope](running-a-scope.md) for a deployment that runs them.
 
 ## Queue environment migration
 
@@ -775,7 +781,9 @@ independently of Organize admission and convergence. Its halt evidence names
 The retired flat `write_back_max_verify_rounds` field and its uppercase
 `KODEZART_` environment spelling are refused; migrate to the nested spelling.
 Deployments without a configured tracker-writing owner can leave the section
-absent. A configured owner with no verification budget refuses at startup.
+absent. A configured owner with no verification budget refuses at startup. The
+field has no default, and a scope run needs it: a lane's fire refuses at the top
+of its execution step without one, before a criteria read, a session or a commit.
 
 
 ## Native Audit scheduling

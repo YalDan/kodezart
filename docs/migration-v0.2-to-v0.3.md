@@ -204,6 +204,13 @@ duration moved into the tracker section as listed in the rename table above.
 A caller may pass a duration per acquisition, and that argument wins over the
 configured default for that grant alone.
 
+## 4a. Operation-file sections you may drop
+
+`[run_event_states]` is optional. Dialling the tracker does not consult it, and
+nothing on the scope path reads it: a run event's comment is rendered from
+`[marker_prefixes]` alone. A table you keep must still name every event kind, or
+the file refuses at load.
+
 ## 5. Removed with no replacement
 
 Delete these assignments. Each is refused at startup, from every source, and no
