@@ -232,10 +232,9 @@ class NativeExecutor(RecordingExecutor):
             yield event
 
 
-async def build_native_audit(repository, server, tmp_path, *, gate):
-    """The composed audit over the native doubles, under the supplied gate."""
-    remote, _author, _observer, _prior, head = repository
-    fields = base_operation(repos=(remote.as_uri(),)).model_dump()
+def native_operation(repo_url):
+    """The configured operation the native audit fixtures run under."""
+    fields = base_operation(repos=(repo_url,)).model_dump()
     fields["repos"][0].update(
         trunk="ordinary-name",
         checks=[{"name": "test", "command": "cat check.txt", "forge_check": "test"}],
@@ -252,11 +251,17 @@ async def build_native_audit(repository, server, tmp_path, *, gate):
     fields["audit_scopes"] = [
         {
             "scope": SCOPE.model_dump(),
-            "repo_url": remote.as_uri(),
+            "repo_url": repo_url,
             "report_issue_key": APPROVED_ISSUE,
         }
     ]
-    operation = OperationConfig.model_validate(fields)
+    return OperationConfig.model_validate(fields)
+
+
+async def build_native_audit(repository, server, tmp_path, *, gate):
+    """The composed audit over the native doubles, under the supplied gate."""
+    remote, _author, _observer, _prior, head = repository
+    operation = native_operation(remote.as_uri())
     server._comment_clock = lambda: FIXTURE_NOW
     tracker = tracker_over(
         server,
