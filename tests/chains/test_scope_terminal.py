@@ -19,24 +19,30 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
+from kodezart.composition.jobs import build_job_queue
 from kodezart.config.app import AppConfig
+from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.core.protocols import ScopeStatusWriter, TrackerPort
 from kodezart.domain.errors import BaseResolutionError
 from kodezart.domain.scope_terminal import render_scope_status
+from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services import scope_terminal as terminal_module
 from kodezart.services.agent_service import AgentService
 from kodezart.services.scope_terminal import ScopeTerminal
+from kodezart.types.domain.agent import WorkflowIterationEvent
 from kodezart.types.domain.gating import ContentClass, OutboundDestination
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.scope_runtime import ScopeWalkEvent
+from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
 from kodezart.types.domain.scope_terminal import (
     ScopeLaneEntry,
     ScopeTerminalEvent,
     derive_scope_outcome,
 )
 from kodezart.types.domain.ticket_review import TicketReviewMode
+from kodezart.types.requests.agent import WorkflowRequest
 from tests.adapters.test_github_api import _make_client
 from tests.chains.test_native_fire import (
     NativeExecutor,
@@ -294,6 +300,84 @@ def test_a_scope_arm_composed_without_a_status_writer_refuses():
 def test_the_same_composition_with_a_writer_builds():
     """The control: nothing else about that call is what the refusal is about."""
     assert compose_scope_arm(status=FakeScopeStatusWriter()) is not None
+
+
+# ---------------------------------------------------------------------------
+# KOD-479 / KOD-471 — the partition: a walk or a post that raises ends the job
+# with no terminal event on the stream and no status update anywhere.
+# ---------------------------------------------------------------------------
+
+
+class RefusingStatusWriter(FakeScopeStatusWriter):
+    """A container the write cannot reach, recording nothing when it refuses."""
+
+    async def post_status_update(self, *, ref, body) -> None:
+        raise TrackerUnavailableError("the container status surface is unavailable")
+
+
+async def test_a_status_update_that_cannot_be_posted_ends_the_job_with_no_event():
+    """The post precedes the yield, so a post that raises leaves no report.
+
+    Driven through the queue, because the half of the partition this states is
+    the job's own outcome: the walk ran, nothing was posted, and the stream
+    carries no report for a consumer to read as a finished scope.
+    """
+    harness = runtime(port=board(lanes=("A",)), status=RefusingStatusWriter())
+    queue = build_job_queue(settings=JobQueueSettings(), workflow_engine=harness.engine)
+    handler = AgentHandler(harness.service, SUPPRESS_ALL_SKILLS, queue=queue)
+    await queue.start()
+    try:
+        record = await handler.submit_workflow(
+            WorkflowRequest(
+                prompt="Run approved scope",
+                repo_url=ORIGIN,
+                scope={"kind": "project", "key": SCOPE.key},
+            ),
+            lane="scope-requests",
+        )
+        payloads = []
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            async for item in handler.attach_job(job_id=record.job_id):
+                payloads.append(item)
+        finished = await queue.get(job_id=record.job_id)
+    finally:
+        await queue.stop()
+
+    # The walk itself ran: the observations are on the stream.
+    assert [item for item in payloads if item["type"] == "scope_walk"]
+    assert "scope_terminal" not in {item["type"] for item in payloads}
+    assert finished.outcome is WorkflowOutcome.engine_error
+    assert harness.status.posts == []
+
+
+async def test_a_walk_that_raises_emits_no_terminal_event(monkeypatch):
+    """A walk that raised never reaches the report, so none is posted either.
+
+    The other half of the same partition: the reading the terminal would have
+    reported on is the one that failed, so there is nothing to report and the
+    run ends where it broke.
+    """
+    port = board(lanes=("A", "B"))
+    harness = runtime(port=port, lanes=("A", "B"))
+    original = port.scope_issues
+
+    async def current_scope(*, ref):
+        if ref == SCOPE:
+            raise TrackerUnavailableError("current scope unavailable")
+        return await original(ref=ref)
+
+    events = []
+    with pytest.raises(TrackerUnavailableError, match="current scope unavailable"):
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            async for event in drive(harness):
+                events.append(event)
+                if isinstance(event, ScopeLaneEvent) and isinstance(
+                    event.event, WorkflowIterationEvent
+                ):
+                    monkeypatch.setattr(port, "scope_issues", current_scope)
+
+    assert terminals(events) == []
+    assert harness.status.posts == []
 
 
 # ---------------------------------------------------------------------------

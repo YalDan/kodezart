@@ -227,6 +227,7 @@ def runtime(
     ref_publisher=None,
     max_iterations=1,
     operation=None,
+    status=None,
 ):
     """The composed engine over external doubles.
 
@@ -256,7 +257,7 @@ def runtime(
         persister=persister if persister is not None else FakeChangePersister(),
     )
     artifacts = FakeArtifactPersister()
-    status = FakeScopeStatusWriter()
+    status = FakeScopeStatusWriter() if status is None else status
     saver = saver or InMemorySaver()
     # Pair the fake filesystem/Git boundary with its immutable-source double.
     # The production builder, native owner and graph remain actual consumers.
