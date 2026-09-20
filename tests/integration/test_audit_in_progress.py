@@ -4,8 +4,9 @@ import json
 
 import pytest
 
+from kodezart.domain.errors import AgentSDKError
 from kodezart.services.audit_runtime import AuditRunIncompleteError
-from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA
+from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, DETECTOR_REMOVAL_SCHEMA
 from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
 from kodezart.types.domain.dispatch import PassRun
 from tests.fakes import PassThroughGate
@@ -123,6 +124,34 @@ async def test_a_tick_over_a_scope_in_progress_completes_and_names_what_it_defer
         (LAPSED, "graded_behind_head"),
     }
     assert not workspace._workspaces
+
+
+async def test_a_lapsed_criterion_whose_side_arm_fails_is_still_deferred(in_progress):
+    """A grading behind the head is decided before the side arms are read.
+
+    The lapsed criterion's detector-removal reading suffers a declared outage,
+    so that arm has an unavailable reason to report. The lapse is still a
+    deferral and the tick still completes: were the reasons read first, the
+    scope would be refused over a reading it discards anyway.
+    """
+    audit, executor, server, _tracker, _git, _workspace, _repository = in_progress
+
+    async def during(kwargs):
+        if (
+            kwargs["output_format"]["schema"] == DETECTOR_REMOVAL_SCHEMA
+            and LAPSED_CHECK in kwargs["prompt"]
+        ):
+            raise AgentSDKError("provider unavailable", error_kind="fixture-provider")
+
+    executor.during = during
+
+    assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    scope = audit.last_report.scopes[0]
+    assert scope.status == "complete", scope.model_dump_json()
+    assert (LAPSED, "graded_behind_head") in {
+        (row.subject.key, row.reason.value) for row in scope.deferred
+    }
+    assert state_writes(server) == []
 
 
 @pytest.mark.parametrize("claim", ["todo", "done"])
