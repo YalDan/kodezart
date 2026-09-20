@@ -24,6 +24,7 @@ from kodezart.domain.comment_markers import configured_marker_prefix
 from kodezart.services.audit_coverage import AuditCoverage
 from kodezart.services.audit_escalation import AuditEscalations
 from kodezart.services.audit_publication import AuditPublisher
+from kodezart.services.audit_reopen import AuditReopener
 from kodezart.services.audit_runtime import AuditScheduledPass, AuditTarget
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.services.audit_sources import AuditSourceReader
@@ -258,6 +259,7 @@ def build_audit_pass(
                     operation=operation,
                     lease_seconds=config.tracker.surface_lease_seconds,
                 ),
+                reopener=AuditReopener(tracker=tracker),
             )
         )
     return AuditScheduledPass(

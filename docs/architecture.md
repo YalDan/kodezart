@@ -83,6 +83,7 @@ does not exist.
 | FireCriteriaSource | TrackerCriteria | Captures the typed native subject specification and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
+| CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
@@ -1128,6 +1129,28 @@ forge comparison, state transitions, mandate-complete reports and the scheduled
 sweep remain separate consumers. The reader acquires no authoring lease and
 performs no tracker write; the required correction writers must use the ruled
 lease and inline verification boundaries.
+
+`AuditReopener` is that correction writer, and the only one. It moves a
+criterion whose current-Check claim was refuted at the branch head back to the
+team's one unstarted state, through `CriterionReopener` — a one-member role
+narrowed out of the port, not a widening of it. Its step is driven by
+`AuditPublisher.write_leased`, so the move happens under this job's lease on the
+criterion's own surface and inside the same write-back verification every audit
+write uses; the artifact re-read is the criterion's body, state and labels. A
+reopen is the scope's last act, after every publication and after the summary,
+because each earlier step re-reads the whole request snapshot and refuses any
+change but a known comment stamp or the decision classification. The step edits
+no body, so a reopened criterion keeps the Evidence row naming the grading that
+was refuted, and the refutation comment published beside it is the evidence.
+
+A covered member whose own state carries nothing to audit yet is deferred rather
+than refused: `audit_deferral` reads the member's state and the configured
+review state and answers `claim_not_made` for a criterion that has made no
+claim, `terminal_not_reached` for any other issue outside that state, and
+`graded_behind_head` for a completed criterion whose recorded grading sits
+behind the head. The pass asks it before it asks the sweep, so a deferred member
+opens no session and costs no Git or forge read, and the deferrals ride on both
+the run report and the published summary.
 
 The separate `AuditForgeVerifier` checks a completed criterion's own explicit
 Evidence SHA through the existing CI monitor and completed-watch reader. Its

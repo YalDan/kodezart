@@ -9,7 +9,7 @@ from datetime import datetime
 from kodezart.chains.audit_sweep import AuditReadObservation, AuditReadSweep
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
-from kodezart.domain.audit_claims import audit_deferral
+from kodezart.domain.audit_claims import audit_deferral, reopens_criterion
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.tracker_writes import marked_comment_body
@@ -17,6 +17,7 @@ from kodezart.services.audit_coverage import AuditCoverage
 from kodezart.services.audit_escalation import AuditEscalations
 from kodezart.services.audit_failures import AUDIT_PUBLICATION_FAILURES
 from kodezart.services.audit_publication import AuditPublisher
+from kodezart.services.audit_reopen import AuditReopener
 from kodezart.services.audit_requests import AuditRequestSnapshot
 from kodezart.services.git_observations import read_remote_head
 from kodezart.services.repo_observations import ensure_repository
@@ -77,9 +78,15 @@ class AuditRunIncompleteError(Exception):
 
 @dataclass
 class _AuditAttempt:
+    """Everything one scope attempt accumulates, so its phases share one object."""
+
     snapshot: AuditRequestSnapshot
     observations: list[AuditReadObservation]
     repair_observations: list[AuditReadObservation]
+    writes: list[WriteBackResult]
+    interrupted: list[AuditRepairInput]
+    unavailable: list[AuditUnavailable]
+    deferred: list[AuditDeferred]
 
 
 @dataclass(frozen=True)
@@ -89,6 +96,7 @@ class AuditTarget:
     sweep: AuditReadSweep
     publisher: AuditPublisher
     escalations: AuditEscalations
+    reopener: AuditReopener
 
 
 def _accept_own_write(
@@ -255,7 +263,11 @@ def _require_payload(result: WriteBackResult, body: str) -> None:
 
 
 class AuditScheduledPass:
-    """No clock, state applier or alternate verification loop lives here."""
+    """No clock and no alternate verification loop lives here.
+
+    The one state move is the reopener's, inside the publisher's leased
+    write-back, and it is a scope's last act.
+    """
 
     def __init__(
         self,
@@ -310,7 +322,15 @@ class AuditScheduledPass:
                     "a native audit source resolves outside the configured "
                     "repository binding"
                 )
-            context = _AuditAttempt(snapshot, observations, repair_observations)
+            context = _AuditAttempt(
+                snapshot,
+                observations,
+                repair_observations,
+                writes,
+                interrupted,
+                unavailable,
+                deferred,
+            )
             by_key = {item.issue.issue_key: item for item in snapshot.targets}
 
             async def visit(candidate: AuditCandidate) -> None:
@@ -337,6 +357,7 @@ class AuditScheduledPass:
                 )
 
             async def complete(coverage: AuditCoverageResult) -> None:
+                owed: list[tuple[AuditReadObservation, AuditPublication, str]] = []
                 await require_current()
                 for observation in observations:
                     subject = ScopeRef(
@@ -363,7 +384,7 @@ class AuditScheduledPass:
                             refuse(subject, reason)
                     for publication in _reports(observation):
                         try:
-                            await self._publish(
+                            current = await self._publish(
                                 target=target,
                                 context=context,
                                 observation=observation,
@@ -371,6 +392,49 @@ class AuditScheduledPass:
                                 identity=identity,
                                 writes=writes,
                                 interrupted=interrupted,
+                            )
+                        except _INCOMPLETE as exc:
+                            refuse(subject, f"{type(exc).__name__}: {exc}")
+                            continue
+                        if reopens_criterion(current):
+                            # The publication's own verified comment is the
+                            # last write it appended, and it is the evidence
+                            # this criterion's reopen stands on.
+                            owed.append(
+                                (observation, current, writes[-1].artifact.native_ref)
+                            )
+                if not unavailable:
+                    await self._summarize(
+                        target=target,
+                        context=context,
+                        identity=identity,
+                        coverage=coverage,
+                        deferred=deferred,
+                        writes=writes,
+                        interrupted=interrupted,
+                    )
+                if owed:
+                    # Every earlier step re-reads the whole snapshot and
+                    # refuses any change but a comment stamp or the decision
+                    # label, so the state moves come last, once, as a batch.
+                    try:
+                        await require_current()
+                    except _INCOMPLETE as exc:
+                        refuse(scope, f"{type(exc).__name__}: {exc}")
+                        owed = []
+                    for observation, publication, refutation_ref in owed:
+                        subject = ScopeRef(
+                            kind=ScopeKind.ISSUE,
+                            key=observation.target.issue.issue_key,
+                        )
+                        try:
+                            await self._take_back(
+                                target=target,
+                                context=context,
+                                identity=identity,
+                                observation=observation,
+                                publication=publication,
+                                refutation_ref=refutation_ref,
                             )
                         except _INCOMPLETE as exc:
                             refuse(subject, f"{type(exc).__name__}: {exc}")
@@ -395,15 +459,6 @@ class AuditScheduledPass:
                             ),
                         )
                     )
-                await self._summarize(
-                    target=target,
-                    context=context,
-                    identity=identity,
-                    coverage=coverage,
-                    deferred=deferred,
-                    writes=writes,
-                    interrupted=interrupted,
-                )
 
             coverage = await self._coverage.cover(
                 scope=scope,
@@ -436,6 +491,47 @@ class AuditScheduledPass:
                     (*observations, *repair_observations)
                 ),
             )
+
+    async def _take_back(
+        self,
+        *,
+        target: AuditTarget,
+        context: _AuditAttempt,
+        identity: RunIdentity,
+        observation: AuditReadObservation,
+        publication: AuditPublication,
+        refutation_ref: str,
+    ) -> None:
+        """Return one refuted criterion to unstarted, beside its evidence."""
+        issue_key = observation.target.issue.issue_key
+        # The re-pinned snapshot, never the pre-tick issue: an instructed
+        # refutation has just put the decision classification on this same
+        # criterion, and the port compares every fact but the comment stamp.
+        criterion = next(
+            item.issue
+            for item in context.snapshot.targets
+            if item.issue.issue_key == issue_key
+        )
+        head = _head(publication)
+        result = await target.reopener.reopen(
+            criterion=criterion,
+            ref=head,
+            job_id=identity.title(),
+            publisher=target.publisher,
+            interrupted=context.interrupted,
+        )
+        context.writes.append(result)
+        if result.verdict is not AuditVerdict.HOLDS:
+            raise AuditClaimReadError(
+                "the reopen exhausted canonical write verification"
+            )
+        await self._log.ainfo(
+            "audit_criterion_reopened",
+            run_identity=identity.title(),
+            criterion=issue_key,
+            head_sha=head,
+            refutation_ref=refutation_ref,
+        )
 
     async def _summarize(
         self,
@@ -545,7 +641,8 @@ class AuditScheduledPass:
         identity: RunIdentity,
         writes: list[WriteBackResult],
         interrupted: list[AuditRepairInput],
-    ) -> None:
+    ) -> AuditPublication:
+        """Publish one report and answer with the publication that landed."""
         observations = context.observations
         verdict = (
             publication.report.claim.judgment.verdict
@@ -679,11 +776,16 @@ class AuditScheduledPass:
             if not isinstance(current, AuditTerminalPublication)
             else current.report.observation.verdict
         )
-        if final_verdict is AuditVerdict.REFUTED:
+        if final_verdict is AuditVerdict.REFUTED and not reopens_criterion(current):
+            # A forge report grades a historical commit, an over-claim or a
+            # removal report is about the Check's standing rather than its
+            # failure at head, and a terminal report is about the owning
+            # issue. None of them is a state move this pass may make.
             raise AuditClaimReadError(
                 "the refutation is published; its workflow-state authority "
                 "remains unresolved"
             )
+        return current
 
     async def run(self, started_at: datetime) -> PassRun:
         identity = RunIdentity(kind=RunKind.AUDIT, name="audit", started_at=started_at)

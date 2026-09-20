@@ -104,8 +104,8 @@ class AuditEscalations:
                 f"{finding.mandate_text}"
             ),
             interim_reading=(
-                "The demonstrated refutation is not treated as a verified "
-                "claim while this instruction remains unresolved."
+                "The criterion is returned to unstarted on the demonstrated "
+                "refutation; the instruction it names is the open question."
             ),
             interim_basis=finding.evidence,
         )
