@@ -391,15 +391,22 @@ class ScopeWorkflowEngine:
         """Stream one lane's fire, and report how it ended without deciding.
 
         This is the ONE place in the walker that reads a fire's terminal
-        delivery phase, and it is the one place that cannot spend the reading:
-        what it is handed is the list of lanes whose delivery was skipped, which
-        is reporting and reaches no decision at all. The lists a dispatch
-        decision IS made from — the resting lanes, the previous fire's criterion
-        identities, the lanes dispatched, the lanes that faulted — are
-        deliberately not passed here, so no reading of an ending can reach one
-        (KOD-724, KOD-725). Everything the class does outside this helper is
-        therefore free of the vocabulary a fire's ending is spelled in, which is
-        what lets the rest of the class be scanned whole.
+        delivery phase, and what it does with the reading is report it: it
+        appends to the list of lanes whose delivery was skipped. The lists a
+        dispatch decision IS made from — the resting lanes, the previous fire's
+        criterion identities, the lanes dispatched, the lanes that faulted — are
+        deliberately not passed here (KOD-724, KOD-725). Everything the class
+        does outside this helper is therefore free of the vocabulary a fire's
+        ending is spelled in, which is what lets the rest of the module be
+        scanned whole.
+
+        ``skipped`` is a list the CALLER holds, so it is readable there, and a
+        caller that read it would be reading this fire's ending back into the
+        next dispatch decision without spelling any of that vocabulary. What
+        keeps ``run`` from doing so is not this signature but a walk: the one
+        in which a lane's delivery-only turn DELIVERS, whose lane is asserted
+        rested right after it. A rest conditioned on the skipped list would
+        leave that lane unrested and the walk would offer it another tick.
 
         A stream that ends with no final state at all, or with the delivery
         still pending, is a fire nothing can be reported about: it raises, and

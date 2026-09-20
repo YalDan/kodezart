@@ -27,11 +27,13 @@ must never reach are functions that refuse, so a subject that reached one would
 fail loudly rather than quietly pass.
 """
 
+import asyncio
 from typing import NoReturn
 
 import pytest
 import structlog.testing
 
+from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import BaseResolutionError, ScopedExecutionUnavailableError
@@ -43,10 +45,12 @@ from kodezart.services.scope_runtime import (
     _LastFire,
     _owed_identities,
 )
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, RepoEntry, ScopeLabel
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.scope_runtime import LaneFailure
+from kodezart.types.domain.scope_runtime import LaneFailure, ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import (
@@ -485,3 +489,173 @@ async def test_a_put_back_that_fails_is_the_lanes_own_fault(monkeypatch) -> None
     assert [failure.issue_key for failure in failures] == ["A"]
     assert failures[0].error.error_kind == "TrackerUnavailableError"
     assert "the state write for A failed" in failures[0].error.error
+
+
+# ---------------------------------------------------------------------------
+# KOD-724, KOD-725 — the fire helper's own refusal.  A stream that ends with
+# no final state at all, or with the delivery still pending, is a fire nothing
+# can be reported about.
+# ---------------------------------------------------------------------------
+
+#: How long one of these walks may take before the test fails instead of
+#: hanging.  The walk below drives no real graph, so the bound is a guard
+#: against a walk that spins on a lane it never rested rather than a budget.
+WALK_BOUND_SECONDS = 30
+
+NO_FINAL_STATE = "no root values payload"
+PENDING_PHASE = "a delivery still pending"
+
+
+def lane_state(issue_key: str):
+    """One prepared lane state, with the delivery phase the launch puts on it.
+
+    Every field of the fire state is spelled here because making one is a
+    lane launch's business and this test has no lane graph to do it. The
+    delivery phase — the one field under test — is deliberately NOT spelled:
+    ``NativeLaneWorkflow.prepare`` is the shipped initializer every real launch
+    goes through, so the pending phase the walker reads here is the production
+    one and not a value typed in a test.
+    """
+    return NativeLaneWorkflow.prepare(
+        {
+            "issue_key": issue_key,
+            "lane_entry": None,
+            "feature_branch": f"kodezart/{issue_key}",
+            "ralph_branch": f"kodezart/{issue_key}-ralph",
+            "work_base_ref": "main",
+            "fire_spec": None,
+            "acceptance_criteria": [],
+            "criterion_set": None,
+            "criteria_validation": None,
+            "criteria_regeneration_rounds": 0,
+            "criteria_infeasible": False,
+            "accept_verdict": AcceptVerdict.rejected,
+            "flagged_items": [],
+            "total_iterations": 0,
+            "feature_tip_sha": None,
+            "review_base_sha": None,
+            "review_head_sha": None,
+            "merged": False,
+            "merge_error": None,
+            "review_passed": False,
+            "review_feedback": None,
+            "remediation_rounds_used": 0,
+            "remediation_ticket": None,
+            "remediation_entry": None,
+            "best_iteration_sha": None,
+            "repo_url": URL,
+            "repo_visibility": RepoVisibility.PRIVATE,
+            "trajectory": None,
+        }
+    )
+
+
+class LaneFire:
+    """The lane's fire, doubled down to the one call the walker makes of it."""
+
+    def prepare(self, **facts):
+        # Handed back untouched. What the walker does with a prepared state is
+        # launch it, and this double is about the launch's stream alone.
+        return facts, {"configurable": {"thread_id": facts["issue_key"]}}
+
+
+class LaneGraph:
+    """A lane graph whose stream ends the way its *shape* says it ends.
+
+    The two shapes differ in the ONE qualifier the walker's reader reads: a
+    values payload from the root is a final state, and the identical payload
+    from inside the graph is not. So the arm under test is chosen by the
+    namespace rather than by two unrelated payloads, and a delivery still
+    pending is what both of them carry.
+    """
+
+    def __init__(self, *, shape: str) -> None:
+        self.shape = shape
+        self.launched: list[str] = []
+
+    async def astream(self, initial, *, config, stream_mode, subgraphs):
+        # The walker asks for both stream modes and for subgraphs. A reader
+        # that stopped asking for either would not see what this double
+        # answers, so the premise is stated where the answer is given.
+        assert subgraphs and set(stream_mode) == {"custom", "values"}
+        self.launched.append(initial["issue_key"])
+        namespace = () if self.shape == PENDING_PHASE else ("native_fire",)
+        yield namespace, "values", initial
+
+
+class UnreportableFireLane:
+    """One lane every fire of which streams the shape a test named."""
+
+    delivers = True
+
+    def __init__(self, *, shape: str) -> None:
+        self.fire = LaneFire()
+        self.graph = LaneGraph(shape=shape)
+
+    def prepare(self, state):
+        return lane_state(state["issue_key"])
+
+
+@pytest.mark.parametrize("shape", [NO_FINAL_STATE, PENDING_PHASE])
+async def test_a_fire_with_no_final_delivery_phase_is_the_lanes_own_failure(
+    shape,
+) -> None:
+    """A fire nothing can be reported about refuses, and the lane pays for it.
+
+    The walker streams one lane's fire and then says how it ended. Two streams
+    leave it nothing to say: one that ended without the root ever reporting a
+    final state, and one whose final state still carries the phase the launch
+    initialized. Neither is a delivery that happened and neither is a delivery
+    that was skipped, so reporting either as one would put a fact on the walk
+    that no stream established.
+
+    The refusal is typed and it names the scope it was read under. It is raised
+    inside the lane's own boundary, so it is that lane's fault: the lane is
+    reported failed with the message on the observation, rested exactly once,
+    and the walk takes its next tick instead of ending on the error.
+    """
+    port = scope_board(criterion_row("A/check"))
+    lane = UnreportableFireLane(shape=shape)
+    walk = engine(
+        port,
+        lane_for=lambda _: lane,
+        probe_for=lambda _: FakeDeliveryProbe(),
+        repositories=(RepoEntry(url=URL, trunk="main"),),
+    ).run(
+        prompt="Request prose is not the native subject",
+        repo_path="/fixture/repo",
+        repo_url=URL,
+        base_spec=trunk_base("unused-request-default"),
+        scope=SCOPE,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=[],
+        cache_key="fixture-job",
+    )
+
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        observations = [
+            event.observation
+            async for event in walk
+            if isinstance(event, ScopeWalkEvent)
+        ]
+
+    # The fire really was launched, so what refused is a stream that ran and
+    # not a lane the walk never reached.
+    assert lane.graph.launched == ["A"]
+    assert observations[-1].dispatched == ("A",)
+    failures = observations[-1].failed_lanes
+    assert [failure.issue_key for failure in failures] == ["A"]
+    assert [failure.error.error_kind for failure in failures] == ["ScopeReadError"]
+    assert "native lane has no final delivery phase" in failures[0].error.error
+    # Rested once: the boundary rests the lane it reported, and no later arm
+    # rests it again.
+    assert observations[-1].rested_lanes == ("A",)
+    # The walk went on. The tick after the refusal is taken — the lane still
+    # owes its criterion, so it is still in the ready set and still not offered
+    # — and the walk ends on having no candidate rather than on the error.
+    assert len(observations) == 2
+    assert observations[-1].ready == ("A",)
+    # And nothing was put back. The lane's turn ended in its own fault, which
+    # the boundary reports, and the plateau reading is not asked about a lane
+    # already resting.
+    assert port.restored_states == []

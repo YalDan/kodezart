@@ -2170,7 +2170,8 @@ async def test_a_finished_lane_without_a_pull_request_is_delivered_without_a_loo
             trunk="main",
             evaluations=one_check_echoes("A", rounds=4),
         )
-        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+        with structlog.testing.capture_logs() as delivering:
+            events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
 
         assert lane_failures(events) == ()
         # No iteration, and no session an iteration would have opened: the
@@ -2199,6 +2200,18 @@ async def test_a_finished_lane_without_a_pull_request_is_delivered_without_a_loo
             event.observation for event in events if isinstance(event, ScopeWalkEvent)
         ]
         assert walked[-1].dispatched == ("A",)
+        # And the turn rested the lane although its delivery DELIVERED. The
+        # rest is unconditional: it reads nothing about how the fire ended, so
+        # a delivered turn and a skipped one rest alike and no per-fire ending
+        # reaches the next dispatch decision (KOD-724). Two ticks and no more
+        # is what says the rest happened here — a walk that rested this lane
+        # only on the skipped ending would offer it again on a third tick.
+        assert len(walked) == 2 and walked[-1].rested_lanes == ("A",)
+        assert [
+            event["lane"]
+            for event in delivering
+            if event.get("event") == "scope_lane_finished_turn_rested"
+        ] == ["A"]
 
         third = resumable(
             port=port,
