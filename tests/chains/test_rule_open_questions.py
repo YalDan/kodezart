@@ -6,6 +6,8 @@ into that loop, and a lane entered to deliver never reaches it.  The authored
 graph is untouched, and no generation node runs on either path through here.
 """
 
+import json
+
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
@@ -283,8 +285,27 @@ REFUTED = {
 }
 
 
+#: The resolution a tampering board substitutes for the one that was written.
+TAMPERED = "A different answer than the one written."
+
+
 def is_record(comment: TrackerComment) -> bool:
     return comment.body.startswith(f"[{RULING_PREFIX}")
+
+
+def altered_resolution(comment: TrackerComment, text: str) -> TrackerComment:
+    """The same record comment with one field of its payload rewritten.
+
+    The marker line and both fences are kept, so a reader still parses the
+    record and mints the same identity from the same question: what it finds
+    differs from what was written, rather than being unreadable.
+    """
+    marker, separator, rest = comment.body.partition("\n```json\n")
+    payload = json.loads(rest[: -len("\n```")])
+    payload["resolution"] = text
+    return comment.model_copy(
+        update={"body": marker + separator + json.dumps(payload, indent=2) + "\n```"}
+    )
 
 
 class WriteFails(FakeTrackerPort):
@@ -323,8 +344,40 @@ class HidesRecord(FakeTrackerPort):
         return tuple(comment for comment in listed if not is_record(comment))
 
 
+class HidesOnJudgement(NativeExecutor):
+    """Loses the record between the window's own read and the cold one.
+
+    The window reads the artifact it wrote before it is judged, so a board
+    that hides from that point on leaves the window whole and empties only
+    the step's own read-back.
+    """
+
+    def __init__(self, evaluations, *, port):
+        super().__init__(evaluations)
+        self._port = port
+
+    async def stream(self, **kwargs):
+        properties = (kwargs.get("output_format") or {}).get("schema", {}).get(
+            "properties"
+        ) or {}
+        if "citedRefs" in properties:
+            self._port.hide = True
+        async for event in super().stream(**kwargs):
+            yield event
+
+
 class AltersRecord(FakeTrackerPort):
     """The write returns and the text a later reader finds is not the text sent."""
+
+    async def list_comments(self, *, issue_key: str):
+        return tuple(
+            altered_resolution(comment, TAMPERED) if is_record(comment) else comment
+            for comment in await super().list_comments(issue_key=issue_key)
+        )
+
+
+class MalformsRecord(FakeTrackerPort):
+    """The write returns and the framing a later reader finds is broken."""
 
     async def list_comments(self, *, issue_key: str):
         return tuple(
@@ -349,6 +402,11 @@ def variant(cls, **changes):
 
 def unconfirmed(shape):
     """The board and the executor one way of failing to confirm needs."""
+    if shape == "read_back_empty":
+        port = variant(HidesRecord)
+        executor = HidesOnJudgement([], port=port)
+        executor.question_answers = [{"rulings": [ANSWER]}]
+        return port, executor
     executor = NativeExecutor([])
     executor.question_answers = [{"rulings": [ANSWER]}]
     if shape == "judged_refuted":
@@ -358,11 +416,9 @@ def unconfirmed(shape):
         return variant(WriteFails), executor
     if shape == "lease_refused":
         return variant(LeaseRefused), executor
-    if shape == "read_back_changed":
-        return variant(AltersRecord), executor
-    port = variant(HidesRecord)
-    port.hide = True
-    return port, executor
+    if shape == "read_back_malformed":
+        return variant(MalformsRecord), executor
+    return variant(AltersRecord), executor
 
 
 @pytest.mark.parametrize(
@@ -373,12 +429,13 @@ def unconfirmed(shape):
         "judged_refuted",
         "read_back_empty",
         "read_back_changed",
+        "read_back_malformed",
     ],
 )
 async def test_an_unconfirmed_pin_halts_before_the_loop_with_its_own_outcome(
     shape,
 ) -> None:
-    """Five ways to fail, one terminal: the loop was never entered."""
+    """Six ways to fail, one terminal: the loop was never entered."""
     port, executor = unconfirmed(shape)
     git = FakeGitService(remote_branch_shas={"main": "b" * 40})
     workspace = FakeWorkspaceProvider(git=git)
