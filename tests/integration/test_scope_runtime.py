@@ -3321,6 +3321,122 @@ async def test_a_budget_exhausted_lane_resumes_on_its_recorded_branch(monkeypatc
     assert "A live Check  bytes" not in prompt
 
 
+#: A lane of three criteria, and the keys of its roster.
+THREE_CHECKS = {"A": ("check", "second", "third")}
+A_THREE_KEYS = ("A/check", "A/second", "A/third")
+
+#: The gradings each of the first two fires of that lane asks for, observed
+#: rather than assumed: each closes one criterion, is graded red on what is
+#: left, takes a remediation round for it and is graded once more, and the
+#: one-iteration budget ends there.
+#:
+#: Exact and not generous, unlike the pool the converging fire is answered
+#: from: an echo left over from one fire is the echo the NEXT fire's grading is
+#: answered with, and it answers a question that fire never asked.
+STALLING_FIRE_GRADINGS = 2
+
+
+def three_criterion_lane(repos, *, port):
+    """Lane A, three checks and a budget of one iteration: three fires.
+
+    Each of the first two fires closes one criterion and then stalls on what is
+    left, so each takes a remediation round — and a remediation round draws a
+    FRESH loop branch and records it. That is what gives the three fires three
+    different records to enter on, and it is the whole premise of the third
+    fire: a reader that remembered the first record it managed to read would
+    enter the third fire on the branch the first fire left, and the work the
+    second fire committed would be lost.
+    """
+    return resumable(
+        port=port,
+        repos=repos,
+        max_iterations=1,
+        evaluations=[
+            *(
+                criteria_echo(keys=A_THREE_KEYS, passed={"A/check"})
+                for _ in range(STALLING_FIRE_GRADINGS)
+            ),
+            *(
+                criteria_echo(keys=("A/second", "A/third"), passed={"A/second"})
+                for _ in range(STALLING_FIRE_GRADINGS)
+            ),
+            # The converging fire's pool, generous because how many gradings a
+            # passing fire asks for is the graph's business: every one of them
+            # answers the same way, and a leftover here is consumed by nobody.
+            *(criteria_echo(keys=("A/third",), passed={"A/third"}) for _ in range(4)),
+        ],
+    )
+
+
+async def test_a_third_fire_enters_on_the_record_the_tick_before_it_read(monkeypatch):
+    """The record is read again before the THIRD fire, not remembered from before.
+
+    Two fires cannot tell a reader that reads every time from one that remembers
+    what it read: the first tick finds no record at all, so the second fire's
+    reading is the first successful one either way. The third fire is where the
+    two part. This lane takes three, each on a loop branch the fire before it
+    recorded, so the branch the third fire enters on says which reading it stood
+    on: the record as the tick that offered it held it, or a record two fires
+    old.
+
+    Compared against the record read at the THIRD TICK'S OBSERVATION, which the
+    walk yields before that tick acts, and not against the record at the end of
+    the walk — the third fire writes that one, so comparing a fire with its own
+    output would state nothing (KOD-723).
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=THREE_CHECKS)
+    minted = mint_spy(monkeypatch)
+    loop_names = loop_name_spy(monkeypatch)
+    harness = three_criterion_lane(repos, port=port)
+
+    async def mark() -> TickMark:
+        return TickMark(
+            acquisitions=len(harness.workspace.acquisitions),
+            prompts=len(harness.executor.execution_prompts),
+            lane_mints=len(minted),
+            loop_names=len(loop_names),
+            record=await recorded_so_far(port, "A"),
+        )
+
+    events, marks = await walk_marking(harness, job="three-fire-job", mark=mark)
+
+    # Four ticks and three fires: one per criterion, and the tick that finds the
+    # gap empty and nothing left to offer.
+    assert len(ticks_of(events)) == 4
+    assert lane_failures(events) == ()
+    assert ticks_of(events)[-1].dispatched == ("A", "A", "A")
+    assert [tick.ready for tick in ticks_of(events)] == [("A",), ("A",), ("A",), ()]
+    assert all(
+        port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+        for key in A_THREE_KEYS
+    )
+    # One criterion per fire, in the order the fires closed them.
+    assert port.workflow_writes == [
+        ("A/check", LifecycleStage.DONE),
+        ("A/second", LifecycleStage.DONE),
+        ("A/third", LifecycleStage.DONE),
+    ]
+    entered = marks[2]
+    assert entered.record is not None
+    # The premise the third fire is read by: the record MOVED between the second
+    # tick and the third, so a reading taken at the second tick and kept would
+    # name a branch this fire has no business entering on.
+    assert marks[1] is not None and marks[1].record is not None
+    assert marks[1].record.branch != entered.record.branch
+    # The lane's pair of names was drawn once, and each stalling fire's
+    # remediation round drew a loop name beside it: three draws, no fire of them
+    # minting a pair of its own.
+    assert minted == ["A"]
+    assert len(loop_names) == 3
+    # And the third fire checked out the branch THE RECORD NAMED AT ITS ENTRY,
+    # without cutting it, and left the lane there.
+    opened = harness.workspace.acquisitions[entered.acquisitions]
+    assert opened["branch_name"] == opened["ref"] == entered.record.branch
+    assert opened["create_branch"] is False
+    assert (await lane_record(port, "A")).branch == entered.record.branch
+
+
 # ---------------------------------------------------------------------------
 # KOD-460 — a fire that closed none of the criteria its lane owed ends that
 # lane's turn: the issue goes back where its open work stands, the lane rests,
