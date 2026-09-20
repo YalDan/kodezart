@@ -30,7 +30,9 @@ from tests.fakes import (
     FakeDeliveryProbe,
     FakeGitService,
     FakeRepoCache,
+    FakeScopeStatusWriter,
     FakeTrackerPort,
+    PassThroughGate,
     make_tracker_issue,
 )
 
@@ -79,7 +81,11 @@ def engine(port: FakeTrackerPort) -> ScopeWorkflowEngine:
         probe_for=no_probe,
         resolver=BaseResolver(tracker=port, git=git, remote=REMOTE),
         entries=LaneEntryReader(records=records, git=git, remote=REMOTE),
-        terminal=ScopeTerminal(records=records),
+        terminal=ScopeTerminal(
+            records=records,
+            status=FakeScopeStatusWriter(),
+            gate=PassThroughGate(),
+        ),
         cache=FakeRepoCache(),
         repositories=(),
         git_base_url="https://forge.invalid",

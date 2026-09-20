@@ -19,6 +19,7 @@ from tests.fakes import (
     FakeGitService,
     FakeJobQueue,
     FakeRepoCache,
+    FakeScopeStatusWriter,
     PassThroughGate,
 )
 from tests.prompts.test_organize_mandate_bindings import declared_operation
@@ -85,6 +86,7 @@ async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempoten
             caller=board,
             operation=operation,
             ledger=ledger,
+            status=FakeScopeStatusWriter(),
         ),
         github_api=None,
         queue=queue,
@@ -197,6 +199,7 @@ async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatc
             caller=ManagedFakeLinearMcpServer(),
             operation=operation,
             ledger=ledger,
+            status=FakeScopeStatusWriter(),
         )
 
     async def prompt_boot(**_kwargs):

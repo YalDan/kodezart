@@ -15,6 +15,7 @@ from tests.core.test_retired_config import _from_source
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
+    FakeScopeStatusWriter,
     PassThroughGate,
     make_prompt_provider,
 )
@@ -260,6 +261,7 @@ async def test_composed_dispatch_uses_remote_and_integration_directory(
             ledger=tracker.self_writes,
             caller=ManagedFakeLinearMcpServer(),
             operation=operation,
+            status=FakeScopeStatusWriter(),
         ),
         github_api=FakeDeliveryProbe(),
         queue=queue,
