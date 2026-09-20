@@ -832,6 +832,16 @@ still retains incomplete coverage while its workflow-state authority is
 unresolved: none of them is a reading of the claim's failure at the head. No
 case manufactures a classification or marks a criterion Done.
 
+What a finished claim must look like for one tick to re-judge it and, on a
+refutation, reopen it: a criterion sub-issue carrying the `criterion`
+classification and a parent, in the team's completed state, inside a bound audit
+scope; an owner carrying exactly one lane run-state record whose `branch` has a
+live remote head; a recorded Evidence SHA equal to that head, since an earlier
+one is reported as a lapse and opens no session; and selection on this tick,
+which means its state changed after the last completed tick, or the process is
+fresh, or the full-sweep interval has passed — editing a body moves no state
+entry time. A push onto the audited branch during the tick refuses that scope.
+
 A covered member whose own tracker state carries nothing to audit yet is
 reported as deferred rather than as missing coverage, and no judgment session,
 Git read or forge read is spent on it. A criterion that is neither completed nor

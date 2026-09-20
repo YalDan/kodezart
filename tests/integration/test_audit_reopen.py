@@ -298,3 +298,102 @@ async def test_a_refutation_of_a_strict_subset_moves_exactly_those_criteria(
         key: row.description for key, row in before.items()
     }
     assert not workspace._workspaces
+
+
+# ---------------------------------------------------------------------------
+# KOD-832 clause 8 — one audit tick re-verifies at least one finished claim
+# against the branch and reopens a planted false one with evidence.
+# ---------------------------------------------------------------------------
+
+
+async def test_one_audit_tick_reverifies_a_finished_claim_and_reopens_the_planted_false(
+    working_scope,
+):
+    """The clause in process, on the shape the scope path leaves behind.
+
+    An owner still In Progress carrying two finished criteria graded at the
+    head of the branch its lane record names. One of them still holds at that
+    head; the other is the planted false claim. One tick, three runs of
+    nothing: the tick is a single ``run``.
+    """
+    audit, executor, server, _tracker, _git, workspace, repository = working_scope
+    _remote, _author, _observer, _prior, head = repository
+    add_criterion(
+        server,
+        SECOND,
+        status="Done",
+        status_type="completed",
+        graded_sha=head,
+        check=SECOND_CHECK,
+    )
+    executor.checks[SECOND] = SECOND_CHECK
+    executor.claim_verdicts = {CHILD: "refuted", SECOND: "holds"}
+    bodies_before = {
+        key: server.issues[key].description for key in (CHILD, SECOND, ROOT)
+    }
+
+    assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    scope = audit.last_report.scopes[0]
+    assert scope.status == "complete", scope.model_dump_json()
+
+    # Both finished claims were re-judged against the branch, each in a fresh
+    # session carrying its own Check and that branch's head.
+    judged = [
+        call
+        for call in executor.calls
+        if call["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA
+    ]
+    assert len(judged) == 2
+    assert {BASE_CHECK, SECOND_CHECK} == {
+        check
+        for check in (BASE_CHECK, SECOND_CHECK)
+        if any(check in call["prompt"] for call in judged)
+    }
+    assert all(head in call["prompt"] for call in judged)
+    assert all(call["session_id"] is None for call in judged)
+
+    # The claim that still holds keeps its state and its verdict on the board.
+    assert server.issues[SECOND].status == "Done"
+    holding = next(
+        row
+        for row in audit_comments(server, SECOND)
+        if published(row).get("detector") == "current_check"
+    )
+    assert published(holding)["report"]["claim"]["judgment"]["verdict"] == "holds"
+
+    # The planted false claim is refuted with linkable evidence, and that
+    # evidence lands before the one state write that reopens it.
+    refutation = next(
+        row
+        for row in audit_comments(server, CHILD)
+        if published(row).get("detector") == "current_check"
+    )
+    report = published(refutation)["report"]
+    assert report["claim"]["judgment"]["verdict"] == "refuted"
+    assert report["claim"]["head_sha"] == head
+    assert report["claim"]["check"] == BASE_CHECK
+    assert report["claim"]["judgment"]["evidence"].strip()
+    assert report["mandate"]["verdict"] == "refuted"
+    assert landed(server, "save_comment", body=refutation.body) < landed(
+        server, "save_issue", id=CHILD, state=unstarted_state(server)
+    )
+    assert state_writes(server) == [{"id": CHILD, "state": unstarted_state(server)}]
+    assert server.issues[CHILD].status == "Todo"
+    assert server.issues[CHILD].status_type == "unstarted"
+
+    # The three artifacts a reader links: the refutation on the criterion, the
+    # criterion's state history, and the scope summary on the report issue.
+    assert [row[:2] for row in server.issues[CHILD].previous_states] == [
+        ("Done", "completed")
+    ]
+    summary = json.loads(
+        audit_comments(server, APPROVED_ISSUE)[0].body.partition("\n")[2]
+    )
+    assert refutation.id in summary["record_refs"]
+    assert holding.id in summary["record_refs"]
+    # Nothing was written into a body, and the owner was never written.
+    assert {
+        key: server.issues[key].description for key in bodies_before
+    } == bodies_before
+    assert not any(row["id"] == ROOT for row in state_writes(server))
+    assert not workspace._workspaces
