@@ -1166,7 +1166,8 @@ execution.
 Scope readers, planning and readiness remain available to their current
 consumers. The former preparation, feasibility and ruling-proposal stack ran
 work only to refuse; its exclusive ports, transient schema and prompt role have
-been retired.
+been retired. They are not an alternate execution path or evidence of a
+completed fire.
 
 The native arm's order is `resolve_visibility`, `revalidate_criteria`,
 `rule_open_questions`, `run_ralph_loop`. The question step asks one read-only
@@ -1176,7 +1177,6 @@ back, and only then enters the loop. An open question whose answer cannot be
 confirmed on the tracker ends the fire `ruling_unrecorded`, with the loop
 un-entered. Unlike the retired stack this one has a consumer: the loop's own
 writer contract renders the pinned answers it reads back.
-They are not an alternate execution path or evidence of a completed fire.
 
 The scheduled pass gate keeps its vendor timestamp window for reply and
 mention scanning. Atomic issue-write responses can identify their own
