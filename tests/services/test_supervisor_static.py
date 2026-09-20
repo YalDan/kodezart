@@ -9,7 +9,10 @@ import ast
 import inspect
 import pathlib
 
+from typing_extensions import get_protocol_members
+
 from kodezart.composition.supervisor import build_supervisor_pass
+from kodezart.core.protocols import RunAlarmTracker
 
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src"
 ENTRY_POINTS = (
@@ -30,6 +33,31 @@ FORBIDDEN_ROLES = frozenset(
     }
 )
 FORBIDDEN_MODULES = frozenset({"subprocess", "os", "os.path", "shutil", "socket"})
+#: Exactly what the observation's role names: three lease calls, one keyed
+#: record read and write, one lane stream read and one append to it.
+SUPERVISOR_ROLE_MEMBERS = frozenset(
+    {
+        "acquire_surfaces",
+        "renew_surfaces",
+        "release_surfaces",
+        "read_run_alarm",
+        "record_run_alarm",
+        "lane_run_events",
+        "post_run_event",
+    }
+)
+#: The calls that move a run's state. The role is narrowed out of the port, so
+#: the port satisfies any widening of it and neither mypy nor a behavioural
+#: test would notice one of these arriving.
+STATE_MOVING_CALLS = frozenset(
+    {
+        "set_workflow_state",
+        "restore_workflow_state",
+        "set_queue_state",
+        "reset_criterion_pending",
+        "edit_description",
+    }
+)
 
 
 def _module_path(module: str) -> pathlib.Path | None:
@@ -84,6 +112,21 @@ def test_the_supervisor_reaches_no_adapter_no_process_and_no_repository_role():
         ), module
         assert modules.isdisjoint(FORBIDDEN_MODULES), (module, modules)
         assert names.isdisjoint(FORBIDDEN_ROLES), (module, names & FORBIDDEN_ROLES)
+
+
+def test_the_supervisor_role_names_no_state_moving_method():
+    """Moving no state is structural: the role has no method that could.
+
+    The role is a narrowing of the port, so the port satisfies it however wide
+    it grows — a state writer appended to it type-checks, and no behavioural
+    test sees anything until something calls it. The member set is therefore
+    pinned exactly, and separately named as disjoint from the state movers so
+    a widening says which one arrived.
+    """
+    members = get_protocol_members(RunAlarmTracker)
+
+    assert members == SUPERVISOR_ROLE_MEMBERS
+    assert members.isdisjoint(STATE_MOVING_CALLS), members & STATE_MOVING_CALLS
 
 
 def test_the_pass_factory_takes_no_runner_and_no_repository_collaborator():
