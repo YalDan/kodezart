@@ -464,3 +464,41 @@ async def test_the_alarm_marker_shares_no_prefix_with_any_other_configured_purpo
         if purpose == MARKER_PURPOSE:
             continue
         assert not marker.startswith(f"[{prefix}")
+
+
+async def test_a_tick_in_which_an_alarm_fires_moves_no_state_and_posts_no_halt():
+    """The observation is a reading; the board's states are the walk's business."""
+    port = await board()
+    tally = supervisor(port)
+    states = {key: (row.state_name, row.state_kind) for key, row in port.issues.items()}
+    changes = dict(port.issue_state_changes)
+
+    await observe(tally)
+
+    stored = await port.read_run_alarm(issue_key=LANE, subject=SUBJECT, signal=SIGNAL)
+    assert stored is not None
+    assert is_raised(stored), "a tick that raised nothing states nothing about moving"
+
+    assert port.workflow_writes == []
+    assert port.restored_states == []
+    assert port.issue_writes == []
+    assert port.queue_writes == []
+    assert port.classification_writes == []
+    assert port.claim_writes == []
+    assert port.issue_state_changes == changes
+    assert {
+        key: (row.state_name, row.state_kind) for key, row in port.issues.items()
+    } == states
+
+    prefix = f"[{port.marker_prefixes[RUN_EVENT_PURPOSE]}:"
+    posted = [row for row in port.comments if row.body.startswith(prefix)]
+    streams = [
+        event
+        for key in port.issues
+        for event in await port.lane_run_events(issue_key=key, lane_key=key)
+    ]
+    assert len(streams) == len(posted)
+    assert {event.kind for event in streams} <= {
+        RunEventKind.RUN_ALARM_RAISED,
+        RunEventKind.RUN_ALARM_CLEARED,
+    }
