@@ -8,6 +8,7 @@ behind one more import is inside the assertion the moment it lands.
 import ast
 import inspect
 import pathlib
+from dataclasses import dataclass
 
 from typing_extensions import get_protocol_members
 
@@ -15,9 +16,40 @@ from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.core.protocols import RunAlarmTracker
 
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src"
+#: Where the scan starts. The composition module is one of them because it is
+#: the module the integration tick actually runs and the one place in this slice
+#: where a collaborator is constructed — an adapter reached only from there
+#: would otherwise be outside every assertion below.
 ENTRY_POINTS = (
     "kodezart.services.supervisor_pass",
     "kodezart.services.tally_supervisor",
+    "kodezart.composition.supervisor",
+)
+#: The one place the whole port is held on purpose, by design: the composition
+#: root narrows it into the roles below it. The walker's read path is the other,
+#: and it is derived from the walker's own closure rather than listed, so a
+#: module that starts holding the port has to be reached from the walker or be
+#: this one.
+PORT_HOLDING_ROOT = "kodezart.composition.supervisor"
+WALKER_READ_PATH = ("kodezart.chains.scope_walker",)
+#: Starting a process, reading or writing a file, importing by name. Asserted
+#: over call targets rather than over module names, because the module that
+#: carries most of these (``asyncio``) is held legitimately elsewhere in the
+#: closure — the scheduler's event loop and the owned-task settle.
+IO_CALLS = frozenset(
+    {
+        "create_subprocess_exec",
+        "create_subprocess_shell",
+        "Popen",
+        "system",
+        "check_output",
+        "open",
+        "read_text",
+        "read_bytes",
+        "write_text",
+        "import_module",
+        "__import__",
+    }
 )
 #: A role whose holder could dispatch a session, read a repository, prepare a
 #: tree, push a change, merge a branch, or write anything the tracker offers.
@@ -85,58 +117,148 @@ STATE_MOVING_CALLS = frozenset(
 )
 
 
-def _module_path(module: str) -> pathlib.Path | None:
-    single = SOURCE_ROOT / (module.replace(".", "/") + ".py")
+@dataclass(frozen=True)
+class Scanned:
+    """What one module's source says it reaches.
+
+    *modules* carries each imported module and, for a first-party ``from``
+    import, the dotted name of every alias too, so ``from kodezart import
+    adapters`` is seen as ``kodezart.adapters`` rather than as ``kodezart``.
+    *plain* carries the modules imported as whole modules, which is how a role
+    can be reached without its name ever appearing in an import.
+    """
+
+    modules: frozenset[str]
+    names: frozenset[str]
+    plain: frozenset[str]
+    calls: frozenset[str]
+
+
+def _module_path(module: str, *, root: pathlib.Path) -> pathlib.Path | None:
+    single = root / (module.replace(".", "/") + ".py")
     if single.exists():
         return single
-    package = SOURCE_ROOT / module.replace(".", "/") / "__init__.py"
+    package = root / module.replace(".", "/") / "__init__.py"
     return package if package.exists() else None
 
 
-def _imports(path: pathlib.Path) -> tuple[set[str], set[str]]:
-    """Every module this file imports, and every name it imports from one."""
+def _scan(path: pathlib.Path, *, first_party: str) -> Scanned:
+    """Every module and name this file imports, and every call target in it."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     modules: set[str] = set()
     names: set[str] = set()
+    plain: set[str] = set()
+    calls: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module is not None:
             modules.add(node.module)
             names.update(alias.name for alias in node.names)
+            if node.module.startswith(first_party):
+                modules.update(f"{node.module}.{alias.name}" for alias in node.names)
         elif isinstance(node, ast.Import):
             modules.update(alias.name for alias in node.names)
-    return modules, names
+            plain.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                calls.add(node.func.attr)
+            elif isinstance(node.func, ast.Name):
+                calls.add(node.func.id)
+    return Scanned(
+        modules=frozenset(modules),
+        names=frozenset(names),
+        plain=frozenset(plain),
+        calls=frozenset(calls),
+    )
 
 
-def closure() -> dict[str, tuple[set[str], set[str]]]:
-    """The transitive first-party import closure of the supervisor's two modules."""
-    scanned: dict[str, tuple[set[str], set[str]]] = {}
-    pending = list(ENTRY_POINTS)
+def closure(
+    entry_points: tuple[str, ...] = ENTRY_POINTS,
+    *,
+    root: pathlib.Path = SOURCE_ROOT,
+    first_party: str = "kodezart",
+) -> dict[str, Scanned]:
+    """The transitive first-party import closure of *entry_points*.
+
+    A source-tree walk: nothing here is imported at runtime, so *root* and
+    *first_party* are all it takes to point the same walker at a tree written
+    for a test.
+    """
+    scanned: dict[str, Scanned] = {}
+    pending = list(entry_points)
     while pending:
         module = pending.pop()
         if module in scanned:
             continue
-        path = _module_path(module)
+        path = _module_path(module, root=root)
         if path is None:
             continue
-        modules, names = _imports(path)
-        scanned[module] = (modules, names)
+        found = _scan(path, first_party=first_party)
+        scanned[module] = found
         pending.extend(
-            imported for imported in modules if imported.startswith("kodezart")
+            imported for imported in found.modules if imported.startswith(first_party)
         )
     return scanned
 
 
 def test_the_supervisor_reaches_no_adapter_no_process_and_no_repository_role():
+    """Everything the tick can reach at all, read off the source tree.
+
+    Five rules over the same closure. The whole port is allowed in the
+    composition root, where it is narrowed by design, and on the walker's read
+    path, which this slice left on the whole port; that allowance is derived
+    from the walker's own closure rather than listed, so it cannot quietly
+    cover a module nothing reaches from there. A plain import of a first-party
+    module is refused outright, because it puts every name in that module
+    within reach while the import names none of them. And the process and file
+    calls are asserted as call targets rather than as forbidden modules,
+    because the module that carries most of them is held legitimately by the
+    scheduler and the owned-task settle inside this closure.
+    """
     scanned = closure()
     assert set(ENTRY_POINTS) <= set(scanned)
+    port_allowed = {PORT_HOLDING_ROOT} | set(closure(WALKER_READ_PATH))
 
-    for module, (modules, names) in scanned.items():
+    for module, found in scanned.items():
         assert not module.startswith("kodezart.adapters"), module
         assert not any(
-            imported.startswith("kodezart.adapters") for imported in modules
+            imported.startswith("kodezart.adapters") for imported in found.modules
         ), module
-        assert modules.isdisjoint(FORBIDDEN_MODULES), (module, modules)
-        assert names.isdisjoint(FORBIDDEN_ROLES), (module, names & FORBIDDEN_ROLES)
+        assert found.modules.isdisjoint(FORBIDDEN_MODULES), (module, found.modules)
+        assert not any(name.startswith("kodezart") for name in found.plain), (
+            module,
+            found.plain,
+        )
+        assert found.calls.isdisjoint(IO_CALLS), (module, found.calls & IO_CALLS)
+        roles = FORBIDDEN_ROLES - (
+            {"TrackerPort"} if module in port_allowed else frozenset()
+        )
+        assert found.names.isdisjoint(roles), (module, found.names & roles)
+
+
+def test_the_closure_walker_flags_an_adapter_reached_through_one_more_import(tmp_path):
+    """The walker's own positive control: a scan that finds nothing looks green.
+
+    Every assertion above is a disjointness, so a walker that stopped at its
+    entry points would pass all of them on an empty closure. This points the
+    same walker at a tree written to hold an adapter one import deeper than the
+    entry point and requires it to arrive there. Nothing here is imported; it
+    is read as source, which is why the probe may name an adapter freely.
+    """
+    package = tmp_path / "probe"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "entry.py").write_text("import probe.inner\n", encoding="utf-8")
+    (package / "inner.py").write_text(
+        "from kodezart.adapters.linear import tracker\n", encoding="utf-8"
+    )
+
+    scanned = closure(("probe.entry",), root=tmp_path, first_party="probe")
+
+    assert "probe.inner" in scanned, sorted(scanned)
+    assert any(
+        imported.startswith("kodezart.adapters")
+        for imported in scanned["probe.inner"].modules
+    )
 
 
 def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
@@ -153,18 +275,15 @@ def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
     named among the clock reads and is refused.
     """
     for module in OWN_MODULES:
-        path = _module_path(module)
+        path = _module_path(module, root=SOURCE_ROOT)
         assert path is not None, module
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        modules, _ = _imports(path)
+        found = _scan(path, first_party="kodezart")
 
-        assert modules.isdisjoint(CLOCK_MODULES), (module, modules & CLOCK_MODULES)
-        called = {
-            node.func.attr
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-        }
-        assert called.isdisjoint(CLOCK_CALLS), (module, called & CLOCK_CALLS)
+        assert found.modules.isdisjoint(CLOCK_MODULES), (
+            module,
+            found.modules & CLOCK_MODULES,
+        )
+        assert found.calls.isdisjoint(CLOCK_CALLS), (module, found.calls & CLOCK_CALLS)
 
 
 def test_the_supervisor_role_names_no_state_moving_method():
