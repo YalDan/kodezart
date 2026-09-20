@@ -919,10 +919,17 @@ class OperationConfig(OperationModel):
         return scanned
 
     def require_run_event_table(self) -> None:
-        """Require the total event table before a tracker deployment starts.
+        """A declared event table is total; an absent one loads.
 
-        Empty operation values remain representable for non-tracker callers.
-        A tracker deployment has no default event effect or disabled signal.
+        The one production caller is the load validator above, which asks this
+        only of an operation that declared rows: a table names an effect for
+        every event kind or it names a default and a disabled signal, and
+        neither is a thing this configuration has.
+
+        Nothing on the scope path reads the table. A run event's comment is
+        rendered from ``marker_prefixes`` alone, so an operation that declares
+        no table posts and reads its events exactly as one that does — which is
+        why dialling the tracker no longer asks for it.
         """
         vocabulary = {kind.value for kind in RunEventKind}
         present = set(self.run_event_states)

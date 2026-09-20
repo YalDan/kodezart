@@ -370,8 +370,11 @@ notion_connector = "example-notion-connector-id"
 # Initiative membership and target dates are read from the tracker at run time.
 # A copied [[initiatives]] roster is rejected; team scope is the declared boundary.
 
-# Required before a tracker deployment starts. These rows classify events;
-# they do not grant a state writer or override tracker criterion rollup.
+# Optional. A declared table must be total — every event kind names an effect,
+# or loading the file refuses. Dialling the tracker does not consult it. These
+# rows classify events; they do not grant a state writer or override tracker
+# criterion rollup. A run event's comment is rendered from [marker_prefixes]
+# alone, so an operation that omits this table still posts and reads events.
 [run_event_states]
 first_push = "NO_TRANSITION"
 pr_opened = "in_review"

@@ -9,6 +9,13 @@ concerns.
 
 ## [Unreleased]
 
+### Changed
+
+- `[run_event_states]` is optional in an operation file, and dialling the
+  tracker no longer requires it. A declared table is still total at load time.
+  Nothing on the scope path reads the table: a run event's comment is rendered
+  from `[marker_prefixes]` alone.
+
 ### Removed
 
 - The criterion class. `criterionClass` is gone from every criterion on the
