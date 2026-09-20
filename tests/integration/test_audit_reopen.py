@@ -47,6 +47,14 @@ def sessions(executor, schema):
     )
 
 
+#: Two more criteria a case can put under the same owner, each with its own
+#: Check sentence so a session's subject is unambiguous.
+SECOND = "audit/second-criterion"
+THIRD = "audit/third-criterion"
+SECOND_CHECK = "The second criterion also reads the committed contents."
+THIRD_CHECK = "The third criterion reads the committed contents as well."
+
+
 @pytest.fixture
 async def working_scope(repository, server, tmp_path):
     """The composed audit over a scope whose owner is still in progress."""
@@ -149,32 +157,30 @@ async def test_an_unverifiable_or_a_side_arm_refutation_moves_nothing(
 async def test_an_unrelated_refusal_does_not_block_the_reopen(working_scope):
     audit, executor, server, _tracker, _git, workspace, repository = working_scope
     _remote, _author, _observer, _prior, head = repository
-    second = "audit/second-criterion"
-    second_check = "The second criterion also reads the committed contents."
     add_criterion(
         server,
-        second,
+        SECOND,
         status="Done",
         status_type="completed",
         graded_sha=head,
-        check=second_check,
+        check=SECOND_CHECK,
     )
-    executor.checks[second] = second_check
-    executor.claim_verdicts = {CHILD: "refuted", second: "unverifiable"}
+    executor.checks[SECOND] = SECOND_CHECK
+    executor.claim_verdicts = {CHILD: "refuted", SECOND: "unverifiable"}
 
     with pytest.raises(AuditRunIncompleteError) as raised:
         await audit.run(FIXTURE_NOW)
     scope = raised.value.report.scopes[0]
 
     assert any(
-        row.subject.key == second and "unverifiable claim" in row.reason
+        row.subject.key == SECOND and "unverifiable claim" in row.reason
         for row in scope.unavailable
     ), scope.model_dump_json()
     # No summary: coverage is incomplete. The reopen happens anyway.
     assert audit_comments(server, APPROVED_ISSUE) == []
     assert state_writes(server) == [{"id": CHILD, "state": unstarted_state(server)}]
     assert server.issues[CHILD].status == "Todo"
-    assert server.issues[second].status == "Done"
+    assert server.issues[SECOND].status == "Done"
     refutation = next(
         row
         for row in audit_comments(server, CHILD)
@@ -246,4 +252,49 @@ async def test_a_lapse_is_reported_and_left_done_then_the_same_criterion_is_refu
     )
     assert server.issues[CHILD].status == "Todo"
     assert server.issues[CHILD].status_type == "unstarted"
+    assert not workspace._workspaces
+
+
+async def test_a_refutation_of_a_strict_subset_moves_exactly_those_criteria(
+    working_scope,
+):
+    """Reopening is per sub-issue: the named subset moves, the rest is untouched."""
+    audit, executor, server, _tracker, _git, workspace, repository = working_scope
+    _remote, _author, _observer, _prior, head = repository
+    for key, check in ((SECOND, SECOND_CHECK), (THIRD, THIRD_CHECK)):
+        add_criterion(
+            server,
+            key,
+            status="Done",
+            status_type="completed",
+            graded_sha=head,
+            check=check,
+        )
+        executor.checks[key] = check
+    executor.claim_verdicts = {CHILD: "refuted", SECOND: "refuted"}
+    before = {key: deepcopy(server.issues[key]) for key in (ROOT, CHILD, SECOND, THIRD)}
+
+    assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    scope = audit.last_report.scopes[0]
+    assert scope.status == "complete", scope.model_dump_json()
+
+    # Exactly the two named criteria move, once each.
+    moved = state_writes(server)
+    assert sorted(row["id"] for row in moved) == sorted([CHILD, SECOND])
+    assert {row["state"] for row in moved} == {unstarted_state(server)}
+    assert [server.issues[key].status for key in (CHILD, SECOND)] == ["Todo", "Todo"]
+
+    # The untouched sibling and the owner are byte-identical apart from the
+    # activity stamp the audit's own holds comment on the sibling moved.
+    for key in (THIRD, ROOT):
+        after = deepcopy(server.issues[key])
+        assert after.state_changed_at == before[key].state_changed_at
+        assert after.status == before[key].status
+        assert after.status_type == before[key].status_type
+        after.updated_at = before[key].updated_at
+        assert after == before[key], key
+    # No body in the scope is written by the audit, reopened or not.
+    assert {key: server.issues[key].description for key in before} == {
+        key: row.description for key, row in before.items()
+    }
     assert not workspace._workspaces
