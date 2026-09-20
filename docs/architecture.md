@@ -244,7 +244,10 @@ stands in — the state name the first unstarted criterion it still owes carries
 written through the port's own restore, which reads first and writes nothing
 when the issue is already there — and rests the lane, under
 `scope_lane_plateaued`; where the gap names no unstarted state the write is not
-made and `scope_lane_put_back_skipped` says so. A lane selected for its delivery
+made and `scope_lane_put_back_skipped` says so. That write is the lane's own
+work and runs inside the lane's own boundary: a tracker that will not take it
+rests the lane and reports it under `scope_lane_failed`, and the walk spends the
+rest of the invocation on the other lanes. A lane selected for its delivery
 alone takes ONE such turn per invocation and rests after it, under
 `scope_lane_finished_turn_rested`, whatever that turn's fire did: a delivery that
 landed leaves the pull request on the lane's record and nothing further to do,

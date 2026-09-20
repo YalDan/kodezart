@@ -3061,6 +3061,13 @@ async def test_a_lane_larger_than_one_fires_budget_converges_across_fires():
     """
     repos = WalkRepos()
     port = board(lanes=("A",), checks=TWO_CHECKS)
+    # Somebody moved A's own issue while it was being worked, so a put-back
+    # would be observable: a restore onto the state an issue is already in
+    # writes nothing, and on a board holding A where the put-back would put it
+    # the write and its absence read the same.
+    port.issues["A"] = port.issues["A"].model_copy(
+        update={"state_name": "In Progress", "state_kind": WorkflowStateKind.STARTED}
+    )
     harness = budget_bound_lane(repos, port=port)
     events = await bounded_walk(harness, job="converging-job")
 
@@ -3082,6 +3089,11 @@ async def test_a_lane_larger_than_one_fires_budget_converges_across_fires():
         ("A/check", LifecycleStage.DONE),
         ("A/second", LifecycleStage.DONE),
     ]
+    # And a lane that is making progress is never put back: each of these fires
+    # closed a criterion its lane owed, so neither of them ended the lane's turn
+    # and the issue stayed where it was found (KOD-460).
+    assert port.restored_states == []
+    assert port.issues["A"].state_name == "In Progress"
 
 
 @dataclass(frozen=True)
@@ -3313,6 +3325,99 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
         ]
         assert record.pr.number == wire._numbers[deliverable]
         # The walk went on: B closed its own criterion in this same invocation.
+        assert port.issues["B/check"].state_kind is WorkflowStateKind.COMPLETED
+
+        # And "not offered again" is about THIS invocation. A later one enters
+        # from the record and fires A once more — the issue is back where its
+        # open work stands and the record names the branch that work is on — so
+        # what the plateau ends is the lane's turn and not the lane.
+        later = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("A", rounds=4),
+        )
+        again = await bounded_walk(later, job="later-job", origin=FORGE_ORIGIN)
+
+        assert lane_failures(again) == ()
+        assert ticks_of(again)[-1].dispatched == ("A",)
+        assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+        # The pull request the stall exit opened is the one that receives this
+        # fire's work: nothing opened a second one for the lane.
+        assert len(wire.creates) == 2
+    finally:
+        await forge.close()
+
+
+async def test_a_put_back_that_cannot_be_written_rests_that_lane_and_the_walk_goes_on(
+    monkeypatch,
+):
+    """The state write A's plateau asks for fails, and only A pays for it.
+
+    The put-back is a write about one issue, made inside that lane's own
+    boundary: a tracker that will not take it says nothing about the scope, so
+    A rests, A's failure is on the observation, and B is still fired in the same
+    invocation. Outside a boundary the same failure would end the run with the
+    other lanes untouched.
+
+    A is named once among the resting lanes: the boundary rests it where the
+    write failed, and the plateau arm does not rest it a second time.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A", "B"))
+    port.issues["A"] = port.issues["A"].model_copy(
+        update={"state_name": "In Progress", "state_kind": WorkflowStateKind.STARTED}
+    )
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        harness = resumable(
+            port=port,
+            repos=repos,
+            lanes=("A", "B"),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=[
+                *(
+                    criteria_echo(keys=("A/check",), passed=set())
+                    for _ in range(STALLED_FIRE_GRADINGS)
+                ),
+                *one_check_echoes("B", rounds=2),
+            ],
+        )
+
+        async def unavailable(*, issue_key, state_name):
+            raise TrackerUnavailableError(
+                f"the state write for {issue_key} did not reach the board"
+            )
+
+        monkeypatch.setattr(port, "restore_workflow_state", unavailable)
+        events = await bounded_walk(harness, job="only-job", origin=FORGE_ORIGIN)
+
+        # The same four ticks the walk takes when the write lands: the failure
+        # ends A's turn where the plateau already had.
+        assert len(ticks_of(events)) == 4
+        assert [tick.rested_lanes for tick in ticks_of(events)] == [
+            (),
+            ("A",),
+            ("A",),
+            ("A", "B"),
+        ]
+        failures = lane_failures(events)
+        assert [failure.issue_key for failure in failures] == ["A"]
+        assert failures[0].error.error_kind == "TrackerUnavailableError"
+        assert (
+            "the state write for A did not reach the board" in failures[0].error.error
+        )
+        # Nothing was written, and A's issue is where the fire found it.
+        assert port.restored_states == []
+        assert port.issues["A"].state_name == "In Progress"
+        # The walk went on regardless: B was fired and closed its own criterion.
+        assert ticks_of(events)[-1].dispatched == ("A", "B")
         assert port.issues["B/check"].state_kind is WorkflowStateKind.COMPLETED
     finally:
         await forge.close()

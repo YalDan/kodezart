@@ -1,4 +1,4 @@
-"""The walker's own refusals, asked of the shipped engine directly.
+"""The walker's own refusals and its plateau reading, asked of it directly.
 
 The integration walk observes a refusal as a lane failure, and a lane failure
 keeps only ``str(exc)``: the typed error itself, with the fields a caller reads
@@ -8,25 +8,45 @@ double, and the exception is caught where it is raised.  The refusal of an
 origin with no open-delivery reader at all is driven the same way, for the same
 reason.
 
+The plateau reading is driven here for a different reason.  The pure predicate
+has its own tests over criterion identities, but the fire's turn actually ends
+in ``ScopeWorkflowEngine._settle``, and that method can be rewritten to compare
+gap SIZES, or to read the lane's own criterion children instead of its whole
+subtree, with every walk still green: a lane that churned, lapsed or closed a
+criterion under a deliverable child is then rested and its issue put back, and
+nothing anywhere says otherwise.  So each of those shapes is a real board here,
+read through the shipped ``read_scope_ready`` and handed to the shipped method.
+
 Everything these tests touch is the shipped object: the resolver is a real
 ``BaseResolver`` over the fake port, so which blockers the gate asks about is
-the production answer and not a list written here.  The collaborators a test's
-own subject must never reach are functions that refuse, so a subject that
-reached one would fail loudly rather than quietly pass.
+the production answer and not a list written here; the ready set is the
+production reading of a board and not a value typed to suit a predicate; the
+identities a fire is measured against come from the walker's own selection and
+its own reading of what that turn owes.  The collaborators a test's own subject
+must never reach are functions that refuse, so a subject that reached one would
+fail loudly rather than quietly pass.
 """
 
 from typing import NoReturn
 
 import pytest
+import structlog.testing
 
+from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import BaseResolutionError, ScopedExecutionUnavailableError
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.services.scope_runtime import ScopeWorkflowEngine
+from kodezart.services.scope_runtime import (
+    ScopeWorkflowEngine,
+    _LastFire,
+    _owed_identities,
+)
 from kodezart.types.domain.branch import trunk_base
-from kodezart.types.domain.operation import OperationConfig, RepoEntry
+from kodezart.types.domain.operation import OperationConfig, RepoEntry, ScopeLabel
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope_runtime import LaneFailure
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import (
@@ -180,3 +200,288 @@ async def test_an_origin_with_no_open_delivery_reader_refuses_the_scope() -> Non
 
     assert "open-delivery reader" in str(caught.value)
     assert caught.value.ref == ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope")
+
+
+# ---------------------------------------------------------------------------
+# KOD-460 — the plateau reading at the walker, over real board readings.
+# ---------------------------------------------------------------------------
+
+SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope")
+STAGED = "criteria-staged"
+CRITERION = frozenset({"criterion"})
+LANE_STATE = "In Progress"
+
+
+def criterion_row(
+    key: str,
+    *,
+    parent: str = "A",
+    closed: bool = False,
+    state_name: str | None = None,
+    state_kind: WorkflowStateKind | None = None,
+):
+    """One criterion sub-issue, in the state the board holds it in.
+
+    *state_name* is named apart from the kind because the put-back writes the
+    NAME the board itself carries: a fixture that could only spell "Todo" could
+    not tell the mechanism from a constant.
+    """
+    if closed:
+        state_name, state_kind = "Done", WorkflowStateKind.COMPLETED
+    return make_tracker_issue(
+        key,
+        parent_key=parent,
+        issue_labels=CRITERION,
+        state_name=state_name or "Todo",
+        state_kind=state_kind or WorkflowStateKind.UNSTARTED,
+        body=f"**Check:** {key} live Check  bytes\n**Evidence:** —",
+    )
+
+
+def scope_board(*rows, lanes=("A",), children=()):
+    """A scope of *lanes*, the deliverable children under them, and *rows*.
+
+    Each lane's own issue starts in a state the put-back would move it OUT of,
+    because a restore onto the state an issue is already in writes nothing at
+    all: on a board holding the lane where the put-back would put it, the write
+    and its absence look the same.
+    """
+    return FakeTrackerPort(
+        issues=[
+            *(
+                make_tracker_issue(
+                    key,
+                    issue_labels=frozenset({STAGED}),
+                    state_name=LANE_STATE,
+                    state_kind=WorkflowStateKind.STARTED,
+                )
+                for key in lanes
+            ),
+            *children,
+            *rows,
+        ],
+        scope_memberships={SCOPE: tuple(lanes)},
+        criteria_stage_label_key=STAGED,
+        marker_prefixes=OPERATION.marker_prefixes,
+        scope_label_members={
+            ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
+            for key in lanes
+        },
+    )
+
+
+async def owed_by(port: FakeTrackerPort, walker: ScopeWorkflowEngine, *, lane: str):
+    """What the walker would carry about *lane* after firing it on this board.
+
+    Read through the walker's OWN selection and its own reading of what the
+    selected turn owes, so a change to either — a turn offered with some other
+    gap, identities narrowed to the lane's own criterion children — reaches
+    these tests instead of being written out again here.
+    """
+    ready = await read_scope_ready(ref=SCOPE, tracker=port)
+    selected = walker._select(ready=ready, delivers=False, rested=[])
+    assert selected is not None and selected.issue.issue_key == lane
+    return _LastFire(issue_key=lane, open_criteria=_owed_identities(selected))
+
+
+async def settle_on(port: FakeTrackerPort, *, last: _LastFire):
+    """One plateau reading over this board, as the walker makes it."""
+    walker = engine(port)
+    rested: list[str] = []
+    failures: list[LaneFailure] = []
+    await walker._settle(
+        last=last,
+        ready=await read_scope_ready(ref=SCOPE, tracker=port),
+        rested=rested,
+        failures=failures,
+    )
+    return rested, failures
+
+
+def close(port: FakeTrackerPort, key: str) -> None:
+    """Cross one criterion off, the way a fire's own evaluation crosses it off."""
+    port.issues[key] = port.issues[key].model_copy(
+        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+    )
+
+
+def reopen(port: FakeTrackerPort, key: str, *, state_name: str = "Todo") -> None:
+    """Put one criterion back in an unstarted state, as an amendment does."""
+    port.issues[key] = port.issues[key].model_copy(
+        update={"state_name": state_name, "state_kind": WorkflowStateKind.UNSTARTED}
+    )
+
+
+def surface(port: FakeTrackerPort, key: str) -> None:
+    """Add one criterion the board did not carry when the fire began."""
+    port.issues[key] = criterion_row(key)
+
+
+async def test_a_fire_that_closed_nothing_it_owed_rests_the_lane() -> None:
+    """The positive: the board did not move, so an identical fire would not either.
+
+    The other three cases below are the shapes whose CARDINALITY says the
+    opposite of their identities, and each of them must read the other way; this
+    one is what makes the three of them say something.
+    """
+    port = scope_board(criterion_row("A/check"))
+    last = await owed_by(port, engine(port), lane="A")
+
+    rested, failures = await settle_on(port, last=last)
+
+    assert rested == ["A"]
+    assert failures == []
+    assert port.restored_states == [("A", "Todo")]
+    assert port.issues["A"].state_name == "Todo"
+
+
+async def test_a_tick_that_closed_twelve_and_surfaced_twelve_is_not_a_plateau() -> None:
+    """The gap is the size it was, and twelve of the identities it owed closed."""
+    port = scope_board(*(criterion_row(f"A/check-{index}") for index in range(1, 13)))
+    last = await owed_by(port, engine(port), lane="A")
+    for index in range(1, 13):
+        close(port, f"A/check-{index}")
+    for index in range(13, 25):
+        surface(port, f"A/check-{index}")
+
+    rested, failures = await settle_on(port, last=last)
+
+    # Not vacuous: the gap really did hold its size across the tick, which is
+    # what a count-based reading would call a plateau.
+    ready = await read_scope_ready(ref=SCOPE, tracker=port)
+    assert len(ready.ready[0].gap) == len(last.open_criteria) == 12
+    assert rested == []
+    assert failures == []
+    assert port.restored_states == []
+
+
+async def test_a_tick_whose_gap_grew_through_a_lapse_is_not_a_plateau() -> None:
+    """One closed and two lapsed back: the gap GREW and the fire did real work."""
+    port = scope_board(
+        criterion_row("A/first"),
+        criterion_row("A/second", closed=True),
+        criterion_row("A/third", closed=True),
+    )
+    last = await owed_by(port, engine(port), lane="A")
+    close(port, "A/first")
+    reopen(port, "A/second")
+    reopen(port, "A/third")
+
+    rested, failures = await settle_on(port, last=last)
+
+    ready = await read_scope_ready(ref=SCOPE, tracker=port)
+    assert len(ready.ready[0].gap) == 2
+    assert last.open_criteria == {"A/first"}
+    assert rested == []
+    assert failures == []
+    assert port.restored_states == []
+
+
+async def test_a_tick_whose_only_closure_is_under_a_child_is_not_a_plateau() -> None:
+    """The lane owes its whole SUBTREE, so a closure under a child is progress.
+
+    The criterion that closed hangs off a deliverable child of the lane, which
+    is not a criterion row itself: a reading that kept only the lane's own
+    criterion children would find nothing closed and give the lane's turn up.
+    """
+    child = make_tracker_issue("A1", parent_key="A")
+    port = scope_board(
+        criterion_row("A/check"),
+        criterion_row("A1/check", parent="A1"),
+        children=(child,),
+    )
+    last = await owed_by(port, engine(port), lane="A")
+    close(port, "A1/check")
+
+    rested, failures = await settle_on(port, last=last)
+
+    # The premise: the criterion that closed really is a descendant and not a
+    # child, and the lane really did owe it.
+    assert port.issues["A1/check"].parent_key == "A1"
+    assert last.open_criteria == {"A/check", "A1/check"}
+    assert rested == []
+    assert failures == []
+    assert port.restored_states == []
+
+
+async def test_the_put_back_writes_the_unstarted_state_the_board_names() -> None:
+    """The state name is the criterion's own, never a vocabulary of the walker's."""
+    port = scope_board(criterion_row("A/check", state_name="Ready"))
+    last = await owed_by(port, engine(port), lane="A")
+
+    rested, _ = await settle_on(port, last=last)
+
+    assert rested == ["A"]
+    assert port.restored_states == [("A", "Ready")]
+    assert port.issues["A"].state_name == "Ready"
+
+
+async def test_the_put_back_passes_over_a_started_row_for_the_unstarted_one() -> None:
+    """A started criterion names no state to go back to; the next one does."""
+    port = scope_board(
+        criterion_row(
+            "A/first", state_name="In Review", state_kind=WorkflowStateKind.STARTED
+        ),
+        criterion_row("A/second", state_name="Ready"),
+    )
+    last = await owed_by(port, engine(port), lane="A")
+
+    rested, _ = await settle_on(port, last=last)
+
+    ready = await read_scope_ready(ref=SCOPE, tracker=port)
+    # The order is the board's own and the first row really is the started one,
+    # so passing over it is what the second row's name being written means.
+    assert [row.issue_key for row in ready.ready[0].gap] == ["A/first", "A/second"]
+    assert rested == ["A"]
+    assert port.restored_states == [("A", "Ready")]
+
+
+async def test_a_gap_with_nothing_unstarted_rests_the_lane_and_writes_nothing() -> None:
+    """Every open criterion started: there is no state to put the issue back to.
+
+    Inventing one is not the walker's business, so the lane rests on the reading
+    it made and the write not made is stated by name rather than passed over.
+    """
+    port = scope_board(
+        criterion_row(
+            "A/check", state_name="In Review", state_kind=WorkflowStateKind.STARTED
+        )
+    )
+    last = await owed_by(port, engine(port), lane="A")
+
+    with structlog.testing.capture_logs() as logs:
+        rested, failures = await settle_on(port, last=last)
+
+    assert rested == ["A"]
+    assert failures == []
+    assert port.restored_states == []
+    assert port.issues["A"].state_name == LANE_STATE
+    assert [
+        event["lane"]
+        for event in logs
+        if event.get("event") == "scope_lane_put_back_skipped"
+    ] == ["A"]
+
+
+async def test_a_put_back_that_fails_is_the_lanes_own_fault(monkeypatch) -> None:
+    """The write is the lane's work, so its failure rests and reports that lane.
+
+    A per-issue write that cannot be made says nothing about the scope, and
+    ending the whole run for it would strand every other lane. The lane rests
+    exactly once — the boundary rests it, and the plateau arm does not rest it
+    again — and the walk has the rest of its invocation left.
+    """
+    port = scope_board(criterion_row("A/check"))
+    last = await owed_by(port, engine(port), lane="A")
+
+    async def unavailable(*, issue_key: str, state_name: str) -> NoReturn:
+        raise TrackerUnavailableError(f"the state write for {issue_key} failed")
+
+    monkeypatch.setattr(port, "restore_workflow_state", unavailable)
+
+    rested, failures = await settle_on(port, last=last)
+
+    assert rested == ["A"]
+    assert [failure.issue_key for failure in failures] == ["A"]
+    assert failures[0].error.error_kind == "TrackerUnavailableError"
+    assert "the state write for A failed" in failures[0].error.error

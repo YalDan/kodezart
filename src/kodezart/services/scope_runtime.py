@@ -280,7 +280,12 @@ class ScopeWorkflowEngine:
         return None
 
     async def _settle(
-        self, *, last: _LastFire | None, ready: ScopeReadySet, rested: list[str]
+        self,
+        *,
+        last: _LastFire | None,
+        ready: ScopeReadySet,
+        rested: list[str],
+        failures: list[LaneFailure],
     ) -> None:
         """Fire the last lane again, or stop firing it — read from the gap alone.
 
@@ -312,6 +317,13 @@ class ScopeWorkflowEngine:
         reading's business. Neither is a lane already resting, which has no
         next turn to decide.
 
+        The put-back is the lane's own work and runs inside the lane's own
+        boundary: a write that fails is a fact about that one issue at that one
+        instant, so it rests the lane and is reported against it, and the walk
+        spends the rest of the invocation on the other lanes. The lane rests
+        either way, which is why the rest is appended only where the boundary
+        has not already appended it.
+
         No fire outcome, no verdict and no delivery phase is read here either
         (KOD-725).
         """
@@ -330,8 +342,12 @@ class ScopeWorkflowEngine:
         )
         if not fire_plateaued(ticks=(tick_record,), plateau_bound=PLATEAU_BOUND):
             return
-        await self._put_back(key=last.issue_key, gap=row.gap)
-        rested.append(last.issue_key)
+        async with self._lane_boundary(
+            last.issue_key, failures=failures, rested=rested
+        ):
+            await self._put_back(key=last.issue_key, gap=row.gap)
+        if last.issue_key not in rested:
+            rested.append(last.issue_key)
         await self._log.ainfo("scope_lane_plateaued", lane=last.issue_key)
 
     async def _put_back(self, *, key: str, gap: Sequence[TrackerIssue]) -> None:
@@ -470,7 +486,7 @@ class ScopeWorkflowEngine:
             # The previous tick's fire is read against this tick's facts before
             # anything is selected, and read once: the reading is what decides
             # whether the lane it fired is a candidate again.
-            await self._settle(last=last, ready=ready, rested=rested)
+            await self._settle(last=last, ready=ready, rested=rested, failures=failures)
             last = None
             exclusions = [
                 IssueExclusion(
@@ -567,10 +583,7 @@ class ScopeWorkflowEngine:
             # What this fire finds open is what the next tick measures it
             # against. A turn selected for its delivery alone owes nothing, so
             # it carries no identities and the next tick has nothing to read.
-            last = _LastFire(
-                issue_key=key,
-                open_criteria=frozenset(row.issue_key for row in selected.gap),
-            )
+            last = _LastFire(issue_key=key, open_criteria=_owed_identities(selected))
             async with self._lane_boundary(key, failures=failures, rested=rested):
                 async for event in self._fire(
                     lane=lane,
@@ -595,6 +608,21 @@ class ScopeWorkflowEngine:
                     # so there is no second entry for the same lane.
                     rested.append(key)
                     await self._log.ainfo("scope_lane_finished_turn_rested", lane=key)
+
+
+def _owed_identities(turn: _LaneTurn) -> frozenset[str]:
+    """Every criterion identity the selected turn's lane owes right now.
+
+    The turn's whole gap, which is its whole SUBTREE: a criterion under a
+    deliverable child is work the lane owes like any other, so a fire whose
+    only closure sits there closed previous work and the lane is offered again.
+    Restricted to the lane's own criterion children this would read such a fire
+    as having moved nothing.
+
+    A turn selected for its delivery alone owes nothing and carries no
+    identities, so the tick after it has nothing to read.
+    """
+    return frozenset(row.issue_key for row in turn.gap)
 
 
 def _ready_turn(row: ScopeReadyLane) -> _LaneTurn:
