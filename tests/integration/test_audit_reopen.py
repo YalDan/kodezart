@@ -7,7 +7,11 @@ from datetime import timedelta
 import pytest
 
 from kodezart.services.audit_runtime import AuditRunIncompleteError
-from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, WRITE_BACK_SCHEMA
+from kodezart.types.domain.agent import (
+    AUDIT_CLAIM_SCHEMA,
+    AUDIT_MANDATE_SCHEMA,
+    WRITE_BACK_SCHEMA,
+)
 from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
 from kodezart.types.domain.dispatch import PassRun
 from tests.fakes import PassThroughGate
@@ -224,6 +228,9 @@ async def test_a_lapse_is_reported_and_left_done_then_the_same_criterion_is_refu
     assert [row.current_claim for row in lapses] == [None]
     assert not any(row.kind == "claim" for row in first.observations)
     assert sessions(executor, AUDIT_CLAIM_SCHEMA) == 0
+    # No session of any kind is spent on it: a mandate hunt has nothing to
+    # hunt for when no claim was judged.
+    assert sessions(executor, AUDIT_MANDATE_SCHEMA) == 0
     # It is reported, not reopened.
     assert state_writes(server) == []
     assert server.issues[CHILD].status == "Done"
