@@ -1,18 +1,24 @@
 """Every audit write reaches the sanitization gate before it reaches the backend.
 
 Asserted at the two logs — the gate's own record and the workspace's tool
-call log — and never on the text of a report. The marker prefixes the check
-scans for are read off the configured operation, so an audit that wrote under
-a third marker purpose would be scanned too rather than slipping past a list
-written out here.
+call log — and never on the text of a report. The scan derives the comments
+it covers instead of naming them: every comment written during the tick must
+either carry bytes the gate already saw, or be an ownership record the lease
+writer parks, recognised by the shape the adapter writes it in. A comment
+under any other marker purpose therefore fails the scan rather than slipping
+past a list of purposes written out here.
 """
 
 import pytest
 
-from kodezart.domain.comment_markers import configured_marker_prefix
+from kodezart.adapters.linear.markers import LinearMarkers
 from kodezart.services.audit_runtime import AuditRunIncompleteError
 from kodezart.types.domain.dispatch import PassRun
-from kodezart.types.domain.gating import GateDecision, GateVerdict
+from kodezart.types.domain.gating import (
+    GateDecision,
+    GateVerdict,
+    OutboundDestination,
+)
 from tests.fakes import PassThroughGate
 from tests.integration.test_audit_runtime_native import (
     build_native_audit,
@@ -28,17 +34,17 @@ from tests.tracker.test_state_history import server as server
 
 __all__ = ["repository", "server"]
 
-#: The purposes the audit lane writes comments under. Their spellings come
-#: from the configuration, not from this module.
-AUDIT_PURPOSES = ("audit", "escalation")
 
+def parks_ownership(repo_url, body):
+    """Whether *body* is the ownership record a lease writer parks.
 
-def audit_prefixes(repo_url):
-    prefixes = native_operation(repo_url).marker_prefixes
-    return tuple(
-        f"[{configured_marker_prefix(prefixes, purpose=purpose)}:"
-        for purpose in AUDIT_PURPOSES
-    )
+    Read off the record's own shape, the one the adapter writes leases and
+    claims in, so nothing here has to know which purposes this lane writes
+    comments under.
+    """
+    markers = LinearMarkers(native_operation(repo_url).marker_prefixes)
+    match = markers.grant_pattern.match(body)
+    return match is not None and "kind: lease" in match.group("payload")
 
 
 class OrderedGate(PassThroughGate):
@@ -82,37 +88,44 @@ async def test_every_audit_write_is_gated_before_it_lands(repository, server, tm
     fake.issues[ROOT].status_type = "started"
     executor.claim_verdicts = {CHILD: "refuted"}
     executor.instruction = True
-    prefixes = audit_prefixes(remote.as_uri())
+    repo_url = remote.as_uri()
+    before = len(fake.calls)
 
     assert await audit.run(FIXTURE_NOW) is PassRun.RAN
 
-    # Every marked comment the lane wrote passed the gate, with exactly its
-    # own bytes, at or before the call that wrote it.
-    marked = [
-        (index, arguments["body"])
-        for index, (name, arguments) in enumerate(fake.calls)
-        if name == "save_comment"
-        and str(arguments.get("body", "")).startswith(prefixes)
-    ]
+    # Every comment this tick wrote is either an ownership record the lease
+    # writer parks or a body the gate saw, with exactly those bytes, at or
+    # before the call that wrote it. Nothing else is allowed through.
+    gated = []
+    for index, (name, arguments) in enumerate(fake.calls):
+        if index < before or name != "save_comment":
+            continue
+        body = str(arguments.get("body", ""))
+        if parks_ownership(repo_url, body):
+            continue
+        assert any(
+            content == body and at <= index for _writer, content, at in gate.marks
+        ), body
+        gated.append(body)
     # One escalation, the criterion's seven publications (the current-Check
     # claim, the forge report, four standing readings and the removal
     # reading) and the scope summary. Counted, so a write that stopped
     # reaching the gate shows up as a missing scan rather than as nothing.
-    assert len(marked) == 9, marked
-    for index, body in marked:
-        assert any(
-            content == body and at <= index for _writer, content, at in gate.marks
-        ), body
+    assert len(gated) == 9, gated
 
-    # The decision classification is gated before the label write lands.
+    # The decision classification itself is gated, at its own destination and
+    # with its own content, before the label write lands.
     label_write = landed(fake, "save_issue", id=CHILD, addLabels=["needs-decision"])
-    assert any(at <= label_write for _writer, _content, at in gate.marks)
+    assert any(
+        writer == OutboundDestination.TRACKER_CLASSIFICATION.value
+        and content == "decision"
+        and at <= label_write
+        for writer, content, at in gate.marks
+    ), gate.marks
 
     # The reopen carries no content of its own: it lands after the gate saw
     # its evidence, and it names nothing but the criterion and the state.
-    refutation = next(
-        body for _index, body in marked if '"detector":"current_check"' in body
-    )
+    refutation = next(body for body in gated if '"detector":"current_check"' in body)
     gated_at = next(at for _writer, content, at in gate.marks if content == refutation)
     move = landed(fake, "save_issue", id=CHILD, state=unstarted_state(fake))
     assert gated_at <= move
