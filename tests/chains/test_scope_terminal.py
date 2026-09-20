@@ -10,7 +10,15 @@ Every walk here is bounded by the fixture's own ``bounded_walk``, and each
 tick count is a literal observed from the run before it was written down.
 """
 
+import asyncio
+import inspect
+
+import pytest
+
+from kodezart.core.protocols import ScopeStatusWriter, TrackerPort
 from kodezart.domain.scope_terminal import render_scope_status
+from kodezart.services import scope_terminal as terminal_module
+from kodezart.services.scope_terminal import ScopeTerminal
 from kodezart.types.domain.gating import ContentClass, OutboundDestination
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -20,11 +28,18 @@ from kodezart.types.domain.scope_terminal import (
     ScopeTerminalEvent,
     derive_scope_outcome,
 )
+from tests.chains.test_write_back_adoption import (
+    Journal,
+    RecordingTracker,
+    artifact_writes,
+)
 from tests.integration.test_scope_runtime import (
     ORIGIN,
     SCOPE,
+    WALK_BOUND_SECONDS,
     board,
     bounded_walk,
+    drive,
     runtime,
     ticks_of,
 )
@@ -190,3 +205,152 @@ async def test_a_scope_with_no_status_surface_ends_with_the_event_alone():
 
     assert len(terminals(events)) == 1
     assert harness.status.posts == []
+
+
+# ---------------------------------------------------------------------------
+# KOD-479 — the write set is closed: the terminal's only tracker write is the
+# container status update, over every fixture the walk can end in.
+# ---------------------------------------------------------------------------
+
+
+def recorded(port, **rest):
+    """The composed walk over a port that records every write it makes."""
+    journal = Journal()
+    return runtime(port=RecordingTracker(port, journal), **rest), journal
+
+
+async def attributed(harness, journal, **rest):
+    """Every port write the terminal made, isolated by WHEN it ran.
+
+    The generator runs only when it is pulled, and the only code between the
+    last observation's yield and the terminal's is the report itself, so the
+    writes after the last observation are the terminal's and no other's.
+    """
+    marks: list[int] = []
+    events = []
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in drive(harness, **rest):
+            events.append(event)
+            if isinstance(event, ScopeWalkEvent):
+                marks.append(len(journal.writes))
+    assert marks, "a walk that observed nothing states nothing about attribution"
+    return events, journal.writes[marks[-1] :]
+
+
+def converged_lane():
+    return recorded(board(lanes=("A",))), {}, 1
+
+
+def two_converged_lanes():
+    return recorded(board(lanes=("A", "B")), lanes=("A", "B")), {}, 1
+
+
+def unapproved_lane():
+    return recorded(board(lanes=("A",), approved=False)), {}, 1
+
+
+def blocked_lane():
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key="A")] = frozenset()
+    return recorded(port, lanes=("A", "B")), {}, 1
+
+
+def lane_with_a_malformed_obligation():
+    """A criterion carrying no Check: the lane's own entry refuses it."""
+    port = board(lanes=("A",))
+    port.issues["A/check"] = port.issues["A/check"].model_copy(
+        update={"body": "**Evidence:** — and no Check field at all"}
+    )
+    return recorded(port), {}, 1
+
+
+def initiative_scope():
+    scope = ScopeRef(kind=ScopeKind.INITIATIVE, key="scoped-initiative")
+    port = board(lanes=("A",))
+    port.scope_memberships[scope] = ("A",)
+    return recorded(port), {"scope": scope}, 1
+
+
+def issue_scope():
+    """No container, so no status surface and no write at all."""
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key="A")
+    port = board(lanes=("A",))
+    port.scope_memberships[scope] = ("A",)
+    return recorded(port), {"scope": scope}, 0
+
+
+WRITE_SET_FIXTURES = (
+    converged_lane,
+    two_converged_lanes,
+    unapproved_lane,
+    blocked_lane,
+    lane_with_a_malformed_obligation,
+    initiative_scope,
+    issue_scope,
+)
+
+
+@pytest.mark.parametrize(
+    "fixture", WRITE_SET_FIXTURES, ids=[f.__name__ for f in WRITE_SET_FIXTURES]
+)
+async def test_the_terminals_only_tracker_write_is_the_container_status_update(
+    fixture,
+):
+    (harness, journal), driving, expected = fixture()
+
+    events, writes = await attributed(harness, journal, **driving)
+
+    assert len(terminals(events)) == 1
+    # Nothing on any issue surface, and nothing on the container description:
+    # the report does not reach the tracker through the port at all.
+    assert writes == []
+    assert len(harness.status.posts) == expected
+
+
+@pytest.mark.parametrize(
+    "fixture", WRITE_SET_FIXTURES, ids=[f.__name__ for f in WRITE_SET_FIXTURES]
+)
+async def test_the_terminal_writes_no_description_and_no_issue_surface(fixture):
+    """Stated against the derived write surface rather than a list written here."""
+    (harness, journal), driving, _ = fixture()
+
+    _, writes = await attributed(harness, journal, **driving)
+
+    assert {write.method for write in writes} & artifact_writes() == set()
+    assert "edit_description" not in {write.method for write in writes}
+
+
+async def test_the_attribution_isolates_the_terminal_from_the_walks_own_writes():
+    """Non-vacuity: the walk wrote at the port, and none of it was the terminal's.
+
+    Without this the empty attributed slice above would be satisfied by a
+    journal that recorded nothing at all.
+    """
+    (harness, journal), driving, _ = converged_lane()
+
+    _, writes = await attributed(harness, journal, **driving)
+
+    assert journal.writes, "a walk that wrote nothing states nothing about attribution"
+    assert writes == []
+
+
+def test_the_terminal_holds_no_tracker_port_to_write_through():
+    """The collaborators are a record reader, one write role and the gate.
+
+    Read off the constructor rather than asserted about instances: a port
+    handed to the terminal later would be a write set nothing here bounds.
+    """
+    parameters = inspect.signature(ScopeTerminal.__init__).parameters
+    assert set(parameters) == {"self", "records", "status", "gate"}
+    held = {
+        name: value.annotation for name, value in parameters.items() if name != "self"
+    }
+    assert held["status"] is ScopeStatusWriter
+    assert TrackerPort not in held.values()
+
+
+def test_the_terminals_source_names_one_write_and_it_is_the_status_update():
+    """Every write of the whole derived surface the module names, which is one."""
+    source = inspect.getsource(terminal_module)
+    named = {method for method in artifact_writes() if method in source}
+    assert named == {"post_status_update"}
