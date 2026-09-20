@@ -13,7 +13,9 @@ from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent
+from kodezart.types.domain.scope_terminal import ScopeLaneEntry, ScopeTerminalEvent
 from tests.fakes import FIXTURE_EPOCH
 
 
@@ -93,3 +95,16 @@ def test_queued_egress_preserves_authored_shape_and_required_native_nulls():
     payload = _queued_event_payload(addressed)
     assert payload["event"]["baseRole"] is None
     assert ScopeLaneEvent.model_validate(payload) == addressed
+    # The terminal vector's two recorded columns are absent for a lane no
+    # record addresses, and absence is the fact a consumer must be able to
+    # read: dropping the keys would make it indistinguishable from a column
+    # the envelope never carried.
+    terminal = ScopeTerminalEvent(
+        scope=ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project"),
+        lanes=(ScopeLaneEntry(issue="A", done=False, branch=None, pr=None),),
+        outcome=WorkflowOutcome.scope_stopped_short,
+    )
+    reported = _queued_event_payload(terminal)
+    assert reported["lanes"][0]["branch"] is None
+    assert reported["lanes"][0]["pr"] is None
+    assert ScopeTerminalEvent.model_validate(reported) == terminal

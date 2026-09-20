@@ -29,8 +29,9 @@ class JobRecord(CamelCaseModel):
     """Registry view of one submitted job.
 
     ``queue_position`` is 1-based and ``None`` whenever the job is not
-    QUEUED.  ``outcome`` is written by the dispatcher when it observes
-    the terminal ``WorkflowCompleteEvent``; run state itself lives on the
+    QUEUED.  ``outcome`` is written by the dispatcher when it observes the
+    run's terminal event: a fire's ``WorkflowCompleteEvent`` or a scope's
+    ``ScopeTerminalEvent``; run state itself lives on the
     checkpointer, never here.  ``truncated`` records that the replay
     buffer dropped events — whether by overflowing its capacity or by
     outliving its retention window — never a silent gap.

@@ -23,6 +23,7 @@ from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.scope_runtime import ScopeWorkflowEngine
+from kodezart.services.scope_terminal import ScopeTerminal
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import (
@@ -78,6 +79,7 @@ def engine(port: FakeTrackerPort) -> ScopeWorkflowEngine:
         probe_for=no_probe,
         resolver=BaseResolver(tracker=port, git=git, remote=REMOTE),
         entries=LaneEntryReader(records=records, git=git, remote=REMOTE),
+        terminal=ScopeTerminal(records=records),
         cache=FakeRepoCache(),
         repositories=(),
         git_base_url="https://forge.invalid",

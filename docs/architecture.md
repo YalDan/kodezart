@@ -325,8 +325,9 @@ an explicit migration. A formatter and cold tracker read do not implement the
 committing node's collection/write operation, its first-push notification,
 first-class branch-association persistence, or a complete mid-loop kill test.
 Mandatory write leases and the recorded association-storage conflict remain
-separate prerequisites. Scope terminals must still consume this reader and
-other required durable records; no terminal outcome is inferred from it.
+separate prerequisites. The scope terminal reads each lane's branch and pull
+request through this reader; whether a lane is done is read from its criterion
+sub-issues, never from the record.
 
 Body revisions retain the exact same-read body and a nonempty digest. Shared
 conformance checks cover body changes, unchanged replays and metadata-only
@@ -950,11 +951,9 @@ no invented check failures. The shared result validates that every red has
 exactly its matching remediation and every green has none. This scope outcome
 is independent of lane outcomes. The result is available to any caller;
 it does not itself publish a tracker remediation record or scope terminal.
-Walker invocation and terminal residual publication remain separate integration
-work. The union residual's readable owning-issue carrier is still undeclared;
-an ordinary red union also supplies no fired stopping bound for the existing
-terminal convergence validator. The returned remediation supplies neither a
-fabricated record reference nor a terminal outcome.
+The returned remediation supplies no fabricated record reference and no
+terminal outcome; the scope terminal derives its outcome from criterion states
+alone.
 
 
 ## Current-head audit claim sessions
