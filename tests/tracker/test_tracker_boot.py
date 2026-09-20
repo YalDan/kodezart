@@ -14,7 +14,11 @@ from kodezart.adapters.linear.tracker import (
 )
 from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+from kodezart.composition.tracker import (
+    boot_tracker,
+    build_tracker,
+    refuse_foreign_credential,
+)
 from kodezart.config.app import AppConfig
 from kodezart.config.tracker import TrackerSettings
 from kodezart.core.backoff import RetryPolicy
@@ -1100,3 +1104,21 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
 
         assert dialled is not None
         assert server.lifecycle == ["probe", "open"]
+
+
+async def test_the_annotated_example_can_read_every_issue_classification() -> None:
+    """The example config could not run a scope: the first read refused.
+
+    The scoped path asks for three issue classifications at its first act and
+    names whichever is absent. The annotated example declared two of them, so
+    an operator who copied it met that refusal on the first tick rather than at
+    load. Asserted through the real adapter, built the way boot builds it.
+    """
+    tracker, _ledger = build_tracker(
+        backend=TrackerBackend.LINEAR,
+        retry=RetryPolicy(attempts=1, initial_delay=0.0),
+        operation=load_operation_config(EXAMPLE_CONFIG),
+        caller=FakeLinearMcpServer(),
+    )
+    assert isinstance(tracker, LinearMcpTracker)
+    tracker.require_issue_classification_reads()

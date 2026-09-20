@@ -11,7 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.composition.tracker import build_tracker
+from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.composition.tracker import build_tracker, criteria_stage_label_key
 from kodezart.core.backoff import RetryPolicy
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import ScopeCycleError
@@ -19,6 +21,7 @@ from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerBackend
+from tests.integration.test_scope_deployment import SCOPE_EXAMPLE
 from tests.tools import scratch_scope
 from tests.tools.scratch_board import UNSTARTED_STATE, ScratchBoardServer
 from tests.tools.scratch_scope import (
@@ -444,3 +447,82 @@ async def test_the_planted_claim_is_a_done_criterion_whose_evidence_parses():
     assert [name for name, _ in planted] == ["save_issue", "save_issue"]
     assert set(planted[0][1]) == {"id", "description"}
     assert set(planted[1][1]) == {"id", "state"}
+
+
+# ---------------------------------------------------------------------------
+# The shipped scope operation file, answered by the adapter over a board this
+# builder built. Each call below is one row of the guide's members table, at
+# the site that refuses when the member is absent.
+# ---------------------------------------------------------------------------
+
+
+async def shipped_board():
+    """The shipped file, a board built from it, and the real adapter over both."""
+    loaded = load_operation_config(SCOPE_EXAMPLE)
+    project = loaded.organize_scopes[0].scope.key
+    server = ScratchBoardServer(
+        operation=loaded,
+        project={
+            "id": project,
+            "name": "Scratch scope",
+            "description": f"A scratch board.\n{SCRATCH_DECLARATION}\n",
+            "url": f"https://tracker.invalid/project/{project}",
+            "initiatives": [],
+            "labels": [],
+        },
+    )
+    builder = ScratchScopeBuilder(
+        caller=server,
+        target=target_from(
+            operation=loaded,
+            team_key=next(iter(loaded.teams)),
+            project="Scratch scope",
+            repo_url=loaded.repos[0].url,
+        ),
+        plan=scratch_scope_plan(),
+    )
+    return loaded, server, await builder.build()
+
+
+async def test_the_shipped_scope_config_answers_each_adapter_point_of_need():
+    """Boots is not runs: every scoped read and the cross-off, over one board.
+
+    The approval label and the criteria-stage marker are applied HERE, standing
+    for the person who approves and for the organize stage that marks a lane
+    ready to fire. Neither is the builder's act.
+    """
+    loaded, server, built = await shipped_board()
+    tracker, _ledger = build_tracker(
+        backend=TrackerBackend.LINEAR,
+        retry=RetryPolicy(attempts=1, initial_delay=0.0),
+        operation=loaded,
+        caller=server,
+    )
+    server.projects[loaded.organize_scopes[0].scope.key]["labels"].append(
+        loaded.scope_labels["approved"]
+    )
+    ref = ScopeRef(kind=ScopeKind.PROJECT, key=loaded.organize_scopes[0].scope.key)
+
+    ready = await read_scope_ready(ref=ref, tracker=tracker)
+    assert {row.issue.issue_key for row in ready.ready} == {
+        built.lanes["A"],
+        built.lanes["C"],
+    }
+    assert {row.issue_key: row.blocker_keys for row in ready.blocked} == {
+        built.lanes["B"]: (built.lanes["A"],)
+    }
+    gaps = {row.issue.issue_key: len(row.gap) for row in ready.ready}
+    assert gaps == {built.lanes["A"]: 3, built.lanes["C"]: 3}
+
+    # A lane fires only once it carries the criteria mandate's terminal marker,
+    # which the file's own mandate table names and the adapter is built with.
+    server.issues[built.lanes["A"]].labels.append(
+        loaded.issue_labels[criteria_stage_label_key(loaded)]
+    )
+    spec = await tracker.read_fire_spec(issue_key=built.lanes["A"])
+    assert list(spec.criteria) == list(built.criteria["A"])
+
+    await tracker.set_workflow_state(
+        issue_key=built.criteria["A"][0], stage=LifecycleStage.DONE
+    )
+    assert server.issues[built.criteria["A"][0]].status == DONE_STATE
