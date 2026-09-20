@@ -35,6 +35,16 @@ one of those has no earlier statement of this module's to stand behind.
 * Ordering is source order. A call site textually after an anchor but reachable
   before it — through a loop that continues past the anchor on a later pass, say
   — is accepted; what the scan refuses is a call the source places first.
+* The scanned set is found by matching import nodes that bind ``read_scope_ready``
+  by name. A service that imports the walker MODULE instead (``from
+  kodezart.chains import scope_walker``, or ``import
+  kodezart.chains.scope_walker``) and calls ``scope_walker.read_scope_ready`` is
+  not scanned at all. Only ``services/*.py`` is globbed, so a module in a
+  subpackage of ``services`` is not scanned either.
+* Call sites are matched by bare name, so ``other.run(...)`` on an unrelated
+  object counts as a call site of a same-named member of the scanned class, and
+  could carry coverage a member has not earned. No such name collides in the
+  modules scanned today.
 
 **The scanned set is derived, not listed.** Every ``kodezart.services`` module
 whose own import nodes bind ``read_scope_ready`` from
@@ -307,8 +317,16 @@ class Runner:
     ),
     (
         "an unanchored public coroutine",
+        # Called from an anchored caller AFTER that caller's anchor, so the
+        # covered-set rule accepts it and only the public-coroutine arm can
+        # flag it. Without the caller the S-rule reports it for having no call
+        # site at all, and the public arm's removal would go unnoticed.
         """
 class Runner:
+    async def run(self, ref):
+        ready = await read_scope_ready(ref=ref, tracker=self._tracker)
+        await self.run_pass()
+
     async def run_pass(self):
         await self._log.ainfo("starting")
         await self._tracker.restore_workflow_state(issue_key="k", state_name="s")
