@@ -69,6 +69,7 @@ from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
+from kodezart.types.domain.scope_terminal import ScopeLaneEntry
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
@@ -377,9 +378,11 @@ async def test_request_queue_constructor_reaches_real_native_graph_without_child
         assert observations[-1]["dispatched"] == ["A", "B"]
         assert observations[-1]["unresolvedCriteria"] == []
         assert "workflow_complete" not in {item["type"] for item in payloads}
+        # One terminal report per invocation, at the one clean exit.
+        assert [item["type"] for item in payloads].count("scope_terminal") == 1
         finished = await queue.get(job_id=record.job_id)
         assert finished.state is JobState.TERMINAL
-        assert finished.outcome is None
+        assert finished.outcome is WorkflowOutcome.scope_converged
         assert list(queue._records) == [record.job_id]
         assert harness.port.claim_writes == []
         # The only bodies the walk wrote are the two Evidence rows its own
@@ -446,13 +449,19 @@ async def test_unapproved_scope_observation_cannot_equal_closed_scope():
     port = board(approved=False)
     harness = runtime(port=port)
     events = await bounded_walk(harness)
-    assert len(events) == 1
+    assert len(ticks_of(events)) == 1
     observation = events[0].observation
     assert observation.unapproved_lanes == ("A",)
     assert observation.unresolved_criteria == ("A/check",)
     assert observation.dispatched == ()
     assert harness.executor.schema_calls == []
     assert not any(isinstance(event, WorkflowCompleteEvent) for event in events)
+    # An unapproved lane owes a gap nothing read, so it is not done and the
+    # scope cannot derive the finished outcome from it.
+    assert events[-1].outcome is WorkflowOutcome.scope_stopped_short
+    assert events[-1].lanes[0] == ScopeLaneEntry(
+        issue="A", done=False, branch=None, pr=None
+    )
 
 
 async def test_existing_plan_barrier_prevents_any_lane_effect():
@@ -670,8 +679,8 @@ async def test_approval_removed_during_preparation_prevents_any_native_node(
     monkeypatch.setattr(controller._cache, "ensure_available", ensure_available)
     events = await bounded_walk(harness)
     assert harness.executor.schema_calls == []
-    assert events[-1].observation.unapproved_lanes == ("A",)
-    assert events[-1].observation.unresolved_criteria == ("A/check",)
+    assert ticks_of(events)[-1].unapproved_lanes == ("A",)
+    assert ticks_of(events)[-1].unresolved_criteria == ("A/check",)
 
 
 def owed_again(port, *, lane="A", check=None):
@@ -736,7 +745,7 @@ async def test_current_closed_blocker_unlocks_next_lane_using_its_recorded_branc
     ]
     assert iterations == ["A", "B"]
     assert port.issues["A"].state_kind is WorkflowStateKind.UNSTARTED
-    final = events[-1].observation
+    final = ticks_of(events)[-1]
     assert final.unresolved_criteria == ()
     # Exactly the two criterion sub-issues moved, and neither subject did.
     assert port.workflow_writes == [
@@ -932,13 +941,16 @@ async def test_actual_http_sse_preserves_nested_progress_and_delivery_discrimina
             if event["event"]["type"] == "lane_delivery"
         )
         assert delivery["delivery"]["phase"] == "skipped"
-        observation = events[-1]["observation"]
+        observation = [
+            item["observation"] for item in events if item["type"] == "scope_walk"
+        ][-1]
         assert observation["skippedLanes"] == ["A"]
         assert observation["unresolvedCriteria"] == []
         assert harness.port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
         assert all(event["type"] != "workflow_complete" for event in events)
         status = (await app.client.get(f"/api/v1/jobs/{job_id}")).json()
-        assert status["state"] == "terminal" and status["outcome"] is None
+        assert status["state"] == "terminal"
+        assert status["outcome"] == "scope_converged"
 
 
 async def test_actual_scope_composition_retains_completed_native_delivery_record():
@@ -992,7 +1004,7 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
         assert wire.creates[0]["head"] == phase.result.head_branch
         assert phase.result.final_commit_sha == repos.head_of(phase.result.head_branch)
         assert record.head_sha == repos.head_of(record.branch)
-        assert events[-1].observation.unresolved_criteria == ()
+        assert ticks_of(events)[-1].unresolved_criteria == ()
         assert harness.port.workflow_writes == [("A/check", LifecycleStage.DONE)]
         # The sha the lane's own loop branch stands at, as the repositories
         # answer it, rather than a value spelled here.
@@ -1778,7 +1790,7 @@ async def test_the_scoped_arm_holds_no_checkpointer_while_the_authored_arm_keeps
     events = await bounded_walk(harness)
 
     # The run really ran, so the empty saver below is a statement about it.
-    assert events[-1].observation.dispatched == ("A",)
+    assert ticks_of(events)[-1].dispatched == ("A",)
     assert [checkpoint async for checkpoint in saver.alist(None)] == []
 
 

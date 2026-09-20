@@ -24,6 +24,7 @@ from kodezart.domain.fire_plateau import fire_plateaued, observe_tick
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
+from kodezart.services.scope_terminal import ScopeTerminal
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.dispatch import ExclusionClause, IssueExclusion
@@ -107,6 +108,9 @@ class ScopeWorkflowEngine:
     never record a pull request, so nothing about it would change and every
     invocation would consolidate and review it again; there it waits for a
     person instead.
+
+    At its clean exit the terminal this owner holds posts the scope's one
+    status update; the walk itself still writes only the put-back.
     """
 
     def __init__(
@@ -117,6 +121,7 @@ class ScopeWorkflowEngine:
         probe_for: Callable[[str], DeliveryProbe | None],
         resolver: BaseResolver,
         entries: LaneEntryReader,
+        terminal: ScopeTerminal,
         cache: RepoCache,
         repositories: Sequence[RepoEntry],
         git_base_url: str,
@@ -127,6 +132,7 @@ class ScopeWorkflowEngine:
         self._probe_for = probe_for
         self._resolver = resolver
         self._entries = entries
+        self._terminal = terminal
         self._cache = cache
         self._repositories = repositories
         self._git_base_url = git_base_url
@@ -144,7 +150,9 @@ class ScopeWorkflowEngine:
         one lane is contained here too: it is logged with its traceback and
         reported on the next observation, and the job no longer ends as an
         engine error for it, so a consumer that alarms on the job's outcome
-        alone would miss one and the terminal report reads ``failed_lanes``.
+        alone would miss one. A lane whose own work raised and still owes
+        criteria reads not done in the terminal vector, so the job's outcome
+        says the run stopped short of it.
         Every one of the walk's three ready reads stays OUTSIDE this boundary,
         which is why a lane's turn is several boundaries and not one: a scope
         read failure is a scope failure and still ends the run, wherever in a
@@ -509,6 +517,7 @@ class ScopeWorkflowEngine:
                 scope, tick, ready, dispatched, skipped, rested, failures, exclusions
             )
             if selected is None:
+                yield await self._terminal.report(ready=ready)
                 return
             key = selected.issue.issue_key
             lane_key = _lane_namespace(cache_key, key)

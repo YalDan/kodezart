@@ -45,6 +45,7 @@ from kodezart.services.scope_runtime import (
     _LastFire,
     _owed_identities,
 )
+from kodezart.services.scope_terminal import ScopeTerminal
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
@@ -129,6 +130,7 @@ def engine(
         probe_for=no_probe if probe_for is None else probe_for,
         resolver=BaseResolver(tracker=port, git=git, remote=REMOTE),
         entries=LaneEntryReader(records=records, git=git, remote=REMOTE),
+        terminal=ScopeTerminal(records=records),
         cache=FakeRepoCache(),
         repositories=repositories,
         git_base_url="https://forge.invalid",

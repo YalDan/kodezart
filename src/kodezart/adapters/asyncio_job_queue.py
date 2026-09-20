@@ -28,6 +28,7 @@ from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 from kodezart.types.domain.workflow import WorkflowSubmission
 
 
@@ -311,7 +312,7 @@ class AsyncioJobQueue:
                 cache_key=job_id,
             ):
                 await self._publish(job_id, event)
-                if isinstance(event, WorkflowCompleteEvent):
+                if isinstance(event, WorkflowCompleteEvent | ScopeTerminalEvent):
                     outcome = event.outcome
         except asyncio.CancelledError:
             raise

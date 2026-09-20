@@ -233,7 +233,7 @@ stopped externally reports `killed` only here. `terminal` is resolved
 against the SDK's own terminal-status set, so a consumer tracking task
 ids clears them on `terminal` from either frame.
 
-### Workflow Events (18)
+### Workflow Events (19)
 
 | Event Type                     | Key Fields                                      |
 | ------------------------------ | ----------------------------------------------- |
@@ -255,6 +255,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
 | `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed/rested lane keys, unresolved criterion keys, unapproved lane keys and exclusions |
 | `scope_lane`                   | `laneKey`, `event`: the complete typed inner event, including its discriminator |
+| `scope_terminal`               | `scope`; `lanes`: one entry per lane of the reading, carrying its issue, whether it is done, its recorded branch and its recorded pull request; `outcome`: scope_converged when every lane is done, else scope_stopped_short |
 
 An addressed scope request uses one queue job. Each fresh walk reports current
 readiness and remaining obligations; approved lanes run through the native fire
@@ -262,9 +263,12 @@ and delivery graphs. `scope_lane.event` preserves iteration, review and native
 session fields. An inner fire's `workflow_complete` is not a scope terminal event.
 Nested events use their concrete discriminator and retain required null fields,
 so the scope envelope validates against the same schema it emits.
-When this controller invocation finishes, the job is `terminal` with a null
-outcome; this does not certify scope convergence. Unapproved and skipped lanes
-and unresolved criterion keys remain explicit in `scope_walk.observation`.
+When this controller invocation finishes cleanly it emits one `scope_terminal`
+event and the job's outcome is that event's; a run that raised is `engine_error`
+and emits none. A lane is done when no criterion under it is open, and the
+outcome reads that column and nothing else — not a pull request, not a merge.
+Unapproved and skipped lanes and unresolved criterion keys remain explicit in
+`scope_walk.observation`.
 
 This request route executes eligible lanes serially, and a lane is fired again in
 the same invocation while its last fire closed a previously open criterion of its
@@ -278,8 +282,8 @@ criteria are all Done takes ONE delivery-only turn per invocation and rests
 after it, whatever that turn's fire did: either the pull request is on the
 lane's record and nothing is left to do, or nothing about the lane moved and an
 identical turn would say the same. Scheduled configured-scope lookup,
-concurrent lane marks, cross-job branch recovery and a scope terminal verdict
-are separate requirements. A lane re-enters from its own tracker record and the
+concurrent lane marks and cross-job branch recovery are separate requirements. A
+lane re-enters from its own tracker record and the
 remote head of the branch that record names; no graph state is persisted for the
 scope path, so nothing is replayed and a killed process changes nothing about
 the next decision (KOD-684, KOD-840). Re-entering is posting the same request
