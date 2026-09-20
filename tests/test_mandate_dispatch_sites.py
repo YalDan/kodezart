@@ -130,6 +130,7 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             phase.role.author_prompt_key,
             phase.role.marks_specification_body,
             phase.role.marks_execution_stage,
+            phase.role.runs_under_approval,
             phase.marker_source,
         )
         for phase in phases
@@ -139,6 +140,7 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             PromptKey.ORGANIZE_AUTHOR,
             False,
             False,
+            False,
             "organize_mandates.groom.terminal_marker_key",
         ),
         (
@@ -146,12 +148,14 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             PromptKey.ORGANIZE_AUTHOR,
             True,
             False,
+            True,
             "organize_mandates.ticket.terminal_marker_key",
         ),
         (
             "criteria",
             PromptKey.ORGANIZE_CRITERIA_AUTHOR,
             False,
+            True,
             True,
             "organize_mandates.criteria.terminal_marker_key",
         ),

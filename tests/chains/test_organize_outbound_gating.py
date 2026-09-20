@@ -171,9 +171,7 @@ async def test_every_organize_write_in_a_scope_run_is_gated_first(monkeypatch, s
     if SHAPES[shape].method == "create_split_if_absent":
         assert "create_split_if_absent" in written
     parent = board.server.issues[CLAIMED_ISSUE]
-    assert {"graph complete", "body complete", "criteria complete"} <= set(
-        parent.labels
-    )
+    assert {"body complete", "criteria complete"} <= set(parent.labels)
 
 
 async def test_every_escalation_write_the_node_makes_is_gated_first(monkeypatch):

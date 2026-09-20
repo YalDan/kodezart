@@ -7,8 +7,13 @@ wiring written here.
 
 import pytest
 
-from kodezart.domain.errors import ScopeNotApprovedError
+from kodezart.domain.errors import OrganizeHaltError, ScopeNotApprovedError
 from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.organize_owner import (
+    OrganizeReport,
+    StageHaltCause,
+    StageHaltReport,
+)
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from tests.integration.test_scope_runtime import SCOPE, board, drive, runtime
@@ -53,3 +58,63 @@ async def test_the_addressed_scopes_own_approval_admits_the_run():
     harness = runtime(port=port)
     with pytest.raises(ScopeNotApprovedError):
         _ = [event async for event in drive(harness)]
+
+
+async def test_the_stages_precede_the_first_ready_read_and_a_halt_prevents_it():
+    """Whatever the entry does, it is finished before a member is read.
+
+    The engine's own collaborator is wrapped here rather than replaced, so
+    the order asserted is the composed engine's and not a second wiring's.
+    A halt raised by the entry reaches the caller and the walk never starts.
+    """
+    port = board(lanes=("A",))
+    harness = runtime(port=port)
+    entry = harness.engine._scoped_arm._entry
+    order = []
+
+    async def recorded_admit(**kwargs):
+        order.append("admit")
+        return await entry.admit(**kwargs)
+
+    async def recorded_scope_issues(*, ref):
+        order.append("member read")
+        return await original_scope_issues(ref=ref)
+
+    original_scope_issues = port.scope_issues
+    harness.engine._scoped_arm._entry = type(
+        "RecordingEntry", (), {"admit": staticmethod(recorded_admit)}
+    )()
+    port.scope_issues = recorded_scope_issues
+    events = [event async for event in drive(harness)]
+    assert [event for event in events if isinstance(event, ScopeWalkEvent)]
+    assert order[0] == "admit"
+    assert order.count("admit") == 1
+
+    halting = board(lanes=("A",))
+    second = runtime(port=halting)
+    report = OrganizeReport(
+        halt=StageHaltReport.model_validate(
+            {
+                "cause": "human_decision",
+                "questions": [
+                    {
+                        "kind": "unresolved",
+                        "issueId": "A",
+                        "question": "Which reading of the subject governs?",
+                        "evidence": "The body admits two readings.",
+                    }
+                ],
+            }
+        )
+    )
+
+    async def halting_admit(*, scope, repository, job_id):
+        raise OrganizeHaltError(scope=scope, report=report)
+
+    second.engine._scoped_arm._entry = type(
+        "HaltingEntry", (), {"admit": staticmethod(halting_admit)}
+    )()
+    with pytest.raises(OrganizeHaltError) as caught:
+        _ = [event async for event in drive(second, job="halted")]
+    assert caught.value.report.halt.cause is StageHaltCause.HUMAN_DECISION
+    assert second.executor.schema_calls == []

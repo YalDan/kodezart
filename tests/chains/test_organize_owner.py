@@ -13,9 +13,10 @@ from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
+from kodezart.domain.organize import stage_rows
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import OperationConfig, ScopeLabel
 from kodezart.types.domain.organize import AdmissionVerdict, SpecFinding
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import ToolPreset
@@ -55,13 +56,20 @@ async def test_source_identity_is_checked_before_any_session(monkeypatch, method
 
 class BoardExecutor:
     def __init__(
-        self, board, *, refuse_forever=False, wrong_proposal=False, refusal=None
+        self,
+        board,
+        *,
+        refuse_forever=False,
+        wrong_proposal=False,
+        refusal=None,
+        criteria=("Check prepared bytes",),
     ):
         self.board = board
         self.calls = []
         self.refuse_forever = refuse_forever
         self.wrong_proposal = wrong_proposal
         self.refusal = refusal
+        self.criteria = tuple(criteria)
 
     async def stream(self, **kwargs):
         self.calls.append(kwargs)
@@ -94,10 +102,11 @@ class BoardExecutor:
                         "issue_id": key,
                         "criteria": [
                             {
-                                "title": "Check prepared bytes",
-                                "check": "Prepared bytes match the declared source.",
-                                "do": "Compare the source and prepared bytes.",
+                                "title": title,
+                                "check": f"{title} match the declared source.",
+                                "do": f"Compare the source and {title.lower()}.",
                             }
+                            for title in self.criteria
                         ],
                     }
                 else:
@@ -136,10 +145,17 @@ def factory(
     tick=False,
     settings=None,
     gate=None,
+    under_approval=False,
+    criteria=("Check prepared bytes",),
 ):
     board = _Board()
     operation_fields = declared_operation().model_dump()
     operation_fields["issue_labels"]["decision"] = "needs decision"
+    # The live table gates the first run stage on approval by that exact
+    # reference; grooming keeps its own pre-approval gate.
+    for mandate in operation_fields["organize_mandates"]:
+        if mandate["kind"] == "ticket":
+            mandate["gate_label_key"] = "scope_labels.approved"
     operation_fields["marker_prefixes"]["escalation"] = "organize-question"
     for mandate in operation_fields["organize_mandates"]:
         mandate["rubric_prompt_key"] = "organize_assess"
@@ -155,6 +171,8 @@ def factory(
     parent = board.server.issues[CLAIMED_ISSUE]
     parent.description = body if body is not None else "Missing specification"
     parent.labels = ["candidate scope"]
+    if under_approval:
+        parent.labels.append(operation.scope_labels[ScopeLabel.APPROVED.value])
     tracker = tracker_over(
         board.server,
         caller=board,
@@ -168,6 +186,7 @@ def factory(
         refuse_forever=refuse_forever,
         wrong_proposal=wrong_proposal,
         refusal=refusal,
+        criteria=criteria,
     )
     workspace = RecordingWorkspace()
     constructor = build_organize_tick if tick else build_organize_owner
@@ -195,7 +214,17 @@ def factory(
         ),
         skills=SUPPRESS_ALL_SKILLS,
         gate=PassThroughGate() if gate is None else gate,
-        **({} if tick else {"repo_url": "https://example.invalid/repository"}),
+        **(
+            {}
+            if tick
+            else {
+                "repo_url": "https://example.invalid/repository",
+                "phases": stage_rows(
+                    operation.resolve_organize_mandates(),
+                    under_approval=under_approval,
+                ),
+            }
+        ),
     )
     return owner, board, executor
 
@@ -210,27 +239,22 @@ async def run_owner(owner):
     )
 
 
-async def test_actual_factory_runs_all_configured_phases_and_reentry_writes_nothing():
+async def test_the_pre_approval_owner_grooms_alone_and_reentry_writes_nothing():
+    """The scheduled pass's owner is given the pre-approval row and only that.
+
+    Grooming ends at approval, so the two run-stage markers and the
+    criterion child belong to a scope run and are absent here.
+    """
     owner, board, executor = factory()
     report = await run_owner(owner)
     assert report.halt is None
-    assert [phase.value for phase in report.completed_phases] == [
-        "groom",
-        "ticket",
-        "criteria",
-    ]
+    assert [phase.value for phase in report.completed_phases] == ["groom"]
     parent = board.server.issues[CLAIMED_ISSUE]
-    assert {"graph complete", "body complete", "criteria complete"} <= set(
-        parent.labels
+    assert "graph complete" in parent.labels
+    assert not {"body complete", "criteria complete"} & set(parent.labels)
+    assert not any(
+        issue.parent_id == CLAIMED_ISSUE for issue in board.server.issues.values()
     )
-    children = [
-        issue
-        for issue in board.server.issues.values()
-        if issue.parent_id == CLAIMED_ISSUE
-    ]
-    assert len(children) == 1
-    assert children[0].status_type == "unstarted"
-    assert children[0].description.endswith("**Evidence:**\n")
     assert "approved scope" not in parent.labels
     assert all(
         call["session_id"] is None and call["allowed_tools"] is ToolPreset.EVALUATION
@@ -243,6 +267,30 @@ async def test_actual_factory_runs_all_configured_phases_and_reentry_writes_noth
     )
     board.calls.clear()
     await run_owner(owner)
+    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+
+
+async def test_the_run_stage_owner_does_ticket_then_criteria_and_rewrites_nothing():
+    """Both run stages over an approved scope, in the governed order."""
+    owner, board, _ = factory(under_approval=True)
+    report = await run_owner(owner)
+    assert report.halt is None
+    assert [phase.value for phase in report.completed_phases] == ["ticket", "criteria"]
+    parent = board.server.issues[CLAIMED_ISSUE]
+    assert {"body complete", "criteria complete"} <= set(parent.labels)
+    children = [
+        issue
+        for issue in board.server.issues.values()
+        if issue.parent_id == CLAIMED_ISSUE
+    ]
+    assert len(children) == 1
+    assert children[0].status_type == "unstarted"
+    assert children[0].description.endswith("**Evidence:**\n")
+    assert parent.labels.count("approved scope") == 1
+    board.calls.clear()
+    second = await run_owner(owner)
+    assert second.halt is None
+    assert [phase.value for phase in second.completed_phases] == ["ticket", "criteria"]
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
 
 
@@ -399,7 +447,7 @@ async def test_human_approval_arriving_during_authorship_ends_organize_before_wr
             yield event
 
     monkeypatch.setattr(executor, "stream", approved)
-    with pytest.raises(OrganizeWriteRefusalError, match="approval ended"):
+    with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
         await run_owner(owner)
     assert not [(name, args) for name, args in board.calls if name == "save_issue"]
 
@@ -568,7 +616,14 @@ async def test_assessment_dispatch_uses_the_configured_admission_role():
     assert "Adversarially verify the current issue" in executor.calls[0]["prompt"]
 
 
-async def test_already_approved_scope_starts_no_author_or_judgment():
+async def test_an_approved_scope_admits_nobody_to_grooming_and_opens_no_session():
+    """Approval ends the pre-approval phase for every member at once.
+
+    The row is not refused and does not halt: it has nobody left to act on,
+    so no session opens and no write is made. This is what stands grooming
+    down the moment approval lands, and it is the same reading a run stage
+    is admitted by.
+    """
     owner, board, executor = factory()
     board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
     report = await run_owner(owner)
@@ -672,7 +727,7 @@ async def test_removed_phase_gate_refuses_author_write(monkeypatch):
             yield event
 
     monkeypatch.setattr(executor, "stream", gate_removed)
-    with pytest.raises(OrganizeWriteRefusalError, match="phase gate"):
+    with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
         await run_owner(owner)
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
 
@@ -741,7 +796,8 @@ async def test_remediation_round_input_is_the_accumulated_defect_class_set(monke
     first_round = tuple(sorted(set(ROUND_ONE_CLASSES)))
     both_rounds = tuple(sorted(set(ROUND_ONE_CLASSES) | set(ROUND_TWO_CLASSES)))
     observed = [classes for classes, _ in groupby(r.defect_classes for r in requests)]
-    assert observed == [(), first_round, both_rounds] * 3
+    # Once per row this owner was given, and the pre-approval owner is given one.
+    assert observed == [(), first_round, both_rounds] * 1
     assert all(
         not isinstance(value, SpecFinding)
         and not (
@@ -776,12 +832,17 @@ GROUNDED_BODY = "Prepared body grounded in the source."
 
 
 def regrowth(monkeypatch, *, mandate):
-    """Script one authoring step that carries any mandating sentence forward."""
+    """Script one authoring step that carries any mandating sentence forward.
+
+    Over the run-stage owner, because the body this scripts is the ticket
+    stage's own write.
+    """
     from tests.fakes import FakeMcpIssue
 
     owner, board, executor = factory(
         body=f"{MANDATE_SENTENCE} {DRAFT_BODY}" if mandate else DRAFT_BODY,
         convergence_bound=2,
+        under_approval=True,
     )
     board.server.issues["restating-criterion"] = FakeMcpIssue(
         id="restating-criterion",
@@ -883,11 +944,7 @@ async def test_removed_mandate_leaves_the_same_authoring_step_dry(monkeypatch):
     report = await run_owner(owner)
     assert REGROWTH_CLASS not in observed
     assert report.halt is None
-    assert [phase.value for phase in report.completed_phases] == [
-        "groom",
-        "ticket",
-        "criteria",
-    ]
+    assert [phase.value for phase in report.completed_phases] == ["ticket", "criteria"]
     parent = board.server.issues[CLAIMED_ISSUE]
     assert parent.description == GROUNDED_BODY
     assert [
@@ -895,9 +952,7 @@ async def test_removed_mandate_leaves_the_same_authoring_step_dry(monkeypatch):
         for call in executor.calls
         if call["output_format"]["schema"].get("title") == "OrganizeProposal"
     ]
-    assert {"graph complete", "body complete", "criteria complete"} <= set(
-        parent.labels
-    )
+    assert {"body complete", "criteria complete"} <= set(parent.labels)
 
 
 ESCALATION_MARKER = "[organize-question:"
@@ -961,3 +1016,26 @@ async def test_a_raising_stage_report_leaves_the_escalation_recorded(monkeypatch
     assert len(escalations) == 1
     assert "The current body omits the required source." in escalations[0].body
     assert "needs decision" in board.server.issues[CLAIMED_ISSUE].labels
+
+
+async def test_approval_withdrawn_during_a_stage_author_write_refuses_the_write(
+    monkeypatch,
+):
+    """A run stage is admitted by approval, and re-asked before it writes."""
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    owner, board, executor = factory(under_approval=True)
+    original = executor.stream
+
+    async def withdrawn(**kwargs):
+        async for event in original(**kwargs):
+            if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+                labels = board.server.issues[CLAIMED_ISSUE].labels
+                if "approved scope" in labels:
+                    labels.remove("approved scope")
+            yield event
+
+    monkeypatch.setattr(executor, "stream", withdrawn)
+    with pytest.raises(OrganizeWriteRefusalError, match="ticket is not admitted"):
+        await run_owner(owner)
+    assert not [(name, args) for name, args in board.calls if name == "save_issue"]

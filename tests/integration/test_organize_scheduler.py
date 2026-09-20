@@ -116,22 +116,21 @@ async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempoten
     assert scheduled.timeout_seconds == config.grooming_pass_timeout_seconds
     assert scheduled.report is not None
     assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
-    children = [
-        item for item in board.server.issues.values() if item.parent_id == CLAIMED_ISSUE
-    ]
-    assert len(children) == 1
-    assert children[0].status_type == "unstarted"
-    assert children[0].description.endswith("**Evidence:**\n")
-    assert {"graph complete", "body complete", "criteria complete"} <= set(
-        board.server.issues[CLAIMED_ISSUE].labels
+    # The scheduled pass is given the pre-approval row and no other: its own
+    # marker lands, the two run-stage markers do not, and the criterion
+    # children belong to the criteria stage of an approved scope run.
+    labels = set(board.server.issues[CLAIMED_ISSUE].labels)
+    assert "graph complete" in labels
+    assert not {"body complete", "criteria complete", "approved scope"} & labels
+    assert not any(
+        item.parent_id == CLAIMED_ISSUE for item in board.server.issues.values()
     )
-    assert "approved scope" not in board.server.issues[CLAIMED_ISSUE].labels
+    writes = len([name for name, _ in board.calls if name.startswith("save_")])
     assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
-    assert [
-        item.id
-        for item in board.server.issues.values()
-        if item.parent_id == CLAIMED_ISSUE
-    ] == [children[0].id]
+    assert not any(
+        item.parent_id == CLAIMED_ISSUE for item in board.server.issues.values()
+    )
+    assert len([name for name, _ in board.calls if name.startswith("save_")]) == writes
     schemas = [call["output_format"]["schema"]["title"] for call in executor.calls]
     assert "OrganizeProposal" in schemas
     assert "WriteBackFinding" in schemas
@@ -229,7 +228,7 @@ async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatc
             if entry.name == PromptKey.GROOMING_PASS.value
         )
         await scheduler._tick(grooming)
-        assert "criteria complete" in board.server.issues[CLAIMED_ISSUE].labels
+        assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
         assert any(
             call["output_format"]["schema"]["title"] == "WriteBackFinding"
             for call in executor.calls

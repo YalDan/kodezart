@@ -1,4 +1,8 @@
-"""One pre-approval Organize pipeline over the configured mandate table."""
+"""The Organize pipeline over the configured mandate table.
+
+An owner runs the rows it is given: the pre-approval row for the scheduled
+pass, the two run-stage rows for the scope run.
+"""
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -58,6 +62,7 @@ from kodezart.types.domain.organize import (
     AdmissionRoute,
     MandateKind,
     OrganizeAdmissionRequest,
+    OrganizeLabelNamespace,
     ResolvedMandateSpec,
     SpecFinding,
     split_label_key,
@@ -130,6 +135,7 @@ class OrganizeOwner:
         gate: OutboundContentGate,
         prompts: PromptSetProvider,
         operation: OperationConfig,
+        phases: Sequence[ResolvedMandateSpec],
         policy: OrganizePolicy,
         write_back_max_rounds: int,
         lease_seconds: float,
@@ -139,8 +145,8 @@ class OrganizeOwner:
         self._gate, self._prompts, self._operation = gate, prompts, operation
         self._policy, self._lease_seconds = policy, lease_seconds
         self._write_back_max_rounds = write_back_max_rounds
-        # The resolved table already stands in the governed phase sequence.
-        self._phases = operation.resolve_organize_mandates()
+        # The rows this owner was given, already in the governed sequence.
+        self._phases = tuple(phases)
         if not self._phases:
             raise OperationMemberAbsentError(
                 missing="organize_mandates", stops="Organize construction"
@@ -154,9 +160,12 @@ class OrganizeOwner:
                     missing=phase.spec.gate_label_key,
                     stops="native scope-label gate read",
                 )
+        # The body marker is the whole table's, not this owner's rows': the
+        # gap arithmetic needs it in every phase, including one whose rows do
+        # not include the phase that writes it.
         self._body_marker = next(
             split_label_key(phase.spec.terminal_marker_key)[1]
-            for phase in self._phases
+            for phase in operation.resolve_organize_mandates()
             if phase.role.marks_specification_body
         )
         self._verifier = WriteBackVerifier(
@@ -303,6 +312,35 @@ class OrganizeOwner:
             ]
         )
 
+    async def _admitted(
+        self,
+        issue: TrackerIssue,
+        *,
+        phase: ResolvedMandateSpec,
+        scope_labels: frozenset[ScopeLabel],
+    ) -> bool:
+        """Whether this phase may act on *issue* now.
+
+        The one reading behind every gate and approval arm. A run stage is
+        admitted by approval and by its gate; a pre-approval phase by its
+        gate while approval is absent. A gate naming the approval label
+        reads the cascade, never the exact scope's own labels.
+        """
+        approved = await self._tracker.execution_approved(issue_key=issue.issue_key)
+        namespace, key = split_label_key(phase.spec.gate_label_key)
+        if (
+            namespace is OrganizeLabelNamespace.SCOPE
+            and key == ScopeLabel.APPROVED.value
+        ):
+            gate_open = approved
+        elif namespace is OrganizeLabelNamespace.SCOPE:
+            gate_open = ScopeLabel(key) in scope_labels
+        else:
+            gate_open = key in issue.issue_labels
+        return gate_open and (
+            approved if phase.role.runs_under_approval else not approved
+        )
+
     async def _may_write(
         self, issue_key: str, *, phase: ResolvedMandateSpec, scope: ScopeRef
     ) -> None:
@@ -311,20 +349,12 @@ class OrganizeOwner:
             raise OrganizeWriteRefusalError(
                 issue_key=issue_key, reason="the write target left the admitted scope"
             )
-        namespace, key = split_label_key(phase.spec.gate_label_key)
-        permitted = (
-            ScopeLabel(key) in await self._tracker.read_scope_labels(ref=scope)
-            if namespace.value == "scope_labels"
-            else key
-            in (await self._tracker.read_issue(issue_key=issue_key)).issue_labels
-        )
-        if not permitted:
+        issue = await self._tracker.read_issue(issue_key=issue_key)
+        scope_labels = await self._tracker.read_scope_labels(ref=scope)
+        if not await self._admitted(issue, phase=phase, scope_labels=scope_labels):
             raise OrganizeWriteRefusalError(
-                issue_key=issue_key, reason="configured phase gate is no longer present"
-            )
-        if await self._tracker.execution_approved(issue_key=issue_key):
-            raise OrganizeWriteRefusalError(
-                issue_key=issue_key, reason="scope approval ended Organize"
+                issue_key=issue_key,
+                reason=f"{phase.spec.kind.value} is not admitted for this issue now",
             )
 
     async def _require_revision(self, revision: TrackerIssueRevision) -> None:
@@ -385,10 +415,7 @@ class OrganizeOwner:
             for peer in sorted(peers):
                 await self._may_write(peer, phase=phase, scope=scope)
             await require_context(proposal)
-            if await self._tracker.execution_approved(issue_key=request.issue_key):
-                raise OrganizeWriteRefusalError(
-                    issue_key=request.issue_key, reason="scope approval ended Organize"
-                )
+            await self._may_write(request.issue_key, phase=phase, scope=scope)
 
         async def apply(finding: WriteBackFinding | None) -> None:
             proposal = (
@@ -973,28 +1000,13 @@ class OrganizeOwner:
             for _convergence_round in range(self._policy.max_convergence_rounds):
                 snapshot = await self._snapshot(scope)
                 members = {r.issue.issue_key for r in snapshot}
-                if snapshot and all(
-                    [
-                        await self._tracker.execution_approved(
-                            issue_key=r.issue.issue_key
-                        )
-                        for r in snapshot
-                    ]
-                ):
-                    return OrganizeReport(completed_phases=tuple(completed))
-                namespace, gate = split_label_key(phase.spec.gate_label_key)
                 scope_labels = await self._tracker.read_scope_labels(ref=scope)
                 subjects = [
                     r.issue
                     for r in snapshot
                     if is_organize_subject(r.issue)
-                    and not await self._tracker.execution_approved(
-                        issue_key=r.issue.issue_key
-                    )
-                    and (
-                        ScopeLabel(gate) in scope_labels
-                        if namespace.value == "scope_labels"
-                        else gate in r.issue.issue_labels
+                    and await self._admitted(
+                        r.issue, phase=phase, scope_labels=scope_labels
                     )
                 ]
                 if not subjects:
@@ -1233,13 +1245,8 @@ class OrganizeOwner:
                         revision.issue
                         for revision in current
                         if is_organize_subject(revision.issue)
-                        and not await self._tracker.execution_approved(
-                            issue_key=revision.issue.issue_key
-                        )
-                        and (
-                            ScopeLabel(gate) in current_labels
-                            if namespace.value == "scope_labels"
-                            else gate in revision.issue.issue_labels
+                        and await self._admitted(
+                            revision.issue, phase=phase, scope_labels=current_labels
                         )
                     ]
                     for issue in marker_subjects:

@@ -378,6 +378,28 @@ Incomplete parent identity or duplicate revision/admission records refuse
 computation. Collecting and persisting these snapshots and running leased
 author sessions remain orchestration work outside this pure function.
 
+One organize table declares three phases, and the role table says which side
+of scope approval each runs on. `groom` runs before approval, on the grooming
+cadence, and ends the moment approval lands: an approved scope admits nobody
+to it, so its scheduled pass opens no session and writes nothing. `ticket` and
+`criteria` are stages of an approved scope run. An owner runs exactly the rows
+it is given — the scheduled pass is given the pre-approval row, a scope run's
+entry the two run-stage rows — and no branch on mandate kind exists outside
+the role table.
+
+Because approval admits a member to a run stage instead of ending it, a
+run-stage row may name `scope_labels.approved` as its gate by that exact
+reference. Such a gate reads the per-issue cascade, never the addressed
+scope's own labels. No row may use approval as a completion marker, and no
+row may reach it through an alias: nothing machine-written is approval.
+
+One predicate answers whether a phase may act on a member now, and every gate
+read and approval read in the owner is that predicate: a run stage is admitted
+by approval and by its gate, a pre-approval phase by its gate while approval
+is absent. The same predicate decides the work roster, the marker roster and
+every author write, so a member that was never admitted is never written to
+and an approval withdrawn mid-session refuses the write it was about to make.
+
 ## Workflow Pipeline
 
 The delivery-free `RalphWorkflowEngine` in `chains/ralph_workflow.py` owns

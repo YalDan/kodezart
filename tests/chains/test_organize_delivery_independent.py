@@ -14,9 +14,8 @@ from kodezart.domain.errors import (
 from kodezart.services.organize_tick import OrganizeTick
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from tests.chains.test_organize import RecordingWorkspace
 from tests.chains.test_organize_owner import factory, run_owner
-from tests.fakes import FakeGitService, FakeMcpIssue
+from tests.fakes import FakeMcpIssue
 from tests.services.test_run_surface_lease import _Board
 from tests.tracker.conftest import CLAIMED_ISSUE
 from tests.tracker.test_criterion_creation import JOB, create, saves, surface
@@ -37,18 +36,14 @@ async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
             update={"scope": ScopeRef(kind=ScopeKind.ISSUE, key=key)}
         ),
     )
-    tick = OrganizeTick(
-        targets=(first._targets[0], target),
-        git=FakeGitService(remote_branch_shas={target.repository.trunk: "a" * 40}),
-        workspace=RecordingWorkspace(),
-        remote="origin",
-    )
+    tick = OrganizeTick(targets=(first._targets[0], target))
     try:
         await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
     except OrganizeHaltError:
         pass  # A recorded first halt is allowed; starvation is the oracle.
     assert executor.calls, "the second independent binding never reaches its owner"
-    assert "criteria complete" in board.server.issues[key].labels
+    # The scheduled pass runs the pre-approval row, whose marker this is.
+    assert "graph complete" in board.server.issues[key].labels
 
 
 @pytest.mark.parametrize("approval_arrives", [False, True])
@@ -94,7 +89,8 @@ async def test_approval_is_current_after_last_awaited_gate_read(
 async def test_criterion_author_is_bound_to_current_parent_revision(
     monkeypatch, source_changes
 ):
-    owner, board, executor = factory()
+    # The criterion author is the criteria stage's, which runs inside the run.
+    owner, board, executor = factory(under_approval=True)
     original = executor.stream
     changed = False
 
@@ -177,7 +173,8 @@ async def test_foreign_holder_cannot_create_while_first_owner_holds_set():
 
 
 async def test_cancel_during_owner_create_settles_before_release(monkeypatch):
-    owner, board, _ = factory()
+    # The creation cancelled here is the criteria stage's own.
+    owner, board, _ = factory(under_approval=True)
     board.pause = lambda name, args: name == "save_issue" and "id" not in args
     task = asyncio.create_task(run_owner(owner))
     try:

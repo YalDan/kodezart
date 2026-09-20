@@ -394,7 +394,17 @@ def build_workflow_engine(
         # state is its tracker record, so nothing here writes a checkpoint
         # and nothing reads one (KOD-840).
         native_loop = loop(None)
-        entry = build_scope_entry(tracker=scope_tracker)
+        entry = build_scope_entry(
+            config=config,
+            operation=operation,
+            tracker=scope_tracker,
+            runner=agent_service,
+            workspace=workspace,
+            git=git,
+            prompts=prompts,
+            skills=skills,
+            gate=gate,
+        )
         scoped_arm = build_scope_runtime(
             tracker=scope_tracker,
             forge_lane=build_native_lane_workflow(

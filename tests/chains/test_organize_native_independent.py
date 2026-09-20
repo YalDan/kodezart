@@ -15,7 +15,8 @@ from tests.tracker.conftest import CLAIMED_ISSUE
 async def test_criterion_mint_requires_the_parent_revision_its_author_read(
     monkeypatch, amend_parent
 ):
-    owner, board, executor = factory()
+    # The criterion mint is the criteria stage's, which runs inside the run.
+    owner, board, executor = factory(under_approval=True)
     original = executor.stream
     criterion_inputs = []
 

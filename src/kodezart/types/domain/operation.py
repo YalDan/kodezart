@@ -964,8 +964,10 @@ class OperationConfig(OperationModel):
         An absent table is a legitimate operation without an organizer table.
         A declared table names every phase exactly once. The namespace in
         each key selects its mapping; phase kind never guesses one. Approval
-        ends organization, so its configured label cannot be a phase gate
-        or a machine-written completion marker, including through aliases.
+        admits a member to a run stage and ends the pre-approval phase, and
+        it is never machine-written, so a run-stage row may gate on
+        ``scope_labels.approved`` by that exact reference; no row may mark
+        with it or gate through an alias of it.
 
         Rows come back in the governed phase sequence with the lane role
         each phase carries, so no reader downstream repeats the sequence
@@ -1004,7 +1006,11 @@ class OperationConfig(OperationModel):
                     failures.append(
                         f"{location} has no nonempty mapping for {reference!r}"
                     )
-                elif label == approved_label:
+                elif label == approved_label and not (
+                    field == "gate_label_key"
+                    and namespace is OrganizeLabelNamespace.SCOPE
+                    and MANDATE_PHASE_ROLES[spec.kind].runs_under_approval
+                ):
                     failures.append(
                         f"{location} names scope approval, which ends organize"
                     )

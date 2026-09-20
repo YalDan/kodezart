@@ -8,9 +8,15 @@ from tests.chains import test_organize_owner as fixtures
 from tests.chains.test_organize import result
 from tests.tracker.conftest import CLAIMED_ISSUE
 
+#: The surfaces the criteria stage owns. That stage runs inside an approved
+#: scope run, so what takes its write authority away between an unsent
+#: attempt and the retry is approval WITHDRAWN; for a surface the
+#: pre-approval row authors it is approval ARRIVING.
+RUN_STAGE_KINDS = ("criteria",)
+
 
 @pytest.mark.parametrize("kind", ["graph", "split", "criteria"])
-async def test_scope_approval_during_unsent_attempt_stops_each_authoring_surface(
+async def test_a_scope_approval_move_during_an_unsent_attempt_stops_each_surface(
     monkeypatch, kind
 ):
     original_tracker = fixtures.tracker_over
@@ -19,7 +25,8 @@ async def test_scope_approval_during_unsent_attempt_stops_each_authoring_surface
         return original_tracker(*args, **kwargs, max_retries=1)
 
     monkeypatch.setattr(fixtures, "tracker_over", tracker_with_retry)
-    owner, board, executor = fixtures.factory()
+    under_approval = kind in RUN_STAGE_KINDS
+    owner, board, executor = fixtures.factory(under_approval=under_approval)
     original_stream = executor.stream
 
     async def stream(**kwargs):
@@ -60,7 +67,11 @@ async def test_scope_approval_during_unsent_attempt_stops_each_authoring_surface
         if selected(name, arguments):
             attempts += 1
             if attempts == 1:
-                board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
+                labels = board.server.issues[CLAIMED_ISSUE].labels
+                if under_approval:
+                    labels.remove("approved scope")
+                else:
+                    labels.append("approved scope")
                 raise McpTransportError(
                     "Connection failed before sending",
                     server_name="fixture",
@@ -76,6 +87,6 @@ async def test_scope_approval_during_unsent_attempt_stops_each_authoring_surface
     except OrganizeWriteRefusalError as exc:
         error = exc
     assert error is not None
-    assert attempts == 1, "an authoring surface was retried after scope approval"
+    assert attempts == 1, "an authoring surface was retried without its authority"
     assert not [(name, args) for name, args in board.calls if selected(name, args)]
     assert board.grants() == []
