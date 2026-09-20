@@ -409,15 +409,14 @@ carry one of four classes, the answer, any rejected alternative, repository
 evidence and required `machine` or `principal` authorship. The formatter
 includes every field in one readable JSON block and the parser refuses damaged
 or mismatched identity. The `decision` purpose remains the native escalation
-reply carrier. The actual ruling node and verified, leased publication remain
-separate consumers.
+reply carrier. The native arm's `rule_open_questions` step writes these records
+before its loop; see the scoped execution boundary in `docs/architecture.md`.
 
 `RulingRecordReader` enumerates the current configured ruling comments through
 `TrackerPort.list_comments`, preserving each native comment key and decoded
 record. Successful absence is an empty tuple; malformed records, duplicate
 identities, foreign ownership and incomplete reads refuse. A fresh reader
-observes replay edits through the existing marker upsert primitive. This is
-read-back capability and conformance, not a production ruling writer.
+observes replay edits through the existing marker upsert primitive.
 
 Declare `issue_identity` to use keyed issue upsert. The Linear adapter records
 the scope kind, scope key and deliverable key in a hidden first description

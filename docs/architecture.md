@@ -837,9 +837,10 @@ ruling comments for every explicitly supplied lane member. The configured
 required authorship before projecting it. `observe_recorded_ruling_growth`
 combines that current read with live closure and the caller's retained
 baseline. Amendments keep their deterministic question identity and cannot
-reset the baseline. The actual ruling node, verified leased artifact writes,
-lane-membership producer and persisted window advancement remain separate
-implementation work.
+reset the baseline. The native arm's `rule_open_questions` step now writes
+each pinned answer as a verified, leased marker comment on the issue whose own
+text raised the question, before the loop; the lane-membership producer and
+persisted window advancement remain separate implementation work.
 
 The criterion-lifecycle code conformance module checks both identity owners:
 `CriterionRef` is constructed by the full tracker-spec reader and `RulingId`
@@ -1166,6 +1167,15 @@ Scope readers, planning and readiness remain available to their current
 consumers. The former preparation, feasibility and ruling-proposal stack ran
 work only to refuse; its exclusive ports, transient schema and prompt role have
 been retired.
+
+The native arm's order is `resolve_visibility`, `revalidate_criteria`,
+`rule_open_questions`, `run_ralph_loop`. The question step asks one read-only
+pass under the `fire_time_ruling` role what the subject text and the current
+Checks leave open, pins each answer on the issue whose text raised it, reads it
+back, and only then enters the loop. An open question whose answer cannot be
+confirmed on the tracker ends the fire `ruling_unrecorded`, with the loop
+un-entered. Unlike the retired stack this one has a consumer: the loop's own
+writer contract renders the pinned answers it reads back.
 They are not an alternate execution path or evidence of a completed fire.
 
 The scheduled pass gate keeps its vendor timestamp window for reply and

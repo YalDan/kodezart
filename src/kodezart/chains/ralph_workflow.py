@@ -20,12 +20,17 @@ from kodezart.chains.fire_implementation import FireImplementation
 from kodezart.chains.fire_remediation import FireRemediation
 from kodezart.chains.fire_review import FireReview
 from kodezart.chains.fire_specification import FireSpecification
+from kodezart.chains.fire_time_ruling import (
+    route_after_questions,
+    rule_open_questions,
+)
 from kodezart.core.protocols import FireCriteriaSource
 from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.domain.accept_gate import (
     gate_cleared,
 )
 from kodezart.domain.agent import mint_lane_branches
+from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.base_scope import scope_base
 from kodezart.domain.criteria_feasibility import (
     demands_regeneration,
@@ -36,6 +41,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.thread_id import workflow_thread_id
+from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     AgentEvent,
@@ -70,7 +76,8 @@ class RalphWorkflowEngine:
     from.  The authored arm generates a ticket and a criteria set in the
     graph.  The tracker-native arm is EXECUTION-ONLY: it generates
     neither, and re-validates at head the criterion sub-issues an
-    organize pass already staged, before it reaches the loop.
+    organize pass already staged, and answers the fire's open questions
+    onto the tracker, before it reaches the loop.
     """
 
     def __init__(
@@ -87,6 +94,7 @@ class RalphWorkflowEngine:
         retry_initial_interval: float,
         delay_floor_for: DelayFloor,
         criteria: FireCriteriaSource | None = None,
+        rulings: FireTimeRulings | None = None,
     ) -> None:
         self.specification = specification
         self.implementation = implementation
@@ -94,6 +102,7 @@ class RalphWorkflowEngine:
         self.review = review
         self.remediation = remediation
         self.criteria = criteria
+        self.rulings = rulings
         self._git_base_url = git_base_url
         self.checkpointer = checkpointer
         self.retry = RetryPolicy(
@@ -227,6 +236,11 @@ class RalphWorkflowEngine:
                 self.floor(partial(revalidate_criteria, source=criteria)),
                 retry_policy=self.retry,
             )
+            graph.add_node(
+                "rule_open_questions",
+                self.floor(self._rule_open_questions),
+                retry_policy=self.retry,
+            )
         graph.add_node(
             "run_ralph_loop",
             self.floor(self.implementation.run_ralph_loop),
@@ -305,9 +319,14 @@ class RalphWorkflowEngine:
                 "revalidate_criteria",
                 self._route_after_revalidation,
                 {
-                    "run_ralph_loop": "run_ralph_loop",
+                    "rule_open_questions": "rule_open_questions",
                     "merge_to_feature": "merge_to_feature",
                 },
+            )
+            graph.add_conditional_edges(
+                "rule_open_questions",
+                route_after_questions,
+                {"run_ralph_loop": "run_ralph_loop", "complete": "complete"},
             )
         graph.add_edge("run_ralph_loop", "merge_to_feature")
         graph.add_conditional_edges(
@@ -357,13 +376,31 @@ class RalphWorkflowEngine:
         review rejected, so it takes the loop exactly as it does for any
         other entry, and the loop continues the recorded branch rather than
         cutting a new one.
+
+        What a lane on its way to the loop reaches next is the question
+        step, which is the only edge into the loop on this arm.
         """
         if (
             isinstance(state["lane_entry"], DeliverOnlyLane)
             and state["remediation_ticket"] is None
         ):
             return "merge_to_feature"
-        return "run_ralph_loop"
+        return "rule_open_questions"
+
+    async def _rule_open_questions(
+        self, state: WorkflowState, config: RunnableConfig
+    ) -> dict[str, object]:
+        """Answer the fire's open questions, or refuse for want of the phase.
+
+        The node is part of every native graph, so a deployment that wired
+        no such phase says so here rather than compiling an arm whose loop
+        has a second way in.
+        """
+        if self.rulings is None:
+            raise NativeWriteRefusalError(
+                "Native execution requires the open-question phase"
+            )
+        return await rule_open_questions(state, config, rulings=self.rulings)
 
     def _route_after_merge(self, state: WorkflowState) -> str:
         """Only review merged code; land what a loop exit produced.

@@ -38,6 +38,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.workflow_state import validated_criteria
 from kodezart.services.agent_service import AgentService
+from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.accept import AcceptVerdict
@@ -188,6 +189,12 @@ def tracker(
     return board(issues, approved=approved)
 
 
+#: The sentinel that tells ``engine`` to build the question step itself,
+#: so a test that withholds it passes ``None`` and is not mistaken for one
+#: that said nothing.
+DEFAULT = object()
+
+
 def engine(
     *,
     criteria: TrackerCriteria | None,
@@ -206,6 +213,7 @@ def engine(
     lane_operation=None,
     writes_lane_state: bool = True,
     owns_workspace: bool = True,
+    rulings=DEFAULT,
 ) -> RalphWorkflowEngine:
     """The fire engine, wired the way composition wires it, plus the stage.
 
@@ -342,6 +350,21 @@ def engine(
         retry_initial_interval=0,
         delay_floor_for=no_delay_floor,
         criteria=criteria,
+        rulings=(
+            FireTimeRulings(
+                tracker=criteria._tracker,
+                operation=native_operation(),
+                runner=service,
+                workspace=workspace,
+                git=git,
+                prompts=prompts,
+                skills=SUPPRESS_ALL_SKILLS,
+                gate=gate,
+                lease_seconds=900,
+            )
+            if rulings is DEFAULT and criteria is not None
+            else (None if rulings is DEFAULT else rulings)
+        ),
     )
 
 
@@ -468,7 +491,9 @@ async def test_a_native_fire_opens_no_branch_name_session() -> None:
     # And a new lane cuts the branch it just named, from the base that
     # resolved: work_base_ref is the base on this path, never the loop branch,
     # so the first tree of a new lane is the only one that is created.
-    first = workspace.acquisitions[0]
+    first = next(
+        call for call in workspace.acquisitions if call.get("branch_name") is not None
+    )
     assert first["branch_name"] == terminal.ralph_branch
     assert first["ref"] == "main"
     assert first["create_branch"] is True
@@ -549,7 +574,11 @@ async def test_valid_native_fire_reaches_shared_execution_with_tracker_checks() 
         ),
         last_commit_sha="a" * 40,
     )
-    fire = engine(criteria=TrackerCriteria(tracker=tracker()), quality_gate=gate)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=tracker()),
+        quality_gate=gate,
+        executor=NativeExecutor([native_evaluation(reconciled=True)]),
+    )
 
     await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
 
@@ -773,6 +802,13 @@ class NativeExecutor(FakeAgentExecutor):
         self.evaluation_workspaces = []
         self.remediation_prompts = []
         self.on_evaluation = None
+        #: One answer set per pass through the question step, in order, and
+        #: the prompt plus the whole call of each pass it opened.
+        self.question_answers = []
+        self.question_prompts = []
+        self.question_sessions = []
+        #: One judgement per landed record; the default upholds what landed.
+        self.findings = []
 
     async def stream(self, **kwargs):
         output_format = kwargs.get("output_format")
@@ -790,6 +826,24 @@ class NativeExecutor(FakeAgentExecutor):
                 answered = self.on_evaluation(len(self.evaluation_prompts))
                 if inspect.isawaitable(answered):
                     await answered
+        elif "rulings" in properties:
+            self.question_prompts.append(kwargs["prompt"])
+            self.question_sessions.append(kwargs)
+            output = (
+                self.question_answers.pop(0)
+                if self.question_answers
+                else {"rulings": []}
+            )
+        elif "citedRefs" in properties:
+            output = (
+                self.findings.pop(0)
+                if self.findings
+                else {
+                    "verdict": "holds",
+                    "evidence": "Read the landed record at the base commit.",
+                    "cited_refs": ["policy.py"],
+                }
+            )
         elif "instructions" in properties:
             self.remediation_prompts.append(kwargs["prompt"])
             if self.on_remediation is not None:
@@ -1788,10 +1842,10 @@ def test_only_a_lane_entered_to_deliver_is_prepared_already_accepted(kind) -> No
 @pytest.mark.parametrize(
     "kind,remediating,destination",
     [
-        ("new", False, "run_ralph_loop"),
-        ("resumed", False, "run_ralph_loop"),
+        ("new", False, "rule_open_questions"),
+        ("resumed", False, "rule_open_questions"),
         ("deliver_only", False, "merge_to_feature"),
-        ("deliver_only", True, "run_ralph_loop"),
+        ("deliver_only", True, "rule_open_questions"),
     ],
 )
 def test_the_step_before_the_loop_routes_a_delivering_lane_past_it(
@@ -1817,7 +1871,8 @@ def test_the_step_before_the_loop_routes_a_delivering_lane_past_it(
     assert fire.native_graph is not None
     edges = {(edge.source, edge.target) for edge in fire.native_graph.get_graph().edges}
     assert ("revalidate_criteria", "merge_to_feature") in edges
-    assert ("revalidate_criteria", "run_ralph_loop") in edges
+    assert ("revalidate_criteria", "rule_open_questions") in edges
+    assert ("rule_open_questions", "run_ralph_loop") in edges
 
 
 class CountingSource:

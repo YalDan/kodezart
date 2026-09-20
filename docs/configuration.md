@@ -678,9 +678,9 @@ the workspace; an unreadable namespace cannot establish a valid observation.
 
 ### Scoped workflow requests
 
-Scoped execution is currently unavailable and refuses before tracker,
-repository or judgment work. There is no fire-time ruling prompt setting or
-preparation-only session. Authored workflow prompt configuration is unchanged.
+The `fire_time_ruling` role the pre-loop question step dispatches resolves
+through the same set precedence as every other key and has no setting of its
+own. Authored workflow prompt configuration is unchanged.
 
 ## Queue environment migration
 

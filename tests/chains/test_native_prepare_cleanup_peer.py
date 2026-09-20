@@ -52,7 +52,10 @@ async def test_failed_preparation_releases_uncheckpointed_unwritten_workspace(
         ):
             await fire.native_graph.ainvoke(None, config=config)
         assert observed_paths
-        assert not executor.calls
+        # Only the pre-loop question pass ran; no writer session opened.
+        assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
+            "RulingOutput"
+        ]
         phases = [
             row.checkpoint["channel_values"]["execution"]
             for row in saver.list(None)

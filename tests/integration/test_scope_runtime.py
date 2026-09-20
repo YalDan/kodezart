@@ -143,6 +143,18 @@ def board(*, lanes=("A",), blocked=None, approved=True, checks=None):
     )
 
 
+def opened_branch(acquisitions, *, after: int = 0):
+    """The first acquisition at or after *after* that names a branch.
+
+    The pre-loop question step opens a detached tree of its own, so the
+    loop's acquisition is the first one that NAMES a branch rather than the
+    first one by position.
+    """
+    return next(
+        call for call in acquisitions[after:] if call.get("branch_name") is not None
+    )
+
+
 class RemoteGit(FakeGitService):
     async def remote_branch_sha(self, cwd, remote, branch):
         self.calls.append(("remote_branch_sha", cwd, remote, branch))
@@ -1536,7 +1548,7 @@ async def test_a_recorded_lane_resumes_on_its_recorded_branch_and_mints_nothing(
     assert minted == []
     assert lane_failures(events) == ()
     assert not any("slug" in props for props in second.executor.schema_calls)
-    opened = second.workspace.acquisitions[0]
+    opened = opened_branch(second.workspace.acquisitions)
     assert opened["branch_name"] == opened["ref"] == before.branch
     assert opened["create_branch"] is False
     after = await lane_record(port, "A")
@@ -1951,7 +1963,7 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
             for acquisition in second.workspace.acquisitions
             if acquisition["branch_name"]
         } == {killed.branch}
-        opened = second.workspace.acquisitions[0]
+        opened = opened_branch(second.workspace.acquisitions)
         assert opened["branch_name"] == opened["ref"] == killed.branch
         assert opened["create_branch"] is False
         prompt = second.executor.execution_prompts[0]
@@ -2925,7 +2937,7 @@ async def test_a_budget_exhausted_lane_resumes_on_its_recorded_branch(monkeypatc
     # The second fire checked the branch the record names OUT, and did not cut
     # it: a fire that minted a second branch beside a recorded one would lose
     # the work the record names (KOD-684).
-    opened = harness.workspace.acquisitions[acquired]
+    opened = opened_branch(harness.workspace.acquisitions, after=acquired)
     assert opened["branch_name"] == opened["ref"] == record.branch
     assert opened["create_branch"] is False
     # And it implemented the criterion still owed, not the one already
