@@ -404,15 +404,22 @@ class AuditScheduledPass:
                                 (observation, current, writes[-1].artifact.native_ref)
                             )
                 if not unavailable:
-                    await self._summarize(
-                        target=target,
-                        context=context,
-                        identity=identity,
-                        coverage=coverage,
-                        deferred=deferred,
-                        writes=writes,
-                        interrupted=interrupted,
-                    )
+                    try:
+                        await self._summarize(
+                            target=target,
+                            context=context,
+                            identity=identity,
+                            coverage=coverage,
+                            deferred=deferred,
+                            writes=writes,
+                            interrupted=interrupted,
+                        )
+                    except _INCOMPLETE as exc:
+                        # The report is the last reader of this tick, not its
+                        # first writer. A report step that cannot complete
+                        # refuses the scope's coverage and leaves everything
+                        # already recorded where it is.
+                        refuse(scope, f"{type(exc).__name__}: {exc}")
                 if owed:
                     # Every earlier step re-reads the whole snapshot and
                     # refuses any change but a comment stamp or the decision
