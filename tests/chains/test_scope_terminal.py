@@ -857,6 +857,66 @@ def test_the_merge_state_detector_finds_the_modules_that_do_name_one():
     assert unseen == []
 
 
+#: The three columns of ``LanePR``, which is the whole of a recorded delivery:
+#: reading any one of them off a record is the terminal reading a pull request.
+PR_COLUMN_NAMES = frozenset({"state", "number", "url"})
+
+
+def pr_column_sites(source: str, *, label: str) -> list[str]:
+    """Every place *source* reads a column of a pull request off something."""
+    tree = ast.parse(source)
+    return [
+        f"{label}:{node.lineno}: .{node.attr}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr in PR_COLUMN_NAMES
+    ]
+
+
+def test_the_terminal_reads_no_column_of_a_recorded_pull_request():
+    """The act names none of the three columns, pinned structurally.
+
+    The behavioural tests hold the done column against every value the three
+    columns can take, but they can only hold the values a fixture supplies. A
+    done column flipped on a value outside that set — a number above some
+    threshold, a state string no fixture spells — would pass every one of them
+    and still be the terminal reading a delivery. So the pin is structural:
+    the act does not read the columns at all, at any value, and a flip gated
+    on one cannot be written without this failing.
+
+    The seed alone, because this is about the act: the readings it reaches
+    carry a record's pull request through and legitimately name its columns,
+    and the vector's module declares them.
+    """
+    source = path_of(TERMINAL_SEED).read_text(encoding="utf-8")
+    # Non-vacuity: the act does reach a recorded delivery, so an empty result
+    # is the act declining to read the value rather than never holding one.
+    read = {
+        node.attr
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Attribute)
+    }
+    assert "pr" in read, "the act reads no recorded delivery to state anything about"
+    assert pr_column_sites(source, label=TERMINAL_SEED) == []
+
+
+#: The one shape the column scan claims to see, which is a column read off a
+#: record — so a scan that had lost its detector could not report the same
+#: empty result over the seed as a clean one.
+PR_COLUMN_CONTROLS = (("record.pr.state", ".state"),)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    PR_COLUMN_CONTROLS,
+    ids=[source for source, _ in PR_COLUMN_CONTROLS],
+)
+def test_the_pull_request_column_detector_sees_each_shape_it_claims_to(
+    source, expected
+):
+    sites = pr_column_sites(source, label="control")
+    assert len(sites) == 1 and expected in sites[0], sites
+
+
 # ---------------------------------------------------------------------------
 # KOD-832 clause 6 — a scratch-shaped scope ends with exactly one status
 # update carrying the per-lane vector and the derived outcome, and no other

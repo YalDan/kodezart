@@ -494,9 +494,9 @@ async def test_a_lane_owing_a_criterion_is_not_done_whatever_its_pull_request_sa
     """The recorded delivery is carried onto the row and never read.
 
     A lane the reading placed in the owing-work group owes work, so it is not
-    done — and no value of its recorded pull request's state changes that, in
-    either direction. The whole row is compared, so the recorded delivery
-    reaches the report unaltered and the branch is the record's own.
+    done — and no value of its recorded pull request's state changes that. The
+    whole row is compared, so the recorded delivery reaches the report
+    unaltered and the branch is the record's own.
     """
     status = FakeScopeStatusWriter()
     pr = LanePR(
