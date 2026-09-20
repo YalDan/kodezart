@@ -19,29 +19,46 @@ from kodezart.types.domain.run_alarm import (
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 
+#: Every signal the enum is allowed to declare, with its wire value. The
+#: enum is pinned against this list in both directions, so a member added to
+#: either side without the other reddens.
+DECLARED_SIGNALS = [
+    ("TALLY_UNMOVED", "tally_unmoved"),
+    ("TALLY_REGRESSED", "tally_regressed"),
+    ("LAPSE_UNDISCHARGED", "lapse_undischarged"),
+    ("ESCALATION_AGEING", "escalation_ageing"),
+    ("WRITE_BACK_MISSING", "write_back_missing"),
+    ("SURFACE_CONTENDED", "surface_contended"),
+    ("RECORD_SUPERSEDED", "record_superseded"),
+    ("COMPOSITION_SUBSTITUTED", "composition_substituted"),
+    ("BARREN_TICK_WITH_DIFF_GROWTH", "barren_tick_with_diff_growth"),
+    ("COMMITS_AHEAD_OF_RECORD", "commits_ahead_of_record"),
+    ("RULINGS_OUTPACE_CLOSURES", "rulings_outpace_closures"),
+    (
+        "STRUCTURAL_WRITE_UNCROSSES_MILESTONE",
+        "structural_write_uncrosses_milestone",
+    ),
+]
 
-@pytest.mark.parametrize(
-    ("name", "value"),
-    [
-        ("TALLY_UNMOVED", "tally_unmoved"),
-        ("TALLY_REGRESSED", "tally_regressed"),
-        ("LAPSE_UNDISCHARGED", "lapse_undischarged"),
-        ("ESCALATION_AGEING", "escalation_ageing"),
-        ("WRITE_BACK_MISSING", "write_back_missing"),
-        ("SURFACE_CONTENDED", "surface_contended"),
-        ("RECORD_SUPERSEDED", "record_superseded"),
-        ("COMPOSITION_SUBSTITUTED", "composition_substituted"),
-        ("BARREN_TICK_WITH_DIFF_GROWTH", "barren_tick_with_diff_growth"),
-        ("COMMITS_AHEAD_OF_RECORD", "commits_ahead_of_record"),
-        ("RULINGS_OUTPACE_CLOSURES", "rulings_outpace_closures"),
-        (
-            "STRUCTURAL_WRITE_UNCROSSES_MILESTONE",
-            "structural_write_uncrosses_milestone",
-        ),
-    ],
-)
+
+@pytest.mark.parametrize(("name", "value"), DECLARED_SIGNALS)
 def test_declared_signal_values(name, value):
     assert AlarmSignal[name].value == value
+
+
+def test_no_signal_is_declared_beyond_the_listed_members():
+    """The enum holds these members and no others, by name and by value.
+
+    Checking each listed member on its own says nothing about a thirteenth
+    one: a signal added to the enum alone would answer every row of the
+    parametrized test and still be unnamed here.
+    """
+    assert {member.name for member in AlarmSignal} == {
+        name for name, _ in DECLARED_SIGNALS
+    }
+    assert {member.value for member in AlarmSignal} == {
+        value for _, value in DECLARED_SIGNALS
+    }
 
 
 @pytest.mark.parametrize("kind", AlarmSubjectKind)
