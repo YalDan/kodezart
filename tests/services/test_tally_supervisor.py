@@ -22,6 +22,7 @@ from tests.services.lane_tally_fixtures import (
     alarm_marker,
     allow_foreign_write,
     checks,
+    close_criterion,
     declared_set_fixture,
     events_on,
     lane_state,
@@ -116,6 +117,7 @@ async def test_clearing_edits_the_record_and_posts_one_cleared_event():
     tally = supervisor(port)
     await observe(tally)
     raised = records_on(port, LANE)[0]
+    close_criterion(port, SECOND)
 
     await observe(tally, closed=(SECOND,))
 
@@ -138,6 +140,7 @@ async def test_a_second_stall_after_a_clear_is_measured_from_the_clear():
     port = await one_lane()
     tally = supervisor(port)
     await observe(tally)
+    close_criterion(port, SECOND)
     await observe(tally, closed=(SECOND,))
 
     rewrite_record(port, LANE, commits=("sha-one", "sha-two", "sha-three", "sha-four"))
@@ -203,6 +206,8 @@ async def test_a_finished_lane_with_a_raised_record_is_cleared_and_then_left_alo
     port = await one_lane()
     tally = supervisor(port)
     await observe(tally)
+    for key in (FIRST, SECOND):
+        close_criterion(port, key)
 
     # A member owing nothing is observed with no roster and no gap, so a raise
     # standing on a lane that has since finished is cleared rather than kept.
@@ -248,6 +253,7 @@ async def test_the_supervisor_leases_exactly_the_alarm_marker_on_the_lane_issue(
     expected = run_alarm_surface(issue_key=LANE, marker=alarm_marker(port, LANE))
 
     await observe(tally)
+    close_criterion(port, SECOND)
     await observe(tally, closed=(SECOND,))
 
     leased = [lease for lease in port.lease_writes if lease.holder == HOLDER]
