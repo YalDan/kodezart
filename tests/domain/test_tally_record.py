@@ -8,8 +8,10 @@ merely both read off one expression.
 import pytest
 
 from kodezart.domain.errors import RunShapeReadError
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import COMMITS_WITHOUT_CLOSURE_BOUND, tally_unmoved
 from kodezart.domain.tally_record import (
+    alarm_event_due,
     anchor_of,
     is_raised,
     lane_start,
@@ -26,6 +28,7 @@ from kodezart.types.domain.run_alarm import (
     RunAlarm,
     TallyEvidence,
 )
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneCommit, LaneRunState
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import make_tracker_issue
@@ -343,3 +346,51 @@ def test_a_stored_record_whose_replay_disagrees_with_its_bound_refuses():
             max_commits_without_closure=BOUND,
             raised_by=HOLDER,
         )
+
+
+def event(kind, *, subject_key=AlarmSignal.TALLY_UNMOVED.value):
+    return LaneRunEvent(kind=kind, lane_key=LANE.lane_key, subject_key=subject_key)
+
+
+def test_the_event_due_is_read_from_this_signals_own_events():
+    """Another signal's clear on the same lane is not this signal clearing."""
+    foreign = event(RunEventKind.RUN_ALARM_CLEARED, subject_key="escalation_ageing")
+
+    due = alarm_event_due(record=RAISED_STORED, events=(foreign,))
+
+    assert due is not None
+    assert due.kind is RunEventKind.RUN_ALARM_RAISED
+    assert due.lane_key == LANE.lane_key
+    assert due.subject_key == AlarmSignal.TALLY_UNMOVED.value
+    # The stream already agreeing with the record owes nothing, however many
+    # ticks the condition goes on firing for.
+    assert alarm_event_due(record=RAISED_STORED, events=(foreign, due)) is None
+
+
+@pytest.mark.parametrize(
+    ("record", "posted", "owed"),
+    [
+        (RAISED_STORED, (), RunEventKind.RUN_ALARM_RAISED),
+        (QUIET_STORED, (), None),
+        (RAISED_STORED, (RunEventKind.RUN_ALARM_RAISED,), None),
+        (
+            QUIET_STORED,
+            (RunEventKind.RUN_ALARM_RAISED,),
+            RunEventKind.RUN_ALARM_CLEARED,
+        ),
+        (
+            QUIET_STORED,
+            (RunEventKind.RUN_ALARM_RAISED, RunEventKind.RUN_ALARM_CLEARED),
+            None,
+        ),
+        (
+            RAISED_STORED,
+            (RunEventKind.RUN_ALARM_RAISED, RunEventKind.RUN_ALARM_CLEARED),
+            RunEventKind.RUN_ALARM_RAISED,
+        ),
+    ],
+)
+def test_the_stream_owes_a_transition_only_where_it_disagrees(record, posted, owed):
+    due = alarm_event_due(record=record, events=tuple(event(kind) for kind in posted))
+
+    assert (None if due is None else due.kind) == owed

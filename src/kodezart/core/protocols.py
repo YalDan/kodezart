@@ -1501,6 +1501,65 @@ class WorkRefReader(Protocol):
     async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]: ...
 
 
+@runtime_checkable
+class SurfaceLeaseTracker(Protocol):
+    """Exactly the lease calls one writing job's own lifetime makes.
+
+    A role narrowed out of the port rather than a widening of it: the lease
+    arbitrates and this names the three calls that ask it to, so a writer
+    holding this role can take a lease and can do nothing else with it.
+    ``TrackerPort`` satisfies it structurally.
+    """
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease: ...
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None: ...
+
+    async def release_surfaces(
+        self, *, surfaces: frozenset[WritableSurface], holder: str
+    ) -> None: ...
+
+
+@runtime_checkable
+class RunAlarmTracker(SurfaceLeaseTracker, Protocol):
+    """Exactly the tracker calls an observation of a run's shape makes.
+
+    A role narrowed out of the port rather than a widening of it. What it
+    leaves out is the point: no workflow state, no queue state, no criterion
+    reset and no description edit, so a holder of this role cannot move a
+    run's state whatever it observes. It reads one keyed record, rewrites
+    that one record under its own lease, and appends to one lane's stream.
+    """
+
+    async def read_run_alarm(
+        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm | None: ...
+
+    async def record_run_alarm(
+        self, *, issue_key: str, alarm: RunAlarm, holder: str
+    ) -> None: ...
+
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]: ...
+
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent: ...
+
+
 #: Called with the workspace a commit was made in and the receipt it
 #: returned, between the push and the completion of the persisting phase.
 AfterPublish = Callable[[str, PersistResult], Awaitable[None]]

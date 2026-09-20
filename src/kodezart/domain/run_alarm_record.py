@@ -55,6 +55,19 @@ def run_alarm_marker(
     )
 
 
+def run_alarm_surface(*, issue_key: str, marker: str) -> WritableSurface:
+    """The one leased address a record at *marker* on *issue_key* occupies.
+
+    One expression, so the writer that takes the lease and the refusal that
+    names the missing holder cannot describe two different addresses.
+    """
+    return WritableSurface(
+        kind=SurfaceKind.MARKER_COMMENT,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+        marker=marker,
+    )
+
+
 def require_alarm_holder(*, issue_key: str, marker: str, holder: str | None) -> None:
     """Refuse a leased alarm write that names no holder, before any read.
 
@@ -67,11 +80,7 @@ def require_alarm_holder(*, issue_key: str, marker: str, holder: str | None) -> 
         return
     raise SurfaceLeaseError(
         "a leased record write names no holder",
-        surface=WritableSurface(
-            kind=SurfaceKind.MARKER_COMMENT,
-            ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
-            marker=marker,
-        ),
+        surface=run_alarm_surface(issue_key=issue_key, marker=marker),
         current_holder=None,
     )
 

@@ -6,10 +6,10 @@ carries the existing fire identity and explicit node invocation; each
 iteration, corrective dispatch and graph-level retry is a separate invocation. A repeated native
 opening frame is not a second session. Missing or malformed opening evidence
 is refused after draining the executor, preserving its cleanup. Generic calls
-without a fire identity retain their existing stream. Tracker publication and
-the supervisor's durable event reader remain unavailable until the universal
-surface-lease contract is satisfied; these stream occurrences are not a claim
-of persisted run history. The frozen alarm subject vocabulary also does not
+without a fire identity retain their existing stream. No node-session
+occurrence is published to the tracker and nothing reads one back, so these
+stream occurrences are not a claim of persisted run history; the durable
+event stream that is read back carries the lane's own posted events. The frozen alarm subject vocabulary also does not
 yet provide a per-node subject identity, which this producer does not invent.
 
 ## Overview
@@ -83,6 +83,8 @@ does not exist.
 | FireCriteriaSource | TrackerCriteria | Captures the typed native subject specification and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
+| SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
+| RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: one keyed record read and rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
@@ -643,8 +645,24 @@ carried without parsing parent text. A surface member uses
 the complete address inside the declared string member field, so equivalent
 addresses cannot create different alarm identities through formatting.
 The alarm vocabulary and payload validation are available independently of
-signal computation, supervisor scheduling and leased alarm writes; those
-consumers are not enabled by constructing a model.
+signal computation and of the writers that publish it; constructing a model
+enables neither.
+
+`services.tally_supervisor.TallySupervisor` is the first of those writers.
+Per lane it reads the run-state record, reads the one alarm record at
+`(LaneSubject, TALLY_UNMOVED)` on that lane's issue, composes what the
+address should hold through `domain.tally_record`, and writes only when the
+two differ. A lane with no run-state record is passed over before the address
+is read. The record is rewritten in place — a clear is an edit showing the
+tally moving, never a delete — under a lease on exactly that one marker
+surface, which `domain.run_alarm_record.run_alarm_surface` is the single
+expression for. The lease is taken only around a write, because a lease is
+itself a comment on the carrier and a tick with nothing to say writes
+nothing. The record is written before its event: a record whose event was
+lost is repaired by the next tick, while an event without its record
+announces nothing. What the stream owes is read from the stream, so a
+condition firing across many ticks is announced once. The holder that takes
+the lease and the holder recorded on the alarm are the same string.
 
 `services.scope_tally.observe_scope_tally` reads current native membership and
 strict issue classification twice before computing `tally_unmoved`. Its roster
@@ -706,9 +724,10 @@ with its count. Both native records and the exact decision resolution used
 by the shared observer are checked again; a changed source refuses the
 observation, including a newly answered or withdrawn decision. All returned readings preserve
 their source comment identities, and neither collector writes or reads Git.
-The walker's recorded tick-age input, supervisor tick and alarm persistence
-under a surface lease remain unwired. These readers do not declare the
-complete signal table or supervisor boot capability.
+The walker's recorded tick-age input remains unwired, and no tick of any
+pass reaches these readers. Leased alarm persistence exists, but only the
+lane tally arm writes through it. These readers do not declare the complete
+signal table or a boot capability for it.
 
 `barren_tick_with_diff_growth` compares recorded files-changed and
 commits-ahead against their own configured bounds when a tick closes no
@@ -734,10 +753,10 @@ without inferring them from commit rows or checking their agreement, which
 belongs to the separate record-consistency signal.
 
 The previous tick's open identities and established supersession references
-still require explicit supplied provenance. Their collectors, supervisor
-scheduling and leased alarm persistence remain separate work. These bounded
-record reads do not provide an atomic tracker transaction or an execution
-event stream.
+still require explicit supplied provenance. Their collectors remain separate
+work and no tick reaches them; leased alarm persistence exists, and only the
+lane tally arm writes through it. These bounded record reads do not provide
+an atomic tracker transaction or an execution event stream.
 
 `surface_contended` counts distinct opaque run-holder identities for one
 complete `WritableSurface` address. Three readings carry that address, its
@@ -752,8 +771,9 @@ provenance inputs. It does not provide a tracker provenance reader: ordered
 successful-write history carrying run identities across all six surface
 kinds still depends on the universal holder-aware writer foundation. Vendor
 account authors and change timestamps cannot supply those run identities.
-The pure count and replay tests do not establish that producer, its port
-conformance, or a supervisor's leased alarm writer.
+The pure count and replay tests do not establish that producer or its port
+conformance, and the leased alarm writer that exists observes the lane tally
+arm only.
 
 `write_back_missing` compares one event's explicitly declared
 `WritableSurface` with a successful keyed-record presence reading. The
@@ -816,8 +836,9 @@ and its recorded head. A supplied record reference must match, and missing,
 malformed, duplicated or unreadable records retain the reader's refusal.
 The service performs no repository read or tracker write and does not turn
 an unreadable record into an empty lane. The signal's whole-record-staleness
-limit remains unchanged. Event-to-target collection for skipped writes,
-supervisor scheduling and leased alarm publication remain separate consumers.
+limit remains unchanged. Event-to-target collection for skipped writes remains separate work, and
+nothing observes this signal: the leased writer that exists observes the lane
+tally arm only.
 
 `record_superseded` compares explicit assertions about the same field in the
 same lane. Its three raw readings contain the record's `LaneFieldValue`, an
@@ -834,8 +855,8 @@ SHA spelling, event-body interpretation or repository read establishes the
 order. The alarm retains all original readings and has no threshold bound.
 The field projection is an observation input, not a new run-event vocabulary;
 the event/record readers must supply those assertions and the commit order.
-Their collectors, supervisor scheduling and leased publication remain
-separate consumers.
+Their collectors remain separate work, and nothing observes this signal: the
+leased writer that exists observes the lane tally arm only.
 
 `rulings_outpace_closures` counts distinct machine-authored ruling identities
 added since the recorded last-closure snapshot. Its five readings preserve
@@ -891,8 +912,8 @@ unresolved member while the fire remains completed raises the alarm; an
 existing member changing only state does not. No derived crossed flag or vendor change
 timestamp replaces this graph comparison. Both signals preserve their raw
 readings for replay; the structural signal has no threshold. Retaining prior
-snapshots, supervisor scheduling and alarm publication under the universal
-surface lease remain separate consumers.
+snapshots remains separate work, and nothing observes either signal: the
+leased writer that exists observes the lane tally arm only.
 ## Audit coverage selection
 
 `AuditCoverage` visits the supplied complete eligible snapshot in state-change
