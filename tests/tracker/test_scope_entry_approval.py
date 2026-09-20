@@ -6,10 +6,15 @@ readings the composed question has — an issue scope, a container scope, and
 a milestone, which has no label level of its own.
 """
 
+import pytest
+
 from kodezart.services.scope_approval import scope_approved
-from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.operation import OperationMemberAbsentError, ScopeLabel
+from kodezart.types.domain.scope import ScopeRef
+from tests.tracker.conftest import linear_over_fake_mcp
 from tests.tracker.test_scope_approval import (
     APPROVAL_LABELS,
+    CHILD,
     ApprovalFixture,
     approval,
 )
@@ -18,6 +23,7 @@ from tests.tracker.test_scope_reads import (
     MILESTONE,
     PROJECT,
     ROOT,
+    ScopeMcpServer,
     _container,
 )
 
@@ -77,3 +83,38 @@ async def test_approval_on_the_project_admits_an_issue_scope_under_it(
 
     approval.labels(PROJECT, ScopeLabel.APPROVED)
     assert await scope_approved(ref=ROOT, tracker=approval.tracker) is True
+
+
+@pytest.mark.parametrize("ref", [CHILD, PROJECT])
+async def test_an_unmapped_approval_label_refuses_a_scope_question_before_any_read(
+    ref: ScopeRef,
+) -> None:
+    """An operation with no approved label names no scope as unapproved.
+
+    Both label readings the composed question uses — the per-issue one and
+    the container one — answer the unanswerable question with a typed
+    refusal, ahead of the backend. Swallowing it would read as "not
+    approved", which admits nothing and names no cause (KOD-382).
+    """
+    server = ScopeMcpServer()
+    tracker = linear_over_fake_mcp(server, scope_labels={})
+
+    with pytest.raises(OperationMemberAbsentError, match=r"scope_labels\.approved"):
+        await scope_approved(ref=ref, tracker=tracker)
+
+    assert server.calls == []
+
+
+async def test_an_unmapped_approval_label_refuses_a_milestone_scope_question() -> None:
+    """A milestone adds no label level, so the refusal arrives from its project.
+
+    The milestone's own metadata read is the general container read every
+    surface uses, not a label reading, so it is not the place the approval
+    vocabulary is required; the first label reading in the walk is its
+    project's, and that one refuses.
+    """
+    server = ScopeMcpServer()
+    tracker = linear_over_fake_mcp(server, scope_labels={})
+
+    with pytest.raises(OperationMemberAbsentError, match=r"scope_labels\.approved"):
+        await scope_approved(ref=MILESTONE, tracker=tracker)

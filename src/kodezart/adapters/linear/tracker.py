@@ -1229,7 +1229,26 @@ class LinearMcpTracker:
             )
         return issue, self._scope_label_members(wire.labels)
 
+    def _require_approval_label(self) -> str:
+        """The configured approved label, or a typed refusal before any read.
+
+        An operation with no ``scope_labels.approved`` mapping cannot be
+        asked whether a scope is approved: every reading would answer
+        "absent", which reads as "not approved" and admits nothing while
+        naming no cause. Both label readings ask this first, so the
+        unanswerable question refuses ahead of the backend instead of
+        spending reads to reach a false (KOD-382).
+        """
+        label = self._scope_labels.get(ScopeLabel.APPROVED.value)
+        if not label:
+            raise OperationMemberAbsentError(
+                missing=f"scope_labels.{ScopeLabel.APPROVED.value}",
+                stops="cannot resolve scope approval",
+            )
+        return label
+
     async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        self._require_approval_label()
         if ref.kind is ScopeKind.ISSUE:
             _, members = await self._read_scope_issue(ref.key)
             return members
@@ -1243,12 +1262,7 @@ class LinearMcpTracker:
     async def _read_execution_approval(
         self, *, issue_key: str
     ) -> tuple[TrackerIssue, bool]:
-        label = self._scope_labels.get(ScopeLabel.APPROVED.value)
-        if not label:
-            raise OperationMemberAbsentError(
-                missing=f"scope_labels.{ScopeLabel.APPROVED.value}",
-                stops="cannot resolve scope approval",
-            )
+        label = self._require_approval_label()
         reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
 
         async def hydrate(key: str) -> tuple[TrackerIssue, bool]:

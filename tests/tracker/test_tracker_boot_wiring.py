@@ -16,6 +16,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.composition.prompts import boot_prompts
@@ -34,7 +35,7 @@ from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode
-from tests.fakes import FakeMcpDocument, ManagedFakeLinearMcpServer
+from tests.fakes import FakeMcpDocument, FakeMcpIssue, ManagedFakeLinearMcpServer
 from tests.run_events import RUN_EVENT_TOML
 from tests.tracker.conftest import (
     AGENT_IDENTITY,
@@ -42,6 +43,8 @@ from tests.tracker.conftest import (
     BYSTANDER,
     DOCUMENT_KEY,
     DOCUMENT_TITLE,
+    FIRE_ENTRY_LABELS,
+    FIRE_SCOPE_LABEL,
     FOREIGN_TEAM,
     QUEUE_STATE_LABELS,
     fixture_server,
@@ -71,6 +74,20 @@ ONE_TEAM: dict[str, str] = {"engineering": "fixture-team"}
 #: configuration first, which is the point of that case.
 SCOPED_PROJECT = "fixture-project"
 
+#: The issue another case addresses a run at, carrying the workspace's own
+#: approval label so the run is admitted and the refusal it waits for is the
+#: one further along.
+APPROVED_SCOPE_ISSUE = "SCOPED-1"
+
+#: The admission vocabulary a case declares when it needs the approval
+#: question ANSWERED rather than refused.  The three keys the loader requires,
+#: with the approved one spelling the label the fixture workspace uses.
+ADMISSION_VOCABULARY: dict[str, str] = {
+    "triage": "candidate scope",
+    "proposed": "proposed scope",
+    "approved": FIRE_SCOPE_LABEL,
+}
+
 #: The seconds a scoped read is allowed before that case fails.  The refusal
 #: it waits for is a configuration answer with no round trip behind it, so any
 #: bound at all only keeps a regression from hanging a whole run.
@@ -94,6 +111,7 @@ def _operation_toml(
     document_container: str | None = "engineering",
     record_id: str = RUN_LOG_KEY,
     knowledge: dict[str, str] | None = None,
+    scope_labels: dict[str, str] | None = None,
 ) -> str:
     """An operation config naming the fixture workspace's own entities.
 
@@ -115,6 +133,11 @@ def _operation_toml(
     ``knowledge`` is the what-lives-where map. Declaring one under a
     deployment that grants no session the knowledge store is a preflight
     refusal, which is how the case below reaches one.
+
+    ``scope_labels`` is the admission vocabulary.  ``None`` declares none,
+    which is what a scoped run meets first: the approval question is asked
+    before any scope read, so an operation that maps no approval label is
+    refused there.  A case about a refusal FURTHER along has to declare it.
     """
     knowledge_map = "\n".join(
         f'{key} = "{title}"' for key, title in (knowledge or {}).items()
@@ -128,6 +151,13 @@ def _operation_toml(
     declared_id = "" if document_id is None else f'\nid = "{document_id}"'
     declared_container = (
         "" if document_container is None else f'\ncontainer = "{document_container}"'
+    )
+    admission = (
+        ""
+        if scope_labels is None
+        else "\n[scope_labels]\n"
+        + "\n".join(f'{name} = "{label}"' for name, label in scope_labels.items())
+        + "\n"
     )
     return f"""
 operation_name = "fixture"
@@ -179,7 +209,7 @@ append_only = true
 
 [knowledge]
 {knowledge_map}
-
+{admission}
 [endpoints]
 """
 
@@ -814,25 +844,54 @@ async def test_a_preflight_refusal_strands_no_queue_and_no_open_transport(
     assert not hasattr(app.state, "pass_scheduler")
 
 
-async def test_a_boot_without_a_criterion_mapping_refuses_the_first_scoped_read(
+async def _scoped_refusal(
+    app: FastAPI,
+    wired: ManagedFakeLinearMcpServer,
+    *,
+    scope: ScopeRef,
+) -> tuple[OperationMemberAbsentError, list[str]]:
+    """Drive one scoped run to its configuration refusal, and what it cost.
+
+    Returns the refusal and the tool names the transport was asked for after
+    the run began, so a case can state the cost as the calls themselves
+    rather than as a count.
+    """
+    mark = len(wired.calls)
+    walk = app.state.workflow_engine.run(
+        prompt="",
+        repo_path=None,
+        repo_url="https://example.invalid/repo",
+        base_spec=trunk_base("unused-request-default"),
+        scope=scope,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=[],
+        cache_key="scoped-boot",
+    )
+    with pytest.raises(OperationMemberAbsentError) as caught:
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            await anext(aiter(walk))
+    await walk.aclose()
+    return caught.value, [tool for tool, _ in wired.calls[mark:]]
+
+
+async def test_a_boot_without_an_approval_mapping_refuses_before_any_scope_read(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     wired: ManagedFakeLinearMcpServer,
 ) -> None:
-    """KOD-465: the refusal is the first scoped READ's, and it costs no write.
+    """KOD-382: the run's first question is the approval one, answered from config.
 
-    The fixture operation declares no ``[issue_labels]`` at all, so the first
-    classification the scoped path asks for is ``criterion``. Boot itself is
-    untouched by that: it dials, reconciles every mapping it does own, and says
-    which backend under ``tracker_mappings_reconciled`` — the same process that
-    then refuses. Nothing is checked at boot for the scoped path, which is what
-    puts the refusal at the read (KOD-766).
+    The fixture operation declares no ``[scope_labels]``, so the label a scope
+    run is admitted by is unmapped. That is the first thing the run asks about,
+    ahead of the addressed container's own read, so the refusal names it and
+    costs no tool call at all — the addressed project's identity never reaches
+    the backend.
 
-    What the refusal costs is asserted as ZERO tool calls after the mark, not as
-    zero writes: a read the port makes before it notices the mapping is absent
-    would be a fact about a board the operation cannot classify, and the check
-    is the read's first statement so there is none.
+    Boot itself is untouched by that: it dials, reconciles every mapping it does
+    own, and says which backend under ``tracker_mappings_reconciled`` — the same
+    process that then refuses. Nothing is checked at boot for the scoped path
+    (KOD-766).
     """
     monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
     _configure(monkeypatch, tmp_path, _operation_toml())
@@ -849,21 +908,57 @@ async def test_a_boot_without_a_criterion_mapping_refuses_the_first_scoped_read(
         # operator follows leaves the checkpoint url unset.
         assert app.state.checkpointer is None
 
-        mark = len(wired.calls)
-        walk = app.state.workflow_engine.run(
-            prompt="",
-            repo_path=None,
-            repo_url="https://example.invalid/repo",
-            base_spec=trunk_base("unused-request-default"),
-            scope=ScopeRef(kind=ScopeKind.PROJECT, key=SCOPED_PROJECT),
-            permission_mode=PermissionMode.UNATTENDED,
-            allowed_tools=[],
-            cache_key="scoped-boot",
+        refusal, calls = await _scoped_refusal(
+            app, wired, scope=ScopeRef(kind=ScopeKind.PROJECT, key=SCOPED_PROJECT)
         )
-        with pytest.raises(OperationMemberAbsentError) as caught:
-            async with asyncio.timeout(WALK_BOUND_SECONDS):
-                await anext(aiter(walk))
-        await walk.aclose()
 
-    assert caught.value.missing == "issue_labels['criterion']"
-    assert wired.calls[mark:] == []
+    assert refusal.missing == "scope_labels.approved"
+    assert calls == []
+
+
+async def test_a_boot_without_a_criterion_mapping_refuses_the_first_scoped_read(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """KOD-465: the refusal is the first scoped READ's, and it costs no write.
+
+    The fixture operation declares no ``[issue_labels]`` at all, so the first
+    classification the scoped path asks for is ``criterion``. It does declare
+    the admission vocabulary, and the run is addressed at an issue carrying the
+    workspace's own approval label, so the question asked ahead of the read is
+    answered rather than refused and the read is reached.
+
+    What the refusal costs is asserted as the calls themselves and not as a
+    count: exactly the one read that answered the approval question, and no
+    write. A read the ready set made before it noticed the mapping was absent
+    would be a fact about a board the operation cannot classify, and the check
+    is the read's first statement so there is none.
+    """
+    monkeypatch.setenv("KODEZART_GITHUB_TOKEN", "fixture-forge-token")
+    _configure(
+        monkeypatch, tmp_path, _operation_toml(scope_labels=ADMISSION_VOCABULARY)
+    )
+    wired.issues[APPROVED_SCOPE_ISSUE] = FakeMcpIssue(
+        id=APPROVED_SCOPE_ISSUE, labels=list(FIRE_ENTRY_LABELS)
+    )
+    app = create_app()
+    async with lifespan(app):
+        reconciled = [
+            event
+            for event in _events(capsys.readouterr().out)
+            if event.get("event") == "tracker_mappings_reconciled"
+        ]
+        assert len(reconciled) == 1
+        assert reconciled[0]["backend"] == "linear"
+        # Nothing on the scope path holds graph state, and the recipe a scope
+        # operator follows leaves the checkpoint url unset.
+        assert app.state.checkpointer is None
+
+        refusal, calls = await _scoped_refusal(
+            app, wired, scope=ScopeRef(kind=ScopeKind.ISSUE, key=APPROVED_SCOPE_ISSUE)
+        )
+
+    assert refusal.missing == "issue_labels['criterion']"
+    assert calls == ["get_issue"]
