@@ -24,6 +24,7 @@ from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailure
 from kodezart.core.protocols import AgentExecutor, OutboundContentGate, TicketGenerator
 from kodezart.core.retry import DelayFloor
 from kodezart.domain.accept_gate import accept_verdict
+from kodezart.domain.agent import best_iteration_ref
 from kodezart.domain.errors import (
     CriteriaFanInError,
     ForgeAPIError,
@@ -4137,8 +4138,11 @@ async def test_a_stalled_run_lands_a_do_not_merge_pr_from_the_best_iteration() -
     """AC-2: the head is the peak's commit, not the loop branch's tip."""
     pr_creator = FakePRCreator()
     publisher = FakeRefPublisher()
+    merger = FakeBranchMerger()
 
-    events = await _stalled_run(pr_creator=pr_creator, ref_publisher=publisher)
+    events = await _stalled_run(
+        pr_creator=pr_creator, ref_publisher=publisher, merger=merger
+    )
 
     published = publisher.calls[0]
     assert published["commit_sha"] == _PEAK_SHA
@@ -4152,6 +4156,18 @@ async def test_a_stalled_run_lands_a_do_not_merge_pr_from_the_best_iteration() -
     assert complete.outcome is WorkflowOutcome.stalled_pr_opened
     assert complete.pr_url == "https://github.com/o/r/pull/1"
     assert complete.accepted is False
+
+    # And the branch the pull request is opened from was consolidated FROM the
+    # ref the peak was published at, not from the loop branch whose tip the run
+    # slipped back to. Publishing the peak and then consolidating the tip would
+    # open a do-not-merge pull request from the work the peak was chosen over,
+    # with the peak's sha in its body saying otherwise (KOD-460).
+    assert published["ref"] == best_iteration_ref(complete.feature_branch)
+    consolidations = [call for call in merger.calls if call["method"] == "consolidate"]
+    assert [call["source_branch"] for call in consolidations] == [
+        best_iteration_ref(complete.feature_branch)
+    ]
+    assert complete.ralph_branch != best_iteration_ref(complete.feature_branch)
 
 
 async def test_the_stalled_pr_is_opened_from_the_feature_branch_once_integrated() -> (

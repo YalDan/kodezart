@@ -19,7 +19,11 @@ from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.core.protocols import PRCreator
-from kodezart.domain.agent import generate_ralph_branch_name, mint_lane_branches
+from kodezart.domain.agent import (
+    best_iteration_ref,
+    generate_ralph_branch_name,
+    mint_lane_branches,
+)
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     BaseResolutionError,
@@ -199,6 +203,7 @@ def runtime(
     source=None,
     workspace=None,
     merger=None,
+    ref_publisher=None,
     max_iterations=1,
 ):
     """The composed engine over external doubles.
@@ -263,7 +268,9 @@ def runtime(
                 ],
             ),
             artifact_persister=artifacts,
-            ref_publisher=FakeRefPublisher(),
+            ref_publisher=FakeRefPublisher()
+            if ref_publisher is None
+            else ref_publisher,
             prompts=make_prompt_provider(),
             skills=SUPPRESS_ALL_SKILLS,
             gate=PassThroughGate(),
@@ -1180,6 +1187,35 @@ class WalkMerger(FakeBranchMerger):
         )
 
 
+class WalkRefPublisher(FakeRefPublisher):
+    """Publish a ref into the walk's own repositories, at the sha it names.
+
+    The default double records the call and nothing else, which leaves a ref a
+    stall exit published standing where an unwritten branch stands: at the
+    trunk, carrying none of the lane's commits. A pull request opened from a
+    branch consolidated off THAT ref then holds no work at all, and "from the
+    best iteration" is a statement about a branch name rather than about a
+    commit. Here the ref really holds the commit it was published with.
+
+    Publishing a ref does not make it the tree later unaddressed reads answer
+    from, so the committing repository is put back: the same rule the walk's
+    merger follows for the same reason.
+    """
+
+    def __init__(self, repos: WalkRepos) -> None:
+        super().__init__()
+        self.repos = repos
+
+    async def publish(self, *, commit_sha, ref, **rest):
+        committing = self.repos.current
+        published = self.repos.of(ref)
+        published.head = commit_sha
+        published.shas = [commit_sha]
+        published.publish()
+        self.repos.committing = committing
+        return await super().publish(commit_sha=commit_sha, ref=ref, **rest)
+
+
 class WalkPersister(FakeChangePersister):
     """Commits and pushes the branch each lane of the walk is on."""
 
@@ -1467,15 +1503,16 @@ def echoes(*, passed, rounds: int = 6):
     return [criteria_echo(keys=A_KEYS, passed=passed) for _ in range(rounds)]
 
 
-def resumable(*, repos: WalkRepos, merger=None, **rest):
+def resumable(*, repos: WalkRepos, merger=None, ref_publisher=None, **rest):
     """A runtime over one repository family that commits as a real lane does.
 
     Two runtimes built over the SAME family are two processes against one
     remote: the branches and their pushed heads outlive the first one, which
     is the whole premise of entering from the record.
 
-    *merger* defaults to the family's own consolidating double; a test about a
-    consolidation that answers something else supplies its own.
+    *merger* and *ref_publisher* default to the family's own doubles; a test
+    about a consolidation that answers something else, or one that reads what
+    was published, supplies its own and keeps the reference.
     """
     git = WalkGit(repos)
     return runtime(
@@ -1484,6 +1521,9 @@ def resumable(*, repos: WalkRepos, merger=None, **rest):
         source=WalkSource(repos),
         workspace=WalkWorkspaces(repos, git=git),
         merger=WalkMerger(repos) if merger is None else merger,
+        ref_publisher=WalkRefPublisher(repos)
+        if ref_publisher is None
+        else ref_publisher,
         **rest,
     )
 
@@ -3269,6 +3309,8 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
     wire = ScopeForgeWire(head_sha_of=repos.head_of)
     forge = _make_client(wire)
     try:
+        publisher = WalkRefPublisher(repos)
+        merger = WalkMerger(repos)
         harness = resumable(
             port=port,
             repos=repos,
@@ -3276,6 +3318,8 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
             origin=FORGE_ORIGIN,
             forge=forge,
             trunk="main",
+            merger=merger,
+            ref_publisher=publisher,
             evaluations=[
                 *(
                     criteria_echo(keys=("A/check",), passed=set())
@@ -3324,6 +3368,35 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
             recorded_branches(record=await lane_record(port, "B")).deliverable_branch,
         ]
         assert record.pr.number == wire._numbers[deliverable]
+        # "From the best iteration" by CONTENT and not by branch name. The
+        # stall exit published the best iteration's commit at the lane's own
+        # best-iteration ref; the consolidation that produced the delivered
+        # branch took THAT ref as its source and no other; and the head the
+        # forge reports for the pull request stands at that same commit. A
+        # stall exit that consolidated its loop branch instead would open a
+        # pull request from a head this walk's repositories hold under another
+        # branch entirely.
+        landed = [
+            call["commit_sha"]
+            for call in publisher.calls
+            if call["ref"].endswith("-best")
+        ]
+        assert [call["ref"] for call in publisher.calls] == [
+            best_iteration_ref(deliverable)
+        ]
+        # Not vacuous: what was published is a commit this lane's loop made,
+        # not the trunk the lane was cut from.
+        assert landed[0] != TRUNK_SHA
+        assert landed[0] in repos.branches[record.branch].shas
+        # The head first, because the head is the content: a delivery opened
+        # from a branch standing anywhere else carries other work whatever the
+        # consolidation was asked for.
+        assert repos.head_of(deliverable) == landed[0]
+        assert [
+            call["source_branch"]
+            for call in merger.calls
+            if call["feature_branch"] == deliverable
+        ] == [best_iteration_ref(deliverable)]
         # The walk went on: B closed its own criterion in this same invocation.
         assert port.issues["B/check"].state_kind is WorkflowStateKind.COMPLETED
 
