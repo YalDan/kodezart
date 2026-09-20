@@ -14,12 +14,14 @@ from pathlib import Path
 TRACKER_TESTS = Path(__file__).parent
 
 #: The modules whose cases are port-level conformance cases: the container
-#: reads, the meta-label reads, the label mappings and the lease cases.
+#: reads, the meta-label reads, the label mappings, the lease cases and the
+#: organize replay contract.
 CONFORMANCE_MODULES = (
     "test_scope_reads.py",
     "test_scope_approval.py",
     "test_scope_label_mappings.py",
     "test_tracker_conformance.py",
+    "test_organize_replay_contract.py",
 )
 
 #: How the registry parametrises a fixture over every implementation.  A
