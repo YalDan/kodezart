@@ -12,6 +12,8 @@ from kodezart.chains.criteria import TrackerCriteria
 from kodezart.core.errors import NoStructuredOutputError, TrackerUnavailableError
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import FireSpecEntryError, SurfaceLeaseError
+from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
+from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import ResultEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -470,3 +472,84 @@ async def test_a_remediation_round_passes_the_step_again_and_writes_nothing() ->
         for write in port.comment_writes
         if write[1].startswith(f"[{RULING_PREFIX}") or ANSWER["resolution"] in write[1]
     ] == [(records[0].comment_key, records[0].body)]
+
+
+# ---------------------------------------------------------------------------
+# The loop consumes what the step pinned, read off the tracker.
+# ---------------------------------------------------------------------------
+
+
+class SnapshottingExecutor(NativeExecutor):
+    """Records what the board carried at the moment each writer session opened."""
+
+    def __init__(self, evaluations, *, port):
+        super().__init__(evaluations)
+        self._port = port
+        self.board_at_execution: list[tuple[str, ...]] = []
+
+    async def stream(self, **kwargs):
+        properties = (kwargs.get("output_format") or {}).get("schema", {}).get(
+            "properties"
+        ) or {}
+        if "claims" in properties:
+            self.board_at_execution.append(
+                tuple(c.body for c in self._port.comments if is_record(c))
+            )
+        async for event in super().stream(**kwargs):
+            yield event
+
+
+def registry_block(prompt: str) -> str:
+    """The pinned-answers block of a writer prompt, and nothing around it."""
+    return prompt.partition("<pinned_rulings>")[2].partition("</pinned_rulings>")[0]
+
+
+@pytest.mark.parametrize("answered", [True, False])
+async def test_the_first_iteration_prompt_carries_the_pinned_answer(
+    answered,
+) -> None:
+    """The record the step wrote is what the first iteration is shown."""
+    port = variant(FakeTrackerPort)
+    executor = SnapshottingExecutor(
+        [native_evaluation(reconciled=True) for _ in range(4)], port=port
+    )
+    executor.question_answers = [{"rulings": [ANSWER] if answered else []}]
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        real_loop=True,
+        git=git,
+        workspace=workspace,
+    )
+
+    events = await drive(fire, scope=SCOPE)
+
+    prompt = executor.execution_prompts[0]
+    block = registry_block(prompt)
+    if not answered:
+        assert block.strip() == EMPTY_REGISTRY
+        assert ANSWER["question"] not in prompt
+        return
+    records = await RulingRecordReader(
+        tracker=port, operation=native_operation()
+    ).read_issue(issue_key=DIRECT_OWED)
+    assert len(records) == 1
+    record = records[0][1]
+    assert pinned_registry((record,)) in block
+    assert ANSWER["resolution"] in block
+    # The question stands ONLY inside that block, in the record that answers it.
+    assert ANSWER["question"] in block
+    assert ANSWER["question"] not in prompt.replace(block, "")
+    # The record was on the board when the writer session opened, so the text
+    # above was read back from the tracker rather than carried in run state.
+    assert executor.board_at_execution and all(
+        len(snapshot) == 1 for snapshot in executor.board_at_execution
+    )
+    # And no value of the final state carries it.
+    assert all(
+        ANSWER["resolution"] not in str(value)
+        for value in prepared(fire, entry=None).values()
+    )
+    assert events
