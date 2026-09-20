@@ -226,6 +226,16 @@ READ_BOUND_SECONDS = 60
 #: The one fenced `bash` block of the page an operator follows.
 GUIDE = Path(__file__).resolve().parents[2] / "docs" / "running-a-scope.md"
 
+#: The three the page cannot print a usable value for. Every other variable the
+#: block carries is used exactly as printed.
+SUBSTITUTED: frozenset[str] = frozenset(
+    {
+        "KODEZART_TRACKER__TOKEN",
+        "KODEZART_GITHUB_TOKEN",
+        "KODEZART_OPERATION_CONFIG",
+    }
+)
+
 
 def guide_environment() -> dict[str, str]:
     """The page's own environment, with only the three secrets substituted.
@@ -239,7 +249,16 @@ def guide_environment() -> dict[str, str]:
         r"```bash\n(.*?)```", GUIDE.read_text(encoding="utf-8"), flags=re.DOTALL
     )
     assert block is not None
-    printed = dict(re.findall(r"(KODEZART_[A-Z0-9_]+)=(\S+)", block[1]))
+    # Anchored on `export` and matched to the end of its line, because a
+    # placeholder like `<the tracker credential>` is not one word and a
+    # whitespace-bounded capture would take `<the` for the value.
+    printed = dict(
+        re.findall(r"^export (KODEZART_[A-Z0-9_]+)=(.+)$", block[1], flags=re.MULTILINE)
+    )
+    # Substituted, never added: each of the three has to be a name the page
+    # itself prints, or this helper would configure a deployment the page never
+    # told an operator about.
+    assert SUBSTITUTED <= set(printed), sorted(SUBSTITUTED - set(printed))
     assert len(printed) >= 6
     return {
         **printed,
@@ -331,6 +350,10 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         ),
         plan=scratch_scope_plan(),
     ).build()
+    # What the builder built, before anything is asserted about it: the lane-set
+    # assertions below are all set comparisons, and an empty plan would satisfy
+    # every one of them.
+    assert set(built.lanes) == {"A", "B", "C"}
     labels_before = {key: list(issue.labels) for key, issue in server.issues.items()}
     payload_before = json.dumps(project, sort_keys=True)
 
