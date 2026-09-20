@@ -3332,6 +3332,16 @@ async def test_a_budget_exhausted_lane_resumes_on_its_recorded_branch(monkeypatc
 #: is graded again, and the one-iteration budget ends there.
 STALLED_FIRE_GRADINGS = 2
 
+#: The same, for a stalling fire whose budget is TWO iterations: observed as
+#: four, each of them red.
+#:
+#: Two iterations is what makes the peak and the tip differ. A loop allowed one
+#: iteration commits once, so the best commit it produced is also the branch's
+#: tip and no assertion over a published SHA could tell the two selections
+#: apart; a loop allowed two commits twice, and the stall exit publishes the
+#: earlier of them.
+STALLED_TWO_ITERATION_GRADINGS = 4
+
 
 async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_on():
     """Lane A closes nothing, gives up its turn, and lane B still runs (KOD-460).
@@ -3347,6 +3357,11 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
     The invocation is not over: B is selected on the very next tick and closes
     its own criterion, which is the difference between one lane giving up and a
     walk giving up.
+
+    A's budget is two iterations so that the pull request's head says which
+    commit the stall exit chose: the loop commits twice, the best of the two is
+    not the branch's tip, and the delivered head therefore tells the best
+    iteration from the latest one by content.
     """
     repos = WalkRepos(url=FORGE_ORIGIN)
     port = board(lanes=("A", "B"))
@@ -3370,10 +3385,15 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
             trunk="main",
             merger=merger,
             ref_publisher=publisher,
+            # Two iterations, so A's loop branch holds two commits and the best
+            # of them is not the branch's tip. That is what lets the delivered
+            # head below say WHICH commit the stall exit selected instead of
+            # only which branch name it consolidated from.
+            max_iterations=2,
             evaluations=[
                 *(
                     criteria_echo(keys=("A/check",), passed=set())
-                    for _ in range(STALLED_FIRE_GRADINGS)
+                    for _ in range(STALLED_TWO_ITERATION_GRADINGS)
                 ),
                 *one_check_echoes("B", rounds=2),
             ],
@@ -3438,6 +3458,16 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
         # not the trunk the lane was cut from.
         assert landed[0] != TRUNK_SHA
         assert landed[0] in repos.branches[record.branch].shas
+        # And it is the BEST commit rather than the latest one: the loop made
+        # two, and what was published is the first. A selection that took the
+        # loop branch as it stands would publish the other, so the head this
+        # delivery was opened at discriminates the two by content and not by
+        # the name the consolidation was asked for.
+        assert (
+            landed[0]
+            == repos.branches[record.branch].shas[0]
+            != repos.branches[record.branch].shas[-1]
+        )
         # The head first, because the head is the content: a delivery opened
         # from a branch standing anywhere else carries other work whatever the
         # consolidation was asked for.
