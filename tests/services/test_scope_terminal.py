@@ -21,6 +21,7 @@ from kodezart.services import lane_reports
 from kodezart.services import scope_terminal as terminal_module
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.scope_terminal import ScopeTerminal
+from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -30,12 +31,18 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
-from kodezart.types.domain.run_state import LanePR
+from kodezart.types.domain.run_state import (
+    BranchAssociation,
+    LaneCommit,
+    LanePR,
+    LaneRunState,
+)
 from kodezart.types.domain.scope import ResolvedScope, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
 from kodezart.types.domain.scope_terminal import ScopeLaneEntry, ScopeTerminalEvent
-from kodezart.types.domain.tracker import IssuePriority
+from kodezart.types.domain.tracker import IssuePriority, TrackerComment
 from tests.fakes import (
+    FIXTURE_EPOCH,
     FakeScopeStatusWriter,
     FakeTrackerPort,
     PassThroughGate,
@@ -419,3 +426,91 @@ async def test_a_non_record_error_from_the_reader_leaves_the_report() -> None:
         await unit.report(ready=reading(closed=("A", "B")))
 
     assert status.posts == []
+
+
+# ---------------------------------------------------------------------------
+# KOD-480 — a lane's recorded pull request is carried onto its row and never
+# read: done is membership of the reading's owing-nothing group and nothing
+# else, whatever that pull request says.
+# ---------------------------------------------------------------------------
+
+LANE_BRANCH = "kodezart/A-0a1b2c3d-ralph-11112222"
+
+
+def lane_record(*, lane: str, pr: LanePR) -> LaneRunState:
+    """One lane's record, as the committing loop left it after a push."""
+    return LaneRunState(
+        lane_key=lane,
+        branch=LANE_BRANCH,
+        branch_url=f"https://forge.invalid/{LANE_BRANCH}",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        commits_ahead=1,
+        files_changed=1,
+        commits=[LaneCommit(sha="a" * 40, subject="feat: one", issue_id=lane)],
+        pr=pr,
+        associations=[
+            BranchAssociation(
+                branch=LANE_BRANCH,
+                role=BranchRole.LOOP,
+                derived_from="main",
+                run_id="only-job",
+            )
+        ],
+    )
+
+
+class RecordedRecordReader(LaneRecordReader):
+    """The shipped reader with one named lane's record supplied here."""
+
+    def __init__(self, *, lane: str, record: LaneRunState) -> None:
+        super().__init__(tracker=FakeTrackerPort(issues=[]), operation=OPERATION)
+        self._lane = lane
+        self._record = record
+
+    async def find(
+        self, *, issue_key: str, lane_key: str, record_ref: str | None = None
+    ) -> tuple[TrackerComment, LaneRunState] | None:
+        if issue_key == self._lane:
+            return (
+                TrackerComment(
+                    comment_key=f"{issue_key}-record",
+                    issue_key=issue_key,
+                    author_key=None,
+                    body="the configured marker and this lane's state",
+                    created_at=FIXTURE_EPOCH,
+                ),
+                self._record,
+            )
+        return await super().find(
+            issue_key=issue_key, lane_key=lane_key, record_ref=record_ref
+        )
+
+
+@pytest.mark.parametrize("state", ["open", "closed", "merged"])
+async def test_a_lane_owing_a_criterion_is_not_done_whatever_its_pull_request_says(
+    state: str,
+) -> None:
+    """The recorded delivery is carried onto the row and never read.
+
+    A lane the reading placed in the owing-work group owes work, so it is not
+    done — and no value of its recorded pull request's state changes that, in
+    either direction. The whole row is compared, so the recorded delivery
+    reaches the report unaltered and the branch is the record's own.
+    """
+    status = FakeScopeStatusWriter()
+    pr = LanePR(
+        url="https://forge.invalid/fixture/repo/pull/12", number=12, state=state
+    )
+    record = lane_record(lane="A", pr=pr)
+    unit = terminal(
+        status=status, records=RecordedRecordReader(lane="A", record=record)
+    )
+
+    event = await unit.report(ready=reading(ready=("A",), closed=("B",)))
+
+    assert event.lanes[0] == ScopeLaneEntry(
+        issue="A", done=False, branch=record.branch, pr=pr
+    )
+    assert event.outcome is WorkflowOutcome.scope_stopped_short
+    assert len(status.posts) == 1

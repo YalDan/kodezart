@@ -71,6 +71,7 @@ from tests.integration.test_scope_runtime import (
     ticks_of,
 )
 from tests.lane_fixture import ScopeForgeWire
+from tests.services.test_scope_runtime_static import imported_modules, path_of
 from tests.tracker.test_linear_tool_roster import SOURCE_ROOT
 
 
@@ -467,14 +468,17 @@ async def test_a_scope_of_open_unmerged_pull_requests_derives_the_finished_outco
         )
 
         # Marked at every observation, so what the terminal itself asked the
-        # forge is separable from what each lane's delivery asked it.
-        reads: list[int] = []
+        # forge is separable from what each lane's delivery asked it. Every
+        # request and not the by-number reads alone: a by-head listing, which
+        # the wire answers with a state and a merge fact, is a merge fact read
+        # as much as a read of one pull request is.
+        asked: list[int] = []
         events = []
         async with asyncio.timeout(WALK_BOUND_SECONDS):
             async for event in drive(harness, origin=FORGE_ORIGIN):
                 events.append(event)
                 if isinstance(event, ScopeWalkEvent):
-                    reads.append(len(wire.pr_reads))
+                    asked.append(len(wire.requests))
 
         report = terminals(events)[0]
         assert [lane.done for lane in report.lanes] == [True, True]
@@ -490,7 +494,7 @@ async def test_a_scope_of_open_unmerged_pull_requests_derives_the_finished_outco
         # and nothing merged — the wire raises on a merge, so its absence from
         # the requests is a fact about this run rather than an omission.
         assert wire.pr_reads, "a run that asked the forge nothing controls nothing"
-        assert len(wire.pr_reads) == reads[-1]
+        assert len(wire.requests) == asked[-1]
         assert not [
             request for request in wire.requests if request.url.path.endswith("/merge")
         ]
@@ -518,12 +522,32 @@ MERGE_STATE_NAMES = frozenset(
     {"PRState", "PRStateReader", "PRLifecycle", "read_pr_state", "lifecycle", "merged"}
 )
 
-#: The modules the terminal is made of: the vector, the readings and the act.
-TERMINAL_MODULES = (
-    "types/domain/scope_terminal.py",
-    "domain/scope_terminal.py",
-    "services/scope_terminal.py",
-)
+#: The act the terminal is, from which the rest of it is reached.
+TERMINAL_SEED = "kodezart.services.scope_terminal"
+
+#: The prefixes the scan follows out of the seed's own import nodes. The
+#: ``kodezart.types.domain`` package is NOT followed: the vector's module
+#: imports the v0.2 fire event's module, whose own delivery field names a
+#: merge legitimately, and that is not a fact about this lane. The one typed
+#: module of the terminal is therefore named rather than reached.
+TERMINAL_PACKAGES = ("kodezart.services.", "kodezart.domain.")
+TERMINAL_VECTOR = "kodezart.types.domain.scope_terminal"
+
+
+def terminal_modules() -> set[str]:
+    """The modules the terminal is made of: the act, its readings, its vector.
+
+    Derived out of the act's own import nodes rather than listed here, so a
+    module the terminal starts depending on is scanned without this test being
+    edited — and a scan that had lost its surface could not report the same
+    empty result as a clean one.
+    """
+    tree = ast.parse(path_of(TERMINAL_SEED).read_text(encoding="utf-8"))
+    return {
+        TERMINAL_SEED,
+        TERMINAL_VECTOR,
+        *imported_modules(tree, TERMINAL_PACKAGES),
+    }
 
 
 def merge_state_sites(source: str, *, label: str) -> list[str]:
@@ -546,20 +570,56 @@ def merge_state_sites(source: str, *, label: str) -> list[str]:
             sites.append(f"{label}:{node.lineno}: .{node.attr}")
         elif isinstance(node, ast.Name) and node.id in MERGE_STATE_NAMES:
             sites.append(f"{label}:{node.lineno}: {node.id}")
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value in MERGE_STATE_NAMES
+        ):
+            # Equality and not a substring, so prose about a merge does not
+            # trip it while a comparison against the state does.
+            sites.append(f'{label}:{node.lineno}: "{node.value}"')
     return sites
 
 
 def test_no_module_of_the_terminal_names_a_merge_or_a_pull_request_lifecycle():
+    modules = terminal_modules()
+    # Non-vacuity: the surface actually reaches the act, both of its readings
+    # and the reader that produces the recorded delivery in the first place.
+    assert {
+        TERMINAL_SEED,
+        TERMINAL_VECTOR,
+        "kodezart.domain.scope_terminal",
+        "kodezart.services.lane_records",
+    } <= modules
     offenders = {
         module: sites
-        for module in TERMINAL_MODULES
+        for module in sorted(modules)
         if (
             sites := merge_state_sites(
-                (SOURCE_ROOT / module).read_text(encoding="utf-8"), label=module
+                path_of(module).read_text(encoding="utf-8"), label=module
             )
         )
     }
     assert offenders == {}
+
+
+#: One control per shape the detector claims to see that the scanned surface
+#: cannot supply: the surface is expected to name nothing, so a comparison
+#: against the state as a literal has no control there at all.
+MERGE_STATE_CONTROLS = (
+    ('state == "merged"', '"merged"'),
+    ("record.pr.lifecycle", ".lifecycle"),
+)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    MERGE_STATE_CONTROLS,
+    ids=[source for source, _ in MERGE_STATE_CONTROLS],
+)
+def test_the_merge_state_detector_sees_each_shape_it_claims_to(source, expected):
+    sites = merge_state_sites(source, label="control")
+    assert len(sites) == 1 and expected in sites[0], sites
 
 
 def test_the_merge_state_detector_finds_the_modules_that_do_name_one():
