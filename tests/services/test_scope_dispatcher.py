@@ -567,14 +567,12 @@ def fire_outcome_vocabulary() -> frozenset[str]:
     ``classify_outcome`` and ``accept_verdict`` are the two readings that turn
     a finished fire's state into either of them.
 
-    Blind spots, stated rather than hidden. A name reached through
-    ``getattr(module, "outcome")`` is a string constant this does catch, but
-    one assembled from parts is not. A member bound to a local under another
-    name, and an enum imported ``as`` something else, are read under the new
-    name and pass. And the match is by spelling alone, so a member of an
-    unrelated enum spelled like one of these reads as a hit: over-inclusion,
-    deliberately, until the resolving scan KOD-725's own branch carries lands
-    on top of this one.
+    The vocabulary's own blind spots are stated with the scanned set, in
+    ``dispatchability_predicate_sources``; what belongs here is the one that is
+    a property of the words themselves. The match is by SPELLING alone, so a
+    member of an unrelated enum spelled like one of these reads as a hit:
+    over-inclusion, deliberately, because a scanned unit has no business
+    spelling any of these words whatever it means by them.
     """
     return frozenset(
         {WorkflowOutcome.__name__}
@@ -591,10 +589,10 @@ def fire_outcome_vocabulary() -> frozenset[str]:
 #:
 #: They are what a fire's ending is called where it is legitimately held — a
 #: state key, a field of the phase a delivery ended in — so forbidding them
-#: over a whole module would forbid the walker's post-fire bookkeeping, which
-#: reads a delivery phase on purpose and outside every decision. Inside the
-#: three units that decide what to offer next, either name is a fire-level
-#: outcome reaching the dispatch decision (KOD-725).
+#: over a whole module would forbid the one reporting helper of the walker,
+#: which reads a delivery phase on purpose and is handed nothing a decision is
+#: made from. Anywhere else in the walker, either name is a fire-level outcome
+#: reaching the dispatch decision (KOD-725).
 DECISION_ONLY_NAMES = frozenset({"outcome", "delivery"})
 
 
@@ -624,15 +622,38 @@ def outcome_references(
     return frozenset(found)
 
 
-#: The units of the live walker that decide what it offers next.
+#: The one method of the live walker the scan is allowed to leave out.
 #:
-#: Named apart because these three, and no other source scanned here, also
-#: forbid ``DECISION_ONLY_NAMES``.
-WALK_DECISION_UNITS = (
-    "ScopeWorkflowEngine._select",
-    "ScopeWorkflowEngine._settle",
-    "ScopeWorkflowEngine._put_back",
-)
+#: It is the walker's single reporting helper: it streams one fire and reports
+#: how that fire ended, and it is handed none of the lists a dispatch decision
+#: is made from, so a reading of an ending cannot leave it (KOD-725).
+REPORTING_HELPER = "_fire"
+
+#: The label of the live walker's decision, which is the whole class but that
+#: helper.
+#:
+#: Named apart because this source, and no other scanned here, also forbids
+#: ``DECISION_ONLY_NAMES``.
+WALK_DECISION_UNIT = f"ScopeWorkflowEngine minus {REPORTING_HELPER}"
+
+
+def walker_decision_source(*, cls_source: str, helper_source: str) -> str:
+    """*cls_source* with the exact text of the reporting helper removed once.
+
+    Subtraction rather than a list of methods, so that a method ADDED to the
+    walker is scanned by construction: the decision is everything the class
+    does except the one helper named above, and a new helper reading an ending
+    into a decision cannot escape by not being on a list.
+
+    The occurrence is counted before it is removed, because a subtraction that
+    silently removed nothing — a helper renamed, a source reformatted — would
+    leave the scan passing over a text it no longer covers the way it claims.
+    """
+    assert cls_source.count(helper_source) == 1, (
+        f"the reporting helper's source occurs {cls_source.count(helper_source)} "
+        "times in the class it is subtracted from"
+    )
+    return cls_source.replace(helper_source, "", 1)
 
 
 def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
@@ -646,14 +667,36 @@ def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
     ``record_run_outcome`` is deliberately absent — it records how a fire
     that already ran ended, which is the one place a run outcome belongs.
 
-    The live walk's own decision is here too, in four parts: the two methods
-    that choose the lane a tick offers and read the last fire against this
-    tick's gap, the one that puts a given-up lane's issue back, and the entry
-    reading all three stand on — a lane's record and the branch it names
-    decide how a fire enters, and neither reading may consult how the fire
-    before it ended (KOD-724, KOD-725). The plateau arithmetic is scanned
-    whole for the same reason: it is the quantity ``_settle`` reads, and it
-    counts criterion identities and nothing else.
+    The live walk's own decision is here WHOLE: the walker class minus its one
+    reporting helper, plus the entry reading it stands on — a lane's record and
+    the branch it names decide how a fire enters, and neither reading may
+    consult how the fire before it ended (KOD-724, KOD-725). The class is
+    scanned entire rather than method by method because more of it than the
+    selection decides: the run loop composes the resting lanes, the lane
+    boundary appends to them and the readmission vetoes a fire, so a list of
+    methods would leave the parts nobody thought to list unscanned and a new
+    helper unscanned by default. The plateau arithmetic is scanned whole for a
+    related reason: it is the quantity the plateau reading reads, and it counts
+    criterion identities and nothing else.
+
+    **Blind spots, stated where the scanned set is defined.**
+
+    * Calls are NOT followed. The walker's own helpers are scanned by
+      construction, being part of the class, but a function in another module
+      that a scanned unit calls is not scanned here at all.
+    * ``DECISION_ONLY_NAMES`` applies to the walker's own text and to no other
+      source. Elsewhere those two bare words are what a fire's ending is
+      legitimately called — a state key, a field of a delivery phase — so
+      forbidding them everywhere would forbid the reporting that has to read
+      one. The consequence is real: a bare ``record.outcome`` in the entry
+      reading or in the plateau arithmetic is not a hit.
+    * A name assembled from parts is missed: ``getattr(last, "out" + "come")``
+      names nothing the parse can see.
+    * A member bound to a local under another name, in another module, is read
+      under that name and passes. A direct ``import X as Y`` is NOT a blind
+      spot: the import arm matches the imported name whatever it is bound to.
+    * The match is by spelling, so it over-includes; see
+      ``fire_outcome_vocabulary``.
     """
     return (
         ("SubtreeClosure", inspect.getsource(issue_tree.SubtreeClosure)),
@@ -662,21 +705,78 @@ def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
         ("scope_walker", inspect.getsource(scope_walker)),
         ("run_pass", inspect.getsource(ScopeDispatcher.run_pass)),
         (
-            "ScopeWorkflowEngine._select",
-            inspect.getsource(scope_runtime.ScopeWorkflowEngine._select),
-        ),
-        (
-            "ScopeWorkflowEngine._settle",
-            inspect.getsource(scope_runtime.ScopeWorkflowEngine._settle),
-        ),
-        (
-            "ScopeWorkflowEngine._put_back",
-            inspect.getsource(scope_runtime.ScopeWorkflowEngine._put_back),
+            WALK_DECISION_UNIT,
+            walker_decision_source(
+                cls_source=inspect.getsource(scope_runtime.ScopeWorkflowEngine),
+                helper_source=inspect.getsource(
+                    getattr(scope_runtime.ScopeWorkflowEngine, REPORTING_HELPER)
+                ),
+            ),
         ),
         ("services/lane_entry", inspect.getsource(lane_entry_reader)),
         ("domain/lane_entry", inspect.getsource(lane_entry)),
         ("fire_plateau", inspect.getsource(fire_plateau)),
     )
+
+
+#: A class-shaped control's reporting helper, spelled once and shared by both
+#: controls below so the text subtracted from either is the exact same text.
+CONTROL_HELPER = '''    def _fire(self, lane):
+        """Stream the lane and report how its fire ended."""
+        final = lane.stream()
+        return final["delivery"]
+'''
+
+#: The same control's clean method: it decides from the gap and the resting
+#: lanes, which is what a walker's decision is allowed to read.
+CONTROL_CLEAN = """    def _select(self, ready, rested):
+        return [row for row in ready if row.issue_key not in rested]
+"""
+
+#: And its unclean one: a SECOND method reading the phase a delivery ended in,
+#: which is the reading the scan exists to find wherever it is written.
+CONTROL_DECIDING = """    def _readmitted(self, final, rested):
+        if final["delivery"] is None:
+            rested.append(final)
+        return rested
+"""
+
+
+def test_the_scan_excludes_one_reporting_helper_and_nothing_else():
+    """The subtraction removes the named helper and leaves every other method.
+
+    Two class-shaped sources, differing in one method. In the first the phase a
+    delivery ended in is read inside the excluded helper and nowhere else, and
+    the scanned remainder is clean. In the second the same read also sits in a
+    method that decides, and the remainder is a hit — so the exclusion is by
+    the helper's own text and not by the words the helper happens to use, and a
+    method added to the walker is scanned whether or not anybody listed it.
+    """
+    reporting_only = f"class Walker:\n{CONTROL_CLEAN}\n{CONTROL_HELPER}"
+    deciding_too = (
+        f"class Walker:\n{CONTROL_CLEAN}\n{CONTROL_DECIDING}\n{CONTROL_HELPER}"
+    )
+
+    clean = walker_decision_source(
+        cls_source=reporting_only, helper_source=CONTROL_HELPER
+    )
+    unclean = walker_decision_source(
+        cls_source=deciding_too, helper_source=CONTROL_HELPER
+    )
+
+    # Not vacuous: both remainders still carry the class and its clean method,
+    # and the helper's own read is gone from each.
+    assert "_select" in clean and "_select" in unclean
+    assert '"delivery"' not in clean
+    assert outcome_references(clean, also=DECISION_ONLY_NAMES) == frozenset()
+    assert outcome_references(unclean, also=DECISION_ONLY_NAMES) == {"delivery"}
+    # Before the whole class is scanned the helper is found in it exactly once,
+    # and a text the helper is absent from is refused rather than scanned as if
+    # a subtraction had happened.
+    with pytest.raises(AssertionError):
+        walker_decision_source(
+            cls_source=f"class Walker:\n{CONTROL_CLEAN}", helper_source=CONTROL_HELPER
+        )
 
 
 def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
@@ -721,6 +821,27 @@ def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
         def dispatchable(lane):
             return lane.outcome is None and lane.delivery is None
     """
+    # One control per bare name, so that dropping either from the set fails
+    # something: a control that compared the scan's answer with the set itself
+    # would pass over any set at all, including the empty one.
+    reading_a_bare_outcome = """
+        def dispatchable(lane):
+            return lane.outcome is None
+    """
+    reading_a_bare_delivery = """
+        def dispatchable(lane):
+            return lane.delivery is None
+    """
+    # The import arm's own control: the enum is imported under another name and
+    # then read by SUBSCRIPT, which is the one shape no other arm can see — the
+    # alias is not the enum's name and the subscripted key is a value this
+    # source never spells.
+    reading_an_aliased_import = """
+        from kodezart.types.domain.outcome import WorkflowOutcome as _E
+
+        def dispatchable(lane):
+            return lane.last is not _E[lane.ending]
+    """
 
     reading_the_gap = """
         def dispatchable(lane):
@@ -739,14 +860,24 @@ def test_the_detector_flags_a_dispatch_decision_that_reads_a_fire_outcome():
     assert outcome_references(reading_the_run_wire_string) >= {ran.value}
     assert outcome_references(reading_a_classification) == {"classify_outcome"}
     assert outcome_references(reading_a_verdict) == {"accept_verdict"}
+    assert outcome_references(reading_an_aliased_import) == {WorkflowOutcome.__name__}
     # The two bare names are forbidden where the walk decides and nowhere
     # else, so the scan finds them only when it is asked to: a source that
     # holds a delivery phase outside every decision is not a hit.
     assert outcome_references(reading_the_bare_names) == frozenset()
-    assert (
-        outcome_references(reading_the_bare_names, also=DECISION_ONLY_NAMES)
-        == DECISION_ONLY_NAMES
-    )
+    # Spelled out rather than compared with the set the scan is given, so that
+    # a name dropped from that set fails here instead of passing quietly.
+    assert DECISION_ONLY_NAMES == {"outcome", "delivery"}
+    assert outcome_references(reading_the_bare_names, also=DECISION_ONLY_NAMES) == {
+        "outcome",
+        "delivery",
+    }
+    assert outcome_references(reading_a_bare_outcome, also=DECISION_ONLY_NAMES) == {
+        "outcome"
+    }
+    assert outcome_references(reading_a_bare_delivery, also=DECISION_ONLY_NAMES) == {
+        "delivery"
+    }
     assert outcome_references(reading_the_gap) == frozenset()
     assert outcome_references(reading_the_gap, also=DECISION_ONLY_NAMES) == frozenset()
     # And alive over real source, not only over the shapes written here: the
@@ -767,14 +898,16 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     never be read as a lane abandoned: the arithmetic has no access to either
     fact in the first place.
 
-    The live walk is held to it twice over. Its selection asks only which
-    lanes the ready read offers and which are resting; the reading that
-    decides whether a fired lane is offered again asks only which criterion
-    identities its subtree now carries as closed. A fire that ended
-    ``loop_not_accepted`` and a fire that ended ``ci_passed`` reach both of
-    them as the same fact — the gap they left — which is what lets a lane be
-    fired twice in one invocation without any state machine over its exits
-    (KOD-724, KOD-725).
+    The live walk is held to it WHOLE, and not in the three methods somebody
+    listed: its selection asks only which lanes the ready read offers and which
+    are resting, the reading that decides whether a fired lane is offered again
+    asks only which criterion identities its subtree now carries as closed, and
+    the loop that composes the resting lanes, the boundary that appends to them
+    and the readmission that vetoes a fire are all in the scanned text too. A
+    fire that ended ``loop_not_accepted`` and a fire that ended ``ci_passed``
+    reach every one of them as the same fact — the gap they left — which is what
+    lets a lane be fired twice in one invocation without any state machine over
+    its exits (KOD-724, KOD-725).
     """
     scanned = dispatchability_predicate_sources()
 
@@ -784,7 +917,7 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
         "scope_ready",
         "scope_walker",
         "run_pass",
-        *WALK_DECISION_UNITS,
+        WALK_DECISION_UNIT,
         "services/lane_entry",
         "domain/lane_entry",
         "fire_plateau",
@@ -792,8 +925,16 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     # Every source really carries source: a label whose text came back empty
     # would satisfy the assertion below without scanning anything.
     assert all(source.strip() for _, source in scanned)
+    # And the walker's scanned text really is the class less one method: the
+    # methods the walk decides in are in it, and the excluded helper is not.
+    walker = next(source for label, source in scanned if label == WALK_DECISION_UNIT)
+    assert all(
+        f"def {name}(" in walker
+        for name in ("run", "_select", "_settle", "_put_back", "_readmitted")
+    )
+    assert f"def {REPORTING_HELPER}(" not in walker
     for label, source in scanned:
-        also = DECISION_ONLY_NAMES if label in WALK_DECISION_UNITS else frozenset()
+        also = DECISION_ONLY_NAMES if label == WALK_DECISION_UNIT else frozenset()
         assert outcome_references(source, also=also) == frozenset(), label
 
 

@@ -31,12 +31,25 @@ here, because a control for one of the detector's arms cannot come from the
 scanned surface: the surface is expected to name nothing, and until this file
 carried them, three of the four names and the whole string-literal arm could
 be removed with every assertion still passing.
+
+The file carries one other assertion over the walker's own syntax, for the same
+reason no behavioural test can carry it: that the walker remembers a fired lane
+by criterion IDENTITIES and keeps nothing about a lane on itself between fires
+(KOD-723). A value the walker remembered would normally equal the value the
+record names, so a walker reading its own memory instead of the record is
+invisible to every observation of a walk that does not change the record between
+two fires of one process.
 """
 
 import ast
+import dataclasses
+import inspect
+import textwrap
 from pathlib import Path
 
 import pytest
+
+from kodezart.services import scope_runtime
 
 #: How a checkpoint is read, and how one is addressed.
 FORBIDDEN = frozenset({"aget_state", "get_state", "checkpointer", "thread_id"})
@@ -151,3 +164,51 @@ def test_the_walker_names_no_checkpoint_read() -> None:
     assert [path.name for path in controls if named_sites(path)]
     offenders = {path.name: sites for path in scanned if (sites := named_sites(path))}
     assert offenders == {}
+
+
+def instance_attributes_assigned(function: object) -> list[str]:
+    """Every ``self.<name>`` the parsed *function* assigns to, in order."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    assigned: list[str] = []
+    for node in ast.walk(tree):
+        targets: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+        elif isinstance(node, ast.AnnAssign | ast.AugAssign):
+            targets = [node.target]
+        assigned.extend(
+            target.attr
+            for target in targets
+            if isinstance(target, ast.Attribute)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "self"
+        )
+    return assigned
+
+
+def test_the_walker_remembers_a_fired_lane_by_its_identities_alone() -> None:
+    """Two criterion-identity fields, and nothing kept on the walker itself.
+
+    What one tick hands the next about the fire before it is the lane's key and
+    the set of criterion identities that lane owed — not a count, which could
+    not tell a fire that closed one criterion while surfacing two from a fire
+    that moved nothing, and not anything about how the fire ended.
+
+    And the whole of a walk's per-invocation state is the run's own locals, so
+    the second fire of a lane inside one process has nothing of the first fire
+    to read: it asks the record again, exactly as a new process would
+    (KOD-723). An attribute assigned in the run loop is how that would stop
+    being true, so the absence is asserted over the syntax rather than over a
+    walk, where a remembered branch equal to the recorded one looks the same.
+    """
+    assert [field.name for field in dataclasses.fields(scope_runtime._LastFire)] == [
+        "issue_key",
+        "open_criteria",
+    ]
+    assert instance_attributes_assigned(scope_runtime.ScopeWorkflowEngine.run) == []
+    # The detector's own control, over the one method of the walker that does
+    # assign instance attributes: a reading that found none THERE would find
+    # none anywhere and the emptiness above would say nothing.
+    assert "_tracker" in instance_attributes_assigned(
+        scope_runtime.ScopeWorkflowEngine.__init__
+    )
