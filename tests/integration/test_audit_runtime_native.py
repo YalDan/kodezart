@@ -22,6 +22,7 @@ from kodezart.types.domain.agent import (
     DETECTOR_REMOVAL_SCHEMA,
     WRITE_BACK_SCHEMA,
 )
+from kodezart.types.domain.audit_overclaim import OverclaimKind
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import OperationConfig
@@ -30,6 +31,7 @@ from tests.chains.test_organize import RecordingExecutor, result
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeCIMonitor,
+    FakeMcpIssue,
     FakePRStateReader,
     PassThroughGate,
 )
@@ -49,6 +51,45 @@ from tests.tracker.test_audit_requests import (
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 from tests.tracker.test_state_history import server as server
 
+#: The Check sentence the base fixture's one criterion carries. A fixture
+#: adding criteria gives each its own sentence, and the doubles below read the
+#: subject of a session off the prompt rather than off a module constant, so a
+#: scope with several criteria answers per criterion.
+BASE_CHECK = "The current check.txt contains the committed contents."
+
+
+def criterion_body(*, check: str, graded_sha: str) -> str:
+    """One criterion sub-issue body: its Check, its Do and its Evidence row."""
+    return f"**Check:** {check}\n**Do:** AUTHOR REASONING\n" + render_evidence_field(
+        CriterionEvidence(graded_sha=graded_sha, test="historical author reasoning")
+    )
+
+
+def add_criterion(server, key, *, status, status_type, graded_sha, check):
+    """Add one more criterion sub-issue under ``ROOT`` to the fake workspace."""
+    template = server.issues[CHILD]
+    server.issues[key] = FakeMcpIssue(
+        id=key,
+        parent_id=ROOT,
+        labels=list(template.labels),
+        created_at=template.created_at,
+        state_changed_at=template.state_changed_at,
+        updated_at=template.updated_at,
+        status=status,
+        status_type=status_type,
+        description=criterion_body(check=check, graded_sha=graded_sha),
+    )
+    return server.issues[key]
+
+
+def state_writes(server):
+    """The ``save_issue`` calls that carry a state, in the order they landed."""
+    return [
+        dict(arguments)
+        for name, arguments in server.calls
+        if name == "save_issue" and "state" in arguments
+    ]
+
 
 class NativeExecutor(RecordingExecutor):
     def __init__(self, head):
@@ -56,11 +97,37 @@ class NativeExecutor(RecordingExecutor):
         self.head = head
         self.during = None
         self.claim_verdict = "holds"
+        #: One verdict per criterion, keyed by criterion key. A key with no
+        #: entry falls back to ``claim_verdict``.
+        self.claim_verdicts = {}
+        self.overclaim_verdict = "holds"
         self.write_verdict = "holds"
-        self.claim_key = CHILD
+        self.claim_key = None
         self.instruction = False
         self.refuse_after_first_refutation = False
         self.write_calls = 0
+        #: The Check sentence of each fixture criterion, so a session's
+        #: subject is read off the prompt it was given.
+        self.checks = {CHILD: BASE_CHECK}
+
+    def subject(self, prompt):
+        """Which criterion this session is about, by the Check it carries."""
+        matched = [key for key, check in self.checks.items() if check in prompt]
+        assert len(matched) == 1, matched
+        return matched[0]
+
+    @staticmethod
+    def tagged(prompt, tag):
+        return prompt.split(f"<{tag}>", 1)[1].split(f"</{tag}>", 1)[0]
+
+    def defect_class(self, prompt):
+        """The exact defect class this mandate hunt was asked about."""
+        return self.tagged(prompt, "defect_class")
+
+    def mandating_surface(self, prompt):
+        """The index the hunt supplied for the parent body carrying the text."""
+        surfaces = json.loads(self.tagged(prompt, "audited_surfaces"))
+        return next(row["index"] for row in surfaces if row["tracker_key"] == ROOT)
 
     async def stream(self, **kwargs):
         assert kwargs["session_id"] is None
@@ -72,16 +139,27 @@ class NativeExecutor(RecordingExecutor):
             await self.during(kwargs)
         schema = kwargs["output_format"]["schema"]
         if schema == AUDIT_CLAIM_SCHEMA:
+            about = self.subject(kwargs["prompt"])
             payload = {
-                "criterionKey": self.claim_key,
-                "verdict": self.claim_verdict,
+                "criterionKey": self.claim_key or about,
+                "verdict": self.claim_verdicts.get(about, self.claim_verdict),
                 "evidence": "Read check.txt at the current commit.",
             }
         elif schema == AUDIT_OVERCLAIM_SCHEMA:
-            payload = overclaims()
+            payload = (
+                overclaims()
+                if self.overclaim_verdict == "holds"
+                else overclaims(
+                    OverclaimKind.AGGREGATE,
+                    verdict=self.overclaim_verdict,
+                    evidence="A recount of the claimed total refutes it.",
+                    recomputedValue="3",
+                )
+            )
+            payload["criterionKey"] = self.subject(kwargs["prompt"])
         elif schema == DETECTOR_REMOVAL_SCHEMA:
             payload = {
-                "criterionKey": CHILD,
+                "criterionKey": self.subject(kwargs["prompt"]),
                 "verdict": "holds",
                 "evidence": "Compared actual committed revisions.",
                 "findings": [],
@@ -96,16 +174,16 @@ class NativeExecutor(RecordingExecutor):
             if self.instruction:
                 payload = {
                     "verdict": "holds",
-                    "source_index": 1,
+                    "source_index": self.mandating_surface(kwargs["prompt"]),
                     "evidence": (
                         "The exact current parent instruction mandates this defect."
                     ),
                     "finding": {
                         "issue_id": ROOT,
-                        "defect_class": (
-                            "violation of the current Check: "
-                            "The current check.txt contains the committed contents."
-                        ),
+                        # The hunt refuses a finding whose defect class differs
+                        # from the one it was asked about, so the double answers
+                        # the question it was given rather than a fixed one.
+                        "defect_class": self.defect_class(kwargs["prompt"]),
                         "role": "mandate",
                         "mandate_text": "Explicit parent instructions.",
                         "evidence": (
@@ -131,8 +209,8 @@ class NativeExecutor(RecordingExecutor):
             yield event
 
 
-@pytest.fixture
-async def native_audit(repository, server, tmp_path):
+async def build_native_audit(repository, server, tmp_path, *, gate):
+    """The composed audit over the native doubles, under the supplied gate."""
     remote, _author, _observer, _prior, head = repository
     fields = base_operation(repos=(remote.as_uri(),)).model_dump()
     fields["repos"][0].update(
@@ -165,13 +243,7 @@ async def native_audit(repository, server, tmp_path):
     server.issues[ROOT].status = "In Review"
     server.issues[ROOT].status_type = "started"
     server.issues[ROOT].description = "Explicit parent instructions."
-    server.issues[CHILD].description = (
-        "**Check:** The current check.txt contains the committed contents.\n"
-        "**Do:** AUTHOR REASONING\n"
-        + render_evidence_field(
-            CriterionEvidence(graded_sha=head, test="historical author reasoning")
-        )
-    )
+    server.issues[CHILD].description = criterion_body(check=BASE_CHECK, graded_sha=head)
     await lane_record(
         tracker,
         data={
@@ -226,9 +298,16 @@ async def native_audit(repository, server, tmp_path):
         runner=runner,
         prompts=load_registry(),
         skills=SUPPRESS_ALL_SKILLS,
-        gate=PassThroughGate(),
+        gate=gate,
     )
     return audit, executor, server, tracker, git, workspace, repository
+
+
+@pytest.fixture
+async def native_audit(repository, server, tmp_path):
+    return await build_native_audit(
+        repository, server, tmp_path, gate=PassThroughGate()
+    )
 
 
 async def test_current_native_scope_publishes_verified_records_then_summary(

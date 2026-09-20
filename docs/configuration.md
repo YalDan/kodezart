@@ -815,9 +815,21 @@ is a remaining generic recorder implementation gap, not a new operator policy.
 
 Audit publishes completed observations without applying workflow transitions.
 Unverifiable claims make no claim-publication write. A published refutation
-retains incomplete coverage while its workflow-state authority is unresolved;
-unknown native lapse classification likewise remains explicit unavailability.
+retains incomplete coverage while its workflow-state authority is unresolved.
 Neither case manufactures a classification or marks a criterion Done.
+
+A covered member whose own tracker state carries nothing to audit yet is
+reported as deferred rather than as missing coverage, and no judgment session,
+Git read or forge read is spent on it. A criterion that is neither completed nor
+in the configured `in_review` state defers as `claim_not_made`; any other issue
+outside that state defers as `terminal_not_reached`; a completed criterion whose
+recorded Evidence SHA sits behind its branch head defers as `graded_behind_head`
+once its unverifiable observation is retained on the report. A deferral writes
+nothing and moves no state. Both the run report and the published scope summary
+carry every deferred member with its reason, so a summary cannot read as though
+each covered member had been judged. A completed criterion whose owner carries
+no unique lane record is not deferred: a claim that cannot be placed on a branch
+is missing coverage.
 
 Audit summaries carry the actual addressed record snapshots as well as their
 native references. Those records are reread before summary publication and after
