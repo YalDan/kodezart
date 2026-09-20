@@ -14,10 +14,10 @@ def lane_roster(ready: ScopeReadySet) -> tuple[tuple[str, bool], ...]:
     placed in none of them (a criterion issue, a record issue) appears not at
     all.
 
-    Done is membership of the owing-nothing group and nothing else.  The gap
-    a member owes is computed for APPROVED members alone, so an unapproved
-    member has no gap to read and is not done even where the criteria under
-    it happen to read closed.
+    A lane is done when it is a member of the owing-nothing group and nothing
+    else.  The gap a member owes is computed for APPROVED members alone, so an
+    unapproved member has no gap to read and is not done even where the
+    criteria under it happen to read closed.
 
     The order is the scope's own member order rather than the groups', so two
     readings of one unchanged scope render the same vector.  A group holding a

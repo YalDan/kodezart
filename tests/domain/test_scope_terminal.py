@@ -82,12 +82,17 @@ def test_the_roster_carries_one_row_per_lane_of_every_group() -> None:
 
 
 def test_the_roster_reads_scope_order_and_not_group_order() -> None:
-    """Two readings of one unchanged scope render the same vector."""
+    """Two readings of one unchanged scope render the same vector.
+
+    The members are declared out of sorted order, so a roster that sorted its
+    keys instead of reading the scope's own member order is a different vector
+    rather than the same one.
+    """
     roster = lane_roster(
-        reading(members=("A", "B", "C"), closed=("C", "A"), ready=("B",))
+        reading(members=("B", "A", "C"), closed=("C", "B"), ready=("A",))
     )
 
-    assert roster == (("A", True), ("B", False), ("C", True))
+    assert roster == (("B", True), ("A", False), ("C", True))
 
 
 def test_a_member_in_no_group_is_no_lane_of_the_report() -> None:
