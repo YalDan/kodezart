@@ -203,9 +203,13 @@ def alarm_event_due(
         if event.kind in _TRANSITION_KINDS and event.subject_key == record.signal.value
     ]
     raised = is_raised(record)
-    if bool(spoken) and (spoken[-1].kind is RunEventKind.RUN_ALARM_RAISED) == raised:
-        return None
-    if not spoken and not raised:
+    last = spoken[-1] if spoken else None
+    if last is None:
+        # A stream that has never spoken for this signal owes a raise and
+        # nothing else: there is no clear to post for an alarm nobody heard.
+        if not raised:
+            return None
+    elif (last.kind is RunEventKind.RUN_ALARM_RAISED) == raised:
         return None
     return LaneRunEvent(
         kind=RunEventKind.RUN_ALARM_RAISED

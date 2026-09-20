@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.config.app import AppConfig
-from kodezart.domain import run_shape
+from kodezart.domain import run_shape, tally_record
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_shape import escalation_ageing
 from kodezart.types.domain.escalation import (
@@ -283,20 +283,47 @@ def test_negative_limits_refuse_configuration(name):
         AppConfig(_env_file=None, **{name: -1})
 
 
-def test_signal_module_is_pure_and_count_comparisons_have_no_literal_bound():
-    tree = ast.parse(inspect.getsource(run_shape))
-    allowed_imports = {
-        "typing",
-        "pydantic",
-        "kodezart.domain.errors",
-        "kodezart.domain.run_alarm_record",
-        "kodezart.types.domain.escalation",
-        "kodezart.types.domain.run_alarm",
-        "kodezart.types.domain.run_state",
-        "kodezart.types.domain.surface",
-        "kodezart.types.domain.scope",
-        "kodezart.types.domain.organize",
-    }
+@pytest.mark.parametrize(
+    ("module", "allowed_imports"),
+    [
+        (
+            run_shape,
+            {
+                "typing",
+                "pydantic",
+                "kodezart.domain.errors",
+                "kodezart.domain.run_alarm_record",
+                "kodezart.types.domain.escalation",
+                "kodezart.types.domain.run_alarm",
+                "kodezart.types.domain.run_state",
+                "kodezart.types.domain.surface",
+                "kodezart.types.domain.scope",
+                "kodezart.types.domain.organize",
+            },
+        ),
+        # The record rule is the same kind of module: arithmetic over readings
+        # the caller supplies, so it is held to the same import set and the
+        # same no-literal-bound rule as the signal it composes for.
+        (
+            tally_record,
+            {
+                "collections.abc",
+                "kodezart.domain.errors",
+                "kodezart.domain.fire_plateau",
+                "kodezart.domain.run_event_stream",
+                "kodezart.domain.run_shape",
+                "kodezart.types.domain.run_alarm",
+                "kodezart.types.domain.run_event",
+                "kodezart.types.domain.run_state",
+                "kodezart.types.domain.tracker",
+            },
+        ),
+    ],
+)
+def test_signal_module_is_pure_and_count_comparisons_have_no_literal_bound(
+    module, allowed_imports
+):
+    tree = ast.parse(inspect.getsource(module))
     imports = {
         node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
     }
