@@ -129,8 +129,11 @@ class _PinStep:
         """
         if finding is not None:
             raise RulingUnrecordedError(
-                issue_key=self.ruling.issue_ref,
-                reason="a pinned answer is written once and never rewritten",
+                issue_key=self.lane_key,
+                reason=(
+                    f"{self.ruling.issue_ref!r}: a pinned answer is written once "
+                    "and never rewritten"
+                ),
             )
         text = render_ruling(
             ruling=self.ruling,
@@ -146,8 +149,11 @@ class _PinStep:
             destination=OutboundDestination.TRACKER_COMMENT,
             content_class=ContentClass.AUTHORED,
             refusal=lambda: RulingUnrecordedError(
-                issue_key=self.ruling.issue_ref,
-                reason="the outbound gate changed the exact pinned text",
+                issue_key=self.lane_key,
+                reason=(
+                    f"{self.ruling.issue_ref!r}: the outbound gate changed the "
+                    "exact pinned text"
+                ),
             ),
         )
         await self.lease.renew()
@@ -380,8 +386,11 @@ class FireTimeRulings:
                 )
                 if result.verdict is not AuditVerdict.HOLDS:
                     raise RulingUnrecordedError(
-                        issue_key=record.issue_ref,
-                        reason="the landed pinned text was not independently upheld",
+                        issue_key=spec.subject,
+                        reason=(
+                            f"{record.issue_ref!r}: the landed pinned text was not "
+                            "independently upheld"
+                        ),
                     )
         await self._require_read_back(spec=spec, owed=owed)
 

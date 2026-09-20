@@ -60,6 +60,12 @@ HOLDS = {
     "cited_refs": ["policy.py"],
 }
 
+REFUTED = {
+    "verdict": "refuted",
+    "evidence": "The landed text names a predicate this tree does not hold.",
+    "cited_refs": ["policy.py"],
+}
+
 
 def ambiguous_body() -> str:
     return criterion_body(DIRECT_OWED).replace(
@@ -356,6 +362,20 @@ async def test_a_record_the_tracker_accepted_but_does_not_list_is_not_pinned(
     # failed is the step's own read-back of it.
     assert port.comment_writes
     assert len(executor.judged_artifacts) == 1
+
+
+async def test_a_refuted_judgement_is_refused_under_the_fires_subject(
+    repository,
+) -> None:
+    """One key names the fire; the issue that raised the question is the reason."""
+    executor = Executor([[one_answer()]], findings=[dict(REFUTED)])
+    step, spec, current, _, _, _, repo_path, base = await build(repository, executor)
+
+    with pytest.raises(RulingUnrecordedError) as caught:
+        await run(step, spec, current, repo_path, base)
+
+    assert caught.value.issue_key == SUBJECT
+    assert DIRECT_OWED in caught.value.reason
 
 
 @pytest.mark.parametrize("holder", [None, "  "], ids=["None", "blank"])
