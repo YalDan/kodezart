@@ -495,8 +495,10 @@ value carries the decision comment reference; an unanswered readable
 escalation returns unresolved. Missing or ambiguous records, unreadable
 reply links and incomplete pages raise `EscalationReadError`. Resolution
 reads every comment page and does not parse historical escalation bodies
-as JSON, cache answers, write comments or change labels. The supervisor
-still owns consuming this read in its alarm computation.
+as JSON, cache answers, write comments or change labels. Consuming this read
+in an alarm computation is still owed; the supervisor tick that exists reads
+the scope's ready set, and observes the lane tally arm for each ready lane and
+each finished member of every scope the operation declares.
 
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the

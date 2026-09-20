@@ -648,7 +648,44 @@ The alarm vocabulary and payload validation are available independently of
 signal computation and of the writers that publish it; constructing a model
 enables neither.
 
-`services.tally_supervisor.TallySupervisor` is the first of those writers.
+### Supervisor pass
+
+`services.supervisor_pass.SupervisorPass` is one scheduled tick over the
+scopes `OperationConfig.supervisor_scopes` declares, registered on the
+existing scheduler by `composition/supervisor.py::build_supervisor_pass` with
+its interval and timeout from application configuration, no report, and no
+sleep, timer or clock of its own. `composition/passes.py` registers it only
+when a tracker is dialled and the roster is non-empty; either one absent
+registers nothing and logs `supervisor_pass_not_wired` naming which. The pass
+holds no port at all: the scope read is injected as a callable and the
+observation is the observer's, so it can reach no repository, session, queue
+or forge.
+
+Per scope it observes every ready lane with that lane's own roster and gap,
+and every finished member with neither — a raise standing on a lane that has
+since finished is cleared rather than left. Blocked and unapproved members are
+not observed: they are never fired, so they record nothing and there is no
+clock to measure. The accepted consequence is that a lane raised and then
+blocked by hand stays raised until it is ready again.
+
+One lane's failure is that lane's. Each scope read and each lane observation
+is contained, logged as `supervisor_scope_failed` or `supervisor_lane_failed`,
+and the tick then raises `SupervisorIncompleteError` naming what it could not
+reach, so the scheduler reports it failed with whatever it did write already
+on the tracker. Cancellation and the scheduler's own timeout are not a lane's
+failure and pass straight through.
+
+What the tick is observable by: an alarm is a record at
+`(LaneSubject(scope, lane), TALLY_UNMOVED)` on the lane's own issue whose
+readings replay to an alarm, announced by exactly one `run_alarm_raised` event
+on that lane's stream. A record whose readings replay to nothing is a tally
+reading kept so the next tick has an anchor, and it is written only when a
+lane moved while it still owed work — which is the only write a run that never
+stalls makes. There is no scope-subject alarm: a run event needs a lane key,
+and a scope's stall is some lane's stall.
+
+`services.tally_supervisor.TallySupervisor` is the writer the tick observes
+through.
 Per lane it reads the run-state record, reads the one alarm record at
 `(LaneSubject, TALLY_UNMOVED)` on that lane's issue, composes what the
 address should hold through `domain.tally_record`, and writes only when the

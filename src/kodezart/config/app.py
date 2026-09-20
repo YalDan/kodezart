@@ -363,6 +363,23 @@ class AppConfig(BaseSettings):
         le=86400.0,
         description="Seconds between audit delta ticks on the existing scheduler.",
     )
+    supervisor_pass_interval_seconds: float = Field(
+        default=300.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Seconds between supervisor observation ticks on the existing scheduler."
+        ),
+    )
+    supervisor_pass_timeout_seconds: float = Field(
+        default=120.0,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "Wall-clock bound for one supervisor observation tick over every "
+            "declared scope."
+        ),
+    )
     audit_full_sweep_interval_seconds: float = Field(
         default=86400.0,
         ge=60.0,

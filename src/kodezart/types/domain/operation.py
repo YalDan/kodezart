@@ -581,6 +581,7 @@ class OperationConfig(OperationModel):
     organize_mandates: tuple[MandateSpec, ...] = ()
     organize_scopes: tuple[OrganizeScopeBinding, ...] = ()
     audit_scopes: tuple[AuditScopeBinding, ...] = ()
+    supervisor_scopes: tuple[ScopeRef, ...] = ()
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
     run_event_states: dict[str, LifecycleStage | RunEventEffect] = Field(
         default_factory=dict
@@ -1078,6 +1079,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "organize_mandates": ConfigOwnership.LOCAL,
     "organize_scopes": ConfigOwnership.LOCAL,
     "audit_scopes": ConfigOwnership.LOCAL,
+    "supervisor_scopes": ConfigOwnership.LOCAL,
     "workflow_states": ConfigOwnership.EXTERNAL,
     "run_event_states": ConfigOwnership.LOCAL,
     "marker_prefixes": ConfigOwnership.LOCAL,
