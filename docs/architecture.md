@@ -819,7 +819,11 @@ collaborator that could settle them.
 At the walk's one clean exit the scope terminal reports. It reads the tick's
 own ready set for which members owe nothing, and each lane's run-state record
 for the branch and pull request that lane carries; it remembers nothing of the
-invocation, so a killed run re-enters and reports the same way. Its one write
+invocation, so a killed run re-enters and reports the same way. Before the
+event is built and before anything is written, the vector is asserted to cover
+every lane of that reading, compared by key; a vector that does not is an alarm
+rather than an ending, so the invocation ends there with nothing posted instead
+of a short report being published as a complete one. Its one write
 is the container's status update, through `ScopeStatusWriter` and no port
 member, gated exactly under its own destination as DERIVED content — a gate
 that altered the report refuses the write rather than publishing a different

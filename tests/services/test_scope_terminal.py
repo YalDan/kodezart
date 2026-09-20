@@ -7,13 +7,15 @@ the gate and the status writer as doubles that answer for what they were
 handed.
 """
 
+import ast
 import inspect
+from collections.abc import Callable
 
 import pytest
 import structlog.testing
 
 from kodezart.core.errors import LaneRosterArityError
-from kodezart.domain.errors import ScopeStatusError
+from kodezart.domain.errors import LaneRecordReadError, ScopeStatusError
 from kodezart.domain.scope_terminal import render_scope_status
 from kodezart.services import lane_reports
 from kodezart.services import scope_terminal as terminal_module
@@ -100,12 +102,15 @@ class RefusingStatusWriter(FakeScopeStatusWriter):
         raise ScopeStatusError(ref=ref, reason="the container refused the write")
 
 
-def terminal(*, status=None, gate=None) -> ScopeTerminal:
+def reader() -> LaneRecordReader:
+    """The shipped record reader over a board carrying no lane comment."""
+    return LaneRecordReader(tracker=FakeTrackerPort(issues=[]), operation=OPERATION)
+
+
+def terminal(*, status=None, gate=None, records=None) -> ScopeTerminal:
     """The shipped terminal over the shipped record reader and a bare board."""
     return ScopeTerminal(
-        records=LaneRecordReader(
-            tracker=FakeTrackerPort(issues=[]), operation=OPERATION
-        ),
+        records=reader() if records is None else records,
         status=FakeScopeStatusWriter() if status is None else status,
         gate=PassThroughGate() if gate is None else gate,
     )
@@ -293,10 +298,124 @@ async def test_a_lane_that_is_not_done_forbids_the_finished_outcome() -> None:
     assert event.outcome is WorkflowOutcome.scope_stopped_short
 
 
+#: A vocabulary a lane defines is a class of one of these shapes: a states
+#: enum, or a refusal of its own.
+VOCABULARY_BASES = frozenset({"StrEnum", "Enum", "Exception"})
+
+
+def defined_classes(source: str) -> dict[str, list[str]]:
+    """Every class *source* declares, by the base names it was given."""
+    declared: dict[str, list[str]] = {}
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ClassDef):
+            declared[node.name] = [
+                base.id if isinstance(base, ast.Name) else base.attr
+                for base in node.bases
+                if isinstance(base, ast.Name | ast.Attribute)
+            ]
+    return declared
+
+
 def test_the_arity_assertion_is_the_siblings_own_and_no_vocabulary_is_defined_here():
-    """The unit is consumed, not reimplemented, and its state enum is unused."""
+    """The unit is consumed, not reimplemented, and no vocabulary starts here.
+
+    Read off the syntax tree rather than as a substring, so a states enum or
+    a refusal added here under any name is the thing this refuses, and not
+    only one spelled the way the sibling spells it.
+    """
     source = inspect.getsource(terminal_module)
+    declared = defined_classes(source)
+
+    assert set(declared) == {"ScopeTerminal"}
+    for name, bases in declared.items():
+        assert not VOCABULARY_BASES.intersection(bases), f"{name} declares a vocabulary"
+        assert "Roster" not in name
+        assert "Report" not in name
     assert "assert_lane_roster" in source
     assert "LaneReportState" not in source
-    assert "LaneReport" not in source
     assert terminal_module.assert_lane_roster is lane_reports.assert_lane_roster
+
+
+# ---------------------------------------------------------------------------
+# KOD-481, the unrecorded lane — a record that is there and unreadable is one
+# lane's fact and no other's, and only that fault is contained.
+# ---------------------------------------------------------------------------
+
+
+def unreadable(key: str) -> LaneRecordReadError:
+    return LaneRecordReadError(
+        issue_key=key, lane_key=key, record_ref=None, reason="the listing failed"
+    )
+
+
+class FailingRecordReader(LaneRecordReader):
+    """The shipped reader with one named lane's read replaced by a failure.
+
+    Every other lane is read the shipped way, so what the terminal does with
+    the failure is separable from what it does with an absent record.
+    """
+
+    def __init__(self, *, lane: str, failure: Callable[[str], Exception]) -> None:
+        super().__init__(tracker=FakeTrackerPort(issues=[]), operation=OPERATION)
+        self._lane = lane
+        self._failure = failure
+
+    async def find(
+        self, *, issue_key: str, lane_key: str, record_ref: str | None = None
+    ) -> tuple[object, object] | None:
+        if issue_key == self._lane:
+            raise self._failure(issue_key)
+        return await super().find(
+            issue_key=issue_key, lane_key=lane_key, record_ref=record_ref
+        )
+
+
+async def test_an_unreadable_record_keeps_its_lane_in_the_vector() -> None:
+    """The row's own reading never came from the record, so it stands.
+
+    A walk that already ran cannot be undone by a listing that failed after
+    it: the lane keeps its place, keeps the done column the reading gave it,
+    and reports both recorded columns absent rather than invented — and the
+    fault is said in the log by name rather than passed over.
+    """
+    status = FakeScopeStatusWriter()
+    unit = terminal(
+        status=status,
+        records=FailingRecordReader(lane="B", failure=unreadable),
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        event = await unit.report(ready=reading(closed=("A", "B")))
+
+    assert event.lanes == (
+        ScopeLaneEntry(issue="A", done=True, branch=None, pr=None),
+        ScopeLaneEntry(issue="B", done=True, branch=None, pr=None),
+    )
+    assert event.outcome is WorkflowOutcome.scope_converged
+    assert len(status.posts) == 1
+    assert [
+        entry["lane"]
+        for entry in logs
+        if entry["event"] == "scope_terminal_record_unreadable"
+    ] == ["B"]
+
+
+async def test_a_non_record_error_from_the_reader_leaves_the_report() -> None:
+    """Only the record fault is contained; anything else is not this lane's.
+
+    The counterpart of the case above and the reason the containment is
+    narrow: an error that is not a record read's ends the invocation, and
+    nothing is posted on the way out.
+    """
+    status = FakeScopeStatusWriter()
+    unit = terminal(
+        status=status,
+        records=FailingRecordReader(
+            lane="A", failure=lambda key: RuntimeError(f"not a record fault: {key}")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="not a record fault"):
+        await unit.report(ready=reading(closed=("A", "B")))
+
+    assert status.posts == []
