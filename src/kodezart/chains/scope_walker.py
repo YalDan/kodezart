@@ -117,6 +117,10 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
             issue for issue in facts.values() if "criterion" in issue.issue_labels
         ),
         closed=tuple(closed.values()),
+        # What the scope still owes, from the closure that computed the gaps.
+        # A reporter asking a criterion's state kind again would be a second
+        # reading of the same question, answerable differently.
+        unresolved=closure.open_criterion_keys(),
     )
 
 

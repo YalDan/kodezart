@@ -665,11 +665,12 @@ def _observation(
             skipped_lanes=tuple(skipped),
             failed_lanes=tuple(failures),
             rested_lanes=tuple(rested),
-            unresolved_criteria=tuple(
-                row.issue_key
-                for row in ready.criteria
-                if row.state_kind is not WorkflowStateKind.COMPLETED
-            ),
+            # Copied from the ready read, which took it off the closure that
+            # computed the gaps. Reading a criterion's state kind here instead
+            # would be a second arithmetic over the same question, and this
+            # module is scanned whole for the vocabulary such a reading is
+            # spelled in (KOD-725).
+            unresolved_criteria=ready.unresolved,
             unapproved_lanes=ready.unapproved,
             exclusions=tuple(exclusions),
         )

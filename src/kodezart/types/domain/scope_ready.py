@@ -23,6 +23,12 @@ class ScopeReadySet:
     a topology to order them into — but they are the members a delivery is
     still owed for, so a read that dropped them left the only carrier of
     that fact out of its answer.
+
+    ``unresolved`` carries the keys of the criteria the whole scope still
+    owes, as the same closure arithmetic the gaps come from reads them. It
+    is on the read rather than recomputed by a reporter, because a second
+    reading of what a criterion's workflow state means would be a second
+    arithmetic free to disagree with the one the lanes were selected by.
     """
 
     scope: ResolvedScope
@@ -31,3 +37,4 @@ class ScopeReadySet:
     unapproved: tuple[str, ...] = ()
     criteria: tuple[TrackerIssue, ...] = ()
     closed: tuple[TrackerIssue, ...] = ()
+    unresolved: tuple[str, ...] = ()

@@ -625,35 +625,38 @@ def outcome_references(
 #: The one method of the live walker the scan is allowed to leave out.
 #:
 #: It is the walker's single reporting helper: it streams one fire and reports
-#: how that fire ended, and it is handed none of the lists a dispatch decision
-#: is made from, so a reading of an ending cannot leave it (KOD-725).
+#: how that fire ended by appending to a list of lanes. The lists a dispatch
+#: decision is made from are not passed to it, and that its reporting list is
+#: not read back into a decision is pinned by a walk and not by this scan
+#: (KOD-724, KOD-725).
 REPORTING_HELPER = "_fire"
 
-#: The label of the live walker's decision, which is the whole class but that
+#: The label of the live walker's decision, which is its whole MODULE but that
 #: helper.
 #:
 #: Named apart because this source, and no other scanned here, also forbids
 #: ``DECISION_ONLY_NAMES``.
-WALK_DECISION_UNIT = f"ScopeWorkflowEngine minus {REPORTING_HELPER}"
+WALK_DECISION_UNIT = f"scope_runtime minus {REPORTING_HELPER}"
 
 
-def walker_decision_source(*, cls_source: str, helper_source: str) -> str:
-    """*cls_source* with the exact text of the reporting helper removed once.
+def walker_decision_source(*, unit_source: str, helper_source: str) -> str:
+    """*unit_source* with the exact text of the reporting helper removed once.
 
-    Subtraction rather than a list of methods, so that a method ADDED to the
-    walker is scanned by construction: the decision is everything the class
-    does except the one helper named above, and a new helper reading an ending
-    into a decision cannot escape by not being on a list.
+    Subtraction rather than a list of definitions, so that anything ADDED to
+    the walker is scanned by construction: the decision is everything the
+    module does except the one helper named above, and a new helper reading an
+    ending into a decision cannot escape by not being on a list — whether it is
+    written as a method or beside the class.
 
     The occurrence is counted before it is removed, because a subtraction that
     silently removed nothing — a helper renamed, a source reformatted — would
     leave the scan passing over a text it no longer covers the way it claims.
     """
-    assert cls_source.count(helper_source) == 1, (
-        f"the reporting helper's source occurs {cls_source.count(helper_source)} "
-        "times in the class it is subtracted from"
+    assert unit_source.count(helper_source) == 1, (
+        f"the reporting helper's source occurs {unit_source.count(helper_source)} "
+        "times in the text it is subtracted from"
     )
-    return cls_source.replace(helper_source, "", 1)
+    return unit_source.replace(helper_source, "", 1)
 
 
 def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
@@ -667,23 +670,28 @@ def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
     ``record_run_outcome`` is deliberately absent — it records how a fire
     that already ran ended, which is the one place a run outcome belongs.
 
-    The live walk's own decision is here WHOLE: the walker class minus its one
+    The live walk's own decision is here WHOLE: the walker MODULE minus its one
     reporting helper, plus the entry reading it stands on — a lane's record and
     the branch it names decide how a fire enters, and neither reading may
-    consult how the fire before it ended (KOD-724, KOD-725). The class is
+    consult how the fire before it ended (KOD-724, KOD-725). The module is
     scanned entire rather than method by method because more of it than the
     selection decides: the run loop composes the resting lanes, the lane
     boundary appends to them and the readmission vetoes a fire, so a list of
-    methods would leave the parts nobody thought to list unscanned and a new
-    helper unscanned by default. The plateau arithmetic is scanned whole for a
-    related reason: it is the quantity the plateau reading reads, and it counts
-    criterion identities and nothing else.
+    methods would leave the parts nobody thought to list unscanned. And the
+    module rather than the class alone, because the walker's decision is not
+    confined to its class: the criterion identities a fire is measured against
+    and the turn the selection returns are built beside it, and a module's own
+    imports and bindings are where a read spelled under another name would be
+    written. The plateau arithmetic is scanned whole for a related reason: it is
+    the quantity the plateau reading reads, and it counts criterion identities
+    and nothing else.
 
     **Blind spots, stated where the scanned set is defined.**
 
-    * Calls are NOT followed. The walker's own helpers are scanned by
-      construction, being part of the class, but a function in another module
-      that a scanned unit calls is not scanned here at all.
+    * Calls are NOT followed. Everything the walker's own module defines is
+      scanned — its methods, the helpers beside them, its module-level bindings
+      — but a function in another module that a scanned unit calls is not
+      scanned here at all.
     * ``DECISION_ONLY_NAMES`` applies to the walker's own text and to no other
       source. Elsewhere those two bare words are what a fire's ending is
       legitimately called — a state key, a field of a delivery phase — so
@@ -692,9 +700,12 @@ def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
       reading or in the plateau arithmetic is not a hit.
     * A name assembled from parts is missed: ``getattr(last, "out" + "come")``
       names nothing the parse can see.
-    * A member bound to a local under another name, in another module, is read
-      under that name and passes. A direct ``import X as Y`` is NOT a blind
-      spot: the import arm matches the imported name whatever it is bound to.
+    * A member bound to a name under another spelling and read by identity is
+      read under that spelling and passes, wherever the binding is written.
+    * A direct ``import X as Y`` is caught only where the import STATEMENT
+      itself is inside the scanned text. For every unit scanned here it is: a
+      module's source carries its own imports. A unit scanned method by method,
+      or class by class, would not carry them, and the alias would pass there.
     * The match is by spelling, so it over-includes; see
       ``fire_outcome_vocabulary``.
     """
@@ -707,7 +718,7 @@ def dispatchability_predicate_sources() -> tuple[tuple[str, str], ...]:
         (
             WALK_DECISION_UNIT,
             walker_decision_source(
-                cls_source=inspect.getsource(scope_runtime.ScopeWorkflowEngine),
+                unit_source=inspect.getsource(scope_runtime),
                 helper_source=inspect.getsource(
                     getattr(scope_runtime.ScopeWorkflowEngine, REPORTING_HELPER)
                 ),
@@ -741,41 +752,62 @@ CONTROL_DECIDING = """    def _readmitted(self, final, rested):
         return rested
 """
 
+#: The same reading written BESIDE the class instead of inside it, which is
+#: where the walker's own extracted helpers live: a module-level function whose
+#: answer a decision is made from.
+CONTROL_DECIDING_BESIDE = """def _owed(turn, rested):
+    if turn.outcome is None:
+        rested.append(turn)
+    return rested
+"""
+
 
 def test_the_scan_excludes_one_reporting_helper_and_nothing_else():
-    """The subtraction removes the named helper and leaves every other method.
+    """The subtraction removes the named helper and leaves every other text.
 
-    Two class-shaped sources, differing in one method. In the first the phase a
-    delivery ended in is read inside the excluded helper and nowhere else, and
-    the scanned remainder is clean. In the second the same read also sits in a
-    method that decides, and the remainder is a hit — so the exclusion is by
-    the helper's own text and not by the words the helper happens to use, and a
-    method added to the walker is scanned whether or not anybody listed it.
+    Three module-shaped sources, differing in one definition. In the first the
+    phase a delivery ended in is read inside the excluded helper and nowhere
+    else, and the scanned remainder is clean. In the second the same kind of
+    read also sits in a method that decides; in the third it sits in a function
+    BESIDE the class, which is where the walker's own extracted helpers live.
+    Both remainders are hits — so the exclusion is by the helper's own text and
+    not by the words the helper happens to use, and a definition added to the
+    walker's module is scanned whether or not anybody listed it and wherever it
+    is written.
     """
     reporting_only = f"class Walker:\n{CONTROL_CLEAN}\n{CONTROL_HELPER}"
     deciding_too = (
         f"class Walker:\n{CONTROL_CLEAN}\n{CONTROL_DECIDING}\n{CONTROL_HELPER}"
     )
+    deciding_beside = (
+        f"class Walker:\n{CONTROL_CLEAN}\n{CONTROL_HELPER}\n\n{CONTROL_DECIDING_BESIDE}"
+    )
 
     clean = walker_decision_source(
-        cls_source=reporting_only, helper_source=CONTROL_HELPER
+        unit_source=reporting_only, helper_source=CONTROL_HELPER
     )
     unclean = walker_decision_source(
-        cls_source=deciding_too, helper_source=CONTROL_HELPER
+        unit_source=deciding_too, helper_source=CONTROL_HELPER
+    )
+    beside = walker_decision_source(
+        unit_source=deciding_beside, helper_source=CONTROL_HELPER
     )
 
-    # Not vacuous: both remainders still carry the class and its clean method,
-    # and the helper's own read is gone from each.
-    assert "_select" in clean and "_select" in unclean
+    # Not vacuous: every remainder still carries the class and its clean
+    # method, the helper's own read is gone from each, and the third really
+    # does still hold the definition written beside the class.
+    assert "_select" in clean and "_select" in unclean and "_select" in beside
     assert '"delivery"' not in clean
+    assert "def _owed(" in beside
     assert outcome_references(clean, also=DECISION_ONLY_NAMES) == frozenset()
     assert outcome_references(unclean, also=DECISION_ONLY_NAMES) == {"delivery"}
-    # Before the whole class is scanned the helper is found in it exactly once,
+    assert outcome_references(beside, also=DECISION_ONLY_NAMES) == {"outcome"}
+    # Before the whole module is scanned the helper is found in it exactly once,
     # and a text the helper is absent from is refused rather than scanned as if
     # a subtraction had happened.
     with pytest.raises(AssertionError):
         walker_decision_source(
-            cls_source=f"class Walker:\n{CONTROL_CLEAN}", helper_source=CONTROL_HELPER
+            unit_source=f"class Walker:\n{CONTROL_CLEAN}", helper_source=CONTROL_HELPER
         )
 
 
@@ -903,11 +935,13 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     are resting, the reading that decides whether a fired lane is offered again
     asks only which criterion identities its subtree now carries as closed, and
     the loop that composes the resting lanes, the boundary that appends to them
-    and the readmission that vetoes a fire are all in the scanned text too. A
-    fire that ended ``loop_not_accepted`` and a fire that ended ``ci_passed``
-    reach every one of them as the same fact — the gap they left — which is what
-    lets a lane be fired twice in one invocation without any state machine over
-    its exits (KOD-724, KOD-725).
+    and the readmission that vetoes a fire are all in the scanned text too — as
+    are the helpers written beside the class that build the identities that
+    reading measures and the turn the selection returns. A fire that ended
+    ``loop_not_accepted`` and a fire that ended ``ci_passed`` reach every one of
+    them as the same fact — the gap they left — which is what lets a lane be
+    fired twice in one invocation without any state machine over its exits
+    (KOD-724, KOD-725).
     """
     scanned = dispatchability_predicate_sources()
 
@@ -925,12 +959,21 @@ def test_no_fire_outcome_is_read_anywhere_the_dispatch_decision_is_made():
     # Every source really carries source: a label whose text came back empty
     # would satisfy the assertion below without scanning anything.
     assert all(source.strip() for _, source in scanned)
-    # And the walker's scanned text really is the class less one method: the
-    # methods the walk decides in are in it, and the excluded helper is not.
+    # And the walker's scanned text really is the module less one method: every
+    # definition the walk decides in is in it — the ones inside the class and
+    # the ones beside it — and the excluded helper is not.
     walker = next(source for label, source in scanned if label == WALK_DECISION_UNIT)
     assert all(
         f"def {name}(" in walker
-        for name in ("run", "_select", "_settle", "_put_back", "_readmitted")
+        for name in (
+            "run",
+            "_select",
+            "_settle",
+            "_put_back",
+            "_readmitted",
+            "_owed_identities",
+            "_ready_turn",
+        )
     )
     assert f"def {REPORTING_HELPER}(" not in walker
     for label, source in scanned:

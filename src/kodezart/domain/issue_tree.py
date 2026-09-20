@@ -7,7 +7,7 @@ from kodezart.domain.errors import (
     ScopeReadError,
     ScopeSupersessionReadError,
 )
-from kodezart.domain.gap import compute_gap
+from kodezart.domain.gap import compute_gap, in_gap
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
@@ -122,3 +122,26 @@ class SubtreeClosure:
     def is_closed(self, key: str) -> bool:
         """Finished is owing nothing: the same read, asked the other way."""
         return not self.gap(key)
+
+    def open_criterion_keys(self) -> tuple[str, ...]:
+        """Every still-open criterion anywhere in the subtree, by key, in order.
+
+        What the whole tree still owes, for a caller that REPORTS the remaining
+        work rather than fires anything for it. The reading is the gap
+        arithmetic's own membership predicate asked of each criterion record the
+        tree carries, so what a scope still owes and what a lane still owes are
+        two askings of one question and a reporter needs no second opinion about
+        what a workflow state means (KOD-356).
+
+        Every criterion the tree carries, and not only those beneath a
+        candidate: an obligation under a member nobody approved is one the scope
+        has not discharged either. A criterion closed as canceled with no
+        supersession reference established still counts as owed, which is the
+        same answer the reading gives a lane that owes one.
+        """
+        return tuple(
+            key
+            for key, issue in self.facts.items()
+            if "criterion" in issue.issue_labels
+            and in_gap(issue, supersession_ref=None)
+        )
