@@ -26,6 +26,7 @@ from tests.fakes import (
     FakeJobQueue,
     FakePRStateReader,
     FakeRepoCache,
+    FakeScopeStatusWriter,
     FakeWorkspaceProvider,
     PassThroughGate,
 )
@@ -125,6 +126,7 @@ async def runtime(
             caller=server,
             operation=operation,
             ledger=SelfWriteLedger(),
+            status=FakeScopeStatusWriter(),
         ),
         github_api=None,
         audit_forge=forge,
@@ -309,6 +311,7 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
             caller=ManagedFakeLinearMcpServer(),
             operation=operation,
             ledger=SelfWriteLedger(),
+            status=FakeScopeStatusWriter(),
         )
 
     async def prompt_boot(**_kwargs):

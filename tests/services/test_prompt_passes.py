@@ -58,6 +58,7 @@ from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentRunner,
     FakeJobQueue,
+    FakeScopeStatusWriter,
     FakeTrackerPort,
     FakeWorkspaceProvider,
     ManagedFakeLinearMcpServer,
@@ -164,6 +165,7 @@ def dialled_over(
         caller=ManagedFakeLinearMcpServer(),
         operation=operation,
         ledger=tracker.self_writes,
+        status=FakeScopeStatusWriter(),
     )
 
 
