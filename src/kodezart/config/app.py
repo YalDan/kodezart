@@ -226,6 +226,14 @@ class AppConfig(BaseSettings):
             "before a contention observation fires."
         ),
     )
+    run_alarm_max_commits_without_closure: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "Recorded lane commits allowed since a lane last closed a "
+            "criterion its subtree already owed."
+        ),
+    )
     run_alarm_max_rulings_without_closure: int = Field(
         default=5,
         ge=0,

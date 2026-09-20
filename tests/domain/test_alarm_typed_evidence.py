@@ -41,12 +41,14 @@ def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
         LabelsEvidence,
         LaneFieldEvidence,
         LaneFieldValue,
+        LaneTally,
         PresenceEvidence,
         ReferencesEvidence,
         ResolutionEvidence,
         RulingsEvidence,
         ScopeEvidence,
         SurfaceEvidence,
+        TallyEvidence,
         TextEvidence,
     )
     from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
@@ -83,6 +85,7 @@ def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
         LaneFieldEvidence(
             value=LaneFieldValue(lane_key="lane", field_key="quality", value="red")
         ),
+        TallyEvidence(value=LaneTally(open=("criterion",), commits=("head",))),
         ScopeEvidence(value=scope),
         RulingsEvidence(
             value=LaneRulingSnapshot(lane_key="lane", issue_keys=("issue",), rulings=())

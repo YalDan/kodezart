@@ -81,6 +81,7 @@ class SubtreeClosure:
         self.ref = ref
         self.children: dict[str, list[TrackerIssue]] = {}
         self.gaps: dict[str, tuple[TrackerIssue, ...]] = {}
+        self.rosters: dict[str, tuple[TrackerIssue, ...]] = {}
         for issue in facts.values():
             if issue.parent_key is not None and issue.parent_key in facts:
                 self.children.setdefault(issue.parent_key, []).append(issue)
@@ -94,6 +95,29 @@ class SubtreeClosure:
 
     def gap(self, key: str) -> tuple[TrackerIssue, ...]:
         """Every still-open criterion record under *key*, in subtree order."""
+        self._walk(key)
+        return self.gaps[key]
+
+    def roster(self, key: str) -> tuple[TrackerIssue, ...]:
+        """Every criterion record under *key*, open or closed, in subtree order.
+
+        The same walk and the same refusals as ``gap``, read for the whole
+        set rather than its open part: a reading of what the subtree owes now
+        says nothing about what it owed before, so a consumer comparing two
+        ticks needs the identities that could have closed between them.
+        """
+        self._walk(key)
+        return self.rosters[key]
+
+    def _walk(self, key: str) -> None:
+        """Assemble both readings of *key*'s subtree in one traversal.
+
+        One walk, because the two answers are two readings of one set and a
+        second traversal could see a different shape of it. Whatever refuses
+        the open reading refuses the whole one: a criterion with children, a
+        record issue with children and a container owing no criteria are not
+        subtrees this arithmetic can be asked about at all.
+        """
         pending = [(key, False)]
         while pending:
             current, expanded = pending.pop()
@@ -104,12 +128,17 @@ class SubtreeClosure:
             if "criterion" in issue.issue_labels:
                 if children:
                     raise ScopeReadError("criterion has child issues", ref=self.ref)
+                self.rosters[current] = (issue,)
                 self.gaps[current] = open_criteria((issue,), ref=self.ref)
             elif issue.issue_labels & RECORD_KINDS:
                 if children:
                     raise ScopeReadError("record issue has child issues", ref=self.ref)
+                self.rosters[current] = ()
                 self.gaps[current] = ()
             elif expanded:
+                self.rosters[current] = tuple(
+                    row for child in children for row in self.rosters[child.issue_key]
+                )
                 self.gaps[current] = tuple(
                     row for child in children for row in self.gaps[child.issue_key]
                 )
@@ -117,7 +146,6 @@ class SubtreeClosure:
                 self.criteria(current)
                 pending.append((current, True))
                 pending.extend((child.issue_key, False) for child in children)
-        return self.gaps[key]
 
     def is_closed(self, key: str) -> bool:
         """Finished is owing nothing: the same read, asked the other way."""

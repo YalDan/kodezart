@@ -108,6 +108,7 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
                 issue=entry.issue,
                 effective_priority=entry.effective_priority,
                 gap=gaps[entry.issue.issue_key],
+                criteria=closure.roster(entry.issue.issue_key),
             )
             for entry in topology.ready
         ),
