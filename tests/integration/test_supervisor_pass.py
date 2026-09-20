@@ -10,7 +10,7 @@ import structlog.testing
 from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.config.app import AppConfig
 from kodezart.domain.errors import LaneRecordReadError
-from kodezart.domain.run_alarm_record import MARKER_PURPOSE
+from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.tally_record import is_raised
 from kodezart.services.supervisor_pass import SUPERVISOR_TICK_NAME
 from kodezart.services.tally_supervisor import SIGNAL
@@ -313,6 +313,44 @@ async def raised_events(port, lane):
     ]
 
 
+async def streams_of(port):
+    """Every lane's whole stream, of whatever kind, as one comparable value.
+
+    Read over every kind rather than the raises alone: a tick that posted a
+    clear for a lane nobody had raised leaves the raises exactly as they were,
+    so a filtered read reports a healthy walk either way. The walk's own
+    events are on these streams too, which is why the claim is that the tick
+    added nothing to them and not that they are empty.
+    """
+    return {
+        lane: list(await port.lane_run_events(issue_key=lane, lane_key=lane))
+        for lane in WALK_LANES
+    }
+
+
+def alarm_address(lane):
+    """The marker the tick's own record for *lane* is written under."""
+    return run_alarm_marker(
+        subject=LaneSubject(scope_key=WALK_SCOPE.key, lane_key=lane),
+        signal=SIGNAL,
+        marker_prefixes=walk_operation().marker_prefixes,
+    )
+
+
+def written_since(port, mark):
+    """Each comment written after *mark*, as the address it landed at.
+
+    A write is read as issue key and marker together: a body under the record's
+    own marker landing on another issue is a write this tick did not owe, and a
+    per-lane read of the two lane issues sees neither the issue nor the marker.
+    """
+    rows = {row.comment_key: row for row in port.comments}
+    return [
+        (rows[key].issue_key, body.split("\n", 1)[0])
+        for key, body in port.comment_writes[mark:]
+    ]
+
+
 def board_state(port):
     """Everything a tick must leave exactly as it found it."""
     return (
@@ -388,12 +426,21 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
 
     before = board_state(port)
     doubles = doubles_of(first, repos)
+    streams = await streams_of(port)
+    quiet_writes = len(port.comment_writes)
     async with asyncio.timeout(TICK_BOUND_SECONDS):
         assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
 
     assert await observed_alarms(port) == []
     assert await raised_events(port, "A") == []
     assert await raised_events(port, "S") == []
+    # Every kind, not the raises alone: the tick added nothing at all to either
+    # lane's stream, so a clear posted for a lane nobody had raised reddens here.
+    assert await streams_of(port) == streams
+    # The whole tick's writes, not only the two lane issues': the one write a
+    # healthy walk earns is the quiet reading on A, and a write coupled to it
+    # that landed on a criterion issue is read by nothing else above.
+    assert written_since(port, quiet_writes) == [("A", alarm_address("A"))]
     assert board_state(port) == before
     assert doubles_of(first, repos) == doubles
     # Not vacuous: the tick did observe lane A, and what it left there is a
