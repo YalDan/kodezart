@@ -388,6 +388,29 @@ async def test_a_refutation_of_a_strict_subset_moves_exactly_those_criteria(
     assert {row["state"] for row in moved} == {unstarted_state(server)}
     assert [server.issues[key].status for key in (CHILD, SECOND)] == ["Todo", "Todo"]
 
+    # Each of them stands on its own verified refutation, published before its
+    # own move: a criterion reopened on a sibling's evidence would be a move a
+    # reader cannot link to anything about it.
+    for key in (CHILD, SECOND):
+        refutations = [
+            row
+            for row in audit_comments(server, key)
+            if published(row).get("detector") == "current_check"
+        ]
+        assert len(refutations) == 1, key
+        report = published(refutations[0])["report"]
+        assert report["claim"]["judgment"]["verdict"] == "refuted", key
+        assert report["claim"]["head_sha"] == head, key
+        assert landed(server, "save_comment", body=refutations[0].body) < landed(
+            server, "save_issue", id=key, state=unstarted_state(server)
+        ), key
+        assert [
+            write.verdict.value
+            for write in scope.writes
+            if write.artifact.surface.kind.value == "criterion_sub_issue"
+            and write.artifact.surface.ref.key == key
+        ] == ["holds"], key
+
     # The untouched sibling and the owner are byte-identical apart from the
     # activity stamp the audit's own holds comment on the sibling moved.
     for key in (THIRD, ROOT):
