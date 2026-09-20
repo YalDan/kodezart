@@ -7,7 +7,7 @@ from datetime import timedelta
 import pytest
 
 from kodezart.services.audit_runtime import AuditRunIncompleteError
-from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA
+from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, WRITE_BACK_SCHEMA
 from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
 from kodezart.types.domain.dispatch import PassRun
 from tests.fakes import PassThroughGate
@@ -21,6 +21,7 @@ from tests.integration.test_audit_runtime_native import (
     unstarted_state,
 )
 from tests.tracker.conftest import APPROVED_ISSUE, FIXTURE_NOW
+from tests.tracker.test_audit_evidence_git import command
 from tests.tracker.test_audit_evidence_git import repository as repository
 from tests.tracker.test_audit_requests import CHILD, ROOT
 from tests.tracker.test_state_history import server as server
@@ -252,6 +253,102 @@ async def test_a_lapse_is_reported_and_left_done_then_the_same_criterion_is_refu
     )
     assert server.issues[CHILD].status == "Todo"
     assert server.issues[CHILD].status_type == "unstarted"
+    assert not workspace._workspaces
+
+
+async def test_a_reopen_its_judge_refutes_is_reported_and_the_next_one_still_moves(
+    working_scope,
+):
+    """A move its own verification cannot settle is a refusal, not a crash.
+
+    Two refuted criteria are owed a reopen. Every round over the first one's
+    move is refuted by the write-back judge, so that move exhausts its budget:
+    the scope reports the criterion in the words of the refusal and stays
+    incomplete, while the next owed criterion is still moved and verified.
+    Unrefused, the run would instead build a completed coverage carrying an
+    unverified write and fail its own validator on the way out.
+    """
+    audit, executor, server, _tracker, _git, workspace, repository = working_scope
+    _remote, _author, _observer, _prior, head = repository
+    add_criterion(
+        server,
+        SECOND,
+        status="Done",
+        status_type="completed",
+        graded_sha=head,
+        check=SECOND_CHECK,
+    )
+    executor.checks[SECOND] = SECOND_CHECK
+    executor.claim_verdicts = {CHILD: "refuted", SECOND: "refuted"}
+    executor.refute_reopen_of = CHILD
+
+    with pytest.raises(AuditRunIncompleteError) as raised:
+        await audit.run(FIXTURE_NOW)
+    scope = raised.value.report.scopes[0]
+
+    assert any(
+        row.subject.key == CHILD
+        and "the reopen exhausted canonical write verification" in row.reason
+        for row in scope.unavailable
+    ), scope.model_dump_json()
+    # The first move landed, its repair round replayed it without a second
+    # write, and the criterion the refusal does not name still moved.
+    assert [row["id"] for row in state_writes(server)] == [CHILD, SECOND]
+    assert server.issues[SECOND].status == "Todo"
+    reopens = [
+        write
+        for write in scope.writes
+        if write.artifact.surface.kind.value == "criterion_sub_issue"
+    ]
+    assert [row.artifact.surface.ref.key for row in reopens] == [CHILD, SECOND]
+    assert reopens[0].verdict.value != "holds"
+    assert reopens[1].verdict.value == "holds"
+    assert not workspace._workspaces
+
+
+async def test_a_branch_that_moves_before_the_batch_keeps_the_reopen_from_landing(
+    working_scope,
+):
+    """One head re-read stands between the report step and the state moves.
+
+    The scope summary's own write-back session pushes a commit to the branch
+    every observation of this tick was graded against. The re-read refuses the
+    scope and the owed reopen never runs: a move landing here would say a
+    criterion was judged at a commit nothing in this tick read.
+    """
+    audit, executor, server, _tracker, _git, workspace, repository = working_scope
+    _remote, author, _observer, _prior, _head = repository
+    executor.claim_verdicts = {CHILD: "refuted"}
+    pushed = []
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] != WRITE_BACK_SCHEMA or pushed:
+            return
+        artifact = json.loads(executor.tagged(kwargs["prompt"], "written_artifact"))
+        if "record_refs" not in artifact["content"]:
+            return
+        # Another file than the one every session reads, so the commit moves
+        # the branch head without changing what a session sees at its own ref.
+        (author / "notes.txt").write_text("a commit this tick never read\n")
+        command(author, "add", "--all")
+        command(author, "commit", "-qm", "unobserved")
+        command(author, "push", "-q", "configured-remote", "ordinary-name")
+        pushed.append(kwargs["prompt"])
+
+    executor.during = during
+
+    with pytest.raises(AuditRunIncompleteError) as raised:
+        await audit.run(FIXTURE_NOW)
+    scope = raised.value.report.scopes[0]
+
+    assert len(pushed) == 1
+    assert any(
+        row.subject == scope.scope
+        and "observed branch changed during the read sweep" in row.reason
+        for row in scope.unavailable
+    ), scope.model_dump_json()
+    assert state_writes(server) == []
+    assert server.issues[CHILD].status == "Done"
     assert not workspace._workspaces
 
 

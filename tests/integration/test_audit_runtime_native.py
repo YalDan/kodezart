@@ -27,6 +27,7 @@ from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
+from kodezart.types.domain.surface import SurfaceKind
 from tests.chains.test_organize import RecordingExecutor, result
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -128,6 +129,9 @@ class NativeExecutor(RecordingExecutor):
         self.claim_key = None
         self.instruction = False
         self.refuse_after_first_refutation = False
+        #: A criterion key whose reopen every write-back round refutes, so the
+        #: move exhausts its verification budget. Every other round holds.
+        self.refute_reopen_of = None
         self.write_calls = 0
         #: The Check sentence of each fixture criterion, so a session's
         #: subject is read off the prompt it was given.
@@ -146,6 +150,24 @@ class NativeExecutor(RecordingExecutor):
     def defect_class(self, prompt):
         """The exact defect class this mandate hunt was asked about."""
         return self.tagged(prompt, "defect_class")
+
+    def judges_a_reopen(self, prompt):
+        """Whether this write-back round judges ``refute_reopen_of``'s move.
+
+        Read off the written artifact the round was handed, the way a judge
+        reads it: that criterion's own sub-issue surface, carrying an
+        unstarted state. A classification label on the same surface and a
+        comment about the criterion are other artifacts and other rounds.
+        """
+        if self.refute_reopen_of is None:
+            return False
+        artifact = json.loads(self.tagged(prompt, "written_artifact"))
+        surface = artifact["surface"]
+        return (
+            surface["kind"] == SurfaceKind.CRITERION_SUB_ISSUE.value
+            and surface["ref"]["key"] == self.refute_reopen_of
+            and '"state_kind": "unstarted"' in artifact["content"]
+        )
 
     def mandating_surface(self, prompt):
         """The index the hunt supplied for the parent body carrying the text."""
@@ -217,7 +239,9 @@ class NativeExecutor(RecordingExecutor):
         else:
             assert schema == WRITE_BACK_SCHEMA
             self.write_calls += 1
-            if self.refuse_after_first_refutation and self.write_calls == 1:
+            if self.judges_a_reopen(kwargs["prompt"]):
+                self.write_verdict = "refuted"
+            elif self.refuse_after_first_refutation and self.write_calls == 1:
                 self.write_verdict = "refuted"
                 self.claim_verdict = "unverifiable"
             else:
