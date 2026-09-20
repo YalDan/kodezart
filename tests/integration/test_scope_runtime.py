@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -41,9 +42,11 @@ from kodezart.services import scope_runtime
 from kodezart.services.agent_service import AgentService
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
+from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import (
     ResultEvent,
     SystemEvent,
+    TicketDraftOutput,
     WorkflowCompleteEvent,
     WorkflowConsolidationEvent,
     WorkflowIterationEvent,
@@ -1030,6 +1033,198 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
         ).graded_sha == repos.head_of(record.branch)
     finally:
         await forge.close()
+
+
+# ---------------------------------------------------------------------------
+# KOD-832 clause 3 — every fire is execution-only, and the pre-loop question
+# step pins each open question's answer before the first loop iteration.
+# ---------------------------------------------------------------------------
+
+#: The three lanes of the clause: one whose open question is answered and
+#: pinned, one with none, and one whose record cannot be written.
+CLAUSE_3_LANES = ("A", "B", "C")
+
+CLAUSE_3_QUESTION = "Does a Check's byte run include its trailing marker?"
+CLAUSE_3_RESOLUTION = "The trailing marker is not part of the Check's bytes."
+
+
+def clause_3_answer(key: str) -> dict[str, object]:
+    return {
+        "issueRef": f"{key}/check",
+        "question": CLAUSE_3_QUESTION,
+        "rulingClass": "pin_reading",
+        "resolution": CLAUSE_3_RESOLUTION,
+        "rejectedAlternative": (
+            "Reading the marker as Check text, under which the criterion can "
+            "never be observed."
+        ),
+        "repoEvidence": ["lane-0.py — the reader this tree already has"],
+    }
+
+
+def record_prefix() -> str:
+    return native_operation().marker_prefixes["ruling"]
+
+
+def records_on(port, key: str):
+    return [
+        comment
+        for comment in port.comments
+        if comment.issue_key == key and comment.body.startswith(f"[{record_prefix()}")
+    ]
+
+
+class UnwritableLane(FakeTrackerPort):
+    """One lane's record write fails; every other write of the board is fine."""
+
+    refuse = "C"
+
+    async def upsert_comment(self, *, target, marker, body, holder=None, expected=None):
+        if marker.startswith(f"[{record_prefix()}") and target.startswith(self.refuse):
+            raise TrackerUnavailableError("this lane's record write is unavailable")
+        return await super().upsert_comment(
+            target=target, marker=marker, body=body, holder=holder, expected=expected
+        )
+
+
+class QuestionedExecutor(ObservedNativeExecutor):
+    """Answers each lane's question pass and reads the board at each iteration.
+
+    The board is read through a FRESH record reader at the moment a writer
+    session opens, so what the first iteration was shown came off the tracker
+    rather than out of anything this walk carried.
+    """
+
+    def __init__(self, evaluations, *, port, answers):
+        super().__init__(evaluations)
+        self._port = port
+        self._answers = dict(answers)
+        #: One entry per writer session: its prompt and the record count of
+        #: every issue on the board at the moment it opened.
+        self.records_at_execution: list[tuple[str, dict[str, int]]] = []
+
+    async def stream(self, **kwargs):
+        properties = (kwargs.get("output_format") or {}).get("schema", {}).get(
+            "properties"
+        ) or {}
+        if "rulings" in properties:
+            subject = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])[-1]
+            self.question_answers = [{"rulings": self._answers.get(subject, [])}]
+        if "claims" in properties:
+            reader = RulingRecordReader(
+                tracker=self._port, operation=native_operation()
+            )
+            self.records_at_execution.append(
+                (
+                    kwargs["prompt"],
+                    {
+                        key: len(await reader.read_issue(issue_key=key))
+                        for key in sorted(self._port.issues)
+                    },
+                )
+            )
+        async for event in super().stream(**kwargs):
+            yield event
+
+
+def wrote_for(executor, key: str):
+    """Every writer session of lane *key*, by the subject text it carries."""
+    return [
+        row
+        for row in executor.records_at_execution
+        if f"Exact native subject {key}  with spaces" in row[0]
+    ]
+
+
+async def test_every_scoped_fire_pins_its_open_questions_before_its_first_iteration(
+    monkeypatch,
+):
+    """Three lanes, one walk: what the clause says, at the composed boundary.
+
+    A raises a question and its answer is on the tracker before the iteration
+    that reads it. B raises none and fires anyway. C's record cannot be
+    written, so C is never entered — and the walk still finishes without
+    reporting a failed lane.
+    """
+
+    def never_drafted(*_args, **_kwargs):
+        pytest.fail("a scoped fire drafted a subject")
+
+    monkeypatch.setattr(TicketDraftOutput, "__init__", never_drafted)
+    rows = board(lanes=CLAUSE_3_LANES)
+    port = UnwritableLane(
+        issues=list(rows.issues.values()),
+        scope_memberships={SCOPE: CLAUSE_3_LANES},
+        criteria_stage_label_key=STAGED,
+        marker_prefixes=native_operation().marker_prefixes,
+        scope_label_members=dict(rows.scope_label_members),
+    )
+    harness = runtime(port=port, lanes=CLAUSE_3_LANES)
+    executor = QuestionedExecutor(
+        list(harness.executor.evaluations),
+        port=port,
+        answers={key: [clause_3_answer(key)] for key in ("A", "C")},
+    )
+    harness.service._executor = executor
+    harness = Harness(
+        harness.engine,
+        port,
+        executor,
+        harness.service,
+        harness.artifacts,
+        harness.saver,
+        harness.workspace,
+        harness.status,
+    )
+
+    events = await bounded_walk(harness)
+
+    # The step is part of the arm this walk dispatches through.
+    fire = lane_of(harness).fire
+    assert fire.native_graph is not None
+    assert "rule_open_questions" in set(fire.native_graph.get_graph().nodes)
+
+    # One lane's failure never ends the walk, no lane is reported failed, and
+    # no fire generated anything or ran without a run identity.
+    assert lane_failures(events) == ()
+    assert not any("slug" in props for props in executor.schema_calls)
+    # Every attributed session of the walk names a lane of this scope. The
+    # step's own two sessions are unattributed, because the shared read-only
+    # judgment helper takes no run identity.
+    named = {row.name for row in executor.run_identities if row is not None}
+    assert named and named <= set(CLAUSE_3_LANES)
+
+    # A's first iteration opened after its record was on the board, and it was
+    # shown the subject body, the live Check bytes and the pinned text.
+    opened = wrote_for(executor, "A")
+    assert opened, "lane A never opened a writer session"
+    first_prompt, counts = opened[0]
+    assert counts["A/check"] == 1
+    assert "A live Check  bytes" in first_prompt
+    assert CLAUSE_3_RESOLUTION in first_prompt
+    assert len(records_on(port, "A/check")) == 1
+    assert records_on(port, "A") == []
+
+    # B fired with nothing open and carries no record.
+    assert wrote_for(executor, "B")
+    assert records_on(port, "B/check") == []
+    assert records_on(port, "B") == []
+
+    # C was never entered, and its delivery says why.
+    assert wrote_for(executor, "C") == []
+    skipped = [
+        event.event.delivery
+        for event in events
+        if isinstance(event, ScopeLaneEvent)
+        and isinstance(event.event, LaneDeliveryEvent)
+        and event.lane_key == "C"
+    ]
+    assert skipped
+    assert all(delivery.phase == "skipped" for delivery in skipped)
+    assert {delivery.outcome for delivery in skipped} == {
+        WorkflowOutcome.ruling_unrecorded
+    }
+    assert records_on(port, "C/check") == []
 
 
 # ---------------------------------------------------------------------------
