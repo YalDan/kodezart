@@ -4,7 +4,7 @@ from types import TracebackType
 from typing import Self
 
 from kodezart.core.owned_tasks import settle
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import SurfaceLeaseTracker
 from kodezart.domain.errors import SurfaceLeaseError, SurfaceLeaseLostError
 from kodezart.types.domain.surface import WritableSurface
 
@@ -25,7 +25,7 @@ class RunSurfaceLease:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: SurfaceLeaseTracker,
         job_id: str,
         surfaces: frozenset[WritableSurface],
         lease_seconds: float,

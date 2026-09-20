@@ -890,12 +890,27 @@ KOD_806_STATE_MOVES = frozenset(
 #: The writes that still reach the port with no write-back around them,
 #: every one of them in a process that holds no judged commit to verify
 #: against: the dispatch pass that resolves a base before a run exists,
-#: the lifecycle watcher's notes about a run that has already ended, and
-#: boot-time vocabulary instatement.  None of them puts authored content
-#: on a surface — which is asserted below, not asserted here, so an
-#: authored write cannot be added under one of these entries.
+#: the lifecycle watcher's notes about a run that has already ended,
+#: boot-time vocabulary instatement, and the supervisor's own observation
+#: of a lane's tally — the one alarm record it rewrites at that lane's
+#: address and the two transition events that announce it.  That record is
+#: arithmetic over facts the tracker already carries, so there is no
+#: authored commit to verify it against and re-judging it would be no
+#: second judgement (KOD-843).  None of them puts authored content on a
+#: surface — which is asserted below, not asserted here, so an authored
+#: write cannot be added under one of these entries.
 UNVERIFIED_WRITES = frozenset(
     {
+        CallSite(
+            module="services/tally_supervisor.py",
+            function="TallySupervisor._write_record",
+            method="record_run_alarm",
+        ),
+        CallSite(
+            module="services/tally_supervisor.py",
+            function="TallySupervisor._announce",
+            method="post_run_event",
+        ),
         CallSite(
             module=LIFECYCLE,
             function="TrackerLifecycleWriter.on_run_failed",
