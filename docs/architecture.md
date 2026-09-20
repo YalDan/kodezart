@@ -233,7 +233,25 @@ nothing to do.
 A lane the facts leave nothing to do RESTS. The walker states it by name under
 `scope_lane_nothing_to_do` and does not offer that lane again in the same
 invocation, so a reading that keeps reporting the lane cannot make the walk
-spin on it. A deliver-only entry enters the fire graph already accepted — the
+spin on it. Being fired is not what rests a lane: a lane IS fired again in the
+same invocation while its last fire closed a previously open criterion of its
+subtree, because one fire's iteration budget is smaller than some lanes are and
+such a lane converges across fires instead of owing the remainder to the next
+invocation. The tick after a fire reads which of the criterion identities the
+lane owed the subtree now carries as closed, and reads nothing else. A fire that
+closed none of them puts the lane's issue back to the state its own open work
+stands in — the state name the first unstarted criterion it still owes carries,
+written through the port's own restore, which reads first and writes nothing
+when the issue is already there — and rests the lane, under
+`scope_lane_plateaued`; where the gap names no unstarted state the write is not
+made and `scope_lane_put_back_skipped` says so. Every lane resting is reported
+on the walk observation, and `dispatched` carries one entry per fire. The walker
+asks the forge nothing about a candidate at all, neither at selection nor at the
+lane's own boundary: where a lane stands is its own record, and a lane whose
+pull request is already open is the lane whose next commits that pull request
+receives (KOD-431, KOD-785). The one forge read a lane's turn makes is about a
+closed blocker recording no branch (KOD-777, below). A deliver-only entry enters
+the fire graph already accepted — the
 verdict states the entry's own fact, that every criterion of the subtree is
 Done — reads its roster as the whole finished subtree through
 `FireCriteriaSource.read_finished`, and is routed past the loop to

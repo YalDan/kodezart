@@ -268,9 +268,10 @@ This request route executes eligible lanes serially, and a lane is fired again i
 the same invocation while its last fire closed a previously open criterion of its
 subtree: one fire's iteration budget is smaller than some lanes are, so a lane
 larger than that budget converges across fires rather than waiting for the next
-invocation. A fire that closed none of them rests the lane, and rested lanes are
-reported in `scope_walk.observation`; `dispatched` carries one entry per fire, so
-a lane named twice there was fired twice. Scheduled
+invocation. A fire that closed none of them puts the issue back to the state its
+own open work stands in, through the port's own restore, and rests the lane, and
+rested lanes are reported in `scope_walk.observation`; `dispatched` carries one
+entry per fire, so a lane named twice there was fired twice. Scheduled
 configured-scope lookup, concurrent lane marks, cross-job branch recovery and a
 scope terminal verdict are separate requirements. A lane re-enters from its own
 tracker record and the remote head of the branch that record names; no graph

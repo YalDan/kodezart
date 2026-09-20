@@ -18,6 +18,7 @@ from kodezart.config.app import AppConfig
 from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import TrackerUnavailableError
+from kodezart.core.protocols import PRCreator
 from kodezart.domain.agent import mint_lane_branches
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
@@ -63,7 +64,7 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
-from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.adapters.test_github_api import _make_client
 from tests.api.v1.test_jobs import _build_app
@@ -102,11 +103,17 @@ SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
 STAGED = "criteria-staged"
 
 
-def board(*, lanes=("A",), blocked=None, approved=True, checks=None):
+def board(*, lanes=("A",), blocked=None, approved=True, checks=None, priorities=None):
     """The scope's lanes and their criterion sub-issues.
 
     *checks* names each lane's criteria; a lane not named there has the one
     criterion every lane has had, under the body every test reads it by.
+
+    *priorities* names a lane's own priority; a lane not named there keeps the
+    none every lane has had. A ready set is ranked by effective priority before
+    age and every issue here is created at the same instant, so a test about
+    which lane a tick offers FIRST states the priorities rather than relying on
+    the order the rows happen to be built in.
     """
     rows = []
     for key in lanes:
@@ -116,6 +123,7 @@ def board(*, lanes=("A",), blocked=None, approved=True, checks=None):
                 body=f"Exact native subject {key}  with spaces\n",
                 blocked_by=(blocked or {}).get(key, ()),
                 issue_labels=frozenset({STAGED}),
+                priority=(priorities or {}).get(key, IssuePriority.NONE),
             )
         )
         for name in (checks or {}).get(key, ("check",)):
@@ -3086,5 +3094,221 @@ async def test_a_closed_lane_whose_record_cannot_be_read_is_not_offered_again(
         ] == ["A"]
         # Nothing was delivered for it either: the turn ended before a session.
         assert wire.creates == []
+    finally:
+        await forge.close()
+
+
+# ---------------------------------------------------------------------------
+# KOD-832 clauses 5 and 7 — a process killed mid-fire re-enters from the
+# tracker alone: the lane that finished is not re-run, the lane killed in
+# flight resumes on its recorded branch, and the lane that was blocked stands
+# on the branch its blocker's record names.
+# ---------------------------------------------------------------------------
+
+#: The lane priorities that fix which lane each tick of the acceptance walk
+#: offers first, and with them the order A, C, B.
+#:
+#: A goes first because it is the blocker B has to stand on, and its own
+#: priority is what puts it there: effective priority flows from a blocked lane
+#: back to its blocker, and B's is the lowest there is. C goes before B because
+#: its own priority is the higher of the two, which is what makes the lane the
+#: kill catches in flight the one with two criteria rather than the last lane
+#: offered. Without them the order would be whatever the rows were built in,
+#: since every issue of this board is created at the same instant.
+ACCEPTANCE_PRIORITIES = {"A": IssuePriority.URGENT, "C": IssuePriority.HIGH}
+
+
+async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
+    """Two processes over one board, one remote and one origin (KOD-832).
+
+    Run one finishes and delivers A, then dies inside C's fire with C's first
+    criterion crossed off and its second still owed. Nothing of that process
+    survives but what it wrote down: the board, the repositories and the
+    origin. Run two is built fresh over those three, and from them alone it
+    reads what is left to do — A is not worked again, C resumes on the branch
+    its record names and is graded only against the criterion it still owes,
+    and B, whose blocker closed in the run before, is fired against the
+    deliverable branch A's record names. No graph state was persisted by either
+    process, so nothing was replayed to reach any of it.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(
+        lanes=THREE_LANES,
+        blocked={"B": ("A",)},
+        checks={"C": ("check", "second")},
+        priorities=ACCEPTANCE_PRIORITIES,
+    )
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    # The wire raises on every capability it does not hold, a merge included.
+    # A raise inside a lane's turn is contained and reported, and a raise
+    # outside one is contained with a visibility nobody chose, so neither would
+    # be read off the walk as such: the refusals are collected here instead.
+    refused: list[str] = []
+
+    def answering(request):
+        try:
+            return wire(request)
+        except AssertionError:
+            refused.append(f"{request.method} {request.url}")
+            raise
+
+    forge = _make_client(answering)
+    try:
+        first = resumable(
+            port=port,
+            repos=repos,
+            lanes=THREE_LANES,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            max_iterations=2,
+            evaluations=[
+                *one_check_echoes("A"),
+                *(criteria_echo(keys=C_KEYS, passed={"C/check"}) for _ in range(4)),
+            ],
+        )
+        reached = False
+        stream = drive(first, job="first-job", origin=FORGE_ORIGIN)
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            async for event in stream:
+                if (
+                    isinstance(event, ScopeLaneEvent)
+                    and event.lane_key == "C"
+                    and isinstance(event.event, WorkflowIterationEvent)
+                ):
+                    reached = True
+                    break
+        # Where a process dies. Generator close is a ``BaseException`` the lane
+        # boundary does not contain, so run one really ends inside C's fire and
+        # what run two enters on is what the board and the remote already hold.
+        await stream.aclose()
+
+        # What the kill left, stated before run two is built: otherwise every
+        # assertion below could be about a first run that never got that far.
+        assert reached, "run one ended before lane C was in flight"
+        assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+        assert port.issues["C/check"].state_kind is WorkflowStateKind.COMPLETED
+        assert port.issues["C/second"].state_kind is WorkflowStateKind.UNSTARTED
+        assert port.issues["B/check"].state_kind is WorkflowStateKind.UNSTARTED
+        killed = await lane_record(port, "C")
+        assert killed.pr is None
+        finished = recorded_branches(
+            record=await lane_record(port, "A")
+        ).deliverable_branch
+        assert [create["head"] for create in wire.creates] == [finished]
+
+        minted = mint_spy(monkeypatch)
+        second = resumable(
+            port=port,
+            repos=repos,
+            lanes=THREE_LANES,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            max_iterations=2,
+            evaluations=[
+                *(
+                    criteria_echo(keys=("C/second",), passed={"C/second"})
+                    for _ in range(2)
+                ),
+                *one_check_echoes("B"),
+            ],
+        )
+        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+
+        # Six ticks, bounded and observed: A offered for a delivery its record
+        # already carries and rested, C fired, C offered for the delivery that
+        # fire earned and rested, B fired, B offered and rested, and the sixth
+        # with nothing left to offer.
+        assert len(ticks_of(events)) == 6
+        assert lane_failures(events) == ()
+        assert [tick.ready for tick in ticks_of(events)] == [
+            ("C", "B"),
+            ("C", "B"),
+            ("B",),
+            ("B",),
+            (),
+            (),
+        ]
+        assert ticks_of(events)[-1].dispatched == ("C", "B")
+        assert ticks_of(events)[-1].rested_lanes == ("A", "C", "B")
+        assert ticks_of(events)[-1].unresolved_criteria == ()
+
+        # A is not worked again: no iteration, no session naming its subject,
+        # and one pull request for it across both processes.
+        assert [
+            event.lane_key
+            for event in events
+            if isinstance(event, ScopeLaneEvent)
+            and isinstance(event.event, WorkflowIterationEvent)
+        ] == ["C", "B"]
+        assert not [
+            prompt
+            for prompt in second.executor.execution_prompts
+            if "Exact native subject A" in prompt
+        ]
+        assert [create["head"] for create in wire.creates].count(finished) == 1
+
+        # C resumes: the recorded loop branch checked out and not cut, the
+        # criterion its last fire closed absent from the roster, and one record
+        # on the same branch naming both processes.
+        opened = second.workspace.acquisitions[0]
+        assert opened["branch_name"] == opened["ref"] == killed.branch
+        assert opened["create_branch"] is False
+        assert "C/second live Check  bytes" in second.executor.execution_prompts[0]
+        assert "C live Check  bytes" not in second.executor.execution_prompts[0]
+        resumed = await lane_record(port, "C")
+        assert resumed.branch == killed.branch
+        assert {item.run_id for item in resumed.associations} == {
+            "first-job",
+            "second-job",
+        }
+
+        # B is fired on the strength of a closed blocker and nothing else: this
+        # test edits no issue between the runs, so what unlocked B is A's own
+        # closure in run one, and what B stands on is the branch A's record
+        # names rather than the trunk.
+        assert bases_of(events)["B"] == finished
+        assert finished not in TRUNK_BRANCHES
+        records = {key: await lane_record(port, key) for key in THREE_LANES}
+        delivered = {
+            key: recorded_branches(record=record).deliverable_branch
+            for key, record in records.items()
+        }
+        stacked = next(
+            create for create in wire.creates if create["head"] == delivered["B"]
+        )
+        assert stacked["base"] == finished
+        # One name was minted in this process, B's: the two lanes with records
+        # entered from them.
+        assert minted == ["B"]
+
+        # Every lane ends with a pull request on its record, the one the origin
+        # holds for that lane's own delivered head, and its checks were observed
+        # at that same head.
+        assert [key for key, record in records.items() if record.pr is None] == []
+        assert {
+            key: record.pr.number for key, record in records.items() if record.pr
+        } == {key: wire._numbers[head] for key, head in delivered.items()}
+        assert sorted(wire.watches) == sorted(
+            f"/repos/owner/repo/commits/{head}/check-runs"
+            for head in delivered.values()
+        )
+
+        # Nothing was merged by either process, and nothing could have been:
+        # the wire was asked for no capability it does not hold, and the port a
+        # lane opens pull requests through carries no merge to call.
+        assert refused == []
+        assert {name for name in vars(PRCreator) if not name.startswith("_")} == {
+            "create_pr",
+            "comment_on_pr",
+        }
+
+        # And none of it was replayed: the scope path persists no graph state,
+        # so every graph a lane of this origin runs on holds no checkpointer.
+        lane = second.engine._scoped_arm._lane_for(FORGE_ORIGIN)
+        assert lane.graph.checkpointer is None
+        assert lane.fire.native_graph.checkpointer is None
+        assert lane.fire.implementation._quality_gate._checkpointer is None
     finally:
         await forge.close()
