@@ -14,6 +14,7 @@ from kodezart.services.tally_supervisor import SIGNAL, TallySupervisor
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.scope import ResolvedScope, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
+from kodezart.types.domain.topology import BlockedIssue
 from kodezart.types.domain.tracker import IssuePriority
 from tests.fakes import FIXTURE_EPOCH, FakeTrackerPort, make_tracker_issue
 from tests.services.lane_tally_fixtures import (
@@ -40,7 +41,7 @@ LANES = ("LANE-B", "LANE-C")
 every_write_of_a_tick_is_inside_the_declared_set = declared_set_fixture()
 
 
-def ready_set(*, ref=REF, lanes=LANES, closed=()):
+def ready_set(*, ref=REF, lanes=LANES, closed=(), blocked=()):
     """One scope reading in the shape the walker's own read composes it in."""
     return ScopeReadySet(
         scope=ResolvedScope(ref=ref, issues=()),
@@ -53,7 +54,7 @@ def ready_set(*, ref=REF, lanes=LANES, closed=()):
             )
             for lane in lanes
         ),
-        blocked=(),
+        blocked=blocked,
         criteria=tuple(row for lane in (*lanes, *closed) for row in subtree(lane)),
         closed=tuple(make_tracker_issue(lane) for lane in closed),
     )
@@ -142,6 +143,51 @@ async def test_a_finished_member_is_observed_so_a_standing_raise_is_cleared():
     assert [event.kind.value for event in await events_on(port, "LANE-B")] == [
         "run_alarm_raised",
         "run_alarm_cleared",
+    ]
+
+
+async def test_a_blocked_member_is_not_observed_and_its_raise_stands(monkeypatch):
+    """A member nothing can fire records nothing, so there is nothing to measure.
+
+    A blocked member is not read at all, which is the only safe reading: with
+    no roster and no gap it would look like a lane that had finished its work,
+    and the standing raise on it would be cleared by the very fact that it is
+    stuck. The stated consequence is that the raise keeps standing until the
+    member is ready again.
+    """
+    port = await board(lanes=LANES)
+    tally = supervisor(port)
+    await pass_over(port, readings={REF: ready_set()}, tally=tally).run(FIXTURE_EPOCH)
+
+    listed: list[str] = []
+    listing = port.list_comments
+
+    async def counted(*, issue_key: str):
+        listed.append(issue_key)
+        return await listing(issue_key=issue_key)
+
+    monkeypatch.setattr(port, "list_comments", counted)
+
+    await pass_over(
+        port,
+        readings={
+            REF: ready_set(
+                lanes=("LANE-C",),
+                blocked=(BlockedIssue(issue_key="LANE-B", blocker_keys=("LANE-X",)),),
+            )
+        },
+        tally=tally,
+    ).run(FIXTURE_EPOCH)
+
+    assert "LANE-B" not in listed
+    assert listed, "a tick that read nothing states nothing about what it skipped"
+    stored = await port.read_run_alarm(
+        issue_key="LANE-B", subject=subject("LANE-B"), signal=SIGNAL
+    )
+    assert stored is not None
+    assert is_raised(stored)
+    assert [event.kind.value for event in await events_on(port, "LANE-B")] == [
+        "run_alarm_raised"
     ]
 
 
