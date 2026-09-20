@@ -9,14 +9,15 @@ code that could stand in for one.
 import pytest
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
+from kodezart.core.prompt_rendering import free_binding_names
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.sets import OPUS_SET, V5_SET, operation_registry, render_case
+from tests.prompts.test_set_completeness import shipped_sets
 
 MEMBER = f"{PromptKey.FIRE_TIME_RULING.value}.md"
 
-
-def shipped_sets() -> list[str]:
-    return sorted(path.name for path in default_sets_root().iterdir() if path.is_dir())
+#: What the step binds the member with, by name.
+BOUND = frozenset({"issue_key", "task_md", "pinned_rulings"})
 
 
 def test_the_role_is_a_data_file_in_every_shipped_set() -> None:
@@ -34,8 +35,15 @@ def test_the_role_is_a_data_file_in_every_shipped_set() -> None:
 @pytest.mark.parametrize("default_set", [OPUS_SET, V5_SET])
 def test_the_template_renders_with_the_steps_own_bindings(default_set: str) -> None:
     """The three names the step binds are the three the member references."""
-    rendered = render_case(operation_registry(default_set=default_set), MEMBER[:-3])
+    registry = operation_registry(default_set=default_set)
 
+    rendered = render_case(registry, MEMBER[:-3])
+
+    # The member references each of them, so a tag left standing over a
+    # dropped reference is not a rendering this row accepts.
+    assert BOUND <= free_binding_names(
+        registry.template_for(PromptKey.FIRE_TIME_RULING).body
+    )
     assert "{{" not in rendered
     assert "<issue_key>external/42</issue_key>" in rendered
     assert "<pinned_answers>" in rendered
