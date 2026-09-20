@@ -192,6 +192,17 @@ backlog-kind criteria and criterion edges leaving their parent's subtree yield
 arithmetic owns cycle detection. A successful planning snapshot alone makes no
 approval or readiness claim.
 
+Before any of that, a scope run asks one question of the address it was given:
+is this scope approved. The answer follows the label cascade upward from the
+addressed node, so an issue under an approved project and a project under an
+approved initiative are both admitted, and a milestone is admitted by its
+owning project. A scope with no approval anywhere above it refuses by type
+before a single member is read, which is a different outcome from a scope that
+is approved and has nothing left to do: that one is walked and observed once,
+with nothing dispatched. The per-member approval reading inside `read_scope_ready`
+is unchanged and still decides each lane (KOD-425); this is the run's own
+admission, not a substitute for it.
+
 The actual scoped entry then calls `read_scope_ready`. It requires all three
 semantic classifications (`criterion`, `tracker`, `decision`) through the shared
 `require_issue_classification_reads` declaration, reads current

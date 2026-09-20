@@ -22,6 +22,7 @@ from kodezart.domain.errors import BaseResolutionError
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.scope_entry import ScopeEntry
 from kodezart.services.scope_runtime import ScopeWorkflowEngine
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -78,6 +79,8 @@ def engine(port: FakeTrackerPort) -> ScopeWorkflowEngine:
         probe_for=no_probe,
         resolver=BaseResolver(tracker=port, git=git, remote=REMOTE),
         entries=LaneEntryReader(records=records, git=git, remote=REMOTE),
+        # Neither case here reaches the entry: the gate refuses first.
+        entry=ScopeEntry(approvals=port, stages_for=lambda _url: None),
         cache=FakeRepoCache(),
         repositories=(),
         git_base_url="https://forge.invalid",

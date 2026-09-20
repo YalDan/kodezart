@@ -24,6 +24,7 @@ from kodezart.domain.fire_plateau import fire_plateaued, observe_tick
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
+from kodezart.services.scope_entry import ScopeEntry
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.dispatch import ExclusionClause, IssueExclusion
@@ -97,10 +98,13 @@ class ScopeWorkflowEngine:
     """The sole lane selector inside a scope request.
 
     No child is submitted to the queue that is already running this scope.
-    This owner writes no approval or claim mark and no lifecycle stage, and it
-    persists no graph state: where a lane stands is its own tracker record,
-    read again before every fire. The one state it writes is the put-back of a
-    lane whose fire closed nothing of what that lane owed (KOD-460).
+    This owner writes no approval or claim mark and no lifecycle stage, and
+    none of the organize stage labels: those are written before its first
+    tick, by the entry step it is given, under that step's own verified
+    write-back. It persists no graph state either: where a lane stands is its
+    own tracker record, read again before every fire. The one state it writes
+    is the put-back of a lane whose fire closed nothing of what that lane
+    owed (KOD-460).
 
     A lane that owes nothing is selected first, and only where the origin's
     lane can deliver. On an origin with no forge behind it such a lane could
@@ -117,12 +121,14 @@ class ScopeWorkflowEngine:
         probe_for: Callable[[str], DeliveryProbe | None],
         resolver: BaseResolver,
         entries: LaneEntryReader,
+        entry: ScopeEntry,
         cache: RepoCache,
         repositories: Sequence[RepoEntry],
         git_base_url: str,
         integration_workspace_dir: str,
     ) -> None:
         self._tracker = tracker
+        self._entry = entry
         self._lane_for = lane_for
         self._probe_for = probe_for
         self._resolver = resolver
@@ -389,6 +395,10 @@ class ScopeWorkflowEngine:
                 "Scope execution requires an open-delivery reader for this origin",
                 ref=scope,
             )
+        # Nothing about the scope is read and no lane is selected until the
+        # scope is approved and its organize stages are complete on every
+        # member. The entry raises; this owner never writes those labels.
+        await self._entry.admit(scope=scope, repository=repo, job_id=cache_key)
         # The request's base describes the scope input, never an independently
         # trusted lane base. Each lane's graph gets the current resolver answer.
         _ = prompt, run_identity, base_spec, implied_base

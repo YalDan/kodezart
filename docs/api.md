@@ -99,11 +99,22 @@ Omitting `scope` or supplying `null` runs the existing prompt workflow.
 Invalid scope input returns `422` before a job is queued. `baseBranch`
 must be nonempty when no recorded `baseSpec` is supplied.
 
-Scoped graph execution is not yet implemented. A valid scoped job terminates
-with `ScopedExecutionUnavailableError` and outcome `engine_error` when dequeued,
-before tracker reads, repository preparation or judgment sessions. This refusal
-also applies without a configured tracker. An addressed scope never falls back
-to the prompt workflow. These rules also apply to `/fire`.
+A scoped job runs its scope through the scope controller. A deployment with no
+configured tracker has no such controller: the job terminates with
+`ScopedExecutionUnavailableError` and outcome `engine_error` when dequeued,
+before tracker reads, repository preparation or judgment sessions. An addressed
+scope never falls back to the prompt workflow.
+
+A scoped job that does have a controller can still end before it walks
+anything, at its entry, and each of those endings is typed and carries the
+addressed scope. `ScopeNotApprovedError` means the addressed scope carries no
+approval, on itself or on any container above it: nothing about the scope was
+read and no member was touched. `OrganizeHaltError` means an organize stage of
+the approved run stopped and retains its exact halt report. Both terminate the
+job with outcome `engine_error`; no event type or event field is added for
+them. The first `scope_walk` observation of a run follows its entry, so an
+observation is evidence that the entry passed. These rules also apply to
+`/fire`.
 
 ### Example
 

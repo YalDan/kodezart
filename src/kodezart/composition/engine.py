@@ -23,6 +23,7 @@ from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.composition.delivery import build_native_lane_workflow
+from kodezart.composition.organize import build_scope_entry
 from kodezart.composition.scope_runtime import build_scope_runtime
 from kodezart.config.app import AppConfig
 from kodezart.core.errors import RateLimitedSoftFailureError
@@ -393,6 +394,7 @@ def build_workflow_engine(
         # state is its tracker record, so nothing here writes a checkpoint
         # and nothing reads one (KOD-840).
         native_loop = loop(None)
+        entry = build_scope_entry(tracker=scope_tracker)
         scoped_arm = build_scope_runtime(
             tracker=scope_tracker,
             forge_lane=build_native_lane_workflow(
@@ -425,6 +427,7 @@ def build_workflow_engine(
             repositories=repositories,
             config=config,
             operation=operation,
+            entry=entry,
         )
     return OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,

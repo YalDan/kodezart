@@ -10,6 +10,7 @@ from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader, RecordedDeliverableRefs
+from kodezart.services.scope_entry import ScopeEntry
 from kodezart.services.scope_runtime import ScopeWorkflowEngine
 from kodezart.types.domain.operation import OperationConfig, RepoEntry
 
@@ -25,6 +26,7 @@ def build_scope_runtime(
     repositories: Sequence[RepoEntry],
     config: AppConfig,
     operation: OperationConfig,
+    entry: ScopeEntry,
 ) -> ScopeWorkflowEngine:
     """One request controller; the existing origin predicate chooses capabilities.
 
@@ -53,6 +55,7 @@ def build_scope_runtime(
             refs=RecordedDeliverableRefs(records=records),
         ),
         entries=LaneEntryReader(records=records, git=git, remote=config.git.remote),
+        entry=entry,
         cache=cache,
         repositories=repositories,
         git_base_url=config.git.base_url,

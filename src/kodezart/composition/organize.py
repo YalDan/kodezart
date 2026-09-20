@@ -15,6 +15,8 @@ from kodezart.core.protocols import (
 from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.organize_owner import OrganizeOwner
 from kodezart.services.organize_tick import OrganizeTarget, OrganizeTick
+from kodezart.services.scope_entry import ScopeEntry
+from kodezart.services.scope_organizer import ScopeOrganizer
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -80,6 +82,15 @@ def build_organize_owner(
         write_back_max_rounds=config.write_back.max_verify_rounds,
         lease_seconds=config.tracker.surface_lease_seconds,
     )
+
+
+def build_scope_entry(*, tracker: TrackerPort) -> ScopeEntry:
+    """What a scope run passes through before its first tick."""
+
+    def stages_for(_url: str) -> ScopeOrganizer | None:
+        return None
+
+    return ScopeEntry(approvals=tracker, stages_for=stages_for)
 
 
 def verify_organize_configuration(
