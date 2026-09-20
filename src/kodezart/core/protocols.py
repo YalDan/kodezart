@@ -770,8 +770,45 @@ class TrackerContextReader(Protocol):
 
 
 @runtime_checkable
+class TrackerScopeApprovalReader(Protocol):
+    """Read approval the way it is granted: as a label on a node, cascading down.
+
+    The three reads an approval question needs and nothing else, so a scope
+    run's entry and the pass that submits one depend on no writer and no
+    other read.
+    """
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        """Read configured labels on this exact scope, without approval cascade."""
+        ...
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve the configured scope approval label from current ancestry.
+
+        Check the issue and parent issues, then its own project and initiative
+        ancestry. Milestone members use their project approval. Label presence
+        decides; there is no approval-actor carrier. Every call reads again,
+        and missing or unreadable ancestry raises instead of returning false.
+        """
+        ...
+
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        """The container's ref, name, description, optional url and parent.
+
+        Milestone metadata carries no invented or containing-project URL.
+        An issue-kind ref raises a typed domain error: an issue is read
+        through ``read_issue``, never returned as an empty container.
+        """
+        ...
+
+
+@runtime_checkable
 class TrackerPort(
-    TrackerCommentReader, TrackerCriteriaReader, TrackerContextReader, Protocol
+    TrackerCommentReader,
+    TrackerCriteriaReader,
+    TrackerContextReader,
+    TrackerScopeApprovalReader,
+    Protocol,
 ):
     """The complete adapter surface selected by application composition.
 
@@ -938,33 +975,10 @@ class TrackerPort(
         """
         ...
 
-    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
-        """Read configured labels on this exact scope, without approval cascade."""
-        ...
-
-    async def execution_approved(self, *, issue_key: str) -> bool:
-        """Resolve the configured scope approval label from current ancestry.
-
-        Check the issue and parent issues, then its own project and initiative
-        ancestry. Milestone members use their project approval. Label presence
-        decides; there is no approval-actor carrier. Every call reads again,
-        and missing or unreadable ancestry raises instead of returning false.
-        """
-        ...
-
     async def project_milestones(
         self, *, project_key: str
     ) -> tuple[ScopeContainer, ...]:
         """Read all native project milestones without selection policy."""
-        ...
-
-    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
-        """The container's ref, name, description, optional url and parent.
-
-        Milestone metadata carries no invented or containing-project URL.
-        An issue-kind ref raises a typed domain error: an issue is read
-        through ``read_issue``, never returned as an empty container.
-        """
         ...
 
     async def update_issue_graph(

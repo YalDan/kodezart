@@ -51,13 +51,42 @@ async def resolve_execution_approval(
             return True
         key = issue.parent_key
 
-    ancestor = (
-        ScopeRef(kind=ScopeKind.PROJECT, key=project) if project is not None else None
+    if project is None:
+        return False
+    return await resolve_container_approval(
+        ref=ScopeRef(kind=ScopeKind.PROJECT, key=project),
+        read_container=read_container,
+        seen=seen,
     )
+
+
+async def resolve_container_approval(
+    *,
+    ref: ScopeRef,
+    read_container: ReadContainerApproval,
+    seen: set[ScopeRef] | None = None,
+) -> bool:
+    """Walk a container chain upward until a node carries approval.
+
+    The caller's ``seen`` set is shared when there is one, so cycle
+    detection spans the issue chain and the container chain as one walk.
+    A milestone's owning project is the first container node: a milestone
+    adds no label level of its own.
+    """
+    walked = seen if seen is not None else set()
+    if ref.kind is ScopeKind.ISSUE:
+        raise ScopeReadError("not an approval container", ref=ref)
+    ancestor: ScopeRef | None = ref
+    if ref.kind is ScopeKind.MILESTONE:
+        _, owner = await read_container(ref)
+        if owner is None or owner.kind is not ScopeKind.PROJECT:
+            raise ScopeReadError("milestone has no owning project", ref=ref)
+        walked.add(ref)
+        ancestor = owner
     while ancestor is not None:
-        if ancestor in seen:
-            raise ScopeReadError("container parent cycle", ref=requested)
-        seen.add(ancestor)
+        if ancestor in walked:
+            raise ScopeReadError("container parent cycle", ref=ref)
+        walked.add(ancestor)
         approved, parent = await read_container(ancestor)
         if parent is not None and parent.kind is not ScopeKind.INITIATIVE:
             raise ScopeReadError("invalid approval container parent", ref=ancestor)

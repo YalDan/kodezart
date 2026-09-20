@@ -86,6 +86,7 @@ does not exist.
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers |
 | FireCriteriaSource | TrackerCriteria | Captures the typed native subject specification and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
+| TrackerScopeApprovalReader | LinearMcpTracker | The three reads an approval question needs — a node's own labels, its parent edge, the per-issue cascade — narrowed out of the port; a scope run's entry and the heartbeat depend on it alone |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
 | ScopeStatusWriter | LinearScopeStatusWriter | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
@@ -171,6 +172,17 @@ self-declarations do not prove an adapter's behavior.
 only the read operations used by record readers, criterion consumers and the
 fire context assembler. The composed `TrackerPort` inherits those definitions;
 the selected adapter satisfies each role directly.
+
+`TrackerScopeApprovalReader` is the same narrowing for the one question "is this
+addressed scope approved". Approval is granted as a label on a node and read
+downward, so the answer needs three reads and no more: a container's own
+configured labels, the parent edge that continues the chain, and the per-issue
+cascade. An issue scope is that cascade. A container scope reads its own labels
+and walks its parent edge upward. A milestone carries no label level at all: no
+native object of that kind holds a configured label, so its owning project is
+the first node in the chain, and a label planted on the milestone's backing data
+approves nothing. Composed as one function over the role, so the readers of that
+answer depend on no writer.
 
 `read_scope_plan` applies native stage barriers at the actual scoped engine
 entry before any execution arm is selected. Its `require_scope_plan_reads`
