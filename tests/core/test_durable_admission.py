@@ -118,6 +118,7 @@ def test_current_descriptions_and_artifacts_are_durable(
     [
         OutboundDestination.PR_COMMENT,
         OutboundDestination.TRACKER_COMMENT,
+        OutboundDestination.TRACKER_STATUS_UPDATE,
         OutboundDestination.COMMIT_MESSAGE,
         OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY,
     ],

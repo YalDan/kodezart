@@ -274,7 +274,9 @@ subtree: one fire's iteration budget is smaller than some lanes are, so a lane
 larger than that budget converges across fires rather than waiting for the next
 invocation. A fire that closed none of them rests the lane, and rested lanes are
 reported in `scope_walk.observation`; `dispatched` carries one entry per fire, so
-a lane named twice there was fired twice. Scheduled
+a lane named twice there was fired twice. On a project or initiative scope the
+same report is posted as one status update on the container; a milestone or
+issue scope has no status surface and ends with the event alone. Scheduled
 configured-scope lookup, concurrent lane marks and cross-job branch recovery are
 separate requirements. A lane re-enters from its own
 tracker record and the remote head of the branch that record names; no graph

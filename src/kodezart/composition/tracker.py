@@ -8,6 +8,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Final, assert_never
 
+from kodezart.adapters.linear.status_update import LinearScopeStatusWriter
 from kodezart.adapters.linear.tracker import (
     ACCEPTED_CREDENTIAL_SHAPE,
     LinearMcpTracker,
@@ -25,6 +26,7 @@ from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
     McpToolCaller,
+    ScopeStatusWriter,
     TrackerPort,
 )
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
@@ -171,6 +173,22 @@ def build_tracker(
             return adapter, ledger
 
 
+def build_scope_status_writer(
+    *, backend: TrackerBackend, caller: McpToolCaller
+) -> ScopeStatusWriter:
+    """The ``ScopeStatusWriter`` implementation *backend* selects.
+
+    One class for one role over the same session the port dials, beside the
+    port rather than on it: the scope terminal states the single write it
+    makes, and every other tracker consumer is unchanged by its existence
+    (KOD-829).  The match is TOTAL, so a second backend added without this
+    role stops the type check here.
+    """
+    match backend:
+        case TrackerBackend.LINEAR:
+            return LinearScopeStatusWriter(caller=caller)
+
+
 @dataclass(frozen=True)
 class DialledTracker:
     """A reconciled tracker: the port, its session, and the config it left.
@@ -184,6 +202,11 @@ class DialledTracker:
     tracker: TrackerPort
     caller: ManagedMcpToolCaller
     operation: OperationConfig
+    status: ScopeStatusWriter
+    """The scope terminal's one write, over the same session and BESIDE the
+    port the way the ledger is: it belongs to one consumer's role, and a
+    member for it on the port would put that role into every tracker
+    implementation (KOD-829)."""
     ledger: SelfWriteLedger
     """Where this tracker's own writes leave their stamp, for the pass gates
     that must not wake on them.  It travels WITH the tracker because the two
@@ -258,6 +281,7 @@ async def boot_tracker(
             tracker=tracker,
             caller=caller,
             operation=reconciliation.config,
+            status=build_scope_status_writer(backend=settings.backend, caller=caller),
             ledger=ledger,
         )
     except BaseException as failure:

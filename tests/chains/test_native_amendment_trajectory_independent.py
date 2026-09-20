@@ -26,6 +26,7 @@ from tests.fakes import (
     FakeBranchMerger,
     FakeRefPublisher,
     FakeRepoCache,
+    FakeScopeStatusWriter,
     PassThroughGate,
 )
 from tests.prompts.test_prompt_wiring import load_registry
@@ -76,6 +77,7 @@ async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
         ),
         operation=native_operation(),
         scope_tracker=port,
+        scope_status=FakeScopeStatusWriter(),
         criteria=criteria,
         repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
         agent_service=service,

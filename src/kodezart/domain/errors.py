@@ -419,6 +419,23 @@ class ScopeReadError(Exception):
         self.ref: ScopeRef = ref
 
 
+class ScopeStatusError(Exception):
+    """The scope's status update cannot be posted as derived.
+
+    Three readings, one type: a scope kind whose container carries no status
+    surface at all, a body with nothing in it, and an outbound gate that
+    changed the derived report.  The first two are raised before any backend
+    call, so a scope with no target spends no request finding out; the third
+    is raised instead of writing, because a redacted variant of a derived
+    report is not a weaker version of that report but a different claim.
+    """
+
+    def __init__(self, *, ref: ScopeRef, reason: str) -> None:
+        self.ref: ScopeRef = ref
+        self.reason = reason
+        super().__init__(f"{reason} (scope: {ref.kind.value}:{ref.key})")
+
+
 class ScopePlanRefusalError(ScopeReadError):
     """Live scope facts violate the stage barrier before dispatch can begin."""
 

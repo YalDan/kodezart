@@ -145,6 +145,7 @@ class OutboundDestination(StrEnum):
     ARTIFACT_TICKET_JSON = "artifact_ticket_json"
     ARTIFACT_CRITERIA_JSON = "artifact_criteria_json"
     TRACKER_COMMENT = "tracker_comment"
+    TRACKER_STATUS_UPDATE = "tracker_status_update"
     TRACKER_DESCRIPTION = "tracker_description"
     TRACKER_TITLE = "tracker_title"
     TRACKER_CLASSIFICATION = "tracker_classification"
@@ -162,6 +163,7 @@ DESTINATION_SURFACE: Mapping[OutboundDestination, OutboundSurface] = {
     OutboundDestination.ARTIFACT_TICKET_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.ARTIFACT_CRITERIA_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.TRACKER_COMMENT: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_STATUS_UPDATE: OutboundSurface.TRACKER,
     OutboundDestination.TRACKER_DESCRIPTION: OutboundSurface.TRACKER,
     OutboundDestination.TRACKER_TITLE: OutboundSurface.TRACKER,
     OutboundDestination.TRACKER_CLASSIFICATION: OutboundSurface.TRACKER,
@@ -188,6 +190,7 @@ DESTINATION_DURABILITY: Mapping[OutboundDestination, SurfaceDurability] = {
     OutboundDestination.ARTIFACT_TICKET_JSON: SurfaceDurability.DURABLE,
     OutboundDestination.ARTIFACT_CRITERIA_JSON: SurfaceDurability.DURABLE,
     OutboundDestination.TRACKER_COMMENT: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.TRACKER_STATUS_UPDATE: SurfaceDurability.POINT_IN_TIME,
     OutboundDestination.TRACKER_DESCRIPTION: SurfaceDurability.DURABLE,
     OutboundDestination.TRACKER_TITLE: SurfaceDurability.DURABLE,
     OutboundDestination.TRACKER_CLASSIFICATION: SurfaceDurability.DURABLE,

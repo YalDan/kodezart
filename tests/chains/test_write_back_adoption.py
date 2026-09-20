@@ -1,10 +1,17 @@
 """Every port write a scope run makes goes through the write-back verifier.
 
-The write surface is READ OFF ``TrackerPort`` rather than listed here, so a
-port that grows a write grows this check with it.  Two rules, both computed
-from the port and stated once:
+The write surface is READ OFF the tracker-writing surface rather than listed
+here, so a surface that grows a write grows this check with it.  That surface
+is ``TrackerPort`` plus every public class in a module that names a tracker
+tool constant: a role declared beside the port and dialled over the same
+session writes the backend exactly as a port member does, and a check that
+read only the port would stop seeing such a write the moment it existed
+(KOD-829).  The naming scan is the tool roster's own, so the two cannot
+disagree about which modules dial the tracker.
 
-*Which methods write.*  A public port method whose leading name token is a
+Two rules, both computed from that surface and stated once:
+
+*Which methods write.*  A public method whose leading name token is a
 mutating verb — create, update, upsert, edit, set, post, record, acquire,
 renew, release, reset, restore, claim, ensure.  Everything else on the port
 answers a question instead of changing an answer.
@@ -35,6 +42,7 @@ content on a surface.
 """
 
 import ast
+import importlib
 import inspect
 import json
 import pathlib
@@ -47,6 +55,7 @@ from typing import Protocol
 import pytest
 
 import kodezart
+from kodezart.adapters.linear.status_update import LinearScopeStatusWriter
 from kodezart.chains import write_back_verifier as verifier_module
 from kodezart.chains.write_back_verifier import WriteBackStep, WriteBackVerifier
 from kodezart.core.protocols import TrackerPort
@@ -68,6 +77,11 @@ from tests.services.test_native_amendments import (
     repository,
 )
 from tests.tracker.conftest import CLAIMED_ISSUE
+from tests.tracker.test_linear_tool_roster import (
+    _TOOL_CONSTANT,
+    KNOWLEDGE_TOOL_MODULES,
+    SOURCE_ROOT,
+)
 
 __all__ = ["repository"]
 
@@ -111,23 +125,72 @@ ADDRESS_PARAMETERS = frozenset(
 )
 
 
-def write_methods(port: type = TrackerPort) -> frozenset[str]:
-    """Every write on *port*, derived from the port's own surface."""
+def tracker_dialling_classes() -> tuple[type, ...]:
+    """Every public class in a module that names a tracker tool constant.
+
+    Derived, for the same reason the port's own writes are: a role built
+    beside the port over the tracker's caller is a writer of the same
+    backend, and listing those modules by hand is how one of them would
+    come to be missing from this check.  The knowledge vendor's sinks are
+    exempted by the roster's own exemption, which the paired test there
+    keeps from sheltering a tracker tool.
+    """
+    found: list[type] = []
+    for path in sorted(SOURCE_ROOT.rglob("*.py")):
+        text = path.read_text()
+        if not _TOOL_CONSTANT.search(text):
+            continue
+        if f"{path.parent.name}/{path.name}" in KNOWLEDGE_TOOL_MODULES:
+            continue
+        dotted = ".".join(
+            ("kodezart", *path.relative_to(SOURCE_ROOT).with_suffix("").parts)
+        )
+        module = importlib.import_module(dotted)
+        found.extend(
+            value
+            for name, value in vars(module).items()
+            if not name.startswith("_")
+            and isinstance(value, type)
+            and value.__module__ == dotted
+        )
+    return tuple(found)
+
+
+#: The whole surface a tracker write can be declared on: the port, and every
+#: role dialled beside it over the same session.
+TRACKER_SURFACE: tuple[type, ...] = (TrackerPort, *tracker_dialling_classes())
+
+
+def _roles(port: type | tuple[type, ...]) -> tuple[type, ...]:
+    """A single class and a surface of several are one thing to read."""
+    return port if isinstance(port, tuple) else (port,)
+
+
+def write_methods(
+    port: type | tuple[type, ...] = TRACKER_SURFACE,
+) -> frozenset[str]:
+    """Every write on *port*, derived from the surface's own members."""
     return frozenset(
         name
-        for name in dir(port)
+        for role in _roles(port)
+        for name in dir(role)
         if not name.startswith("_")
-        and callable(getattr(port, name, None))
+        and callable(getattr(role, name, None))
         and name.split("_")[0] in WRITE_VERBS
     )
 
 
-def parameters(method: str, port: type = TrackerPort) -> tuple[str, ...]:
-    signature = inspect.signature(getattr(port, method))
+def parameters(
+    method: str, port: type | tuple[type, ...] = TRACKER_SURFACE
+) -> tuple[str, ...]:
+    role = next(role for role in _roles(port) if hasattr(role, method))
+    signature = inspect.signature(getattr(role, method))
     return tuple(name for name in signature.parameters if name != "self")
 
 
-def artifact_writes(port: type = TrackerPort) -> frozenset[str]:
+def artifact_writes(
+    port: type | tuple[type, ...] = TRACKER_SURFACE,
+) -> frozenset[str]:
     """The writes that leave something a later reader reads back."""
     return frozenset(
         method
@@ -139,12 +202,27 @@ def artifact_writes(port: type = TrackerPort) -> frozenset[str]:
     )
 
 
-def content_parameters(method: str, port: type = TrackerPort) -> tuple[str, ...]:
+def content_parameters(
+    method: str, port: type | tuple[type, ...] = TRACKER_SURFACE
+) -> tuple[str, ...]:
     return tuple(
         name
         for name in parameters(method, port)
         if not name.endswith("_key") and name not in ADDRESS_PARAMETERS
     )
+
+
+def test_the_write_surface_covers_the_roles_dialled_beside_the_port():
+    """Non-vacuity: the widening sees a write the port itself does not declare.
+
+    The scope terminal's status update is declared on its own role and on no
+    port member, so the difference between the two derivations is exactly it.
+    A widening that found nothing here would be indistinguishable from the
+    old port-only read.
+    """
+    assert LinearScopeStatusWriter in tracker_dialling_classes()
+    assert write_methods() - write_methods(TrackerPort) == {"post_status_update"}
+    assert "post_status_update" in artifact_writes()
 
 
 @dataclass
@@ -814,6 +892,17 @@ UNVERIFIED_WRITES = frozenset(
             module="services/tracker_boot.py",
             function="reconcile_tracker_mappings",
             method="ensure_mappings",
+        ),
+        # The scope terminal's one write. Its body is derived from criterion
+        # states and each lane's recorded branch and pull request, and no
+        # judged commit exists to verify it against: the walk it reports on
+        # has ended, and re-reading the container would compare the report
+        # with itself. Held out by name under KOD-806, exactly as the moves
+        # above are.
+        CallSite(
+            module="services/scope_terminal.py",
+            function="ScopeTerminal._post",
+            method="post_status_update",
         ),
     }
 )

@@ -1,11 +1,19 @@
 """Report a scope walk's lanes at its clean exit, and derive its outcome."""
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.domain.errors import LaneRecordReadError
-from kodezart.domain.scope_terminal import lane_roster
+from kodezart.core.outbound_write import gated_exact
+from kodezart.core.protocols import OutboundContentGate, ScopeStatusWriter
+from kodezart.domain.errors import LaneRecordReadError, ScopeStatusError
+from kodezart.domain.scope_terminal import lane_roster, render_scope_status
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.types.domain.gating import (
+    ContentClass,
+    OutboundDestination,
+    RepoVisibility,
+)
 from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.scope_terminal import (
+    STATUS_UPDATE_SCOPE_KINDS,
     ScopeLaneEntry,
     ScopeTerminalEvent,
     derive_scope_outcome,
@@ -23,21 +31,50 @@ class ScopeTerminal:
 
     One lane's unreadable record is that lane's fact and no other's: it
     leaves the two recorded columns absent and every other row untouched.
+
+    The report is also the scope's one tracker write, on the container's own
+    status surface and nowhere else: no lane issue is written, no container
+    description is written, and no lease, claim or in-progress mark is taken
+    (KOD-788).  Exactly-one is a property of this running once, at the walk's
+    one clean exit, and not of a mark it holds while it runs.
     """
 
-    def __init__(self, *, records: LaneRecordReader) -> None:
+    def __init__(
+        self,
+        *,
+        records: LaneRecordReader,
+        status: ScopeStatusWriter,
+        gate: OutboundContentGate,
+    ) -> None:
         self._records = records
+        self._status = status
+        self._gate = gate
         self._log: BoundLogger = get_logger(__name__)
 
     async def report(self, *, ready: ScopeReadySet) -> ScopeTerminalEvent:
-        """The terminal event for *ready*, whose outcome its own vector derives."""
+        """The terminal event for *ready*, posted before it is handed back.
+
+        The post happens BEFORE the caller receives the event, so a post that
+        raises ends the job with no terminal event on its stream and the next
+        invocation reports again — rather than leaving a stream that claims a
+        report nothing carries.
+        """
         roster = lane_roster(ready)
         entries = [await self._entry(issue_key=key, done=done) for key, done in roster]
-        return ScopeTerminalEvent(
+        event = ScopeTerminalEvent(
             scope=ready.scope.ref,
             lanes=tuple(entries),
             outcome=derive_scope_outcome(entries),
         )
+        if event.scope.kind in STATUS_UPDATE_SCOPE_KINDS:
+            await self._post(event)
+        else:
+            await self._log.ainfo(
+                "scope_status_surface_absent",
+                scope=event.scope.key,
+                kind=event.scope.kind.value,
+            )
+        return event
 
     async def _entry(self, *, issue_key: str, done: bool) -> ScopeLaneEntry:
         """One lane's row: its own reading, and the facts its record carries.
@@ -67,4 +104,35 @@ class ScopeTerminal:
         _, record = located
         return ScopeLaneEntry(
             issue=issue_key, done=done, branch=record.branch, pr=record.pr
+        )
+
+    async def _post(self, event: ScopeTerminalEvent) -> None:
+        """Gate the rendered report and put it on the container, byte for byte.
+
+        The body is DERIVED — criterion states and each lane's own recorded
+        branch and delivery — so nothing here is a second judgement of
+        anything, and a gate that altered it would be publishing a claim the
+        derivation did not make.  Hence the exact form: an altered result is
+        refused with this writer's own error rather than written.
+
+        The visibility stated is the tracker's own, which mirrors publicly;
+        ``UNKNOWN`` would say a resolution failed, and none did.
+        """
+        body = await gated_exact(
+            gate=self._gate,
+            log=self._log,
+            content=render_scope_status(event),
+            visibility=RepoVisibility.PUBLIC,
+            destination=OutboundDestination.TRACKER_STATUS_UPDATE,
+            content_class=ContentClass.DERIVED,
+            refusal=lambda: ScopeStatusError(
+                ref=event.scope,
+                reason="the outbound gate changed the derived report",
+            ),
+        )
+        await self._status.post_status_update(ref=event.scope, body=body)
+        await self._log.ainfo(
+            "scope_status_update_posted",
+            scope=event.scope.key,
+            outcome=event.outcome.value,
         )
