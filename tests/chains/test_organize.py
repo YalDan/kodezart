@@ -1358,3 +1358,151 @@ def test_change_stamp_detector_flags_a_gap_site_that_reads_the_field(field, form
     }[form]
     assert change_stamp_reads(ast.parse(snippet)) == {field}
     assert change_stamp_reads(ast.parse(snippet.replace(field, "body_digest"))) == set()
+
+
+#: The module that defines the gap arithmetic. Its own calls of its own
+#: functions are the arithmetic, not a call site into it.
+GAP_HOME = "domain/organize.py"
+
+
+def called_names(node):
+    """Every name a parsed definition calls, in either form it can call it."""
+    names = set()
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Call):
+            callee = inner.func
+            if isinstance(callee, ast.Name):
+                names.add(callee.id)
+            elif isinstance(callee, ast.Attribute):
+                names.add(callee.attr)
+    return names
+
+
+def gap_callees(source):
+    """Every function of *source* that reaches the gap arithmetic when called.
+
+    Derived, not listed: a helper added beside the gap that hands back the
+    gap's own answer is a gap computation whatever it is named, and a list
+    written here would not know about it.  The walk grows a set that only
+    ever grows, so one round per definition is more than it can need.
+    """
+    tree = ast.parse(source)
+    defined = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    reached = {"organize_gap"}
+    for _round in range(len(defined) + 1):
+        grown = {name for name, node in defined.items() if called_names(node) & reached}
+        if grown <= reached:
+            break
+        reached |= grown
+    return frozenset(reached)
+
+
+def gap_call_sites(sources, callees):
+    """Every call of a gap-computing function, outside the module defining it.
+
+    An import renames but does not call: the local name a ``from`` import
+    binds is resolved back to the imported one, so an aliased import is the
+    same site under another spelling and an import on its own is no site.
+    """
+    sites = []
+    for relative, source in sorted(sources.items()):
+        if relative == GAP_HOME:
+            continue
+        tree = ast.parse(source)
+        local = {name: name for name in callees}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name in callees:
+                        local[alias.asname or alias.name] = alias.name
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            callee = node.func
+            if isinstance(callee, ast.Name) and callee.id in local:
+                sites.append((relative, node.lineno, local[callee.id]))
+            elif isinstance(callee, ast.Attribute) and callee.attr in callees:
+                sites.append((relative, node.lineno, callee.attr))
+    return tuple(sites)
+
+
+def test_exactly_one_production_call_site_computes_the_organize_gap():
+    """One arithmetic, computed in one place, for every entry into a stage.
+
+    The set of callees is read out of the defining module rather than
+    written here, so the pre-query counts as a gap computation without
+    being named: ``organize_at_rest`` hands back the gap's own cardinality.
+    The count is one because the pre-query has no production caller.  An
+    owner that later asks it too makes this check read two, and the
+    reconciliation is to drop the pre-query call, not to raise the count.
+    """
+    sources = source_tree()
+    callees = gap_callees(sources[GAP_HOME])
+    assert {"organize_gap", "organize_at_rest"} <= callees
+    assert [
+        (relative, name) for relative, _line, name in gap_call_sites(sources, callees)
+    ] == [("services/organize_owner.py", "organize_gap")]
+
+
+def test_the_derivation_reaches_a_helper_that_hands_back_the_gaps_answer():
+    snippet = (
+        "def organize_gap(*, revisions):\n"
+        "    return tuple(revisions)\n"
+        "\n"
+        "def at_rest(*, revisions):\n"
+        "    return not organize_gap(revisions=revisions)\n"
+        "\n"
+        "def unrelated(*, revisions):\n"
+        "    return len(revisions)\n"
+    )
+    assert gap_callees(snippet) == frozenset({"organize_gap", "at_rest"})
+
+
+@pytest.mark.parametrize(
+    ("form", "body", "expected"),
+    [
+        (
+            "plain",
+            "from kodezart.domain.organize import organize_gap\n"
+            "\n"
+            "def plan(revisions):\n"
+            "    return organize_gap(revisions=revisions)\n",
+            1,
+        ),
+        (
+            "aliased",
+            "from kodezart.domain.organize import organize_gap as _gap\n"
+            "\n"
+            "def plan(revisions):\n"
+            "    return _gap(revisions=revisions)\n",
+            1,
+        ),
+        (
+            "attribute",
+            "import kodezart.domain.organize as organize\n"
+            "\n"
+            "def plan(revisions):\n"
+            "    return organize.organize_gap(revisions=revisions)\n",
+            1,
+        ),
+        (
+            "pre_query",
+            "from kodezart.domain.organize import organize_at_rest\n"
+            "\n"
+            "def plan(revisions):\n"
+            "    return organize_at_rest(revisions=revisions)\n",
+            1,
+        ),
+        ("import_alone", "from kodezart.domain.organize import organize_gap\n", 0),
+    ],
+)
+def test_the_call_site_count_reads_each_form_the_call_can_take(form, body, expected):
+    sources = source_tree()
+    callees = gap_callees(sources[GAP_HOME])
+    planted = gap_call_sites({"services/planted.py": body}, callees)
+    assert len(planted) == expected
+    assert all(relative == "services/planted.py" for relative, _line, _name in planted)

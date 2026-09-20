@@ -4,6 +4,7 @@
 # current native board and the requested wire type, not a canned verdict order.
 import json
 import re
+from collections import Counter
 from itertools import groupby
 
 import pytest
@@ -14,6 +15,7 @@ from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.domain.organize import stage_rows
+from kodezart.services import organize_owner
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
@@ -149,8 +151,14 @@ def factory(
     under_approval=False,
     criteria=("Check prepared bytes",),
     phases=None,
+    board=None,
 ):
-    board = _Board()
+    # *board* builds another owner over a board a previous owner already
+    # worked: a case about a second entry into a stage needs the labels and
+    # children that entry left, so the seeding below runs for a fresh board
+    # only and never resets the parent a run has written.
+    seeded = board is None
+    board = _Board() if seeded else board
     operation_fields = declared_operation().model_dump()
     operation_fields["issue_labels"]["decision"] = "needs decision"
     # The live table gates the first run stage on approval by that exact
@@ -170,11 +178,12 @@ def factory(
             }
         ]
     operation = OperationConfig.model_validate(operation_fields)
-    parent = board.server.issues[CLAIMED_ISSUE]
-    parent.description = body if body is not None else "Missing specification"
-    parent.labels = ["candidate scope"]
-    if under_approval:
-        parent.labels.append(operation.scope_labels[ScopeLabel.APPROVED.value])
+    if seeded:
+        parent = board.server.issues[CLAIMED_ISSUE]
+        parent.description = body if body is not None else "Missing specification"
+        parent.labels = ["candidate scope"]
+        if under_approval:
+            parent.labels.append(operation.scope_labels[ScopeLabel.APPROVED.value])
     tracker = tracker_over(
         board.server,
         caller=board,
@@ -1157,3 +1166,206 @@ async def test_the_criteria_stage_opens_no_session_without_the_ticket_label():
     # post-stage barrier and read the whole roster a second time to say the
     # same thing.
     assert [name for name, _ in board.calls].count("list_issues") == 1
+
+
+#: The two members every entry below is read over. The criterion children a
+#: stage creates are verified in every dry round and carry no stage marker;
+#: the question here is which lane the round works, so the ledger is kept to
+#: the lanes.
+LANES = (CLAIMED_ISSUE, "second")
+
+
+class GapSpy:
+    """Every ``organize_gap`` call the owner makes, with the round it served.
+
+    The number of sessions already spent is read at each call, so the calls
+    cut the run into rounds: what a round worked is the sessions between its
+    gap call and the next one.  Wrapping the real function rather than
+    replacing it leaves the arithmetic and the run exactly as they are.
+    """
+
+    def __init__(self, monkeypatch, executor):
+        self.calls = []
+        self._executor = executor
+        computed = organize_owner.organize_gap
+
+        def recorded(**kwargs):
+            answer = computed(**kwargs)
+            self.calls.append(
+                (frozenset(item.issue_key for item in answer), len(executor.calls))
+            )
+            return answer
+
+        monkeypatch.setattr(organize_owner, "organize_gap", recorded)
+
+    def rounds(self):
+        """Per gap call: the work set it answered, then the lanes it spent."""
+        ledger = []
+        for index, (work, spent) in enumerate(self.calls):
+            until = (
+                self.calls[index + 1][1]
+                if index + 1 < len(self.calls)
+                else len(self._executor.calls)
+            )
+            judged = Counter()
+            authored = Counter()
+            for call in self._executor.calls[spent:until]:
+                keys = re.findall(r"<issue_key>(.*?)</issue_key>", call["prompt"])
+                if not keys or keys[-1] not in LANES:
+                    continue
+                title = call["output_format"]["schema"].get("title")
+                if title == "AdmissionJudgment":
+                    judged[keys[-1]] += 1
+                elif title == "OrganizeProposal":
+                    authored[keys[-1]] += 1
+            ledger.append(
+                (work, dict(sorted(judged.items())), dict(sorted(authored.items())))
+            )
+        return tuple(ledger)
+
+
+def two_lane_board():
+    """An approved scope of two members, the second prepared from the start."""
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = factory(under_approval=True)
+    board.server.issues["second"] = FakeMcpIssue(
+        id="second", parent_id=CLAIMED_ISSUE, description=PREPARED_BODY
+    )
+    return owner, board, executor
+
+
+async def entry_killed(monkeypatch):
+    """A killed pass re-entered: one member was labelled before it died."""
+    owner, board, executor = two_lane_board()
+    board.server.issues["second"].labels.append("body complete")
+    spy = GapSpy(monkeypatch, executor)
+    return spy, board, executor, await run_owner(owner)
+
+
+async def entry_refutation(monkeypatch):
+    """A refutation on a converged scope: the stage label is gone again.
+
+    A refutation reaches organize as the removal of the refuted member's
+    stage label — the one tracker fact that says a stage is owed again — and
+    as a finding against a landed claim. Here the second lane loses the
+    criteria label and the first lane's claim is refuted once, so the round
+    that follows owes work to a lane that lost its label and to a lane that
+    still carries it.
+    """
+    owner, board, executor = two_lane_board()
+    assert (await run_owner(owner)).halt is None
+    board.server.issues["second"].labels.remove("criteria complete")
+    landed = executor.stream
+    refuted = []
+
+    async def refuting(**kwargs):
+        async for event in landed(**kwargs):
+            payload = event.structured_output
+            if (
+                kwargs["output_format"]["schema"].get("title") == "AdmissionJudgment"
+                and payload.get("issue_id") == "second"
+                and not refuted
+            ):
+                refuted.append(payload)
+                event = result(
+                    structured_output={
+                        **payload,
+                        "findings": [
+                            {
+                                "issue_id": CLAIMED_ISSUE,
+                                "defect_class": "source_version_unspecified",
+                                "evidence": "The landed claim names no source version.",
+                                "role": "instance",
+                            }
+                        ],
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", refuting)
+    spy = GapSpy(monkeypatch, executor)
+    report = await run_owner(owner)
+    assert refuted
+    return spy, board, executor, report
+
+
+async def entry_heartbeat(monkeypatch):
+    """A heartbeat tick: another owner over the board a converged run left."""
+    owner, board, executor = two_lane_board()
+    assert (await run_owner(owner)).halt is None
+    second, board, executor = factory(under_approval=True, board=board)
+    spy = GapSpy(monkeypatch, executor)
+    board.calls.clear()
+    return spy, board, executor, await run_owner(second)
+
+
+#: What each entry is owed, round by round: the work set the one arithmetic
+#: answered, the admission sessions each lane was spent, and the author
+#: sessions each lane was spent. One row per gap call.
+ENTRY_LEDGERS = {
+    # The ticket stage, then the criteria stage, each converging in one
+    # round. The member labelled before the kill is out of the roster, so
+    # the unlabelled one is the only lane the round works; the labelled one
+    # is verified once, in the dry round that follows, like every member.
+    "killed": (
+        (frozenset(LANES), {CLAIMED_ISSUE: 3, "second": 1}, {CLAIMED_ISSUE: 1}),
+        (
+            frozenset(LANES),
+            {CLAIMED_ISSUE: 3, "second": 3},
+            {CLAIMED_ISSUE: 1, "second": 1},
+        ),
+    ),
+    # The ticket stage completes on its labels alone. The criteria stage
+    # re-opens for the lane whose label went: on its first round every
+    # member's admission and criterion child are still live, so the work
+    # set is empty and no lane is worked. The refutation lands in that
+    # round's dry pass; the second round owes the refuted lane, which still
+    # carries the label, and it alone is authored again.
+    "refutation": (
+        (frozenset(LANES), {}, {}),
+        (frozenset(), {CLAIMED_ISSUE: 1, "second": 1}, {}),
+        (frozenset(LANES), {CLAIMED_ISSUE: 3, "second": 2}, {CLAIMED_ISSUE: 1}),
+    ),
+    # Both stages, one round each, no lane in either roster: the gap is
+    # asked once per stage and nothing is spent on the answer.
+    "heartbeat": (
+        (frozenset(LANES), {}, {}),
+        (frozenset(LANES), {}, {}),
+    ),
+}
+
+
+@pytest.mark.parametrize("entry", sorted(ENTRY_LEDGERS))
+async def test_the_three_entries_take_their_work_sets_from_the_same_function(
+    monkeypatch, entry
+):
+    """Every way into a stage asks one function what the stage owes.
+
+    A killed pass re-entered, a refutation on a converged scope and a
+    heartbeat tick over an unchanged one are three entries into the same two
+    stages. Each asks the gap exactly once per round it enters, before the
+    roster can stand it down, and works the members the answer names — never
+    the roster it started from, and never a second arithmetic of its own.
+    """
+    spy, board, executor, report = await {
+        "killed": entry_killed,
+        "refutation": entry_refutation,
+        "heartbeat": entry_heartbeat,
+    }[entry](monkeypatch)
+
+    assert report.halt is None
+    assert [phase.value for phase in report.completed_phases] == ["ticket", "criteria"]
+    assert spy.rounds() == ENTRY_LEDGERS[entry]
+    for key in LANES:
+        assert {"body complete", "criteria complete"} <= set(
+            board.server.issues[key].labels
+        )
+    if entry == "heartbeat":
+        # Nothing owed and nothing spent: both stages are asked, and an
+        # unchanged scope answers with no work, so no session opens and the
+        # board is not written.
+        assert executor.calls == []
+        assert not [
+            (name, args) for name, args in board.calls if name.startswith("save_")
+        ]
