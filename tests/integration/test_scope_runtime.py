@@ -3188,6 +3188,53 @@ def budget_bound_lane(repos, *, port):
     )
 
 
+async def test_a_second_fire_of_a_pinned_lane_adds_no_record():
+    """One invocation, two fires of one lane, and one record between them.
+
+    The second fire re-enters the question step like a second process does: it
+    reads the board, finds the identity its own earlier pass minted, and owes
+    nothing. What proves it is the write journal — the record is written once
+    and the second fire's pass writes nothing at all.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks=TWO_CHECKS)
+    harness = budget_bound_lane(repos, port=port)
+    prefix = native_operation().marker_prefixes["ruling"]
+    harness.executor.question_answers = [
+        {
+            "rulings": [
+                {
+                    "issueRef": "A/check",
+                    "question": "Does the Check's byte run include its marker?",
+                    "rulingClass": "pin_reading",
+                    "resolution": "The marker is not part of the Check's bytes.",
+                    "rejectedAlternative": "Reading the marker as Check text.",
+                    "repoEvidence": ["lane-0.py"],
+                }
+            ]
+        }
+    ]
+
+    events = await bounded_walk(harness, job="converging-job")
+
+    assert ticks_of(events)[-1].dispatched == ("A", "A")
+    assert lane_failures(events) == ()
+    # Three passes through the step — two fires and one remediation round —
+    # one record, and one write of it. The count is the observed one.
+    assert len(harness.executor.question_prompts) == 3
+    records = [c for c in port.comments if c.body.startswith(f"[{prefix}")]
+    assert len(records) == 1
+    assert records[0].issue_key == "A/check"
+    assert [
+        write for write in port.comment_writes if write[1].startswith(f"[{prefix}")
+    ] == [(records[0].comment_key, records[0].body)]
+    # And every pass after the first was shown what the first one pinned.
+    assert all(
+        "The marker is not part of the Check's bytes." in prompt
+        for prompt in harness.executor.question_prompts[1:]
+    )
+
+
 async def test_a_lane_larger_than_one_fires_budget_converges_across_fires():
     """Two criteria, a one-iteration budget, and one invocation (KOD-724).
 

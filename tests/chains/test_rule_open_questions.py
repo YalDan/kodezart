@@ -430,3 +430,43 @@ async def test_a_session_failure_is_not_the_unrecorded_answer_outcome() -> None:
         await executed(fire, state, config)
 
     assert len(executor.question_prompts) == 1
+
+
+async def test_a_remediation_round_passes_the_step_again_and_writes_nothing() -> None:
+    """The round re-enters through the step, and the board already has the answer."""
+    executor = NativeExecutor(
+        [
+            native_evaluation(failed=True),
+            *[native_evaluation(reconciled=True) for _ in range(4)],
+        ]
+    )
+    executor.question_answers = [
+        {"rulings": [ANSWER]},
+        {"rulings": [ANSWER]},
+    ]
+    port = variant(FakeTrackerPort)
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        real_loop=True,
+        remediation_rounds=1,
+        git=git,
+        workspace=workspace,
+    )
+
+    await drive(fire, scope=SCOPE)
+
+    # Two passes through the step, one record, and the second pass was shown
+    # the first one's text.
+    assert len(executor.question_prompts) == 2
+    records = [c for c in port.comments if is_record(c)]
+    assert len(records) == 1
+    assert ANSWER["resolution"] in executor.question_prompts[1]
+    # And exactly one write of that record happened, on the first pass.
+    assert [
+        write
+        for write in port.comment_writes
+        if write[1].startswith(f"[{RULING_PREFIX}") or ANSWER["resolution"] in write[1]
+    ] == [(records[0].comment_key, records[0].body)]

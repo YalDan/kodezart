@@ -326,3 +326,84 @@ async def test_a_record_the_tracker_accepted_but_does_not_list_is_not_pinned(
     assert caught.value.issue_key == SUBJECT
     # The write did happen; what failed is the confirmation of it.
     assert port.comment_writes
+
+
+# ---------------------------------------------------------------------------
+# Re-entry: the second pass finds its own earlier records and writes nothing.
+# ---------------------------------------------------------------------------
+
+SUBJECT_QUESTION = "Does the subject's own text settle the retry bound?"
+
+#: Every write journal this double keeps, plus the live lease table: a pass
+#: that wrote anything at all moves one of them.
+JOURNALS = (
+    "comment_writes",
+    "issue_writes",
+    "issue_creations",
+    "workflow_writes",
+    "restored_states",
+    "queue_writes",
+    "classification_writes",
+    "lease_writes",
+    "renewals",
+)
+
+
+def subject_answer(**changes) -> dict[str, object]:
+    return one_answer(
+        issueRef=SUBJECT,
+        question=SUBJECT_QUESTION,
+        rulingClass="pin_artifact",
+        rejectedAlternative=None,
+        **changes,
+    )
+
+
+def board_state(port) -> dict[str, object]:
+    """Everything a second pass must leave exactly as it found it."""
+    return {
+        "bodies": {key: issue.body for key, issue in port.issues.items()},
+        "comments": [
+            (comment.issue_key, comment.comment_key, comment.body)
+            for comment in port.comments
+        ],
+        "leases": dict(port.leases),
+        **{name: list(getattr(port, name)) for name in JOURNALS},
+    }
+
+
+@pytest.mark.parametrize("second", ["the same answers", "a different resolution"])
+async def test_a_second_pass_over_one_fixture_writes_nothing(
+    repository, second
+) -> None:
+    """The identity is the question's, so a later answer to it is dropped."""
+    repeat = (
+        [one_answer(), subject_answer()]
+        if second == "the same answers"
+        else [one_answer(resolution="A later, different answer."), subject_answer()]
+    )
+    executor = Executor([[one_answer(), subject_answer()], repeat])
+    step, spec, current, _, port, _, repo_path, base = await build(repository, executor)
+    before_bodies = {key: issue.body for key, issue in port.issues.items()}
+
+    await run(step, spec, current, repo_path, base)
+    after_first = board_state(port)
+    judged = len(executor.judged_artifacts)
+
+    await run(step, spec, current, repo_path, base)
+
+    assert board_state(port) == after_first
+    assert after_first["bodies"] == before_bodies
+    # One record per question, each on the issue whose text raised it.
+    records = [comment for comment in port.comments if comment.body.startswith("[")]
+    assert sorted(comment.issue_key for comment in records) == sorted(
+        {DIRECT_OWED, SUBJECT}
+    )
+    # The second pass judged nothing, because it wrote nothing to judge.
+    assert len(executor.judged_artifacts) == judged == 2
+    # It did ask again, and it was shown what the board already carries.
+    assert len(executor.question_prompts) == 2
+    assert RESOLUTION in executor.question_prompts[1]
+    # The record still says what the first pass pinned.
+    ((_, record),) = await cold_records(port, DIRECT_OWED)
+    assert record.resolution == RESOLUTION
