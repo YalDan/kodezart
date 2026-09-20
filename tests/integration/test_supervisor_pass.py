@@ -1,6 +1,7 @@
 """The supervisor tick as the composition root registers and runs it."""
 
 import asyncio
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -21,13 +22,7 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import native_operation
-from tests.fakes import (
-    FIXTURE_EPOCH,
-    FakeAgentRunner,
-    FakeGitService,
-    FakeTrackerPort,
-    FakeWorkspaceProvider,
-)
+from tests.fakes import FIXTURE_EPOCH, FakeAgentRunner, FakeTrackerPort
 from tests.integration.test_scope_runtime import (
     FORGE_ORIGIN,
     ORIGIN,
@@ -157,18 +152,42 @@ def test_the_example_operation_declares_the_roster_the_tick_reads() -> None:
     assert "supervisor_scopes" in EXAMPLE.read_text(encoding="utf-8")
 
 
-async def test_a_whole_tick_dispatches_no_agent_and_touches_no_repository():
+def refuse_every_process(monkeypatch):
+    """Make any process the tick starts, by any route, fail the test.
+
+    Patched on the modules rather than asserted over a double, because a double
+    the factory never receives records nothing however the tick behaves. This
+    catches a process reached through a collaborator the factory was never
+    given, typed or not, and ``subprocess.run`` and ``check_output`` both reach
+    ``Popen`` by module-global lookup, so the three names below are every route
+    out of this process.
+    """
+
+    def reached(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("the supervisor tick reached a process")
+
+    for module, name in (
+        (asyncio, "create_subprocess_exec"),
+        (asyncio, "create_subprocess_shell"),
+        (subprocess, "Popen"),
+    ):
+        monkeypatch.setattr(module, name, reached)
+
+
+async def test_a_whole_tick_dispatches_no_agent_and_touches_no_repository(monkeypatch):
     """The real factory over a real board: nothing outside the tracker is asked.
 
-    The doubles are handed to nothing, because the factory takes none of them.
-    They are here so the claim is the observed one — zero dispatches, zero
-    version-control calls, zero prepared trees across the whole tick — rather
-    than an argument from the factory's signature, which is asserted elsewhere.
+    "No repository" is observed rather than argued: every route out of this
+    process is made to fail for the duration of the tick, so a repository or a
+    session reached through any collaborator reddens even though the factory
+    takes none. Doubles handed to nothing would have recorded nothing whatever
+    the tick did.
+
+    The other half of the claim — that the runner records zero dispatches and
+    the version-control service zero calls — is pinned over doubles that ARE
+    wired, by the acceptance test's per-double call counts around each tick.
     """
     port = await board(lanes=LANES, scope=SCOPE)
-    runner = FakeAgentRunner(events=[])
-    git = FakeGitService()
-    workspace = FakeWorkspaceProvider(git=git)
     operation = declared(scopes=(SCOPE,))
 
     scheduled = build_supervisor_pass(
@@ -182,14 +201,11 @@ async def test_a_whole_tick_dispatches_no_agent_and_touches_no_repository():
         tracker=port,
     )
 
+    refuse_every_process(monkeypatch)
     async with asyncio.timeout(TICK_BOUND_SECONDS):
         outcome = await scheduled.run(FIXTURE_EPOCH)
 
     assert outcome is PassRun.RAN
-    assert runner.calls == []
-    assert git.calls == []
-    assert workspace.calls == []
-    assert workspace.acquisitions == []
     # The tick did observe: a board whose lanes are all past the bound raises
     # on each, so "no agent and no repository" is not "nothing happened".
     for lane in LANES:
