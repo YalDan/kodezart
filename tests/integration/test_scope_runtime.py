@@ -310,7 +310,7 @@ async def walk_reporting(harness, *, kind, match="", **rest):
     the walk's lane boundary and named on the observation, so a test about
     that refusal asserts its type and message there instead of catching it.
     """
-    events = [event async for event in drive(harness, **rest)]
+    events = await bounded_walk(harness, **rest)
     failures = lane_failures(events)
     assert [failure.error.error_kind for failure in failures] == [kind]
     assert match in failures[0].error.error
@@ -384,26 +384,27 @@ async def test_next_lane_uses_current_approval_membership_and_check(change):
     port = board(lanes=("A", "B"))
     harness = runtime(port=port, lanes=("A", "B"))
     events = []
-    async for event in drive(harness):
-        events.append(event)
-        if isinstance(event, ScopeLaneEvent) and isinstance(
-            event.event, WorkflowIterationEvent
-        ):
-            if event.lane_key != "A":
-                continue
-            if change == "approval":
-                port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key="B")] = (
-                    frozenset()
-                )
-            elif change == "membership":
-                port.scope_memberships[SCOPE] = ("A",)
-            else:
-                port.issues["B/check"] = port.issues["B/check"].model_copy(
-                    update={
-                        "body": "**Check:** amended B Check  exact bytes\n"
-                        "**Evidence:** —"
-                    }
-                )
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in drive(harness):
+            events.append(event)
+            if isinstance(event, ScopeLaneEvent) and isinstance(
+                event.event, WorkflowIterationEvent
+            ):
+                if event.lane_key != "A":
+                    continue
+                if change == "approval":
+                    port.scope_label_members[
+                        ScopeRef(kind=ScopeKind.ISSUE, key="B")
+                    ] = frozenset()
+                elif change == "membership":
+                    port.scope_memberships[SCOPE] = ("A",)
+                else:
+                    port.issues["B/check"] = port.issues["B/check"].model_copy(
+                        update={
+                            "body": "**Check:** amended B Check  exact bytes\n"
+                            "**Evidence:** —"
+                        }
+                    )
     launched = [
         event.lane_key
         for event in events
@@ -425,7 +426,7 @@ async def test_next_lane_uses_current_approval_membership_and_check(change):
 async def test_unapproved_scope_observation_cannot_equal_closed_scope():
     port = board(approved=False)
     harness = runtime(port=port)
-    events = [event async for event in drive(harness)]
+    events = await bounded_walk(harness)
     assert len(events) == 1
     observation = events[0].observation
     assert observation.unapproved_lanes == ("A",)
@@ -442,7 +443,7 @@ async def test_existing_plan_barrier_prevents_any_lane_effect():
     )
     harness = runtime(port=port)
     with pytest.raises(ScopePlanRefusalError) as caught:
-        _ = [event async for event in drive(harness)]
+        _ = await bounded_walk(harness)
     assert caught.value.open_decisions == ("decision",)
     assert harness.executor.schema_calls == []
 
@@ -505,10 +506,10 @@ async def test_one_lanes_failure_is_reported_and_the_walk_continues(
         port.issues["B/check"] = port.issues["B/check"].model_copy(
             update={"body": "**Evidence:** — and no Check field at all"}
         )
-    # Bounded: a lane offered again after it failed would walk forever, and a
-    # hang is not a failing assertion. Four ticks take milliseconds here.
-    async with asyncio.timeout(30):
-        events = [event async for event in drive(harness)]
+    # Bounded, like every walk of this module: a lane offered again after it
+    # failed would walk forever, and a hang is not a failing assertion. Four
+    # ticks take milliseconds here.
+    events = await bounded_walk(harness)
     observations = [
         event.observation for event in events if isinstance(event, ScopeWalkEvent)
     ]
@@ -603,8 +604,9 @@ async def test_a_failed_ready_read_in_a_lanes_turn_ends_the_run(monkeypatch, sit
     monkeypatch.setattr(scope_runtime, "read_scope_ready", failing)
     events = []
     with pytest.raises(TrackerUnavailableError, match="the scope ready read failed"):
-        async for event in drive(harness):
-            events.append(event)
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            async for event in drive(harness):
+                events.append(event)
     assert lane_failures(events) == ()
     assert harness.executor.execution_prompts == []
 
@@ -622,11 +624,12 @@ async def test_tracker_outage_between_lanes_cannot_reuse_the_previous_ready_set(
         return await original(ref=ref)
 
     with pytest.raises(TrackerUnavailableError, match="current scope unavailable"):
-        async for event in drive(harness):
-            if isinstance(event, ScopeLaneEvent) and isinstance(
-                event.event, WorkflowIterationEvent
-            ):
-                monkeypatch.setattr(port, "scope_issues", current_scope)
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            async for event in drive(harness):
+                if isinstance(event, ScopeLaneEvent) and isinstance(
+                    event.event, WorkflowIterationEvent
+                ):
+                    monkeypatch.setattr(port, "scope_issues", current_scope)
     assert len(harness.executor.execution_prompts) == 1
     assert "Exact native subject B" not in harness.executor.execution_prompts[0]
     assert port.claim_writes == []
@@ -646,7 +649,7 @@ async def test_approval_removed_during_preparation_prevents_any_native_node(
         return path
 
     monkeypatch.setattr(controller._cache, "ensure_available", ensure_available)
-    events = [event async for event in drive(harness)]
+    events = await bounded_walk(harness)
     assert harness.executor.schema_calls == []
     assert events[-1].observation.unapproved_lanes == ("A",)
     assert events[-1].observation.unresolved_criteria == ("A/check",)
@@ -694,15 +697,18 @@ async def test_current_closed_blocker_unlocks_next_lane_using_its_recorded_branc
     port = board(lanes=("A", "B"), blocked={"B": ("A",)})
     harness = resumable(repos=repos, port=port, lanes=("A", "B"))
     events = []
-    async for event in drive(harness):
-        events.append(event)
-        if isinstance(event, ScopeLaneEvent) and isinstance(
-            event.event, LaneDeliveryEvent
-        ):
-            if event.lane_key == "A":
-                # A's criterion is already Done: its own evaluation step
-                # crossed it off, so nothing here has to close the blocker.
-                assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in drive(harness):
+            events.append(event)
+            if isinstance(event, ScopeLaneEvent) and isinstance(
+                event.event, LaneDeliveryEvent
+            ):
+                if event.lane_key == "A":
+                    # A's criterion is already Done: its own evaluation step
+                    # crossed it off, so nothing here has to close the blocker.
+                    assert (
+                        port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+                    )
     iterations = [
         event.lane_key
         for event in events
@@ -804,7 +810,7 @@ async def test_a_closed_blocker_with_no_record_is_gated_by_one_open_delivery_rea
     harness.engine._scoped_arm._probe_for = lambda _: probe
 
     with structlog.testing.capture_logs() as logs:
-        events = [event async for event in drive(harness)]
+        events = await bounded_walk(harness)
 
     # The blocker was asked about exactly once and nothing else was asked
     # about at all, whatever the answer was: the read is made per blocker per
@@ -935,7 +941,7 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
         harness = resumable(
             port=port, repos=repos, origin=FORGE_ORIGIN, forge=forge, trunk="main"
         )
-        events = [event async for event in drive(harness, origin=FORGE_ORIGIN)]
+        events = await bounded_walk(harness, origin=FORGE_ORIGIN)
         deliveries = [
             event.event.delivery
             for event in events
@@ -1301,37 +1307,38 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
     mid_walk: dict[str, tuple[str, str, str, str | None, str]] = {}
 
     events = []
-    async for event in drive(harness):
-        events.append(event)
-        if not isinstance(event, ScopeLaneEvent):
-            continue
-        if isinstance(event.event, WorkflowIterationEvent):
-            lane = event.lane_key
-            if lane not in mid_walk:
-                record = await lane_record(port, lane)
-                mid_walk[lane] = (
-                    port.issues[f"{lane}/check"].state_name,
-                    parse_criterion_evidence(
-                        port.issues[f"{lane}/check"].body
-                    ).graded_sha,
-                    record.head_sha,
-                    record.pushed_head_sha,
-                    # The repository's own head at this instant: read here
-                    # rather than at the end, the comparison is to the tree
-                    # this lane stood at when the cross-off was written.
-                    repos.branches[record.branch].head,
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in drive(harness):
+            events.append(event)
+            if not isinstance(event, ScopeLaneEvent):
+                continue
+            if isinstance(event.event, WorkflowIterationEvent):
+                lane = event.lane_key
+                if lane not in mid_walk:
+                    record = await lane_record(port, lane)
+                    mid_walk[lane] = (
+                        port.issues[f"{lane}/check"].state_name,
+                        parse_criterion_evidence(
+                            port.issues[f"{lane}/check"].body
+                        ).graded_sha,
+                        record.head_sha,
+                        record.pushed_head_sha,
+                        # The repository's own head at this instant: read here
+                        # rather than at the end, the comparison is to the tree
+                        # this lane stood at when the cross-off was written.
+                        repos.branches[record.branch].head,
+                    )
+            if isinstance(event.event, LaneDeliveryEvent):
+                # A delivery leaves the lane's deliverable branch on the remote,
+                # which is the ref a dependent lane's base resolves to. The branch
+                # is read off the record, because the record is where a lane's
+                # deliverable branch is written (KOD-842).
+                delivered = recorded_branches(
+                    record=await lane_record(port, event.lane_key)
                 )
-        if isinstance(event.event, LaneDeliveryEvent):
-            # A delivery leaves the lane's deliverable branch on the remote,
-            # which is the ref a dependent lane's base resolves to. The branch
-            # is read off the record, because the record is where a lane's
-            # deliverable branch is written (KOD-842).
-            delivered = recorded_branches(
-                record=await lane_record(port, event.lane_key)
-            )
-            repos.delivered[delivered.deliverable_branch] = repos.branches[
-                delivered.loop_branch
-            ].head
+                repos.delivered[delivered.deliverable_branch] = repos.branches[
+                    delivered.loop_branch
+                ].head
 
     heads = {branch: repo.head for branch, repo in repos.branches.items()}
     assert len(heads) == 2
@@ -1428,25 +1435,26 @@ async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
     )
     at_iteration: dict[int, tuple[str, str, list[str | None], str]] = {}
 
-    async for event in drive(harness):
-        if not isinstance(event, ScopeLaneEvent):
-            continue
-        if isinstance(event.event, WorkflowIterationEvent):
-            issue = port.issues[broken]
-            at_iteration[event.event.iteration] = (
-                issue.state_name,
-                parse_criterion_evidence(issue.body).graded_sha,
-                [
-                    posted.graded_sha
-                    for posted in await port.lane_run_events(
-                        issue_key="A", lane_key="A"
-                    )
-                    if posted.kind is RunEventKind.CRITERION_REFUTED
-                ],
-                repos.branches[event.event.branch].head,
-            )
-        if isinstance(event.event, LaneDeliveryEvent):
-            port.recorded_work_refs["A"] = [deliverable_of(repos, "A")]
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in drive(harness):
+            if not isinstance(event, ScopeLaneEvent):
+                continue
+            if isinstance(event.event, WorkflowIterationEvent):
+                issue = port.issues[broken]
+                at_iteration[event.event.iteration] = (
+                    issue.state_name,
+                    parse_criterion_evidence(issue.body).graded_sha,
+                    [
+                        posted.graded_sha
+                        for posted in await port.lane_run_events(
+                            issue_key="A", lane_key="A"
+                        )
+                        if posted.kind is RunEventKind.CRITERION_REFUTED
+                    ],
+                    repos.branches[event.event.branch].head,
+                )
+            if isinstance(event.event, LaneDeliveryEvent):
+                port.recorded_work_refs["A"] = [deliverable_of(repos, "A")]
 
     heads = [repo.head for repo in repos.branches.values()]
     assert len(heads) == 1
@@ -1541,11 +1549,12 @@ async def first_fire(port, repos, *, passed=("A/check",)):
     harness = resumable(port=port, repos=repos, evaluations=echoes(passed=set(passed)))
     stream = drive(harness, job="first-job")
     observed = 0
-    async for event in stream:
-        if isinstance(event, ScopeWalkEvent):
-            observed += 1
-            if observed == 2:
-                break
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in stream:
+            if isinstance(event, ScopeWalkEvent):
+                observed += 1
+                if observed == 2:
+                    break
     await stream.aclose()
     # The walk really reached the tick after the fire, so what follows is that
     # fire's record and not the record of a walk that ended some other way.
@@ -1629,7 +1638,7 @@ async def test_a_recorded_lane_resumes_on_its_recorded_branch_and_mints_nothing(
 
     minted = mint_spy(monkeypatch)
     second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
-    events = [event async for event in drive(second, job="second-job")]
+    events = await bounded_walk(second, job="second-job")
 
     # Nothing was minted on any path, and the lane did not fail on the way to
     # not minting: an empty spy beside a reported failure would say nothing.
@@ -1670,7 +1679,7 @@ async def test_a_changed_check_on_re_entry_is_owed_and_graded_again():
     owed_again(port, check="materially changed Check")
 
     second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
-    _ = [event async for event in drive(second, job="second-job")]
+    _ = await bounded_walk(second, job="second-job")
 
     prompt = second.executor.execution_prompts[0]
     assert "materially changed Check" in prompt
@@ -1746,7 +1755,7 @@ async def test_the_scoped_arm_holds_no_checkpointer_while_the_authored_arm_keeps
     assert authored.graph.checkpointer is saver
     assert authored.implementation._quality_gate._checkpointer is saver
 
-    events = [event async for event in drive(harness)]
+    events = await bounded_walk(harness)
 
     # The run really ran, so the empty saver below is a statement about it.
     assert events[-1].observation.dispatched == ("A",)
@@ -1842,7 +1851,7 @@ async def test_a_record_with_no_digest_is_entered_and_pinned_by_its_next_write(
     minted = mint_spy(monkeypatch)
     second = resumable(port=port, repos=repos, evaluations=echoes(passed=set(A_KEYS)))
     reads = subject_reads(port, monkeypatch)
-    events = [event async for event in drive(second, job="second-job")]
+    events = await bounded_walk(second, job="second-job")
 
     # Not refused, and not re-entered by minting a second branch beside the
     # record: the lane ran, on the branch the record names.
@@ -2016,11 +2025,7 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
         # A and B are offered for a delivery they already recorded and rest,
         # C fires and closes its last criterion, C is offered for a delivery it
         # then records too and rests, and the fifth has nothing left to offer.
-        async with asyncio.timeout(60):
-            events = [
-                event
-                async for event in drive(second, job="second-job", origin=FORGE_ORIGIN)
-            ]
+        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
 
         assert len(ticks_of(events)) == 5
         assert [
@@ -2077,13 +2082,19 @@ async def test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes(monkeypa
 # ---------------------------------------------------------------------------
 
 
-#: The seconds a walk of this section is allowed before the test fails.
+#: The seconds ANY walk of this module is allowed before the test fails.
 #:
 #: A lane the walk selects and neither dispatches nor rests is offered again
 #: on the next tick, forever: the regression answers nothing rather than
 #: answering wrongly, and an unbounded test would hang a whole run instead of
 #: failing one case. The bound is orders above what these walks take and far
 #: under anything a reader would wait out.
+#:
+#: Every walk here goes through it — the whole-walk ones through
+#: ``bounded_walk`` below, the ones a test reads event by event under this same
+#: bound written out, and the one walk a test cancels mid-flight under its own
+#: deadline. A walk that stops fitting the bound is a defect to find, never a
+#: bound to raise.
 WALK_BOUND_SECONDS = 60
 
 
@@ -2116,11 +2127,12 @@ async def stopped_at_consolidation(port, repos, *, origin, forge=None, lane="A")
         evaluations=one_check_echoes(lane, rounds=4),
     )
     stream = drive(harness, job="first-job", origin=origin)
-    async for event in stream:
-        if isinstance(event, ScopeLaneEvent) and isinstance(
-            event.event, WorkflowConsolidationEvent
-        ):
-            break
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in stream:
+            if isinstance(event, ScopeLaneEvent) and isinstance(
+                event.event, WorkflowConsolidationEvent
+            ):
+                break
     await stream.aclose()
     assert port.issues[f"{lane}/check"].state_kind is WorkflowStateKind.COMPLETED
     record = await lane_record(port, lane)
@@ -2341,10 +2353,7 @@ async def test_a_reopened_criterion_refuses_a_deliver_only_entry(monkeypatch):
             return spec
 
         monkeypatch.setattr(port, "read_fire_spec", reopening)
-        events = [
-            event
-            async for event in drive(second, job="second-job", origin=FORGE_ORIGIN)
-        ]
+        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
 
         assert reopened == ["A"]
         failures = lane_failures(events)
@@ -2382,7 +2391,7 @@ async def test_a_forge_less_origin_never_selects_a_finished_lane():
         trunk="main",
         evaluations=one_check_echoes("A", rounds=4),
     )
-    events = [event async for event in drive(second, job="second-job")]
+    events = await bounded_walk(second, job="second-job")
 
     walked = [
         event.observation for event in events if isinstance(event, ScopeWalkEvent)
@@ -2692,10 +2701,7 @@ async def test_a_dependent_lane_opens_its_pull_request_against_its_blockers_bran
                 *one_check_echoes("B", rounds=4),
             ],
         )
-        events = [
-            event
-            async for event in drive(harness, job="stacked-job", origin=FORGE_ORIGIN)
-        ]
+        events = await bounded_walk(harness, job="stacked-job", origin=FORGE_ORIGIN)
 
         record = await lane_record(port, "A")
         deliverable = recorded_branches(record=record).deliverable_branch
@@ -2762,23 +2768,24 @@ async def test_a_blocker_branch_absent_from_the_remote_refuses_without_trunk():
         )
         deleted: list[str] = []
         events = []
-        async for event in drive(harness, job="stacked-job", origin=FORGE_ORIGIN):
-            events.append(event)
-            if (
-                isinstance(event, ScopeLaneEvent)
-                and isinstance(event.event, LaneDeliveryEvent)
-                and event.lane_key == "A"
-                and not deleted
-            ):
-                # A delivered, so its branch is published and its record names
-                # it. Now the remote holds it no longer: what the repository
-                # committed locally is untouched, which is what a branch
-                # somebody deleted on the remote leaves behind.
-                branch = recorded_branches(
-                    record=await lane_record(port, "A")
-                ).deliverable_branch
-                repos.branches[branch].pushed = None
-                deleted.append(branch)
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            async for event in drive(harness, job="stacked-job", origin=FORGE_ORIGIN):
+                events.append(event)
+                if (
+                    isinstance(event, ScopeLaneEvent)
+                    and isinstance(event.event, LaneDeliveryEvent)
+                    and event.lane_key == "A"
+                    and not deleted
+                ):
+                    # A delivered, so its branch is published and its record names
+                    # it. Now the remote holds it no longer: what the repository
+                    # committed locally is untouched, which is what a branch
+                    # somebody deleted on the remote leaves behind.
+                    branch = recorded_branches(
+                        record=await lane_record(port, "A")
+                    ).deliverable_branch
+                    repos.branches[branch].pushed = None
+                    deleted.append(branch)
 
         assert deleted
         assert (await lane_record(port, "A")).pr is not None
