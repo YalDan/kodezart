@@ -147,6 +147,9 @@ written down here to go stale.
 - [docs/migration-v0.2-to-v0.3.md](docs/migration-v0.2-to-v0.3.md) — the
   upgrade guide for a v0.2.x operator: the settings renames, the names that
   stay flat and the ones that are gone.
+- [docs/running-a-scope.md](docs/running-a-scope.md) — booting a deployment that
+  works scope by scope: the config, the environment, what boot logs, starting
+  and re-entering a run, and which member refuses where.
 
 ## Configuration
 
@@ -560,7 +563,9 @@ Executable start to finish — no step assumes knowledge that is not on this
 page. Linear is the reference adapter and the worked example here; the tracker
 port is vendor-neutral, and another adapter passing the same conformance suite
 gets its own appendix rather than changes to these steps. Work the steps in
-order. Each ends with an **observable result** naming what you should be able
+order. These steps set up the per-issue deployment; for one that works scope by
+scope, read [docs/running-a-scope.md](docs/running-a-scope.md) beside them —
+steps 1 to 4 are the same and the rest differ. Each ends with an **observable result** naming what you should be able
 to see, so nothing depends on judgment this page has not supplied. Field
 semantics, defaults and bounds are not repeated here: every `KODEZART_*`
 variable named below is documented once, under
@@ -748,7 +753,10 @@ be recovered from their title.
 [`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
 field by field and covers every one — to `operation.toml` in the repository
 root, fill in the values from steps 2–4, and point
-`KODEZART_OPERATION_CONFIG` at it.
+`KODEZART_OPERATION_CONFIG` at it. For a deployment that works scope by scope,
+copy [`docs/operation.scope.toml`](docs/operation.scope.toml) instead: it is the
+smallest config that runs a scope, and
+[docs/running-a-scope.md](docs/running-a-scope.md) walks through it.
 
 **Your filled-in config is not the example, and it does not belong in version
 control.** It names real people by their tracker and forge identifiers, and
@@ -815,8 +823,8 @@ it could not resolve. Nothing runs until you fix it.
 | `tracker_mappings_reconciled`, then `pass_scheduler_started` | A | Nothing. Go to step 8. |
 | `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER__TOKEN` (step 1). |
 | `tracker_not_configured` with `operation_config_present: false` | B | Set `KODEZART_OPERATION_CONFIG` (step 5). |
-| `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. |
-| `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`. Supply whichever reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. |
+| `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. With `organize_scopes_declared: true` this is not a gap at all: that deployment works scope by scope and withholds both passes on purpose. |
+| `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`, `organize_scopes_declared`. Supply whichever of the first three reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. With `organize_scopes_declared: true` the pass is withheld on purpose. |
 | `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
 | `TrackerEnsureConflictError` | C | A value the operation *owns* exists with a conflicting definition, or two declared entries claim one backend value. Reconcile the workspace or the config by hand; boot will not alter either for you. |
@@ -825,17 +833,6 @@ it could not resolve. Nothing runs until you fix it.
 
 *Observable result:* one of the three states, identified by name, with no line
 in the startup log left unaccounted for.
-
-**Native claim capability:** Linear MCP currently refuses claim acquisition and
-renewal with `UnsupportedClaimError`. Its comment API has no conditional
-ownership/version update, and delayed renewal can otherwise displace a newer
-holder. Claim-dependent dispatch therefore refuses before enqueueing a fire.
-Existing claim reads and releases remain available for cleanup; changing lease
-timing cannot enable safe native claims. Authored HTTP execution and the
-read-only tracker paths retain their existing contracts.
-
-The following fire progression describes a claim-capable adapter; it is not
-currently a successful Linear MCP smoke test.
 
 **8. Smoke test — the one act that is yours.** The loop watches for issues
 carrying the approval label. **Applying that label is the single human act the
@@ -878,8 +875,9 @@ judgment passes are a different shape: on their interval
 `KODEZART_GROOMING_PASS_INTERVAL_SECONDS`) the rendered prompt goes to an
 **agent session**, and the session does the work — so the session itself must
 be able to reach the tracker. Both passes register whenever the operation
-config declares at least one team and one repository (an empty roster logs
-`prompt_passes_not_wired` naming what is absent). What this process attaches to
+config declares at least one team and one repository and declares no
+`organize_scopes` (an empty roster, or a declared scope, logs
+`prompt_passes_not_wired` naming which it was). What this process attaches to
 a session is the knowledge server it was granted
 (`KODEZART_KNOWLEDGE__SESSION_GRANTS`) and nothing else: it registers no tracker
 MCP server on a session. That registration is host configuration, made where a

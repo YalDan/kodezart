@@ -14,6 +14,8 @@ from pathlib import Path
 
 from kodezart.adapters.linear.tracker import ACCEPTED_CREDENTIAL_SHAPE
 from kodezart.core import errors
+from kodezart.domain import errors as domain_errors
+from kodezart.types.domain import operation as operation_types
 from kodezart.types.domain.dispatch import DispatchOutcome
 from kodezart.types.domain.operation import (
     DocumentEntry,
@@ -364,3 +366,24 @@ def test_the_ignore_rules_are_anchored_so_the_examples_stay_tracked() -> None:
     for example in examples:
         assert Path(REPO_ROOT / example).is_file()
         assert not any(fnmatch(example, rule) for rule in patterns), example
+
+
+def test_the_guide_names_no_failure_class_that_does_not_exist() -> None:
+    """Every `*Error` in the setup section, not only the ones listed above.
+
+    `CITED_ERRORS` is a floor: it requires the classes an operator matches a
+    boot failure against to be named and to exist. It says nothing about a class
+    the section names and nobody listed — which is how a paragraph naming a
+    class that exists nowhere in the tree sat in this section unnoticed. Derived
+    from the section's own text, over the three modules a failure an operator
+    reads can come from.
+    """
+    modules = (errors, domain_errors, operation_types)
+    named = set(re.findall(r"\b([A-Z]\w+Error)\b", _guide()))
+    assert named >= CITED_ERRORS
+    unresolved = [
+        name
+        for name in sorted(named)
+        if not any(hasattr(module, name) for module in modules)
+    ]
+    assert unresolved == []

@@ -3,8 +3,9 @@
 `build_workflow_engine` composes `AuthoredDeliveryCoordinator` around the shared
 fire graph. The authored HTTP path creates the PR, watches checks, routes a
 reproduced work defect through the existing remediation entry, and emits its
-existing terminal event. Scoped execution currently refuses before preparation:
-there is no active scope walker or independent delivery coordinator.
+existing terminal event. The scope path has its own walker and its own native
+lane delivery, described in [running a scope](running-a-scope.md); it shares
+this fire graph and no part of the authored coordinator.
 
 The accepted and stalled PR-opening nodes use the same watch route. The existing
 acceptance/outcome classifier retains `stalled_pr_opened` when checks recover;

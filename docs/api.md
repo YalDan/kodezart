@@ -99,11 +99,13 @@ Omitting `scope` or supplying `null` runs the existing prompt workflow.
 Invalid scope input returns `422` before a job is queued. `baseBranch`
 must be nonempty when no recorded `baseSpec` is supplied.
 
-Scoped graph execution is not yet implemented. A valid scoped job terminates
-with `ScopedExecutionUnavailableError` and outcome `engine_error` when dequeued,
-before tracker reads, repository preparation or judgment sessions. This refusal
-also applies without a configured tracker. An addressed scope never falls back
-to the prompt workflow. These rules also apply to `/fire`.
+A scoped request runs when a tracker is dialled. Without one there is no scoped
+arm to reach, so a valid scoped job terminates with
+`ScopedExecutionUnavailableError` and outcome `engine_error` when dequeued,
+before tracker reads, repository preparation or judgment sessions. The same
+refusal names an origin with no delivery reader behind it. An addressed scope
+never falls back to the prompt workflow. These rules also apply to `/fire`.
+See [running a scope](running-a-scope.md) for the configuration one needs.
 
 ### Example
 
@@ -270,13 +272,13 @@ subtree: one fire's iteration budget is smaller than some lanes are, so a lane
 larger than that budget converges across fires rather than waiting for the next
 invocation. A fire that closed none of them rests the lane, and rested lanes are
 reported in `scope_walk.observation`; `dispatched` carries one entry per fire, so
-a lane named twice there was fired twice. Scheduled
-configured-scope lookup, concurrent lane marks, cross-job branch recovery and a
-scope terminal verdict are separate requirements. A lane re-enters from its own
-tracker record and the remote head of the branch that record names; no graph
-state is persisted for the scope path, so nothing is replayed and a killed
-process changes nothing about the next decision (KOD-684, KOD-840). The
-HTTP API does not yet expose a request to resume an existing job.
+a lane named twice there was fired twice. Scheduled configured-scope lookup,
+concurrent lane marks, cross-job branch recovery and a scope terminal verdict
+are separate requirements. A lane re-enters from its own tracker record and the
+remote head of the branch that record names; no graph state is persisted for the
+scope path, so nothing is replayed and a killed process changes nothing about
+the next decision. Re-entering is posting the same request again; the HTTP API
+exposes no request to resume an existing job.
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
 `rejected`), not a boolean.

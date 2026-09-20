@@ -9,8 +9,20 @@ concerns.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/running-a-scope.md`, one page for running a scope: what the run is and
+  is not, what the first boot writes to the team, the environment it needs, what
+  boot logs, how to start and re-enter a run, and which member refuses where.
+  `docs/operation.scope.toml` is the config it points at.
+
 ### Changed
 
+- Every document that said scoped execution was unimplemented now says what is
+  true: a scoped request runs when a tracker is dialled, and
+  `ScopedExecutionUnavailableError` names the absence of a scoped arm or of a
+  delivery reader for the origin. The README's stale paragraph about claim
+  acquisition being refused is deleted; claim acquisition is implemented.
 - An operation that declares `[[organize_scopes]]` schedules the organize tick
   and the audit pass only. The periodic dispatch pass, the fire-prep and
   grooming prompt passes and the lifecycle watcher are withheld, and the
