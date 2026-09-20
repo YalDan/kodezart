@@ -121,6 +121,24 @@ class LaneFieldValue(CamelCaseModel):
     value: str
 
 
+class LaneTally(CamelCaseModel):
+    """One reading of a lane: what its subtree owes, and what it has recorded.
+
+    ``open`` is every criterion sub-issue key the lane's subtree still owes,
+    sorted, and ``commits`` is the shas its run-state record carries, in
+    recorded order. Both are identities: two readings are compared by set
+    difference over them and never by their lengths, because a reading that
+    closed two criteria while three more were surfaced owes more than
+    before and still moved. No commit subject is carried — that is authored
+    text, and an observation of a run's shape reads none of it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    open: tuple[Identity, ...]
+    commits: tuple[Identity, ...]
+
+
 class Evidence[T](CamelCaseModel):
     """One already-typed projection, never a serialized domain payload."""
 
@@ -188,6 +206,12 @@ class LaneFieldEvidence(Evidence[LaneFieldValue]):
     kind: Literal["lane_field"] = "lane_field"
 
 
+class TallyEvidence(Evidence[LaneTally]):
+    """One whole tally reading of one lane, kept so the next tick can compare."""
+
+    kind: Literal["tally"] = "tally"
+
+
 class ScopeEvidence(Evidence[ScopeRef]):
     """The native scope address supplied by its current reader."""
 
@@ -217,6 +241,7 @@ AlarmEvidence = Annotated[
     | ResolutionEvidence
     | CommitsEvidence
     | LaneFieldEvidence
+    | TallyEvidence
     | ScopeEvidence
     | RulingsEvidence
     | GraphEvidence,

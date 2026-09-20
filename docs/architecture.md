@@ -696,8 +696,25 @@ The signal retains the exact configuration references, native scope address,
 roster keys and member label projections as readings, so replay needs no port.
 A missing member reading or null/empty marker set counts as open in the pure
 predicate. The final execution transition still requires a native member
-lane-dispatched event reader and explicitly refuses before querying; the lane
-arm, supervisor scheduling and leased alarm publication remain unfinished.
+lane-dispatched event reader and explicitly refuses before querying.
+
+`tally_unmoved` has a second arm, chosen by the subject's kind and sharing the
+signal: under a `LaneSubject` it reads one lane's tally twice. A `LaneTally` is
+that reading — the criterion sub-issue keys the lane's subtree still owes,
+sorted, and the commit shas its run-state record carries, in recorded order.
+The arm takes four readings: the earlier tally, the current one, the earlier
+reading's identities that have since closed, and
+`run_alarm_max_commits_without_closure`. It returns an alarm when the lane owes
+work, closed none of what it owed, and recorded more commits since the earlier
+reading than the bound allows. The clock is therefore the lane's own record: a
+lane nobody fires records nothing and is quiet by arithmetic. Work counts
+identities and never lengths, the same position `domain/fire_plateau` states
+for the walk's own plateau, and closure is the walk's own arithmetic rather
+than a second one. A subject with neither arm refuses. `domain/tally_record`
+composes those readings from the tracker and decides what the one record at
+the address should hold next; whether a record is an alarm is answered by
+replaying its readings, never by whether it carries a bound, because the scope
+arm raises with none.
 
 `domain.run_shape.escalation_ageing` measures an unresolved escalation in
 recorded lane commits after its raise SHA and recorded walker ticks since

@@ -20,12 +20,14 @@ from kodezart.types.domain.run_alarm import (
     Evidence,
     LabelsEvidence,
     LaneFieldEvidence,
+    LaneSubject,
     PresenceEvidence,
     ReferencesEvidence,
     ResolutionEvidence,
     RunAlarm,
     ScopeEvidence,
     SurfaceEvidence,
+    TallyEvidence,
     TextEvidence,
 )
 
@@ -34,6 +36,7 @@ ESCALATION_TICKS_BOUND = "run_alarm_escalation_age_max_ticks"
 BARREN_FILES_BOUND = "run_alarm_barren_tick_max_files_changed"
 BARREN_COMMITS_BOUND = "run_alarm_barren_tick_max_commits_ahead"
 SURFACE_HOLDERS_BOUND = "run_alarm_max_surface_holders"
+COMMITS_WITHOUT_CLOSURE_BOUND = "run_alarm_max_commits_without_closure"
 
 
 def _unreadable(signal: AlarmSignal, source_ref: str, reason: str) -> RunShapeReadError:
@@ -465,20 +468,128 @@ def tally_unmoved(
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
+    """One signal over two observation windows, chosen by the subject's kind.
+
+    A lane subject reads the same tally twice — what its subtree owed, what
+    it owes now, and what it recorded between the two — while a scope
+    subject reads one snapshot of an ORGANIZE marker barrier. Both are the
+    same question asked of what the run's shape is addressed to, so both are
+    arms of this member rather than a second signal, and a subject with no
+    arm refuses instead of being answered from some other arm's readings.
+    """
+    if isinstance(subject, LaneSubject):
+        return _lane_tally_unmoved(
+            subject=subject,
+            readings=readings,
+            raised_at_sha=raised_at_sha,
+            raised_by=raised_by,
+        )
+    if subject.kind is AlarmSubjectKind.SCOPE:
+        return _scope_tally_unmoved(
+            subject=subject,
+            readings=readings,
+            raised_at_sha=raised_at_sha,
+            raised_by=raised_by,
+        )
+    raise _unreadable(
+        AlarmSignal.TALLY_UNMOVED, subject.scope_key, "no tally arm for this subject"
+    )
+
+
+def _lane_tally_unmoved(
+    *,
+    subject: LaneSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Observe a lane's tally standing still across its own recorded commits.
+
+    Four readings in order: the earlier tally of this lane, its current
+    tally, the earlier reading's identities that have since closed, and the
+    configured bound. The clock is the lane's own record — the shas the
+    current reading carries that the earlier one did not — so a lane nobody
+    fired records nothing and is quiet by arithmetic rather than by a rule.
+
+    Work counts identities and never lengths: a reading that closed two
+    criteria while three more were surfaced did work the difference of two
+    counts would report as negative. A lane that closed something, or owes
+    nothing at all, is quiet whatever it recorded.
+    """
+    signal = AlarmSignal.TALLY_UNMOVED
+    try:
+        anchor_reading, latest_reading, closed_reading, bound_reading = readings
+    except ValueError as exc:
+        raise _unreadable(
+            signal, subject.lane_key, "incomplete lane tally readings"
+        ) from exc
+    for reading in (anchor_reading, latest_reading, closed_reading):
+        if reading.source_ref != subject.lane_key:
+            raise _unreadable(
+                signal, reading.source_ref, "a tally reading names another lane"
+            )
+    if bound_reading.source_ref != COMMITS_WITHOUT_CLOSURE_BOUND:
+        raise _unreadable(
+            signal, bound_reading.source_ref, "the bound names another configured field"
+        )
+    anchor = read_alarm_value(anchor_reading, TallyEvidence, signal)
+    latest = read_alarm_value(latest_reading, TallyEvidence, signal)
+    closed = read_alarm_value(closed_reading, ReferencesEvidence, signal)
+    configured = read_alarm_value(bound_reading, CountEvidence, signal)
+    for reading, identities in (
+        (anchor_reading, anchor.open),
+        (anchor_reading, anchor.commits),
+        (latest_reading, latest.open),
+        (latest_reading, latest.commits),
+        (closed_reading, closed),
+    ):
+        if len(set(identities)) != len(identities):
+            raise _unreadable(
+                signal, reading.source_ref, "an identity appears more than once"
+            )
+    if not set(closed) <= set(anchor.open):
+        raise _unreadable(
+            signal, closed_reading.source_ref, "a closed identity was never owed"
+        )
+    if set(closed) & set(latest.open):
+        raise _unreadable(
+            signal, closed_reading.source_ref, "a closed identity is still owed"
+        )
+    if not latest.open or closed:
+        return None
+    observed = len(set(latest.commits) - set(anchor.commits))
+    if observed > configured:
+        return RunAlarm(
+            subject=subject,
+            signal=signal,
+            readings=readings,
+            bound=AlarmBound(
+                config_field=COMMITS_WITHOUT_CLOSURE_BOUND,
+                configured_value=configured,
+                observed_value=observed,
+            ),
+            raised_at_sha=raised_at_sha,
+            raised_by=raised_by,
+        )
+    return None
+
+
+def _scope_tally_unmoved(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
     """Observe a configured adjacent ORGANIZE marker barrier over its roster.
 
     Readings retain two qualified configuration keys, the native scope
     address, its ORGANIZE work-target keys, then per-member semantic label
     sets. An absent member reading or a absent label set counts as open;
-    malformed or foreign readings refuse. This is the scope arm of the
-    shared signal. The lane arm and execution-entry event reader are not
-    implemented by substituting other tracker facts.
+    malformed or foreign readings refuse. The execution-entry event reader
+    is not implemented by substituting other tracker facts.
     """
     signal = AlarmSignal.TALLY_UNMOVED
-    if subject.kind is not AlarmSubjectKind.SCOPE:
-        raise _unreadable(
-            signal, subject.scope_key, "lane tally inputs are unavailable"
-        )
     try:
         current, following, scope_reading, roster_reading, *members = readings
     except ValueError as exc:

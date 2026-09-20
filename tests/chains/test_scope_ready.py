@@ -588,3 +588,42 @@ async def test_a_record_member_owing_nothing_is_not_reported_closed(
     assert selection.closed == ()
     assert selection.ready == selection.blocked == ()
     fixture.assert_read_only()
+
+
+async def test_every_ready_lane_reports_its_whole_criterion_roster_and_its_gap(
+    ready_fixture,
+):
+    """Two readings of one subtree, so a consumer can tell what closed.
+
+    The gap alone says what a lane owes now and nothing about what it owed
+    before. The roster is the whole set the gap is the open part of, including
+    a criterion under a deliverable child the scope's own filter cannot
+    address, so an identity that left the gap between two ticks is nameable.
+    """
+    rows = [
+        row("lane"),
+        row("lane-check", parent="lane", label="criterion"),
+        row("nested", parent="lane"),
+        row("deep-check", parent="nested", label="criterion"),
+        row("finished"),
+        row("finished-check", parent="finished", label="criterion"),
+    ]
+    for item in rows[2:4]:
+        item.project_key = OTHER_PROJECT
+        item.milestone_key = None
+    fixture = await ready_fixture(rows)
+    fixture.state("deep-check", "completed")
+    fixture.state("finished-check", "completed")
+
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+
+    assert keys(selection) == ["lane"]
+    lane = selection.ready[0]
+    assert {issue.issue_key for issue in lane.criteria} == {"lane-check", "deep-check"}
+    assert [issue.issue_key for issue in lane.gap] == ["lane-check"]
+    assert set(lane.gap) <= set(lane.criteria)
+    # A member owing nothing is reported as finished and carries no roster of
+    # its own: it is not a lane, so there is no lane reading to hold one.
+    assert [issue.issue_key for issue in selection.closed] == ["finished"]
+    assert "finished" not in keys(selection)
+    fixture.assert_read_only()

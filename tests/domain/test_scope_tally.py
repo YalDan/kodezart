@@ -174,10 +174,12 @@ def test_incomplete_malformed_or_foreign_data_refuses(damage):
     assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
 
 
-def test_lane_arm_is_explicitly_unavailable_not_a_second_signal():
+def test_scope_shaped_readings_under_a_lane_subject_refuse_within_the_same_signal():
+    """Both arms are this member's; neither answers from the other's readings."""
     subject = LaneSubject(scope_key=SCOPE.key, lane_key="lane/one")
-    with pytest.raises(RunShapeReadError, match="lane tally inputs"):
+    with pytest.raises(RunShapeReadError) as caught:
         observe(inputs(), subject=subject)
+    assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
 
 
 def test_graph_to_body_uses_the_same_signal_and_governed_source_pair():

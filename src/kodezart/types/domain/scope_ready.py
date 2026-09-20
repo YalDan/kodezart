@@ -9,9 +9,19 @@ from kodezart.types.domain.tracker import IssuePriority, TrackerIssue
 
 @dataclass(frozen=True, slots=True)
 class ScopeReadyLane:
+    """One selected lane, its priority, and the two readings of its subtree.
+
+    ``criteria`` is every criterion record beneath the lane, open or closed,
+    and ``gap`` is the open part of it. A consumer asking whether the lane
+    moved between two ticks needs the whole roster: the identities that were
+    open earlier and are absent from ``gap`` now are what closed, and the
+    open reading alone cannot name them.
+    """
+
     issue: TrackerIssue
     effective_priority: IssuePriority
     gap: tuple[TrackerIssue, ...]
+    criteria: tuple[TrackerIssue, ...]
 
 
 @dataclass(frozen=True, slots=True)
