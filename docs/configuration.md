@@ -157,8 +157,16 @@ Escalation ageing uses recorded run progress. The implementation defaults
 allow five lane commits or ten walker ticks after a question is raised;
 operators can set either count to zero to observe the first subsequent
 commit or tick. A counter must exceed its configured limit. These settings
-feed the read-only observation service; the supervisor's walker integration
-and leased alarm writer remain separate work.
+feed the read-only observation service, which no tick reaches.
+
+The supervisor tick that does exist observes one thing: each declared scope's
+ready lanes and finished members, and for each the lane tally arm of
+`TALLY_UNMOVED`. Per lane it reads the run-state record and the one alarm
+record at that lane's address, composes what the address should hold, and
+writes only when the two differ. It moves no state and opens no session. It
+is registered only when the operation declares `supervisor_scopes` and the
+deployment dials a tracker; either one absent registers nothing and names
+which was missing in the boot log.
 
 | Variable                          | Type         | Default                  | Constraints | Description                                              |
 | --------------------------------- | ------------ | ------------------------ | ----------- | -------------------------------------------------------- |
@@ -213,6 +221,8 @@ and leased alarm writer remain separate work.
 | `KODEZART_CI_POLL_INTERVAL_SECONDS` | `float` | `30.0` | >= 5.0, <= 300.0 | Seconds between CI status check polls. |
 | `KODEZART_CI_POLL_MAX_ATTEMPTS` | `int` | `60` | >= 1, <= 600 | Maximum CI status check poll attempts before timeout. |
 | `KODEZART_AUDIT_SWEEP_INTERVAL_SECONDS` | `float` | `3600.0` | >= 60.0, <= 86400.0 | Seconds between audit delta ticks on the existing scheduler. |
+| `KODEZART_SUPERVISOR_PASS_INTERVAL_SECONDS` | `float` | `300.0` | 60-86400 | Seconds between supervisor observation ticks on the existing scheduler. |
+| `KODEZART_SUPERVISOR_PASS_TIMEOUT_SECONDS` | `float` | `120.0` | > 0 | Wall-clock bound for one supervisor observation tick over every declared scope. |
 | `KODEZART_AUDIT_FULL_SWEEP_INTERVAL_SECONDS` | `float` | `86400.0` | >= 60.0, <= 86400.0 | Full coverage interval, no shorter than the audit tick interval. |
 | `KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES` | `int` | `4` | >= 1, <= 32 | Maximum simultaneous delivery check watches across lanes. |
 | `KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS` | `int` | `1` | >= 0, <= 5 | Same-SHA reruns before a red check set is treated as reproduced. Zero disables flake re-observation; explicit unmet prerequisites consume no rerun. |

@@ -17,6 +17,7 @@ from kodezart.composition.organize import (
     verify_organize_configuration,
 )
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
+from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.composition.tracker import DialledTracker
 from kodezart.config.app import AppConfig
 from kodezart.config.knowledge import KnowledgeSettings
@@ -875,6 +876,22 @@ async def build_dispatch_runtime(
             forge=audit_forge,
         )
         await log.ainfo("audit_pass_not_wired", reason="audit_unconfigured")
+    # The observation tick needs a tracker to read and a declared roster to
+    # read it for; it needs nothing else, so it is gated on exactly those two
+    # and the absent arm names which one was missing rather than leaving an
+    # operator to deduce it from a schedule with no supervisor in it.
+    if dialled is not None and dialled.operation.supervisor_scopes:
+        scheduled.append(
+            build_supervisor_pass(
+                config=config, operation=dialled.operation, tracker=dialled.tracker
+            )
+        )
+    else:
+        await log.ainfo(
+            "supervisor_pass_not_wired",
+            tracker_present=dialled is not None,
+            scopes_declared=bool(operation is not None and operation.supervisor_scopes),
+        )
     if operation is not None:
         if dialled is None and (
             config.fire_prep_pass_gate_signals or config.grooming_pass_gate_signals

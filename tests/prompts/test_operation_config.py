@@ -141,6 +141,7 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "organize_mandates",
         "organize_scopes",
         "audit_scopes",
+        "supervisor_scopes",
         "workflow_states",
         "run_event_states",
         "marker_prefixes",
@@ -638,6 +639,7 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     assert native == {
         "organize_scopes": "composition/organize.py::build_organize_tick",
         "audit_scopes": "composition/audit.py::build_audit_pass",
+        "supervisor_scopes": "composition/supervisor.py::build_supervisor_pass",
         "workflow_states.done": "adapters/linear/tracker.py::set_workflow_state",
     }
     assert set(mapped).isdisjoint(native)

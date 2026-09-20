@@ -38,6 +38,10 @@ organize_scopes = []
 # Requires AppConfig.audit.timeout_seconds, write_back.max_verify_rounds,
 # and configured audit/escalation marker prefixes. Absence schedules no audit.
 audit_scopes = []
+# Scopes the supervisor observation tick reads each interval. Plain scope
+# references: the tick reads tracker state only, so it needs no repository and
+# no report destination. Absence schedules no supervisor tick.
+supervisor_scopes = []
 
 # Identities the agent posts under, in the order the pass templates address
 # them: the mention handle first, the account's plain name second. Must not
