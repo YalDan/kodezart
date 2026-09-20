@@ -11,7 +11,9 @@ from kodezart.config.app import AppConfig
 from kodezart.core.errors import OperationConfigError
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_event import (
+    DERIVED_RUN_EVENTS,
     RUN_EVENT_PUBLISHERS,
+    SILENT_STATE_EVENTS,
     RunEventKind,
     RunEventPublisher,
 )
@@ -70,6 +72,25 @@ def test_an_effect_cannot_change_its_ruled_class(event):
     table = dict(RUN_EVENT_STATES)
     table[event] = "in_progress" if table[event].isupper() else "NO_TRANSITION"
     with pytest.raises(ValidationError, match=event):
+        operation(run_event_states=table)
+
+
+#: The two classes whose effect is fixed, in one list: each member must keep its
+#: own effect and must not be allowed to take the other class's.
+SPECIAL_EVENTS = tuple(sorted(DERIVED_RUN_EVENTS | SILENT_STATE_EVENTS))
+
+
+@pytest.mark.parametrize("event", SPECIAL_EVENTS)
+def test_a_special_event_cannot_take_the_other_special_effect(event):
+    """Swap DERIVED for NO_TRANSITION and back, not for a named state.
+
+    The case above swaps each special effect for a named workflow state, which
+    an arm widened to accept both special effects still refuses. This swap is
+    the one such a widening lets through.
+    """
+    table = dict(RUN_EVENT_STATES)
+    table[event.value] = "NO_TRANSITION" if event in DERIVED_RUN_EVENTS else "DERIVED"
+    with pytest.raises(ValidationError, match=event.value):
         operation(run_event_states=table)
 
 
