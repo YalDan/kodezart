@@ -37,10 +37,12 @@ coverage.xml
 .claude/*
 !.claude/workflows/
 
-# Environment
+# Environment. Any stem, because a credentials file for one board is named
+# after that board and a list of stems is a list somebody has to remember.
 .env
 .env.local
 .env.*.local
+*.env
 
 # Operation config. Carries tracker handles and a forge identity, and this
 # board mirrors to a public repository. Root-anchored so the annotated
