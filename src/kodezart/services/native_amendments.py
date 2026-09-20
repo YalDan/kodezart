@@ -35,6 +35,7 @@ from kodezart.domain.errors import (
     WriteBackReadError,
 )
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.domain.rulings import pinned_registry
 from kodezart.services.amendment_writeback import (
     AmendmentSource,
     AmendmentWriteBack,
@@ -257,10 +258,9 @@ class _NativeWriterGuard:
             self._spec
         )
         self._rulings = tuple(ruling for _, ruling in self._ruling_records)
-        registry = "\n".join(ruling.model_dump_json() for ruling in self._rulings)
         instructions = owner._prompts.template_for(
             PromptKey.NATIVE_WRITER_CONTRACT,
-        ).render({"pinned_rulings": registry or "Confirmed empty ruling registry."})
+        ).render({"pinned_rulings": pinned_registry(self._rulings)})
         start = NativeWriterStart(head_sha=head, instructions=instructions)
         await self.require_current(workspace_path=workspace_path, start=start)
         return start

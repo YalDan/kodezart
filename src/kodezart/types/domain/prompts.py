@@ -56,6 +56,8 @@ class PromptKey(StrEnum):
     #: rule covers it like every other role.
     KNOWLEDGE_MAP = "knowledge_map"
     FIRE_RECORD = "fire_record"
+    #: The pre-loop step that finds a fire's open questions and answers them.
+    FIRE_TIME_RULING = "fire_time_ruling"
 
 
 class OrchestrationPrimitive(StrEnum):

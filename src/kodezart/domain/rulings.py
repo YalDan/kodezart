@@ -1,12 +1,85 @@
 """The configured comment representation of a pinned fire-time ruling."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping, Sequence
+
+from pydantic import ValidationError
 
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.errors import RulingUnrecordedError
 from kodezart.domain.tracker_writes import marked_comment_body
-from kodezart.types.domain.agent import Ruling, RulingId
+from kodezart.types.domain.agent import (
+    Ruling,
+    RulingAnswer,
+    RulingAuthor,
+    RulingId,
+)
+
+#: What a session is shown when the tracker carries no answer yet. Stated
+#: as an absence it can read rather than an empty string it could mistake
+#: for a rendering failure.
+EMPTY_REGISTRY = "Confirmed empty ruling registry."
+
+
+def owed_rulings(
+    *,
+    subject: str,
+    answers: Sequence[RulingAnswer],
+    addressable: frozenset[str],
+    recorded: Collection[RulingId],
+) -> tuple[Ruling, ...]:
+    """The records this pass still owes the tracker, in identity order.
+
+    Arithmetic, not judgement: the identity of each answer is minted from
+    the exact pair it names, machine authorship is stamped here rather than
+    answered, and an identity the tracker already carries is dropped — which
+    is what makes a second pass over the same fire owe nothing.
+
+    An answer addressed outside the fire, two answers to one question, or an
+    answer no valid record can be built from is refused rather than written,
+    because each of the three would put text on the tracker that its reader
+    could not address back to the issue whose text raised the question.
+    """
+    owed: dict[RulingId, Ruling] = {}
+    seen: set[tuple[str, str]] = set()
+    for answer in answers:
+        if answer.issue_ref not in addressable:
+            raise RulingUnrecordedError(
+                issue_key=subject,
+                reason=f"{answer.issue_ref!r} is not a member of this fire",
+            )
+        address = (answer.issue_ref, answer.question)
+        if address in seen:
+            raise RulingUnrecordedError(
+                issue_key=subject,
+                reason=f"one question on {answer.issue_ref!r} was answered twice",
+            )
+        seen.add(address)
+        identity = mint_ruling_id(issue_ref=answer.issue_ref, question=answer.question)
+        if identity in recorded:
+            continue
+        try:
+            ruling = Ruling.model_validate(
+                {
+                    **answer.model_dump(),
+                    "ruling_id": identity,
+                    "authored_by": RulingAuthor.MACHINE,
+                    "protected_tests": None,
+                }
+            )
+        except ValidationError as exc:
+            raise RulingUnrecordedError(
+                issue_key=subject,
+                reason=f"an answer on {answer.issue_ref!r} is not a valid record",
+            ) from exc
+        owed[identity] = ruling
+    return tuple(owed[identity] for identity in sorted(owed))
+
+
+def pinned_registry(rulings: Sequence[Ruling]) -> str:
+    """The text a session is shown for the answers already pinned."""
+    return "\n".join(ruling.model_dump_json() for ruling in rulings) or EMPTY_REGISTRY
 
 
 def ruling_marker(

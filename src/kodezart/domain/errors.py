@@ -235,6 +235,22 @@ class RulingRecordReadError(Exception):
         )
 
 
+class RulingUnrecordedError(Exception):
+    """An open question was raised and its answer is not confirmed on the tracker.
+
+    One error for every way the pre-loop step can fail to leave a confirmed
+    record: the write refused, the lease was lost, the independent judgement
+    did not uphold what landed, or the read-back did not find the record it
+    had just written. What the consumer downstream needs is the same in every
+    case — the loop was not entered, because nothing it could read is there.
+    """
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"an open question on {issue_key!r} is unanswered: {reason}")
+
+
 class LaneEntryError(Exception):
     """A lane cannot be entered from the facts it presents, and nothing is minted.
 
