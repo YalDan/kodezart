@@ -119,6 +119,9 @@ def test_the_registry_text_is_one_json_line_per_record_or_the_stated_empty_form(
     """What a session is shown for the answers already pinned."""
     records = owed(answer(), answer(question="Which artifact does the Check name?"))
 
+    # The stated form, as a literal: an absence a reader can tell from a
+    # rendering that failed.
+    assert EMPTY_REGISTRY == "Confirmed empty ruling registry."
     assert pinned_registry(()) == EMPTY_REGISTRY
     assert pinned_registry(records).splitlines() == [
         record.model_dump_json() for record in records
