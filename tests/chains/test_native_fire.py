@@ -73,6 +73,7 @@ from tests.fakes import (
     FakeGitService,
     FakeQualityGate,
     FakeRepoCache,
+    FakeScopeStatusWriter,
     FakeTicketGenerator,
     FakeTrackerPort,
     FakeWorkspaceProvider,
@@ -1249,6 +1250,7 @@ async def test_production_constructor_wires_native_source_to_shared_consumers(
     router = build_workflow_engine(
         operation=native_operation(),
         scope_tracker=port,
+        scope_status=FakeScopeStatusWriter(),
         config=AppConfig(
             write_back=WriteBackSettings(max_verify_rounds=2),
             ticket_review_mode=TicketReviewMode.REVIEWED,

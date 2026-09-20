@@ -185,6 +185,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 else None
             ),
             scope_tracker=dialled.tracker if dialled is not None else None,
+            scope_status=dialled.status if dialled is not None else None,
         )
         app.state.workflow_engine = workflow_engine
 

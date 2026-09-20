@@ -32,6 +32,7 @@ from tests.fakes import (
     FakeBranchMerger,
     FakeRefPublisher,
     FakeRepoCache,
+    FakeScopeStatusWriter,
     PassThroughGate,
 )
 from tests.lane_fixture import ADDED_OWED, added_criterion, criteria_echo
@@ -81,6 +82,7 @@ async def make_runtime(
         ),
         operation=None if no_operation else operation,
         scope_tracker=port,
+        scope_status=FakeScopeStatusWriter(),
         criteria=source,
         repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
         agent_service=service,

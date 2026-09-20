@@ -88,6 +88,7 @@ does not exist.
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
+| ScopeStatusWriter | LinearScopeStatusWriter | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
@@ -814,6 +815,23 @@ delivery states the assumption in the log under `base_input_no_open_delivery`,
 and a forge that cannot answer raises its own typed error, which is neither
 answer (KOD-721, KOD-777). The resolver names the blockers and holds no forge
 collaborator that could settle them.
+
+At the walk's one clean exit the scope terminal reports. It reads the tick's
+own ready set for which members owe nothing, and each lane's run-state record
+for the branch and pull request that lane carries; it remembers nothing of the
+invocation, so a killed run re-enters and reports the same way. Its one write
+is the container's status update, through `ScopeStatusWriter` and no port
+member, gated exactly under its own destination as DERIVED content — a gate
+that altered the report refuses the write rather than publishing a different
+claim. Nothing is leased, claimed or marked in progress for it, and no
+writable-surface address is taken: `CONTAINER_STATUS_UPDATE` keeps no
+production writer, and exactly-one follows from the terminal running once
+(KOD-788). That write sits outside the write-back verifier under a named
+call-site register entry rather than a new read-back arm, because the walk it
+reports on has ended and there is no judged commit to verify it against
+(KOD-806). A milestone or issue scope has no status surface at the backend, so
+it ends with the terminal event alone and `scope_status_surface_absent` in the
+log; no containing project is written in its place.
 
 `commits_ahead_of_record` compares four projections from one lane record:
 lane key, declared head, commits-ahead count and ordered `LaneCommit` rows.

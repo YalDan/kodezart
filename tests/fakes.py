@@ -55,6 +55,7 @@ from kodezart.domain.errors import (
     PRStateReadError,
     RateLimitError,
     ScopeReadError,
+    ScopeStatusError,
     SurfaceLeaseError,
     SurfaceWriteAttributionError,
     TransientAPIError,
@@ -150,6 +151,7 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.scope_terminal import STATUS_UPDATE_SCOPE_KINDS
 from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
 from kodezart.types.domain.session import (
     HttpKnowledge,
@@ -2641,6 +2643,9 @@ class FakeLinearMcpServer:
         #: vendor's own (KOD-169).
         self.projects: dict[str, Mapping[str, object]] = dict(projects or {})
         self.actor: str = actor
+        #: Every status update this server accepted, as its container kind,
+        #: its target and the body it carried.
+        self.status_updates: list[tuple[str, str, str]] = []
         self.calls: list[tuple[str, Mapping[str, object]]] = []
         self.comment_instants: list[datetime] = list(comment_instants)
         #: The backend's OWN clock, which is the only reading of "when"
@@ -3279,6 +3284,39 @@ class FakeLinearMcpServer:
             raise LookupError(msg)
         self.initiative_labels.append(name)
         return {}
+
+    def _tool_save_status_update(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """One status update on a project or an initiative, addressed by key.
+
+        The declared contract, refused the way the server refuses it: the
+        ``type`` says which container is addressed and the argument of that
+        same name carries the target, so a payload naming neither, naming
+        both, or naming a container this workspace does not hold is a tool
+        error rather than a silent success.  The success envelope is
+        unmeasured, so what comes back is minimal and the adapter reads
+        none of it.
+        """
+        kind = arguments.get("type")
+        holders: Mapping[str, Mapping[str, object]] = {
+            "project": self.projects,
+            "initiative": getattr(self, "initiatives", {}),
+        }
+        if kind not in holders:
+            msg = f"status updates address a project or an initiative, not {kind!r}"
+            raise LookupError(msg)
+        named = [name for name in holders if name in arguments]
+        if named != [kind]:
+            msg = f"a status update names exactly its own target, not {named!r}"
+            raise LookupError(msg)
+        target = str(arguments[str(kind)])
+        if target not in holders[str(kind)]:
+            msg = f"fake workspace has no {kind} {target!r}"
+            raise LookupError(msg)
+        self.status_updates.append((str(kind), target, str(arguments.get("body", ""))))
+        return {"success": True}
 
     def _tool_list_issue_statuses(
         self,
@@ -4904,6 +4942,31 @@ class FakeTrackerPort:
             action=EnsureAction.CREATED,
             identifier=identifier,
         )
+
+
+class FakeScopeStatusWriter:
+    """In-process ``ScopeStatusWriter`` that records what it was asked to post.
+
+    It refuses exactly what the shipped adapter refuses before any call — a
+    scope kind with no status surface, and a body with nothing in it — and
+    records nothing when it does, so a fixture cannot read a refused post as
+    a landed one.
+    """
+
+    def __init__(self) -> None:
+        self.posts: list[tuple[ScopeRef, str]] = []
+
+    async def post_status_update(self, *, ref: ScopeRef, body: str) -> None:
+        await asyncio.sleep(0)
+        if ref.kind not in STATUS_UPDATE_SCOPE_KINDS:
+            raise ScopeStatusError(
+                ref=ref, reason="this scope kind carries no status update"
+            )
+        if not body.strip():
+            raise ScopeStatusError(
+                ref=ref, reason="a status update with no body states nothing"
+            )
+        self.posts.append((ref, body))
 
 
 class FakeDeliveryProbe:

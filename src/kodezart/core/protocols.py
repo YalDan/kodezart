@@ -1501,6 +1501,20 @@ class WorkRefReader(Protocol):
     async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]: ...
 
 
+@runtime_checkable
+class ScopeStatusWriter(Protocol):
+    """Post one point-in-time status update on a scope's container.
+
+    A role narrowed out of the port rather than a widening of it: the scope
+    terminal makes exactly this one write and states exactly it, so the
+    tracker port grows no member and the consumer depends on nothing wider
+    (KOD-829).  ``ref`` addresses the container; ``body`` is the whole
+    content, already derived and already gated by the caller.
+    """
+
+    async def post_status_update(self, *, ref: ScopeRef, body: str) -> None: ...
+
+
 #: Called with the workspace a commit was made in and the receipt it
 #: returned, between the push and the completion of the persisting phase.
 AfterPublish = Callable[[str, PersistResult], Awaitable[None]]

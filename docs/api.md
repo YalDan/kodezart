@@ -281,9 +281,11 @@ entry per fire, so a lane named twice there was fired twice. A lane whose
 criteria are all Done takes ONE delivery-only turn per invocation and rests
 after it, whatever that turn's fire did: either the pull request is on the
 lane's record and nothing is left to do, or nothing about the lane moved and an
-identical turn would say the same. Scheduled configured-scope lookup,
-concurrent lane marks and cross-job branch recovery are separate requirements. A
-lane re-enters from its own tracker record and the
+identical turn would say the same. On a project or initiative scope the
+same report is posted as one status update on the container; a milestone or
+issue scope has no status surface and ends with the event alone. Scheduled
+configured-scope lookup, concurrent lane marks and cross-job branch recovery are
+separate requirements. A lane re-enters from its own tracker record and the
 remote head of the branch that record names; no graph state is persisted for the
 scope path, so nothing is replayed and a killed process changes nothing about
 the next decision (KOD-684, KOD-840). Re-entering is posting the same request

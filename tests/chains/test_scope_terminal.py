@@ -10,6 +10,8 @@ Every walk here is bounded by the fixture's own ``bounded_walk``, and each
 tick count is a literal observed from the run before it was written down.
 """
 
+from kodezart.domain.scope_terminal import render_scope_status
+from kodezart.types.domain.gating import ContentClass, OutboundDestination
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
@@ -130,3 +132,61 @@ async def test_an_issue_kind_scope_reports_the_same_vector():
 
     assert report.scope == scope
     assert [lane.issue for lane in report.lanes] == ["A"]
+
+
+# ---------------------------------------------------------------------------
+# KOD-484 — the report is posted on the container, through this lane's own
+# destination member, and a scope with no status surface posts nothing.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_walk_posts_its_report_on_the_scopes_own_container():
+    harness = runtime(port=board(lanes=("A",)))
+
+    events = await bounded_walk(harness)
+
+    report = terminals(events)[0]
+    assert [ref for ref, _ in harness.status.posts] == [SCOPE]
+    assert harness.status.posts[0][1] == render_scope_status(report)
+
+
+async def test_the_posted_report_carries_the_outcome_and_one_line_per_lane():
+    harness = runtime(port=board(lanes=("A", "B")), lanes=("A", "B"))
+
+    await bounded_walk(harness)
+
+    body = harness.status.posts[0][1]
+    assert body.splitlines()[0] == "Scope outcome: scope_converged"
+    assert len([line for line in body.splitlines() if line.startswith("- [")]) == 2
+    assert "A" in body and "B" in body
+
+
+async def test_the_report_goes_through_the_gate_on_this_lanes_own_destination():
+    """One gated write on this destination, carrying the report's own bytes.
+
+    The walk shares one gate with every other writer of the run, so the claim
+    is about this destination's entries in it and not about the whole log:
+    exactly one, declared DERIVED, carrying what the report rendered to.
+    """
+    harness = runtime(port=board(lanes=("A",)))
+
+    report = terminals(await bounded_walk(harness))[0]
+
+    gate = harness.engine._scoped_arm._terminal._gate
+    assert gate.destinations.count(OutboundDestination.TRACKER_STATUS_UPDATE) == 1
+    at = gate.destinations.index(OutboundDestination.TRACKER_STATUS_UPDATE)
+    assert gate.content_classes[at] is ContentClass.DERIVED
+    assert gate.calls[at][0] == render_scope_status(report)
+
+
+async def test_a_scope_with_no_status_surface_ends_with_the_event_alone():
+    """An issue-kind scope has no container to post on, and none is invented."""
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key="A")
+    port = board(lanes=("A",))
+    port.scope_memberships[scope] = ("A",)
+    harness = runtime(port=port)
+
+    events = await bounded_walk(harness, scope=scope, origin=ORIGIN)
+
+    assert len(terminals(events)) == 1
+    assert harness.status.posts == []

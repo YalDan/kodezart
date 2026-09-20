@@ -1,6 +1,7 @@
-"""Pure readings of one scope reading, for the terminal that reports it."""
+"""Pure readings of one scope reading, and the body its report renders to."""
 
 from kodezart.types.domain.scope_ready import ScopeReadySet
+from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 
 
 def lane_roster(ready: ScopeReadySet) -> tuple[tuple[str, bool], ...]:
@@ -37,3 +38,29 @@ def lane_roster(ready: ScopeReadySet) -> tuple[tuple[str, bool], ...]:
             f"the reading groups lanes the scope does not carry: {unplaced}"
         )
     return tuple((key, key in done) for key in order if key in lanes)
+
+
+def render_scope_status(event: ScopeTerminalEvent) -> str:
+    """The status update's body: one line for the outcome, one line per lane.
+
+    No url, no count in digits, no date and no job id.  A url is the one
+    thing on this vector a reference scanner has cause to rewrite, and a
+    derived report the gate rewrote is a different claim rather than a
+    weaker one — so leaving it out is what keeps a correct report from being
+    refused on a deployment whose forge host is private.  Where the delivery
+    is remains on the wire event and on the lane's own record, which is
+    where a reader already looks it up.
+    """
+    lines = [f"Scope outcome: {event.outcome.value}", ""]
+    for lane in event.lanes:
+        mark = "x" if lane.done else " "
+        branch = (
+            "no branch recorded" if lane.branch is None else f"branch {lane.branch}"
+        )
+        delivery = (
+            "no pull request recorded"
+            if lane.pr is None
+            else f"pull request #{lane.pr.number}"
+        )
+        lines.append(f"- [{mark}] {lane.issue} \u2014 {branch} \u2014 {delivery}")
+    return "\n".join(lines)

@@ -92,6 +92,7 @@ from tests.fakes import (
     FakeGitService,
     FakeRefPublisher,
     FakeRepoCache,
+    FakeScopeStatusWriter,
     FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
@@ -206,6 +207,7 @@ class Harness:
     artifacts: FakeArtifactPersister
     saver: InMemorySaver
     workspace: FakeWorkspaceProvider
+    status: FakeScopeStatusWriter
 
 
 def runtime(
@@ -254,6 +256,7 @@ def runtime(
         persister=persister if persister is not None else FakeChangePersister(),
     )
     artifacts = FakeArtifactPersister()
+    status = FakeScopeStatusWriter()
     saver = saver or InMemorySaver()
     # Pair the fake filesystem/Git boundary with its immutable-source double.
     # The production builder, native owner and graph remain actual consumers.
@@ -298,8 +301,9 @@ def runtime(
             checkpointer=saver,
             criteria=TrackerCriteria(tracker=port),
             scope_tracker=port,
+            scope_status=status,
         )
-    return Harness(engine, port, executor, service, artifacts, saver, workspace)
+    return Harness(engine, port, executor, service, artifacts, saver, workspace, status)
 
 
 def drive(harness, *, job="scope-job", scope=SCOPE, origin=ORIGIN, path=None):

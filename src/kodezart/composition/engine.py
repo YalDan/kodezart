@@ -36,6 +36,7 @@ from kodezart.core.protocols import (
     PromptSetProvider,
     RefPublisher,
     RepoCache,
+    ScopeStatusWriter,
     TrackerPort,
     WorkflowEngine,
     WorkspaceProvider,
@@ -190,6 +191,7 @@ def build_workflow_engine(
     checkpointer: BaseCheckpointSaver[str] | None,
     criteria: FireCriteriaSource | None = None,
     scope_tracker: TrackerPort | None = None,
+    scope_status: ScopeStatusWriter | None = None,
     operation: OperationConfig | None = None,
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.
@@ -379,6 +381,11 @@ def build_workflow_engine(
     if scope_tracker is not None:
         if criteria is None:
             raise ValueError("Scope execution requires a native criterion source")
+        if scope_status is None:
+            # Refused rather than defaulted to a writer that posts nothing: a
+            # scope arm composed without one would walk, certify nothing and
+            # say nothing, which is the state the terminal exists to end.
+            raise ValueError("Scope execution requires a scope status writer")
         if operation is None:
             # The marker every lane's record is read and written under comes
             # from here, so this is the typed absence refusal the rest of
@@ -425,6 +432,8 @@ def build_workflow_engine(
             repositories=repositories,
             config=config,
             operation=operation,
+            status=scope_status,
+            gate=gate,
         )
     return OriginRoutedWorkflowEngine(
         forge_arm=forge_arm,

@@ -5,7 +5,14 @@ from collections.abc import Sequence
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.config.app import AppConfig
-from kodezart.core.protocols import DeliveryProbe, GitService, RepoCache, TrackerPort
+from kodezart.core.protocols import (
+    DeliveryProbe,
+    GitService,
+    OutboundContentGate,
+    RepoCache,
+    ScopeStatusWriter,
+    TrackerPort,
+)
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
@@ -26,6 +33,8 @@ def build_scope_runtime(
     repositories: Sequence[RepoEntry],
     config: AppConfig,
     operation: OperationConfig,
+    status: ScopeStatusWriter,
+    gate: OutboundContentGate,
 ) -> ScopeWorkflowEngine:
     """One request controller; the existing origin predicate chooses capabilities.
 
@@ -56,7 +65,7 @@ def build_scope_runtime(
             refs=RecordedDeliverableRefs(records=records),
         ),
         entries=LaneEntryReader(records=records, git=git, remote=config.git.remote),
-        terminal=ScopeTerminal(records=records),
+        terminal=ScopeTerminal(records=records, status=status, gate=gate),
         cache=cache,
         repositories=repositories,
         git_base_url=config.git.base_url,
