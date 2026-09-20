@@ -11,6 +11,7 @@ import json
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.chains.fire_time_ruling import rule_open_questions
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import NoStructuredOutputError, TrackerUnavailableError
 from kodezart.domain.amendment import NativeWriteRefusalError
@@ -19,6 +20,7 @@ from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import ResultEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, ToolPreset
@@ -121,6 +123,17 @@ async def executed(fire, state, config) -> list[str]:
     ):
         names.extend(update)
     return names
+
+
+async def snapshots(fire, state, config) -> list[dict]:
+    """Every state this fire actually produced, in order, the last included."""
+    assert fire.native_graph is not None
+    return [
+        snapshot
+        async for snapshot in fire.native_graph.astream(
+            state, config=config, stream_mode="values"
+        )
+    ]
 
 
 def staged(executor=None, **changes):
@@ -568,6 +581,27 @@ def registry_block(prompt: str) -> str:
     return prompt.partition("<pinned_rulings>")[2].partition("</pinned_rulings>")[0]
 
 
+class AltersAfterStep(FakeTrackerPort):
+    """Rewrites the answer a reader finds, once it is told the step is done.
+
+    The step's own read-back has already run by then, so whatever the loop
+    renders can only be what a reader finds on the board now.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.alter = False
+
+    async def list_comments(self, *, issue_key: str):
+        listed = await super().list_comments(issue_key=issue_key)
+        if not self.alter:
+            return listed
+        return tuple(
+            altered_resolution(comment, TAMPERED) if is_record(comment) else comment
+            for comment in listed
+        )
+
+
 @pytest.mark.parametrize("answered", [True, False])
 async def test_the_first_iteration_prompt_carries_the_pinned_answer(
     answered,
@@ -587,8 +621,9 @@ async def test_the_first_iteration_prompt_carries_the_pinned_answer(
         git=git,
         workspace=workspace,
     )
+    state, config = prepare(fire)
 
-    events = await drive(fire, scope=SCOPE)
+    produced = await snapshots(fire, state, config)
 
     prompt = executor.execution_prompts[0]
     block = registry_block(prompt)
@@ -611,12 +646,83 @@ async def test_the_first_iteration_prompt_carries_the_pinned_answer(
     assert executor.board_at_execution and all(
         len(snapshot) == 1 for snapshot in executor.board_at_execution
     )
-    # And no value of the final state carries it.
-    assert all(
-        ANSWER["resolution"] not in str(value)
-        for value in prepared(fire, entry=None).values()
+    # And no channel of any state this graph produced carries it, the last
+    # state the walk left included.
+    assert produced
+    for snapshot in produced:
+        assert all(
+            ANSWER["resolution"] not in str(value) for value in snapshot.values()
+        )
+
+
+async def test_the_first_iterations_block_is_read_off_the_tracker_at_loop_start() -> (
+    None
+):
+    """The record changes on the board after the step, and the loop shows that.
+
+    Nothing the step returned can account for the text below: the answer it
+    wrote is not the answer a reader finds when the loop opens.
+    """
+    port = variant(AltersAfterStep)
+    executor = NativeExecutor([native_evaluation(reconciled=True) for _ in range(4)])
+    executor.question_answers = [{"rulings": [ANSWER]}]
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        real_loop=True,
+        git=git,
+        workspace=workspace,
     )
-    assert events
+    state, config = prepare(fire)
+    assert fire.native_graph is not None
+
+    # The board is rewritten between two supersteps: after the step returned,
+    # before the loop node runs.
+    async for update in fire.native_graph.astream(
+        state, config=config, stream_mode="updates"
+    ):
+        if STEP in update:
+            port.alter = True
+
+    block = registry_block(executor.execution_prompts[0])
+    assert TAMPERED in block
+    assert ANSWER["resolution"] not in block
+
+
+async def test_the_step_returns_no_update_into_graph_state() -> None:
+    """Called directly, with the record written: nothing to carry forward."""
+    port = variant(FakeTrackerPort)
+    executor = NativeExecutor([])
+    executor.question_answers = [{"rulings": [ANSWER]}]
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        git=git,
+        workspace=workspace,
+    )
+    source = TrackerCriteria(tracker=port)
+    spec = await source.read_spec(issue_key=SUBJECT)
+    current = await source.read_current(spec=spec, held=None)
+    _, config = prepare(fire)
+
+    update = await rule_open_questions(
+        {
+            "fire_spec": spec,
+            "criterion_set": current,
+            "work_base_ref": "main",
+            "repo_visibility": RepoVisibility.PUBLIC,
+        },
+        config,
+        rulings=fire.rulings,
+    )
+
+    assert update == {}
+    # Non-vacuous: the pass did answer, and the answer is on the tracker.
+    assert [comment for comment in port.comments if is_record(comment)]
 
 
 # ---------------------------------------------------------------------------
