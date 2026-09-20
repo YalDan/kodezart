@@ -8,6 +8,8 @@ a milestone, which has no label level of its own.
 
 import pytest
 
+from kodezart.core.errors import TrackerUnavailableError
+from kodezart.domain.errors import ScopeNotApprovedError, ScopeReadError
 from kodezart.services.scope_approval import scope_approved
 from kodezart.types.domain.operation import OperationMemberAbsentError, ScopeLabel
 from kodezart.types.domain.scope import ScopeRef
@@ -83,6 +85,44 @@ async def test_approval_on_the_project_admits_an_issue_scope_under_it(
 
     approval.labels(PROJECT, ScopeLabel.APPROVED)
     assert await scope_approved(ref=ROOT, tracker=approval.tracker) is True
+
+
+async def test_a_project_scope_is_approved_by_its_initiative(
+    approval: ApprovalFixture,
+) -> None:
+    """A container scope reads its own labels and then walks upward.
+
+    The milestone case reaches the initiative through two edges, so it
+    cannot tell a walk that stops at the project from one that continues.
+    This one addresses the project itself.
+    """
+    assert await scope_approved(ref=PROJECT, tracker=approval.tracker) is False
+
+    approval.labels(INITIATIVE, ScopeLabel.APPROVED)
+    assert await scope_approved(ref=PROJECT, tracker=approval.tracker) is True
+
+    approval.labels(INITIATIVE)
+    assert await scope_approved(ref=PROJECT, tracker=approval.tracker) is False
+
+
+@pytest.mark.parametrize("ref", [PROJECT, INITIATIVE])
+async def test_a_missing_container_propagates_as_a_read_error(
+    approval: ApprovalFixture, ref: ScopeRef
+) -> None:
+    """A container the tracker cannot read is never read as "not approved".
+
+    Answering False for an unreadable node would admit nothing and name a
+    withheld approval as the cause, when the cause is a container that is
+    gone. The read error reaches the caller instead.
+    """
+    approval.fake.scope_containers.pop(ref, None)
+    approval.server.projects.pop(ref.key, None)
+    approval.server.initiatives.pop(ref.key, None)
+
+    with pytest.raises((ScopeReadError, TrackerUnavailableError)) as caught:
+        await scope_approved(ref=ref, tracker=approval.tracker)
+
+    assert not isinstance(caught.value, ScopeNotApprovedError)
 
 
 @pytest.mark.parametrize("ref", [CHILD, PROJECT])
