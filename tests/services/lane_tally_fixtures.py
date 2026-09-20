@@ -11,9 +11,10 @@ from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.tally_supervisor import SIGNAL, TallySupervisor
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import OperationConfig, ScopeLabel
 from kodezart.types.domain.run_alarm import LaneSubject
 from kodezart.types.domain.run_state import LaneCommit, LaneRunState
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import FakeTrackerPort, make_tracker_issue
 
@@ -27,6 +28,9 @@ PREFIXES = {
     "run_event": "fixture-runevent",
     "run_alarm": "fixture-runalarm",
 }
+#: The criteria-stage label the board's lanes carry, as the walker's own
+#: fixtures spell it, so a scoped read of this board selects them.
+STAGED = "criteria-staged"
 
 #: Every board built through this module, with the lanes it was built for, so a
 #: surface assertion can be applied to every fixture rather than to the ones
@@ -101,13 +105,37 @@ def lane_state(lane, *, commits):
     )
 
 
-async def board(*, lanes, commits=("sha-one", "sha-two"), prefixes=PREFIXES):
-    """Each lane's issue, its criterion family, and the record its loop left."""
+async def board(
+    *, lanes, commits=("sha-one", "sha-two"), prefixes=PREFIXES, scope=None
+):
+    """Each lane's issue, its criterion family, and the record its loop left.
+
+    With *scope* the same board is also addressable as that scope: the lanes
+    are its members and each is approved, so the walker's own ready read
+    answers for it and a composed tick can read this board rather than a
+    second one written to agree with it.
+    """
     port = FakeTrackerPort(
         issues=[
-            row for lane in lanes for row in (make_tracker_issue(lane), *subtree(lane))
+            row
+            for lane in lanes
+            for row in (
+                make_tracker_issue(
+                    lane,
+                    issue_labels=frozenset() if scope is None else frozenset({STAGED}),
+                ),
+                *subtree(lane),
+            )
         ],
         marker_prefixes=prefixes,
+        scope_memberships=None if scope is None else {scope: tuple(lanes)},
+        criteria_stage_label_key=None if scope is None else STAGED,
+        scope_label_members=None
+        if scope is None
+        else {
+            ScopeRef(kind=ScopeKind.ISSUE, key=lane): frozenset({ScopeLabel.APPROVED})
+            for lane in lanes
+        },
     )
     for lane in lanes:
         await port.post_comment(
