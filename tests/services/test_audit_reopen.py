@@ -7,6 +7,7 @@ reopen that took no lease or handed over a stale ``expected`` fails here for
 the reason it would fail against the backend.
 """
 
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 
 import pytest
@@ -73,8 +74,13 @@ def issue(key: str, *, criterion: bool, state: WorkflowStateKind) -> TrackerIssu
 class JournallingPort(FakeTrackerPort):
     """The port double plus a journal of the reopen's own calls and moves."""
 
-    def __init__(self, **kwargs: object) -> None:
-        super().__init__(**kwargs)  # type: ignore[arg-type]
+    def __init__(
+        self,
+        *,
+        issues: Sequence[TrackerIssue] = (),
+        marker_prefixes: Mapping[str, str] | None = None,
+    ) -> None:
+        super().__init__(issues=issues, marker_prefixes=marker_prefixes)
         #: Every reopen call: the criterion, the holder it supplied, and the
         #: holder actually granted the criterion surface at that moment.
         self.resets: list[tuple[str, str | None, str | None]] = []
