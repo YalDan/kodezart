@@ -13,9 +13,18 @@ import pytest
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.fire_time_ruling import rule_open_questions
 from kodezart.core.constants import EVAL_PERMISSION_MODE
-from kodezart.core.errors import NoStructuredOutputError, TrackerUnavailableError
+from kodezart.core.errors import (
+    NoStructuredOutputError,
+    TrackerAccessDeniedError,
+    TrackerProtocolError,
+    TrackerUnavailableError,
+)
 from kodezart.domain.amendment import NativeWriteRefusalError
-from kodezart.domain.errors import FireSpecEntryError, SurfaceLeaseError
+from kodezart.domain.errors import (
+    FireSpecEntryError,
+    SurfaceLeaseError,
+    TransientAPIError,
+)
 from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import ResultEvent, WorkflowCompleteEvent
@@ -322,12 +331,36 @@ def altered_resolution(comment: TrackerComment, text: str) -> TrackerComment:
     )
 
 
+#: Each typed failure of the record's own write that leaves no confirmed
+#: record, by the row that raises it.  One row per TYPE and not per message:
+#: what the step converts is the type, so rows sharing one would not say
+#: which of them the outcome below came from.
+WRITE_FAILURES = {
+    "write_unavailable": lambda: TrackerUnavailableError(
+        "the record write is unavailable"
+    ),
+    "write_denied": lambda: TrackerAccessDeniedError(
+        "the configured authority may not comment on this issue"
+    ),
+    "write_unreadable": lambda: TrackerProtocolError(
+        "the record write answered a shape this adapter cannot read",
+        tool="upsert_comment",
+        detail="the response carries no comment identity",
+    ),
+    "write_transient": lambda: TransientAPIError("the record write answered 503"),
+}
+
+
 class WriteFails(FakeTrackerPort):
     """The record's own write fails; every other write of the board is fine."""
 
+    def __init__(self, *args, failure, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._failure = failure
+
     async def upsert_comment(self, *, target, marker, body, holder=None, expected=None):
         if marker.startswith(f"[{RULING_PREFIX}"):
-            raise TrackerUnavailableError("the record write is unavailable")
+            raise self._failure()
         return await super().upsert_comment(
             target=target, marker=marker, body=body, holder=holder, expected=expected
         )
@@ -342,6 +375,18 @@ class LeaseRefused(FakeTrackerPort):
             surface=next(iter(surfaces)),
             current_holder="another-job",
         )
+
+
+class LeaseLost(FakeTrackerPort):
+    """The grant stands and its renewal cannot confirm the declared set.
+
+    The port answers ``None``, which names neither a competing holder nor an
+    unheld surface, so the run's own lease raises out of ``renew`` rather
+    than writing on under a lease it cannot vouch for.
+    """
+
+    async def renew_surfaces(self, *, surfaces, holder, lease_seconds):
+        return None
 
 
 class HidesRecord(FakeTrackerPort):
@@ -423,13 +468,21 @@ def unconfirmed(shape):
         return port, executor
     executor = NativeExecutor([])
     executor.question_answers = [{"rulings": [ANSWER]}]
+    if shape in WRITE_FAILURES:
+        return variant(WriteFails, failure=WRITE_FAILURES[shape]), executor
     if shape == "judged_refuted":
         executor.findings = [dict(REFUTED)]
         return variant(FakeTrackerPort), executor
-    if shape == "write_fails":
-        return variant(WriteFails), executor
     if shape == "lease_refused":
         return variant(LeaseRefused), executor
+    if shape == "lease_lost":
+        return variant(LeaseLost), executor
+    if shape == "verifier_read_fails":
+        # Hidden from the first listing on, so the window's own re-read of
+        # what it just wrote is the read that cannot find it.
+        port = variant(HidesRecord)
+        port.hide = True
+        return port, executor
     if shape == "read_back_malformed":
         return variant(MalformsRecord), executor
     return variant(AltersRecord), executor
@@ -438,9 +491,11 @@ def unconfirmed(shape):
 @pytest.mark.parametrize(
     "shape",
     [
-        "write_fails",
+        *WRITE_FAILURES,
         "lease_refused",
+        "lease_lost",
         "judged_refuted",
+        "verifier_read_fails",
         "read_back_empty",
         "read_back_changed",
         "read_back_malformed",
@@ -449,7 +504,7 @@ def unconfirmed(shape):
 async def test_an_unconfirmed_pin_halts_before_the_loop_with_its_own_outcome(
     shape,
 ) -> None:
-    """Six ways to fail, one terminal: the loop was never entered."""
+    """Every way to fail, one terminal: the loop was never entered."""
     port, executor = unconfirmed(shape)
     git = FakeGitService(remote_branch_shas={"main": "b" * 40})
     workspace = FakeWorkspaceProvider(git=git)
