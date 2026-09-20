@@ -440,8 +440,8 @@ async def test_one_audit_tick_reverifies_a_finished_claim_and_reopens_the_plante
 
     An owner still In Progress carrying two finished criteria graded at the
     head of the branch its lane record names. One of them still holds at that
-    head; the other is the planted false claim. One tick, three runs of
-    nothing: the tick is a single ``run``.
+    head; the other is the planted false claim. The tick is a single ``run``,
+    and a second one over the same board re-judges nothing.
     """
     audit, executor, server, _tracker, _git, workspace, repository = working_scope
     _remote, _author, _observer, _prior, head = repository
@@ -458,6 +458,7 @@ async def test_one_audit_tick_reverifies_a_finished_claim_and_reopens_the_plante
     bodies_before = {
         key: server.issues[key].description for key in (CHILD, SECOND, ROOT)
     }
+    calls_before = len(server.calls)
 
     assert await audit.run(FIXTURE_NOW) is PassRun.RAN
     scope = audit.last_report.scopes[0]
@@ -523,4 +524,27 @@ async def test_one_audit_tick_reverifies_a_finished_claim_and_reopens_the_plante
         key: server.issues[key].description for key in bodies_before
     } == bodies_before
     assert not any(row["id"] == ROOT for row in state_writes(server))
+    # The owner is reported deferred for not having reached a terminal state,
+    # and no write of any kind names it — not a state, not a comment.
+    assert [(row.subject.key, row.reason.value) for row in scope.deferred] == [
+        (ROOT, "terminal_not_reached")
+    ]
+    assert [
+        (name, dict(arguments))
+        for name, arguments in server.calls[calls_before:]
+        if name.startswith("save_")
+        and ROOT in {arguments.get("id"), arguments.get("issueId")}
+    ] == []
+
+    # A second tick over the same board judges nothing again: the criterion the
+    # first one reopened is unstarted, so it has made no claim to re-judge.
+    claims = sessions(executor, AUDIT_CLAIM_SCHEMA)
+    assert await audit.run(FIXTURE_NOW + timedelta(seconds=60)) is PassRun.RAN
+    second = audit.last_report.scopes[0]
+    assert second.status == "complete", second.model_dump_json()
+    assert [(row.subject.key, row.reason.value) for row in second.deferred] == [
+        (CHILD, "claim_not_made")
+    ]
+    assert sessions(executor, AUDIT_CLAIM_SCHEMA) == claims
+    assert state_writes(server) == [{"id": CHILD, "state": unstarted_state(server)}]
     assert not workspace._workspaces
