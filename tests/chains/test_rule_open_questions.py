@@ -549,6 +549,19 @@ async def test_a_remediation_round_passes_the_step_again_and_writes_nothing() ->
         for write in port.comment_writes
         if write[1].startswith(f"[{RULING_PREFIX}") or ANSWER["resolution"] in write[1]
     ] == [(records[0].comment_key, records[0].body)]
+    # An identical re-write of identical text is invisible in that journal, so
+    # the two things a second write cannot do without: the record was judged
+    # once, and its surface was held once — one grant and the one renewal the
+    # write makes inside it.
+    assert len(executor.judge_sessions) == 1
+    held = [
+        lease
+        for lease in port.lease_writes
+        if any(
+            surface.marker.startswith(f"[{RULING_PREFIX}") for surface in lease.surfaces
+        )
+    ]
+    assert len(held) == 2
 
 
 # ---------------------------------------------------------------------------
