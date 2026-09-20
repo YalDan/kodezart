@@ -344,6 +344,13 @@ def test_signal_module_is_pure_and_count_comparisons_have_no_literal_bound(
         and node.func.id in forbidden_calls
         for node in ast.walk(tree)
     )
+    # Arithmetic over values it was handed has nothing to await. With the
+    # import allow-list an await cannot by itself reach I/O, but "performs no
+    # I/O" is held directly by there being nothing here that could wait.
+    assert not any(
+        isinstance(node, (ast.Await, ast.AsyncFunctionDef, ast.AsyncFor, ast.AsyncWith))
+        for node in ast.walk(tree)
+    )
     assert not any(
         isinstance(child, ast.Constant) and isinstance(child.value, (int, float))
         for node in ast.walk(tree)
