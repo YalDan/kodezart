@@ -69,6 +69,16 @@ async def test_escalation_writes_complete_before_the_report_step(instructed):
     assert (
         landed(server, "save_issue", id=CHILD, addLabels=["needs-decision"]) < report_at
     )
+    # Bounded by the write that cites it, not only by the report: an escalation
+    # raised at the top of the report step would still precede the summary.
+    refutation = next(
+        row
+        for row in server.comments
+        if row.issue_id == CHILD and '"detector":"current_check"' in row.body
+    )
+    assert landed(server, "save_comment", body=escalation.body) < landed(
+        server, "save_comment", body=refutation.body
+    )
 
 
 async def test_every_summary_claim_resolves_to_a_record_at_report_time(instructed):
@@ -88,7 +98,10 @@ async def test_every_summary_claim_resolves_to_a_record_at_report_time(instructe
                 ):
                     kind = record["surface"]["kind"]
                     if kind == "marker_comment":
-                        found = next(row for row in server.comments if row.id == ref)
+                        found = next(
+                            (row for row in server.comments if row.id == ref), None
+                        )
+                        assert found is not None, ref
                         assert found.body == record["content"]
                     else:
                         # The classification record addresses the criterion
@@ -140,7 +153,13 @@ async def test_a_report_step_that_raises_leaves_every_escalation_recorded(instru
 
     assert [row.subject for row in scope.unavailable] == [scope.scope]
     assert summary_writes(server) == []
-    assert any(row.body.startswith(ESCALATION_PREFIX) for row in server.comments)
+    # Byte-identical to the escalation the scope recorded first: a body
+    # rewritten under the same marker on the way out is the one rollback this
+    # port can express, and it would leave the prefix standing.
+    escalation = next(
+        row for row in server.comments if row.body.startswith(ESCALATION_PREFIX)
+    )
+    assert escalation.body == scope.writes[0].artifact.content
     assert "needs-decision" in server.issues[CHILD].labels
     # The reopen does not depend on the report step.
     assert state_writes(server) == [{"id": CHILD, "state": unstarted_state(server)}]

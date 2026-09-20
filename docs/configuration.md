@@ -824,7 +824,10 @@ after the scope summary. It holds a lease on the criterion's own surface, runs
 inside write-back verification, carries nothing but the criterion's key and the
 state, and edits no body and no Evidence row: the evidence is the verified
 refutation comment beside it. The owning issue is never written; its state
-follows from the tracker's own rollup.
+follows from the tracker's own rollup. A report step that cannot complete
+refuses the scope's coverage in place: every write already recorded — the
+escalation, the classification and the refutation — stays where it is, and the
+reset still runs.
 
 Unverifiable claims make no claim-publication write and no state write. A
 refuted forge, over-claim, detector-removal or terminal report is published and
