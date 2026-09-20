@@ -205,6 +205,7 @@ async def _runtime(
     tracker: FakeTrackerPort | None,
     runner: FakeAgentRunner,
     operation: OperationConfig | None = None,
+    reconciled: OperationConfig | None = None,
     prompt_set: str = DEFAULT_SET,
     **overrides: object,
 ) -> DispatchRuntime:
@@ -214,6 +215,11 @@ async def _runtime(
     because that is what the root does: every refusal the passes can raise
     is settled before anything stateful is built, and the builder below
     re-checks none of it.
+
+    *reconciled* is the operation the dialled tracker carries, where a caller
+    needs it to differ from the one handed in raw. Preflight still runs on the
+    raw copy, as the root's does. Left out, the two are one object, so nothing
+    downstream can tell which copy it was handed.
     """
     declared = example_config() if operation is None else operation
     config = _config(tmp_path, **overrides)
@@ -234,7 +240,7 @@ async def _runtime(
         recorder=RunRecorder(records={}, sinks={}),
         config=config,
         operation=declared,
-        dialled=dialled_over(tracker, declared),
+        dialled=dialled_over(tracker, declared if reconciled is None else reconciled),
         github_api=None,
         queue=queue,
         registry=queue,
