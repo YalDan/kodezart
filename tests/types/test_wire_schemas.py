@@ -31,6 +31,7 @@ from kodezart.types.domain.agent import (
     DraftCritiqueOutput,
     GeneratedCriteriaOutput,
     PRDescriptionOutput,
+    RulingOutput,
     TicketDraftOutput,
     TicketReviewOutput,
 )
@@ -91,6 +92,7 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "ORGANIZE_ADMISSION_SCHEMA": AdmissionJudgment,
     "ORGANIZE_PROPOSAL_SCHEMA": OrganizeProposal,
     "WRITE_BACK_SCHEMA": WriteBackFinding,
+    "RULING_SCHEMA": RulingOutput,
     "AUDIT_CLAIM_SCHEMA": AuditClaimJudgment,
     "AUDIT_OVERCLAIM_SCHEMA": AuditOverclaimJudgment,
     "AUDIT_MANDATE_SCHEMA": AuditMandateJudgment,
@@ -221,6 +223,12 @@ AUDIT_SCHEMA_BINDINGS = [
         ("FreshWriteBackJudge", "judge"),
         "judge_in_workspace",
         "WRITE_BACK_SCHEMA",
+    ),
+    (
+        "services/fire_time_rulings.py",
+        ("FireTimeRulings", "_answers"),
+        "judge_in_workspace",
+        "RULING_SCHEMA",
     ),
     (
         "chains/organize.py",

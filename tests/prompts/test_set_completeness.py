@@ -87,6 +87,7 @@ def test_the_legacy_set_stays_complete_when_the_default_names_another_set(
         PromptKey.ORGANIZE_AUTHOR,
         PromptKey.ORGANIZE_VERIFY,
         PromptKey.ORGANIZE_CRITERIA_AUTHOR,
+        PromptKey.FIRE_TIME_RULING,
     ],
 )
 def test_a_set_missing_one_key_raises_the_typed_boot_error(

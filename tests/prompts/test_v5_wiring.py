@@ -88,6 +88,7 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "iteration_feedback": ("failed_criteria",),
     "knowledge_map": (),
     "fire_record": (),
+    "fire_time_ruling": ("issue_key", "pinned_answers", "task_md"),
     "post_merge_review": ("acceptance_criteria", "changeset"),
     "pr_description": ("ticket", "acceptance_criteria"),
     "remediation_ticket": ("ticket", "done_work", "failure_evidence"),

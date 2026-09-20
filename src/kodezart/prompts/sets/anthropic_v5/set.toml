@@ -226,6 +226,7 @@ keys = [
     "audit_overclaim",
     "audit_detection_removal",
     "audit_mandate",
+    "fire_time_ruling",
 ]
 
 [session_roles.implementation]

@@ -56,10 +56,19 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.write_back import WriteBackFinding
 from tests.chains import test_organize_owner as organize_suite
+from tests.chains.test_native_fire import DIRECT_OWED
 from tests.chains.test_native_fire import tracker as native_tracker
 from tests.chains.test_organize import result
 from tests.chains.test_organize_owner import factory, run_owner
 from tests.fakes import FakeMcpIssue
+from tests.services.test_fire_time_rulings import (
+    HOLDER,
+    ambiguous_body,
+    one_answer,
+)
+from tests.services.test_fire_time_rulings import Executor as QuestionExecutor
+from tests.services.test_fire_time_rulings import build as question_step
+from tests.services.test_fire_time_rulings import run as run_question_step
 from tests.services.test_native_amendments import (
     Executor,
     build,
@@ -498,6 +507,30 @@ async def test_every_criterion_evaluator_write_passes_the_verifier(
     }
 
 
+async def test_every_open_question_write_passes_the_verifier(repository, monkeypatch):
+    """The pre-loop step's record lands inside its own surface's window."""
+    journal = observe(monkeypatch)
+    port = RecordingTracker(
+        native_tracker(bodies={DIRECT_OWED: ambiguous_body()}), journal
+    )
+    executor = QuestionExecutor([[one_answer()]])
+    step, spec, current, workspace, _, _, repo_path, base = await question_step(
+        repository, executor, port=port
+    )
+    try:
+        await run_question_step(step, spec, current, repo_path, base)
+    finally:
+        await cleanup(workspace)
+
+    require_adoption(journal)
+    methods = [write.method for write in journal.writes]
+    assert methods.index("acquire_surfaces") < methods.index("upsert_comment")
+    wrote = next(write for write in journal.writes if write.method == "upsert_comment")
+    assert wrote.kwargs["target"] == DIRECT_OWED
+    assert wrote.kwargs["holder"] == HOLDER
+    assert wrote.kwargs["expected"] is None
+
+
 # The runs above answer for the writes those runs happen to make.  The
 # Check is about CALL SITES: a step wired straight at the port, in a path
 # neither run walks, is a bypass the observed journal never sees.  So the
@@ -895,6 +928,19 @@ def test_a_writer_a_step_delegates_to_is_verified_with_it():
     )
     assert delegated in production.call_sites(artifact_writes())
     assert delegated not in production.outside_a_write_back(artifact_writes())
+
+
+def test_the_open_question_record_write_is_a_steps_own_write():
+    """The pre-loop record grows neither register: the step owns its write."""
+    production = Production(production_sources())
+    site = CallSite(
+        module="services/fire_time_rulings.py",
+        function="_PinStep.write",
+        method="upsert_comment",
+    )
+    assert site in production.call_sites(artifact_writes())
+    assert site not in production.outside_a_write_back(artifact_writes())
+    assert production.authored(site)
 
 
 def test_no_write_outside_a_write_back_puts_authored_content_on_a_surface():

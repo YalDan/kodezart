@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.rulings import parse_ruling, render_ruling, ruling_marker
-from kodezart.types.domain.agent import Ruling, RulingAuthor, RulingClass, RulingOutput
+from kodezart.types.domain.agent import Ruling, RulingAuthor, RulingClass
 from kodezart.types.domain.operation import OperationMemberAbsentError
 
 PREFIXES = {"ruling": "fixture-pinned", "decision": "fixture-answer"}
@@ -54,7 +54,6 @@ async def test_closed_model_and_pinned_text_round_trip_every_author_and_class(
         ruling_id=original.ruling_id, lane_key=LANE, marker_prefixes=PREFIXES
     )
     assert "fixture-pinned:lane%3Acaf%C3%A9%2Falpha:" in body
-    assert RulingOutput(rulings=[parsed]).rulings == [original]
     with pytest.raises(ValidationError, match="frozen"):
         parsed.authored_by = RulingAuthor.PRINCIPAL
 
