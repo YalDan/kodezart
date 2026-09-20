@@ -2828,21 +2828,27 @@ def probe_of(harness, *, origin: str):
 
 
 async def test_a_scope_whose_pull_requests_are_all_open_still_walks_to_completion():
-    """Every lane's delivery is open and every lane fires anyway (KOD-431).
+    """Every lane's delivery is open, over a graph, and every lane fires anyway.
 
-    Run one delivers both lanes, so the origin holds one open pull request per
-    lane. Their criteria are then owed again the way an amendment owes one
-    again, which is the board a scope under review carries: every lane is
-    ready, and every lane's own delivery is open. That the origin reports each
+    The literal scenario KOD-431 excludes, in one walk: every lane's pull
+    request open and unmerged AND a dependency edge across them. Run one
+    delivers both lanes, so the origin holds one open pull request per lane.
+    Their criteria are then owed again the way an amendment owes one again,
+    which is the board a scope under review carries: every lane is ready in
+    turn, and every lane's own delivery is open. That the origin reports each
     of them open is read here through the shipped reader, so the premise is the
     forge's answer and not a guess about how a pull request names its lane.
 
-    The walk then fires both, excludes no candidate for a delivery, and asks
-    the origin what it already has not once. Each lane's existing pull request
-    receives the next commits rather than a second one being opened (KOD-785).
+    B stands on A, so B is a dependent whose OWN pull request is open behind a
+    blocker whose pull request is open too. What releases it is A's criteria
+    being Done — nothing waits for either delivery to land, and no stacked
+    ordering of the two open pull requests is imposed anywhere. The walk fires
+    both, excludes no candidate for a delivery of its own, and asks the origin
+    what it already has not once. Each lane's existing pull request receives
+    the next commits rather than a second one being opened (KOD-785).
     """
     repos = WalkRepos(url=FORGE_ORIGIN)
-    port = board(lanes=("A", "B"))
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
     wire = ScopeForgeWire(head_sha_of=repos.head_of)
     forge = _make_client(wire)
     try:
@@ -2885,20 +2891,44 @@ async def test_a_scope_whose_pull_requests_are_all_open_still_walks_to_completio
         )
         events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
 
-        # Five ticks: each lane's fire, the tick after it that offers the lane
-        # for its delivery alone and finds its pull request already recorded,
-        # and the tick with nothing left to offer.
+        # Five ticks: A's fire, the tick after it that offers A for its delivery
+        # alone and finds its pull request already recorded, then the same pair
+        # for B once A's criterion is Done, and the tick with nothing left to
+        # offer. The edge orders the two fires; it holds neither of them back.
         assert len(ticks_of(events)) == 5
         assert lane_failures(events) == ()
         assert ticks_of(events)[-1].dispatched == ("A", "B")
         assert ticks_of(events)[-1].rested_lanes == ("A", "B")
         assert ticks_of(events)[-1].unresolved_criteria == ()
-        # Not one candidate was passed over for a delivery, and the listing
-        # that would have passed it over was never read.
+        # Not one candidate was passed over for its own delivery, and the
+        # listing that would have passed it over was never read. The one
+        # exclusion the walk does carry is the edge itself: on tick one B
+        # stands behind an A that owes its criterion again, which is a fact
+        # about the graph and not about anybody's pull request.
+        assert [
+            (exclusion.issue_key, exclusion.clause.value, exclusion.detail)
+            for tick in ticks_of(events)
+            for exclusion in tick.exclusions
+        ] == [("B", "live_blocker", "A")]
+        assert [len(tick.exclusions) for tick in ticks_of(events)] == [1, 0, 0, 0, 0]
         assert not [
-            exclusion for tick in ticks_of(events) for exclusion in tick.exclusions
+            exclusion
+            for tick in ticks_of(events)
+            for exclusion in tick.exclusions
+            if exclusion.clause.value == "open_delivery"
         ]
         assert open_listings(wire, after=answered) == []
+        # B stood on the branch A's own record names, and nothing merged
+        # anything: the dependent whose own pull request is open is released by
+        # its blocker's criteria being Done, not by that blocker's delivery
+        # landing.
+        assert (
+            bases_of(events)["B"]
+            == recorded_branches(record=await lane_record(port, "A")).deliverable_branch
+        )
+        assert [
+            request for request in wire.requests if request.url.path.endswith("/merge")
+        ] == []
         # The same two pull requests, each carrying the second run's work.
         assert len(wire.creates) == 2
         assert all(
