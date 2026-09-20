@@ -30,9 +30,10 @@ agent_identities = ["@example-agent", "example-agent"]
 name = "Example team"
 key = "EXA"
 
-# Scope admission. All three members are required once the table is declared.
-# Without scope_labels.approved the first scoped read cannot resolve approval
-# and refuses; the other two are what the organize mandates gate on.
+# Scope admission. With the table declared, all three members are required at
+# load. With no table at all, the first scoped read cannot resolve approval and
+# refuses naming scope_labels.approved; the other two are what the organize
+# mandates gate on.
 # Applying the approved label to the project is the one human act in a run.
 [scope_labels]
 triage = "scope:triage"
@@ -84,9 +85,10 @@ terminal_marker_key = "issue_labels.criteria"
 scope = { kind = "project", key = "example-scratch-project" }
 repo_url = "https://example.invalid/example-org/example-repo"
 
-# The team's own state names. Without workflow_states.done a criterion
-# cross-off fails after a session and a commit, which is the most expensive
-# absent member on this path.
+# The team's own state names. With the table declared, an absent done is
+# refused at load. With no table at all, the first criterion cross-off refuses
+# after a session and a commit, which is the most expensive absent member on
+# this path.
 [workflow_states]
 in_progress = "In Progress"
 in_review = "In Review"
@@ -95,15 +97,17 @@ done = "Done"
 # Stable tracker identities. Preserve these prefixes when adopting a tracker
 # that already carries recorded work: changing one addresses a different
 # marker. An absent purpose is refused at its point of use — the walk resolves
-# run_state and run_event together before it records a lane, and reads
-# lane_record for where a lane stands.
+# run_state and run_event together before it records a lane, and re-reads the
+# lane record under run_state when it re-enters.
 [marker_prefixes]
 run_outcome = "kodezart-run-outcome"
 run_state = "kodezart-run-state"
 run_event = "kodezart-run-event"
-lane_record = "kodezart-lane-record"
-# A lane's fire writes back what it amended and records the rulings it
-# addressed, so a walk refuses at its first execution step without these two.
+# The organize owner's split creation reads this before it writes a split, and
+# refuses naming marker_prefixes['issue_identity'] without it.
+issue_identity = "kodezart-issue"
+# A lane's fire writes back what it amended and records what it answered, so a
+# walk refuses at its first execution step without these two.
 amendment = "kodezart-amendment"
 ruling = "kodezart-ruling"
 escalation = "kodezart-escalation"

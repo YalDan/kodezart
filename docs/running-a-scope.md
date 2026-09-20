@@ -140,7 +140,6 @@ names the member and what it stops.
 | `issue_labels.criteria` | reading a lane's fire specification, after the clone | `FireSpecEntryError` |
 | `marker_prefixes.run_state` | recording where the lane stands | `OperationMemberAbsentError` |
 | `marker_prefixes.run_event` | posting the lane's own run events | `OperationMemberAbsentError` |
-| `marker_prefixes.lane_record` | reading how the lane re-enters | `OperationMemberAbsentError` |
 | `marker_prefixes.amendment` | writing back what the fire amended | `OperationMemberAbsentError` |
 | `workflow_states.done` | crossing a criterion off, after a session and a commit | `TrackerProtocolError` |
 | `write_back.max_verify_rounds` | the top of the fire's execution step, before a criteria read | `OperationMemberAbsentError` |

@@ -6,6 +6,7 @@ member the walk needs and the file lacks shows up here as a lane failure, which
 is how the file's contents are settled rather than guessed.
 """
 
+import ast
 import asyncio
 import json
 import re
@@ -21,6 +22,7 @@ from kodezart.services.tracker_boot import owned_mappings
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import ExclusionClause
 from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
@@ -55,12 +57,16 @@ def shipped():
 async def test_the_shipped_scope_config_walks_one_lane_to_a_crossed_off_criterion():
     """One lane, from the shipped file's own names, all the way to Done.
 
-    The board is labelled with the criteria-stage key the file's own mandate
-    table names and answers under the file's own marker prefixes, so nothing
-    here stands on a constant this module chose. A purpose the walk resolves
-    and the file does not declare would be contained at the lane boundary and
-    named in `failed_lanes`, which is why that assertion comes first — it is
-    how this file's marker list was settled rather than guessed.
+    The board is labelled with the criteria-stage KEY the file's own mandate
+    table names and answers under the file's own marker prefixes, and both are
+    asserted below before the walk so neither is a constant this module chose.
+    What the key MAPS to is not exercised here — the port compares the key
+    itself — and that mapping is pinned through the real adapter by
+    `tests/tools/test_scratch_scope.py::test_the_shipped_scope_config_answers_each_adapter_point_of_need`.
+    A purpose the walk resolves and the file does not declare would be contained
+    at the lane boundary and named in `failed_lanes`, which is why that
+    assertion comes first — it is how this file's marker list was settled rather
+    than guessed.
 
     Over the forge-less origin the module's other walks use, because the shared
     forge double answers for one hardcoded address and pointing a shipped
@@ -70,6 +76,12 @@ async def test_the_shipped_scope_config_walks_one_lane_to_a_crossed_off_criterio
     loaded = shipped()
     repos = WalkRepos()
     port = board(lanes=("A",), operation=loaded)
+    # What the board actually took from the file, rather than what the helper is
+    # believed to take: a board labelled with this module's own fallback key, or
+    # a port answering under some other operation's prefixes, would walk green
+    # and say nothing about the shipped file.
+    assert criteria_stage_label_key(loaded) in port.issues["A"].issue_labels
+    assert port.marker_prefixes == loaded.marker_prefixes
     harness = resumable(repos=repos, port=port, operation=loaded, origin=ORIGIN)
     events = await bounded_walk(harness, origin=ORIGIN)
     assert lane_failures(events) == ()
@@ -100,8 +112,100 @@ def test_the_shipped_file_names_the_criteria_stage_the_adapter_is_built_with():
         if row.role.marks_execution_stage
     )
     assert (
-        criteria_stage_label_key(loaded) == row.spec.terminal_marker_key.split(".")[1]
+        criteria_stage_label_key(loaded)
+        == split_label_key(row.spec.terminal_marker_key)[1]
     )
+
+
+def test_the_shipped_file_declares_no_table_the_scope_path_never_reads() -> None:
+    """The header's claim about the two absent tables, asserted rather than read.
+
+    Both fields default to an empty mapping, so a table added to the file would
+    load, boot and walk while the header above it said there was none.
+    """
+    loaded = shipped()
+    assert loaded.run_event_states == {}
+    assert loaded.queue_states == {}
+
+
+#: Every purpose a marker prefix can be asked for is named in the source by one
+#: of three shapes. The floor below keeps an empty derivation from making the
+#: subset assertion say nothing.
+PURPOSE_FLOOR: frozenset[str] = frozenset(
+    {"run_state", "run_event", "ruling", "amendment"}
+)
+
+SRC = Path(__file__).resolve().parents[2] / "src"
+
+
+def _called_name(node: ast.expr) -> str:
+    """The bare name a call's target ends in: ``self._prefix`` is ``_prefix``."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def _string(node: ast.expr | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def marker_purposes_read_under_src() -> set[str]:
+    """Every marker purpose the source can ask for, off the syntax tree.
+
+    Three shapes, because the code asks in three ways: a `purpose=` keyword on
+    any call; the sole positional argument of a call whose function name ends in
+    `_prefix`; and a module-level name ending in `_PURPOSE`.
+
+    A purpose named some fourth way is a blind spot stated here rather than
+    hidden. It would make this guard accept a declared member nothing reads,
+    which is the direction that costs a reader a false promise and not a run.
+    """
+    found: set[str] = set()
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg == "purpose" and (value := _string(keyword.value)):
+                    found.add(value)
+            if (
+                _called_name(node.func).endswith("_prefix")
+                and len(node.args) == 1
+                and not node.keywords
+                and (value := _string(node.args[0]))
+            ):
+                found.add(value)
+        for statement in tree.body:
+            if not isinstance(statement, ast.Assign):
+                continue
+            value = _string(statement.value)
+            if value is None:
+                continue
+            if any(
+                isinstance(target, ast.Name) and target.id.endswith("_PURPOSE")
+                for target in statement.targets
+            ):
+                found.add(value)
+    return found
+
+
+def test_every_marker_purpose_the_shipped_file_declares_is_one_the_code_reads() -> None:
+    """A declared purpose nothing asks for is a member the header promises is used.
+
+    A subset guard on purpose. The other direction — every purpose the walk
+    needs is declared — is not derivable from the source, because which
+    purposes a given deployment reaches depends on what it schedules; the walk
+    test above is what settles that, by failing the lane.
+    """
+    derived = marker_purposes_read_under_src()
+    assert PURPOSE_FLOOR <= derived, sorted(PURPOSE_FLOOR - derived)
+    declared = set(shipped().marker_prefixes)
+    assert declared <= derived, sorted(declared - derived)
 
 
 # ---------------------------------------------------------------------------
