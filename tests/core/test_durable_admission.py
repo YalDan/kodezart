@@ -1,5 +1,7 @@
 """Shared destination durability and non-redaction admission rules."""
 
+import re
+
 import pytest
 from pydantic import ValidationError
 
@@ -11,11 +13,13 @@ from kodezart.core.outbound_write import gated_write
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.gating import (
     DESTINATION_DURABILITY,
+    DESTINATION_SURFACE,
     ContentClass,
     DurabilityCategory,
     GateDecision,
     GateVerdict,
     OutboundDestination,
+    OutboundSurface,
     RedactionCategory,
     RepoVisibility,
     ScanCategory,
@@ -23,6 +27,7 @@ from kodezart.types.domain.gating import (
     SurfaceDurability,
     WriterShape,
     durability_of,
+    surface_of,
 )
 from kodezart.types.domain.privacy import PrivateSurface
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
@@ -30,6 +35,11 @@ from tests.adapters.test_judgment_scanner import ScriptedAuditExecutor, audit_re
 from tests.fakes import FakeContentJudgment
 from tests.outbound import make_admission
 from tests.prompts.test_prompt_wiring import load_registry
+from tests.tracker.test_linear_tool_roster import SOURCE_ROOT
+
+#: The roster module itself declares every member, so it names them all and
+#: could never tell an invented member from a real one.
+ROSTER_MODULE = SOURCE_ROOT / "types" / "domain" / "gating.py"
 
 
 @pytest.mark.parametrize(
@@ -95,6 +105,43 @@ def test_every_real_writer_has_a_durability_classification() -> None:
     assert set(DESTINATION_DURABILITY) == set(OutboundDestination)
 
 
+def test_every_real_writer_has_a_surface_classification() -> None:
+    """The surface map is total too, so a new member classifies both or neither."""
+    assert set(DESTINATION_SURFACE) == set(OutboundDestination)
+
+
+def naming_modules(destination: OutboundDestination) -> list[str]:
+    """Every source file outside the roster that addresses *destination*."""
+    pattern = re.compile(rf"\bOutboundDestination\.{destination.name}\b")
+    return [
+        str(path.relative_to(SOURCE_ROOT))
+        for path in sorted(SOURCE_ROOT.rglob("*.py"))
+        if path != ROSTER_MODULE and pattern.search(path.read_text(encoding="utf-8"))
+    ]
+
+
+@pytest.mark.parametrize(
+    "destination", list(OutboundDestination), ids=lambda member: member.name
+)
+def test_every_destination_member_is_named_by_a_production_writer(
+    destination: OutboundDestination,
+) -> None:
+    """A member whose writer does not exist is an invented value (KOD-484).
+
+    Derived over the roster, so a member added here has to be addressed by
+    some production module before it is a destination at all — which is also
+    what forbids registering one for a surface nothing writes.
+    """
+    assert naming_modules(destination), f"{destination.name} names no writer"
+
+
+def test_the_status_update_destination_is_named_by_the_terminal() -> None:
+    """The control for the scan: the writer of the newest member is that lane."""
+    assert "services/scope_terminal.py" in naming_modules(
+        OutboundDestination.TRACKER_STATUS_UPDATE
+    )
+
+
 @pytest.mark.parametrize(
     "destination",
     [
@@ -127,6 +174,23 @@ def test_appended_events_are_point_in_time(
     destination: OutboundDestination,
 ) -> None:
     assert durability_of(destination) is SurfaceDurability.POINT_IN_TIME
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        OutboundDestination.TRACKER_COMMENT,
+        OutboundDestination.TRACKER_STATUS_UPDATE,
+        OutboundDestination.TRACKER_DESCRIPTION,
+        OutboundDestination.TRACKER_TITLE,
+        OutboundDestination.TRACKER_CLASSIFICATION,
+    ],
+)
+def test_tracker_destinations_write_onto_the_tracker_surface(
+    destination: OutboundDestination,
+) -> None:
+    """Every write of the coordination surface is classified as one."""
+    assert surface_of(destination) is OutboundSurface.TRACKER
 
 
 def test_a_write_without_a_destination_member_is_durable() -> None:
