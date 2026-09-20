@@ -5,6 +5,7 @@ one board rather than two that happen to agree.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 import pytest
 
@@ -45,11 +46,17 @@ class Board:
     other than the supervisor, so a legitimate foreign write is admitted by
     being declared rather than by widening the set every board is checked
     against.
+
+    *states* and *state_changes* are the board's states as the tick found
+    them. A state move that goes around the port's writers leaves no write
+    log, so what it moved is only visible as a difference from a baseline.
     """
 
     port: FakeTrackerPort
     lanes: tuple[str, ...]
     allowed: set[tuple[str, str]] = field(default_factory=set)
+    states: dict[str, tuple[str, WorkflowStateKind]] = field(default_factory=dict)
+    state_changes: dict[str, datetime] = field(default_factory=dict)
 
 
 #: Every board built through this module, with the lanes it was built for, so a
@@ -165,8 +172,34 @@ async def board(
             ),
         )
     port.comment_writes.clear()
-    BOARDS.append(Board(port=port, lanes=tuple(lanes)))
+    entry = Board(port=port, lanes=tuple(lanes))
+    _rebase_states(entry)
+    BOARDS.append(entry)
     return port
+
+
+def _rebase_states(entry):
+    """Take the board's states as they now stand as the baseline to compare to."""
+    entry.states = {
+        key: (row.state_name, row.state_kind) for key, row in entry.port.issues.items()
+    }
+    entry.state_changes = dict(entry.port.issue_state_changes)
+
+
+def close_criterion(port, key):
+    """Finish one criterion issue on the board, as the walk's own closure does.
+
+    Passing a closed roster to ``observe`` says what the tick reads; it does
+    not move the issue, so a tick that reset the criterion it just saw close
+    would be resetting something still unstarted and the fake would return it
+    untouched. Moving it here makes such a reset a real move, which the state
+    baseline sees. The baseline is retaken, because this move is the test's
+    and not the tick's.
+    """
+    port.issues[key] = port.issues[key].model_copy(
+        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+    )
+    _rebase_states(next(row for row in BOARDS if row.port is port))
 
 
 def allow_foreign_write(port, *, lane, marker):
@@ -273,6 +306,11 @@ def assert_every_write_is_inside_the_declared_set():
     The set is derived from the purposes the board actually configures, so a
     board declaring no alarm prefix is checked against what it does declare
     rather than skipped.
+
+    The board's states are compared to the baseline as well, on every tick
+    rather than on the one test that snapshots them: a move made around the
+    port's own writers appears in no write log, so only the difference from
+    the baseline reports it.
     """
     for entry in BOARDS:
         port = entry.port
@@ -292,6 +330,10 @@ def assert_every_write_is_inside_the_declared_set():
         assert port.classification_writes == []
         assert port.claim_writes == []
         assert [lease for lease in port.leases.values() if lease.holder == HOLDER] == []
+        assert {
+            key: (row.state_name, row.state_kind) for key, row in port.issues.items()
+        } == entry.states
+        assert port.issue_state_changes == entry.state_changes
 
 
 def declared_set_fixture():
