@@ -8,9 +8,7 @@ import pytest
 from kodezart.domain.errors import OrganizeHaltError
 from kodezart.services.organize_tick import OrganizeTick
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from tests.chains.test_organize import RecordingWorkspace
 from tests.chains.test_organize_owner import factory
-from tests.fakes import FakeGitService
 from tests.tracker.conftest import CLAIMED_ISSUE
 
 
@@ -29,12 +27,7 @@ async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
             update={"scope": ScopeRef(kind=ScopeKind.ISSUE, key=key)}
         ),
     )
-    tick = OrganizeTick(
-        targets=(first._targets[0], target),
-        git=FakeGitService(remote_branch_shas={target.repository.trunk: "a" * 40}),
-        workspace=RecordingWorkspace(),
-        remote="origin",
-    )
+    tick = OrganizeTick(targets=(first._targets[0], target))
     halt = None
     try:
         await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
@@ -47,4 +40,5 @@ async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
         assert halt.report.halt.bound.rounds_used == 1
         assert halt.report.halt.admission_results
     assert executor.calls, "the second independent binding never reaches its owner"
-    assert "criteria complete" in board.server.issues[key].labels
+    # The scheduled pass runs the pre-approval row, whose marker this is.
+    assert "graph complete" in board.server.issues[key].labels

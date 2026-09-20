@@ -9,6 +9,7 @@ from kodezart.types.domain.organize import (
     AdmissionVerdict,
     RefusalKind,
     RefusedAdmission,
+    ResolvedMandateSpec,
     SpecFinding,
     UnverifiableAdmission,
 )
@@ -65,6 +66,17 @@ def admission_route(
     ):
         return AdmissionRoute.ESCALATE
     return AdmissionRoute.REAUTHOR
+
+
+def stage_rows(
+    rows: Sequence[ResolvedMandateSpec], *, under_approval: bool
+) -> tuple[ResolvedMandateSpec, ...]:
+    """The rows of one organize table that run on one side of approval.
+
+    Reads the role each resolved row already carries, never its kind, and
+    keeps the governed order the table came back in.
+    """
+    return tuple(row for row in rows if row.role.runs_under_approval is under_approval)
 
 
 def is_organize_subject(issue: TrackerIssue) -> bool:

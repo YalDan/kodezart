@@ -710,13 +710,41 @@ def test_scope_approval_cannot_be_used_through_an_issue_label_alias(field):
         OperationConfig.model_validate(fields)
 
 
-def test_scope_approval_is_not_an_organize_gate():
+def test_scope_approval_gates_only_a_run_stage_and_never_marks_one():
+    """Approval admits a member to a run stage; it ends the pre-approval one.
+
+    So the row that runs before approval still cannot gate on it, and no row
+    may use it as a completion marker: nothing machine-written is approval.
+    """
     from pydantic import ValidationError
 
     from kodezart.types.domain.operation import OperationConfig
 
     fields = mandate_operation_fields()
     fields["organize_mandates"][0]["gate_label_key"] = "scope_labels.approved"
+    with pytest.raises(ValidationError, match="scope approval, which ends organize"):
+        OperationConfig.model_validate(fields)
+
+    fields = mandate_operation_fields()
+    fields["organize_mandates"][1]["gate_label_key"] = "scope_labels.approved"
+    resolved = OperationConfig.model_validate(fields).resolve_organize_mandates()
+    assert [
+        (row.spec.kind.value, row.gate_label, row.role.runs_under_approval)
+        for row in resolved
+    ] == [
+        ("groom", "candidate scope", False),
+        ("ticket", "approved scope", True),
+        ("criteria", "body complete", True),
+    ]
+
+    # A run-stage row may name approval as its gate and still not as its
+    # marker, including by an issue-label alias of the same label.
+    fields = mandate_operation_fields()
+    fields["issue_labels"]["approval_alias"] = fields["scope_labels"]["approved"]
+    fields["organize_mandates"][1]["gate_label_key"] = "scope_labels.approved"
+    fields["organize_mandates"][1]["terminal_marker_key"] = (
+        "issue_labels.approval_alias"
+    )
     with pytest.raises(ValidationError, match="scope approval, which ends organize"):
         OperationConfig.model_validate(fields)
 

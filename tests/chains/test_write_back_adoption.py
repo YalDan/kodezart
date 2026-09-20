@@ -451,7 +451,9 @@ def organize_run(monkeypatch, journal, *, shape="bodies", gate=None):
         return ports[-1]
 
     monkeypatch.setattr(organize_suite, "tracker_over", recording)
-    owner, board, executor = factory(convergence_bound=4, bound=3, gate=gate)
+    owner, board, executor = factory(
+        convergence_bound=4, bound=3, gate=gate, under_approval=True
+    )
     if shape == "bodies":
         return owner, board, ports
     if shape == "edges":
@@ -509,9 +511,7 @@ async def test_every_organize_write_in_a_scope_run_passes_the_verifier(
         "set_issue_classification",
     } <= written
     parent = board.server.issues[CLAIMED_ISSUE]
-    assert {"graph complete", "body complete", "criteria complete"} <= set(
-        parent.labels
-    )
+    assert {"body complete", "criteria complete"} <= set(parent.labels)
 
 
 @dataclass(frozen=True)

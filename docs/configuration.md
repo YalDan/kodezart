@@ -313,10 +313,19 @@ All declared references resolve while loading the operation configuration,
 before tracker startup or dispatch. Missing or empty mappings abort loading
 and report every unresolved reference.
 
-Organize runs before scope approval. The configured `scope_labels.approved`
-label cannot gate a phase or be its completion marker, including when another
-key aliases that label. Each phase completes with an issue marker. The table
-validates phase configuration; it does not schedule an organize pass.
+The table declares one phase that runs before scope approval and two that run
+inside an approved scope run. `groom` is the pre-approval phase: it runs on the
+grooming cadence and ends when approval lands. `ticket` and `criteria` are
+stages of the approved run, and each is complete only when every member of the
+scope carries its marker.
+
+A run-stage row may therefore gate on `scope_labels.approved` by that exact
+reference, because approval is what admits a member to it. The pre-approval row
+may not: approval ends that phase. No row may use the approval label as its
+completion marker, and no row may reach it through a key in another mapping
+that aliases the same label — approval is never machine-written. Each phase
+completes with an issue marker. The table validates phase configuration; it
+does not schedule an organize pass.
 
 ## Organize prompt roles
 

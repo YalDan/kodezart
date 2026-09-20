@@ -17,14 +17,22 @@ PARENT = "authority-parent"
 PROJECT = "authority-project"
 
 
-def configured(monkeypatch, kind):
+#: The surfaces the criteria stage owns. That stage runs inside an approved
+#: scope run, so the fact that governs its write authority is approval
+#: PRESENT; every other surface here is authored by the pre-approval row,
+#: where the governing fact is approval ABSENT.
+RUN_STAGE_KINDS = ("criteria",)
+
+
+def configured(monkeypatch, kind, change=None):
     original_tracker = fixtures.tracker_over
 
     def retried(*args, **kwargs):
         return original_tracker(*args, **kwargs, max_retries=1)
 
     monkeypatch.setattr(fixtures, "tracker_over", retried)
-    owner, board, executor = fixtures.factory()
+    under_approval = kind in RUN_STAGE_KINDS
+    owner, board, executor = fixtures.factory(under_approval=under_approval)
     subject = board.server.issues[CLAIMED_ISSUE]
     subject.parent_id = PARENT
     subject.project_id = PROJECT
@@ -39,6 +47,16 @@ def configured(monkeypatch, kind):
         "initiatives": [],
         "url": "https://tracker.invalid/project/authority-project",
     }
+    if under_approval and change in {"parent_approval", "project_approval"}:
+        # Hold the run stage's approval exactly where the change withdraws it
+        # from, so each case still names one external holder of one fact.
+        subject.labels.remove("approved scope")
+        holder = (
+            board.server.issues[PARENT].labels
+            if change == "parent_approval"
+            else board.server.projects[PROJECT]["labels"]
+        )
+        holder.append("approved scope")
     original_call = board.call_tool
 
     async def external_call(*, name, arguments):
@@ -86,7 +104,7 @@ def configured(monkeypatch, kind):
             return "priority" in arguments
         return "id" not in arguments
 
-    return owner, board, selected
+    return owner, board, selected, under_approval
 
 
 @pytest.mark.parametrize("kind", ["body", "graph", "split", "criteria"])
@@ -97,7 +115,7 @@ def configured(monkeypatch, kind):
 async def test_unsent_retry_preserves_every_owner_precondition(
     monkeypatch, kind, change
 ):
-    owner, board, selected = configured(monkeypatch, kind)
+    owner, board, selected, under_approval = configured(monkeypatch, kind, change)
     original = board.call_tool
     attempts = 0
     before_subject = None
@@ -109,10 +127,18 @@ async def test_unsent_retry_preserves_every_owner_precondition(
             if attempts == 1:
                 subject = board.server.issues[CLAIMED_ISSUE]
                 before_subject = copy.deepcopy(subject)
-                if change == "parent_approval":
-                    board.server.issues[PARENT].labels.append("approved scope")
-                elif change == "project_approval":
-                    board.server.projects[PROJECT]["labels"].append("approved scope")
+                if change in {"parent_approval", "project_approval"}:
+                    holder = (
+                        board.server.issues[PARENT].labels
+                        if change == "parent_approval"
+                        else board.server.projects[PROJECT]["labels"]
+                    )
+                    # The move that takes this surface's authority away: for a
+                    # run stage, approval withdrawn; before approval, granted.
+                    if under_approval:
+                        holder.remove("approved scope")
+                    else:
+                        holder.append("approved scope")
                 elif change == "context":
                     board.server.issues[
                         PARENT
@@ -163,7 +189,7 @@ async def test_unsent_retry_preserves_every_owner_precondition(
 async def test_actual_completed_or_uncertain_write_is_never_resent(
     monkeypatch, kind, outcome
 ):
-    owner, board, selected = configured(monkeypatch, kind)
+    owner, board, selected, _ = configured(monkeypatch, kind)
     original = board.call_tool
     issued = 0
 
@@ -197,7 +223,7 @@ async def test_actual_completed_or_uncertain_write_is_never_resent(
 async def test_repeated_cancellation_during_retry_validation_settles_before_release(
     monkeypatch, refuse
 ):
-    owner, board, selected = configured(monkeypatch, "body")
+    owner, board, selected, _ = configured(monkeypatch, "body")
     original = board.call_tool
     attempts = 0
     reached = asyncio.Event()
@@ -255,7 +281,9 @@ async def test_second_child_retry_retains_context_with_first_owned_creation(
         return original_tracker(*args, **kwargs, max_retries=1)
 
     monkeypatch.setattr(fixtures, "tracker_over", retried)
-    owner, board, executor = fixtures.factory(convergence_bound=4, bound=3)
+    owner, board, executor = fixtures.factory(
+        convergence_bound=4, bound=3, under_approval=kind in RUN_STAGE_KINDS
+    )
     original_stream = executor.stream
 
     async def stream(**kwargs):

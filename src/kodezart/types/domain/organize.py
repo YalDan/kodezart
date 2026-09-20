@@ -258,7 +258,10 @@ class AdmissionResult(_AdmissionView[BoundAdmissionDecision]):
 
 
 class MandateKind(StrEnum):
-    """The phases of one organize pass, before scope approval."""
+    """The phases of one organize table.
+
+    One before scope approval, two inside the approved scope run.
+    """
 
     GROOM = "groom"
     TICKET = "ticket"
@@ -311,9 +314,15 @@ class MandateSpec(CamelCaseModel):
 class MandatePhaseRole(CamelCaseModel):
     """One phase's differences that no operation configures.
 
-    The generative role that drafts a phase's writes, and what its
-    completion marker attests to the readers downstream, belong to the
-    lane rather than to an operator's label spellings.
+    The generative role that drafts a phase's writes, what its completion
+    marker attests to the readers downstream, and which side of scope
+    approval the phase runs on belong to the lane rather than to an
+    operator's label spellings.
+
+    ``runs_under_approval`` False: approval ends the phase (the
+    pre-approval pass). True: the phase is a stage of the approved scope
+    run; approval admits every member to it and it is complete only when
+    every member carries its marker.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -321,6 +330,7 @@ class MandatePhaseRole(CamelCaseModel):
     author_prompt_key: PromptKey
     marks_specification_body: bool
     marks_execution_stage: bool
+    runs_under_approval: bool
 
 
 #: The governed phase sequence, and the only place in the sources where a
@@ -332,16 +342,19 @@ MANDATE_PHASE_ROLES: Mapping[MandateKind, MandatePhaseRole] = {
         author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
         marks_specification_body=False,
         marks_execution_stage=False,
+        runs_under_approval=False,
     ),
     MandateKind.TICKET: MandatePhaseRole(
         author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
         marks_specification_body=True,
         marks_execution_stage=False,
+        runs_under_approval=True,
     ),
     MandateKind.CRITERIA: MandatePhaseRole(
         author_prompt_key=PromptKey.ORGANIZE_CRITERIA_AUTHOR,
         marks_specification_body=False,
         marks_execution_stage=True,
+        runs_under_approval=True,
     ),
 }
 
