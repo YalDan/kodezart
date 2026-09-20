@@ -161,8 +161,8 @@ class BaseResolver:
 
         ``None`` is the ASSUMED-LANDED arm: a blocker that is
         TERMINAL and carries no deliverable ref anywhere on its ancestor
-        chain finished outside kodezart's own delivery loop — the
-        founder's boards merge pull requests by hand — so its work is on
+        chain finished elsewhere — pull requests are merged outside this
+        operation's delivery loop as well — so its work is on
         the trunk and it contributes no input.  The assumption is logged
         by name, never silent.  A LIVE ref-less blocker keeps the refusal:
         eligibility excludes live blockers before resolution, so reaching
