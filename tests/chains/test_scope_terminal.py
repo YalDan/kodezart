@@ -22,6 +22,7 @@ from kodezart.composition.engine import build_workflow_engine
 from kodezart.config.app import AppConfig
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.protocols import ScopeStatusWriter, TrackerPort
+from kodezart.domain.errors import BaseResolutionError
 from kodezart.domain.scope_terminal import render_scope_status
 from kodezart.services import scope_terminal as terminal_module
 from kodezart.services.agent_service import AgentService
@@ -37,7 +38,11 @@ from kodezart.types.domain.scope_terminal import (
 )
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.adapters.test_github_api import _make_client
-from tests.chains.test_native_fire import NativeExecutor, native_operation
+from tests.chains.test_native_fire import (
+    NativeExecutor,
+    native_evaluation,
+    native_operation,
+)
 from tests.chains.test_write_back_adoption import (
     Journal,
     RecordingTracker,
@@ -65,6 +70,7 @@ from tests.integration.test_scope_runtime import (
     board,
     bounded_walk,
     drive,
+    finish_by_hand,
     lane_record,
     resumable,
     runtime,
@@ -308,6 +314,9 @@ async def attributed(harness, journal, **rest):
     The generator runs only when it is pulled, and the only code between the
     last observation's yield and the terminal's is the report itself, so the
     writes after the last observation are the terminal's and no other's.
+
+    The marks come back as well, so a test can say what the walk itself wrote
+    BEFORE its last observation and not only what the terminal did after it.
     """
     marks: list[int] = []
     events = []
@@ -317,25 +326,45 @@ async def attributed(harness, journal, **rest):
             if isinstance(event, ScopeWalkEvent):
                 marks.append(len(journal.writes))
     assert marks, "a walk that observed nothing states nothing about attribution"
-    return events, journal.writes[marks[-1] :]
+    return events, journal.writes[marks[-1] :], marks
+
+
+async def nothing_to_close() -> None:
+    """The closer a fixture that opened no transport hands back."""
+
+
+def evaluations_for(*, passing=(), failing=()):
+    """Two gradings per lane, in the order the lanes are offered in.
+
+    Only a lane that reaches a grading has one scripted: an echo left over
+    for a lane that never graded would be spent on the next lane and grade it
+    against another lane's Check.
+    """
+    return [
+        native_evaluation(
+            failed=key in failing, checks={f"{key}/check": f"{key} live Check  bytes"}
+        )
+        for key in (*failing, *passing)
+        for _ in range(2)
+    ]
 
 
 def converged_lane():
-    return recorded(board(lanes=("A",))), {}, 1
+    return recorded(board(lanes=("A",))), {}, 1, nothing_to_close
 
 
 def two_converged_lanes():
-    return recorded(board(lanes=("A", "B")), lanes=("A", "B")), {}, 1
+    return recorded(board(lanes=("A", "B")), lanes=("A", "B")), {}, 1, nothing_to_close
 
 
 def unapproved_lane():
-    return recorded(board(lanes=("A",), approved=False)), {}, 1
+    return recorded(board(lanes=("A",), approved=False)), {}, 1, nothing_to_close
 
 
 def blocked_lane():
     port = board(lanes=("A", "B"), blocked={"B": ("A",)})
     port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key="A")] = frozenset()
-    return recorded(port, lanes=("A", "B")), {}, 1
+    return recorded(port, lanes=("A", "B")), {}, 1, nothing_to_close
 
 
 def lane_with_a_malformed_obligation():
@@ -344,14 +373,83 @@ def lane_with_a_malformed_obligation():
     port.issues["A/check"] = port.issues["A/check"].model_copy(
         update={"body": "**Evidence:** — and no Check field at all"}
     )
-    return recorded(port), {}, 1
+    return recorded(port), {}, 1, nothing_to_close
+
+
+def one_lane_gave_up():
+    """A never passes its grading and is put back; B passes.
+
+    The exit through a lane that spent its rounds without closing what it
+    owed, which is also where the walk's own put-back lands in the journal.
+    """
+    return (
+        recorded(
+            board(lanes=("A", "B")),
+            lanes=("A", "B"),
+            evaluations=evaluations_for(failing=("A",), passing=("B",)),
+        ),
+        {},
+        1,
+        nothing_to_close,
+    )
+
+
+def one_lane_failed():
+    """B's base cannot be resolved, so its turn ends before it launches."""
+    harness, journal = recorded(
+        board(lanes=("A", "B")),
+        lanes=("A", "B"),
+        evaluations=evaluations_for(passing=("A",)),
+    )
+    resolver = harness.engine._scoped_arm._resolver
+    resolve = resolver.resolve
+
+    async def refuse_one(*, issue_key, **rest):
+        if issue_key == "B":
+            raise BaseResolutionError(
+                "the lane's base cannot be resolved", issue_id=issue_key
+            )
+        return await resolve(issue_key=issue_key, **rest)
+
+    resolver.resolve = refuse_one
+    return (harness, journal), {}, 1, nothing_to_close
+
+
+def already_done():
+    """Both lanes were finished elsewhere, so no lane is ever offered."""
+    port = board(lanes=("A", "B"))
+    finish_by_hand(port, "A")
+    finish_by_hand(port, "B")
+    return recorded(port, lanes=("A", "B"), evaluations=[]), {}, 1, nothing_to_close
+
+
+def all_done_open_prs():
+    """Both lanes commit and open a pull request on a forge origin.
+
+    The exit the write set has to be closed over as well: a walk whose lanes
+    actually delivered writes far more at the port than a forge-less one, so
+    an attributed slice that is empty here says more than one that is empty
+    over a fixture that never pushed.
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    journal = Journal()
+    forge = _make_client(ScopeForgeWire(head_sha_of=repos.head_of))
+    harness = resumable(
+        port=RecordingTracker(board(lanes=("A", "B")), journal),
+        repos=repos,
+        lanes=("A", "B"),
+        origin=FORGE_ORIGIN,
+        forge=forge,
+        trunk="main",
+    )
+    return (harness, journal), {"origin": FORGE_ORIGIN}, 1, forge.close
 
 
 def initiative_scope():
     scope = ScopeRef(kind=ScopeKind.INITIATIVE, key="scoped-initiative")
     port = board(lanes=("A",))
     port.scope_memberships[scope] = ("A",)
-    return recorded(port), {"scope": scope}, 1
+    return recorded(port), {"scope": scope}, 1, nothing_to_close
 
 
 def issue_scope():
@@ -359,7 +457,7 @@ def issue_scope():
     scope = ScopeRef(kind=ScopeKind.ISSUE, key="A")
     port = board(lanes=("A",))
     port.scope_memberships[scope] = ("A",)
-    return recorded(port), {"scope": scope}, 0
+    return recorded(port), {"scope": scope}, 0, nothing_to_close
 
 
 WRITE_SET_FIXTURES = (
@@ -368,6 +466,10 @@ WRITE_SET_FIXTURES = (
     unapproved_lane,
     blocked_lane,
     lane_with_a_malformed_obligation,
+    one_lane_gave_up,
+    one_lane_failed,
+    already_done,
+    all_done_open_prs,
     initiative_scope,
     issue_scope,
 )
@@ -379,15 +481,22 @@ WRITE_SET_FIXTURES = (
 async def test_the_terminals_only_tracker_write_is_the_container_status_update(
     fixture,
 ):
-    (harness, journal), driving, expected = fixture()
+    (harness, journal), driving, expected, closer = fixture()
 
-    events, writes = await attributed(harness, journal, **driving)
+    try:
+        events, writes, _ = await attributed(harness, journal, **driving)
+    finally:
+        await closer()
 
     assert len(terminals(events)) == 1
     # Nothing on any issue surface, and nothing on the container description:
     # the report does not reach the tracker through the port at all.
     assert writes == []
     assert len(harness.status.posts) == expected
+    # And on the scope's own container, never on a lane or another key.
+    assert [ref for ref, _ in harness.status.posts] == [
+        driving.get("scope", SCOPE)
+    ] * expected
 
 
 @pytest.mark.parametrize(
@@ -395,9 +504,12 @@ async def test_the_terminals_only_tracker_write_is_the_container_status_update(
 )
 async def test_the_terminal_writes_no_description_and_no_issue_surface(fixture):
     """Stated against the derived write surface rather than a list written here."""
-    (harness, journal), driving, _ = fixture()
+    (harness, journal), driving, _, closer = fixture()
 
-    _, writes = await attributed(harness, journal, **driving)
+    try:
+        _, writes, _ = await attributed(harness, journal, **driving)
+    finally:
+        await closer()
 
     assert {write.method for write in writes} & artifact_writes() == set()
     assert "edit_description" not in {write.method for write in writes}
@@ -409,11 +521,29 @@ async def test_the_attribution_isolates_the_terminal_from_the_walks_own_writes()
     Without this the empty attributed slice above would be satisfied by a
     journal that recorded nothing at all.
     """
-    (harness, journal), driving, _ = converged_lane()
+    (harness, journal), driving, _, _ = converged_lane()
 
-    _, writes = await attributed(harness, journal, **driving)
+    _, writes, _ = await attributed(harness, journal, **driving)
 
     assert journal.writes, "a walk that wrote nothing states nothing about attribution"
+    assert writes == []
+
+
+async def test_the_walks_own_put_back_is_before_the_last_mark_and_not_the_terminals():
+    """The put-back of a lane that gave up is the walk's, not the terminal's.
+
+    A write surface listed by hand in the recording port would leave this one
+    unrecorded and every attributed slice would still be empty; asserting the
+    method lands BEFORE the last observation is what makes the port's coverage
+    of it part of this criterion rather than another's.
+    """
+    (harness, journal), driving, _, _ = one_lane_gave_up()
+
+    _, writes, marks = await attributed(harness, journal, **driving)
+
+    assert "restore_workflow_state" in {
+        write.method for write in journal.writes[: marks[-1]]
+    }
     assert writes == []
 
 
@@ -672,7 +802,7 @@ async def test_a_scratch_shaped_scope_ends_with_exactly_one_status_update():
         lanes=SCRATCH_LANES,
     )
 
-    events, writes = await attributed(harness, journal, scope=SCRATCH)
+    events, writes, _ = await attributed(harness, journal, scope=SCRATCH)
 
     # Exactly one report, and it is the last thing the stream carries.
     reports = terminals(events)
