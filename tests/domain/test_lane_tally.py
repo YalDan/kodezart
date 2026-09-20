@@ -174,7 +174,6 @@ def test_a_stored_record_whose_replay_disagrees_with_its_bound_refuses():
         "wrong-kind",
         "foreign-lane",
         "foreign-bound-field",
-        "repeated-identity",
         "closed-was-never-owed",
         "closed-is-still-owed",
     ],
@@ -193,11 +192,6 @@ def test_malformed_foreign_or_inconsistent_readings_refuse(damage):
         values[1] = values[1].model_copy(update={"source_ref": "LANE-OTHER"})
     elif damage == "foreign-bound-field":
         values[3] = values[3].model_copy(update={"source_ref": "some_other_field"})
-    elif damage == "repeated-identity":
-        values[0] = AlarmReading(
-            source_ref=LANE.lane_key,
-            value=TallyEvidence(value=tally(("c-one", "c-one"))),
-        )
     elif damage == "closed-was-never-owed":
         values[2] = AlarmReading(
             source_ref=LANE.lane_key, value=ReferencesEvidence(value=("c-three",))
@@ -210,6 +204,44 @@ def test_malformed_foreign_or_inconsistent_readings_refuse(damage):
     with pytest.raises(RunShapeReadError) as caught:
         observe(tuple(values))
 
+    assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
+
+
+#: The five identity tuples the arm reads, and one damaged reading for each: an
+#: identity repeated in it. Every one of the five is checked by the code, so all
+#: five are asked here — a repeat in the commits of either reading is counted
+#: once by the set difference and leaves the arithmetic looking right, which is
+#: exactly why the refusal cannot be pinned for one tuple and assumed for four.
+REPEATED = {
+    "anchor.open": (0, lambda: tally(("c-one", "c-one"))),
+    "anchor.commits": (0, lambda: tally(commits=("sha-a", "sha-a"))),
+    "latest.open": (1, lambda: tally(("c-one", "c-one"), ("sha-one", "sha-two"))),
+    "latest.commits": (1, lambda: tally(("c-one", "c-two"), ("sha-one", "sha-one"))),
+    "closed": (2, None),
+}
+
+
+@pytest.mark.parametrize("tuple_name", list(REPEATED))
+def test_a_repeated_identity_in_any_of_the_five_tuples_refuses(tuple_name):
+    """One reason for all five, so which tuple was damaged is not the answer.
+
+    The reason is asserted and not only the signal: a repeat in the closed
+    reading is also a closed identity still owed, and a check that had stopped
+    looking at that tuple would refuse for the later reason and read as a pass.
+    """
+    position, damaged = REPEATED[tuple_name]
+    values = list(firing())
+    values[position] = AlarmReading(
+        source_ref=LANE.lane_key,
+        value=ReferencesEvidence(value=("c-one", "c-one"))
+        if damaged is None
+        else TallyEvidence(value=damaged()),
+    )
+
+    with pytest.raises(RunShapeReadError) as caught:
+        observe(tuple(values))
+
+    assert caught.value.reason == "an identity appears more than once"
     assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
 
 

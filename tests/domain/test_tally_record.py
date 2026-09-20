@@ -126,8 +126,11 @@ def tally(open_keys, commits=()):
 
 
 #: The roster both criteria of the lane are read from, and the two readings of
-#: it a tick makes: everything owed, and the part of it still open.
-ROSTER = (criterion(FIRST), criterion(SECOND))
+#: it a tick makes: everything owed, and the part of it still open. The roster is
+#: handed over in no particular order, because nothing promises the walk reads a
+#: subtree in one: a record whose readings simply kept the order they arrived in
+#: would say different things about one lane on two ticks.
+ROSTER = (criterion(SECOND), criterion(FIRST))
 BOTH_OPEN = (criterion(FIRST), criterion(SECOND))
 ONE_OPEN = (criterion(FIRST),)
 
@@ -304,8 +307,47 @@ def test_a_second_stall_is_measured_from_the_reading_the_movement_left():
 
 
 def test_the_lane_start_holds_the_whole_roster_and_no_commit():
+    # The roster arrives unordered, so the sorted reading is not the reading the
+    # roster happened to be in.
     assert lane_start(ROSTER) == tally((FIRST, SECOND))
     assert lane_start(()) == tally(())
+
+
+#: Six identities rather than a pair. The closed reading is sorted out of a SET,
+#: whose own order is neither the roster's nor anything a reading may depend on,
+#: and a pair drawn from a set comes out in sorted order about half the time
+#: where six do not.
+MANY = tuple(f"c-{index:02d}" for index in range(6))
+
+
+def test_every_reading_a_record_carries_is_sorted_whatever_order_it_was_read_in():
+    """One lane read twice must leave one record, so every reading is ordered.
+
+    The three readings that carry identities are each built from something whose
+    own order says nothing: the roster as the walk handed it over, the gap the
+    same way, and what closed as a set difference of the two. A record keeping
+    any of those orders would differ from one composed over the same facts read
+    in another order, and the tick that writes only on a difference would rewrite
+    the address for nothing.
+    """
+    roster = tuple(criterion(key) for key in reversed(MANY))
+    gap = (criterion(MANY[-1]),)
+
+    desired = next_tally_record(
+        subject=LANE,
+        stored=None,
+        roster=roster,
+        gap=gap,
+        criteria=roster,
+        record=lane_record(commits=("sha-one",)),
+        max_commits_without_closure=BOUND,
+        raised_by=HOLDER,
+    )
+
+    assert desired is not None
+    assert desired.readings[0].value.value == tally(MANY)
+    assert desired.readings[1].value.value == tally((MANY[-1],), ("sha-one",))
+    assert desired.readings[2].value.value == MANY[:-1]
 
 
 def test_a_closure_under_a_deliverable_child_is_movement():
