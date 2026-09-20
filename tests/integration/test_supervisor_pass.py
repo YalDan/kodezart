@@ -227,6 +227,12 @@ ALARM_PREFIX = "run-alarm"
 WALK_LANES = ("A", "S")
 WALK_CHECKS = {"A": ("check", "second"), "S": ("check",)}
 WALK_KEYS = ("A/check", "A/second", "S/check")
+#: The configured bound, named once: it is the value the deployment is built
+#: with, the value the precondition compares the recorded commits to, and the
+#: value the stored record must carry. Three literals could disagree, and a
+#: bound above the recorded commits would satisfy the rest of the test by never
+#: being crossed.
+STALL_BOUND = 1
 #: Lane A's roster passes; lane S's criterion never does, which is the stall.
 PASSING = ("A/check", "A/second")
 #: The healthy phase closes part of lane A's roster and leaves the rest owed,
@@ -285,7 +291,7 @@ def walk_supervisor(port):
         config=AppConfig(
             _env_file=None,
             max_iterations=2,
-            run_alarm_max_commits_without_closure=1,
+            run_alarm_max_commits_without_closure=STALL_BOUND,
             supervisor_pass_interval_seconds=INTERVAL,
             supervisor_pass_timeout_seconds=TIMEOUT,
         ),
@@ -322,12 +328,19 @@ def board_state(port):
 
 
 def doubles_of(harness, repos):
-    """Call counts of every double outside the tracker, as one comparable value."""
+    """Call counts of every double outside the tracker, as one comparable value.
+
+    Each double's own log, not a proxy: a read-only version-control call and a
+    consolidate of an already-integrated branch both move no branch head, so
+    branch heads alone would miss them. The heads stay too, because they are the
+    fact a delivery would read.
+    """
     return (
         len(harness.executor.schema_calls),
-        len(harness.service._workspace.calls),
-        len(harness.service._persister.calls),
+        len(harness.git.calls),
         len(harness.workspace.calls),
+        len(harness.persister.calls),
+        len(harness.merger.calls),
         {branch: repo.head for branch, repo in repos.branches.items()},
     )
 
@@ -364,15 +377,17 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
     first.executor.evaluations = KeyedEchoes(first.executor, passing=PARTLY_PASSING)
     stream = drive(first, job="healthy-job")
     observed = 0
-    async for event in stream:
-        if isinstance(event, ScopeWalkEvent):
-            observed += 1
-            if observed == 2:
-                break
-    await stream.aclose()
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in stream:
+            if isinstance(event, ScopeWalkEvent):
+                observed += 1
+                if observed == 2:
+                    break
+        await stream.aclose()
     assert observed == 2
 
     before = board_state(port)
+    doubles = doubles_of(first, repos)
     async with asyncio.timeout(TICK_BOUND_SECONDS):
         assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
 
@@ -380,6 +395,7 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
     assert await raised_events(port, "A") == []
     assert await raised_events(port, "S") == []
     assert board_state(port) == before
+    assert doubles_of(first, repos) == doubles
     # Not vacuous: the tick did observe lane A, and what it left there is a
     # tally reading rather than an alarm. Lane S was never fired, so there is
     # no record of it at all and no clock to measure it by.
@@ -396,7 +412,7 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
     stalled = await walk_record(port, "S")
     # The precondition, from the board: a lane whose recorded commits do not
     # pass the bound could satisfy what follows by never being measured.
-    assert len(stalled.commits) > 1
+    assert len(stalled.commits) > STALL_BOUND
     assert port.issues["S/check"].state_kind is not WorkflowStateKind.COMPLETED
 
     before = board_state(port)
@@ -422,12 +438,15 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
     assert is_raised(stored)
     assert stored.bound is not None
     assert stored.bound.config_field == "run_alarm_max_commits_without_closure"
-    assert stored.bound.configured_value == 1
+    assert stored.bound.configured_value == STALL_BOUND
     assert stored.bound.observed_value == len(stalled.commits)
     assert await observed_alarms(port) == ["S"]
     assert len(await raised_events(port, "S")) == 1
     assert await raised_events(port, "A") == []
     assert len([row for row in alarm_records(port) if row.issue_key == "S"]) == 1
+    # Every alarm address on the whole board, not only the two lane addresses:
+    # a record written somewhere else would be read by nothing above.
+    assert sorted(row.issue_key for row in alarm_records(port)) == ["A", "S"]
 
     # Nothing moved, across the raising tick and the two replays.
     assert board_state(port) == before

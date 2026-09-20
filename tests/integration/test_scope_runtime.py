@@ -166,6 +166,13 @@ class ObservedNativeExecutor(NativeExecutor):
 
 @dataclass
 class Harness:
+    """The composed engine and every double outside it, each named.
+
+    The version-control service, the persister and the merger are held here
+    rather than reached through the service's private attributes, so a test
+    asserting that something called none of them reads each double's own log.
+    """
+
     engine: object
     port: FakeTrackerPort
     executor: NativeExecutor
@@ -173,6 +180,9 @@ class Harness:
     artifacts: FakeArtifactPersister
     saver: InMemorySaver
     workspace: FakeWorkspaceProvider
+    git: object
+    persister: object
+    merger: object
 
 
 def runtime(
@@ -212,14 +222,28 @@ def runtime(
     # of the fixture reads, so a prepared tree and the head it was cut at are
     # one repository's answer rather than two doubles'.
     workspace = FakeWorkspaceProvider(git=git) if workspace is None else workspace
+    persister = FakeChangePersister() if persister is None else persister
     service = AgentService(
         git_base_url="https://github.com",
         executor=executor,
         workspace=workspace,
-        persister=persister if persister is not None else FakeChangePersister(),
+        persister=persister,
     )
     artifacts = FakeArtifactPersister()
     saver = saver or InMemorySaver()
+    merger = (
+        FakeBranchMerger(
+            consolidation_outcomes=[
+                ConsolidationOutcome(
+                    status=ConsolidationStatus.FAST_FORWARDED,
+                    feature_tip_sha="a" * 40,
+                )
+                for _ in lanes
+            ],
+        )
+        if merger is None
+        else merger
+    )
     # Pair the fake filesystem/Git boundary with its immutable-source double.
     # The production builder, native owner and graph remain actual consumers.
     with pytest.MonkeyPatch.context() as external:
@@ -241,17 +265,7 @@ def runtime(
             git=git,
             cache=FakeRepoCache(),
             workspace=workspace,
-            merger=merger
-            if merger is not None
-            else FakeBranchMerger(
-                consolidation_outcomes=[
-                    ConsolidationOutcome(
-                        status=ConsolidationStatus.FAST_FORWARDED,
-                        feature_tip_sha="a" * 40,
-                    )
-                    for _ in lanes
-                ],
-            ),
+            merger=merger,
             artifact_persister=artifacts,
             ref_publisher=FakeRefPublisher(),
             prompts=make_prompt_provider(),
@@ -262,7 +276,18 @@ def runtime(
             criteria=TrackerCriteria(tracker=port),
             scope_tracker=port,
         )
-    return Harness(engine, port, executor, service, artifacts, saver, workspace)
+    return Harness(
+        engine,
+        port,
+        executor,
+        service,
+        artifacts,
+        saver,
+        workspace,
+        git,
+        persister,
+        merger,
+    )
 
 
 def drive(harness, *, job="scope-job", scope=SCOPE, origin=ORIGIN, path=None):
