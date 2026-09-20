@@ -24,6 +24,7 @@ from tests.services.lane_tally_fixtures import (
     SCOPE,
     alarm_marker,
     board,
+    checks,
     declared_set_fixture,
     events_on,
     operation,
@@ -144,6 +145,15 @@ async def test_a_finished_member_is_observed_so_a_standing_raise_is_cleared():
         "run_alarm_raised",
         "run_alarm_cleared",
     ]
+    stored = await port.read_run_alarm(
+        issue_key="LANE-B", subject=subject("LANE-B"), signal=SIGNAL
+    )
+    assert stored is not None
+    assert not is_raised(stored)
+    # What the lane closed is read off the SCOPE's criteria: a finished member is
+    # observed with no roster at all, so a tick handing the lane's own roster on
+    # in their place would leave a cleared record saying it closed nothing.
+    assert stored.readings[2].value.value == tuple(sorted(checks("LANE-B")))
 
 
 async def test_a_blocked_member_is_not_observed_and_its_raise_stands(monkeypatch):

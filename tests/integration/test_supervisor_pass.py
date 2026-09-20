@@ -22,7 +22,12 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import native_operation
-from tests.fakes import FIXTURE_EPOCH, FakeAgentRunner, FakeTrackerPort
+from tests.fakes import (
+    FIXTURE_EPOCH,
+    FakeAgentRunner,
+    FakeDeliveryProbe,
+    FakeTrackerPort,
+)
 from tests.integration.test_scope_runtime import (
     FORGE_ORIGIN,
     ORIGIN,
@@ -68,19 +73,45 @@ def declared(*, scopes):
     )
 
 
+#: The one repository the dispatch wiring below binds, named once: the pass name
+#: asserted and the roster the deployment is built with cannot then disagree.
+REPO = example_config().repos[0].url
+
 #: Each wiring: the roster handed in raw, the roster the dialled tracker's
-#: reconciled copy carries (``None`` when no tracker is dialled at all), and the
-#: two facts the absent-arm log must state — or ``None`` where a tick registers.
-#: The last two cases are the ones that tell the copies apart: the gate and the
-#: log both read the reconciled one, so a roster reconciliation added registers
-#: a tick and a roster it removed registers none.
+#: reconciled copy carries (``None`` when no tracker is dialled at all), the two
+#: facts the absent-arm log must state — or ``None`` where a tick registers —
+#: and whether a delivery probe is dialled. Two of the cases tell the copies
+#: apart: the gate and the log both read the reconciled one, so a roster
+#: reconciliation added registers a tick and a roster it removed registers none.
+#: The dispatch case is what puts a pass of another kind in the schedule BEFORE
+#: the observation arm reaches it, which is the only way the clause about the
+#: other passes is a claim about something the arm could have dropped.
 WIRINGS = {
-    "declared_with_tracker": ((SCOPE,), (SCOPE,), None),
-    "declared_without_tracker": ((SCOPE,), None, (False, True)),
-    "undeclared": ((), (), (True, False)),
-    "reconciled_declares": ((), (SCOPE,), None),
-    "only_raw_declares": ((SCOPE,), (), (True, False)),
+    "declared_with_tracker": ((SCOPE,), (SCOPE,), None, False),
+    "declared_with_tracker_and_dispatch": ((SCOPE,), (SCOPE,), None, True),
+    "declared_without_tracker": ((SCOPE,), None, (False, True), False),
+    "undeclared": ((), (), (True, False), False),
+    "reconciled_declares": ((), (SCOPE,), None, False),
+    "only_raw_declares": ((SCOPE,), (), (True, False), False),
 }
+
+
+def bound_to_one_repository(operation):
+    """*operation* narrowed to its first repository, and the teams bound to it.
+
+    One repository is one dispatch pass, which is enough for the schedule to
+    hold a registration the observation arm runs after and few enough to name.
+    """
+    return operation.model_copy(
+        update={
+            "repos": (operation.repos[0],),
+            "teams": {
+                key: entry
+                for key, entry in operation.teams.items()
+                if entry.repository == REPO
+            },
+        }
+    )
 
 
 @pytest.mark.parametrize("wiring", list(WIRINGS))
@@ -99,26 +130,31 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     so the gate and the absent-arm log are each shown to read that one and not
     the copy handed in raw.
     """
-    raw_scopes, reconciled_scopes, absent = WIRINGS[wiring]
-    operation = declared(scopes=raw_scopes)
-    reconciled = (
-        None if reconciled_scopes is None else declared(scopes=reconciled_scopes)
-    )
-    tracker = (
-        None
-        if reconciled_scopes is None
-        else FakeTrackerPort(issues=[], marker_prefixes=operation.marker_prefixes)
-    )
+    raw_scopes, reconciled_scopes, absent, dispatching = WIRINGS[wiring]
 
-    with structlog.testing.capture_logs() as logs:
-        runtime = await _runtime(
-            tmp_path,
-            tracker=tracker,
+    async def boot(directory, *, raw, reconciled_roster):
+        """This deployment with *raw* declared, and *reconciled_roster* dialled."""
+        operation = declared(scopes=raw)
+        if dispatching:
+            operation = bound_to_one_repository(operation)
+        return await _runtime(
+            directory,
+            tracker=None
+            if reconciled_roster is None
+            else FakeTrackerPort(issues=[], marker_prefixes=operation.marker_prefixes),
             runner=FakeAgentRunner(events=[]),
             operation=operation,
-            reconciled=reconciled,
+            reconciled=None
+            if reconciled_roster is None
+            else operation.model_copy(update={"supervisor_scopes": reconciled_roster}),
+            github_api=FakeDeliveryProbe() if dispatching else None,
             supervisor_pass_interval_seconds=INTERVAL,
             supervisor_pass_timeout_seconds=TIMEOUT,
+        )
+
+    with structlog.testing.capture_logs() as logs:
+        runtime = await boot(
+            tmp_path, raw=raw_scopes, reconciled_roster=reconciled_scopes
         )
 
     registered = list(runtime.scheduler.passes)
@@ -137,13 +173,29 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
         assert unwired[0]["tracker_present"] is tracker_present
         assert unwired[0]["scopes_declared"] is scopes_declared
 
-    # Every other pass is as it was: the arm adds one registration and edits
-    # no other, so the rest of the schedule is the same set either way. Asserted
-    # as that set rather than as "not empty", because an arm that cleared the
-    # schedule before appending its own would leave a non-empty list of one.
+    # Every other pass is as it was: the arm adds one registration and edits no
+    # other, so the rest of the schedule is the same set either way. Named, so
+    # what the arm is being compared against is readable; a dispatch pass is
+    # among them wherever one was dialled, and that one is registered before the
+    # arm runs.
+    expected = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
+    if dispatching:
+        expected |= {f"dispatch:{REPO}"}
+    assert {entry.name for entry in registered} - {SUPERVISOR_TICK_NAME} == expected
+
+    # "As before" is the same deployment declaring no roster at all, so the
+    # comparison is against the schedule this boot would have had rather than
+    # against a set written out above: whatever the fixture wires, the arm added
+    # its own registration and removed none.
+    with structlog.testing.capture_logs():
+        as_before = await boot(
+            tmp_path / "as-before",
+            raw=(),
+            reconciled_roster=None if reconciled_scopes is None else (),
+        )
+
     assert {entry.name for entry in registered} - {SUPERVISOR_TICK_NAME} == {
-        PromptKey.FIRE_PREP_PASS.value,
-        PromptKey.GROOMING_PASS.value,
+        entry.name for entry in as_before.scheduler.passes
     }
 
 

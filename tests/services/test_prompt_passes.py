@@ -57,11 +57,15 @@ from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
     FakeAgentRunner,
+    FakeDeliveryProbe,
+    FakeGitService,
     FakeJobQueue,
+    FakeRepoCache,
     FakeScopeStatusWriter,
     FakeTrackerPort,
     FakeWorkspaceProvider,
     ManagedFakeLinearMcpServer,
+    PassThroughGate,
     make_tracker_issue,
 )
 from tests.prompts.sets import V5_SET
@@ -206,6 +210,7 @@ async def _runtime(
     runner: FakeAgentRunner,
     operation: OperationConfig | None = None,
     reconciled: OperationConfig | None = None,
+    github_api: FakeDeliveryProbe | None = None,
     prompt_set: str = DEFAULT_SET,
     **overrides: object,
 ) -> DispatchRuntime:
@@ -220,6 +225,11 @@ async def _runtime(
     needs it to differ from the one handed in raw. Preflight still runs on the
     raw copy, as the root's does. Left out, the two are one object, so nothing
     downstream can tell which copy it was handed.
+
+    *github_api* is the delivery probe the dispatch passes are gated on, so a
+    caller that needs a schedule with something registered BEFORE the arms this
+    module asks about can have one. Left out, no dispatch pass is built, which
+    is what every caller here but the registration rows wants.
     """
     declared = example_config() if operation is None else operation
     config = _config(tmp_path, **overrides)
@@ -232,7 +242,7 @@ async def _runtime(
         config=config,
         operation=declared,
         tracker=tracker,
-        github_api=None,
+        github_api=github_api,
         prompts=prompts,
     )
     return await build_dispatch_runtime(
@@ -241,12 +251,16 @@ async def _runtime(
         config=config,
         operation=declared,
         dialled=dialled_over(tracker, declared if reconciled is None else reconciled),
-        github_api=None,
+        github_api=github_api,
         queue=queue,
         registry=queue,
-        gate=None,
-        git=None,  # type: ignore[arg-type]
-        cache=None,  # type: ignore[arg-type]
+        # The dispatch passes' own collaborators, which nothing builds without a
+        # delivery probe: with none handed over these stay the absent values
+        # every other caller here boots with, so a row that asks for no dispatch
+        # pass boots exactly as it did.
+        gate=PassThroughGate() if github_api is not None else None,
+        git=FakeGitService() if github_api is not None else None,  # type: ignore[arg-type]
+        cache=FakeRepoCache() if github_api is not None else None,  # type: ignore[arg-type]
         prompts=prompts,
         runner=runner,
         skills=SUPPRESS_ALL_SKILLS,
