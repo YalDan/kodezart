@@ -14,6 +14,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.composition.jobs import build_job_queue
+from kodezart.composition.tracker import criteria_stage_label_key
 from kodezart.config.app import AppConfig
 from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
@@ -109,7 +110,15 @@ SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
 STAGED = "criteria-staged"
 
 
-def board(*, lanes=("A",), blocked=None, approved=True, checks=None, priorities=None):
+def board(
+    *,
+    lanes=("A",),
+    blocked=None,
+    approved=True,
+    checks=None,
+    priorities=None,
+    operation=None,
+):
     """The scope's lanes and their criterion sub-issues.
 
     *checks* names each lane's criteria; a lane not named there has the one
@@ -120,7 +129,16 @@ def board(*, lanes=("A",), blocked=None, approved=True, checks=None, priorities=
     age and every issue here is created at the same instant, so a test about
     which lane a tick offers FIRST states the priorities rather than relying on
     the order the rows happen to be built in.
+
+    *operation* is the deployment this board belongs to, defaulting to the
+    native fixture. Its own criteria-stage key and marker prefixes are what
+    the lanes carry and what the port answers under, so a test about a
+    SHIPPED operation file walks a board labelled the way that file says.
+    The fixture operation declares no organize mandates and therefore no
+    criteria stage, so it keeps this module's own constant.
     """
+    operation = native_operation() if operation is None else operation
+    staged = criteria_stage_label_key(operation) or STAGED
     rows = []
     for key in lanes:
         rows.append(
@@ -128,7 +146,7 @@ def board(*, lanes=("A",), blocked=None, approved=True, checks=None, priorities=
                 key,
                 body=f"Exact native subject {key}  with spaces\n",
                 blocked_by=(blocked or {}).get(key, ()),
-                issue_labels=frozenset({STAGED}),
+                issue_labels=frozenset({staged}),
                 priority=(priorities or {}).get(key, IssuePriority.NONE),
             )
         )
@@ -145,10 +163,10 @@ def board(*, lanes=("A",), blocked=None, approved=True, checks=None, priorities=
     return FakeTrackerPort(
         issues=rows,
         scope_memberships={SCOPE: tuple(lanes)},
-        criteria_stage_label_key=STAGED,
+        criteria_stage_label_key=staged,
         # The board reads its markers under the operation the engine writes
         # them under; a port with no prefixes could answer for no lane.
-        marker_prefixes=native_operation().marker_prefixes,
+        marker_prefixes=operation.marker_prefixes,
         scope_label_members={
             ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
             for key in lanes
@@ -205,6 +223,7 @@ def runtime(
     merger=None,
     ref_publisher=None,
     max_iterations=1,
+    operation=None,
 ):
     """The composed engine over external doubles.
 
@@ -243,7 +262,7 @@ def runtime(
             NativeSourceReader if source is None else (lambda: source),
         )
         engine = build_workflow_engine(
-            operation=native_operation(),
+            operation=native_operation() if operation is None else operation,
             config=AppConfig(
                 write_back=WriteBackSettings(max_verify_rounds=2),
                 ticket_review_mode=TicketReviewMode.REVIEWED,
@@ -1248,11 +1267,12 @@ class WalkPersister(FakeChangePersister):
         )
 
 
-async def lane_record(port, key: str):
+async def lane_record(port, key: str, *, operation=None):
     """The record this walk left on one lane's issue, read back fresh."""
-    _, record = await LaneRecordReader(tracker=port, operation=native_operation()).read(
-        issue_key=key, lane_key=key
+    reader = LaneRecordReader(
+        tracker=port, operation=native_operation() if operation is None else operation
     )
+    _, record = await reader.read(issue_key=key, lane_key=key)
     return record
 
 

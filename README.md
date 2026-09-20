@@ -508,6 +508,9 @@ live workspace belongs to the tracker adapter, not to config load.
 - [`docs/operation.example.toml`](docs/operation.example.toml) — a fully
   annotated example covering every field, the complete counterpart the
   minimal floor grows into.
+- [`docs/operation.scope.toml`](docs/operation.scope.toml) — the smallest
+  config that runs a scope: one team, one repository, one walked scope, the
+  three organize phases, and none of the per-issue machine.
 - [`docs/cutover_mapping.md`](docs/cutover_mapping.md) — which routine behavior
   maps to which kodezart component, plus the behavior-parity dimension and
   placeholder mapping tables.

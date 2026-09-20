@@ -126,6 +126,30 @@ async def refuse_unattributable_writer(
         )
 
 
+def criteria_stage_label_key(operation: OperationConfig) -> str | None:
+    """The issue-label key that marks a lane's criteria stage complete.
+
+    The terminal marker of whichever resolved mandate row marks the execution
+    stage, reduced to the key half of its qualified reference — which is what
+    the adapter then looks up in ``issue_labels`` and nowhere else. ``None``
+    where no declared row marks that stage, and a lane that carries no such
+    marker cannot fire.
+
+    A function beside the builder rather than an expression inside it, because
+    a test about a shipped operation file needs the same answer the adapter is
+    built with, and a second copy of this expression in a test would be a
+    second opinion about which label that is.
+    """
+    return next(
+        (
+            split_label_key(row.spec.terminal_marker_key)[1]
+            for row in operation.resolve_organize_mandates()
+            if row.role.marks_execution_stage
+        ),
+        None,
+    )
+
+
 def build_tracker(
     *,
     backend: TrackerBackend,
@@ -154,14 +178,7 @@ def build_tracker(
                 workflow_state_names=operation.workflow_states,
                 marker_prefixes=operation.marker_prefixes,
                 issue_labels=operation.issue_labels,
-                criteria_stage_label_key=next(
-                    (
-                        split_label_key(row.spec.terminal_marker_key)[1]
-                        for row in operation.resolve_organize_mandates()
-                        if row.role.marks_execution_stage
-                    ),
-                    None,
-                ),
+                criteria_stage_label_key=criteria_stage_label_key(operation),
                 team_identifiers={
                     team_key: entry.name for team_key, entry in operation.teams.items()
                 },

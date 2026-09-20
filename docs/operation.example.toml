@@ -168,6 +168,9 @@ decision = "queue:decision"
 criterion = "criterion"
 # Escalations add this classification without replacing queue approval.
 decision = "decision"
+# The classification a scoped read requires beside the two above: the first
+# act of a scope walk asks for all three and names whichever is absent.
+tracker = "tracker"
 
 # Scope admission is separate from the issue queue. Names are configurable;
 # an omitted or empty mapping is valid, and a populated mapping must include
