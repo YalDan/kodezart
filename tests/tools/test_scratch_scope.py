@@ -7,6 +7,8 @@ observes what it refused to write.
 
 import ast
 import inspect
+import os
+import threading
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ import pytest
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.tracker import build_tracker, criteria_stage_label_key
+from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import ScopeCycleError
@@ -26,6 +29,7 @@ from tests.tools import scratch_scope
 from tests.tools.scratch_board import UNSTARTED_STATE, ScratchBoardServer
 from tests.tools.scratch_scope import (
     SCRATCH_DECLARATION,
+    BuiltScope,
     ScratchScopeBuilder,
     ScratchScopeRefusalError,
     scratch_scope_plan,
@@ -244,28 +248,70 @@ async def test_a_declaration_mentioned_in_prose_is_not_a_declaration():
     assert writes(server) == []
 
 
-async def seeded_with_foreign_issue() -> tuple[ScratchBoardServer, OperationConfig]:
+#: Three foreign titles, one per way a planned title could be matched loosely:
+#: unrelated, sharing lane A's prefix, and lane A's own title in another case.
+#: Only an exact title is adoptable, so all three are foreign.
+FOREIGN_TITLES = (
+    "Somebody else's work",
+    "Scratch lane A — somebody else's reader",
+    "scratch lane a — a line reader",
+)
+
+
+async def seeded_with_foreign_issue(
+    title: str = FOREIGN_TITLES[0],
+) -> tuple[ScratchBoardServer, OperationConfig, BuiltScope]:
     """A built board that somebody else then filed an issue into."""
     server, operation = board()
-    await builder_over(server, operation).build()
+    built = await builder_over(server, operation).build()
     from tests.fakes import FakeMcpIssue
 
     server.issues["FOREIGN-1"] = FakeMcpIssue(
         id="FOREIGN-1",
-        title="Somebody else's work",
+        title=title,
         team=TEAM_NAME,
         project_id=PROJECT_ID,
     )
-    return server, operation
+    return server, operation, built
 
 
-async def test_a_project_holding_an_issue_the_builder_did_not_create_is_refused():
-    """The foreign row sits past the first listing page and is still found."""
-    server, operation = await seeded_with_foreign_issue()
+@pytest.mark.parametrize("title", FOREIGN_TITLES)
+async def test_a_project_holding_an_issue_the_builder_did_not_create_is_refused(
+    title: str,
+):
+    """The foreign row sits past the first listing page and is still found.
+
+    A title is adoptable only when it matches a planned one exactly. A row that
+    merely shares lane A's prefix, or that differs from lane A's title only in
+    case, is as foreign as an unrelated one.
+    """
+    server, operation, _built = await seeded_with_foreign_issue(title)
     mark = len(writes(server))
     with pytest.raises(ScratchScopeRefusalError) as caught:
         await builder_over(server, operation).build()
     assert caught.value.foreign == ("FOREIGN-1",)
+    assert writes(server)[mark:] == []
+
+
+async def test_two_rows_sharing_a_planned_title_are_both_refused():
+    """Two rows carrying one planned title are two the builder cannot tell apart.
+
+    Adopting either would be a guess about which one the last run created, so
+    both are named and nothing is written.
+    """
+    server, operation, built = await built_board()
+    from tests.fakes import FakeMcpIssue
+
+    server.issues["DUP-1"] = FakeMcpIssue(
+        id="DUP-1",
+        title=scratch_scope_plan().lane("A").title,
+        team=TEAM_NAME,
+        project_id=PROJECT_ID,
+    )
+    mark = len(writes(server))
+    with pytest.raises(ScratchScopeRefusalError) as caught:
+        await builder_over(server, operation).build()
+    assert set(caught.value.foreign) == {built.lanes["A"], "DUP-1"}
     assert writes(server)[mark:] == []
 
 
@@ -287,16 +333,19 @@ def test_every_public_act_is_named_by_the_plant_case():
 @pytest.mark.parametrize("act", PLANTS)
 async def test_every_plant_is_refused_on_a_project_with_a_foreign_issue(act: str):
     """Every act reads the board again first, so none of them inherits a verdict."""
-    server, operation = await seeded_with_foreign_issue()
+    server, operation, built = await seeded_with_foreign_issue()
     builder = builder_over(server, operation)
     mark = len(writes(server))
     arguments = (
-        {"criterion_key": "whatever", "sha": "a" * 40}
+        # A criterion this build really created, so the act's own row lookup
+        # finds it and the ownership guard is what refuses.
+        {"criterion_key": built.criteria["A"][0], "sha": "a" * 40}
         if act == "plant_false_done"
         else {}
     )
-    with pytest.raises(ScratchScopeRefusalError):
+    with pytest.raises(ScratchScopeRefusalError) as caught:
         await getattr(builder, act)(**arguments)
+    assert caught.value.foreign == ("FOREIGN-1",)
     assert writes(server)[mark:] == []
 
 
@@ -316,6 +365,79 @@ def test_the_command_line_has_no_default_target():
     )
     with pytest.raises(SystemExit):
         parser.parse_args(["build"])
+
+
+def entry_point(argv: list[str]) -> int:
+    """Run the entry point on a thread of its own, re-raising what it raised.
+
+    ``main()`` calls ``asyncio.run``, which displaces the current event loop of
+    the thread it runs on and can leak that loop's selector sockets between
+    cases. A thread of its own leaves the loop the async cases share exactly
+    where they left it.
+    """
+    answered: list[int] = []
+    raised: list[BaseException] = []
+
+    def call() -> None:
+        try:
+            answered.append(scratch_scope.main(argv))
+        except (Exception, SystemExit) as error:
+            raised.append(error)
+
+    thread = threading.Thread(target=call)
+    thread.start()
+    thread.join()
+    if raised:
+        raise raised[0]
+    return answered[0]
+
+
+def test_the_command_line_reads_no_credential_file_and_reaches_no_caller(
+    tmp_path, monkeypatch
+):
+    """The token comes from the process environment, and never from a file.
+
+    A credential file planted beside the working directory must not be read, so
+    a run with nothing in the environment refuses for having no credential at
+    all — and it reaches no caller factory on the way there. With none of the
+    four arguments it exits two, again without reaching a factory.
+    """
+    # Assembled rather than written out, so no line here has the shape of a
+    # credential. What matters is only that a file reader would find a token.
+    (tmp_path / ".env").write_text(
+        "KODEZART_TRACKER__TOKEN=" + "lin_api_" + "0" * 40 + "\n", encoding="utf-8"
+    )
+    for name in [key for key in os.environ if key.startswith("KODEZART_")]:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(tmp_path)
+    # tests/conftest.py:32 blanks `env_file` for the whole session, so a test of
+    # the "process environment only" rule has to put the default back first.
+    monkeypatch.setitem(AppConfig.model_config, "env_file", ".env")
+
+    def never(**_: object) -> object:
+        raise AssertionError("the caller factory was reached")
+
+    monkeypatch.setattr(scratch_scope, "make_mcp_tool_caller", never)
+    monkeypatch.setattr(scratch_scope, "refuse_foreign_credential", never)
+
+    loaded = load_operation_config(SCOPE_EXAMPLE)
+    with pytest.raises(ScratchScopeRefusalError, match="no tracker credential"):
+        entry_point(
+            [
+                "build",
+                "--operation-config",
+                str(SCOPE_EXAMPLE),
+                "--team",
+                next(iter(loaded.teams)),
+                "--project",
+                "Scratch scope",
+                "--repo-url",
+                loaded.repos[0].url,
+            ]
+        )
+    with pytest.raises(SystemExit) as exited:
+        entry_point(["build"])
+    assert exited.value.code == 2
 
 
 async def test_a_listing_that_cannot_be_exhausted_is_refused():
@@ -357,9 +479,7 @@ async def test_a_second_build_adopts_everything_and_writes_nothing():
     second = await builder_over(server, operation).build()
     assert writes(server)[mark:] == []
     assert second.created == ()
-    assert set(second.adopted) == set(first.created) - {
-        key for key in first.created if " blockedBy " in key
-    }
+    assert set(second.adopted) == set(first.created)
     assert second.lanes == first.lanes
     assert second.criteria == first.criteria
 
@@ -435,13 +555,19 @@ async def test_the_planted_claim_is_a_done_criterion_whose_evidence_parses():
     assert criterion.status_type == "completed"
     evidence = parse_criterion_evidence(criterion.description)
     assert evidence.graded_sha == sha
-    # Every byte outside the Evidence row is the body the build wrote.
+    # Every byte outside the Evidence row is the body the build wrote: the two
+    # fields by value, and then the text itself up to the Evidence row, which is
+    # the clause as written and catches a body recomposed from the plan.
     assert criterion_field_bodies(
         criterion.description, field="Check"
     ) == criterion_field_bodies(before, field="Check")
     assert criterion_field_bodies(
         criterion.description, field="Do"
     ) == criterion_field_bodies(before, field="Do")
+    after = criterion.description
+    assert (
+        after[: after.index("**Evidence:**")] == before[: before.index("**Evidence:**")]
+    )
     # Two saves, because a body and a state never travel together here.
     planted = writes(server)[mark:]
     assert [name for name, _ in planted] == ["save_issue", "save_issue"]
