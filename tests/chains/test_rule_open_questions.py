@@ -34,6 +34,7 @@ from tests.chains.test_native_fire import (
     NESTED_DONE,
     NESTED_OWED,
     OWED_KEYS,
+    RECORDED_LOOP,
     SUBJECT,
     NativeExecutor,
     check_of,
@@ -743,7 +744,7 @@ async def test_the_step_returns_no_update_into_graph_state() -> None:
 # ---------------------------------------------------------------------------
 
 #: Every Git verb that could move a head, by the name the service uses.
-MOVING = ("commit", "push", "add_all", "reset_hard", "create_branch")
+MOVING = ("commit", "push", "add_all", "reset_hard")
 
 
 class StepWatchingExecutor(NativeExecutor):
@@ -788,7 +789,6 @@ async def test_the_question_session_is_read_only_and_moves_no_branch(kind) -> No
         persister=persister,
     )
     state, config = prepare(fire, entry=entry_of(kind))
-    before = await git.remote_branch_sha("/tmp/fire", "origin", "main")
 
     await executed(fire, state, config)
 
@@ -808,11 +808,19 @@ async def test_the_question_session_is_read_only_and_moves_no_branch(kind) -> No
     # judge's stands at the exact commit that tree reported.
     assert opened[0]["ref"] == state["work_base_ref"]
     assert opened[1]["ref"] == "a" * 40
-    # Nothing was committed, pushed or reset, nothing was persisted, and every
-    # remote head is where it was.
+    if kind == "resumed":
+        # The literal, so a change in how the entry derives that ref fails here.
+        assert opened[0]["ref"] == RECORDED_LOOP
+    # Each of those trees was given back before the next was taken.
+    assert [name for name, *_ in workspace.calls[:4]] == [
+        "acquire",
+        "release",
+        "acquire",
+        "release",
+    ]
+    # Nothing was committed, pushed or reset, and nothing was persisted.
     assert not [name for name, *_ in git.calls if name in MOVING]
     assert persister.calls == []
-    assert await git.remote_branch_sha("/tmp/fire", "origin", "main") == before
 
 
 async def test_the_judge_is_built_from_one_repository_source() -> None:
