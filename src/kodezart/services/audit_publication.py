@@ -130,6 +130,33 @@ class AuditPublisher:
             interrupted.extend(observed.received)
             raise
 
+    async def write_leased(
+        self,
+        *,
+        step: WriteBackStep,
+        ref: str,
+        job_id: str,
+        interrupted: list[AuditRepairInput],
+        accept_grant: Callable[[], Awaitable[None]] | None = None,
+    ) -> WriteBackResult:
+        """Drive one step under this job's lease on the step's own surface.
+
+        The grant is itself a native comment, so a caller whose freshness
+        comparison would see it supplies *accept_grant* to re-pin. A caller
+        whose comparison ignores that activity timestamp supplies nothing.
+        """
+        async with RunSurfaceLease(
+            tracker=self._tracker,
+            job_id=job_id,
+            surfaces=frozenset({step.surface}),
+            lease_seconds=self._lease_seconds,
+        ):
+            if accept_grant is not None:
+                # Account only for that known activity timestamp; all source
+                # content stays pinned.
+                await accept_grant()
+            return await self.verify_step(step=step, ref=ref, interrupted=interrupted)
+
     async def publish(
         self,
         *,
@@ -149,16 +176,8 @@ class AuditPublisher:
             marker=marker,
         )
         await require_current()
-        async with RunSurfaceLease(
-            tracker=self._tracker,
-            job_id=job_id,
-            surfaces=frozenset({surface}),
-            lease_seconds=self._lease_seconds,
-        ):
-            # The acquired grant is itself a native comment. Account only for
-            # that known activity timestamp; all source content stays pinned.
-            await accept_write()
-            step = _AuditComment(
+        return await self.write_leased(
+            step=_AuditComment(
                 tracker=self._tracker,
                 gate=self._gate,
                 surface=surface,
@@ -167,5 +186,9 @@ class AuditPublisher:
                 compose=compose,
                 require_current=require_current,
                 accept_write=accept_write,
-            )
-            return await self.verify_step(step=step, ref=ref, interrupted=interrupted)
+            ),
+            ref=ref,
+            job_id=job_id,
+            interrupted=interrupted,
+            accept_grant=accept_write,
+        )

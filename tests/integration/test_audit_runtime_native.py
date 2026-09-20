@@ -91,6 +91,29 @@ def state_writes(server):
     ]
 
 
+def unstarted_state(server, team="fixture-team"):
+    """How the workspace addresses the team's one unstarted state."""
+    names = [
+        name
+        for name in server.statuses[team]
+        if server.state_types.get(name) == "unstarted"
+    ]
+    assert len(names) == 1, names
+    return f"{team}-{names[0]}-id"
+
+
+def landed(server, tool, **match):
+    """The index of the one *tool* call whose arguments carry *match*."""
+    found = [
+        index
+        for index, (name, arguments) in enumerate(server.calls)
+        if name == tool
+        and all(arguments.get(field) == value for field, value in match.items())
+    ]
+    assert len(found) == 1, found
+    return found[0]
+
+
 class NativeExecutor(RecordingExecutor):
     def __init__(self, head):
         super().__init__([])
@@ -406,38 +429,83 @@ async def test_instructed_refutation_records_verified_escalation_before_claim(
     audit, executor, server, _tracker, _git, workspace, _repository = native_audit
     executor.claim_verdict = "refuted"
     executor.instruction = True
-    with pytest.raises(AuditRunIncompleteError) as raised:
-        await audit.run(FIXTURE_NOW)
-    report = raised.value.report
+    assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    report = audit.last_report
     scope = report.scopes[0]
-    assert "workflow-state authority" in scope.unavailable[0].reason, (
-        report.model_dump_json()
-    )
+    assert scope.status == "complete", report.model_dump_json()
     escalations = [
         row
         for row in server.comments
         if row.body.startswith("[native-audit-escalation:")
     ]
     assert len(escalations) == 1
+    assert "returned to unstarted on the demonstrated refutation" in escalations[0].body
     assert "needs-decision" in server.issues[CHILD].labels
     assert scope.writes[0].artifact.native_ref == escalations[0].id
     assert scope.writes[1].artifact.surface.kind.value == "criterion_sub_issue"
     assert escalations[0].id in scope.writes[2].artifact.content
     assert all(row.verdict.value == "holds" for row in scope.writes)
-    assert not any(
-        row.issue_id == APPROVED_ISSUE and row.body.startswith("[native-audit:")
+
+    # The refutation is published, then the criterion goes back, once.
+    refutation = next(
+        row
         for row in server.comments
+        if row.issue_id == CHILD and row.body.startswith("[native-audit:")
+    )
+    assert state_writes(server) == [{"id": CHILD, "state": unstarted_state(server)}]
+    assert landed(server, "save_comment", body=refutation.body) < landed(
+        server, "save_issue", id=CHILD, state=unstarted_state(server)
+    )
+    assert server.issues[CHILD].status == "Todo"
+    assert server.issues[CHILD].status_type == "unstarted"
+    assert scope.writes[-1].artifact.surface.kind.value == "criterion_sub_issue"
+    assert scope.writes[-1].artifact.surface.ref.key == CHILD
+    assert scope.writes[-1].verdict.value == "holds"
+
+    # A reopened refutation is resolved coverage, so the scope reports it.
+    summaries = [
+        row
+        for row in server.comments
+        if row.issue_id == APPROVED_ISSUE and row.body.startswith("[native-audit:")
+    ]
+    assert len(summaries) == 1
+    assert (
+        refutation.id in json.loads(summaries[0].body.partition("\n")[2])["record_refs"]
     )
     assert server.issues[ROOT].status == "In Review"
-    assert server.issues[CHILD].status == "Done"
+
     first = escalations[0].id
-    with pytest.raises(AuditRunIncompleteError):
-        await audit.run(FIXTURE_NOW + timedelta(seconds=60))
+    sessions = len(executor.calls)
+    claims = len(
+        [
+            call
+            for call in executor.calls
+            if call["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA
+        ]
+    )
+    assert await audit.run(FIXTURE_NOW + timedelta(seconds=60)) is PassRun.RAN
+    second = audit.last_report.scopes[0]
+    assert second.status == "complete", audit.last_report.model_dump_json()
+    assert [(row.subject.key, row.reason.value) for row in second.deferred] == [
+        (CHILD, "claim_not_made")
+    ]
     assert [
         row.id
         for row in server.comments
         if row.body.startswith("[native-audit-escalation:")
     ] == [first]
+    assert len(state_writes(server)) == 1
+    assert (
+        len(
+            [
+                call
+                for call in executor.calls
+                if call["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA
+            ]
+        )
+        == claims
+    )
+    assert len(executor.calls) > sessions  # the second tick's own summary judge
     assert not workspace._workspaces
 
 

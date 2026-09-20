@@ -801,7 +801,9 @@ actual scheduled tick and periodic full coverage. The scheduler owns timing.
 
 Configured Audit also requires the actual tracker and forge reader, the
 `audit` and `escalation` marker prefixes, the `decision` issue classification,
-and the configured `in_review` workflow state. Partial configuration refuses
+and the configured `in_review` workflow state. The audited team must have
+exactly one unstarted workflow state, which is where a refuted criterion is
+reset to; the port refuses the reset otherwise. Partial configuration refuses
 preflight before queue startup. With both roster and settings absent, the named
 `audit_pass_not_wired` event records `audit_unconfigured`.
 
@@ -813,10 +815,22 @@ repair loop. A verified summary references actual verified native records; only
 completed selections advance the disposable coverage cache. This restriction
 is a remaining generic recorder implementation gap, not a new operator policy.
 
-Audit publishes completed observations without applying workflow transitions.
-Unverifiable claims make no claim-publication write. A published refutation
-retains incomplete coverage while its workflow-state authority is unresolved.
-Neither case manufactures a classification or marks a criterion Done.
+Audit applies exactly one workflow transition: a criterion sub-issue whose
+current-Check claim is refuted at its branch head is reset to the team's one
+unstarted state. That reset runs after its refutation comment — and, when the
+refutation names an instruction, its escalation — has been published and read
+back through the canonical verifier, and it is the scope's last tracker act,
+after the scope summary. It holds a lease on the criterion's own surface, runs
+inside write-back verification, carries nothing but the criterion's key and the
+state, and edits no body and no Evidence row: the evidence is the verified
+refutation comment beside it. The owning issue is never written; its state
+follows from the tracker's own rollup.
+
+Unverifiable claims make no claim-publication write and no state write. A
+refuted forge, over-claim, detector-removal or terminal report is published and
+still retains incomplete coverage while its workflow-state authority is
+unresolved: none of them is a reading of the claim's failure at the head. No
+case manufactures a classification or marks a criterion Done.
 
 A covered member whose own tracker state carries nothing to audit yet is
 reported as deferred rather than as missing coverage, and no judgment session,

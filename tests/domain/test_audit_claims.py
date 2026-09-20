@@ -1,13 +1,36 @@
 """A member's own state decides what there is to audit, before any arm runs."""
 
+from typing import get_args
+
 import pytest
 
-from kodezart.domain.audit_claims import audit_deferral
-from kodezart.types.domain.audit_runtime import AuditDeferral
+from kodezart.domain.audit_claims import audit_deferral, reopens_criterion
+from kodezart.types.domain.audit import (
+    AuditClaimReport,
+    AuditMandateObservation,
+    AuditVerdict,
+)
+from kodezart.types.domain.audit_detection_removal import DetectorRemovalReportEntry
+from kodezart.types.domain.audit_overclaim import OverclaimKind, OverclaimReportEntry
+from kodezart.types.domain.audit_runtime import (
+    AuditClaimPublication,
+    AuditDeferral,
+    AuditForgePublication,
+    AuditOverclaimPublication,
+    AuditPublication,
+    AuditRemovalPublication,
+    AuditTerminalPublication,
+)
+from kodezart.types.domain.audit_terminal import (
+    AuditTerminalObservation,
+    AuditTerminalReport,
+    TerminalDiscrepancy,
+)
 from kodezart.types.domain.tracker import IssuePriority, TrackerIssue, WorkflowStateKind
 from tests.tracker.conftest import FIXTURE_NOW
 
 REVIEW = "In Review"
+HEAD = "a" * 40
 
 
 def issue(
@@ -103,3 +126,91 @@ def test_a_completed_criterion_is_the_one_claim_a_tick_owes_a_session():
     )
     assert audit_deferral(issue=completed, review_state=REVIEW) is None
     assert audit_deferral(issue=completed, review_state=None) is None
+
+
+def report(verdict: AuditVerdict, *, head: str = HEAD) -> AuditClaimReport:
+    """One mandate-complete claim report at *head*, with the given verdict."""
+    return AuditClaimReport.model_validate(
+        {
+            "claim": {
+                "judgment": {
+                    "criterion_key": "audit/subject",
+                    "verdict": verdict.value,
+                    "evidence": "Read the current source at the observed commit.",
+                },
+                "head_sha": head,
+                "record_ref": "audit-record",
+                "check": "Current Check",
+            },
+            "mandate": None if verdict is not AuditVerdict.REFUTED else ABSENT_MANDATE,
+        }
+    )
+
+
+ABSENT_MANDATE = AuditMandateObservation.model_validate(
+    {
+        "verdict": "refuted",
+        "covered": [],
+        "unreadable": [],
+        "finding": None,
+        "finding_surface": None,
+        "evidence": "No instruction mandates the observed defect.",
+    }
+)
+
+
+def terminal(verdict: AuditVerdict) -> AuditTerminalReport:
+    """One terminal report at *head*, with the given verdict."""
+    refuted = verdict is AuditVerdict.REFUTED
+    return AuditTerminalReport(
+        observation=AuditTerminalObservation(
+            issue_key="audit/root",
+            record_ref="audit-record",
+            verdict=verdict,
+            discrepancies=(TerminalDiscrepancy.NO_BRANCH,) if refuted else (),
+            branch_head=HEAD if refuted else None,
+            pr=None,
+        ),
+        mandate=ABSENT_MANDATE if refuted else None,
+    )
+
+
+def publications(verdict: AuditVerdict) -> dict[str, object]:
+    """One publication of every shipped kind, all carrying *verdict*."""
+    return {
+        "claim": AuditClaimPublication(
+            detector="current_check", report=report(verdict)
+        ),
+        "forge": AuditForgePublication(graded_sha=HEAD, report=report(verdict)),
+        "overclaim": AuditOverclaimPublication(
+            entry=OverclaimReportEntry(
+                kind=OverclaimKind.AGGREGATE, report=report(verdict)
+            )
+        ),
+        "detector_removal": AuditRemovalPublication(
+            entry=DetectorRemovalReportEntry(finding=None, report=report(verdict))
+        ),
+        "terminal": AuditTerminalPublication(report=terminal(verdict)),
+    }
+
+
+@pytest.mark.parametrize("verdict", list(AuditVerdict))
+@pytest.mark.parametrize(
+    "kind", ["claim", "forge", "overclaim", "detector_removal", "terminal"]
+)
+def test_only_a_refuted_current_check_claim_takes_a_criterion_back(kind, verdict):
+    publication = publications(verdict)[kind]
+    expected = kind == "claim" and verdict is AuditVerdict.REFUTED
+    assert reopens_criterion(publication) is expected
+
+
+def shipped_kinds() -> set[str]:
+    """Every publication kind, read off the union rather than listed here."""
+    members = get_args(get_args(AuditPublication.__value__)[0])
+    return {get_args(member.model_fields["kind"].annotation)[0] for member in members}
+
+
+def test_the_table_covers_every_shipped_publication_kind():
+    table = publications(AuditVerdict.HOLDS)
+    assert set(table) == shipped_kinds()
+    assert {row.kind for row in table.values()} == shipped_kinds()

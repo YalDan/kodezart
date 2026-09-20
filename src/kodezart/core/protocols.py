@@ -1545,6 +1545,21 @@ class LaneStateTracker(TrackerCommentReader, Protocol):
 
 
 @runtime_checkable
+class CriterionReopener(Protocol):
+    """The one state move the audit makes.
+
+    A role narrowed out of the port rather than a widening of it:
+    ``TrackerPort`` satisfies it structurally.  The audit is not the lane,
+    so it does not take ``LaneStateTracker``, which is bound to the lane
+    state writer's calls.
+    """
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str | None = None
+    ) -> TrackerIssue: ...
+
+
+@runtime_checkable
 class LaneStateWriter(Protocol):
     """The lane's own tracker writes; the committing loop needs nothing else."""
 
