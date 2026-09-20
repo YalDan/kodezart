@@ -15,10 +15,16 @@ import asyncio
 import inspect
 
 import pytest
+from langgraph.checkpoint.memory import InMemorySaver
 
+from kodezart.chains.criteria import TrackerCriteria
+from kodezart.composition.engine import build_workflow_engine
+from kodezart.config.app import AppConfig
+from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.protocols import ScopeStatusWriter, TrackerPort
 from kodezart.domain.scope_terminal import render_scope_status
 from kodezart.services import scope_terminal as terminal_module
+from kodezart.services.agent_service import AgentService
 from kodezart.services.scope_terminal import ScopeTerminal
 from kodezart.types.domain.gating import ContentClass, OutboundDestination
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -29,11 +35,26 @@ from kodezart.types.domain.scope_terminal import (
     ScopeTerminalEvent,
     derive_scope_outcome,
 )
+from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.adapters.test_github_api import _make_client
+from tests.chains.test_native_fire import NativeExecutor, native_operation
 from tests.chains.test_write_back_adoption import (
     Journal,
     RecordingTracker,
     artifact_writes,
+)
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    FakeArtifactPersister,
+    FakeBranchMerger,
+    FakeChangePersister,
+    FakeGitService,
+    FakeRefPublisher,
+    FakeRepoCache,
+    FakeScopeStatusWriter,
+    FakeWorkspaceProvider,
+    PassThroughGate,
+    make_prompt_provider,
 )
 from tests.integration.test_scope_runtime import (
     FORGE_ORIGIN,
@@ -213,6 +234,59 @@ async def test_a_scope_with_no_status_surface_ends_with_the_event_alone():
 
     assert len(terminals(events)) == 1
     assert harness.status.posts == []
+
+
+def compose_scope_arm(*, status):
+    """The composition call, with the scope arm's writer left to the caller."""
+    workspace = FakeWorkspaceProvider()
+    port = board(lanes=("A",))
+    return build_workflow_engine(
+        operation=native_operation(),
+        scope_tracker=port,
+        scope_status=status,
+        criteria=TrackerCriteria(tracker=port),
+        config=AppConfig(
+            write_back=WriteBackSettings(max_verify_rounds=2),
+            ticket_review_mode=TicketReviewMode.REVIEWED,
+            max_iterations=1,
+            retry_max_attempts=1,
+            retry_initial_interval=0.1,
+        ),
+        repositories=(),
+        agent_service=AgentService(
+            git_base_url="https://github.com",
+            executor=NativeExecutor([]),
+            workspace=workspace,
+            persister=FakeChangePersister(),
+        ),
+        git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
+        cache=FakeRepoCache(),
+        workspace=workspace,
+        merger=FakeBranchMerger(),
+        artifact_persister=FakeArtifactPersister(),
+        ref_publisher=FakeRefPublisher(),
+        prompts=make_prompt_provider(),
+        skills=SUPPRESS_ALL_SKILLS,
+        gate=PassThroughGate(),
+        github_api=None,
+        checkpointer=InMemorySaver(),
+    )
+
+
+def test_a_scope_arm_composed_without_a_status_writer_refuses():
+    """Refused at construction rather than defaulted to a writer that is silent.
+
+    A scope arm handed no writer would walk, certify nothing and say nothing,
+    which is the state this lane exists to end — so the absence is a
+    composition error and not a mode.
+    """
+    with pytest.raises(ValueError, match="scope status writer"):
+        compose_scope_arm(status=None)
+
+
+def test_the_same_composition_with_a_writer_builds():
+    """The control: nothing else about that call is what the refusal is about."""
+    assert compose_scope_arm(status=FakeScopeStatusWriter()) is not None
 
 
 # ---------------------------------------------------------------------------
