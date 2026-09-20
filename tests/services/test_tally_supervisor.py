@@ -202,6 +202,33 @@ async def test_a_healthy_lane_with_no_stored_reading_is_not_written_to():
     assert records_on(port, LANE) == []
 
 
+async def test_a_lane_that_moved_while_still_owing_writes_a_reading_and_posts_nothing():
+    """The third write of the record rule announces nothing, in either direction.
+
+    A lane that closed one criterion and still owes another is written a new
+    earlier reading, so the bound is measured from where the lane now stands.
+    That write is a reading and not a transition: the stream has never carried
+    a raise for this signal, so there is nothing to clear, and the events this
+    signal posts are the two transitions alone.
+    """
+    port = await one_lane(commits=("sha-one",))
+    close_criterion(port, SECOND)
+    tally = supervisor(port)
+
+    await observe(tally, closed=(SECOND,))
+
+    assert len(records_on(port, LANE)) == 1
+    stored = await port.read_run_alarm(issue_key=LANE, subject=SUBJECT, signal=SIGNAL)
+    assert stored is not None
+    assert not is_raised(stored)
+    assert stored.readings[2].value.value == (SECOND,)
+    assert await events_on(port, LANE) == []
+
+    after = snapshot(port)
+    await observe(tally, closed=(SECOND,))
+    assert snapshot(port) == after
+
+
 async def test_a_finished_lane_with_a_raised_record_is_cleared_and_then_left_alone():
     port = await one_lane()
     tally = supervisor(port)

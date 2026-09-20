@@ -390,6 +390,32 @@ def test_the_event_due_is_read_from_this_signals_own_events():
     assert owed_clear.subject_key == AlarmSignal.TALLY_UNMOVED.value
 
 
+def test_an_event_of_another_kind_keyed_to_this_signal_is_not_this_signal_speaking():
+    """The stream's last word is read from this signal's own two kinds only.
+
+    An entry of another kind may carry this signal's subject key, and a reader
+    that took the last such entry whatever its kind would hear it as a clear:
+    a standing raise would look unanswered and would be posted twice, and a
+    record that has since gone quiet would look already cleared.
+    """
+    raised_here = event(RunEventKind.RUN_ALARM_RAISED)
+    another_kind = event(RunEventKind.LANE_PLATEAUED)
+
+    assert (
+        alarm_event_due(record=RAISED_STORED, events=(raised_here, another_kind))
+        is None
+    )
+
+    owed_clear = alarm_event_due(
+        record=QUIET_STORED, events=(raised_here, another_kind)
+    )
+
+    assert owed_clear is not None
+    assert owed_clear.kind is RunEventKind.RUN_ALARM_CLEARED
+    assert owed_clear.lane_key == LANE.lane_key
+    assert owed_clear.subject_key == AlarmSignal.TALLY_UNMOVED.value
+
+
 @pytest.mark.parametrize(
     ("record", "posted", "owed"),
     [
