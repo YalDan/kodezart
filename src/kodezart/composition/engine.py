@@ -49,6 +49,7 @@ from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableErr
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
+from kodezart.services.lane_lapse_escalation import LaneLapseEscalations
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import AgentEvent
@@ -266,6 +267,26 @@ def build_workflow_engine(
         if native_writes is not None
         else None
     )
+    # One raiser for every loop this deployment compiles, for the same reason:
+    # the question a lapse owes is composed from the lane, the tree and the
+    # head that arrive per call, so the component holds no run state. One
+    # round with no repair arm is a property of writing a question and not a
+    # deployment's choice, so it is not a constructor argument.
+    lapse_escalations = (
+        LaneLapseEscalations(
+            tracker=native_writes[0],
+            operation=native_writes[1],
+            runner=agent_service,
+            workspace=workspace,
+            git=git,
+            prompts=prompts,
+            skills=skills,
+            gate=gate,
+            lease_seconds=config.tracker.surface_lease_seconds,
+        )
+        if native_writes is not None
+        else None
+    )
     lane_state = (
         TrackerLaneStateWriter(
             tracker=scope_tracker,
@@ -289,6 +310,7 @@ def build_workflow_engine(
         return RalphLoop(
             source=native_source,
             lane_state=lane_state,
+            lapse_escalations=lapse_escalations,
             amendments=(
                 NativeAmendments(
                     tracker=native_writes[0],

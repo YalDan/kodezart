@@ -11,8 +11,10 @@ from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import LaneStateWriter
 from kodezart.domain.amendment import NativeWriteRefusalError
+from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_cross_off import (
     CARRIED_REASON,
+    LAPSE_REASON,
     UNDEMONSTRATED_REASON,
     evaluation_observation,
 )
@@ -41,7 +43,7 @@ from kodezart.types.domain.run_event import (
     RunEventKind,
     RunEventPublisher,
 )
-from kodezart.types.domain.run_state import LaneRunState
+from kodezart.types.domain.run_state import LaneEscalation, LaneRunState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -129,6 +131,7 @@ class Lane:
         resumed_head_sha=None,
         repo_url=REPO_URL,
         writes_lane_state=True,
+        raises_lapse_questions=True,
         owns_workspace=True,
         source=LaneSource,
     ):
@@ -155,6 +158,7 @@ class Lane:
             forge=forge,
             lane_operation=lane_operation,
             writes_lane_state=writes_lane_state,
+            raises_lapse_questions=raises_lapse_questions,
             owns_workspace=owns_workspace,
         )
         self.loop = self.fire.implementation._quality_gate
@@ -1539,14 +1543,20 @@ UNTOUCHED_PREFIX = "docs/"
 TOUCHED_PREFIX = "lane-1.py"
 
 
-def declaring(prefix: str) -> dict:
-    """The first grading's echo: one criterion passes and declares its cost."""
+def declaring(prefix: str, *, rederivation_class: str = "expensive") -> dict:
+    """The first grading's echo: one criterion passes and declares its cost.
+
+    *rederivation_class* is what that grading says the loop would have to do
+    to take it again. It decides everything that follows once the prefix
+    moves: an expensive grading goes back to the session, an observed one
+    cannot and lapses.
+    """
     return criteria_echo(
         keys=OWED_KEYS,
         passed={CARRIED},
         declared={
             CARRIED: {
-                "rederivationClass": "expensive",
+                "rederivationClass": rederivation_class,
                 "exercisedPaths": [prefix],
             }
         },
@@ -1711,3 +1721,188 @@ async def test_an_expensive_grading_whose_paths_moved_is_dispatched_again():
     # The re-derived grading declares nothing this time, so it is cheap again:
     # the later declaration wins, exactly as the model's own reading says.
     assert rows[CARRIED].rederivation_class is RederivationClass.cheap
+
+
+# ---------------------------------------------------------------------------
+# A grading the loop cannot re-derive is asked about, once (KOD-699).
+# ---------------------------------------------------------------------------
+
+#: The criterion whose grading rests on a performed observation. It is the one
+#: ``declaring`` passes, so the two arms differ in the class that grading
+#: declares and in nothing else.
+LAPSED = CARRIED
+
+
+def escalation_writes(lane, key: str) -> list[tuple[str, WorkflowStateKind]]:
+    """Every occurrence write ASKED for, with the criterion's state at that moment.
+
+    The board cannot answer either question: an identical body is answered
+    unchanged and a label already present returns early, so a second raise
+    leaves the same board as one. And the order is a property — a question
+    naming a criterion the board still shows as finished sends a reader to a
+    satisfied row.
+    """
+    asked: list[tuple[str, WorkflowStateKind]] = []
+    port = lane.port
+    prefix = native_operation().marker_prefixes["escalation"]
+    upsert = port.upsert_comment
+
+    async def observed(*, target, marker, body, **rest):
+        if marker.startswith(f"[{prefix}:"):
+            asked.append((marker, port.issues[key].state_kind))
+        return await upsert(target=target, marker=marker, body=body, **rest)
+
+    port.upsert_comment = observed
+    return asked
+
+
+def occurrence(lane, key: str):
+    """The occurrence body the board holds for *key*'s lapse question."""
+    marker = compose_comment_marker(
+        prefixes=native_operation().marker_prefixes,
+        purpose="escalation",
+        lane=SUBJECT,
+        occurrence_key=f"{key}:lapse",
+    )
+    found = [
+        comment for comment in lane.port.comments if comment.body.startswith(marker)
+    ]
+    assert len(found) == 1, found
+    return found[0], LaneEscalation.model_validate_json(
+        found[0].body.partition("\n")[2]
+    )
+
+
+async def test_an_observed_grading_asks_one_question_and_the_lane_keeps_grading():
+    """Three iterations, one lapse, one question, and a lane that goes on grading.
+
+    The first grading passes one criterion and declares it observed over a
+    prefix the lane's own later commits touch. At the second iteration the
+    commit record between that grading's sha and the new head reaches beneath
+    that prefix, so the grading has stopped standing — and the loop cannot
+    take it again, because the observation was performed rather than derived.
+    The criterion goes back to unstarted carrying the sha it was graded at,
+    and one question is raised on the lane's own issue, addressed under that
+    criterion.
+
+    Counting is on what the loop ASKS the port for, never on what the board
+    holds: an identical occurrence body is answered unchanged and a label
+    already present returns early, so a board-derived count cannot tell one
+    raise from two. The third iteration is what makes the count mean
+    something — the criterion is still lapsed there and no longer newly so, so
+    the transition the raise is keyed on has passed and nothing is asked
+    again.
+
+    The lapse comes from the commit record and from nothing else: no reading
+    is injected, and the record is read once, over that grading's own sha to
+    the new head. The lane's other two criteria are graded at every iteration
+    throughout.
+    """
+    lane = Lane(
+        evaluations=[
+            declaring(TOUCHED_PREFIX, rederivation_class="observed"),
+            criteria_echo(keys=OWED_KEYS[1:], passed=()),
+            criteria_echo(keys=OWED_KEYS[1:], passed=()),
+        ],
+        max_iterations=3,
+    )
+    raised = escalation_writes(lane, LAPSED)
+    asked = asked_about(lane, LAPSED)
+    events = await lane.run()
+
+    graded_sha, head_sha = lane.repo.shas[0], lane.repo.shas[1]
+    marker = compose_comment_marker(
+        prefixes=native_operation().marker_prefixes,
+        purpose="escalation",
+        lane=SUBJECT,
+        occurrence_key=f"{LAPSED}:lapse",
+    )
+    # One question for one transition, addressed under the criterion whose
+    # grading lapsed, and written only once the board no longer shows that
+    # criterion as finished.
+    assert raised == [(marker, WorkflowStateKind.UNSTARTED)]
+    comment, escalation = occurrence(lane, LAPSED)
+    assert comment.issue_key == SUBJECT
+    assert escalation.issue_id == SUBJECT
+    assert escalation.escalation_key == f"{LAPSED}:lapse"
+    assert escalation.raised_at_sha == graded_sha
+    assert escalation.interim_basis == TOUCHED_PREFIX
+    assert lane.port.classification_writes == [(SUBJECT, "decision")]
+    # One judged window per raise, counted where the board cannot: the judge
+    # opens its own session per question and the fake keeps every one.
+    assert len(lane.executor.judge_sessions) == 1
+
+    # The lapse is the commit record's own answer: nothing injects a reading,
+    # and the record for the standing grading is read once, over that
+    # grading's own sha to the head this iteration grades.
+    standing = [
+        call
+        for call in lane.git.calls
+        if call[0] == "diff_summary" and call[2] in lane.repo.shas
+    ]
+    assert standing == [("diff_summary", CACHE_PATH, graded_sha, head_sha)]
+
+    # Not re-derived, and not returned to Done: the criterion leaves the
+    # session's roster for good and the board says it is owed again.
+    assert len(lane.executor.evaluation_prompts) == 3
+    assert check_of(LAPSED) in lane.executor.evaluation_prompts[0]
+    assert all(
+        check_of(LAPSED) not in prompt
+        for prompt in lane.executor.evaluation_prompts[1:]
+    )
+    assert lane.port.issues[LAPSED].state_kind is WorkflowStateKind.UNSTARTED
+    assert evidence_of(lane, LAPSED).graded_sha == graded_sha
+    # The tick, then the take-back's one re-stamp of that row: the state is
+    # asked for once in the whole run, so nothing moved it twice and nothing
+    # put it back.
+    assert asked == ["edit_description", "set_workflow_state", "edit_description"]
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert [
+        event.kind
+        for event in posted
+        if event.kind is RunEventKind.CRITERION_REFUTED and event.criterion_id == LAPSED
+    ] == []
+
+    # The rest of the lane keeps being graded, at every iteration after the
+    # lapse as well as the one it happened at.
+    for prompt in lane.executor.evaluation_prompts[1:]:
+        assert all(check_of(key) in prompt for key in OWED_KEYS[1:])
+    iterations = [
+        event for event in events if isinstance(event, WorkflowIterationEvent)
+    ]
+    assert len(iterations) == 3
+    rows = {
+        result.criterion_id: result
+        for result in iterations[2].evaluation.criteria_results
+    }
+    assert set(rows) == set(OWED_KEYS)
+    assert rows[LAPSED].passed is False
+    assert rows[LAPSED].reasoning == LAPSE_REASON
+
+
+async def test_a_lapse_with_no_escalation_writer_refuses_before_the_session():
+    """A lane that could not ask the question does not take the criterion back.
+
+    The escalation role is resolved where the reading is composed, before the
+    session this iteration would grade in — so a deployment that configured no
+    raiser refuses while the board still reads as the pass the first grading
+    left. The refusal is the loop's own typed one, the second session is never
+    opened, and no occurrence is written.
+    """
+    lane = Lane(
+        evaluations=[
+            declaring(TOUCHED_PREFIX, rederivation_class="observed"),
+            criteria_echo(keys=OWED_KEYS[1:], passed=()),
+        ],
+        max_iterations=2,
+        raises_lapse_questions=False,
+    )
+    raised = escalation_writes(lane, LAPSED)
+
+    with pytest.raises(NativeWriteRefusalError, match="lapse escalation writer"):
+        await lane.run()
+
+    assert len(lane.executor.evaluation_prompts) == 1
+    assert raised == []
+    assert lane.port.issues[LAPSED].state_kind is WorkflowStateKind.COMPLETED
+    assert evidence_of(lane, LAPSED).graded_sha == lane.repo.shas[0]

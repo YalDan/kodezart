@@ -114,6 +114,11 @@ async def test_native_builder_retains_reports_and_requires_the_actual_owner(
         repository, executor, configured=configured
     )
     loop = fire.implementation._quality_gate
+    # The composition root's own native loop: the raiser a lapsed observation's
+    # question goes through is built exactly when the four native-write
+    # capabilities are, so the role is reachable from the root rather than
+    # merely existing.
+    assert (loop._lapse_escalations is not None) is configured
 
     async def run():
         return [
