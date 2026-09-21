@@ -280,12 +280,13 @@ def hands_a_spec(module, argument):
 
 
 CALLER = (
-    "from kodezart.b import _own_text\n"
+    "{IMPORT}\n"
     "\n"
     "def run(state):\n"
     "    spec = current_fire_spec(state)\n"
     "    return {CALL}\n"
 )
+OWN_TEXT_IMPORT = "from kodezart.b import _own_text"
 PROBE = (
     "def _own_text(value):\n"
     "    return (\n"
@@ -296,33 +297,74 @@ PROBE = (
 )
 
 
+def caller(imported, call):
+    """The caller module, spelling its import and its call as given."""
+    return CALLER.replace("{IMPORT}", imported).replace("{CALL}", call)
+
+
 @pytest.mark.parametrize(
-    ("form", "call", "probe"),
+    ("form", "imported", "call", "probe"),
     [
-        ("positional", "_own_text(spec)", PROBE),
-        ("keyword", "_own_text(value=spec)", PROBE),
+        ("positional", OWN_TEXT_IMPORT, "_own_text(spec)", PROBE),
+        ("keyword", OWN_TEXT_IMPORT, "_own_text(value=spec)", PROBE),
         (
             "through_a_receiver",
+            OWN_TEXT_IMPORT,
             "self._own_text(spec)",
             "class Reader:\n"
             "    def _own_text(self, value):\n"
             "        return value.body\n",
         ),
+        ("aliased_import", "from kodezart.b import _own_text as h", "h(spec)", PROBE),
     ],
 )
 def test_an_unannotated_parameter_handed_a_bound_value_at_a_call_is_a_seed(
-    form, call, probe
+    form, imported, call, probe
 ):
-    trees = parsed({"a.py": CALLER.replace("{CALL}", call), "b.py": probe})
+    trees = parsed({"a.py": caller(imported, call), "b.py": probe})
 
     assert parameters_receiving(trees, yields=hands_a_spec) == {
         ("b.py", "_own_text"): frozenset({"value"})
     }
 
     unrelated = parsed(
-        {"a.py": CALLER.replace("{CALL}", call.replace("spec", "state")), "b.py": probe}
+        {"a.py": caller(imported, call.replace("spec", "state")), "b.py": probe}
     )
     assert parameters_receiving(unrelated, yields=hands_a_spec) == {}
+
+
+@pytest.mark.parametrize(
+    ("route", "imported", "call"),
+    [
+        ("module_alias", "import kodezart.b as helpers", "helpers._own_text(spec)"),
+        ("submodule_import", "from kodezart import b", "b._own_text(spec)"),
+    ],
+)
+def test_a_callee_reached_through_a_module_route_is_that_modules_own_definition(
+    route, imported, call
+):
+    """A module receiver fills no parameter, so the first one takes the value."""
+    trees = parsed({"a.py": caller(imported, call), "b.py": PROBE})
+
+    assert parameters_receiving(trees, yields=hands_a_spec) == {
+        ("b.py", "_own_text"): frozenset({"value"})
+    }
+
+
+def test_a_receiver_that_spells_no_module_is_every_method_of_that_name():
+    """An offset stays for a real receiver: ``self`` is filled, not handed."""
+    trees = parsed(
+        {
+            "a.py": caller("from kodezart.b import Reader", "Reader()._own_text(spec)"),
+            "b.py": "class Reader:\n"
+            "    def _own_text(self, value):\n"
+            "        return value.body\n",
+        }
+    )
+
+    assert parameters_receiving(trees, yields=hands_a_spec) == {
+        ("b.py", "_own_text"): frozenset({"value"})
+    }
 
 
 def test_a_callee_is_resolved_to_the_callers_own_definition_first():

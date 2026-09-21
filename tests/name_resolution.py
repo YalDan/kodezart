@@ -345,14 +345,45 @@ def _module_path(dotted: str) -> str:
     return "/".join(parts[1:]) + ".py" if parts[0] == SOURCE_ROOT.name else ""
 
 
+def _module_routes(tree: ast.Module, trees: Mapping[str, ast.Module]) -> dict[str, str]:
+    """Local spelling -> the module of *trees* that spelling routes to.
+
+    ``import a.b [as m]`` binds the module itself, so its attributes route
+    through the local spelling.  ``from a import b`` binds a submodule
+    whenever ``a.b`` is a module of the tree rather than a name defined
+    inside ``a``, so it routes the same way.  A spelling that names no module
+    of *trees* is no route: the receiver is a value, not a module.
+    """
+    routes: dict[str, str] = {}
+    for local, dotted in resolve(tree, names=()).modules.items():
+        path = _module_path(dotted)
+        if path in trees:
+            routes[local] = path
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or node.module is None:
+            continue
+        for alias in node.names:
+            path = _module_path(f"{node.module}.{alias.name}")
+            if path in trees:
+                routes[alias.asname or alias.name] = path
+    return routes
+
+
 def _definitions_by_name(
     trees: Mapping[str, ast.Module],
 ) -> tuple[
     dict[str, dict[str, list[ast.FunctionDef | ast.AsyncFunctionDef]]],
+    dict[str, dict[str, list[ast.FunctionDef | ast.AsyncFunctionDef]]],
     dict[str, list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]],
 ]:
-    """Every function by module and bare name, and every method by bare name."""
+    """Every function by module and name, the top-level ones, and the methods.
+
+    The top-level map is what a module route reaches: ``m.helper(...)`` can
+    only land on a definition ``m`` itself states, never on a method of some
+    class inside it.
+    """
     own: dict[str, dict[str, list[ast.FunctionDef | ast.AsyncFunctionDef]]] = {}
+    top: dict[str, dict[str, list[ast.FunctionDef | ast.AsyncFunctionDef]]] = {}
     methods: dict[str, list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]] = {}
     for module, tree in trees.items():
         inside = {
@@ -361,13 +392,18 @@ def _definitions_by_name(
             if isinstance(node, ast.ClassDef)
             for statement in node.body
         }
+        for statement in tree.body:
+            if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef):
+                top.setdefault(module, {}).setdefault(statement.name, []).append(
+                    statement
+                )
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
             own.setdefault(module, {}).setdefault(node.name, []).append(node)
             if id(node) in inside:
                 methods.setdefault(node.name, []).append((module, node))
-    return own, methods
+    return own, top, methods
 
 
 def parameters_receiving(
@@ -378,44 +414,61 @@ def parameters_receiving(
     """Which parameters a call in the package hands a value of interest to.
 
     ``(module, function name)`` -> the parameter names some call hands an
-    argument to for which ``yields(calling_module, argument)`` is true.  A
-    bare callee is the caller's own definition of that word when it has one,
-    else the definition in the module the caller from-imports it from; a
-    callee reached through a receiver is every method of that name in the
-    package, because the receiver's type is not resolved here.  One call
-    edge, never deeper: a value handed on from the callee is the callee's
-    own site to answer for.
+    argument to for which ``yields(calling_module, argument)`` is true.
+
+    A bare callee is the caller's own definition of that word when it has
+    one, else the definition the caller from-imports, under the name the
+    home module gave it: an aliased from-import is looked up as the imported
+    word, not as the local spelling.  A callee reached through a receiver
+    that spells a module of *trees* — ``import a.b [as m]`` or ``from a
+    import b`` — is that module's own top-level definition of the attribute,
+    and a module fills no parameter, so nothing is offset.  Any other
+    receiver is a value whose type is not resolved here, so the callee is
+    every method of that name in the package and the parameter the receiver
+    fills is skipped.
+
+    One call edge, never deeper: a value handed on from the callee is the
+    callee's own site to answer for.
     """
-    own, methods = _definitions_by_name(trees)
+    own, top, methods = _definitions_by_name(trees)
     received: dict[tuple[str, str], set[str]] = {}
     for module, tree in sorted(trees.items()):
         imported = {
-            alias.asname or alias.name: _module_path(node.module)
+            alias.asname or alias.name: (_module_path(node.module), alias.name)
             for node in ast.walk(tree)
             if isinstance(node, ast.ImportFrom) and node.module is not None
             for alias in node.names
         }
+        routes = _module_routes(tree, trees)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             callee = node.func
             targets: list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]] = []
+            through_receiver = False
             if isinstance(callee, ast.Name):
                 here = own.get(module, {}).get(callee.id)
                 if here is not None:
                     targets = [(module, function) for function in here]
                 else:
-                    home = imported.get(callee.id, "")
+                    home, original = imported.get(callee.id, ("", callee.id))
                     targets = [
                         (home, function)
-                        for function in own.get(home, {}).get(callee.id, [])
+                        for function in own.get(home, {}).get(original, [])
                     ]
             elif isinstance(callee, ast.Attribute):
-                targets = list(methods.get(callee.attr, ()))
+                receiver = _spelling(callee.value)
+                routed = None if receiver is None else routes.get(receiver)
+                if routed is not None:
+                    targets = [
+                        (routed, function)
+                        for function in top.get(routed, {}).get(callee.attr, [])
+                    ]
+                else:
+                    targets = list(methods.get(callee.attr, ()))
+                    through_receiver = True
             for home, function in targets:
-                handed = _handed(
-                    node, function, through_receiver=isinstance(callee, ast.Attribute)
-                )
+                handed = _handed(node, function, through_receiver=through_receiver)
                 for parameter, argument in handed.items():
                     if yields(module, argument):
                         received.setdefault((home, function.name), set()).add(parameter)
