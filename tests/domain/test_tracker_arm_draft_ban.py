@@ -4,7 +4,7 @@ The tracker arm parses no body into a draft because the whole package makes a
 draft in exactly two authored places, names the class as a value in two type
 tests, and calls a model method on two receivers whose own function states no
 type for them.  The register below carries all three kinds and says what each
-is, so a fourth entry of any kind is read rather than absorbed.
+is, so a third entry in any kind is read rather than absorbed.
 
 The scanned surface is derived, not listed: every module that imports or
 declares the class, reaches it through a module it imports, or imports a
@@ -13,10 +13,13 @@ shared walk knows is reported — the class call, the building and parsing
 model methods however the receiver is reached, a subclass, an adapter or
 partial built around the class, ``type(x)(...)`` and ``x.__class__(...)``.
 
-Stated blind spot: a reflective construction that never spells the class,
-such as ``AuthoredSpec.model_fields["ticket"].annotation(...)``, is invisible
-to this walk and to any other static one.  Nothing at head does it, and a
-reader who wants it closed has to run the code rather than read it.
+Stated blind spot: a construction that names the class only inside a string
+constant, such as ``getattr(module, "TicketDraftOutput")`` or a
+``model_fields`` lookup keyed by a word, or that never names it at all, as in
+``AuthoredSpec.model_fields["ticket"].annotation(...)``, is invisible to this
+walk and to any other static one: a string constant is read here only inside
+an annotation, never as a receiver or a lookup key.  Nothing at head does it,
+and a reader who wants it closed has to run the code rather than read it.
 """
 
 import pytest
