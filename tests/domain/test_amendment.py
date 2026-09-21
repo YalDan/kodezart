@@ -500,6 +500,7 @@ def test_cost_never_authorizes_amendment_and_requires_recorded_base_measurement(
     [
         ("drop_measurement", "retains the actual measurement"),
         ("drop_measured_by", "retains the actual measurement"),
+        ("omit_measured_by", "Field required"),
         ("contradicting_affordability", "match the measured affordability"),
     ],
 )
@@ -513,6 +514,13 @@ def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_am
     stored against an affordability the measurement contradicts. The closing half
     is that no measured cost reaches the applied form at all.
 
+    The two measured-by rows are one clause read twice, because they fail for
+    different reasons: an explicit None is refused by the rule about the two
+    halves, while an absent key is refused only because the field is required.
+    A field handed a default would keep refusing the None and quietly accept
+    the absence, which is a record stored without how its measurement was
+    produced.
+
     The contradicting row flips the measured affordability and leaves the reason
     alone on purpose: flipping the reason instead would also trip the completed
     refusal's publication rule, and which validator speaks first is not something
@@ -524,6 +532,8 @@ def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_am
         cost["measurement"] = None
     elif mutation == "drop_measured_by":
         value["judgment"]["measured_by"] = None
+    elif mutation == "omit_measured_by":
+        del value["judgment"]["measured_by"]
     else:
         cost["measurement"]["affordable"] = False
     with pytest.raises(ValidationError) as failure:
