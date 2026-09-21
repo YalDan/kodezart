@@ -378,13 +378,11 @@ def standing_operation(*, scopes: bool) -> OperationConfig:
     return OperationConfig.model_validate(fields)
 
 
-def owner_config(**overrides: object) -> AppConfig:
-    settings: dict[str, object] = {
-        "organize": OrganizeSettings(max_admission_rounds=2, max_convergence_rounds=2),
-        "write_back": WriteBackSettings(max_verify_rounds=2),
-    }
-    settings.update(overrides)
-    return AppConfig(**settings)  # type: ignore[arg-type]
+def owner_config() -> AppConfig:
+    return AppConfig(
+        organize=OrganizeSettings(max_admission_rounds=2, max_convergence_rounds=2),
+        write_back=WriteBackSettings(max_verify_rounds=2),
+    )
 
 
 def built(operation: OperationConfig, *, tracker, config=None) -> ScopeHeartbeat | None:
