@@ -99,7 +99,11 @@ guide.
 
 1. Branch from `main`
 2. Make your changes
-3. Run `make check` (CI runs the same pipeline: lint, type-check, test)
+3. Run `make check` (CI runs the same pipeline: lint, type-check, test). A new
+   suppression, skip form or gated mark, and a removed test declaration or
+   assertion, reds it: each is a deliberate edit to the baseline tables in
+   `tests/test_suppression_baseline.py` or to `tests/negative_shape_baseline.json`,
+   made in the commit that needs it and explained there.
 4. Describe your changes in the PR
 
 ## Adding a New Adapter

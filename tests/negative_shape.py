@@ -20,14 +20,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from tests.conftest import GATED_MARKERS
+
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 
 #: The two trees the gate covers: shipped code and the suite that exercises it.
 SCANNED: Final[tuple[str, ...]] = ("src/kodezart", "tests")
 
-#: The directive comments that take a line out of the gate's reach.
+#: The directive comments that take a line, or a whole file, out of the
+#: gate's reach.  The file-level type-checker forms are here because they
+#: are the cheapest hole of all: one comment at the top of a module and the
+#: checker reads none of it.  No form for a checker the gate does not run.
 SUPPRESSION: Final[re.Pattern[str]] = re.compile(
-    r"#\s*(?:type:\s*ignore|(?:ruff:\s*)?noqa)"
+    r"#\s*(?:type:\s*ignore|(?:ruff:\s*)?noqa|mypy:\s*(?:ignore-errors|disable-error-code))"
 )
 
 #: The pytest forms that keep a collected test from running.
@@ -41,6 +46,15 @@ SKIP_FORMS: Final[frozenset[str]] = frozenset(
         "pytest.xfail",
     }
 )
+
+
+def gated_mark_forms() -> frozenset[str]:
+    """The mark forms the collection gate turns into a skip.
+
+    Derived from the gate's own table, so a marker class added there is
+    rostered by the census without a second list being kept in step.
+    """
+    return frozenset(f"pytest.mark.{name}" for name in GATED_MARKERS)
 
 
 @dataclass(frozen=True, slots=True)
