@@ -17,12 +17,24 @@ from types import ModuleType
 import pytest
 
 from kodezart.chains import delivery_coordinator
+from kodezart.composition.scope_runtime import build_scope_union
+from kodezart.config.app import AppConfig
 from kodezart.core import protocols
 from kodezart.domain.errors import CheckChainExecutionError
-from tests.chains.test_delivery_coordinator import RaisingRunner
+from kodezart.services.lane_records import LaneRecordReader
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.union_tick import ScopeUnionRequest
+from tests.chains.test_delivery_coordinator import RECORD_OPERATION, RaisingRunner
 from tests.chains.test_delivery_coordinator import delivery as delivery
 from tests.chains.test_delivery_coordinator import repository as repository
-from tests.fakes import FakeDeliveryProbe, FakePRCreator, FakePRStateReader
+from tests.fakes import (
+    FakeDeliveryProbe,
+    FakeGitService,
+    FakePRCreator,
+    FakePRStateReader,
+    FakeRepoCache,
+    FakeTrackerPort,
+)
 from tests.services import test_union_composition as pinned
 
 #: Every question the forge answers, across the write port, the query
@@ -200,6 +212,40 @@ async def test_the_union_step_holds_no_forge_collaborator_at_all(delivery) -> No
 
     assert [value for value in held if is_forge_shaped(value)] == []
     assert delivery.git in held
+
+
+async def test_the_composed_union_step_holds_no_forge_collaborator() -> None:
+    """The same walk, over the object the production composition now builds.
+
+    The case above says "over the object a production call site builds"; until
+    the union acquired one there was none, so the same holdings walk is run
+    here over what the shipped builder answers with. The builder has a delivery
+    reader within reach of its own caller and the walk holds one for its own
+    gate, so passing either near the union is the one thing this composition
+    could get catastrophically wrong.
+    """
+    git = FakeGitService()
+    union_for = build_scope_union(
+        tracker=FakeTrackerPort(),
+        git=git,
+        cache=FakeRepoCache(),
+        records=LaneRecordReader(tracker=FakeTrackerPort(), operation=RECORD_OPERATION),
+        config=AppConfig(),
+    )
+
+    subject = await union_for(
+        ScopeUnionRequest(
+            scope=ScopeRef(kind=ScopeKind.PROJECT, key="project-one"),
+            repo=pinned.entry(),
+            repo_url="file:///fixture",
+            job_id="scope-job",
+        )
+    )
+
+    held = held_by(subject)
+
+    assert [value for value in held if is_forge_shaped(value)] == []
+    assert git in held
 
 
 def test_no_module_the_union_step_reaches_asks_a_pull_request_anything() -> None:

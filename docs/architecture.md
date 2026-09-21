@@ -1134,7 +1134,22 @@ and repeats a stale attempt. The configured attempt bound produces
 produces `UnionHeadReadError`. Native reads settle before cancellation returns;
 concurrent calls on one instance share the result. These are repeat-read
 observations, without atomic exclusion of a writer after the last read. The
-scope-walker tick invocation and durable result persistence remain separate work.
+scope walk asks its union once per tick, and a tick whose lane heads are
+unchanged reuses the observation rather than composing again; durable
+persistence of the result remains outside the scope path, which compiles no
+checkpointer (KOD-840).
+
+The walk holds a factory rather than an instance, because what a union may
+reuse is pinned to one repository path and one selected base and both are facts
+about one invocation: one union per invocation, in a local, so a killed run's
+next invocation composes again from tracker and remote facts alone. A
+repository declaring no check chain is not composed at all, and the invocation
+says so. A measurement that refuses is stated and ends nothing: it rests no
+lane, reports no lane failure and stops no dispatch, because whether a scope
+composes is an observation of the scope and not a gate on it. The branch each
+lane contributes is the one its own run-state record names, read through the
+narrow ref-reading role (KOD-842). The union holds no forge collaborator
+(KOD-778).
 
 The pinned composition consumes the ordered lane-head snapshot
 and an immutable selected base. It creates a detached Git worktree, merges

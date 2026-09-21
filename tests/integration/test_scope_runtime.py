@@ -321,6 +321,7 @@ def runtime(
     status=None,
     organize=None,
     executor=None,
+    repo_checks=(),
 ):
     """The composed engine over external doubles.
 
@@ -328,6 +329,12 @@ def runtime(
     no-commit doubles; a test about what a walk leaves on the board supplies
     repositories that actually commit, so every recorded fact comes from an
     observation of one.
+
+    *repo_checks* is the chain the declared repository runs, and the shipped
+    default of no chain at all. A scope's union is composed only where its
+    repository declares one, so a test about the union declares it here; the
+    name says repository, because ``board(checks=…)`` already means a lane's
+    criteria in this module.
     """
     port = port or board(lanes=lanes)
     executor = (
@@ -387,7 +394,9 @@ def runtime(
                 retry_initial_interval=0.1,
                 **({} if organize is None else {"organize": organize}),
             ),
-            repositories=(RepoEntry(url=origin, trunk=trunk),),
+            repositories=(
+                RepoEntry(url=origin, trunk=trunk, checks=tuple(repo_checks)),
+            ),
             agent_service=service,
             git=git,
             cache=FakeRepoCache(),
@@ -1966,7 +1975,7 @@ def echoes(*, passed, rounds: int = 6):
     return [criteria_echo(keys=A_KEYS, passed=passed) for _ in range(rounds)]
 
 
-def resumable(*, repos: WalkRepos, merger=None, ref_publisher=None, **rest):
+def resumable(*, repos: WalkRepos, merger=None, ref_publisher=None, git=None, **rest):
     """A runtime over one repository family that commits as a real lane does.
 
     Two runtimes built over the SAME family are two processes against one
@@ -1976,8 +1985,13 @@ def resumable(*, repos: WalkRepos, merger=None, ref_publisher=None, **rest):
     *merger* and *ref_publisher* default to the family's own doubles; a test
     about a consolidation that answers something else, or one that reads what
     was published, supplies its own and keeps the reference.
+
+    *git* defaults to the family's own service. A test whose scratch tree is
+    really used supplies a subclass that makes the directory the port is asked
+    for, because this family's service records the acquisition without making
+    one and a chain cannot run in a directory that is not there.
     """
-    git = WalkGit(repos)
+    git = WalkGit(repos) if git is None else git
     return runtime(
         persister=WalkPersister(repos),
         git=git,

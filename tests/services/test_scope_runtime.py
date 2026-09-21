@@ -106,6 +106,17 @@ class RefusingLane:
         raise AssertionError(f"the walk reached the lane graph: {name}")
 
 
+async def no_union(request) -> None:
+    """A scope whose repository declares no chain, which is every board here.
+
+    Deliberately not a refusing double, unlike the two above: a refusal here
+    is contained at the walk's own union boundary, so every case in this module
+    would log a contained failure it is not about, while answering with nothing
+    is what the composition answers for a board declaring no chain.
+    """
+    return None
+
+
 def engine(
     port: FakeTrackerPort,
     *,
@@ -131,6 +142,7 @@ def engine(
         tracker=port,
         lane_for=no_lane if lane_for is None else lane_for,
         probe_for=no_probe if probe_for is None else probe_for,
+        union_for=no_union,
         resolver=BaseResolver(tracker=port, git=git, remote=REMOTE),
         entries=LaneEntryReader(records=records, git=git, remote=REMOTE),
         terminal=ScopeTerminal(
