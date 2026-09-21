@@ -11,6 +11,7 @@ import tomllib
 
 import pytest
 
+from kodezart.adapters.claude.agents_mapping import map_system_prompt
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.sets import V5_SET, v5_registry
@@ -61,6 +62,50 @@ def v5_bodies() -> dict[str, str]:
     return {key.value: registry.template_for(key).body for key in PromptKey}
 
 
+def prose(text: str) -> str:
+    """*text* with its line wrapping removed, so a sentence compares as a sentence."""
+    return " ".join(text.split())
+
+
+def member_files_carrying(text: str) -> list[str]:
+    """Every `.md` under the sets root (each shipped set, lens bodies included)
+    whose prose contains *text*, as posix paths relative to that root."""
+    root = default_sets_root()
+    files = sorted(root.rglob("*.md"))
+    assert files
+    needle = prose(text)
+    return [
+        path.relative_to(root).as_posix()
+        for path in files
+        if needle in prose(path.read_text("utf-8"))
+    ]
+
+
+# ---------------------------------------------------------------------------
+# the member-file scan — the positive control every one-source test rests on
+# ---------------------------------------------------------------------------
+
+
+def test_the_member_file_scan_reaches_each_set_and_the_lens_bodies() -> None:
+    """A scan that finds nothing anywhere would pass every one-source test.
+
+    Three files whose own text must find them: a member of the new set, a
+    member of the set it replaces, and a lens body under `definitions/`,
+    the last derived from the tree rather than named.
+    """
+    root = default_sets_root()
+    lens = sorted((root / V5_SET / "definitions").glob("*.md"))[0]
+    for path in (
+        root / V5_SET / "evaluation.md",
+        root / DEFAULT_SET / "evaluation.md",
+        lens,
+    ):
+        first_line = next(
+            line for line in path.read_text("utf-8").splitlines() if line.strip()
+        )
+        assert path.relative_to(root).as_posix() in member_files_carrying(first_line)
+
+
 # ---------------------------------------------------------------------------
 # suppression_proxy — one source, three consumers
 # ---------------------------------------------------------------------------
@@ -74,12 +119,7 @@ def test_the_suppression_proxy_is_declared_exactly_once() -> None:
     verbatim would be the second copy this fragment exists to prevent.
     """
     proxy_first_line = fragment("suppression_proxy").splitlines()[0]
-    members = sorted((default_sets_root() / V5_SET).glob("*.md"))
-    assert members
-    carriers = [
-        path.name for path in members if proxy_first_line in path.read_text("utf-8")
-    ]
-    assert carriers == []
+    assert member_files_carrying(proxy_first_line) == []
 
 
 def test_the_suppression_proxy_resolves_into_exactly_its_three_consumers() -> None:
@@ -111,13 +151,61 @@ def test_the_house_rules_appear_in_no_template_body() -> None:
 
 
 def test_the_house_rules_are_delivered_as_the_system_prompt_append() -> None:
-    """Absence from the bodies is only half the claim; this is the other half."""
-    assert v5_registry().system_prompt_append() == fragment("house_rules")
+    """Absence from the bodies is only half the claim; this is the other half.
+
+    Per key as well as per set: the append is read off the session policy the
+    dispatch actually carries, and off the mapping that hands it to the SDK,
+    so "every dispatched key receives it" is asserted where it is decided.
+    """
+    registry = v5_registry()
+    rules = fragment("house_rules")
+    assert registry.system_prompt_append() == rules
+    for key in PromptKey:
+        policy = registry.session_policy(key)
+        assert policy.system_prompt_append == rules
+        mapped = map_system_prompt(policy)
+        assert mapped is not None
+        assert mapped["append"] == rules
 
 
 def test_the_legacy_set_declares_no_system_prompt_append() -> None:
     """The set that states its rules inline contributes no append, and is unchanged."""
     assert load_registry(default_set=DEFAULT_SET).system_prompt_append() is None
+
+
+# ---------------------------------------------------------------------------
+# house_rules — the engineering standard, one sentence per reading (KOD-882)
+# ---------------------------------------------------------------------------
+
+#: One sentence per reading of the standard, in the order the fragment states
+#: them. Imported by the loop suite, which asserts the same six sentences
+#: reach the writer and the grader, so the readings have one source too.
+ENGINEERING_READINGS: tuple[str, ...] = (
+    "SOLID, DRY, hexagonal, and KISS as the way to get there.",
+    "Ports are narrow role protocols the application defines, and a consumer "
+    "depends on the smallest role it needs.",
+    "One adapter package per vendor, the vendor's wire shapes inside it, and no "
+    "judgement in an adapter.",
+    "Judgement is a prompt and arithmetic is a plain function.",
+    "Typed errors before any backend call.",
+    "The smallest change that satisfies the criterion: delete rather than carry, "
+    "and no abstraction, parameter or file beyond what the task requires.",
+)
+
+
+@pytest.mark.parametrize("reading", ENGINEERING_READINGS)
+def test_the_engineering_standard_states_each_reading(reading: str) -> None:
+    """Named one by one, so dropping any one of them reds its own case."""
+    assert reading in prose(fragment("house_rules"))
+
+
+@pytest.mark.parametrize("reading", ENGINEERING_READINGS)
+def test_each_reading_has_one_source_and_no_member_of_either_set_carries_it(
+    reading: str,
+) -> None:
+    """Counted over the whole manifest, so no second fragment can restate it."""
+    assert prose(SET_TOML.read_text(encoding="utf-8")).count(reading) == 1
+    assert member_files_carrying(reading) == []
 
 
 def test_the_no_early_stopping_paragraph_survives_the_hoist() -> None:
@@ -157,10 +245,7 @@ def test_every_judgment_template_ends_with_the_depth_block(key: str) -> None:
 
 def test_the_depth_block_is_declared_once_and_carried_by_no_member_file() -> None:
     """Same one-source rule as the proxy: the members ask, the set supplies."""
-    instruction = fragment("ultrathink_instruction")
-    members = sorted((default_sets_root() / V5_SET).glob("*.md"))
-    carriers = [path.name for path in members if instruction in path.read_text("utf-8")]
-    assert carriers == []
+    assert member_files_carrying(fragment("ultrathink_instruction")) == []
 
 
 def test_the_ultracode_token_is_declared_and_used_by_no_member() -> None:

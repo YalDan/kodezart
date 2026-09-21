@@ -601,6 +601,12 @@ stateDiagram-v2
 On iterations 2+, `iteration_feedback.augment_prompt()` appends failed criteria
 and their reasoning to the execution prompt, giving the agent targeted feedback.
 
+The engineering standard — SOLID, DRY, hexagonal, and KISS as the way to get
+there, each with this repository's reading — is stated once, in the
+`house_rules` fragment of the `anthropic_v5` prompt set, and reaches every
+session of every prompt key as the system-prompt append rather than inside any
+template body.
+
 The default maximum is 5 iterations (configurable via
 `KODEZART_MAX_ITERATIONS`).
 
