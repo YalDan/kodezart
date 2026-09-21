@@ -649,6 +649,26 @@ def test_the_addressed_issue_is_the_subject_the_run_carries() -> None:
 # ---------------------------------------------------------------------------
 
 
+RETIRED_SOURCE_CLAIM = "The spec read IS the source"
+
+
+def test_the_criteria_docstring_names_the_gate_and_the_shrink_guard() -> None:
+    """The class says what the read does, not that it is the source.
+
+    ``read_fire_spec`` admits the subject and refuses a subtree that lost a
+    criterion the captured spec names; the roster itself comes from the
+    subtree read. A docstring naming the read as the source contradicts the
+    code below it and the paragraph two sentences down, and it has drifted
+    that way once already (KOD-398).
+    """
+    docstring = TrackerCriteria.__doc__
+    assert docstring is not None
+    assert RETIRED_SOURCE_CLAIM not in docstring
+    assert "The subtree IS the source" in docstring
+    assert "admission" in docstring
+    assert "shrinking" in docstring
+
+
 async def test_the_criteria_a_fire_owes_are_its_subtrees_todo_criteria() -> None:
     stage = TrackerCriteria(tracker=tracker())
 
