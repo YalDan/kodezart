@@ -6,7 +6,9 @@ into that loop, and a lane entered to deliver never reaches it.  The authored
 graph is untouched, and no generation node runs on either path through here.
 """
 
+import ast
 import json
+from pathlib import Path
 
 import pytest
 
@@ -1009,6 +1011,90 @@ async def test_the_question_step_mints_a_pinned_answer_identity_and_no_criterion
     # reaches it under exactly the same patch.
     with pytest.raises(AssertionError, match="criterion identity"):
         await source.read_spec(issue_key=SUBJECT)
+
+
+#: The mint the ruling path must never reach, and the tree it is scanned over.
+CRITERION_MINT = "criterion_ref"
+SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
+
+#: Every module of the pre-loop question path: the node, the component it
+#: drives, the arithmetic that component does, and the reader of what it wrote.
+RULING_PATH = (
+    "chains/fire_time_ruling.py",
+    "services/fire_time_rulings.py",
+    "domain/rulings.py",
+    "services/ruling_records.py",
+)
+
+#: The modules that may name the mint at all, other than the one defining it,
+#: against what each names it for. Crossing a criterion off addresses that
+#: criterion by its identity, which is the one legitimate reason to mint one
+#: outside the module that owns the mint.
+MINT_CALLERS = {"domain/criterion_cross_off.py"}
+
+
+def _names_the_mint(module: Path) -> bool:
+    """Whether this module names the mint as a value, an import or a definition.
+
+    The name as an identifier, never as text: ``types/domain/criterion_ref.py``
+    is a module path and ``CRITERION_REFUTED`` is a different name, so a
+    substring search over the tree would report both and say nothing.
+    """
+    tree = ast.parse(module.read_text(encoding="utf-8"))
+    return any(
+        (isinstance(node, ast.Name) and node.id == CRITERION_MINT)
+        # The module-attribute form, which is the one the sentinel can see.
+        or (isinstance(node, ast.Attribute) and node.attr == CRITERION_MINT)
+        # The from-import form, which is the one it cannot.
+        or (
+            isinstance(node, ast.ImportFrom)
+            and any(alias.name == CRITERION_MINT for alias in node.names)
+        )
+        or (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == CRITERION_MINT
+        )
+        for node in ast.walk(tree)
+    )
+
+
+def test_no_module_on_the_ruling_path_names_the_criterion_mint() -> None:
+    """The negative clause, against every import spelling (KOD-639).
+
+    The behavioural guard above replaces the mint in the module dict, so it
+    sees a call reached as ``fire_spec.criterion_ref(...)`` and nothing of a
+    caller that did ``from kodezart.domain.fire_spec import criterion_ref`` —
+    which binds the function at import time, before any patch, and is the form
+    this tree already uses elsewhere. ``CriterionRef`` is a ``NewType`` over
+    ``str``, so a mint added on this path changes no value a test could read:
+    the naming site is the only observable thing there is.
+
+    Read statically, and as a census rather than a spot check, so a new naming
+    site is reported wherever it lands and however it is imported.
+    """
+    naming = {
+        str(module.relative_to(SOURCE_ROOT))
+        for module in SOURCE_ROOT.rglob("*.py")
+        if _names_the_mint(module)
+    }
+
+    # Non-vacuous: the scan finds the sites there are, and the module that
+    # defines the mint is derived rather than named.
+    (definer,) = {
+        str(module.relative_to(SOURCE_ROOT))
+        for module in SOURCE_ROOT.rglob("*.py")
+        if any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == CRITERION_MINT
+            for node in ast.walk(ast.parse(module.read_text(encoding="utf-8")))
+        )
+    }
+    assert definer == "domain/fire_spec.py"
+
+    # The clause: no module of the question path names it at all.
+    assert naming.isdisjoint(RULING_PATH)
+    # And the census is total, so a naming site anywhere else is reported too.
+    assert naming == {definer} | MINT_CALLERS
 
 
 # ---------------------------------------------------------------------------
