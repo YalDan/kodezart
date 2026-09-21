@@ -65,6 +65,10 @@ class UndemonstratedReason(StrEnum):
     #: The grading workspace held changes the sha does not, or its head was
     #: not the sha the verdict would be stamped with.
     workspace_not_the_graded_sha = "workspace_not_the_graded_sha"
+    #: The check this criterion names still passed after the behaviour it
+    #: names had been removed from the tree, so passing it read nothing
+    #: about that behaviour.
+    check_survived_mutation = "check_survived_mutation"
 
 
 #: The classes whose criteria name the path prefixes their grading exercised.

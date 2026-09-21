@@ -40,6 +40,7 @@ UTILITY_KEYS = frozenset(
         PromptKey.KNOWLEDGE_MAP.value,
         PromptKey.FIRE_RECORD.value,
         PromptKey.NATIVE_WRITER_CONTRACT.value,
+        PromptKey.MUTATION_SURVIVAL.value,
     },
 )
 

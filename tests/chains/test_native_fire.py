@@ -46,6 +46,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.lane_lapse_escalation import LaneLapseEscalations
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
+from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.scope_membership import read_scope_members
 from kodezart.types.domain.accept import AcceptVerdict
@@ -97,6 +98,7 @@ from tests.fakes import (
     no_delay_floor,
     unsatisfied_base_answer,
 )
+from tests.mutation_fixture import MUTATION_REMOVAL_LINE
 
 #: The operation's own key for "the criteria stage finished on this issue".
 STAGE_KEY = "criteria-staged"
@@ -233,6 +235,7 @@ def engine(
     writes_lane_state: bool = True,
     raises_lapse_questions: bool = True,
     owns_workspace: bool = True,
+    reads_mutation: bool = False,
     rulings=DEFAULT,
 ) -> RalphWorkflowEngine:
     """The fire engine, wired the way composition wires it, plus the stage.
@@ -280,6 +283,17 @@ def engine(
                     lease_seconds=900,
                 )
                 if criteria is not None
+                else None
+            ),
+            mutation=(
+                MutationSurvivalReader(
+                    runner=service,
+                    workspace=workspace,
+                    git=git,
+                    prompts=prompts,
+                    skills=SUPPRESS_ALL_SKILLS,
+                )
+                if reads_mutation
                 else None
             ),
             lane_state=(
@@ -1191,10 +1205,14 @@ RATE_LIMITED_BASE_READING = "rate-limited-base-reading"
 class NativeExecutor(FakeAgentExecutor):
     """Only the agent boundary is scripted; all execution consumers are real."""
 
-    def __init__(self, evaluations, *, on_remediation=None):
+    def __init__(self, evaluations, *, on_remediation=None, evaluate_in=None):
         super().__init__(events=[])
         self.evaluations = list(evaluations)
         self.on_remediation = on_remediation
+        #: When set, every evaluation is answered by reading the tree it was
+        #: streamed in rather than by popping a scripted answer: a lane graded
+        #: against real source has no script to pop from.
+        self.evaluate_in = evaluate_in
         self.schema_calls = []
         self.execution_prompts = []
         self.evaluation_prompts = []
@@ -1215,6 +1233,13 @@ class NativeExecutor(FakeAgentExecutor):
         #: it can have committed anything. A hook here is a kill BETWEEN two
         #: iterations; the evaluation hook above is a kill inside one.
         self.on_execution = None
+        #: The removal sessions, kept apart from ``execution_prompts``: both
+        #: run with no output format, and a double that counted one as the
+        #: other would report a removal as the lane's implementation session.
+        self.mutation_prompts = []
+        self.mutation_workspaces = []
+        #: What a removing session leaves in the tree it was streamed in.
+        self.on_mutation = None
         #: One answer set per pass through the question step, in order, and
         #: the prompt plus the whole call of each pass it opened.
         self.question_answers = []
@@ -1241,10 +1266,13 @@ class NativeExecutor(FakeAgentExecutor):
         properties = (output_format or {}).get("schema", {}).get("properties", {})
         self.schema_calls.append(properties)
         if "criteriaResults" in properties:
-            assert self.evaluations, "Unexpected extra evaluation"
             self.evaluation_prompts.append(kwargs["prompt"])
             self.evaluation_workspaces.append(kwargs.get("cwd"))
-            output = self.evaluations.pop(0)
+            if self.evaluate_in is not None:
+                output = self.evaluate_in(kwargs.get("cwd"))
+            else:
+                assert self.evaluations, "Unexpected extra evaluation"
+                output = self.evaluations.pop(0)
             if self.on_evaluation is not None:
                 # Awaited when the hook is one: what a board does between two
                 # evaluations it does through the port, the way a write-back
@@ -1293,6 +1321,12 @@ class NativeExecutor(FakeAgentExecutor):
         elif "claims" in properties:
             self._opened_execution(kwargs["prompt"])
             output = {"claims": []}
+        elif output_format is None and MUTATION_REMOVAL_LINE in kwargs["prompt"]:
+            self.mutation_prompts.append(kwargs["prompt"])
+            self.mutation_workspaces.append(kwargs.get("cwd"))
+            if self.on_mutation is not None:
+                self.on_mutation(kwargs.get("cwd"))
+            output = None
         elif output_format is None:
             self._opened_execution(kwargs["prompt"])
             output = None
@@ -1776,6 +1810,11 @@ async def test_production_constructor_wires_native_source_to_shared_consumers(
     assert terminal.outcome is WorkflowOutcome.handed_off_for_delivery
     assert port.spec_reads == 1
     assert artifacts.persist_calls == []
+    # A reading that is tested and reachable from nothing reads nothing: the
+    # loop the real constructor composed is the one that holds the reader.
+    assert isinstance(
+        fire.implementation._quality_gate._mutation, MutationSurvivalReader
+    )
 
 
 @pytest.mark.parametrize("consumer", ["implementation", "review", "loop"])

@@ -240,7 +240,10 @@ class GatedExecutor(OrganizingExecutor):
         self.release = asyncio.Event()
 
     async def stream(self, **kwargs):
-        title = kwargs["output_format"]["schema"].get("title")
+        # A dispatch that names no schema is a real shape on this path —
+        # the removal session's product is a tree, not an answer — so the
+        # title is read as absent rather than reached for.
+        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
         if title not in {"AdmissionJudgment", "OrganizeProposal", "WriteBackFinding"}:
             self.reached.set()
             await self.release.wait()

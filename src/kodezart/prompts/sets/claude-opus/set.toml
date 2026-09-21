@@ -51,3 +51,5 @@ audit_mandate = ["code-review"]
 organize_criteria_author = ["code-review"]
 fire_record = []
 fire_time_ruling = ["code-review"]
+# A mechanical removal step needs no role skill: nothing it says is read.
+mutation_survival = []

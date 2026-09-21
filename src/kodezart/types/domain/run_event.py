@@ -26,6 +26,7 @@ class RunEventKind(StrEnum):
     RUN_ALARM_CLEARED = "run_alarm_cleared"
     NODE_SESSION_STARTED = "node_session_started"
     CRITERION_GRADING_UNVERIFIED = "criterion_grading_unverified"
+    CRITERION_CHECK_SURVIVED_MUTATION = "criterion_check_survived_mutation"
 
 
 class RunEventEffect(StrEnum):
@@ -62,6 +63,7 @@ RUN_EVENT_PUBLISHERS = {
     RunEventKind.RUN_ALARM_CLEARED: RunEventPublisher.RAISER,
     RunEventKind.NODE_SESSION_STARTED: RunEventPublisher.RAISER,
     RunEventKind.CRITERION_GRADING_UNVERIFIED: RunEventPublisher.LANE,
+    RunEventKind.CRITERION_CHECK_SURVIVED_MUTATION: RunEventPublisher.LANE,
 }
 
 DERIVED_RUN_EVENTS = frozenset(
@@ -84,6 +86,7 @@ SILENT_STATE_EVENTS = frozenset(
         RunEventKind.RUN_ALARM_CLEARED,
         RunEventKind.NODE_SESSION_STARTED,
         RunEventKind.CRITERION_GRADING_UNVERIFIED,
+        RunEventKind.CRITERION_CHECK_SURVIVED_MUTATION,
     }
 )
 
@@ -97,6 +100,9 @@ SILENT_STATE_EVENTS = frozenset(
 UNDEMONSTRATED_EVENT_KINDS: Mapping[UndemonstratedReason, RunEventKind] = {
     UndemonstratedReason.workspace_not_the_graded_sha: (
         RunEventKind.CRITERION_GRADING_UNVERIFIED
+    ),
+    UndemonstratedReason.check_survived_mutation: (
+        RunEventKind.CRITERION_CHECK_SURVIVED_MUTATION
     ),
 }
 

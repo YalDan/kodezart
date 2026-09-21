@@ -135,7 +135,10 @@ class OrganizingExecutor(ObservedNativeExecutor):
         ]
 
     async def stream(self, **kwargs):
-        title = kwargs["output_format"]["schema"].get("title")
+        # A dispatch that names no schema is a real shape on this path —
+        # the removal session's product is a tree, not an answer — so the
+        # title is read as absent rather than reached for.
+        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
         if title not in {"AdmissionJudgment", "OrganizeProposal", "WriteBackFinding"}:
             async for event in super().stream(**kwargs):
                 yield event
@@ -699,7 +702,10 @@ class EscalatingExecutor(OrganizingExecutor):
         self.refuses = refuses
 
     async def stream(self, **kwargs):
-        title = kwargs["output_format"]["schema"].get("title")
+        # A dispatch that names no schema is a real shape on this path —
+        # the removal session's product is a tree, not an answer — so the
+        # title is read as absent rather than reached for.
+        title = (kwargs.get("output_format") or {}).get("schema", {}).get("title")
         if title == "AdmissionJudgment":
             key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])[-1]
             if (

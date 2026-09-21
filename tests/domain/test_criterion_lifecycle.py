@@ -1382,6 +1382,7 @@ def test_the_re_derivation_class_and_cross_off_state_members_are_exactly_these()
 def test_the_undemonstrated_reason_members_are_exactly_these():
     assert [(member.name, member.value) for member in UndemonstratedReason] == [
         ("workspace_not_the_graded_sha", "workspace_not_the_graded_sha"),
+        ("check_survived_mutation", "check_survived_mutation"),
     ]
 
 

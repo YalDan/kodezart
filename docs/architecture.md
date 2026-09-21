@@ -431,6 +431,22 @@ to the criterion's sub-issue and carrying the sha the verdict would have been
 stamped with. The sub-issue itself is untouched: there is no verdict to write on
 it, so its state does not move and its Evidence row is not stamped.
 
+A pass is worth what its check discriminates, so after the grading stands the
+same question is asked of a second tree. `MutationSurvivalReader` acquires
+another workspace at the graded sha, one session removes from it the behaviour
+the passing criteria name, and the evaluation prompt that produced those passes
+is put again, byte for byte, in that copy. A criterion that passed in both trees
+read nothing about the behaviour it names: its pass is withheld and it resolves
+undemonstrated with `check_survived_mutation`. What is read off the mutant tree
+is the two facts `read_workspace_head` answers — it must still stand at the
+graded sha and must hold changes — and the second grading's results. What is not
+read is anything the removing session says about its own work: it returns no
+structured output, and a removal that committed, moved the head or changed
+nothing leaves every pass standing. The failure mode is silence rather than a
+withholding, and a criterion the mutant grading fails or does not answer for is
+not a survivor, because a verdict read in a tree the sha does not name is no
+more the branch's than a pass read there is.
+
 A native evaluation whose grading did stand then runs each criterion it passed
 through that criterion's own check again, in a further tree the loop owns at the
 commit the recorded base resolves to. A check that already passes there passes

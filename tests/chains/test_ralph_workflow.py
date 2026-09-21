@@ -4942,6 +4942,8 @@ KEYED_DISPATCH_COUNTS = {
     "remediation.py": 1,
     "ticket_generation.py": 2,
     "prompt_pass.py": 1,
+    # The removal and the second grading of one mutation reading.
+    "mutation_survival.py": 2,
 }
 
 
