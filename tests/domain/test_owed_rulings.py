@@ -4,13 +4,22 @@ import pytest
 
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.errors import RulingUnrecordedError
-from kodezart.domain.rulings import EMPTY_REGISTRY, owed_rulings, pinned_registry
+from kodezart.domain.rulings import (
+    EMPTY_REGISTRY,
+    excess_answers,
+    owed_rulings,
+    pinned_registry,
+)
 from kodezart.types.domain.agent import Ruling, RulingAnswer, RulingAuthor
 
 SUBJECT = "EXT/1"
 CHECK = "EXT/1-a"
 ADDRESSABLE = frozenset({SUBJECT, CHECK})
 QUESTION = "Which of the two readings applies?"
+
+#: One item a subject's own section states, and the words inside it an answer
+#: could name instead of the item.
+STATED_DELIVERABLE = "bound a failed item's retries on the existing queue predicate"
 
 
 def answer(**changes) -> RulingAnswer:
@@ -201,3 +210,27 @@ def test_the_registry_text_is_one_json_line_per_record_or_the_stated_empty_form(
         Ruling.model_validate_json(line) in records
         for line in pinned_registry(records).splitlines()
     )
+
+
+@pytest.mark.parametrize(
+    "named",
+    ["retries", "the existing queue predicate", "bound", "a failed item's retries"],
+)
+def test_an_answer_naming_part_of_a_stated_deliverable_is_still_excess(named) -> None:
+    """Membership, never containment (KOD-629).
+
+    A containment test would let one stated item cover every item whose words
+    happen to occur inside it, so an answer naming only part of a stated item
+    would pass as covered. Part of an item is not an item: the section does not
+    state it, so the answer names work beyond what the subject states and is
+    excess.
+    """
+    named_answer = answer(deliverable=named)
+
+    assert named_answer.deliverable in STATED_DELIVERABLE
+    assert excess_answers(answers=(named_answer,), stated=(STATED_DELIVERABLE,)) == (
+        named_answer,
+    )
+    # Not "everything is excess": the item as the section states it is covered.
+    whole = answer(deliverable=STATED_DELIVERABLE)
+    assert excess_answers(answers=(whole,), stated=(STATED_DELIVERABLE,)) == ()
