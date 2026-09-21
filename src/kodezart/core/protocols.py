@@ -517,6 +517,48 @@ class PRCreator(Protocol):
 
 
 @runtime_checkable
+class ForgeQuery(Protocol):
+    """The forge's READ side: what already exists, and where to look at it.
+
+    Separate from ``PRCreator`` because it grants nothing.  A caller
+    asking "is there already a pull request for this head?" before opening
+    one needs no authority to open one, and a port that bundled the two
+    would hand the write to every caller that only wanted the answer.
+    """
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        """The OPEN pull request on *head* — its web URL and number — or none.
+
+        ``None`` is an ANSWER and not a failure: the forge was asked and
+        reported nothing open on that head.  A read that could not be
+        made RAISES, because "nobody has opened one" and "we could not
+        find out" send a check-before-create caller to opposite branches,
+        and the second one arriving as the first opens a duplicate.
+
+        More than one open pull request on one head is the forge
+        contradicting the question it was asked, and it raises rather
+        than picking: a caller that skipped its own create because of an
+        arbitrary pick would attach its work to whichever came back first.
+        """
+        ...
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """The page a person opens to look at *branch* on this forge.
+
+        Composed by the adapter because the shape of that address belongs
+        to the forge: a caller assembling it would be a second statement
+        of one vendor's URL layout, free to disagree with the first.
+
+        This asks the forge nothing, so it is not a coroutine and it
+        never reports whether the branch exists — an address is not an
+        observation, and a caller must not read one as the other.
+        """
+        ...
+
+
+@runtime_checkable
 class PRStateReader(Protocol):
     """Read one PR's native lifecycle without edit, close or merge authority."""
 
@@ -1476,6 +1518,20 @@ class WorkRefReader(Protocol):
     async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]: ...
 
 
+@runtime_checkable
+class ScopeStatusWriter(Protocol):
+    """Post one point-in-time status update on a scope's container.
+
+    A role narrowed out of the port rather than a widening of it: the scope
+    terminal makes exactly this one write and states exactly it, so the
+    tracker port grows no member and the consumer depends on nothing wider
+    (KOD-829).  ``ref`` addresses the container; ``body`` is the whole
+    content, already derived and already gated by the caller.
+    """
+
+    async def post_status_update(self, *, ref: ScopeRef, body: str) -> None: ...
+
+
 #: Called with the workspace a commit was made in and the receipt it
 #: returned, between the push and the completion of the persisting phase.
 AfterPublish = Callable[[str, PersistResult], Awaitable[None]]
@@ -2111,3 +2167,12 @@ class OutboundContentGate(Protocol):
         saying so.
         """
         ...
+
+
+@runtime_checkable
+class CheckChainRunner(Protocol):
+    """Execute the declared ordered chain, retaining every step's output."""
+
+    async def run_chain(
+        self, *, cwd: str, steps: Sequence[CheckStep]
+    ) -> CheckChainResult: ...

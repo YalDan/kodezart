@@ -601,6 +601,20 @@ class FakeGitService:
                 paths=paths,
             )
 
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        self.calls.append(
+            ("merge_scratch_head", cwd, head_sha, author_name, author_email)
+        )
+        paths = self._merge_conflicts.get(head_sha)
+        if paths is not None:
+            raise MergeConflictError(
+                "scratch merge conflict",
+                source_branch=head_sha,
+                paths=paths,
+            )
+
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
         return "a" * 40
@@ -1795,6 +1809,42 @@ class FakeRemediator:
         )
 
 
+class FakeForgeQuery:
+    """The forge's read side, beside the creator fake it is consulted with.
+
+    Seeded with the open pull requests the forge holds, keyed by origin and
+    head.  A head the fixture does not name has nothing open on it, which
+    is the same answer the forge gives — an answer, never a failure, so a
+    read that must fail is stated as ``fail_lookup`` instead.
+    """
+
+    def __init__(
+        self,
+        *,
+        open_prs: Mapping[tuple[str, str], tuple[str, int]] | None = None,
+        fail_lookup: Exception | None = None,
+    ) -> None:
+        self._open_prs = dict(open_prs or {})
+        self._fail_lookup = fail_lookup
+        self.lookups: list[tuple[str, str]] = []
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        self.lookups.append((repo_url, head))
+        if self._fail_lookup is not None:
+            raise self._fail_lookup
+        return self._open_prs.get((repo_url, head))
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        owner, repo = extract_owner_repo(repo_url)
+        origin = urlsplit(repo_url)
+        if origin.scheme != "https" or not origin.netloc:
+            msg = f"Cannot compose a branch page for origin: {repo_url}"
+            raise ValueError(msg)
+        return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch)}"
+
+
 class FakePRCreator:
     """Fake PRCreator for testing the outer workflow pipeline."""
 
@@ -1903,6 +1953,25 @@ class FakeCIMonitor:
         return self._attempt_context().get(
             (repo_url, ref), (self._passed, self._summary, self._failed_names)
         )
+
+    async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
+        self.rerun_calls.append((repo_url, ref))
+        if self._fail is not None:
+            raise self._fail
+        result = (
+            self._rerun_results.pop(0)
+            if self._rerun_results
+            else self._observation(repo_url, ref)
+        )
+        attempts = self._attempt_context()
+        attempts[(repo_url, ref)] = result
+        self._attempts.set((asyncio.current_task(), attempts))
+
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        self.declaration_calls.append(repo_url)
+        if self._fail is not None:
+            raise self._fail
+        return self._declared
 
     async def wait_for_checks(
         self,
@@ -3262,6 +3331,39 @@ class FakeLinearMcpServer:
             raise LookupError(msg)
         self.initiative_labels.append(name)
         return {}
+
+    def _tool_save_status_update(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """One status update on a project or an initiative, addressed by key.
+
+        The declared contract, refused the way the server refuses it: the
+        ``type`` says which container is addressed and the argument of that
+        same name carries the target, so a payload naming neither, naming
+        both, or naming a container this workspace does not hold is a tool
+        error rather than a silent success.  The success envelope is
+        unmeasured, so what comes back is minimal and the adapter reads
+        none of it.
+        """
+        kind = arguments.get("type")
+        holders: Mapping[str, Mapping[str, object]] = {
+            "project": self.projects,
+            "initiative": getattr(self, "initiatives", {}),
+        }
+        if kind not in holders:
+            msg = f"status updates address a project or an initiative, not {kind!r}"
+            raise LookupError(msg)
+        named = [name for name in holders if name in arguments]
+        if named != [kind]:
+            msg = f"a status update names exactly its own target, not {named!r}"
+            raise LookupError(msg)
+        target = str(arguments[str(kind)])
+        if target not in holders[str(kind)]:
+            msg = f"fake workspace has no {kind} {target!r}"
+            raise LookupError(msg)
+        self.status_updates.append((str(kind), target, str(arguments.get("body", ""))))
+        return {"success": True}
 
     def _tool_list_issue_statuses(
         self,
@@ -4792,6 +4894,31 @@ class FakeTrackerPort:
         )
 
 
+class FakeScopeStatusWriter:
+    """In-process ``ScopeStatusWriter`` that records what it was asked to post.
+
+    It refuses exactly what the shipped adapter refuses before any call — a
+    scope kind with no status surface, and a body with nothing in it — and
+    records nothing when it does, so a fixture cannot read a refused post as
+    a landed one.
+    """
+
+    def __init__(self) -> None:
+        self.posts: list[tuple[ScopeRef, str]] = []
+
+    async def post_status_update(self, *, ref: ScopeRef, body: str) -> None:
+        await asyncio.sleep(0)
+        if ref.kind not in STATUS_UPDATE_SCOPE_KINDS:
+            raise ScopeStatusError(
+                ref=ref, reason="this scope kind carries no status update"
+            )
+        if not body.strip():
+            raise ScopeStatusError(
+                ref=ref, reason="a status update with no body states nothing"
+            )
+        self.posts.append((ref, body))
+
+
 def _comparable(value: object) -> object:
     """*value* rendered into something a comparison can be made on.
 
@@ -5376,6 +5503,10 @@ def write_stdio_fake_server(directory: Path) -> Path:
 
 class FakePRStateReader:
     """Read-only exact-identity double for the native PR state boundary."""
+
+    def __init__(self, *, records: dict[tuple[str, int], PRState]) -> None:
+        self.records = records
+        self.calls: list[tuple[str, int]] = []
 
     async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:
         if (
