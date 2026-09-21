@@ -14,7 +14,7 @@ becomes once they are separated, is KOD-139; naming the property here
 keeps the claim honest until that lands.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Self
 
@@ -163,6 +163,16 @@ class ScopeLabel(StrEnum):
     TRIAGE = "triage"
     PROPOSED = "proposed"
     APPROVED = "approved"
+
+
+def aliases_approval_member(*, label: str, scope_labels: Mapping[str, str]) -> bool:
+    """Whether this configured label spells the admission vocabulary's approved member.
+
+    Admission is the approver's own act, so every seam that writes a
+    configured label asks this before writing. Stated once, beside the
+    member it names.
+    """
+    return label == scope_labels.get(ScopeLabel.APPROVED.value)
 
 
 class LifecycleStage(StrEnum):
@@ -702,6 +712,18 @@ class OperationConfig(OperationModel):
                     failures.append(
                         f"scope_labels is missing required key {scope_label.value!r}"
                     )
+
+        # A queue-state write is an ordinary state move, so a queue member
+        # spelled as the admission vocabulary's approved member would let that
+        # move grant approval. Refused here, where both mappings are: an
+        # operation that spells them the same cannot load at all.
+        failures.extend(
+            f"queue_states[{name!r}] {label!r} is the label scope_labels"
+            f"[{ScopeLabel.APPROVED.value!r}] names; a queue-state write may not "
+            f"express approval"
+            for name, label in self.queue_states.items()
+            if aliases_approval_member(label=label, scope_labels=self.scope_labels)
+        )
 
         if self.workflow_states:
             for stage in LifecycleStage:

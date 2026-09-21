@@ -1190,7 +1190,14 @@ class TrackerPort(
         issue_key: str,
         state: QueueState,
     ) -> TrackerIssue:
-        """Read first; replace other queue states only if they differ."""
+        """Read first; replace other queue states only if they differ.
+
+        A state whose configured label is the scope admission vocabulary's
+        approved member raises ``ApprovalLabelWriteError`` before any backend
+        request: the queue vocabulary cannot express an approval, whatever
+        mapping the operation loaded with. The operation loader refuses such a
+        mapping; this refusal is the port's own and does not rely on it.
+        """
         ...
 
     async def set_issue_classification(

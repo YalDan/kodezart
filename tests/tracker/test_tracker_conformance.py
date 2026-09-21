@@ -67,6 +67,7 @@ from tests.tracker.conftest import (
     FOREIGN_ISSUE,
     FOREIGN_REVIEW,
     ISSUE_LABELS,
+    QUEUE_STATE_LABELS,
     SCOPE_DIAGNOSIS,
     TEAM_IDENTIFIERS,
     TRACKER_IMPLEMENTATIONS,
@@ -152,6 +153,40 @@ def aliasing_writes(
 ) -> Callable[[], tuple[object, ...]]:
     """Mutations made against the aliased workspace, by either arm."""
     return observed_writes(aliasing_tracker, server)
+
+
+@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
+async def queue_aliasing_tracker(
+    request: pytest.FixtureRequest,
+    server: FakeLinearMcpServer,
+    clock: FixtureClock,
+) -> TrackerPort:
+    """Every implementation, over a workspace whose queue spells approval.
+
+    The admission vocabulary's approved member and the issue queue's own
+    approved member resolve to the SAME tracker label here, which is the only
+    shape in which a queue-state write can name the approver's member at all.
+    The admission mapping is what moves, because the queue mapping is the
+    fixture's constant and a workspace that changed both would not say which
+    of the two the rule is about.
+    """
+    factory = TRACKER_IMPLEMENTATIONS[request.param]
+    port = factory(
+        TrackerWorkspace(
+            server=server,
+            clock=clock,
+            scope_labels={ScopeLabel.APPROVED.value: QUEUE_STATE_LABELS["approved"]},
+        ),
+    )
+    return await port if isawaitable(port) else port
+
+
+@pytest.fixture
+def queue_aliasing_writes(
+    queue_aliasing_tracker: TrackerPort, server: FakeLinearMcpServer
+) -> Callable[[], tuple[object, ...]]:
+    """Mutations made against the queue-aliased workspace, by either arm."""
+    return observed_writes(queue_aliasing_tracker, server)
 
 
 #: Holders are shaped as the identities the contract names: a lease is held
@@ -2534,6 +2569,51 @@ class TestApprovalLabelWrites:
         )
 
         assert "criterion" in updated.issue_labels
+
+    async def test_a_queue_state_write_naming_approval_is_refused_before_any_request(
+        self,
+        queue_aliasing_tracker: TrackerPort,
+        queue_aliasing_writes: Callable[[], tuple[object, ...]],
+        server: FakeLinearMcpServer,
+    ) -> None:
+        """The queue vocabulary cannot express an approval either.
+
+        The subject is an issue in another queue member, so the write is a real
+        move: a subject already carrying the approved label would return
+        unchanged before any refusal could be asked for, and moving it out of
+        that member first would itself revoke the approval under this mapping.
+        """
+        before = await queue_aliasing_tracker.read_issue(issue_key=ASSET_ISSUE)
+        labels = list(server.issues[ASSET_ISSUE].labels)
+        written = queue_aliasing_writes()
+        asked = len(server.calls)
+
+        with pytest.raises(ApprovalLabelWriteError) as refused:
+            await queue_aliasing_tracker.set_queue_state(
+                issue_key=ASSET_ISSUE, state=QueueState.APPROVED
+            )
+
+        assert len(server.calls) == asked
+        assert (refused.value.issue_key, refused.value.classification) == (
+            ASSET_ISSUE,
+            QueueState.APPROVED.value,
+        )
+        after = await queue_aliasing_tracker.read_issue(issue_key=ASSET_ISSUE)
+        assert after.issue_labels == before.issue_labels
+        assert after.queue_states == before.queue_states == frozenset({QueueState.DONE})
+        assert queue_aliasing_writes() == written
+        assert server.issues[ASSET_ISSUE].labels == labels
+
+    async def test_a_queue_state_that_is_not_the_approval_member_still_writes(
+        self,
+        queue_aliasing_tracker: TrackerPort,
+    ) -> None:
+        """Only the colliding member refuses; the rest of the queue is untouched."""
+        updated = await queue_aliasing_tracker.set_queue_state(
+            issue_key=ASSET_ISSUE, state=QueueState.PROPOSED
+        )
+
+        assert updated.queue_states == frozenset({QueueState.PROPOSED})
 
 
 class TestPrincipalAuthoredBodies:

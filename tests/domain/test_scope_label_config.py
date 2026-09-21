@@ -17,16 +17,33 @@ SCOPE_LABELS = {
 }
 
 
-def _write_config(tmp_path: Path, labels: dict[str, str] | None) -> Path:
+#: A whole issue-queue vocabulary, so a case can move one member onto the
+#: admission label and leave the rest a legal mapping.
+QUEUE_STATES = {
+    "triage": "needs issue assessment",
+    "proposed": "issue ready for a decision",
+    "approved": "implementation authorized",
+    "done": "issue finished",
+    "decision": "issue awaiting a decision",
+}
+
+
+def _write_config(
+    tmp_path: Path,
+    labels: dict[str, str] | None,
+    queue_states: dict[str, str] | None = None,
+) -> Path:
     lines = [
         'operation_name = "fixture"',
         'workspace = "fixture-workspace"',
     ]
-    if labels is not None:
-        lines.extend(("", "[scope_labels]"))
+    for block, mapping in (("scope_labels", labels), ("queue_states", queue_states)):
+        if mapping is None:
+            continue
+        lines.extend(("", f"[{block}]"))
         lines.extend(
             f"{json.dumps(key)} = {json.dumps(value)}"
-            for key, value in sorted(labels.items())
+            for key, value in sorted(mapping.items())
         )
     path = tmp_path / "operation.toml"
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -118,3 +135,64 @@ def test_scope_label_values_remain_strings() -> None:
     (failure,) = caught.value.errors()
     assert failure["loc"] == ("scope_labels", "approved")
     assert failure["type"] == "string_type"
+
+
+@pytest.mark.parametrize("member", ["approved", "done"])
+def test_a_queue_state_spelling_the_approval_label_is_refused_at_load_naming_both_keys(
+    member: str,
+) -> None:
+    """Any queue member spelled as the approval label is refused, not just one.
+
+    The queue member's own name carries no weight: what the rule is about is
+    the label, so a "done" write spelled as the approval label is the same
+    write as an "approved" one. Both keys are named, because a reader has two
+    mappings to reconcile.
+    """
+    with pytest.raises(ValidationError) as caught:
+        OperationConfig(
+            operation_name="fixture",
+            workspace="fixture-workspace",
+            scope_labels=SCOPE_LABELS,
+            queue_states={**QUEUE_STATES, member: SCOPE_LABELS["approved"]},
+        )
+
+    message = str(caught.value)
+    assert f"queue_states[{member!r}]" in message
+    assert "scope_labels['approved']" in message
+    assert repr(SCOPE_LABELS["approved"]) in message
+
+
+def test_the_collision_is_a_typed_load_error_beside_the_structural_ones(
+    tmp_path: Path,
+) -> None:
+    """The collision is collected with the other structural failures, not first."""
+    path = _write_config(
+        tmp_path,
+        {key: value for key, value in SCOPE_LABELS.items() if key != "triage"},
+        {**QUEUE_STATES, "approved": SCOPE_LABELS["approved"]},
+    )
+
+    with pytest.raises(OperationConfigError) as caught:
+        load_operation_config(path)
+
+    assert any(
+        "scope_labels is missing required key 'triage'" in failure
+        for failure in caught.value.failures
+    )
+    assert any(
+        "queue_states['approved']" in failure for failure in caught.value.failures
+    )
+
+
+def test_matching_non_approval_spellings_still_load(tmp_path: Path) -> None:
+    """One label under both namespaces is legal unless it is the approval one."""
+    config = load_operation_config(
+        _write_config(
+            tmp_path,
+            SCOPE_LABELS,
+            {**QUEUE_STATES, "triage": SCOPE_LABELS["triage"]},
+        )
+    )
+
+    assert config.queue_states["triage"] == SCOPE_LABELS["triage"]
+    assert config.scope_labels == SCOPE_LABELS
