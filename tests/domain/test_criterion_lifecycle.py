@@ -685,7 +685,19 @@ def test_a_vendor_name_is_found_however_it_is_written(spelling):
     assert vendor_terms(rendered) == VENDOR_TERMS
 
 
-@pytest.mark.parametrize("innocent", ["nonlinear", "linearity", "collinear", "linea"])
+@pytest.mark.parametrize(
+    "innocent",
+    [
+        "nonlinear",
+        "linearity",
+        "collinear",
+        "linea",
+        # The Check's last sentence, asserted rather than left to a green scan:
+        # the label vocabulary the record's own surface carries is domain
+        # vocabulary, so the guard must name none of it.
+        "issue_labels read_scope_labels criterion",
+    ],
+)
 def test_a_longer_word_is_not_a_vendor_name(innocent):
     assert vendor_terms(innocent) == ()
 
