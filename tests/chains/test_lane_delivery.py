@@ -3,6 +3,8 @@
 import ast
 import asyncio
 import inspect
+from types import UnionType
+from typing import Union, get_args, get_origin
 
 import pytest
 from pydantic import ValidationError
@@ -75,6 +77,22 @@ def _names(node) -> set[str]:
     return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)} | {
         n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)
     }
+
+
+def _roles_in(annotation) -> set[object]:
+    """*annotation* together with every member a union of it is built from.
+
+    ``TrackerPort | None`` is a union object rather than the port, so asking
+    whether a set of raw annotations contains ``TrackerPort`` answers no for
+    a constructor that takes one optionally.  The members are walked out
+    instead — recursively, so a union nested inside a union is no hiding
+    place either — and the walk is bounded by the annotation's own depth.
+    """
+    roles = {annotation}
+    if get_origin(annotation) in (Union, UnionType):
+        for member in get_args(annotation):
+            roles |= _roles_in(member)
+    return roles
 
 
 def pr_identity(*, head=HEAD, number=1, base=BASE):
@@ -323,6 +341,31 @@ async def test_a_coordinator_write_through_any_collaborator_reds_every_fixture()
         await deliver(parts)
 
 
+async def test_an_unlock_write_through_any_collaborator_reds_every_fixture():
+    """The same claim for the unlock half, which leaves no trace on the board.
+
+    Releasing a claim and a surface set on a board that holds neither moves
+    the locks not at all, so a check that read the locks back would agree
+    with the release it exists to catch.  The double journals the attempt,
+    the projection covers that journal, and the driver reds — which is what
+    makes "any unlock write fails the fixture" an assertion here.
+    """
+    parts = await setup()
+    owner, tracker = parts[0], parts[6]
+    inner = owner._criteria_reader
+    assert tracker.claims == {} and tracker.leases == {}
+
+    class Writing:
+        async def read_current(self, *, spec, held=None):
+            await tracker.release_claim(issue_key=SUBJECT, holder="lane")
+            await tracker.release_surfaces(surfaces=frozenset(), holder="lane")
+            return await inner.read_current(spec=spec, held=held)
+
+    owner._criteria_reader = Writing()
+    with pytest.raises(AssertionError, match="wrote to the tracker"):
+        await deliver(parts)
+
+
 async def test_stalled_lane_uses_the_same_open_watch_path_without_a_fix():
     parts = await setup(monitor=FakeCIMonitor(passed=False), bound=0)
     result = await deliver(parts, stalled=True, remediation=True)
@@ -419,19 +462,37 @@ async def test_the_coordinator_holds_no_tracker_port_and_no_lane_state_writer():
 
     The constructor's roles are the coordinator's whole declared reach: the
     one tracker-facing role among them is a reader, so the two negatives are
-    not vacuous.  The instance is then checked as it stands, one level deep;
-    a write made through a collaborator's own tracker is the driver's catch.
+    not vacuous.  Each annotation is walked out through its union members
+    first, so a role offered as ``TrackerPort | None`` is refused by the same
+    two negatives rather than slipping past them, and every parameter is
+    required, so there is no board-writing role a caller may fill that the
+    composition root leaves out.  The instance is then checked as it stands,
+    one level deep; a write made through a collaborator's own tracker is the
+    driver's catch.
     """
-    roles = {
-        parameter.annotation
+    parameters = [
+        parameter
         for parameter in inspect.signature(
             LaneDeliveryCoordinator.__init__
         ).parameters.values()
         if parameter.name != "self"
+    ]
+    roles = {
+        role for parameter in parameters for role in _roles_in(parameter.annotation)
     }
+
+    # The walk is shown on the very shape it exists for, so the two
+    # negatives below are read against a union rather than trusted to be.
+    assert TrackerPort in _roles_in(TrackerPort | None)
+
     assert TrackerPort not in roles
     assert LaneStateWriter not in roles
     assert FireCriteriaReader in roles
+    assert [
+        parameter.name
+        for parameter in parameters
+        if parameter.default is not inspect.Parameter.empty
+    ] == []
 
     owner, *_, tracker = await setup()
 

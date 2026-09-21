@@ -99,14 +99,33 @@ async def write_renewal(port: FakeTrackerPort) -> None:
     await port.renew_claim(issue_key=ISSUE, holder=HOLDER, lease_seconds=LEASE_SECONDS)
 
 
-async def write_surface_lease(port: FakeTrackerPort) -> None:
-    surface = WritableSurface(
+def leased_surface() -> WritableSurface:
+    """The one surface the lease rows below take and give back."""
+    return WritableSurface(
         kind=SurfaceKind.ISSUE_DESCRIPTION,
         ref=ScopeRef(kind=ScopeKind.ISSUE, key=ISSUE),
     )
+
+
+async def write_surface_lease(port: FakeTrackerPort) -> None:
     await port.acquire_surfaces(
-        surfaces=frozenset({surface}), holder=HOLDER, lease_seconds=LEASE_SECONDS
+        surfaces=frozenset({leased_surface()}),
+        holder=HOLDER,
+        lease_seconds=LEASE_SECONDS,
     )
+
+
+async def write_claim_release(port: FakeTrackerPort) -> None:
+    # Journalled whether or not anything was held: an attempt is the write.
+    # This board holds no claim, so the release moves nothing else at all —
+    # which is what makes the case about this journal and no other.
+    await port.release_claim(issue_key=ISSUE, holder=HOLDER)
+
+
+async def write_lease_release(port: FakeTrackerPort) -> None:
+    # The same for a surface set: nothing is leased here, so giving one back
+    # leaves ``leases`` where it was and the attempt is the only trace.
+    await port.release_surfaces(surfaces=frozenset({leased_surface()}), holder=HOLDER)
 
 
 async def write_issue_creation(port: FakeTrackerPort) -> None:
@@ -162,6 +181,8 @@ WRITES: Mapping[str, Callable[[FakeTrackerPort], Awaitable[None]]] = {
     "_documents": write_document,
     "document_titles": write_document,
     "self_writes": write_self_write,
+    "claim_releases": write_claim_release,
+    "lease_releases": write_lease_release,
 }
 
 

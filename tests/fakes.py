@@ -3493,6 +3493,15 @@ class FakeTrackerPort:
         #: growing, which a record of grants alone cannot tell from a
         #: heartbeat still ticking against a claim it no longer holds.
         self.renewals: list[tuple[str, str]] = []
+        #: Every claim release ATTEMPT, as (issue, holder).  Journalled
+        #: whether or not anything was held: an attempt is the write.  A
+        #: release of a claim this holder never took moves ``claims`` not at
+        #: all, so a check reading the locks back would find it invisible.
+        self.claim_releases: list[tuple[str, str]] = []
+        #: Every surface release ATTEMPT, as (surfaces, holder).  Journalled
+        #: whether or not anything was held: an attempt is the write, for
+        #: the same reason the claim releases above are kept.
+        self.lease_releases: list[tuple[frozenset[WritableSurface], str]] = []
         self.comments: list[TrackerComment] = []
         self.comment_writes: list[tuple[str, str]] = []
         self.issue_writes: list[tuple[str, str | None, str | None]] = []
@@ -4660,6 +4669,7 @@ class FakeTrackerPort:
         return renewed
 
     async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        self.claim_releases.append((issue_key, holder))
         held = self.claims.get(issue_key)
         if held is not None and held.holder == holder:
             del self.claims[issue_key]
@@ -4735,6 +4745,7 @@ class FakeTrackerPort:
         holder: str,
     ) -> None:
         await asyncio.sleep(0)
+        self.lease_releases.append((surfaces, holder))
         for surface in surfaces:
             lease = self.leases.get(surface)
             if lease is not None and lease.holder == holder:
@@ -5056,7 +5067,10 @@ def tracker_state(port: FakeTrackerPort) -> dict[str, object]:
 #: first eight are the ones such a check named when it was written; the rest
 #: are what naming them one by one left out — the recorded base spec, the
 #: queue-state writes, the put-backs, both halves of a document write, and
-#: this process's own write ledger.  Named here so the rendering above is
+#: this process's own write ledger.  The last two are the unlock attempts —
+#: a claim release and a surface release — which move nothing on a board
+#: holding neither and would therefore be invisible to a check that read the
+#: locks back instead of the attempt.  Named here so the rendering above is
 #: SHOWN to reach them rather than trusted to: a rendering that stopped
 #: reaching one of these has stopped being total, and that is the one
 #: failure a list of journals cannot report about itself.
@@ -5076,6 +5090,8 @@ TRACKER_WRITE_JOURNALS = frozenset(
         "_documents",
         "document_titles",
         "self_writes",
+        "claim_releases",
+        "lease_releases",
     }
 )
 
@@ -5107,10 +5123,22 @@ def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
     claim for a pass that must not touch the board at all.  A consumer that
     legitimately READS the board — a lane's delivery re-reads its criteria
     before every barrier — needs the narrower claim: of the journals a write
-    can land in, none moved.  The projection is the declared journal set,
-    checked to be reached before the answer is handed out, as ``handed_over``
-    does.  Attributes outside the set (``issue_reads``, ``scans``, a
-    subclass's own counters) are outside the claim by construction.
+    can land in, none moved.
+
+    The surface is the declared reach list above, and it is a hand-written
+    list on purpose: the completeness test beside it forces the list to name
+    every journal this check reaches, so a journal that arrives later has to
+    arrive with the write that fills it.  A write that lands in an attribute
+    the list does not name — ``recorded_work_refs`` under ``record_work_ref``,
+    the identity map under ``upsert_issue`` — is reached all the same,
+    because those calls either stamp the issue through ``_wrote``, whose
+    stamp lands in ``self_writes``, or fill a journal the list does name.
+
+    Attributes outside the set (``issue_reads``, ``scans``, a subclass's own
+    counters) are outside the claim by construction, and so is a board a
+    fixture moved by its own hand (``port.issues[...] = ...``): that is the
+    fixture changing the world under the consumer, not the consumer writing.
+    ``handed_over`` is the answerer that covers those.
     """
 
     def journals() -> dict[str, object]:
