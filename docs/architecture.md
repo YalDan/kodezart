@@ -1083,7 +1083,9 @@ does not change the addressed keys. Static modules beside it hold the same
 discipline over the read: the criterion template-row grammar is compiled in
 `domain/fire_spec.py` alone and read only there, no other module matches
 criterion-shaped text against a body, and criterion sub-issues reach the
-tracker only through the port's criterion read. Evaluator state/body writer
+tracker only through the port's criterion read. `create_criterion_if_absent`
+is called from the criteria stage alone and implemented by one adapter method
+under the criterion child-set surface. Evaluator state/body writer
 adoption and the separate model-membership and spec-backend invariants remain
 unfinished.
 
