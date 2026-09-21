@@ -587,3 +587,41 @@ def test_a_normalised_declaration_builds_a_cross_off_the_model_accepts():
         exercised_paths=paths,
     )
     assert built.rederivation_class is RederivationClass.cheap
+
+
+@pytest.mark.parametrize(
+    "rederivation_class", sorted(PATH_BOUND_CLASSES, key=lambda one: one.value)
+)
+def test_a_declaration_that_earns_no_class_reaches_the_board_as_cheap(
+    rederivation_class,
+):
+    """The normalisation is on the path a session's own answer travels (KOD-696).
+
+    The unit rows above pin what the normalisation returns; this pins that
+    the one production site that builds a cross-off asks it. Reading a
+    session's declaration straight through would hand the cross-off model a
+    path-bound class with no prefixes — the pair it refuses — and the
+    refusal would come out of the write rather than out of the answer,
+    taking the whole fire down over one criterion.
+    """
+    (crossed,) = cross_offs_for(
+        results=[
+            CriterionResult(
+                criterion_id=CriterionId(KEY),
+                criterion=CHECK,
+                passed=True,
+                reasoning="Observed the selected check.",
+                rederivation_class=rederivation_class,
+                exercised_paths=(),
+            )
+        ],
+        graded_sha=GRADED_SHA,
+        observation=evaluation_observation(session_id="session-7", iteration=3),
+        demonstrated=True,
+        standing=(),
+        reading={},
+    )
+
+    assert crossed.rederivation_class is RederivationClass.cheap
+    assert crossed.exercised_paths == ()
+    assert crossed.state is CrossOffState.passed
