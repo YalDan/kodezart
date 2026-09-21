@@ -232,9 +232,10 @@ CONFIG_BASELINE: dict[str, object] = {
 
 #: One hand-written source per form, each binding the form's own module a
 #: different way, so the import alias, the from-import, the assignment
-#: alias, a name bound twice, the annotated assignment and an import inside
-#: the function that calls the form each have a control, and so does a form
-#: a longer chain continues.  The tree aliases neither module today, so
+#: alias, a name bound twice, the annotated assignment, an import inside the
+#: function that calls the form, a from-import inside that function and a
+#: wrapped import an alias is copied from each have a control, and so does a
+#: form a longer chain continues.  The tree aliases neither module today, so
 #: these are the only proof those arms work.
 FORM_CONTROLS: tuple[tuple[str, str], ...] = (
     (
@@ -299,6 +300,23 @@ FORM_CONTROLS: tuple[tuple[str, str], ...] = (
     (
         "unittest.expectedFailure",
         "from unittest import expectedFailure\n@expectedFailure\ndef test_a(): ...\n",
+    ),
+    # The from-import written inside the function that calls the form: the
+    # other local-import control binds through a plain import, so without
+    # this one the from-import arm could be narrowed back to the module body
+    # and nothing would say so.
+    (
+        "pytest.importorskip",
+        "def test_a():\n    from pytest import importorskip as need\n"
+        "    need('yaml')\n",
+    ),
+    # A wrapped import the alias is copied from: the import sits nested and
+    # the assignment that copies it sits at module level below, so the two
+    # are only read in the right order when the reading follows the source.
+    (
+        "pytest.mark.skip",
+        "try:\n    import pytest\nexcept ImportError:\n    pytest = None\n"
+        "m = pytest.mark\n@m.skip\ndef test_a(): ...\n",
     ),
 )
 
