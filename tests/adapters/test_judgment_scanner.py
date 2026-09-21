@@ -37,9 +37,15 @@ from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import ContentJudgment, OutboundContentGate
 from kodezart.services.amendment_writeback import _ExactEvidenceGate
-from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
+from kodezart.types.domain.agent import (
+    AgentEvent,
+    ContentAuditFinding,
+    RateLimitWarningEvent,
+    ResultEvent,
+)
 from kodezart.types.domain.gating import (
     ContentClass,
+    DurabilityCategory,
     GateVerdict,
     ObjectCount,
     OutboundDestination,
@@ -739,6 +745,36 @@ def test_every_surface_that_declares_provenance_declares_its_aggregates() -> Non
             destination=OutboundDestination.PR_BODY,
             content_class=ContentClass.DERIVED,
         )
+
+
+async def test_the_judgment_wire_carries_no_structured_locator() -> None:
+    """P: only the deterministic rule can name a declared value.
+
+    The structured locator is the writer's declaration reaching the refusal.
+    A session has no declaration to make, so the wire model has no such field
+    and forbids extras: an answer that tried to supply one is refused rather
+    than trusted.
+    """
+    assert "source" not in ContentAuditFinding.model_fields
+
+    executor = ScriptedAuditExecutor(
+        [
+            audit_result(
+                [
+                    {
+                        "category": DurabilityCategory.OBJECT_COUNT.value,
+                        "rationale": "a count",
+                        "source": {"kind": "count", "field": "lanes", "value": 3},
+                    }
+                ]
+            )
+        ],
+    )
+    result = await scanner_for(executor).scan(
+        content=PROSE,
+        destination=OutboundDestination.PR_BODY,
+    )
+    assert result.failure is ScanFailureKind.MALFORMED_VERDICT
 
 
 def test_no_module_reconstructs_the_class_from_the_payload_bytes() -> None:

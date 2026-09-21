@@ -4,6 +4,7 @@ import inspect
 import re
 
 import pytest
+import structlog.testing
 from pydantic import ValidationError
 
 from kodezart.adapters.outbound_admission import OutboundAdmission
@@ -599,3 +600,65 @@ async def test_undeclared_keys_in_the_bytes_are_clean_on_a_durable_surface() -> 
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == content
     assert executor.calls == []
+
+
+# ---------------------------------------------------------------------------
+# The refusal names the value, never an offset (KOD-487)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_refused_count_and_roster_name_their_values_without_offsets() -> None:
+    """Repair information for both structured categories, on one refusal.
+
+    What a writer repairs is the value it declared, named by its own field,
+    so the refusal carries the field and the value and no position in the
+    rendered text — there is no substring of the payload that is the claim.
+    """
+    with pytest.raises(OutboundContentBlockedError) as excinfo:
+        await gated_write(
+            gate=await configured_gate(),
+            log=get_logger(__name__),
+            content="see the lanes below",
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.TRACKER_DESCRIPTION,
+            content_class=ContentClass.DERIVED,
+            aggregates=(LANE_COUNT, LANE_ROSTER),
+        )
+
+    error = excinfo.value
+    assert {hit.source.field for hit in error.hits if hit.source is not None} == {
+        "lanes",
+        "lanes.issue",
+    }
+    assert {hit.category for hit in error.hits} == set(DurabilityCategory)
+    assert all(
+        hit.start is None and hit.end is None and hit.matched_text is None
+        for hit in error.hits
+    )
+    assert "source: lanes; value: 3" in str(error)
+    assert "source: lanes.issue; identities: A, B, C" in str(error)
+    assert "start:" not in str(error)
+
+
+async def test_the_gated_event_names_a_structured_hits_source() -> None:
+    """The verdict is observable, and a structured hit says which field it is about."""
+    with structlog.testing.capture_logs() as captured:
+        with pytest.raises(OutboundContentBlockedError):
+            await gated_write(
+                gate=await configured_gate(),
+                log=get_logger(__name__),
+                content="see the lanes below",
+                visibility=RepoVisibility.PUBLIC,
+                shape=WriterShape.PROSE,
+                destination=OutboundDestination.TRACKER_DESCRIPTION,
+                content_class=ContentClass.DERIVED,
+                aggregates=(LANE_COUNT,),
+            )
+
+    (record,) = [
+        entry for entry in captured if entry.get("event") == "outbound_content_gated"
+    ]
+    hits = record["hits"]
+    assert hits[0]["source"] == "lanes"
+    assert hits[0]["start"] is None
