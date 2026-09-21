@@ -1,0 +1,204 @@
+"""The one rule: whether a grading taken at one commit still stands (KOD-696).
+
+One arm per fixture, each stating its own inputs, so the arm that breaks
+names itself.  The rule is pure arithmetic, so every fixture here is the
+whole apparatus: no tracker, no workspace, no session.
+"""
+
+import ast
+import inspect
+
+import pytest
+
+from kodezart.domain import lapse
+from kodezart.domain.lapse import GradedState, graded_state
+from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.criterion_lifecycle import RederivationClass
+
+GRADED = "a" * 40
+HEAD = "b" * 40
+
+
+def digest(*paths: str) -> ChangesetDigest:
+    """A commit record's changed-path reading, as the rule takes it."""
+    return ChangesetDigest(
+        file_paths=list(paths), commit_subjects=["moved something"], commit_count=1
+    )
+
+
+def test_a_grading_at_the_head_it_is_read_against_counts():
+    assert graded_state(graded_sha=GRADED, head_sha=GRADED) is GradedState.counted
+
+
+def test_a_cheap_grading_lapses_as_soon_as_the_head_moves():
+    """Nothing is asked about paths: re-deriving it is what it costs."""
+    assert (
+        graded_state(
+            graded_sha=GRADED,
+            head_sha=HEAD,
+            rederivation_class=RederivationClass.cheap,
+            exercised_paths=("src/kodezart/domain/",),
+            changeset=digest("docs/architecture.md"),
+        )
+        is GradedState.lapsed
+    )
+
+
+def test_a_grading_that_declares_no_class_is_cheap_and_cannot_carry():
+    """The default is what a verdict naming no class earns: no exemption."""
+    assert (
+        graded_state(
+            graded_sha=GRADED, head_sha=HEAD, changeset=digest("docs/architecture.md")
+        )
+        is GradedState.lapsed
+    )
+
+
+@pytest.mark.parametrize(
+    "rederivation_class", sorted(RederivationClass, key=lambda member: member.value)
+)
+def test_a_path_bound_grading_carries_when_nothing_it_exercised_moved(
+    rederivation_class,
+):
+    """Only the two path-bound classes carry; the cheap one lapses regardless."""
+    state = graded_state(
+        graded_sha=GRADED,
+        head_sha=HEAD,
+        rederivation_class=rederivation_class,
+        exercised_paths=("src/kodezart/domain/lapse.py",),
+        changeset=digest("docs/architecture.md", "src/kodezart/chains/ralph_loop.py"),
+    )
+    expected = (
+        GradedState.lapsed
+        if rederivation_class is RederivationClass.cheap
+        else GradedState.counted
+    )
+    assert state is expected
+
+
+@pytest.mark.parametrize(
+    "moved",
+    [
+        "src/kodezart/domain",
+        "src/kodezart/domain/lapse.py",
+        "src/kodezart/domain/nested/deeper.py",
+    ],
+)
+def test_a_path_at_or_beneath_an_exercised_prefix_lapses_the_grading(moved):
+    assert (
+        graded_state(
+            graded_sha=GRADED,
+            head_sha=HEAD,
+            rederivation_class=RederivationClass.expensive,
+            exercised_paths=("src/kodezart/domain",),
+            changeset=digest("docs/architecture.md", moved),
+        )
+        is GradedState.lapsed
+    )
+
+
+def test_a_prefix_matching_a_partial_segment_is_not_a_hit():
+    """``dom`` names no part of ``domain``, and a partial match would lapse it."""
+    assert (
+        graded_state(
+            graded_sha=GRADED,
+            head_sha=HEAD,
+            rederivation_class=RederivationClass.expensive,
+            exercised_paths=("src/kodezart/dom",),
+            changeset=digest("src/kodezart/domain/lapse.py"),
+        )
+        is GradedState.counted
+    )
+
+
+def test_a_trailing_separator_on_a_prefix_reads_the_same_as_one_without():
+    moved = digest("src/kodezart/domain/lapse.py")
+    assert graded_state(
+        graded_sha=GRADED,
+        head_sha=HEAD,
+        rederivation_class=RederivationClass.expensive,
+        exercised_paths=("src/kodezart/domain/",),
+        changeset=moved,
+    ) is graded_state(
+        graded_sha=GRADED,
+        head_sha=HEAD,
+        rederivation_class=RederivationClass.expensive,
+        exercised_paths=("src/kodezart/domain",),
+        changeset=moved,
+    )
+
+
+def test_a_path_bound_grading_with_no_changed_path_reading_lapses():
+    """An absent reading is not a reading that nothing moved."""
+    assert (
+        graded_state(
+            graded_sha=GRADED,
+            head_sha=HEAD,
+            rederivation_class=RederivationClass.observed,
+            exercised_paths=("src/kodezart/domain/",),
+            changeset=None,
+        )
+        is GradedState.lapsed
+    )
+
+
+def test_an_empty_commit_record_carries_a_path_bound_grading():
+    """A record that read no changed path is a reading, and it says nothing moved."""
+    assert (
+        graded_state(
+            graded_sha=GRADED,
+            head_sha=HEAD,
+            rederivation_class=RederivationClass.observed,
+            exercised_paths=("src/kodezart/domain/",),
+            changeset=ChangesetDigest(
+                file_paths=[], commit_subjects=[], commit_count=0
+            ),
+        )
+        is GradedState.counted
+    )
+
+
+@pytest.mark.parametrize("member", sorted(GradedState, key=lambda one: one.value))
+def test_the_reading_refuses_to_answer_as_a_truth_value(member):
+    """``if graded_state(...)`` would pass silently for both members."""
+    with pytest.raises(TypeError, match="not a truth value"):
+        bool(member)
+
+
+def test_a_reading_used_as_a_condition_refuses_rather_than_passing():
+    with pytest.raises(TypeError, match="not a truth value"):
+        if graded_state(graded_sha=GRADED, head_sha=HEAD):  # pragma: no branch
+            pass
+
+
+def test_the_lapse_module_imports_only_value_types_and_does_no_io():
+    """The rule may reach value types and nothing else: no port, no adapter, no tree."""
+    tree = ast.parse(inspect.getsource(lapse))
+    modules = {
+        node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+    }
+    assert modules == {
+        "collections.abc",
+        "enum",
+        "kodezart.types.domain.consolidation",
+        "kodezart.types.domain.criterion_lifecycle",
+    }
+    assert not any(
+        module is not None
+        and (
+            module.startswith("kodezart.adapters")
+            or module == "kodezart.core.protocols"
+        )
+        for module in modules
+    )
+    assert not any(
+        isinstance(node, (ast.Import, ast.AsyncFunctionDef, ast.Await))
+        for node in ast.walk(tree)
+    )
+    forbidden = {"open", "print", "input", "__import__", "eval", "exec", "compile"}
+    called = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert not called & forbidden

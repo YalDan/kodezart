@@ -369,7 +369,17 @@ the refuting grading then goes on its Evidence row, and one `criterion_refuted`
 event is posted under `marker_prefixes.run_event` last. That order is what the
 act guarantees: a failure anywhere after the move back leaves the criterion
 owed, and the next fire re-grades it, instead of leaving it certified at a sha
-that failed it. Nothing else is written: no parent's
+that failed it.
+
+A criterion whose grading no longer stands goes back the same way and announces
+nothing. The sub-issue returns to the team's unstarted state, keeping the sha it
+was graded at on its Evidence row with its pointer saying that grading lapsed,
+so a reader sees the gap between what was graded and where the branch went
+rather than a satisfied criterion. No event is composed and none is looked for:
+a lapse is the criterion being owed again, not a regression, so the take-back
+that reports one and the take-back that reports nothing are one act with one
+difference. A lapse repeated in a later iteration finds the sub-issue already
+unstarted and writes nothing at all. Nothing else is written: no parent's
 state, and no comment per criterion. The owning issue's finished state is the
 tracker's own rollup over its criterion sub-issues, which `SubtreeClosure`
 reads, so the scope walker sees a lane close with no further write.
@@ -1339,6 +1349,18 @@ categories using a scripted external judgment boundary; they validate execution
 and evidence handling without claiming live-model detection accuracy.
 
 ## Recorded criterion Evidence and lapse observations
+
+Whether a grading taken at one commit still stands at another is answered by one
+function under `domain/`, `graded_state` in `domain/lapse.py`, for every record
+that carries a graded sha (KOD-696). It is pure arithmetic over the two shas, the
+grading's re-derivation class, the path prefixes that grading exercised and the
+changed paths of the commit record between them; it runs no command and reads no
+tree. Its reading is a two-member value, never a boolean, and it refuses to
+answer as a truth value at all, because a grading nothing has re-derived and a
+grading that failed are different things and a boolean collapses them. The audit
+lane's own lapse observation reads that answer instead of weighing the two shas
+itself, so the lane-state writer and the audit cannot come to disagree about what
+a sha behind head is worth.
 
 `AuditReadSweep` independently invokes `AuditForgeVerifier` for completed native
 criterion requests. The request's criterion, owning issue and repository come

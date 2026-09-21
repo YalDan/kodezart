@@ -5,6 +5,7 @@ from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import GitService, GitSourceReader, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.domain.lapse import GradedState, graded_state
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES, parse_audit_evidence
 from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import read_replace_refs
@@ -136,7 +137,13 @@ class AuditEvidenceVerifier:
         )
         claim = None
         verdict = AuditVerdict.UNVERIFIABLE
-        if not completed or evidence.graded_sha == head:
+        # A finished claim is verified afresh only while its recorded
+        # grading still stands; whether it does is the one rule's answer,
+        # never this reader's own comparison of the two shas.
+        if not completed or (
+            graded_state(graded_sha=evidence.graded_sha, head_sha=head)
+            is GradedState.counted
+        ):
             claim = await self._claims.verify(
                 AuditClaimRequest.model_validate(
                     {**request.model_dump(), "record_ref": comment.comment_key}
