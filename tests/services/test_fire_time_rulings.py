@@ -42,6 +42,7 @@ from kodezart.types.domain.gating import (
     TrackerAggregate,
     WriterShape,
 )
+from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -330,7 +331,9 @@ class RecordingPrompts:
         return self._inner.session_policy(key)
 
 
-async def build(repository, executor, *, port=None, gate=None, prompts=None):
+async def build(
+    repository, executor, *, port=None, gate=None, prompts=None, operation=None
+):
     """The step, its subject and the tracker Checks, wired as composition does."""
     repo, base = repository
     git_service = SubprocessGitService(remote="origin")
@@ -348,7 +351,7 @@ async def build(repository, executor, *, port=None, gate=None, prompts=None):
     gate = gate if gate is not None else PassThroughGate()
     step = FireTimeRulings(
         tracker=port,
-        operation=native_operation(),
+        operation=native_operation() if operation is None else operation,
         runner=service,
         workspace=workspace,
         git=git_service,
@@ -897,19 +900,35 @@ async def test_a_deliverable_the_subject_does_not_state_is_raised_and_not_pinned
 
 
 async def test_the_raise_lands_on_a_leased_surface_before_the_refusal(
-    repository,
+    repository, monkeypatch
 ) -> None:
     """The write is inside the window and the refusal is after it (KOD-629).
 
-    Two facts, both off the board the port kept: the marker the raise landed
-    on is one of the surfaces a lease was granted over, and no lease is live
-    afterwards — so the window closed before the refusal reached the caller.
+    The window is asserted at the moment of the write: the port's own live
+    lease table is read as the comment is being recorded, and the surface
+    written to has to be in it under this pass's holder. Reading that table
+    afterwards would say nothing — the granted set is the same set whether the
+    write happened inside the window or after it closed.
     """
     answer = contradiction_answer(deliverable=EXCESS_DELIVERABLE)
     executor = Executor([[answer]])
     step, spec, current, _, port, _, repo_path, base = await build(
         repository, executor, port=deliverable_board(subject=subject_body())
     )
+    held_at_write: list[frozenset[WritableSurface]] = []
+    recorded = port.upsert_comment
+
+    async def upsert_comment(**fields):
+        held_at_write.append(
+            frozenset(
+                surface
+                for surface, lease in port.leases.items()
+                if lease.holder == HOLDER
+            )
+        )
+        return await recorded(**fields)
+
+    monkeypatch.setattr(port, "upsert_comment", upsert_comment)
 
     with pytest.raises(RulingUnrecordedError):
         await run(step, spec, current, repo_path, base)
@@ -920,11 +939,100 @@ async def test_the_raise_lands_on_a_leased_surface_before_the_refusal(
         ref=ScopeRef(kind=ScopeKind.ISSUE, key=DIRECT_OWED),
         marker=raise_comment.body.splitlines()[0],
     )
+    # The lease over that surface was live, under this holder, as it was written.
+    (held,) = held_at_write
+    assert surface in held
     assert surface in {held for lease in port.lease_writes for held in lease.surfaces}
+    # And the window closed before the refusal reached the caller.
     assert port.leases == {}
     # Non-vacuous: the lease was taken by this pass's own holder.
     assert [lease.holder for lease in port.lease_writes] == [HOLDER] * len(
         port.lease_writes
+    )
+
+
+async def test_an_answer_outside_the_fire_is_refused_before_any_raise_is_written(
+    repository,
+) -> None:
+    """The arithmetic runs before the raise, so no issue this fire cannot address.
+
+    An answer addressed outside the fire that also names work beyond what the
+    subject states is refused for being outside the fire — the refusal it would
+    otherwise have earned is never written, because a raise on an issue this
+    fire cannot address is text whose reader cannot address it back.
+    """
+    outside = "EXT/999"
+    answer = contradiction_answer(issueRef=outside, deliverable=EXCESS_DELIVERABLE)
+    executor = Executor([[answer]])
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor, port=deliverable_board(subject=subject_body())
+    )
+    assert outside not in {spec.subject, *(str(ref) for ref in spec.criteria)}
+
+    with pytest.raises(RulingUnrecordedError) as caught:
+        await run(step, spec, current, repo_path, base)
+
+    assert caught.value.issue_key == SUBJECT
+    assert outside in caught.value.reason
+    assert "is not a member of this fire" in caught.value.reason
+    # Nothing was written, leased or gated on the way to that refusal.
+    assert raised_comments(port) == []
+    assert port.comment_writes == []
+    assert port.lease_writes == []
+    assert gate.content_classes == []
+    # Non-vacuous: the same answer inside the fire is raised rather than refused.
+    inside = Executor([[contradiction_answer(deliverable=EXCESS_DELIVERABLE)]])
+    step, spec, current, _, raised_port, _, repo_path, base = await build(
+        repository, inside, port=deliverable_board(subject=subject_body())
+    )
+    with pytest.raises(RulingUnrecordedError):
+        await run(step, spec, current, repo_path, base)
+    assert len(raised_comments(raised_port)) == 1
+
+
+async def test_a_fire_under_an_operation_that_configures_no_escalation_prefix_pins(
+    repository,
+) -> None:
+    """The escalation prefix is needed only by the arm that escalates (KOD-629).
+
+    An operation that configures no escalation prefix can still answer every
+    open question, because an answer that stays inside what the subject states
+    raises nothing: the prefix is resolved on the escalating arm rather than at
+    the top, so such an operation fires normally instead of refusing every pass.
+    """
+    prefixes = {
+        purpose: prefix
+        for purpose, prefix in native_operation().marker_prefixes.items()
+        if purpose != "escalation"
+    }
+    operation = OperationConfig(
+        operation_name="native-fixture-no-escalation",
+        workspace="fixture",
+        marker_prefixes=prefixes,
+        issue_labels={"decision": "decision"},
+    )
+    assert "escalation" not in operation.marker_prefixes
+    assert "ruling" in operation.marker_prefixes
+
+    # An answer naming no deliverable: nothing to raise, so nothing needs it.
+    executor = Executor([[contradiction_answer()]])
+    step, spec, current, _, port, _, repo_path, base = await build(
+        repository,
+        executor,
+        port=deliverable_board(subject=subject_body()),
+        operation=operation,
+    )
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    # The pass pinned its answer, under this operation's own record prefix.
+    (pinned,) = pinned_bodies(port, operation.marker_prefixes)
+    assert pinned[0] == DIRECT_OWED
+    identity = mint_ruling_id(issue_ref=DIRECT_OWED, question=CONTRADICTION_QUESTION)
+    assert pinned[2].splitlines()[0] == ruling_marker(
+        ruling_id=identity,
+        lane_key=SUBJECT,
+        marker_prefixes=operation.marker_prefixes,
     )
 
 
