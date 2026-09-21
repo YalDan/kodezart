@@ -172,13 +172,16 @@ def test_pure_counts_separate_subject_kind_identity_and_reason():
     # The same subject as `a` under a second reason, repeated so that one
     # subject carries two distinct counted rows.
     other_reason = record(reason="cost_measured_affordable")
+    # A second criterion identity upheld once for the same reason as `a`: a
+    # count that drops the id merges it into `a` and reaches four.
+    second = record(identity="opaque/criterion-2")
     reports = [
         AmendmentReport(verdicts=items)
         for items in [
             (a, ruling),
             (other_reason,),
             (a, ruling),
-            (a,),
+            (a, second),
             (other_reason,),
         ]
     ]
