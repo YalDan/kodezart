@@ -12,8 +12,10 @@ both sort keys, which used no forbidden token at all.
 
 Two weaker nets sit outside the shape pins. One collects every ``len(...)``
 whose argument is an attribute and asserts none of those attributes is a text
-column of the two row types the rank computes over. The other reads every
-identifier in the package and asserts none carries an estimate word.
+column of the two row types the rank computes over, counting a column written
+``str | None`` or wrapped in ``Annotated`` as the text column it is. The other
+reads every identifier in the package and asserts none carries an estimate
+word.
 
 The wired rank path is the unscoped producer's selection over
 ``domain/dispatch.py``; the scope dispatcher has no production caller, so it
@@ -45,10 +47,11 @@ the text-length net.
 import ast
 import dataclasses
 import inspect
-from collections.abc import Mapping
+import types
+from collections.abc import Iterator, Mapping
 from datetime import datetime
 from decimal import Decimal
-from typing import get_args
+from typing import Annotated, Union, get_args, get_origin
 
 import pytest
 
@@ -161,15 +164,14 @@ def called_names(regions: tuple[ast.AST, ...]) -> frozenset[str]:
     )
 
 
-def ordering_sites(trees) -> dict[str, tuple[int, frozenset[str]]]:
-    """Every ordering in the package that consults priority, by definition.
+def _priority_orderings(trees) -> Iterator[tuple[str, tuple[ast.AST, ...]]]:
+    """Every priority ordering in *trees*, keyed the way a register keys it.
 
-    Keyed ``module::dotted definition``; valued by how many such expressions
-    the definition holds and every attribute name read inside their keys and
-    arguments. An ordering consults priority when its key or arguments reach
-    a rank name under any spelling.
+    ``module::dotted definition`` paired with the ordering's key and
+    arguments. An ordering consults priority when its key or arguments reach a
+    rank name under any spelling. One walk, because what each ordering reads
+    and what it calls are two readings of the same expressions.
     """
-    found: dict[str, list[frozenset[str]]] = {}
     for module, tree in sorted(trees.items()):
         resolution = resolve(tree, names=RANK_NAMES)
         where = definitions(tree)
@@ -177,8 +179,18 @@ def ordering_sites(trees) -> dict[str, tuple[int, frozenset[str]]]:
             regions = _ordering_regions(node)
             if regions is None or not _consults_rank(regions, resolution):
                 continue
-            key = f"{module}::{where.get(id(node), '<module>')}"
-            found.setdefault(key, []).append(attribute_reads(regions))
+            yield f"{module}::{where.get(id(node), '<module>')}", regions
+
+
+def ordering_sites(trees) -> dict[str, tuple[int, frozenset[str]]]:
+    """Every ordering in the package that consults priority, by definition.
+
+    Valued by how many such expressions the definition holds and every
+    attribute name read inside their keys and arguments.
+    """
+    found: dict[str, list[frozenset[str]]] = {}
+    for key, regions in _priority_orderings(trees):
+        found.setdefault(key, []).append(attribute_reads(regions))
     return {
         key: (len(reads), frozenset().union(*reads)) for key, reads in found.items()
     }
@@ -187,15 +199,8 @@ def ordering_sites(trees) -> dict[str, tuple[int, frozenset[str]]]:
 def ordering_calls(trees) -> dict[str, frozenset[str]]:
     """Every name the registered orderings call, by the same key."""
     found: dict[str, set[str]] = {}
-    for module, tree in sorted(trees.items()):
-        resolution = resolve(tree, names=RANK_NAMES)
-        where = definitions(tree)
-        for node in ast.walk(tree):
-            regions = _ordering_regions(node)
-            if regions is None or not _consults_rank(regions, resolution):
-                continue
-            key = f"{module}::{where.get(id(node), '<module>')}"
-            found.setdefault(key, set()).update(called_names(regions))
+    for key, regions in _priority_orderings(trees):
+        found.setdefault(key, set()).update(called_names(regions))
     return {key: frozenset(names) for key, names in found.items()}
 
 
@@ -220,13 +225,48 @@ DISPATCH_ORDERINGS = {
 }
 
 
-def text_columns() -> frozenset[str]:
-    """The text fields of the two row types a rank computes over."""
+def _declared_text(annotation: object) -> frozenset[object]:
+    """The types an annotation declares, with ``Annotated`` and a union undone.
+
+    A container is left whole, unlike ``_named_types`` below: the element type
+    of ``frozenset[str]`` is not what a length of that field measures.
+    """
+    if getattr(annotation, "__metadata__", None) is not None:
+        return _declared_text(get_args(annotation)[0])
+    if get_origin(annotation) in (Union, types.UnionType):
+        return frozenset(
+            one
+            for argument in get_args(annotation)
+            for one in _declared_text(argument)
+            if one is not type(None)
+        )
+    return frozenset({annotation})
+
+
+def text_fields(annotated: Mapping[str, object]) -> frozenset[str]:
+    """Every field whose annotation declares text and nothing else.
+
+    A column written ``str | None`` or wrapped in ``Annotated`` is the same
+    text column as a bare ``str``, the way the numeric pin reads the leaves of
+    what a field declares rather than its written form. A container of ``str``
+    is not a text column: the length of a label set counts labels.
+    """
     return frozenset(
         name
-        for model in (IssueSnapshot, TrackerIssue)
-        for name, field in model.model_fields.items()
-        if field.annotation is str
+        for name, annotation in annotated.items()
+        if _declared_text(annotation) == frozenset({str})
+    )
+
+
+def text_columns() -> frozenset[str]:
+    """The text fields of the two row types a rank computes over."""
+    return frozenset().union(
+        *(
+            text_fields(
+                {name: field.annotation for name, field in model.model_fields.items()}
+            )
+            for model in (IssueSnapshot, TrackerIssue)
+        )
     )
 
 
@@ -387,6 +427,34 @@ def test_every_ordering_that_consults_priority_reads_only_the_rank_inputs():
         assert named <= RANK_CALLS
 
 
+def test_an_ordering_that_consults_the_rank_under_another_spelling_is_registered():
+    """Discovery keys on what a spelling denotes, not on the word written.
+
+    The planted module's only rank spelling is the alias, and the attributes
+    its key reads are outside ``RANK_NAMES``, so nothing but the resolved
+    import can put the ordering on the register. With the alias left unused the
+    same ordering is no site at all.
+    """
+    consulting = ast.parse(
+        f"from kodezart.domain.dispatch import {RankKey.__name__} as Key\n"
+        "\n"
+        "def pick(rows):\n"
+        "    return sorted(rows, key=lambda row: Key(row.level, row.at))\n"
+    )
+    unused = ast.parse(
+        f"from kodezart.domain.dispatch import {RankKey.__name__} as Key\n"
+        "\n"
+        "def pick(rows):\n"
+        "    return sorted(rows, key=lambda row: (row.level, row.at))\n"
+    )
+
+    assert not {"level", "at"} & RANK_NAMES
+    assert ordering_sites({"planted.py": consulting}) == {
+        "planted.py::pick": (1, frozenset({"level", "at"}))
+    }
+    assert ordering_sites({"planted.py": unused}) == {}
+
+
 def test_no_row_the_rank_reads_carries_a_numeric_or_estimate_like_field():
     """A size has to be declared somewhere; none of the rows declares one."""
     assert set(IssueSnapshot.model_fields) == {
@@ -416,6 +484,16 @@ def test_no_row_the_rank_reads_carries_a_numeric_or_estimate_like_field():
             if estimate_words(field.name)
         ] == []
     assert numeric_fields({"weight": int | None, "at": datetime}) == ["weight"]
+    assert text_fields(
+        {
+            "body": str,
+            "project": str | None,
+            "title": Annotated[str, "titled"],
+            "issue_labels": frozenset[str],
+            "either": str | int,
+            "at": datetime,
+        }
+    ) == frozenset({"body", "project", "title"})
 
 
 def test_no_length_of_an_issue_text_column_is_taken_anywhere_in_the_package():
