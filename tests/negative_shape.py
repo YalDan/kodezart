@@ -28,11 +28,21 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 SCANNED: Final[tuple[str, ...]] = ("src/kodezart", "tests")
 
 #: The directive comments that take a line, or a whole file, out of the
-#: gate's reach.  The file-level type-checker forms are here because they
-#: are the cheapest hole of all: one comment at the top of a module and the
-#: checker reads none of it.  No form for a checker the gate does not run.
+#: gate's reach.  The file-level forms are the cheapest hole of all: one
+#: comment at the top of a module and the tool reads none of it.  Every
+#: family below was verified against the binary the gate itself runs.  The
+#: linter honours its own whole-file exemption, the one it inherited from
+#: the linter it replaced, and the import-sorter exemptions, so all three
+#: are read.  Any inline setting of the type checker is a per-module
+#: configuration change, the same class its own table in the project file
+#: pins, so the prefix alone is what is read: a match on prose would cost
+#: one row of the allowed map, which is the safe direction.  No form for a
+#: checker the gate does not run.
 SUPPRESSION: Final[re.Pattern[str]] = re.compile(
-    r"#\s*(?:type:\s*ignore|(?:ruff:\s*)?noqa|mypy:\s*(?:ignore-errors|disable-error-code))"
+    r"#\s*(?:type:\s*ignore"
+    r"|(?:ruff:\s*|flake8:\s*)?noqa"
+    r"|mypy:"
+    r"|isort:\s*(?:skip_file|skip|off))"
 )
 
 #: The pytest forms that keep a collected test from running.
