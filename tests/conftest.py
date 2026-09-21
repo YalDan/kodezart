@@ -64,7 +64,10 @@ def _git_test_identity() -> None:
     os.environ.setdefault("GIT_COMMITTER_EMAIL", "test@kodezart-test.invalid")
 
 
-_GATED_MARKERS: dict[str, str] = {
+#: The marker classes the collection gate deselects from the default run.
+#: Read by the census as well as by the gate below: a test newly carrying
+#: one of these is a test that stops running.
+GATED_MARKERS: dict[str, str] = {
     "live": "live tests need external credentials or CLI (run with: pytest -m live)",
     "postgres": (
         "postgres tests need a database at KODEZART_TEST_POSTGRES_URL "
@@ -78,7 +81,7 @@ def pytest_collection_modifyitems(
     items: list[pytest.Item],
 ) -> None:
     marker_expr = config.getoption("-m", default="")
-    for marker, reason in _GATED_MARKERS.items():
+    for marker, reason in GATED_MARKERS.items():
         if marker in marker_expr:
             continue
         skip = pytest.mark.skip(reason=reason)
