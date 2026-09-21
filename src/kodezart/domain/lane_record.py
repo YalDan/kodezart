@@ -3,6 +3,8 @@
 import json
 from collections.abc import Mapping
 
+from pydantic import ValidationError
+
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import LaneRecordWriteError
 from kodezart.domain.tracker_writes import marked_comment_body
@@ -75,6 +77,13 @@ def next_lane_record(
     head is already the last recorded row appends no second row; the rows are
     the commit acts this lane recorded, so a head that returns to an earlier
     sha is a new act and takes a row of its own.
+
+    Composing the value is the boundary that types what the model refuses of
+    it: the record's own invariants — the current branch carrying a LOOP
+    association, one DELIVERABLE per run, the declared shape of every field —
+    belong to the model, and a caller writing a record gets this module's
+    write refusal for all of them rather than a validation error out of a
+    layer it never called.
     """
     _require_one_binding_per_run(prior=prior, lane=lane)
     commits = list(prior.commits) if prior is not None else []
@@ -83,42 +92,52 @@ def next_lane_record(
             LaneCommit(sha=head_sha, subject=subject, issue_id=lane.lane_key)
         )
     associations = list(prior.associations) if prior is not None else []
-    for association in (
-        BranchAssociation(
-            branch=lane.deliverable_branch,
-            role=BranchRole.DELIVERABLE,
-            derived_from=lane.base_ref,
-            run_id=lane.run_id,
-        ),
-        BranchAssociation(
+    try:
+        for association in (
+            BranchAssociation(
+                branch=lane.deliverable_branch,
+                role=BranchRole.DELIVERABLE,
+                derived_from=lane.base_ref,
+                run_id=lane.run_id,
+            ),
+            BranchAssociation(
+                branch=lane.loop_branch,
+                role=BranchRole.LOOP,
+                derived_from=lane.deliverable_branch,
+                run_id=lane.run_id,
+            ),
+        ):
+            if association not in associations:
+                associations.append(association)
+        return LaneRunState(
+            lane_key=lane.lane_key,
             branch=lane.loop_branch,
-            role=BranchRole.LOOP,
-            derived_from=lane.deliverable_branch,
-            run_id=lane.run_id,
-        ),
-    ):
-        if association not in associations:
-            associations.append(association)
-    return LaneRunState(
-        lane_key=lane.lane_key,
-        branch=lane.loop_branch,
-        branch_url=branch_url,
-        head_sha=head_sha,
-        pushed_head_sha=pushed_head_sha,
-        commits_ahead=changeset.commit_count,
-        files_changed=len(changeset.file_paths),
-        commits=commits,
-        pr=prior.pr if prior is not None else None,
-        # Pinned once, by the first write that had one: a later entry reading
-        # a different subject is an amendment and is refused before it, so
-        # nothing here re-pins the digest under a running lane.
-        body_digest=(
-            prior.body_digest
-            if prior is not None and prior.body_digest is not None
-            else lane.body_digest
-        ),
-        associations=associations,
-    )
+            branch_url=branch_url,
+            head_sha=head_sha,
+            pushed_head_sha=pushed_head_sha,
+            commits_ahead=changeset.commit_count,
+            files_changed=len(changeset.file_paths),
+            commits=commits,
+            pr=prior.pr if prior is not None else None,
+            # Pinned once, by the first write that had one: a later entry
+            # reading a different subject is an amendment and is refused
+            # before it, so nothing here re-pins the digest under a running
+            # lane.
+            body_digest=(
+                prior.body_digest
+                if prior is not None and prior.body_digest is not None
+                else lane.body_digest
+            ),
+            associations=associations,
+        )
+    except ValidationError as exc:
+        raise LaneRecordWriteError(
+            lane_key=lane.lane_key,
+            reason=(
+                "the observed facts are not a record: "
+                f"{exc.error_count()} refused field(s)"
+            ),
+        ) from exc
 
 
 def record_with_pull_request(*, prior: LaneRunState, pr: LanePR) -> LaneRunState:

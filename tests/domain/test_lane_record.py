@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+from collections import Counter
 from pathlib import Path
 from typing import (
     Literal,
@@ -85,9 +86,18 @@ def record_data() -> dict[str, object]:
         ],
         "pr": {"url": "https://forge.example/pr/7", "number": 7, "state": "OPEN"},
         "bodyDigest": DIGEST,
+        # One deliverable, two loop and a recovery association for the current
+        # run, and the earlier run's own deliverable beside them: the set the
+        # enumerability and cardinality rules are stated over (KOD-703).
         "associations": [
             {
                 "branch": "ordinary-name",
+                "role": "loop",
+                "derivedFrom": "has-ralph-in-its-name",
+                "runId": "run-current",
+            },
+            {
+                "branch": "fix-loop",
                 "role": "loop",
                 "derivedFrom": "has-ralph-in-its-name",
                 "runId": "run-current",
@@ -154,13 +164,61 @@ def test_three_remote_states_and_every_fact_survive_serialization(remote_head):
     ]
 
 
+#: Every association the fixture carries, as the whole chain each one names.
+RECORD_CHAINS = [
+    ("ordinary-name", BranchRole.LOOP, "has-ralph-in-its-name", "run-current"),
+    ("fix-loop", BranchRole.LOOP, "has-ralph-in-its-name", "run-current"),
+    ("has-ralph-in-its-name", BranchRole.DELIVERABLE, None, "run-current"),
+    ("reaped-ref", BranchRole.RECOVERY, "ordinary-name", "run-current"),
+    ("earlier-deliverable", BranchRole.DELIVERABLE, None, "run-earlier"),
+]
+
+
+def association_chains(
+    record: LaneRunState,
+) -> list[tuple[str, BranchRole, str | None, str]]:
+    """Each association as the whole chain it names, in the record's own order.
+
+    Read as tuples rather than by index: what the record has to enumerate is
+    the branch, its explicit role, what it was derived from and which run
+    recorded it, and an index says none of those.
+    """
+    return [
+        (item.branch, item.role, item.derived_from, item.run_id)
+        for item in record.associations
+    ]
+
+
+def role_counts(record: LaneRunState, *, run_id: str) -> dict[BranchRole, int]:
+    """How many associations one run carries at each role."""
+    return dict(
+        Counter(item.role for item in record.associations if item.run_id == run_id)
+    )
+
+
 def test_record_uses_explicit_roles_and_keeps_reaped_and_prior_run_associations():
     record = LaneRunState.model_validate(record_data())
-    assert record.associations[0].role is BranchRole.LOOP
-    assert record.associations[1].role is BranchRole.DELIVERABLE
-    assert record.associations[2].branch == "reaped-ref"
-    assert record.associations[3].run_id == "run-earlier"
-    assert record.associations[0].derived_from == record.associations[1].branch
+    assert association_chains(record) == RECORD_CHAINS
+
+
+def test_one_deliverable_two_loop_and_a_recovery_read_back_with_their_chains():
+    """One run's whole association set reads back, chains intact (KOD-703).
+
+    The roles are explicit and the derivation links are the record's own: a
+    reaped recovery branch is still named with what it was derived from, and
+    an earlier run's deliverable stands beside this run's rather than being
+    replaced by it. Counting per role states the cardinality the model
+    enforces — one deliverable per run, loop associations uncounted — over
+    the same set the chains are read from.
+    """
+    record = LaneRunState.model_validate(record_data())
+    assert role_counts(record, run_id="run-current") == {
+        BranchRole.DELIVERABLE: 1,
+        BranchRole.LOOP: 2,
+        BranchRole.RECOVERY: 1,
+    }
+    assert role_counts(record, run_id="run-earlier") == {BranchRole.DELIVERABLE: 1}
+    assert association_chains(record) == RECORD_CHAINS
 
 
 @pytest.mark.parametrize("field", ["commitsAhead", "filesChanged"])
@@ -192,7 +250,7 @@ def test_caller_cannot_rewrite_record_by_clearing_original_input_lists():
     data["commits"].clear()
     data["associations"].clear()
     assert len(record.commits) == 2
-    assert len(record.associations) == 4
+    assert len(record.associations) == 5
 
 
 def test_no_pr_remains_an_explicit_absence():
@@ -244,13 +302,13 @@ def test_several_loop_associations_in_one_run_remain_valid():
     data = record_data()
     data["associations"].append(
         {
-            "branch": "fix-loop",
+            "branch": "third-loop",
             "role": "loop",
             "derivedFrom": "has-ralph-in-its-name",
             "runId": "run-current",
         }
     )
-    assert len(LaneRunState.model_validate(data).associations) == 5
+    assert len(LaneRunState.model_validate(data).associations) == 6
 
 
 def test_render_has_one_configured_marker_and_one_readable_fact_block():
@@ -780,6 +838,114 @@ def test_a_run_rebound_to_another_deliverable_refuses_before_composing_a_record(
         )
     assert lane.deliverable_branch in str(refusal.value)
     assert "another-deliverable" in str(refusal.value)
+
+
+def test_a_binding_the_record_model_refuses_is_a_typed_write_refusal():
+    """The model's refusal of the value it is handed is typed at the composer.
+
+    A binding validates nothing of its own — the committing node rebuilds one
+    per run from its own context — so a field whose shape the record declares
+    reaches the model through this function. Callers write records through
+    this module, so the refusal they see is this module's write refusal, with
+    the model's own error kept as its cause.
+    """
+    refused = dataclasses.replace(binding(), body_digest="short")
+
+    def compose() -> LaneRunState:
+        return next_lane_record(
+            prior=None,
+            lane=refused,
+            branch_url="https://forge.example/branch/ordinary-name",
+            head_sha="a" * 40,
+            pushed_head_sha="a" * 40,
+            changeset=changeset(commits=1, files=1),
+            subject="First change",
+        )
+
+    with pytest.raises(LaneRecordWriteError) as refusal:
+        compose()
+    assert refusal.value.lane_key == refused.lane_key
+    assert "refused field" in str(refusal.value)
+    assert isinstance(refusal.value.__cause__, ValidationError)
+    # Asking for the model's error catches nothing: it no longer leaves this
+    # module, so the write refusal passes the inner expectation by.
+    with pytest.raises(LaneRecordWriteError):
+        with pytest.raises(ValidationError):
+            compose()
+
+
+def test_a_refused_rebind_leaves_the_prior_record_unmodified():
+    """The record the refusal was raised against is the record that remains.
+
+    Nothing about the prior record moves: not a field, not the associations it
+    already carries, and not the body it renders to — so a lane whose write
+    refused re-enters on exactly the facts it had.
+    """
+    lane = binding()
+    prior = next_lane_record(
+        prior=None,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        changeset=changeset(commits=1, files=1),
+        subject="First change",
+    )
+    snapshot = prior.model_copy(deep=True)
+    body_before = lane_record_body(record=prior)
+    rebound = dataclasses.replace(lane, deliverable_branch="another-deliverable")
+
+    with pytest.raises(LaneRecordWriteError):
+        next_lane_record(
+            prior=prior,
+            lane=rebound,
+            branch_url="https://forge.example/branch/ordinary-name",
+            head_sha="b" * 40,
+            pushed_head_sha=None,
+            changeset=changeset(commits=2, files=1),
+            subject="Second change",
+        )
+
+    assert prior == snapshot
+    assert association_chains(prior) == association_chains(snapshot)
+    assert lane_record_body(record=prior) == body_before
+
+
+def test_a_repeated_write_adds_no_second_association_for_the_same_run():
+    """A second commit of one run edits the record; it adds no association.
+
+    The row-level equality a repeated head already states says nothing about
+    the associations, and this write does move the head. What it must not do
+    is carry the run's own deliverable and loop into the set a second time.
+    """
+    lane = binding()
+    first = next_lane_record(
+        prior=None,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        changeset=changeset(commits=1, files=1),
+        subject="First change",
+    )
+    second = next_lane_record(
+        prior=first,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="b" * 40,
+        pushed_head_sha="b" * 40,
+        changeset=changeset(commits=2, files=1),
+        subject="Second change",
+    )
+    assert second.head_sha != first.head_sha
+    assert second.associations == first.associations
+    assert role_counts(second, run_id=lane.run_id) == role_counts(
+        first, run_id=lane.run_id
+    )
+    assert role_counts(second, run_id=lane.run_id) == {
+        BranchRole.DELIVERABLE: 1,
+        BranchRole.LOOP: 1,
+    }
 
 
 def test_a_run_rebased_onto_another_base_refuses_before_composing_a_record():

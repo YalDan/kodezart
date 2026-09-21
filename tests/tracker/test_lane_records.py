@@ -14,7 +14,11 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.tracker import TrackerComment
-from tests.domain.test_lane_record import record_data
+from tests.domain.test_lane_record import (
+    RECORD_CHAINS,
+    association_chains,
+    record_data,
+)
 from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import (
     APPROVED_ISSUE,
@@ -60,6 +64,10 @@ async def test_fresh_reader_recovers_every_fact_from_the_owning_issue(
     )
     assert comment == stored
     assert json.loads(record.model_dump_json(by_alias=True)) == data
+    # The whole-JSON equality says the bytes round-trip; this says the record
+    # read back through the port enumerates every association with the chain
+    # it names, which is what a cold re-entry resolves branches from.
+    assert association_chains(record) == RECORD_CHAINS
     assert tracker_writes() == before
 
 

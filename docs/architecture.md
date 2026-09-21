@@ -371,8 +371,14 @@ by fixed re-entry guidance. The record preserves three-state remote head facts,
 ordered `LaneCommit` rows — one row per commit act, not one per loop iteration:
 a head already recorded appends no second row, and a head that returns to an
 earlier sha is a new act with a row of its own (KOD-681) — `LanePR` and
-explicitly typed `BranchAssociation` roles, parents and run identities. Its loop branch must appear in the association
-set, and each run has at most one deliverable. Branch names do not supply roles.
+explicitly typed `BranchAssociation` roles, parents and run identities. Its loop
+branch must appear in the association set, and each run has at most one
+deliverable. Branch names do not supply roles. Those are the model's own
+invariants, and the composer is the boundary that types them:
+`next_lane_record` catches the model's `ValidationError` over the value it
+composes and raises `LaneRecordWriteError`, so a caller that writes a record
+never sees a validation error out of a layer it did not call, and a refused
+write leaves the prior record exactly as it was (KOD-703).
 The model follows the declared list fields: field assignment is frozen, but
 the lists are not deeply immutable. Consumers must not mutate retained evidence;
 each read returns freshly decoded values rather than a shared cached collection.
