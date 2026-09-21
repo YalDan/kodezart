@@ -268,6 +268,86 @@ def test_a_verdict_and_its_reason_cannot_be_constructed_apart():
             AmendmentReport.model_validate({"verdicts": [applied | {"reason": reason}]})
 
 
+#: The fault lies outside the criterion: some implementation at base would
+#: satisfy it, and only the demonstration is unavailable in this environment.
+_FAULT_OUTSIDE = {
+    "verdict": "unverifiable",
+    "smallest_repair": "environment_supply",
+    "missing_resource": "network access for the demonstration",
+}
+
+
+@pytest.mark.parametrize(
+    "judgment_changes,claimed,environment,expected",
+    [
+        pytest.param({}, None, {}, None, id="fault_in_criterion"),
+        pytest.param(
+            {},
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            None,
+            id="fault_in_criterion_with_capability_claimed",
+        ),
+        pytest.param(
+            {"finding": _FAULT_OUTSIDE},
+            None,
+            {},
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="fault_outside_criterion",
+        ),
+        pytest.param(
+            {"finding": _FAULT_OUTSIDE},
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+            id="fault_outside_criterion_declared_absent",
+        ),
+        pytest.param(
+            {
+                "finding": _FAULT_OUTSIDE
+                | {
+                    "cost_claim": {
+                        "assertion": "The demonstration costs what it costs.",
+                        "measurement": {
+                            "observed": "Executed once at base; 2 seconds observed",
+                            "affordable": True,
+                        },
+                    }
+                },
+                "measured_by": "Reproduced recorded command at base",
+            },
+            None,
+            {},
+            UpheldReason.COST_MEASURED_AFFORDABLE,
+            id="cost_decides_before_the_fault_line",
+        ),
+    ],
+)
+def test_the_fault_line_is_asked_after_cost_and_before_reproduction(
+    judgment_changes,
+    claimed,
+    environment,
+    expected,
+):
+    """Would some implementation at base satisfy this criterion, asked first.
+
+    The rows differ in the finding alone where the fault line is what decides:
+    a fault in the criterion's own text authorizes an amendment, a fault outside
+    it never does. Cost is not one of the four grounds, so deciding it above the
+    fault line still asks the fault line before any ground, and that landed
+    order is pinned here.
+    """
+    value = amended()
+    claim = AmendmentClaim.model_validate(
+        value.claim.model_dump() | {"claimed_capability": claimed}
+    )
+    judgment = AmendmentJudgment.model_validate(
+        value.judgment.model_dump() | judgment_changes
+    )
+    assert judgment.reproduced
+    assert upheld_reason(claim, judgment, environment=environment) is expected
+
+
 def test_claim_cannot_carry_writer_reasoning_unknown_stage_or_unknown_ground():
     valid = {
         "subject": {"kind": "criterion", "id": "native/1"},
