@@ -15,12 +15,12 @@ from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import RulingUnrecordedError
 from kodezart.domain.prompt_variables import tracker_checks_section
-from kodezart.domain.rulings import EMPTY_REGISTRY, ruling_marker
+from kodezart.domain.rulings import EMPTY_REGISTRY, render_ruling, ruling_marker
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.ruling_records import RulingRecordReader
-from kodezart.types.domain.agent import RulingAuthor
+from kodezart.types.domain.agent import RulingAnswer, RulingAuthor, RulingClass
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -33,6 +33,7 @@ from kodezart.types.domain.prompts import PromptKey
 from tests.chains.test_native_fire import (
     DIRECT_OWED,
     SUBJECT,
+    check_of,
     criterion_body,
     native_operation,
     tracker,
@@ -91,6 +92,43 @@ def one_answer(**changes) -> dict[str, object]:
     }
     fields.update(changes)
     return fields
+
+
+# ---------------------------------------------------------------------------
+# One fixture per class of defect, each on DIRECT_OWED's own Check line, as
+# ambiguous_body() is for the reading class.  Every answer below is scripted:
+# which class a defect falls in is the session's judgement, and no test here
+# grades that judgement.
+# ---------------------------------------------------------------------------
+
+#: Two sentences of one Check that cannot both hold, and which one stands.
+STANDING = "a failed item stays queued for a retry"
+LOSING = "a failed item is dropped from the queue on failure"
+CONTRADICTION_CHECK = f"{STANDING}, and {LOSING}"
+CONTRADICTION_QUESTION = "Is a failed item kept for a retry or dropped?"
+
+
+def contradiction_body() -> str:
+    return criterion_body(DIRECT_OWED).replace(
+        check_of(DIRECT_OWED), CONTRADICTION_CHECK
+    )
+
+
+def contradiction_answer(**changes) -> dict[str, object]:
+    """One answer to the contradicting Check, with any field overridable.
+
+    The defaults are merged under *changes* rather than passed as keywords,
+    so a caller may replace any one of them — including with ``None``.
+    """
+    fields: dict[str, object] = {
+        "question": CONTRADICTION_QUESTION,
+        "rulingClass": "resolve_contradiction",
+        "resolution": f"{STANDING}: the retry side stands.",
+        "rejectedAlternative": (
+            f"{LOSING}: the drop side loses, under which no retry can happen."
+        ),
+    }
+    return one_answer(**{**fields, **changes})
 
 
 class Executor:
@@ -487,10 +525,22 @@ def subject_answer(**changes) -> dict[str, object]:
     )
 
 
+#: The only keys of board_state() a record's own write moves: the comment,
+#: the write journal it lands in, and the lease taken to write it.  Every
+#: other key — the renewal journal and the live lease table included — must
+#: be equal on both sides, because a pass acquires no per-issue claim and
+#: releases the lease it took before it returns.
+RECORD_WRITE = frozenset({"comments", "comment_writes", "lease_writes"})
+
+
 def board_state(port) -> dict[str, object]:
     """Everything a second pass must leave exactly as it found it."""
     return {
         "bodies": {key: issue.body for key, issue in port.issues.items()},
+        "states": {
+            key: (issue.state_name, issue.state_kind)
+            for key, issue in port.issues.items()
+        },
         "comments": [
             (comment.issue_key, comment.comment_key, comment.body)
             for comment in port.comments
@@ -498,6 +548,52 @@ def board_state(port) -> dict[str, object]:
         "leases": dict(port.leases),
         **{name: list(getattr(port, name)) for name in JOURNALS},
     }
+
+
+async def pinned_record(port, answer, *, before):
+    """The record one scripted answer landed, as a cold reader finds it.
+
+    Asserts what a pass of any class must satisfy: exactly one comment under
+    the record prefix, on the issue the answer addresses; the minted identity
+    in its marker line; the class named in the body; machine authorship and
+    every answered field intact on a cold read-back; the parsed record
+    rendering back to the bytes on the board; and nothing on the board moved
+    except that comment and the lease taken to write it.  The caller then
+    asserts the clauses its own class owes.
+    """
+    prefixes = native_operation().marker_prefixes
+    pinned = [
+        comment
+        for comment in port.comments
+        if comment.body.startswith(f"[{prefixes['ruling']}")
+    ]
+    assert [comment.issue_key for comment in pinned] == [answer["issueRef"]]
+    identity = mint_ruling_id(issue_ref=answer["issueRef"], question=answer["question"])
+    assert pinned[0].body.splitlines()[0] == ruling_marker(
+        ruling_id=identity, lane_key=SUBJECT, marker_prefixes=prefixes
+    )
+    # The rendered form carries the class by name.
+    answered_class = answer["rulingClass"]
+    assert f'"rulingClass": "{answered_class}"' in pinned[0].body
+    ((_, record),) = await cold_records(port, answer["issueRef"])
+    assert record.ruling_id == identity
+    assert record.authored_by is RulingAuthor.MACHINE
+    # Every field the session answered survives render and read-back.
+    assert (
+        record.model_dump(exclude={"ruling_id", "authored_by", "protected_tests"})
+        == RulingAnswer.model_validate(answer).model_dump()
+    )
+    # And what the reader parsed renders back to the bytes on the board.
+    assert (
+        render_ruling(ruling=record, lane_key=SUBJECT, marker_prefixes=prefixes)
+        == pinned[0].body
+    )
+    # Nothing but the record moved: no body, no state, no other journal.
+    after = board_state(port)
+    assert {key: value for key, value in after.items() if key not in RECORD_WRITE} == {
+        key: value for key, value in before.items() if key not in RECORD_WRITE
+    }
+    return record
 
 
 @pytest.mark.parametrize("second", ["the same answers", "a different resolution"])
@@ -535,3 +631,75 @@ async def test_a_second_pass_over_one_fixture_writes_nothing(
     # The record still says what the first pass pinned.
     ((_, record),) = await cold_records(port, DIRECT_OWED)
     assert record.resolution == RESOLUTION
+
+
+# ---------------------------------------------------------------------------
+# One answer of each class of defect, through the step and off the board again.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_self_contradiction_is_answered_naming_which_side_stands_and_loses(
+    repository,
+) -> None:
+    """Two sentences of one Check cannot both hold; the record says which one does.
+
+    Answered here rather than deferred: after one pass the answer is on the
+    tracker, before any loop, and nothing was raised anywhere else (KOD-628).
+    """
+    answer = contradiction_answer()
+    executor = Executor([[answer], [answer]])
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor, port=tracker(bodies={DIRECT_OWED: contradiction_body()})
+    )
+    before = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    record = await pinned_record(port, answer, before=before)
+    assert record.ruling_class is RulingClass.RESOLVE_CONTRADICTION
+    # The side that stands is the resolution and only the resolution; the side
+    # that loses is the rejected alternative and only that.
+    assert STANDING in record.resolution and LOSING not in record.resolution
+    assert LOSING in record.rejected_alternative
+    assert STANDING not in record.rejected_alternative
+    # The session was shown the contradicting text, and what landed was gated
+    # as content this run authored.
+    assert CONTRADICTION_CHECK in executor.question_prompts[0]
+    assert ContentClass.AUTHORED in gate.content_classes
+    # A second pass over the same fixture writes nothing and judges nothing,
+    # and is shown the answer the first pass pinned.
+    after_first = board_state(port)
+    await run(step, spec, current, repo_path, base)
+    assert board_state(port) == after_first
+    assert len(executor.judged_artifacts) == 1
+    assert len(executor.question_prompts) == 2
+    assert STANDING in executor.question_prompts[1]
+
+
+async def test_a_contradiction_answer_with_no_losing_side_is_refused_before_any_lease(
+    repository,
+) -> None:
+    """Naming the side that loses is the step's requirement, not the script's habit.
+
+    An answer of this class with no rejected alternative is no valid record,
+    so it is refused while the arithmetic is still being done — before the
+    surfaces are leased, before the gate is reached, and before anything is
+    written for a later reader to find.
+    """
+    executor = Executor([[contradiction_answer(rejectedAlternative=None)]])
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor, port=tracker(bodies={DIRECT_OWED: contradiction_body()})
+    )
+
+    with pytest.raises(RulingUnrecordedError) as caught:
+        await run(step, spec, current, repo_path, base)
+
+    assert caught.value.issue_key == SUBJECT
+    assert "not a valid record" in caught.value.reason
+    assert DIRECT_OWED in caught.value.reason
+    assert port.comment_writes == []
+    assert port.lease_writes == []
+    assert port.leases == {}
+    assert executor.judged_artifacts == []
+    assert len(executor.question_prompts) == 1
+    assert gate.content_classes == []
