@@ -35,6 +35,17 @@ def audit_deferral(
     return None if in_review else AuditDeferral.TERMINAL_NOT_REACHED
 
 
+def mandate_escalation_key(*, issue_key: str) -> str:
+    """The escalation identity of an instructed mandate on one criterion.
+
+    The criterion sub-issue key, and nothing composed onto it.  This takes
+    no mandate and no defect class on purpose: a key folding model-authored
+    prose in mints a second identity on every rewording and re-raises a
+    question already answered (KOD-522).
+    """
+    return issue_key
+
+
 def reopens_criterion(publication: AuditPublication) -> bool:
     """Only a refuted current-Check claim takes its criterion back.
 

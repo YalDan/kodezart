@@ -1,10 +1,15 @@
 """A member's own state decides what there is to audit, before any arm runs."""
 
+import inspect
 from typing import get_args
 
 import pytest
 
-from kodezart.domain.audit_claims import audit_deferral, reopens_criterion
+from kodezart.domain.audit_claims import (
+    audit_deferral,
+    mandate_escalation_key,
+    reopens_criterion,
+)
 from kodezart.types.domain.audit import (
     AuditClaimReport,
     AuditMandateObservation,
@@ -202,6 +207,23 @@ def test_only_a_refuted_current_check_claim_takes_a_criterion_back(kind, verdict
     publication = publications(verdict)[kind]
     expected = kind == "claim" and verdict is AuditVerdict.REFUTED
     assert reopens_criterion(publication) is expected
+
+
+def test_a_mandate_escalation_key_is_the_criterion_key_and_admits_no_mandate():
+    """The signature is the guarantee, so the assertion reads it.
+
+    An equality alone would pass a key that still folded prose in behind a
+    parameter with a default; a parameter list that cannot name a mandate
+    is what makes the prose unreachable from the identity.
+    """
+    assert mandate_escalation_key(issue_key="KOD-522") == "KOD-522"
+    assert mandate_escalation_key(issue_key="KOD-540") == "KOD-540"
+    assert mandate_escalation_key(issue_key="KOD-522") != mandate_escalation_key(
+        issue_key="KOD-540"
+    )
+    signature = inspect.signature(mandate_escalation_key)
+    assert list(signature.parameters) == ["issue_key"]
+    assert signature.parameters["issue_key"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 def shipped_kinds() -> set[str]:

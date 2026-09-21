@@ -9,7 +9,11 @@ from datetime import datetime
 from kodezart.chains.audit_sweep import AuditReadObservation, AuditReadSweep
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
-from kodezart.domain.audit_claims import audit_deferral, reopens_criterion
+from kodezart.domain.audit_claims import (
+    audit_deferral,
+    mandate_escalation_key,
+    reopens_criterion,
+)
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.tracker_writes import marked_comment_body
@@ -734,7 +738,9 @@ class AuditScheduledPass:
             if mandate is not None and isinstance(
                 mandate.root, InstructedMandateObservation
             ):
-                key = mandate.root.finding.model_dump_json()
+                key = mandate_escalation_key(
+                    issue_key=observation.target.issue.issue_key
+                )
                 if key not in escalation_refs:
                     escalation_refs[key] = await target.escalations.raise_mandate(
                         issue_key=observation.target.issue.issue_key,
