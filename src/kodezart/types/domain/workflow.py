@@ -20,6 +20,7 @@ from kodezart.types.domain.criteria import (
     TrackerCriterion,
     TrackerCriterionSet,
 )
+from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff
 from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.fire_spec import FireSpec, TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
@@ -86,8 +87,14 @@ class WorkflowContext(CamelCaseModel):
     workspace_path: str | None = None
 
     @classmethod
-    def from_configurable(cls, config: RunnableConfig) -> Self:
-        """Build from a LangGraph RunnableConfig, stripping reserved keys."""
+    def from_configurable(cls: type[Self], config: RunnableConfig) -> Self:
+        """Build from a LangGraph RunnableConfig, stripping reserved keys.
+
+        The receiver is annotated because it is what this parse produces: a
+        context, and never one of the values a context happens to carry. A
+        guard reading this module for a value's own parse sites has that
+        stated rather than left to silence.
+        """
         raw = config["configurable"]
         cleaned = {
             k: v
@@ -235,6 +242,13 @@ class RalphLoopState(TypedDict):
     iteration_commit_sha: NotRequired[str | None]
     amendment_reports: NotRequired[list[AmendmentReport]]
     amendment_blocked: NotRequired[bool]
+    #: What this loop's last evaluation left standing, so the next iteration
+    #: can ask what each of those gradings is still worth instead of grading
+    #: them again. Graph state and not part of the receipt: the receipt is
+    #: what the post-loop roster check compares. Nothing persists it — the
+    #: scope arm runs with no checkpointer, so a killed run re-enters from
+    #: the board with nothing standing.
+    standing: NotRequired[tuple[CriterionCrossOff, ...]]
 
 
 class WorkflowState(TypedDict):

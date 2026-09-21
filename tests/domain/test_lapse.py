@@ -11,9 +11,15 @@ import inspect
 import pytest
 
 from kodezart.domain import lapse
-from kodezart.domain.lapse import GradedState, graded_state
+from kodezart.domain.lapse import GradedState, graded_state, held_standing
 from kodezart.types.domain.consolidation import ChangesetDigest
-from kodezart.types.domain.criterion_lifecycle import RederivationClass
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.criterion_lifecycle import (
+    CriterionCrossOff,
+    CrossOffState,
+    RederivationClass,
+)
+from kodezart.types.domain.criterion_ref import CriterionRef
 
 GRADED = "a" * 40
 HEAD = "b" * 40
@@ -180,6 +186,7 @@ def test_the_lapse_module_imports_only_value_types_and_does_no_io():
     assert modules == {
         "collections.abc",
         "enum",
+        "typing",
         "kodezart.types.domain.consolidation",
         "kodezart.types.domain.criterion_lifecycle",
     }
@@ -202,3 +209,205 @@ def test_the_lapse_module_imports_only_value_types_and_does_no_io():
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
     assert not called & forbidden
+
+
+# ---------------------------------------------------------------------------
+# The partition: what the next iteration is dispatched from (KOD-695).
+# ---------------------------------------------------------------------------
+
+EXERCISED = "src/kodezart/domain/"
+
+
+def standing(
+    key: str,
+    *,
+    state: CrossOffState = CrossOffState.passed,
+    rederivation_class: RederivationClass = RederivationClass.cheap,
+    exercised_paths: tuple[str, ...] = (),
+    graded_sha: str = GRADED,
+) -> CriterionCrossOff:
+    """One cross-off an earlier iteration left standing."""
+    return CriterionCrossOff(
+        criterion=CriterionRef(key),
+        state=state,
+        evidence=CriterionEvidence(graded_sha=graded_sha, test=f"a pointer for {key}"),
+        rederivation_class=rederivation_class,
+        exercised_paths=exercised_paths,
+    )
+
+
+def keys_of(partition) -> dict[str, tuple[str, ...]]:
+    """The partition as the criterion keys in each of its four fields."""
+    return {
+        field: tuple(str(cross_off.criterion) for cross_off in group)
+        for field, group in partition._asdict().items()
+    }
+
+
+def test_every_prior_grading_lands_in_exactly_one_of_the_first_three_fields():
+    """The partition is total and disjoint, and it keeps the order it was given."""
+    prior = [
+        standing("alpha"),
+        standing("beta", state=CrossOffState.failed),
+        standing(
+            "gamma",
+            rederivation_class=RederivationClass.expensive,
+            exercised_paths=(EXERCISED,),
+        ),
+        standing("delta", state=CrossOffState.lapsed),
+        standing(
+            "epsilon",
+            rederivation_class=RederivationClass.observed,
+            exercised_paths=(EXERCISED,),
+        ),
+    ]
+    partition = held_standing(
+        prior=prior,
+        head_sha=HEAD,
+        changesets={GRADED: digest(f"{EXERCISED}lapse.py")},
+    )
+    placed = keys_of(partition)
+    landed = placed["carried"] + placed["rederive"] + placed["lapsed"]
+    assert sorted(landed) == sorted(str(one.criterion) for one in prior)
+    assert len(landed) == len(set(landed)) == len(prior)
+    # Order is the order it arrived in, inside each field.
+    assert placed["rederive"] == ("alpha", "beta", "gamma")
+    assert placed["lapsed"] == ("delta", "epsilon")
+    assert placed["carried"] == ()
+
+
+def test_a_grading_whose_paths_did_not_move_is_carried_and_not_re_derived():
+    partition = held_standing(
+        prior=[
+            standing(
+                "alpha",
+                rederivation_class=RederivationClass.expensive,
+                exercised_paths=(EXERCISED,),
+            )
+        ],
+        head_sha=HEAD,
+        changesets={GRADED: digest("docs/architecture.md")},
+    )
+    assert keys_of(partition) == {
+        "carried": ("alpha",),
+        "rederive": (),
+        "lapsed": (),
+        "newly_lapsed": (),
+    }
+
+
+def test_an_expensive_grading_whose_paths_moved_is_re_derived_not_lapsed():
+    """The loop can grade it again, so it goes back to the session."""
+    partition = held_standing(
+        prior=[
+            standing(
+                "alpha",
+                rederivation_class=RederivationClass.expensive,
+                exercised_paths=(EXERCISED,),
+            )
+        ],
+        head_sha=HEAD,
+        changesets={GRADED: digest(f"{EXERCISED}lapse.py")},
+    )
+    assert keys_of(partition) == {
+        "carried": (),
+        "rederive": ("alpha",),
+        "lapsed": (),
+        "newly_lapsed": (),
+    }
+
+
+def test_an_observed_grading_whose_paths_moved_lapses_and_is_newly_lapsed():
+    """The loop cannot re-derive a performed observation, so it is not offered one."""
+    partition = held_standing(
+        prior=[
+            standing(
+                "alpha",
+                rederivation_class=RederivationClass.observed,
+                exercised_paths=(EXERCISED,),
+            )
+        ],
+        head_sha=HEAD,
+        changesets={GRADED: digest(f"{EXERCISED}lapse.py")},
+    )
+    assert keys_of(partition) == {
+        "carried": (),
+        "rederive": (),
+        "lapsed": ("alpha",),
+        "newly_lapsed": ("alpha",),
+    }
+
+
+def test_a_grading_that_already_lapsed_stays_lapsed_and_is_not_newly_lapsed():
+    """A grading that has lapsed does not un-lapse, and asks nothing twice."""
+    partition = held_standing(
+        prior=[
+            standing(
+                "alpha",
+                state=CrossOffState.lapsed,
+                rederivation_class=RederivationClass.observed,
+                exercised_paths=(EXERCISED,),
+            )
+        ],
+        head_sha=GRADED,
+        changesets={},
+    )
+    assert keys_of(partition) == {
+        "carried": (),
+        "rederive": (),
+        "lapsed": ("alpha",),
+        "newly_lapsed": (),
+    }
+
+
+def test_the_partition_asks_the_rule_once_per_standing_path_bound_grading():
+    """A cheap grading needs no reading, so none is taken for it.
+
+    Counted by the digests the partition actually consults: a reading it
+    took for a cheap grading would be a read of a digest the caller did
+    not even have to fetch.
+    """
+    consulted: list[str] = []
+
+    class Counting(dict):
+        def get(self, key, default=None):
+            consulted.append(key)
+            return super().get(key, default)
+
+    prior = [
+        standing("cheap-one"),
+        standing(
+            "bound-one",
+            rederivation_class=RederivationClass.expensive,
+            exercised_paths=(EXERCISED,),
+        ),
+        standing(
+            "bound-two",
+            rederivation_class=RederivationClass.observed,
+            exercised_paths=(EXERCISED,),
+            graded_sha="c" * 40,
+        ),
+        standing("failed-one", state=CrossOffState.failed),
+    ]
+    held_standing(
+        prior=prior,
+        head_sha=HEAD,
+        changesets=Counting({GRADED: digest("docs/architecture.md")}),
+    )
+    assert consulted == [GRADED, "c" * 40]
+
+
+def test_a_grading_with_no_digest_for_its_own_sha_lapses():
+    """An absent reading is not a reading that nothing moved, here too."""
+    partition = held_standing(
+        prior=[
+            standing(
+                "alpha",
+                rederivation_class=RederivationClass.observed,
+                exercised_paths=(EXERCISED,),
+            )
+        ],
+        head_sha=HEAD,
+        changesets={},
+    )
+    assert keys_of(partition)["lapsed"] == ("alpha",)

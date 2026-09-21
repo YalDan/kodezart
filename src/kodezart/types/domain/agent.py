@@ -38,6 +38,7 @@ from kodezart.types.domain.criteria import (
     FanInReport,
     GeneratedCriterion,
 )
+from kodezart.types.domain.criterion_lifecycle import RederivationClass
 from kodezart.types.domain.gating import (
     DurabilityCategory,
     RedactionCategory,
@@ -620,6 +621,26 @@ class CriterionResult(CamelCaseModel):
         description=(
             "The evidence for the verdict, citing output you ran: file paths "
             "with line numbers, test names, lint rule identifiers."
+        ),
+    )
+    rederivation_class: RederivationClass = Field(
+        default=RederivationClass.cheap,
+        description=(
+            "What re-deriving this verdict costs. 'cheap' if re-running it is "
+            "reading code or running a test; 'expensive' if it needs a long "
+            "build, a deployment or a paid call; 'observed' if it rests on "
+            "something performed once that cannot be repeated. A class other "
+            "than 'cheap' requires exercisedPaths and is read as 'cheap' "
+            "without them."
+        ),
+    )
+    exercised_paths: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "The repository-relative path prefixes this verdict examined, for "
+            "a class other than 'cheap'. A later commit touching one of them "
+            "is what ends the exemption from re-deriving the verdict, so name "
+            "every prefix it depended on and none it did not."
         ),
     )
 

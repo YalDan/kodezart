@@ -19,7 +19,7 @@ from kodezart.domain.fire_spec import (
 )
 from kodezart.domain.lapse import GradedState
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
-from kodezart.types.domain.criteria import TrackerCriterion
+from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import (
     PATH_BOUND_CLASSES,
@@ -87,6 +87,81 @@ def undemonstrated_output(
 def evaluation_observation(*, session_id: str, iteration: int) -> str:
     """The pointer an Evidence row carries back to the grading it came from."""
     return f"evaluator session {session_id}, iteration {iteration}"
+
+
+#: What stands in for a verdict this attempt did not ask for, because the
+#: verdict an earlier one reached still stands.
+#:
+#: Fixed text, for the reason the undemonstrated one above is: this is the
+#: harness's arithmetic over what moved since that grading, not a session's
+#: reading of anything, so a session's prose would misattribute it.
+CARRIED_REASON: Final[str] = (
+    "carried: nothing this grading exercised moved since the sha it was "
+    "graded at, so the verdict it reached still stands and was not asked again"
+)
+
+#: What stands in for a verdict whose grading no longer stands.
+LAPSE_REASON: Final[str] = (
+    "lapsed: what this grading exercised moved after the sha it was graded "
+    "at, so the verdict it reached is owed again rather than failed"
+)
+
+
+def iteration_output(
+    *,
+    criteria: Sequence[TrackerCriterion],
+    standing: Sequence[CriterionCrossOff],
+    reading: Mapping[CriterionRef, GradedState],
+    graded: AcceptanceCriteriaOutput,
+) -> AcceptanceCriteriaOutput:
+    """The whole roster's reading: this session's rows, plus the standing ones.
+
+    A session is asked only about what this iteration may grade, so its own
+    output answers a subset of the roster. What the gate and the trajectory
+    read has to answer the roster entire, or the denominator moves between
+    iterations and acceptance is over whatever the session happened to be
+    handed. So each withheld criterion gets the row its standing grading
+    earns — passing for one that still stands, not passing for one that has
+    lapsed — carrying that grading's own class and prefixes so the next
+    iteration reads the same declaration back.
+
+    The session's rows are passed through untouched, including a second row
+    for one id and a row for an id nobody dispatched: both are the reconciler's
+    to report, and filtering them here would hide a hallucinated roster behind
+    a complete-looking one. A row for a criterion this session was NOT asked
+    about is the one exception — the harness's reading of that criterion is
+    the row above, and a session answering an obligation it was not handed
+    does not get to contradict it.
+    """
+    held = {cross_off.criterion: cross_off for cross_off in standing}
+    answered: dict[CriterionId, list[CriterionResult]] = {}
+    for result in graded.criteria_results:
+        answered.setdefault(result.criterion_id, []).append(result)
+    rows: list[CriterionResult] = []
+    for criterion in criteria:
+        state = reading.get(criterion_ref(criterion.id))
+        if state is None:
+            rows.extend(answered.pop(criterion.id, ()))
+            continue
+        answered.pop(criterion.id, None)
+        prior = held[criterion_ref(criterion.id)]
+        rows.append(
+            CriterionResult(
+                criterion_id=criterion.id,
+                criterion=criterion.text,
+                passed=state is GradedState.counted,
+                reasoning=(
+                    CARRIED_REASON if state is GradedState.counted else LAPSE_REASON
+                ),
+                rederivation_class=prior.rederivation_class,
+                exercised_paths=prior.exercised_paths,
+            )
+        )
+    for unknown in answered.values():
+        rows.extend(unknown)
+    return AcceptanceCriteriaOutput(
+        criteria_results=rows, sherlock_flags=list(graded.sherlock_flags)
+    )
 
 
 #: What a pointer says once the grading it names no longer stands.
@@ -225,7 +300,10 @@ def cross_offs_for(
         if state is None:
             verdict = cross_off_state(passed=result.passed, demonstrated=demonstrated)
             recorded, pointer = attempt
-            rederivation_class, exercised_paths = RederivationClass.cheap, ()
+            rederivation_class, exercised_paths = declared_class(
+                rederivation_class=result.rederivation_class,
+                exercised_paths=result.exercised_paths,
+            )
         else:
             prior = held[criterion]
             verdict = CrossOffState.lapsed

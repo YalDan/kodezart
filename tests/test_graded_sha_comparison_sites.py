@@ -396,6 +396,10 @@ def test_a_second_module_performing_the_comparison_is_reported(tmp_path):
 #: One body per package: a package asking twice is two readers of one answer,
 #: which is how the second of them starts qualifying it.
 CALLERS = {
+    "domain/lapse.py::held_standing": (
+        "the lane arm's one reader: the partition the loop's next iteration "
+        "is dispatched from"
+    ),
     "types/domain/audit_evidence.py::AuditEvidenceObservation.is_lapse": (
         "the audit lane's observation of a finished claim's recorded grading"
     ),

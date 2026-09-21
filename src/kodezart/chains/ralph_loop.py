@@ -1,7 +1,7 @@
 """Ralph quality-gating loop — execute + evaluate until accepted or exhausted."""
 
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
@@ -37,11 +37,13 @@ from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criterion_cross_off import (
     cross_offs_for,
     evaluation_observation,
+    iteration_output,
     undemonstrated_output,
 )
 from kodezart.domain.errors import GitSourceReadError
 from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.fire_spec import body_digest
+from kodezart.domain.lapse import GradedState, HeldStanding, held_standing
 from kodezart.domain.prompt_variables import (
     changeset_variables,
     execution_criteria_variables,
@@ -62,11 +64,18 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
 )
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criteria import (
     ExecutionCriterion,
     FanInReport,
     TrackerCriterionSet,
 )
+from kodezart.types.domain.criterion_lifecycle import (
+    PATH_BOUND_CLASSES,
+    CriterionCrossOff,
+    CrossOffState,
+)
+from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.grading import IterationGrade
@@ -209,6 +218,10 @@ class RalphLoop:
             "pending_failures": [],
             "iteration_records": [],
             "outcome": PendingRalphOutcome(),
+            # Nothing stands at entry: the scope arm persists no graph state,
+            # so a killed run re-enters from the board with every criterion
+            # its roster owes to be graded again.
+            "standing": (),
         }
 
         # Native nested invocation retains the framework's parent-task namespace
@@ -572,6 +585,33 @@ class RalphLoop:
         node_execution = uuid4().hex
         evaluation_attempt = 0
 
+        # What the last grading of this loop left standing, and what each of
+        # those gradings is still worth at the head this iteration grades. The
+        # digests are read once per distinct standing sha, before the session,
+        # because the reading decides which criteria the session is asked
+        # about at all.
+        prior: Sequence[CriterionCrossOff] = state.get("standing", ())
+        standing = HeldStanding(carried=(), rederive=(), lapsed=(), newly_lapsed=())
+        reading: dict[CriterionRef, GradedState] = {}
+        if native_ref is not None and prior:
+            standing = held_standing(
+                prior=prior,
+                head_sha=native_ref,
+                changesets=await self._moved_since(
+                    cwd=cwd, prior=prior, head_sha=native_ref
+                ),
+            )
+            reading = {
+                **{
+                    cross_off.criterion: GradedState.counted
+                    for cross_off in standing.carried
+                },
+                **{
+                    cross_off.criterion: GradedState.lapsed
+                    for cross_off in standing.lapsed
+                },
+            }
+
         dispatched = tuple(ctx.acceptance_criteria)
         # The session the standing grade came from, carried out of the
         # retried closure: the Evidence row points back at the grading that
@@ -587,6 +627,7 @@ class RalphLoop:
         async def evaluate() -> IterationGrade:
             nonlocal dispatched, graded_in, demonstrated
             criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
+            roster: TrackerCriterionSet | None = None
             if ctx.tracker_spec is not None:
                 snapshot = await current_native_criteria(
                     spec=ctx.tracker_spec,
@@ -595,10 +636,30 @@ class RalphLoop:
                         criteria=ctx.acceptance_criteria, outcome=state["outcome"]
                     ),
                 )
+                roster = snapshot
                 criteria = list(snapshot.criteria)
+            # The session is asked only about what this iteration may grade.
+            # A criterion whose grading still stands would be re-derived for
+            # nothing, and one that has lapsed on a performed observation
+            # cannot be re-derived at all.
+            withheld = frozenset(
+                str(cross_off.criterion)
+                for cross_off in (*standing.carried, *standing.lapsed)
+            )
+            for_session = [
+                criterion for criterion in criteria if str(criterion.id) not in withheld
+            ]
+            if not for_session:
+                # Only a STANDING grading is withheld, so an iteration that
+                # ran at all has something failing or owed. If that is ever
+                # wrong the loop says so before it opens a session, rather
+                # than grading an empty roster and writing a partial verdict.
+                raise NativeWriteRefusalError(
+                    "The native evaluation has no criterion left to grade"
+                )
             eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
                 {
-                    **execution_criteria_variables(criteria),
+                    **execution_criteria_variables(for_session),
                     **changeset_variables(changeset),
                 },
             )
@@ -718,6 +779,17 @@ class RalphLoop:
                     graded_sha=native_ref,
                 )
                 output = undemonstrated_output(output)
+            if reading and roster is not None:
+                # After the undemonstrated reading, not before: an attempt
+                # that proved nothing is a missing reading of the tree its sha
+                # names, which is no reason to un-carry an earlier grading —
+                # that one's reading is arithmetic and stands on its own.
+                output = iteration_output(
+                    criteria=roster.criteria,
+                    standing=prior,
+                    reading=reading,
+                    graded=output,
+                )
             return grade_iteration(criteria, output)
 
         grade, unresolved, attempts = await until_permutation(
@@ -769,12 +841,13 @@ class RalphLoop:
             trajectory=trajectory,
             fan_in=fan_in,
         )
+        next_standing: tuple[CriterionCrossOff, ...] = ()
         if native_ref is not None:
             # Before the event, so a consumer that sees iteration n can read
             # the board and find iteration n's cross-offs already on it. The
             # cadence is the evaluator's: this is the step that judged, and
             # nothing after the loop writes a cross-off.
-            await self._cross_off(
+            next_standing = await self._cross_off(
                 ctx=ctx,
                 grade=grade,
                 dispatched=dispatched,
@@ -782,6 +855,8 @@ class RalphLoop:
                 graded_in=graded_in,
                 demonstrated=demonstrated,
                 iteration=state["iteration"],
+                standing=prior,
+                reading=reading,
             )
         writer(event)
         if (
@@ -799,6 +874,10 @@ class RalphLoop:
             "verdict": verdict,
             "pending_failures": pending_failures,
             "iteration_records": records,
+            # The loop's own memory of what it has graded, kept as graph state
+            # rather than on the receipt: the receipt is what the post-loop
+            # roster check compares, and this is not part of that comparison.
+            "standing": next_standing,
             "outcome": (
                 EvaluatedRalphOutcome(event=event, criteria=dispatched)
                 if native_ref is None
@@ -818,12 +897,24 @@ class RalphLoop:
         graded_in: str,
         demonstrated: bool,
         iteration: int,
-    ) -> None:
-        """Put this attempt's verdict on the criteria it was graded against.
+        standing: Sequence[CriterionCrossOff],
+        reading: Mapping[CriterionRef, GradedState],
+    ) -> tuple[CriterionCrossOff, ...]:
+        """Put what this attempt decided on the criteria it decided about.
 
-        The whole roster the attempt dispatched is handed over with the
-        whole grade, because a verdict is a reading of the roster and a
-        partial one is no reading of it.
+        The whole roster the attempt dispatched is read against the whole
+        grade, because a verdict is a reading of the roster and a partial one
+        is no reading of it. What is WRITTEN is narrower: a criterion whose
+        earlier grading still stands is already finished with the row it was
+        graded with, so nothing is written for it at all — neither its
+        Evidence row nor its state — and a second tick per iteration would be
+        a second chance for a third party's amendment to refuse the whole act.
+        The freshly graded ones and the lapsed ones are the pairs this attempt
+        decided, and they go over in roster order.
+
+        The whole tuple comes back as the next iteration's standing, carried
+        gradings included: what stands is what the loop has graded, not what
+        it last wrote.
 
         The refusal below only narrows the closure's typed value: the set is
         read before any evaluation on this arm and an empty one is refused
@@ -838,18 +929,58 @@ class RalphLoop:
             raise NativeWriteRefusalError(
                 "The native evaluation graded no tracker criterion in a session"
             )
+        cross_offs = cross_offs_for(
+            results=grade.results,
+            graded_sha=graded_sha,
+            observation=evaluation_observation(
+                session_id=graded_in, iteration=iteration
+            ),
+            demonstrated=demonstrated,
+            standing=standing,
+            reading=reading,
+        )
+        decided = tuple(
+            pair
+            for pair in zip(roster.criteria, cross_offs, strict=True)
+            if reading.get(pair[1].criterion) is not GradedState.counted
+        )
         await lane_state.write_cross_offs(
             lane=self._lane_binding(ctx),
-            dispatched=roster.criteria,
-            cross_offs=cross_offs_for(
-                results=grade.results,
-                graded_sha=graded_sha,
-                observation=evaluation_observation(
-                    session_id=graded_in, iteration=iteration
-                ),
-                demonstrated=demonstrated,
-            ),
+            dispatched=tuple(criterion for criterion, _ in decided),
+            cross_offs=tuple(cross_off for _, cross_off in decided),
         )
+        return cross_offs
+
+    async def _moved_since(
+        self,
+        *,
+        cwd: str,
+        prior: Sequence[CriterionCrossOff],
+        head_sha: str,
+    ) -> dict[str, ChangesetDigest]:
+        """The changed paths since each standing path-bound grading's own sha.
+
+        One read per distinct graded sha, in a settled order. A cheap grading
+        needs no digest and gets none: it is owed again on any head move, so
+        asking what moved would buy an answer nobody reads.
+
+        The interval is that grading's own sha to *head_sha*, which is the
+        only interval that answers whether what the grading examined has
+        changed since it was taken. The lane's own base-to-head digest cannot:
+        it would call a criterion's prefixes moved because of the very commit
+        that graded it.
+        """
+        return {
+            sha: await self._git.diff_summary(cwd=cwd, base_ref=sha, head_ref=head_sha)
+            for sha in sorted(
+                {
+                    cross_off.evidence.graded_sha
+                    for cross_off in prior
+                    if cross_off.state is CrossOffState.passed
+                    and cross_off.rederivation_class in PATH_BOUND_CLASSES
+                }
+            )
+        }
 
     async def _resolve(self, *, cwd: str, ref: str) -> str:
         """The complete sha *ref* names in *cwd*, or this loop's own refusal.
