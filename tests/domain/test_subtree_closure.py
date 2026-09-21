@@ -45,6 +45,11 @@ def criterion(
     )
 
 
+def record(key: str, *, parent: str, label: str) -> TrackerIssue:
+    """A parked question filed beside a criterion, in its own Todo record issue."""
+    return make_tracker_issue(key, parent_key=parent, issue_labels=frozenset({label}))
+
+
 def facts_of(*issues: TrackerIssue) -> dict[str, TrackerIssue]:
     return {issue.issue_key: issue for issue in issues}
 
@@ -162,6 +167,42 @@ def test_a_closure_over_a_narrower_criterion_set_disagrees_with_the_gap():
     assert narrow_gap == ()
     assert closure.is_closed("lane") is False
     assert (narrow_gap == ()) is not closure.is_closed("lane")
+
+
+@pytest.mark.parametrize("label", sorted(issue_tree.RECORD_KINDS))
+@pytest.mark.parametrize(
+    "criterion_state,open_keys,lane_closed",
+    [
+        (WorkflowStateKind.UNSTARTED, ("lane-AC-1",), False),
+        (WorkflowStateKind.COMPLETED, (), True),
+    ],
+)
+def test_a_record_issue_beside_a_criterion_joins_neither_the_gap_nor_the_roster(
+    label, criterion_state, open_keys, lane_closed
+):
+    """A parked question is its own record issue, and records are not criteria.
+
+    The state a question is parked in is a record issue filed beside the
+    criterion, never a criterion state, so the arithmetic must read it the
+    way it reads a `tracker` record: absent from the gap, absent from the
+    roster, and no obstacle to the lane closing.  The completed row is the
+    load-bearing one — a record that joined the gap would keep a lane whose
+    only criterion is met from ever being finished (KOD-420).
+    """
+    assert issue_tree.RECORD_KINDS == frozenset({"tracker", "decision"})
+    lane = make_tracker_issue("lane")
+    parked = record("lane-REC-1", parent="lane", label=label)
+    check = criterion("lane-AC-1", parent="lane", state=criterion_state)
+    facts = facts_of(lane, parked, check)
+    closure = SubtreeClosure(facts=facts, ref=REF)
+
+    assert parked.state_kind is WorkflowStateKind.UNSTARTED
+    assert tuple(i.issue_key for i in closure.gap("lane")) == open_keys
+    assert tuple(i.issue_key for i in closure.roster("lane")) == ("lane-AC-1",)
+    assert closure.is_closed("lane") is lane_closed
+    assert closure.gap("lane-REC-1") == ()
+    assert closure.roster("lane-REC-1") == ()
+    assert closure.open_criterion_keys() == open_keys
 
 
 def test_issue_tree_module_imports_no_adapters_and_does_no_io():
