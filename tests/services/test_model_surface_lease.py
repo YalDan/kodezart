@@ -6,7 +6,7 @@ import pytest
 
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import SurfaceLeaseError
-from kodezart.domain.model_surfaces import member_surfaces
+from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION, member_surfaces
 from kodezart.domain.surface_lease import surface_address
 from kodezart.services.model_surface_lease import ModelSurfaceLease
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -102,6 +102,19 @@ async def declared_model(tracker: TrackerPort) -> frozenset[WritableSurface]:
             for member in members
         },
     )
+
+
+def test_every_arm_names_the_model_the_resolver_resolves() -> None:
+    """The premise every arm below rests on: one name for the model.
+
+    The workspace's label map, the labels it seeds and the classification
+    each lease is built with are all fed from one constant beside the
+    fixture.  Respelled there on its own, that constant would carry every
+    arm through over a model the production resolver has never heard of —
+    so the constant is tied to the production name here, where a drift in
+    either direction is a failure rather than a green suite.
+    """
+    assert CLASSIFICATION == MODEL_CLASSIFICATION
 
 
 @pytest.mark.parametrize("arm", ARMS)
