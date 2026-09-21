@@ -817,6 +817,10 @@ async def test_a_zero_criterion_subtree_is_one_successful_empty_reading(history:
     """
     port = nested_only_board(nested=history == "minted then removed")
     if history == "minted then removed":
+        assert tuple(
+            criterion.issue_key
+            for criterion in await port.read_criteria(issue_key=DELIVERABLE_CHILD)
+        ) == (NESTED_OWED,)
         del port.issues[NESTED_OWED]
 
     source = TrackerCriteria(tracker=port)
