@@ -28,11 +28,15 @@ another guard's subject; this one owns the row grammar and the body scan.
 What it does not see: an equality against a row label over a body split by
 some other means, because only membership compares and matcher calls are
 read; a row label assembled from a name bound in an earlier statement,
-because only one expression's own literal parts are folded; a caller that
-hands a PARENT's body to the sanctioned reader, because the scan reads the
-reader and not the argument's provenance — that is held behaviourally by
-the reader conformance cases that give a parent a criterion-shaped body
-and read nothing out of it; and any matcher reached by reflection.
+because only one expression's own literal parts are folded; a scan keyed on
+bare markdown bold with no row label at all, because a row shape here is a
+label followed by a colon and bold alone names no field — that form is held
+behaviourally by the reader ordering cases over both tracker
+implementations; a caller that hands a PARENT's body to the sanctioned
+reader, because the scan reads the reader and not the argument's
+provenance — that is held behaviourally by the reader conformance cases
+that give a parent a criterion-shaped body and read nothing out of it; and
+any matcher reached by reflection.
 """
 
 import ast
@@ -328,6 +332,7 @@ def test_the_grammar_is_reached_from_outside_by_call_and_never_re_matched():
         "import re\n"
         "def criteria(issue):\n"
         "    return re.findall(r'^- \\[([ x])\\] (.+)$', issue.body)\n",
+        "import re\ndef ids(issue):\n    return re.findall(r'AC-[0-9]+', issue.body)\n",
         "import re\n"
         "ROW = re.compile(r'- \\[[ x]\\] (?P<name>AC-[0-9]+)')\n"
         "def criteria(issue):\n"
@@ -406,7 +411,8 @@ def test_one_body_scanning_twice_is_one_site_and_two_bodies_are_two():
 
 #: Each way a second body scan could arrive, as the module text it would
 #: arrive as: a checkbox scan, a second row pattern, a split on a row
-#: label, and a pattern compiled in one module and matched in another.
+#: label, a pattern compiled in one module and matched in another, and a
+#: scan for an authored ``AC-n`` identity alone — five in all.
 PLANTED_SCANS = {
     "checkbox-scan": {
         "services/reader.py": "def criteria(issue):\n"
@@ -428,6 +434,11 @@ PLANTED_SCANS = {
         "services/reader.py": "from kodezart.domain.rows import ROW\n"
         "def criteria(issue):\n"
         "    return ROW.findall(issue.body)\n",
+    },
+    "ac-identity-scan": {
+        "services/reader.py": "def ids(issue):\n"
+        "    return [line for line in issue.body.splitlines()"
+        " if 'AC-' in line]\n"
     },
 }
 
