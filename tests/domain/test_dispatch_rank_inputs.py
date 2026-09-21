@@ -3,20 +3,25 @@
 The guard is the shape of the rank, not a word list. Over the whole package it
 finds every ordering expression — a ``sorted``, ``.sort``, ``min``, ``max``,
 ``heapq.nsmallest`` or ``heapq.nlargest`` call, and every ``__lt__`` — whose
-key or arguments reach a rank name, and compares the sites it found, how many
-each definition holds and every attribute name read inside them to an exact
-register. A size fed into a rank
-has to be read off something, so an ordering that reads a name outside the
-rank inputs reds even when it spells no suspicious word: that is the mutation
-this guard exists for, ``estimate=len(issue.body)`` on the rank key and in
-both sort keys, which used no forbidden token at all.
+key or arguments reach a rank name, and compares what it found to two exact
+registers: the sites, how many such expressions each definition holds and
+every name read inside them *as an attribute*; and, per site, the unparsed
+text of each ordering's key and arguments. A size fed into a rank has to be
+read off something, and the text register moves for any read at all — an
+attribute, a bare name, a subscript of one — so an ordering that reads a name
+outside the rank inputs reds even when it spells no suspicious word: that is
+the mutation this guard exists for, ``estimate=len(issue.body)`` on the rank
+key and in both sort keys, which used no forbidden token at all.
+``ast.unparse`` normalises formatting, so reflowing a key leaves the text
+register green while any change to what that key reads moves it.
 
 Two weaker nets sit outside the shape pins. One collects every ``len(...)``
 whose argument is an attribute and asserts none of those attributes is a text
 column of the two row types the rank computes over, counting a column written
 ``str | None`` or wrapped in ``Annotated`` as the text column it is. The other
-reads every identifier in the package and asserts none carries an estimate
-word.
+reads every identifier in the package — every name that is a ``Name``, an
+attribute, a ``def``, a class, an argument or a keyword name — and asserts
+none carries an estimate word.
 
 The wired rank path is the unscoped producer's selection over
 ``domain/dispatch.py``; the scope dispatcher has no production caller, so it
@@ -27,16 +32,24 @@ consults priority anywhere is registered.
 Blind spots, stated: a name assembled from parts rather than joined by
 underscores is not matched; a size used as a filter rather than as an
 ordering, or an ordering that reads no priority name in a definition the
-register does not count, is outside every pin here. The register reads the
-names an ordering's key spells, not what those names were computed from: an
-ordering whose key reads a name outside the rank inputs is registered, but a
-size folded into a rank input *before* the ordering — a rank input rewritten
-from a count, whether in the producer or inside a registered definition —
-reaches the ordering under the rank input's own name and is outside every pin
-here. An ordering expression here is one of the six calls named above or a
-``__lt__``: ``bisect``, ``functools.cmp_to_key`` and a hand-rolled comparison
-loop are not ordering expressions to this guard, and a loop that compares two
-rank keys by hand is not detectable by call shape and is not claimed. A length
+register does not count, is outside every pin here. An ordering is registered
+only when its key or arguments spell or denote a rank name themselves: a key
+that reaches the rank through a helper — a named function, or a lambda that
+calls one — is not registered, and the helper's body is not read. What the
+registers read is what a key reads, not what those names were computed from,
+so a size folded into a rank input *before* the ordering — a rank input
+rewritten from a count, whether in the producer or inside a registered
+definition — reaches the ordering under the rank input's own name and is
+outside every pin here. The ordering surface is matched by the word a callee
+spells, so a ``sorted`` reached under another name — ``from builtins import
+sorted as s``, or ``s = sorted`` — is no ordering expression here, even though
+the resolver beside this guard denotes both spellings as ``sorted``. An
+ordering expression here is one of the six calls named above or a ``__lt__``:
+``bisect.insort``, ``heapq.heapify`` and ``heapq.heappush`` order by a key and
+are not ordering expressions to this guard, and a hand-rolled comparison loop
+is not detectable by call shape and is not claimed. The ``sorted`` around a
+``functools.cmp_to_key`` comparator *is* found; it is not registered because
+the comparator's name denotes no rank. A length
 taken of a local name rather than of a field is not a text-length read, and a
 length taken of a field that is not a text column — a count of relations, the
 size of a label set — is outside the text-length net; strings and comments are
@@ -103,7 +116,7 @@ RANK_INPUTS = frozenset(
 )
 #: The only functions an ordering key may call.
 RANK_CALLS = frozenset({priority_rank.__name__, rank_key.__name__})
-#: Every call that orders something by a key. The two ``heapq`` selections
+#: The calls that order something by a key here. The two ``heapq`` selections
 #: order by a key the way ``sorted`` does, and the callee's own attribute is no
 #: region, so each is found by the word it spells.
 ORDERING_CALLS = frozenset({"sorted", "sort", "min", "max", "nsmallest", "nlargest"})
@@ -216,6 +229,24 @@ def ordering_calls(trees) -> dict[str, frozenset[str]]:
     return {key: frozenset(names) for key, names in found.items()}
 
 
+def ordering_key_texts(trees) -> dict[str, tuple[str, ...]]:
+    """The written key and arguments of every priority ordering, by the same key.
+
+    One unparsed text per ordering, sorted within a definition so the reading
+    does not depend on walk order. ``ordering_sites`` above reports the names a
+    key reads *as attributes*, so a read spelled as a bare name or as a
+    subscript of one leaves its row unchanged; the text moves for any of them.
+    ``ast.unparse`` normalises formatting, so reflowing a key is not a change
+    to what it reads and is not a change here.
+    """
+    found: dict[str, list[str]] = {}
+    for key, regions in _priority_orderings(trees):
+        found.setdefault(key, []).append(
+            ", ".join(ast.unparse(region) for region in regions)
+        )
+    return {key: tuple(sorted(texts)) for key, texts in found.items()}
+
+
 #: Exact. The five definitions in the package that order anything by priority,
 #: with the attribute names each order reads. A sixth entry, or a read outside
 #: RANK_INPUTS, is a new input to the rank and is read before it is accepted.
@@ -233,6 +264,30 @@ DISPATCH_ORDERINGS = {
     "domain/topology.py::plan_topology": (
         2,
         frozenset({"effective_priority", "issue", "created_at"}),
+    ),
+}
+
+#: Exact, over the same five definitions. The text of each registered
+#: ordering's key and arguments, so a read the attribute register cannot see —
+#: a bare name, a subscript of one — moves a register too.
+DISPATCH_ORDERING_KEYS = {
+    "domain/dispatch.py::<module>": ("IssuePriority, priority_rank",),
+    "domain/dispatch.py::RankKey.__lt__": (
+        "return (self.priority_rank, self.created_at) < "
+        "(other.priority_rank, other.created_at)",
+    ),
+    "domain/dispatch.py::select_top_ranked": (
+        "(issue.issue_key for issue in issues if rank_key(issue) == best)",
+        "(rank_key(issue) for issue in issues)",
+    ),
+    "domain/dispatch.py::ranked_order": (
+        "issues, lambda issue: (rank_key(issue).priority_rank, "
+        "rank_key(issue).created_at, issue.issue_key)",
+    ),
+    "domain/topology.py::plan_topology": (
+        "effective[blocker], effective[key], priority_rank",
+        "lambda entry: (priority_rank(entry.effective_priority), "
+        "entry.issue.created_at)",
     ),
 }
 
@@ -457,6 +512,39 @@ def test_every_ordering_that_consults_priority_reads_only_the_rank_inputs():
     assert "relations" not in RANK_INPUTS
     assert with_planted["planted.py::pick"] == (1, frozenset({"relations"}))
     assert with_planted != DISPATCH_ORDERINGS
+
+
+def test_every_registered_orderings_key_text_is_pinned_exactly():
+    """Both registers cover the same sites, and the text one has its control.
+
+    The attribute register cannot see a read that is no attribute, so a size
+    table keyed by issue key and subscripted inside ``ranked_order``'s sort key
+    leaves every row of it unchanged — same count, same attribute names, same
+    called names — while the unparsed text of that key moves. That read is
+    what this pin exists for.
+    """
+    assert ordering_key_texts(PARSED) == DISPATCH_ORDERING_KEYS
+    assert set(DISPATCH_ORDERING_KEYS) == set(DISPATCH_ORDERINGS)
+
+    key_anchor = "                rank_key(issue).created_at,\n"
+    key_sized = key_anchor + "                _SIZES[issue.issue_key],\n"
+    table_anchor = f"def {dispatch.ranked_order.__name__}("
+    table_sized = (
+        f"_SIZES: dict[str, int] = {{}}\n\n\ndef {dispatch.ranked_order.__name__}("
+    )
+    source = PACKAGE[DISPATCH]
+    assert source.count(key_anchor) == 1
+    assert source.count(table_anchor) == 1
+    sized = {
+        **PARSED,
+        DISPATCH: ast.parse(
+            source.replace(key_anchor, key_sized).replace(table_anchor, table_sized)
+        ),
+    }
+
+    assert ordering_sites(sized) == DISPATCH_ORDERINGS
+    assert ordering_calls(sized) == ordering_calls(PARSED)
+    assert ordering_key_texts(sized) != DISPATCH_ORDERING_KEYS
 
 
 def test_an_ordering_that_consults_the_rank_under_another_spelling_is_registered():
