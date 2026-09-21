@@ -696,18 +696,33 @@ def test_every_module_holding_the_lane_record_names_no_vendor():
 
 
 def test_the_holder_scan_reaches_the_port_file_and_this_lane_domain_modules():
-    """Both halves the Check names are in the one derived set.
+    """Both halves the Check names are the walk's own answer, not a list.
 
     The port file is where the record's tracker vocabulary is declared, and
     the lane's domain modules are where the value is composed and read back.
-    Naming them here, rather than listing the scan, is what reds a derivation
-    that stopped reaching either half.
+    Both halves are read off the tree here instead of transcribed, and their
+    size is asserted, so an assertion that stopped naming one reds. The scan
+    is then asserted EQUAL to the walk over the whole packaged tree, not a
+    superset of a few paths: a derivation replaced by transcribed paths, or
+    one that stopped reaching a holder nothing else covers, reds here.
     """
-    assert {
-        "src/kodezart/core/protocols.py",
-        "src/kodezart/domain/lane_record.py",
-        "src/kodezart/domain/lane_entry.py",
-    } <= set(record_sources())
+    walked = value_holders(
+        {
+            path.relative_to(REPO_ROOT).as_posix(): path.read_text()
+            for path in sorted(SOURCE_ROOT.rglob("*.py"))
+        },
+        identity=RECORD_IDENTITY,
+    )
+    halves = {
+        (SOURCE_ROOT / "core" / "protocols.py").relative_to(REPO_ROOT).as_posix(),
+        *(
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in (SOURCE_ROOT / "domain").glob("lane_*.py")
+        ),
+    }
+    assert len(halves) == 3
+    assert set(record_sources()) == set(walked)
+    assert halves <= set(record_sources())
 
 
 @pytest.mark.parametrize("scanned", sorted(record_sources()))
