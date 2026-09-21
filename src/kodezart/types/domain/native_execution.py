@@ -39,6 +39,8 @@ class NativeAuthoritySnapshot(CamelCaseModel):
 
 class NewNativeExecution(CamelCaseModel):
     """No workspace or writer effect has completed."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
     phase: Literal["new"] = "new"
 
 
@@ -54,6 +56,8 @@ class _NativeWorkspacePhase(CamelCaseModel):
 
 class PreparedNativeExecution(_NativeWorkspacePhase):
     """A validated acquired workspace and original live authority."""
+
+    phase: Literal["prepared"] = "prepared"
 
     @model_validator(mode="after")
     def _original_head(self) -> Self:
@@ -80,6 +84,12 @@ class _WrittenNativeExecution(_NativeWorkspacePhase):
         return self
 
 
+class WrittenNativeExecution(_WrittenNativeExecution):
+    """The actual completed writer output and its uncommitted workspace."""
+
+    phase: Literal["written"] = "written"
+
+
 class _ReconciledNativeExecution(_WrittenNativeExecution):
     report: AmendmentReport
 
@@ -98,6 +108,8 @@ class _ReconciledNativeExecution(_WrittenNativeExecution):
 class ReconciledNativeExecution(_ReconciledNativeExecution):
     """All claimed departures have actual completed amendment receipts."""
 
+    phase: Literal["reconciled"] = "reconciled"
+
     @model_validator(mode="after")
     def _no_upheld_departure(self) -> Self:
         if self.report.upheld:
@@ -110,6 +122,8 @@ class ReconciledNativeExecution(_ReconciledNativeExecution):
 class RefusedNativeExecution(_ReconciledNativeExecution):
     """A completed actual UPHELD report; no harness persistence is authorized."""
 
+    phase: Literal["refused"] = "refused"
+
     @model_validator(mode="after")
     def _has_upheld_departure(self) -> Self:
         if not self.report.upheld:
@@ -119,6 +133,9 @@ class RefusedNativeExecution(_ReconciledNativeExecution):
 
 class PersistedNativeExecution(_ReconciledNativeExecution):
     """The persister returned its actual commit/publication receipt."""
+
+    phase: Literal["persisted"] = "persisted"
+    receipt: PersistResult
 
     @model_validator(mode="after")
     def _actual_receipt(self) -> Self:
@@ -135,6 +152,8 @@ class PersistedNativeExecution(_ReconciledNativeExecution):
 
 class UnchangedNativeExecution(_ReconciledNativeExecution):
     """Persistence completed and reported no code changes to commit."""
+
+    phase: Literal["unchanged"] = "unchanged"
 
     @model_validator(mode="after")
     def _no_refused_departure(self) -> Self:

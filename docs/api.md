@@ -131,6 +131,24 @@ curl -N http://localhost:8000/api/v1/agent/workflow \
 
 Queue a workflow run and return immediately. Same request body as
 `POST /api/v1/agent/workflow` (`WorkflowRequest`); no stream is opened.
+
+### Response — `202 Accepted` (`FireAcceptedResponse`)
+
+```json
+{
+  "jobId": "3fa85f6457174562b3fc2c963f66afa6",
+  "lane": "workflow",
+  "state": "queued",
+  "queuePosition": 1,
+  "submittedAt": "2026-01-01T00:00:00Z",
+  "statusUrl": "/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6",
+  "streamUrl": "/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6/stream"
+}
+```
+
+`queuePosition` is `null` once the run has left the queue. A lane at
+`KODEZART_QUEUE__MAX_DEPTH_PER_LANE` rejects the submission with `429`.
+
 ### Example
 
 ```bash

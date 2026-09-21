@@ -1,0 +1,125 @@
+# The smallest operation config that runs a scope.
+#
+# Copy this file, change the names to your workspace's own, and read
+# docs/running-a-scope.md beside it. It is loaded and walked by the test
+# suite, so every member below is one a scope run actually reaches.
+#
+# Every comment says what stops working without the member it stands over.
+# What an absent member costs is paid at the point of need and never at load:
+# the refusal names the member and what it stops.
+#
+# Declaring [[organize_scopes]] is what makes this a scope deployment: no
+# per-issue dispatch pass, no fire-prep or grooming session pass and no
+# lifecycle watcher is scheduled. There is no [run_event_states] table here
+# and no [queue_states] table: neither is read on this path.
+
+# Human-readable name of the operation these settings describe.
+operation_name = "example-scope-operation"
+
+# The tracker workspace the operation acts within. A slug, not a URL.
+workspace = "example-workspace"
+
+# The identities the credential may be attributed to. Boot refuses a
+# credential attributed to none of them, so a deployment cannot write as a
+# person by accident.
+agent_identities = ["@example-agent", "example-agent"]
+
+# One board. A scope run needs it declared: a criterion the walk takes back
+# is resolved through its team, and the workflow states below are that team's.
+[teams.primary]
+name = "Example team"
+key = "EXA"
+
+# Scope admission. With the table declared, all three members are required at
+# load. With no table at all, the first scoped read cannot resolve approval and
+# refuses naming scope_labels.approved; the other two are what the organize
+# mandates gate on.
+# Applying the approved label to the project is the one human act in a run.
+[scope_labels]
+triage = "scope:triage"
+proposed = "scope:proposed"
+approved = "scope:approved"
+
+# Issue classifications. The first scoped read requires criterion, decision
+# and tracker and names whichever is absent; the three phase markers are the
+# ones the mandate rows below reference, and a lane cannot fire until it
+# carries the criteria mandate's terminal marker.
+[issue_labels]
+criterion = "criterion"
+decision = "decision"
+tracker = "tracker"
+groomed = "organize:graph-complete"
+body = "organize:body-complete"
+criteria = "organize:criteria-complete"
+
+# The three organize phases, in order. Each row gates on the label the
+# previous row leaves behind, so the table is the whole progression: an
+# approved scope is groomed, its lanes are given bodies, and its lanes are
+# given criteria. Declaring the table requires all three phases.
+[[organize_mandates]]
+kind = "groom"
+gate_label_key = "scope_labels.triage"
+rubric_prompt_key = "organize_assess"
+admission_prompt_key = "organize_assess"
+terminal_marker_key = "issue_labels.groomed"
+
+[[organize_mandates]]
+kind = "ticket"
+gate_label_key = "issue_labels.groomed"
+rubric_prompt_key = "organize_assess"
+admission_prompt_key = "organize_assess"
+terminal_marker_key = "issue_labels.body"
+
+[[organize_mandates]]
+kind = "criteria"
+gate_label_key = "issue_labels.body"
+rubric_prompt_key = "organize_assess"
+admission_prompt_key = "organize_assess"
+terminal_marker_key = "issue_labels.criteria"
+
+# The scope the organize owner walks, bound to exactly one declared
+# repository. Change the key to your own project's. Declaring
+# organize_mandates without a row here is a partial organize configuration
+# and is refused at boot.
+[[organize_scopes]]
+scope = { kind = "project", key = "example-scratch-project" }
+repo_url = "https://example.invalid/example-org/example-repo"
+
+# The team's own state names. With the table declared, an absent done is
+# refused at load. With no table at all, the first criterion cross-off refuses
+# after a session and a commit, which is the most expensive absent member on
+# this path.
+[workflow_states]
+in_progress = "In Progress"
+in_review = "In Review"
+done = "Done"
+
+# Stable tracker identities. Preserve these prefixes when adopting a tracker
+# that already carries recorded work: changing one addresses a different
+# marker. An absent purpose is refused at its point of use — the walk resolves
+# run_state and run_event together before it records a lane, and re-reads the
+# lane record under run_state when it re-enters.
+[marker_prefixes]
+run_outcome = "kodezart-run-outcome"
+run_state = "kodezart-run-state"
+run_event = "kodezart-run-event"
+# The organize owner's split creation reads this before it writes a split, and
+# refuses naming marker_prefixes['issue_identity'] without it.
+issue_identity = "kodezart-issue"
+# A lane's fire writes back what it amended and records what it answered, so a
+# walk refuses at its first execution step without these two.
+amendment = "kodezart-amendment"
+ruling = "kodezart-ruling"
+escalation = "kodezart-escalation"
+decision = "kodezart-decision"
+audit = "kodezart-audit"
+
+# Exactly one repository, and the request's repo_url must match it: a scoped
+# request naming any other repository is refused before the first read.
+[[repos]]
+url = "https://example.invalid/example-org/example-repo"
+trunk = "main"
+
+[[repos.checks]]
+name = "check"
+command = "make check"

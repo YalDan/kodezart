@@ -58,3 +58,4 @@ def test_the_readme_points_a_new_operator_at_the_floor() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert "docs/operation.minimal.toml" in readme
     assert "docs/operation.example.toml" in readme
+    assert "docs/operation.scope.toml" in readme

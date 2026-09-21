@@ -286,6 +286,7 @@ class CheckPrerequisite(StrEnum):
     """Environment facts that a repository may explicitly declare."""
 
     REPOSITORY_HISTORY = "repository_history"
+    NETWORK = "network"
     CREDENTIALS = "credentials"
 
 
@@ -495,18 +496,6 @@ class RecordDestination(OperationModel):
             if self.outcome_mapping.property in self.columns.property_names():
                 raise ValueError("the outcome property must have its own record column")
         return self
-class Initiative(OperationModel):
-    """An initiative the operation is steering toward.
-
-    ``target_date`` is optional because a real initiative frequently has
-    none.  A required field forced every config to invent one, and a pass
-    rendered from an invented date reports a distance to a commitment the
-    tracker does not hold — an assertion about the operation manufactured
-    by its own configuration model.
-    """
-
-    id: str
-    target_date: date | None = None
 
 
 class OrganizeScopeBinding(OperationModel):
@@ -562,7 +551,6 @@ class OperationConfig(OperationModel):
     records: dict[str, RecordDestination] = Field(default_factory=dict)
     knowledge: dict[str, str] = Field(default_factory=dict)
     endpoints: dict[str, str] = Field(default_factory=dict)
-    initiatives: list[Initiative] = Field(default_factory=list)
     private_surface: PrivateSurface | None = None
 
     @field_validator("private_surface", mode="before")

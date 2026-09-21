@@ -1,8 +1,10 @@
 """Workflow state definitions for the ralph loop and outer pipeline."""
 
 from typing import NotRequired, Self, TypedDict
+
 from langchain_core.runnables import RunnableConfig
 from pydantic import ConfigDict, Field, model_validator
+
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
@@ -31,9 +33,6 @@ from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
 
-
-
-
 _LANGGRAPH_RESERVED_PREFIX = "__pregel_"
 _LANGGRAPH_RESERVED_KEYS: frozenset[str] = frozenset(
     {
@@ -55,6 +54,8 @@ class WorkflowSubmission(CamelCaseModel):
     ``issue_key`` records the dispatched issue independently of prompt
     text and scope. HTTP submissions may have no tracker identity.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     prompt: str = Field(min_length=1)
     issue_key: str | None = None
@@ -106,8 +107,17 @@ class ExecutionContext(WorkflowContext):
     """
 
     base_spec: BaseSpec
-    permission_mode: str = Field(min_length=1)
-    allowed_tools: list[str]
+    permission_mode: PermissionMode
+    allowed_tools: AllowedTools
+    surface_holder: str | None = Field(
+        default=None,
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "The actual parent queue job holding native write surfaces; "
+            "independent of any lane checkpoint namespace. Authored runs may omit it."
+        ),
+    )
 
     @property
     def base_branch(self) -> str:
@@ -128,7 +138,7 @@ class RemediationRequest(CamelCaseModel):
 
     entry: RemediationEntry
     round_index: int = Field(ge=0)
-    original_ticket: TicketDraftOutput
+    original_spec: FireSpec
     work_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
     pr_url: str | None = None
@@ -147,6 +157,14 @@ class RalphLoopContext(ExecutionContext):
     feature branch — after that a remediation round is BUILT ON that
     work while its scope is still read against the lane's recorded base,
     which is why they are separate values and not one.
+
+    ONE RULE lives on this field: when ``work_base_ref`` IS
+    ``ralph_branch``, the loop branch already exists and the first
+    iteration checks it out instead of cutting it.  That is how a lane
+    resumed from its record continues the branch the record names, and it
+    adds no field to say so.  Anything that writes ``work_base_ref`` has
+    to know the rule: a remediation round sets a NEW loop branch and
+    leaves this on the deliverable, so it cuts, which is correct.
     """
 
     feature_branch: str = Field(min_length=1)
@@ -159,8 +177,20 @@ class RalphLoopContext(ExecutionContext):
     #: a clone behind the head the entry read would carry work the criteria
     #: the lane owes were already graded against.
     resumed_head_sha: str | None = None
-    acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
+    acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
+    tracker_spec: TrackerSpec | None = None
     repo_visibility: RepoVisibility
+
+    @model_validator(mode="after")
+    def _criteria_match_source(self) -> Self:
+        """A native checkpoint cannot fall back to the authored cached arm."""
+        native = self.tracker_spec is not None
+        if any(
+            isinstance(criterion, TrackerCriterion) != native
+            for criterion in self.acceptance_criteria
+        ):
+            raise ValueError("Loop criteria must match the frozen subject source")
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -200,17 +230,24 @@ class RalphLoopState(TypedDict):
     verdict: AcceptVerdict
     pending_failures: list[CriterionFailure]
     iteration_records: list[IterationRecord]
+    outcome: RalphOutcome
     iteration_commit_sha: NotRequired[str | None]
+    amendment_reports: NotRequired[list[AmendmentReport]]
+    amendment_blocked: NotRequired[bool]
 
 
 class WorkflowState(TypedDict):
-    """State for the outer workflow pipeline.
+    """State for the delivery-free fire graph.
 
-    ``feature_tip_sha`` is the canonical feature-branch tip SHA after the
-    last successful consolidation; ``None`` until ``_merge_to_feature_node``
-    runs.  ``review_base_sha`` / ``review_head_sha`` are the exact 40-char
-    SHAs the evaluator's ``ChangesetDigest`` is computed between — set by
-    consolidation nodes, read by ``_review_against_ticket_node``.
+    ``issue_key`` is the producer's tracker identity for this run. It is
+    preserved across remediation and appended before gating a PR body.
+
+    ``feature_branch`` and ``feature_tip_sha`` identify the selected published
+    head. Consolidation records its branch tip; a stalled exit may instead
+    select the published best-iteration ref. The SHA remains ``None`` until
+    a node establishes that head. ``review_base_sha`` / ``review_head_sha`` are
+    the exact 40-character endpoints of the evaluator's ``ChangesetDigest``.
+    Consolidation nodes write them; ``_review_against_ticket_node`` reads them.
 
     ``trajectory`` carries the most recent quality-gate invocation's
     ``LoopTrajectory``; ``None`` until the first gate invocation projects
@@ -222,6 +259,12 @@ class WorkflowState(TypedDict):
     commits nothing would otherwise make a run that plainly did work look
     as though it had done none.
 
+    ``lane_entry`` is how this run entered: ``None`` on the authored arm
+    and on a native fire prepared without a walker, which is the same as a
+    new lane.  It is carried on the state because the fire's entry check
+    compares the subject digest against it, and because the loop is told the
+    head a continued branch was entered on from it.
+
     ``work_base_ref`` is the ref the next loop cuts its ralph branch
     from.  It starts as the run's base and becomes the feature branch
     the moment a consolidation puts work there — written by the node
@@ -231,14 +274,17 @@ class WorkflowState(TypedDict):
     second scope base: what the run is diffed against stays
     ``base_spec`` on the execution context.
     """
-    lane_entry: LaneEntry | None
 
+    issue_key: str | None
+    lane_entry: LaneEntry | None
     feature_branch: str
     ralph_branch: str
     work_base_ref: str
     ticket: TicketDraftOutput | None
+    fire_spec: FireSpec | None
     acceptance_criteria: list[GeneratedCriterion]
     criteria_artifact: CriteriaArtifact | None
+    criterion_set: CriteriaArtifact | TrackerCriterionSet | None
     criteria_validation: CriteriaValidation | None
     criteria_regeneration_rounds: int
     criteria_infeasible: bool
@@ -253,7 +299,7 @@ class WorkflowState(TypedDict):
     review_passed: bool
     review_feedback: str | None
     remediation_rounds_used: int
-    remediation_ticket: TicketDraftOutput | None
+    remediation_ticket: TicketDraftOutput | RemediationPlan | None
     remediation_entry: RemediationEntry | None
     best_iteration_sha: str | None
     pr_url: str | None

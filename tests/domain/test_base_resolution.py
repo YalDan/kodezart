@@ -14,12 +14,14 @@ and nothing else.
 
 import ast
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from types import FrameType
+from typing import Protocol, runtime_checkable
 
 import pytest
 
+from kodezart.core.protocols import WorkRefReader
 from kodezart.domain.base_resolution import resolve_base
 from kodezart.domain.errors import (
     BaseIntegrationConflictError,
@@ -30,6 +32,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.branch import BaseInput, WorkRef, WorkRefRole
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     FIXTURE_EPOCH,
@@ -128,6 +131,203 @@ async def test_a_second_ref_at_another_role_is_accepted() -> None:
         ref=ref("B-1", "feature-a-ralph", role=WorkRefRole.ITERATION),
     )
     assert len(await tracker.work_refs(issue_key="B-1")) == 2
+
+
+# ---------------------------------------------------------------------------
+# The ref read is a role of its own (KOD-842)
+# ---------------------------------------------------------------------------
+
+
+class PortRefReadError(RuntimeError):
+    """Raised where the port's own ref read must not have been reached."""
+
+
+class UnreadPortRefs(FakeTrackerPort):
+    """A port every other read of which is ordinary, save the ref read.
+
+    Seeded with refs it then refuses to answer: a resolver reading the port
+    would resolve a base and look correct, so the substitution is shown by
+    the read that must not happen raising rather than by a value.
+    """
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        raise PortRefReadError(issue_key)
+
+
+class NamedRefs:
+    """The read role, answered from a carrier that is not the port."""
+
+    def __init__(self, refs: Mapping[str, Sequence[WorkRef]]) -> None:
+        self._refs = dict(refs)
+        self.calls: list[str] = []
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        self.calls.append(issue_key)
+        return self._refs.get(issue_key, ())
+
+
+async def test_a_named_ref_reader_answers_instead_of_the_port() -> None:
+    """The base is the named carrier's branch, and the port is never asked."""
+    tracker = UnreadPortRefs(
+        issues=[
+            make_tracker_issue(LANE, blocked_by=["B-1"]),
+            make_tracker_issue("B-1"),
+        ],
+        recorded_work_refs={"B-1": [ref("B-1", "branch-on-the-port")]},
+    )
+    reader = NamedRefs({"B-1": (ref("B-1", "branch-on-the-record"),)})
+
+    spec = await BaseResolver(
+        tracker=tracker, git=FakeGitService(), remote=REMOTE, refs=reader
+    ).resolve(
+        issue_key=LANE,
+        repo_path=REPO_PATH,
+        integration_workspace=INTEGRATION_WORKSPACE,
+        trunk=CONFIGURED_TRUNK,
+        now=FIXTURE_EPOCH,
+    )
+
+    assert spec.base_branch == "branch-on-the-record"
+    assert reader.calls == ["B-1"]
+
+
+async def test_the_port_is_the_ref_reader_when_no_other_is_named() -> None:
+    """The control: the default resolver reaches exactly the read above.
+
+    Without it the assertion above would hold for a resolver that had
+    stopped reading refs at all.
+    """
+    tracker = UnreadPortRefs(
+        issues=[
+            make_tracker_issue(LANE, blocked_by=["B-1"]),
+            make_tracker_issue("B-1"),
+        ],
+        recorded_work_refs={"B-1": [ref("B-1", "branch-on-the-port")]},
+    )
+
+    with pytest.raises(PortRefReadError, match="B-1"):
+        await resolve(tracker, FakeGitService())
+
+
+@runtime_checkable
+class _NothingOfItsOwn(Protocol):
+    """A runtime-checkable Protocol declaring nothing, to subtract.
+
+    Whatever ``vars`` shows on this is what the machinery puts on every
+    Protocol, so the names a role declares are derived rather than listed and
+    a Python release that changes the bookkeeping does not need this file
+    edited.
+    """
+
+
+@runtime_checkable
+class _TwoOfItsOwn(Protocol):
+    """The detector's control: a role with a second method must show both."""
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]: ...
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue: ...
+
+
+def declared_on(role: type) -> set[str]:
+    """The names *role*'s own class body binds, bookkeeping subtracted."""
+    return set(vars(role)) - set(vars(_NothingOfItsOwn))
+
+
+def test_the_ref_read_role_is_exactly_one_method() -> None:
+    """The role is one question, and a role is only narrow while it stays one.
+
+    A second method here is a second thing every carrier of the role must
+    answer — and the scope path's carrier answers from a lane record, which
+    can answer this question and no other. The read role widening is how the
+    port creeps back in, so the width is asserted and not merely intended.
+
+    Asserted over the bases too, because a class body is only one of the two
+    ways to widen a Protocol: inheriting a broader one obliges every carrier
+    to answer whatever that one declares, and the names a role's own body
+    binds say nothing about it.
+    """
+    assert declared_on(_TwoOfItsOwn) == {"work_refs", "read_issue"}
+    assert declared_on(WorkRefReader) == {"work_refs"}
+    assert WorkRefReader.__bases__ == (Protocol,)
+
+
+# ---------------------------------------------------------------------------
+# The blockers the assumed-landed arm is about (KOD-721)
+# ---------------------------------------------------------------------------
+
+
+def done(issue_key: str, *, parent_key: str | None = None) -> TrackerIssue:
+    """A blocker its board has closed."""
+    return make_tracker_issue(
+        issue_key,
+        state_name="Done",
+        state_kind=WorkflowStateKind.COMPLETED,
+        parent_key=parent_key,
+    )
+
+
+async def test_only_closed_ref_less_blockers_are_named_as_assumed_landed() -> None:
+    """One board, every reason a blocker is not one, and the order they came in.
+
+    Four blockers are excluded, each for a different reason — still open, a
+    ref of its own, a ref on its parent, and being named twice — so a set
+    built from one of the two facts alone, or from all the blockers, or
+    sorted, fails here rather than at a lane that should not have fired.
+    """
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(
+                LANE, blocked_by=["B-OPEN", "B-2", "B-REF", "B-1", "B-2", "B-CHILD"]
+            ),
+            make_tracker_issue("B-OPEN"),
+            done("B-2"),
+            done("B-REF"),
+            done("B-1"),
+            done("B-CHILD", parent_key="B-PARENT"),
+            make_tracker_issue("B-PARENT"),
+        ],
+        recorded_work_refs={
+            "B-REF": [ref("B-REF", "feature-bref")],
+            "B-PARENT": [ref("B-PARENT", "feature-parent")],
+        },
+    )
+
+    named = await resolver(tracker, FakeGitService()).unrecorded_closed_blockers(
+        issue_key=LANE
+    )
+
+    assert named == ("B-2", "B-1")
+
+
+async def test_a_lane_whose_blockers_all_recorded_a_branch_names_none() -> None:
+    """Nothing is assumed where every premise is written down."""
+    tracker = FakeTrackerPort(
+        issues=[
+            make_tracker_issue(LANE, blocked_by=["B-1"]),
+            done("B-1"),
+        ],
+        recorded_work_refs={"B-1": [ref("B-1", "feature-b1")]},
+    )
+
+    assert (
+        await resolver(tracker, FakeGitService()).unrecorded_closed_blockers(
+            issue_key=LANE
+        )
+        == ()
+    )
+
+
+async def test_a_lane_with_no_blockers_names_none() -> None:
+    """A lane on the trunk assumes nothing about anybody."""
+    tracker = FakeTrackerPort(issues=[make_tracker_issue(LANE)])
+
+    assert (
+        await resolver(tracker, FakeGitService()).unrecorded_closed_blockers(
+            issue_key=LANE
+        )
+        == ()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +496,8 @@ async def test_a_redundant_edge_reduces_to_the_descendant_alone() -> None:
 def lifecycle(tracker: FakeTrackerPort) -> TrackerLifecycleWriter:
     """The shipped lifecycle writer — the only producer of DELIVERABLE refs."""
     return TrackerLifecycleWriter(
+        marker_prefixes={"run_outcome": "fixture-outcome"},
+        surface_lease_seconds=900,
         tracker=tracker,
         gate=PassThroughGate(),
         clock=lambda: FIXTURE_EPOCH,
