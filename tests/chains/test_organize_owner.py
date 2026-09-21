@@ -2,6 +2,7 @@
 
 # Full owner through its actual factory; the executor chooses outputs from the
 # current native board and the requested wire type, not a canned verdict order.
+import dataclasses
 import json
 import re
 from collections import Counter
@@ -988,11 +989,15 @@ async def test_removed_mandate_leaves_the_same_authoring_step_dry(monkeypatch):
 
 
 def board_state(board):
-    """Every native issue as the three facts either run could have changed."""
-    return {
-        key: (native.description, sorted(native.labels), native.parent_id)
-        for key, native in board.server.issues.items()
-    }
+    """Every native issue, whole, and every comment on the workspace.
+
+    Whole, because "the sentence is the only difference" is a claim about
+    everything either board carries, not about the handful of fields a reader
+    of this file happened to think of: a title, a status or a seeded comment
+    differing between the two runs would leave the claim false and the
+    assertion green.
+    """
+    return dict(board.server.issues), list(board.server.comments)
 
 
 @pytest.mark.parametrize("instance", [True, False])
@@ -1036,7 +1041,9 @@ async def test_the_two_mandate_runs_differ_only_by_the_sentence(monkeypatch, ins
 
     Read off both boards before either runs, the two states are equal once the
     sentence is taken off the parent of the live one — and the sentence is on
-    nothing else. The landed outcomes then differ.
+    nothing else. Equal in every field of every native issue and in every
+    comment, so nothing else can be quietly differing. The landed outcomes
+    then differ.
     """
     live_owner, live_board, _live_executor, live_observed = regrowth(
         monkeypatch, mandate=True, instance=instance
@@ -1044,19 +1051,28 @@ async def test_the_two_mandate_runs_differ_only_by_the_sentence(monkeypatch, ins
     dry_owner, dry_board, _dry_executor, dry_observed = regrowth(
         monkeypatch, mandate=False, instance=instance
     )
-    live_state, dry_state = board_state(live_board), board_state(dry_board)
-    assert live_state != dry_state
+    live_issues, live_comments = board_state(live_board)
+    dry_issues, dry_comments = board_state(dry_board)
+    assert (live_issues, live_comments) != (dry_issues, dry_comments)
     assert [
-        key for key, facts in live_state.items() if MANDATE_SENTENCE in facts[0]
+        key
+        for key, native in live_issues.items()
+        if MANDATE_SENTENCE in native.description
     ] == [CLAIMED_ISSUE]
-    assert {
-        key: (
-            (facts[0].removeprefix(f"{MANDATE_SENTENCE} "), *facts[1:])
-            if key == CLAIMED_ISSUE
-            else facts
-        )
-        for key, facts in live_state.items()
-    } == dry_state
+    assert (
+        {
+            key: (
+                dataclasses.replace(
+                    native,
+                    description=native.description.removeprefix(f"{MANDATE_SENTENCE} "),
+                )
+                if key == CLAIMED_ISSUE
+                else native
+            )
+            for key, native in live_issues.items()
+        },
+        live_comments,
+    ) == (dry_issues, dry_comments)
 
     live_report = await run_owner(live_owner)
     dry_report = await run_owner(dry_owner)
