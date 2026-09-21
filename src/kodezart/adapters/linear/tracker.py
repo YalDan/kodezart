@@ -159,8 +159,10 @@ from kodezart.types.domain.surface import (
     SurfaceAuthorship,
     SurfaceKind,
     SurfaceLease,
+    SurfaceProvenance,
     WritableSurface,
     WriteRevalidation,
+    ordered_holders,
     require_body_authorship_surface,
 )
 from kodezart.types.domain.tracker import (
@@ -472,15 +474,23 @@ class _LabelListings:
 
 
 class _GrantKind(StrEnum):
-    """The two ownership questions, held under markers that never intersect.
+    """The three marker vocabularies, held under markers that never intersect.
 
-    A claim answers which deployment may fire an issue; a lease answers
-    which run may write a surface.  One mechanism arbitrates both, and the
-    kind on the marker is what keeps the two vocabularies from meeting.
+    Two of them are ownership questions: a claim answers which deployment
+    may fire an issue, and a lease answers which run may write a surface.
+    One mechanism arbitrates both, and the kind on the marker is what
+    keeps the two vocabularies from meeting.
+
+    The third is not an ownership question at all.  A body write records
+    that its holder replaced one body, and it answers nothing about who
+    may write next: it is durable, the backend orders it, and no
+    arbitration ever reads it.  It shares this parser, this prefix and
+    this ordering because that is the log the backend already orders.
     """
 
     CLAIM = "claim"
     LEASE = "lease"
+    BODY_WRITE = "body_write"
 
 
 _GRANT_KIND_BY_VALUE: Final[Mapping[str, _GrantKind]] = {
@@ -558,6 +568,11 @@ class _GrantMarker:
     ``advertised`` is the holder's account of the same deadline in its own
     clock, which is what a caller schedules against and what no
     arbitration ever reads.
+
+    ``author`` is the account the BACKEND attributes this marker's comment
+    to, which is the one authorship the vendor surface attests; ``None`` is
+    a log entry the backend attributes to nobody.  It authenticates a
+    record rather than ordering one, so no arbitration reads it either.
     """
 
     target: _Target
@@ -568,6 +583,7 @@ class _GrantMarker:
     state: _GrantState
     holder: str
     nonce: str
+    author: str | None
     lease: timedelta
     since: datetime | None
     deadline: datetime
@@ -738,6 +754,17 @@ _CLAIM_ADDRESSING: Final[_Addressing[str]] = _Addressing(
 
 _LEASE_ADDRESSING: Final[_Addressing[WritableSurface]] = _Addressing(
     kind=_GrantKind.LEASE,
+    encode=_surface_line,
+    target=_surface_target,
+    order=surface_address,
+)
+
+#: A body-write record spells, orders and parks itself exactly as a lease
+#: over the same surface does, so the record of a write sits on the very
+#: log the grant for it was arbitrated on.  Only the kind differs, and the
+#: kind is what keeps the two out of each other's arithmetic.
+_BODY_WRITE_ADDRESSING: Final[_Addressing[WritableSurface]] = _Addressing(
+    kind=_GrantKind.BODY_WRITE,
     encode=_surface_line,
     target=_surface_target,
     order=surface_address,
@@ -1045,10 +1072,59 @@ class LinearMcpTracker:
 
     async def read_surface_authorship(
         self, *, surface: WritableSurface
-    ) -> SurfaceAuthorship:
-        """Report the backend's own attribution of the addressed body."""
+    ) -> SurfaceProvenance:
+        """Report the backend's attribution and the recorded write holders."""
         require_body_authorship_surface(surface)
-        return await self._body_authorship(await self._read_issue_wire(surface.ref.key))
+        return SurfaceProvenance(
+            authorship=await self._body_authorship(
+                await self._read_issue_wire(surface.ref.key)
+            ),
+            holders=await self._body_provenance(surface),
+        )
+
+    async def _body_provenance(self, surface: WritableSurface) -> tuple[str, ...]:
+        """The holders this adapter recorded writing this body, in order.
+
+        Author identity authenticates each record and the backend's own
+        placement orders them: a record is read only where the backend
+        attributes its comment to the account this credential writes as,
+        which is what stops a hand-written comment naming a holder from
+        being read as one, and the records are ordered by the same
+        placement the grant arithmetic already arbitrates on.  The
+        surface's change stamp is consulted nowhere.
+        """
+        encoded = _BODY_WRITE_ADDRESSING.encode(surface)
+        authors = await self.writer_identity()
+        recorded = await self._markers_on(
+            _GrantKind.BODY_WRITE, targets=(_BODY_WRITE_ADDRESSING.target(surface),)
+        )
+        return ordered_holders(
+            marker.holder
+            for marker in sorted(recorded, key=lambda entry: entry.order)
+            if encoded in marker.addresses and marker.author in authors
+        )
+
+    async def _record_body_write(
+        self, *, surface: WritableSurface, holder: str
+    ) -> None:
+        """Record that *holder* replaced this body, once the write landed.
+
+        Written after the save the backend took, so no record stands for a
+        body that did not move, and never withdrawn: releasing the lease
+        that authorized the write does not unwrite the write.
+        """
+        await self._write_marker(
+            target=_BODY_WRITE_ADDRESSING.target(surface),
+            body=self._grant_body(
+                addressing=_BODY_WRITE_ADDRESSING,
+                holder=holder,
+                nonce=uuid4().hex,
+                state=_GrantState.HELD,
+                lease_seconds=0.0,
+                advertised=self._clock(),
+                addresses=_BODY_WRITE_ADDRESSING.lines(frozenset({surface})),
+            ),
+        )
 
     async def _body_authorship(self, wire: LinearIssueDetailWire) -> SurfaceAuthorship:
         """Decide authorship from the attribution this very read carried.
@@ -2265,6 +2341,9 @@ class LinearMcpTracker:
                     _TOOL_SAVE_ISSUE, {"id": target, "description": body}
                 )
                 self._saved_issue(payload, written={"description": body})
+                await self._record_body_write(
+                    surface=surface, holder=authorization.holder
+                )
                 return DescriptionEditResult.EDITED
 
             return await self._retry_call(
@@ -3570,6 +3649,7 @@ class LinearMcpTracker:
             state=_GRANT_STATE_BY_VALUE[stated["state"]],
             holder=stated["holder"],
             nonce=stated["nonce"],
+            author=None if wire.author is None else wire.author.name,
             lease=lease,
             since=since,
             deadline=(

@@ -1,6 +1,6 @@
 """Vendor-neutral addresses for independently leased tracker write surfaces."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -67,6 +67,38 @@ _CONTAINER_KINDS: frozenset[SurfaceKind] = frozenset(
 BODY_AUTHORSHIP_SURFACES: frozenset[SurfaceKind] = frozenset(
     {SurfaceKind.ISSUE_DESCRIPTION, SurfaceKind.CRITERION_SUB_ISSUE},
 )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SurfaceProvenance:
+    """The tracker's own attribution of a body, and who has written it.
+
+    ``holders`` is the DISTINCT set of holders whose body writes this port
+    recorded, in the order the backend placed those records, so a holder
+    that wrote twice is named once and the pair reads the same way round
+    for every reader of the same log.  An empty tuple is a body no holder
+    recorded a write of, which is not the same as a body nobody wrote:
+    ``authorship`` is the only answer about the text standing there.
+    """
+
+    authorship: SurfaceAuthorship
+    holders: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if any(not holder.strip() for holder in self.holders):
+            raise ValueError("a surface write holder is nonblank")
+        if len(set(self.holders)) != len(self.holders):
+            raise ValueError("surface write holders are distinct in write order")
+
+
+def ordered_holders(written_by: Iterable[str]) -> tuple[str, ...]:
+    """Body-write holders folded to the distinct set, first occurrence kept.
+
+    Stated once beside the answer it is the shape of, so every
+    implementation folds a repeated holder the same way instead of each
+    deciding whether the second write is a second holder.
+    """
+    return tuple(dict.fromkeys(written_by))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

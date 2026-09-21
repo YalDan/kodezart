@@ -395,14 +395,24 @@ async def _snapshot(
         ],
         clock=clock,
     )
-    port.body_authorship = {
-        key: await source.read_surface_authorship(
-            surface=WritableSurface(
-                kind=SurfaceKind.ISSUE_DESCRIPTION,
-                ref=ScopeRef(kind=ScopeKind.ISSUE, key=key),
-            )
+    body_surfaces = {
+        key: WritableSurface(
+            kind=SurfaceKind.ISSUE_DESCRIPTION,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=key),
         )
         for key in keys
+    }
+    provenance = {
+        key: await source.read_surface_authorship(surface=surface)
+        for key, surface in body_surfaces.items()
+    }
+    port.body_authorship = {
+        key: answer.authorship for key, answer in provenance.items()
+    }
+    port.body_write_holders = {
+        body_surfaces[key]: list(answer.holders)
+        for key, answer in provenance.items()
+        if answer.holders
     }
     port.issue_state_changes = {
         key: (await source.read_issue_state_change(issue_key=key)).state_changed_at

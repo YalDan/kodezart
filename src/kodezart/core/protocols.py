@@ -67,8 +67,8 @@ from kodezart.types.domain.subagents import (
 )
 from kodezart.types.domain.surface import (
     DescriptionWriteAuthority,
-    SurfaceAuthorship,
     SurfaceLease,
+    SurfaceProvenance,
     WritableSurface,
     WriteRevalidation,
 )
@@ -953,7 +953,7 @@ class TrackerPort(
 
     async def read_surface_authorship(
         self, *, surface: WritableSurface
-    ) -> SurfaceAuthorship:
+    ) -> SurfaceProvenance:
         """Whom the tracker records as the author of the addressed body.
 
         Answered from the backend's own attribution of that surface, never
@@ -964,6 +964,12 @@ class TrackerPort(
         Only the surfaces whose body this port can replace are answerable;
         any other address raises before a read is issued, because an
         authorship nothing can act on states a capability no caller has.
+
+        The answer also carries the distinct holders of the body writes
+        this port itself recorded, in the order the backend placed those
+        records. The surface's change stamp is never consulted: a stamp
+        moves for a label, a state or a comment as readily as for a body,
+        so it orders nothing and attributes nothing.
         """
         ...
 
