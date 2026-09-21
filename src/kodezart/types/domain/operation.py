@@ -543,6 +543,9 @@ class AuditScopeBinding(OperationModel):
     """An explicit audit scope, declared repository and native report destination."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+    scope: ScopeRef
+    repo_url: str = Field(min_length=1, pattern=r"\S")
+    report_issue_key: str = Field(min_length=1, pattern=r"\S")
 
 
 class OperationConfig(OperationModel):

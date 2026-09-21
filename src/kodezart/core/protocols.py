@@ -129,6 +129,12 @@ class GitSourceReader(Protocol):
         """Read exact regular-file bytes; missing/unsupported objects refuse."""
         ...
 
+    async def find_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob | None:
+        """Return None only for a successfully read, absent path at that commit."""
+        ...
+
 
 @runtime_checkable
 class GitService(Protocol):
@@ -1569,6 +1575,21 @@ class LaneStateTracker(TrackerCommentReader, Protocol):
     async def set_workflow_state(
         self, *, issue_key: str, stage: LifecycleStage
     ) -> TrackerIssue: ...
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str | None = None
+    ) -> TrackerIssue: ...
+
+
+@runtime_checkable
+class CriterionReopener(Protocol):
+    """The one state move the audit makes.
+
+    A role narrowed out of the port rather than a widening of it:
+    ``TrackerPort`` satisfies it structurally.  The audit is not the lane,
+    so it does not take ``LaneStateTracker``, which is bound to the lane
+    state writer's calls.
+    """
 
     async def reset_criterion_pending(
         self, *, expected: TrackerIssue, holder: str | None = None

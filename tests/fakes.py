@@ -4356,8 +4356,10 @@ class FakeTrackerPort:
         issue_key: str,
         state: QueueState,
     ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.queue_states == frozenset({state}):
+            return issue
         self.queue_writes.append((issue_key, state))
-        issue = self.issues[issue_key]
         updated = issue.model_copy(update={"queue_states": frozenset({state})})
         self.issues[issue_key] = updated
         self._wrote(issue_key)
