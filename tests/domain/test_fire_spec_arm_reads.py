@@ -10,8 +10,9 @@ module that never reaches the tree can be injected as a control.
 
 A spec held by an *unannotated* parameter is found too, by following the call
 that hands it over: a helper written beside a consumer is scanned as the
-consumer.  That is one call edge and never deeper; a value the callee hands
-on again is the callee's own site to answer for.
+consumer.  The call edge is re-walked over the grown scopes to a fixed point,
+so a spec handed on through a chain of unannotated helpers is followed to the
+helper that finally reads it.
 
 The one thing a module may do with an arm's text besides hand it to the
 formatter is hand it to the one digest function, which hashes the bytes and
@@ -20,8 +21,13 @@ renders nothing.  Those positions are counted apart and pinned exactly.
 Stated blind spots: scopes are module-wide, so a word bound to a spec
 anywhere in a module is a spec wherever that module reads it; a tuple-unpack
 target and a starred argument bind nothing; and a call reached through a
-receiver is resolved to every method of that name, which over-includes on the
-red side.
+receiver that spells no module is resolved to every method of that name, which
+over-includes on the red side.
+
+A reflective read is not a text read to this walk: ``getattr(spec, "body")``,
+``spec.model_dump()["body"]`` and ``repr(spec)`` report nothing, because the
+field is never spelled as an attribute of a spec.  ``str(spec)``, an f-string
+over a spec and a slice of ``.body`` are read, because they are.
 """
 
 import ast
@@ -436,7 +442,9 @@ def test_the_partition_is_reached_by_every_kind_of_root():
 
 def test_the_formatter_is_the_render_every_holder_reaches():
     """The formatter is called, so an empty read map is a fact about the tree."""
-    reached = {site.module for site in call_sites(PARSED, names={"format_fire_spec"})}
+    reached = {
+        site.module for site in call_sites(PARSED, names={format_fire_spec.__name__})
+    }
 
     assert reached >= {"chains/fire_implementation.py", "services/fire_time_rulings.py"}
     assert FORMATTER not in reached
@@ -578,6 +586,32 @@ def test_the_scan_catches_a_spec_handed_to_an_unannotated_parameter(
     report = _report({**PACKAGE, "caller.py": caller, "control.py": probe})
 
     assert report["read"] == {"control.py": (reported,)}
+
+
+def test_a_spec_handed_on_through_two_unannotated_helpers_is_followed():
+    """The chain is walked to the helper that reads, not stopped at the first.
+
+    ``helper1`` takes the spec from the consumer's call and hands it on
+    without reading it; ``helper2`` reads the arm's text.  The re-walk over
+    the grown scopes is what seeds ``helper2``, so it is the only site.
+    """
+    caller = (
+        "from kodezart.control import helper1\n"
+        "\n"
+        "def node(state):\n"
+        "    spec = current_fire_spec(state)\n"
+        "    return helper1(spec)\n"
+    )
+    control = (
+        "def helper1(first):\n"
+        "    return helper2(first)\n"
+        "\n"
+        "def helper2(second):\n"
+        "    return second.body\n"
+    )
+    report = _report({**PACKAGE, "caller.py": caller, "control.py": control})
+
+    assert report["read"] == {"control.py": ("helper2",)}
 
 
 @pytest.mark.parametrize(
