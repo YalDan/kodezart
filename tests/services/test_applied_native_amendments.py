@@ -6,14 +6,23 @@ from pathlib import Path
 import pytest
 
 from kodezart.domain.amendment import AmendmentWriteBackRefusalError
+from kodezart.domain.errors import SurfaceLeaseError
 from kodezart.domain.fire_spec import criterion_field_bodies
+from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION
 from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.amendment_write import AmendmentRecord
 from kodezart.types.domain.operation import CheckPrerequisite
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
-from tests.chains.test_native_fire import DIRECT_DONE, DIRECT_OWED, tracker
+from tests.chains.test_native_fire import (
+    DIRECT_DONE,
+    DIRECT_OWED,
+    SUBJECT,
+    tracker,
+)
 from tests.services.test_native_amendments import (
     AMENDED_CHECK,
     UNVERIFIABLE_HERE,
@@ -586,5 +595,49 @@ async def test_amendment_refuses_external_authority_drift_across_fresh_sessions(
         )
         if boundary == "author":
             assert "the amended observable Check" not in port.issues[DIRECT_OWED].body
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_held_marked_model_refuses_the_write_backs_own_acquisition(repository):
+    """The write-back's lease is the model's, wherever the member belongs to one.
+
+    The subject carries the model's classification here, so its criterion
+    sub-issues and its own body are one thing to write. A job already
+    holding the subject's body therefore meets the write-back's own
+    acquisition, and what that acquisition raises is the landed surface
+    lease error — unchanged, not caught and not translated.
+    """
+    port = tracker()
+    subject = port.issues[SUBJECT]
+    port.issues[SUBJECT] = subject.model_copy(
+        update={"issue_labels": subject.issue_labels | {MODEL_CLASSIFICATION}}
+    )
+    await port.acquire_surfaces(
+        surfaces=frozenset(
+            {
+                WritableSurface(
+                    kind=SurfaceKind.ISSUE_DESCRIPTION,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+                )
+            }
+        ),
+        holder="another-writing-job",
+        lease_seconds=900,
+    )
+    executor = Executor(reproduced=True)
+    service, guard, workspace, _ = await build(
+        repository,
+        executor,
+        port=port,
+        issue_labels={
+            "decision": "decision",
+            MODEL_CLASSIFICATION: "model:criterion-lifecycle",
+        },
+    )
+    try:
+        with pytest.raises(SurfaceLeaseError):
+            await drive(service, guard, repository)
+        assert AMENDED_CHECK not in port.issues[DIRECT_OWED].body
     finally:
         await cleanup(workspace)

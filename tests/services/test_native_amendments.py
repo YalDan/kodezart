@@ -215,6 +215,7 @@ async def build(
     frozen_spec=None,
     held=None,
     runner_environment=None,
+    issue_labels=None,
 ):
     """*held* is the roster a run this fixture reconstructs already holds.
 
@@ -225,6 +226,11 @@ async def build(
     *runner_environment* is the one repository's declared environment facts,
     the single field the writer gate reads off a matched repository. Omitted,
     the entry carries the field's own default rather than an assumed empty map.
+
+    *issue_labels* is the classification vocabulary this operation is dialled
+    with. A case about a board that maps a classification the ordinary
+    fixture does not has to dial it here, because what the write-back
+    resolves off the operation is exactly what a deployment configured.
     """
     repo, base = repository
     git_service = SubprocessGitService(remote="origin")
@@ -257,7 +263,9 @@ async def build(
                 "amendment": "fixture-amendment",
                 "escalation": "fixture-escalation",
             },
-            issue_labels={"decision": "decision"},
+            issue_labels=(
+                {"decision": "decision"} if issue_labels is None else dict(issue_labels)
+            ),
         ),
         criteria=criteria,
         git=git_service,

@@ -33,12 +33,13 @@ from kodezart.domain.fire_spec import (
     criterion_field_bodies,
     replace_criterion_fields,
 )
+from kodezart.domain.model_surfaces import model_classification
 from kodezart.domain.rulings import render_ruling
 from kodezart.domain.tracker_writes import comment_under_marker, marked_comment_body
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.lane_escalation import LaneEscalationWriter
+from kodezart.services.model_surface_lease import ModelSurfaceLease
 from kodezart.services.owned_workspace import owned_workspace
-from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.types.domain.agent import AMENDMENT_TEXT_SCHEMA, Ruling, RulingAuthor
 from kodezart.types.domain.amendment import (
@@ -352,8 +353,10 @@ class AmendmentWriteBack:
         surfaces = {archive_surface}
         if reason is None:
             surfaces.add(surface)
-        async with RunSurfaceLease(
+        async with ModelSurfaceLease(
+            reader=self._tracker,
             tracker=self._tracker,
+            classification=model_classification(self._operation),
             job_id=holder,
             surfaces=frozenset(surfaces),
             lease_seconds=self._lease_seconds,
