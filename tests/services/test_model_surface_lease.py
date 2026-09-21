@@ -18,6 +18,9 @@ ARMS = ("native", "fake")
 
 MEMBER_A = "MODEL-A"
 MEMBER_B = "MODEL-B"
+#: An issue the marked model does not cover until a case marks it, which is
+#: what tells a resolution at acquisition from an answer kept from before.
+MEMBER_C = "MODEL-C"
 CRITERION_A = "MODEL-A-C1"
 UNMARKED_X = "PLAIN-X"
 UNMARKED_Y = "PLAIN-Y"
@@ -205,6 +208,62 @@ async def test_the_model_surface_set_is_read_and_never_parsed_from_a_body(
             classification=None,
         ):
             pass
+
+
+@pytest.mark.parametrize("arm", ARMS)
+async def test_a_member_marked_between_two_acquisitions_is_covered_by_the_second(
+    arm: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AT acquisition: each acquisition asks the board what the model is.
+
+    ONE lease object acquires twice with the marked membership moved in
+    between, so an answer kept on the object is as visible here as an
+    answer kept anywhere else — and the count says the query was issued
+    again rather than remembered.  A resolution held over from the first
+    acquisition would leave a member marked after it outside every later
+    lease, which is a second writer acquiring a model somebody holds.
+    """
+    workspace = await marked_workspace(arm)
+    await workspace.seed([{"key": MEMBER_C, "body": PLAIN_BODY}])
+    asked: list[str] = []
+    answered = workspace.tracker.read_labeled_issues
+
+    async def counted(*, classification: str) -> Sequence[TrackerIssue]:
+        asked.append(classification)
+        return await answered(classification=classification)
+
+    monkeypatch.setattr(workspace.tracker, "read_labeled_issues", counted)
+    holding = model_lease(
+        workspace.tracker, holder=FIRST, surfaces={description(MEMBER_A)}
+    )
+
+    async with holding:
+        # Unmarked, so outside the model the first acquisition resolved.
+        async with model_lease(
+            workspace.tracker,
+            holder=SECOND,
+            surfaces={description(MEMBER_C)},
+            classification=None,
+        ):
+            pass
+
+    await workspace.seed(
+        [{"key": MEMBER_C, "body": PLAIN_BODY, "labels": [CLASSIFICATION]}]
+    )
+
+    async with holding:
+        with pytest.raises(SurfaceLeaseError) as refused:
+            async with model_lease(
+                workspace.tracker,
+                holder=SECOND,
+                surfaces={description(MEMBER_C)},
+                classification=None,
+            ):
+                pass
+
+    assert refused.value.current_holder == FIRST
+    assert refused.value.scope_key == MEMBER_C
+    assert asked == [CLASSIFICATION, CLASSIFICATION]
 
 
 @pytest.mark.parametrize("arm", ARMS)
