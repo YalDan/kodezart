@@ -874,9 +874,14 @@ class RalphLoop:
         # ``max_iterations`` already bounds. A criterion the reading carried
         # or found lapsed was not graded by this attempt, so it is not read
         # at the base either: it is withheld from every session of this
-        # iteration, and its cross-off is decided by the reading alone.
+        # iteration, and its cross-off is decided by the reading alone. A
+        # grading that did not stand needs no guard of its own here:
+        # ``undemonstrated_output`` above has already turned every result this
+        # attempt graded into a fail, and the carried rows ``iteration_output``
+        # puts back are the reading's, subtracted below, so it presents no
+        # passing id and the empty ``passing`` skips the reading.
         at_base: Mapping[CriterionId, bool] = {}
-        if native_ref is not None and demonstrated:
+        if native_ref is not None:
             passing = passed_ids(grade.results) - {
                 CriterionId(str(criterion)) for criterion in reading
             }
