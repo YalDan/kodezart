@@ -91,6 +91,20 @@ EXEMPT = {
     "chains/audit_overclaim.py::AuditOverclaimVerifier._adoption": (
         "membership: whether an adopted source sha is one of the audited pair"
     ),
+    "domain/audit_claims.py::evidence_row_history": (
+        "not a revision comparison at all: an event is selected by the subject "
+        "it is keyed to, and a grading naming no commit is dropped"
+    ),
+    "domain/audit_claims.py::restamp_verdict": (
+        "the last recorded grading against the row's own recorded commit: "
+        "whether a restamp names the grading that actually last ran, never the "
+        "head now"
+    ),
+    "types/domain/audit_evidence.py::AuditRestampTrace."
+    "verdict_follows_the_recorded_history": (
+        "the same reading, refused at construction so the wrong verdict cannot "
+        "be published; still recorded against recorded"
+    ),
 }
 
 

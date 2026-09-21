@@ -231,8 +231,18 @@ class ScopeWorkflowEngine:
         walk keeping a second copy of the comparison.
         """
         observed = await union.verify()
+        # Named rather than spread: what a spread contributes is not in the
+        # source, so the event census cannot see the shape it exists to compare
+        # (KOD-192).  The reading itself stays in the domain function.
+        facts = union_facts(observed)
         await self._log.ainfo(
-            "scope_union_observed", scope=scope.key, **union_facts(observed)
+            "scope_union_observed",
+            scope=scope.key,
+            composition=facts["composition"],
+            lanes=facts["lanes"],
+            heads=facts["heads"],
+            scratch_sha=facts["scratch_sha"],
+            remediation=facts["remediation"],
         )
 
     async def _gate_unrecorded_blockers(

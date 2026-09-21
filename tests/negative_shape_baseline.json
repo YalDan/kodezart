@@ -53,20 +53,20 @@
   "tests/audit_replacements.py": 5,
   "tests/chains/test_accept_gate.py": 46,
   "tests/chains/test_amendment_review_reentry.py": 17,
-  "tests/chains/test_audit_pass.py": 30,
+  "tests/chains/test_audit_pass.py": 44,
   "tests/chains/test_authored_check_routing.py": 47,
   "tests/chains/test_authored_publication_clean.py": 1,
   "tests/chains/test_authority_independent_review.py": 22,
   "tests/chains/test_criteria_stage_order.py": 21,
   "tests/chains/test_criteria_validation.py": 116,
-  "tests/chains/test_delivery_coordinator.py": 42,
+  "tests/chains/test_delivery_coordinator.py": 50,
   "tests/chains/test_dispatch_definitions.py": 15,
   "tests/chains/test_fire_extraction.py": 34,
   "tests/chains/test_fire_graph.py": 6,
   "tests/chains/test_fire_spec_prompt_consumers.py": 13,
   "tests/chains/test_fresh_write_back_judge.py": 11,
   "tests/chains/test_lane_delivery.py": 71,
-  "tests/chains/test_lane_state_loop.py": 181,
+  "tests/chains/test_lane_state_loop.py": 189,
   "tests/chains/test_m4_local_sdk_independent.py": 18,
   "tests/chains/test_m4_native_extension_independent.py": 2,
   "tests/chains/test_native_amendment_adoption.py": 10,
@@ -103,7 +103,7 @@
   "tests/chains/test_scope_gap_selection.py": 9,
   "tests/chains/test_scope_observations.py": 14,
   "tests/chains/test_scope_ready.py": 46,
-  "tests/chains/test_scope_terminal.py": 104,
+  "tests/chains/test_scope_terminal.py": 110,
   "tests/chains/test_session_policy_composition.py": 7,
   "tests/chains/test_shorthand_url_resolution.py": 17,
   "tests/chains/test_stalled_handoff.py": 7,
@@ -111,7 +111,7 @@
   "tests/chains/test_tool_preset_composition.py": 4,
   "tests/chains/test_union_exit_invariance.py": 18,
   "tests/chains/test_union_final_freshness.py": 5,
-  "tests/chains/test_union_forge_isolation.py": 25,
+  "tests/chains/test_union_forge_isolation.py": 27,
   "tests/chains/test_union_participant_order.py": 16,
   "tests/chains/test_union_stage_independence.py": 3,
   "tests/chains/test_workflow_phase_composition.py": 27,
@@ -156,9 +156,9 @@
   "tests/docs/test_setup_guide.py": 32,
   "tests/domain/test_agent.py": 3,
   "tests/domain/test_alarm_typed_evidence.py": 4,
-  "tests/domain/test_amendment.py": 18,
+  "tests/domain/test_amendment.py": 20,
   "tests/domain/test_assertion_drift.py": 10,
-  "tests/domain/test_audit_claims.py": 9,
+  "tests/domain/test_audit_claims.py": 14,
   "tests/domain/test_audit_overclaim.py": 3,
   "tests/domain/test_audit_overclaim_report.py": 2,
   "tests/domain/test_audit_terminal_report.py": 7,
@@ -177,7 +177,7 @@
   "tests/domain/test_criterion_cross_off.py": 37,
   "tests/domain/test_criterion_evidence.py": 8,
   "tests/domain/test_criterion_identity.py": 20,
-  "tests/domain/test_criterion_lifecycle.py": 118,
+  "tests/domain/test_criterion_lifecycle.py": 119,
   "tests/domain/test_deliverables_section.py": 9,
   "tests/domain/test_detector_removal_report.py": 5,
   "tests/domain/test_dispatch_predicate.py": 36,
@@ -198,17 +198,18 @@
   "tests/domain/test_lane_tally.py": 28,
   "tests/domain/test_lapse.py": 24,
   "tests/domain/test_mandate_graph.py": 27,
+  "tests/domain/test_model_surfaces.py": 8,
   "tests/domain/test_no_ref_parsing.py": 1,
   "tests/domain/test_operation_optionality.py": 12,
   "tests/domain/test_organize.py": 32,
   "tests/domain/test_organize_routing.py": 6,
   "tests/domain/test_outcome.py": 31,
-  "tests/domain/test_owed_rulings.py": 35,
+  "tests/domain/test_owed_rulings.py": 47,
   "tests/domain/test_record_consistency.py": 26,
   "tests/domain/test_record_superseded.py": 23,
   "tests/domain/test_recorded_landing.py": 22,
   "tests/domain/test_ruling_identity.py": 11,
-  "tests/domain/test_ruling_protected_tests.py": 14,
+  "tests/domain/test_ruling_protected_tests.py": 16,
   "tests/domain/test_rulings.py": 8,
   "tests/domain/test_run_alarm.py": 16,
   "tests/domain/test_run_alarm_payload.py": 4,
@@ -235,6 +236,7 @@
   "tests/domain/test_tracker_arm_draft_ban.py": 6,
   "tests/domain/test_union.py": 7,
   "tests/domain/test_union_check_classification.py": 11,
+  "tests/domain/test_union_facts.py": 8,
   "tests/domain/test_union_remediation.py": 1,
   "tests/domain/test_workflow_state.py": 3,
   "tests/fakes.py": 6,
@@ -246,7 +248,7 @@
   "tests/integration/test_audit_reopen.py": 115,
   "tests/integration/test_audit_report_order.py": 17,
   "tests/integration/test_audit_report_records.py": 3,
-  "tests/integration/test_audit_runtime_native.py": 70,
+  "tests/integration/test_audit_runtime_native.py": 97,
   "tests/integration/test_audit_runtime_types.py": 8,
   "tests/integration/test_audit_scheduler.py": 50,
   "tests/integration/test_audit_workspace_failure_review.py": 4,
@@ -267,6 +269,7 @@
   "tests/integration/test_scope_heartbeat.py": 46,
   "tests/integration/test_scope_launch_freshness.py": 5,
   "tests/integration/test_scope_runtime.py": 494,
+  "tests/integration/test_scope_union.py": 48,
   "tests/integration/test_self_running_chain.py": 21,
   "tests/integration/test_session_resume.py": 6,
   "tests/integration/test_stacked_scope.py": 29,
@@ -282,7 +285,7 @@
   "tests/probes/test_v5_orchestration_live.py": 7,
   "tests/prompts/sets.py": 1,
   "tests/prompts/test_absence_bindings.py": 43,
-  "tests/prompts/test_amendment_prompts.py": 7,
+  "tests/prompts/test_amendment_prompts.py": 9,
   "tests/prompts/test_criteria_generation_prompts.py": 38,
   "tests/prompts/test_fire_record.py": 18,
   "tests/prompts/test_fire_time_ruling_prompt.py": 13,
@@ -313,7 +316,7 @@
   "tests/services/lane_tally_fixtures.py": 10,
   "tests/services/test_agent_service.py": 5,
   "tests/services/test_amendment_interrupted_writes.py": 17,
-  "tests/services/test_applied_native_amendments.py": 109,
+  "tests/services/test_applied_native_amendments.py": 141,
   "tests/services/test_assertion_drift.py": 30,
   "tests/services/test_audit_coverage.py": 22,
   "tests/services/test_audit_reopen.py": 26,
@@ -328,17 +331,18 @@
   "tests/services/test_fire_dispatcher.py": 250,
   "tests/services/test_fire_log_facts.py": 29,
   "tests/services/test_fire_record_identity.py": 9,
-  "tests/services/test_fire_time_rulings.py": 156,
+  "tests/services/test_fire_time_rulings.py": 195,
   "tests/services/test_git_source_lookup.py": 3,
   "tests/services/test_landing_dispatch.py": 15,
   "tests/services/test_lane_entry.py": 19,
   "tests/services/test_lane_reports.py": 2,
   "tests/services/test_lane_state_writer.py": 205,
   "tests/services/test_lifecycle_watcher.py": 94,
+  "tests/services/test_model_surface_lease.py": 11,
   "tests/services/test_native_amendment_archive_independent.py": 6,
   "tests/services/test_native_amendment_archive_publication.py": 11,
   "tests/services/test_native_amendment_independent.py": 28,
-  "tests/services/test_native_amendments.py": 73,
+  "tests/services/test_native_amendments.py": 75,
   "tests/services/test_native_commit_receipt_independent.py": 9,
   "tests/services/test_native_execution_record.py": 13,
   "tests/services/test_parent_rollup_authority.py": 4,
@@ -356,7 +360,7 @@
   "tests/services/test_scope_heartbeat.py": 93,
   "tests/services/test_scope_planning.py": 9,
   "tests/services/test_scope_resolution.py": 7,
-  "tests/services/test_scope_runtime.py": 53,
+  "tests/services/test_scope_runtime.py": 55,
   "tests/services/test_scope_runtime_static.py": 10,
   "tests/services/test_scope_terminal.py": 80,
   "tests/services/test_session_grant_threading.py": 13,
@@ -370,7 +374,9 @@
   "tests/services/test_union_replacement_identity.py": 23,
   "tests/services/test_union_tick.py": 75,
   "tests/spec/test_model_agreement.py": 73,
+  "tests/test_audit_lane_placement.py": 13,
   "tests/test_composition_root.py": 35,
+  "tests/test_criterion_resolution_boundary.py": 14,
   "tests/test_fakes_state.py": 8,
   "tests/test_forge_origin_selection.py": 46,
   "tests/test_graded_sha_comparison_sites.py": 22,
@@ -404,7 +410,7 @@
   "tests/tracker/test_audit_overclaim_sweep_git.py": 24,
   "tests/tracker/test_audit_repository_cancellation.py": 1,
   "tests/tracker/test_audit_requests.py": 34,
-  "tests/tracker/test_audit_sweep.py": 50,
+  "tests/tracker/test_audit_sweep.py": 53,
   "tests/tracker/test_audit_sweep_git.py": 17,
   "tests/tracker/test_audit_terminal_mandate.py": 23,
   "tests/tracker/test_audit_terminal_mandate_git.py": 25,
@@ -430,6 +436,7 @@
   "tests/tracker/test_criterion_reader_boundary.py": 11,
   "tests/tracker/test_criterion_receipt_boundary.py": 2,
   "tests/tracker/test_criterion_record_fidelity.py": 21,
+  "tests/tracker/test_criterion_renumbering.py": 49,
   "tests/tracker/test_criterion_resolution.py": 26,
   "tests/tracker/test_criterion_resolution_consumers.py": 8,
   "tests/tracker/test_criterion_retry_independent.py": 6,
@@ -459,7 +466,7 @@
   "tests/tracker/test_lane_escalation.py": 34,
   "tests/tracker/test_lane_record_signals.py": 20,
   "tests/tracker/test_lane_records.py": 21,
-  "tests/tracker/test_linear_mcp_tracker.py": 101,
+  "tests/tracker/test_linear_mcp_tracker.py": 113,
   "tests/tracker/test_linear_tool_arguments.py": 12,
   "tests/tracker/test_linear_tool_roster.py": 6,
   "tests/tracker/test_linear_wire_shapes.py": 53,
@@ -504,7 +511,7 @@
   "tests/tracker/test_tracker_boot.py": 48,
   "tests/tracker/test_tracker_boot_cleanup.py": 12,
   "tests/tracker/test_tracker_boot_wiring.py": 80,
-  "tests/tracker/test_tracker_conformance.py": 266,
+  "tests/tracker/test_tracker_conformance.py": 275,
   "tests/types/test_audit_mandate_independent.py": 10,
   "tests/types/test_audit_report_contract.py": 11,
   "tests/types/test_audit_union_contracts.py": 12,
@@ -1314,7 +1321,15 @@
    "test_failed_native_read_is_never_a_healthy_terminal",
    "test_missing_recorded_pr_is_unresolved_without_forge_lookup",
    "test_current_native_pr_sha_must_equal_its_resolved_branch",
-   "test_expected_review_requires_parent_state_and_every_completed_criterion"
+   "test_expected_review_requires_parent_state_and_every_completed_criterion",
+   "test_a_restamp_holds_only_when_the_last_recorded_grading_names_its_commit",
+   "test_a_restamp_is_traced_to_the_last_grading_and_not_to_any_earlier_one",
+   "test_another_criterions_grading_at_the_same_commit_traces_nothing",
+   "test_a_criterion_with_no_recorded_grading_is_not_traced",
+   "test_a_grading_naming_no_commit_is_not_a_grading_at_all",
+   "test_a_restamp_trace_is_read_from_the_stream_and_not_from_a_verdict",
+   "test_an_unreadable_grading_stream_is_a_typed_refusal_not_a_silent_absence",
+   "test_a_restamp_trace_cannot_be_built_against_its_own_recorded_history"
   ],
   "tests/chains/test_audit_terminal_cancellation.py": [
    "test_terminal_cache_settles_native_clone_and_fetch",
@@ -1389,6 +1404,8 @@
    "test_a_raising_check_chain_still_removes_the_composed_tree",
    "test_a_lane_with_no_recorded_deliverable_ref_refuses",
    "test_a_lane_with_two_recorded_deliverable_refs_refuses",
+   "test_a_scope_lanes_branch_is_the_one_its_record_names",
+   "test_a_port_work_ref_alone_leaves_a_scope_lane_unbranched",
    "test_completed_lanes_with_retained_heads_are_checked_together",
    "test_completed_and_unfinished_retained_lanes_each_participate_once",
    "test_roster_change_during_measurement_refuses_before_return",
@@ -1489,6 +1506,7 @@
    "test_the_evaluation_is_graded_in_a_workspace_the_loop_owns",
    "test_no_step_after_the_loop_writes_a_cross_off",
    "test_the_evaluator_step_is_the_only_caller_of_write_cross_offs",
+   "test_the_evaluator_step_writes_one_state_move_and_one_evidence_row_per_key",
    "test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_events",
    "test_a_regression_inside_the_loop_moves_the_criterion_back_and_says_so",
    "test_a_refutation_the_loop_died_inside_certifies_no_failing_grading",
@@ -2036,6 +2054,9 @@
    "test_the_merge_state_detector_finds_the_modules_that_do_name_one",
    "test_the_terminal_reads_no_column_of_a_recorded_pull_request",
    "test_the_pull_request_column_detector_sees_each_shape_it_claims_to",
+   "test_no_module_of_the_terminal_reaches_the_git_port",
+   "test_the_git_port_detector_sees_each_shape_it_claims_to",
+   "test_the_git_port_detector_finds_the_modules_that_do_read_a_ref",
    "test_a_scratch_shaped_scope_ends_with_exactly_one_status_update"
   ],
   "tests/chains/test_session_policy_composition.py": [
@@ -2104,6 +2125,7 @@
    "test_the_forge_predicate_recognises_every_forge_double",
    "test_the_holdings_walk_reaches_a_collaborator_inside_a_container",
    "test_the_union_step_holds_no_forge_collaborator_at_all",
+   "test_the_composed_union_step_holds_no_forge_collaborator",
    "test_no_module_the_union_step_reaches_asks_a_pull_request_anything",
    "test_the_union_steps_own_modules_name_the_merge_state_reader_nowhere",
    "test_the_query_ports_and_their_doubles_expose_no_merge_capability",
@@ -2566,6 +2588,7 @@
    "test_actual_scope_egress_roundtrips_required_nulls_and_rejects_bad_native_reports",
    "test_missing_capability_requires_a_typed_claim_absent_from_declared_capabilities",
    "test_cost_never_authorizes_amendment_and_requires_recorded_base_measurement",
+   "test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_amendment",
    "test_completed_reports_refuse_missing_or_unrelated_canonical_evidence"
   ],
   "tests/domain/test_assertion_drift.py": [
@@ -2583,6 +2606,7 @@
    "test_an_unconfigured_review_state_is_no_review_claim_at_all",
    "test_a_completed_criterion_is_the_one_claim_a_tick_owes_a_session",
    "test_only_a_refuted_current_check_claim_takes_a_criterion_back",
+   "test_a_mandate_escalation_key_is_the_criterion_key_and_admits_no_mandate",
    "test_the_table_covers_every_shipped_publication_kind"
   ],
   "tests/domain/test_audit_overclaim.py": [
@@ -2861,6 +2885,7 @@
    "test_rebinding_the_identity_name_to_text_does_not_keep_the_address_typed",
    "test_moving_the_only_construction_to_another_owner_fails",
    "test_qualified_shadow_cannot_make_text_an_identity",
+   "test_the_ruling_address_names_are_the_five_the_guard_carries",
    "test_every_ruling_address_name_refuses_a_bare_string_annotation",
    "test_aliasing_a_local_namespace_preserves_its_untyped_address_refusal",
    "test_run_event_invariant_uses_the_actual_code_backend",
@@ -3167,6 +3192,16 @@
    "test_both_fire_observations_must_be_completed",
    "test_superseded_fire_is_not_a_previously_crossed_fire"
   ],
+  "tests/domain/test_model_surfaces.py": [
+   "test_a_member_contributes_its_body_and_each_criterion_its_own",
+   "test_a_member_with_no_criteria_contributes_its_body_alone",
+   "test_no_members_resolve_to_no_surfaces",
+   "test_a_request_inside_the_model_takes_the_whole_model",
+   "test_a_request_on_another_surface_of_a_covered_issue_is_inside_it",
+   "test_a_request_outside_the_model_takes_exactly_what_it_asked_for",
+   "test_an_empty_model_leaves_every_request_as_it_was",
+   "test_the_classification_is_resolved_from_configuration_presence"
+  ],
   "tests/domain/test_no_ref_parsing.py": [
    "test_no_scope_surface_parses_a_ref_to_obtain_a_base"
   ],
@@ -3261,9 +3296,11 @@
    "test_the_new_member_appends_with_its_exact_wire_value"
   ],
   "tests/domain/test_owed_rulings.py": [
+   "test_the_addressable_set_is_the_subject_and_its_criterion_keys_alone",
    "test_an_answer_becomes_a_machine_authored_record_under_a_minted_identity",
    "test_records_come_back_in_identity_order_whatever_order_they_were_answered_in",
    "test_an_answer_addressed_outside_the_fire_is_refused",
+   "test_an_answer_addressed_outside_the_fire_is_refused_before_anything_else",
    "test_two_answers_to_one_question_are_refused",
    "test_a_pinned_reading_without_its_rejected_reading_is_refused",
    "test_an_identity_the_tracker_already_carries_is_not_owed",
@@ -3343,6 +3380,7 @@
    "test_reference_to_another_ruling_is_rejected",
    "test_repeated_test_address_cannot_duplicate_one_rulings_protection",
    "test_invalid_native_designation_refuses_instead_of_losing_protection",
+   "test_repeated_designations_names_an_address_two_records_claim",
    "test_native_designation_has_a_typed_ruling_owner",
    "test_mypy_preserves_reader_identity_and_refuses_a_plain_string_owner"
   ],
@@ -3600,6 +3638,10 @@
    "test_input_failure_order_does_not_change_classification",
    "test_unknown_failed_names_remain_sorted_roots"
   ],
+  "tests/domain/test_union_facts.py": [
+   "test_every_measured_head_is_named_once_in_composition_order",
+   "test_a_green_states_no_remediation_and_a_red_states_its_detail"
+  ],
   "tests/domain/test_union_remediation.py": [
    "test_entry_round_trip_preserves_one_cause",
    "test_empty_duplicated_or_mixed_cause_refuses",
@@ -3655,6 +3697,8 @@
    "test_current_native_scope_publishes_verified_records_then_summary",
    "test_native_source_or_identity_failure_cannot_publish_clean_coverage",
    "test_instructed_refutation_records_verified_escalation_before_claim",
+   "test_two_unchanged_sweeps_hold_one_escalation_for_a_reworded_mandate",
+   "test_the_composed_sweep_traces_a_criterion_restamp_to_its_lanes_gradings",
    "test_executor_programming_failure_escapes_the_native_owner",
    "test_repair_refusal_retains_the_actual_prior_writeback_finding",
    "test_declared_executor_outage_retains_unavailable_and_other_observations"
@@ -3837,6 +3881,14 @@
    "test_a_closed_lane_whose_record_cannot_be_read_is_not_offered_again",
    "test_a_killed_scope_run_re_enters_from_the_tracker_alone"
   ],
+  "tests/integration/test_scope_union.py": [
+   "test_a_two_lane_scope_is_composed_once_for_the_whole_walk",
+   "test_a_moved_lane_head_is_composed_again_before_the_walk_states_it",
+   "test_a_red_composition_stops_no_lane_and_is_stated_once",
+   "test_a_lane_that_published_no_branch_leaves_the_walk_running",
+   "test_a_repository_declaring_no_check_chain_is_never_composed",
+   "test_a_trunk_absent_from_the_remote_composes_nothing"
+  ],
   "tests/integration/test_self_running_chain.py": [
    "test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket",
    "test_the_chain_never_sets_the_approved_state_itself",
@@ -3934,6 +3986,7 @@
   ],
   "tests/prompts/test_amendment_prompts.py": [
    "test_each_role_is_a_data_file_in_every_shipped_set",
+   "test_every_shipped_set_states_the_designated_test_convention",
    "test_the_template_binds_exactly_the_harness_names"
   ],
   "tests/prompts/test_criteria_generation_prompts.py": [
@@ -4315,7 +4368,9 @@
    "test_the_fault_line_separates_a_fault_in_the_criterion_from_one_outside_it",
    "test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated",
    "test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes",
-   "test_amendment_refuses_external_authority_drift_across_fresh_sessions"
+   "test_amendment_refuses_external_authority_drift_across_fresh_sessions",
+   "test_designated_protected_test_change_is_upheld_and_never_reaches_the_branch",
+   "test_a_held_marked_model_refuses_the_write_backs_own_acquisition"
   ],
   "tests/services/test_assertion_drift.py": [
    "test_both_revisions_are_green_but_expected_value_drift_emits_claim",
@@ -4585,7 +4640,14 @@
    "test_a_restated_question_leaves_the_earlier_record_readable_and_unedited",
    "test_a_contradiction_answer_with_no_losing_side_is_refused_before_any_lease",
    "test_an_invented_artifact_pins_its_model_call_site_and_in_repo_precedent",
-   "test_a_false_premise_is_regrounded_at_the_base_neither_closed_nor_crossed_off"
+   "test_a_false_premise_is_regrounded_at_the_base_neither_closed_nor_crossed_off",
+   "test_a_key_the_criterion_family_does_not_hold_is_refused_before_any_write",
+   "test_keys_an_answer_names_only_in_its_prose_are_prose_and_are_not_resolved",
+   "test_a_reference_lost_between_the_session_and_the_write_is_refused",
+   "test_a_criterion_the_answer_does_not_address_leaving_still_records",
+   "test_an_identity_a_successor_absorbed_is_still_addressable_at_the_write",
+   "test_the_family_is_read_again_after_the_session_and_before_the_write",
+   "test_a_family_read_that_fails_at_the_write_records_nothing_and_says_so"
   ],
   "tests/services/test_git_source_lookup.py": [
    "test_actual_deleted_file_is_absent_only_at_the_selected_revision",
@@ -4700,6 +4762,17 @@
    "TestTheShutdownRecordSweep.test_a_terminal_job_whose_watch_never_recorded_still_gets_its_row",
    "TestTheShutdownRecordSweep.test_a_fire_the_registry_has_forgotten_is_named_and_gets_no_row"
   ],
+  "tests/services/test_model_surface_lease.py": [
+   "test_every_arm_names_the_model_the_resolver_resolves",
+   "test_two_holders_over_one_marked_model_contend",
+   "test_a_criterion_sub_issue_of_a_marked_member_is_in_the_same_model",
+   "test_two_holders_over_unmarked_independent_surfaces_both_acquire",
+   "test_the_model_surface_set_is_read_and_never_parsed_from_a_body",
+   "test_a_member_marked_between_two_acquisitions_is_covered_by_the_second",
+   "test_a_failed_acquisition_holds_nothing",
+   "test_nothing_unconfigured_queries_the_marker",
+   "test_a_refusal_is_typed_before_any_backend_call"
+  ],
   "tests/services/test_native_amendment_archive_independent.py": [
    "test_native_amendment_requires_preserved_current_history"
   ],
@@ -4725,6 +4798,7 @@
    "test_the_writer_contract_renders_every_pinned_answer_inside_the_delimiters",
    "test_a_stage_with_no_registration_is_refused_before_any_session",
    "test_an_unreadable_registry_is_refused_before_the_writer_session",
+   "test_a_roster_designating_one_test_twice_is_refused_before_the_writer_session",
    "test_ruling_change_during_commit_content_gate_refuses_before_commit",
    "test_actual_commit_receipt_requires_current_authority_before_publication",
    "test_an_observed_amendment_keeps_the_roster_criterion_the_fire_finished",
@@ -5011,6 +5085,7 @@
    "test_no_open_delivery_lets_the_lane_through",
    "test_an_origin_with_no_open_delivery_reader_refuses_the_scope",
    "test_a_fire_that_closed_nothing_it_owed_rests_the_lane",
+   "test_the_bound_is_one_tick_and_the_walk_spends_that_constant",
    "test_a_tick_that_closed_twelve_and_surfaced_twelve_is_not_a_plateau",
    "test_a_tick_whose_gap_grew_through_a_lapse_is_not_a_plateau",
    "test_a_tick_whose_only_closure_is_under_a_child_is_not_a_plateau",
@@ -5242,6 +5317,22 @@
    "test_one_reader_counts_both_declaration_forms",
    "test_live_workspace_equals_supplied_snapshot"
   ],
+  "tests/test_audit_lane_placement.py": [
+   "test_each_named_module_owns_the_symbol_the_placement_names",
+   "test_the_grading_history_role_holds_its_one_read_and_nothing_beside_it",
+   "test_the_pass_builder_is_wired_into_the_scheduled_passes",
+   "test_no_module_but_the_owner_declares_a_cross_lane_symbol",
+   "test_no_module_but_the_owner_declares_a_class_shaped_like_a_write_back_role",
+   "test_neither_write_back_role_is_re_exported_under_a_second_import_path",
+   "test_the_cross_lane_symbols_are_imported_from_their_owning_modules",
+   "test_a_relocated_symbol_reds_the_placement_it_used_to_satisfy",
+   "test_a_planted_stub_reds_the_single_declaration_assertion",
+   "test_a_stub_rebound_to_the_owned_name_reds_the_single_declaration_assertion",
+   "test_a_planted_role_copy_under_another_name_reds_the_shape_assertion",
+   "test_a_planted_second_import_path_reds_the_re_export_assertion",
+   "test_a_nested_declaration_is_not_a_hiding_place",
+   "test_a_plain_import_of_a_role_for_use_is_not_a_second_import_path"
+  ],
   "tests/test_composition_root.py": [
    "test_the_composition_root_defines_only_its_hook_and_its_factory",
    "test_the_guard_reads_a_real_module",
@@ -5258,6 +5349,19 @@
    "test_the_declared_output_style_reaches_the_executor_through_composition",
    "test_the_executor_keywords_are_read_off_a_real_call",
    "test_composition_hands_every_graph_the_floor_it_built_from_the_config"
+  ],
+  "tests/test_criterion_resolution_boundary.py": [
+   "test_one_site_turns_a_criterion_identity_into_its_sub_issue",
+   "test_no_consumer_of_the_resolver_also_takes_the_criterion_family",
+   "test_holding_the_role_includes_holding_a_class_that_implements_it",
+   "test_no_module_scans_for_checkbox_syntax",
+   "test_the_refused_lookup_shapes_are_reported",
+   "test_a_second_resolution_in_one_module_counts_as_two_sites",
+   "test_a_resolution_that_renames_its_identities_is_reported",
+   "test_a_family_read_without_a_criterion_identity_is_not_a_resolution",
+   "test_a_protocol_declaration_is_not_an_implementation",
+   "test_each_spelling_of_a_checkbox_scan_is_reported",
+   "test_a_criterion_text_comparison_on_a_key_addressed_target_is_not_reported"
   ],
   "tests/test_fakes_state.py": [
    "test_every_journal_the_check_reaches_is_written_to_here",
@@ -5750,6 +5854,14 @@
   "tests/tracker/test_criterion_record_fidelity.py": [
    "test_every_native_state_and_evidence_survives_the_port_round_trip"
   ],
+  "tests/tracker/test_criterion_renumbering.py": [
+   "test_a_removed_criterion_and_a_renumbered_remainder_move_no_identity",
+   "test_the_family_is_ordered_by_its_keys_and_not_by_the_position_token",
+   "test_a_verdict_a_designation_and_an_audit_request_resolve_through_the_key",
+   "test_a_verdict_is_written_onto_the_sub_issue_its_own_key_names",
+   "test_a_superseded_identity_stays_resolvable_and_names_what_absorbed_it",
+   "test_the_authored_arm_keeps_enumerating_from_one"
+  ],
   "tests/tracker/test_criterion_resolution.py": [
    "test_resolution_preserves_own_key_full_source_and_every_state",
    "test_identical_text_and_parent_prose_cannot_redirect_the_native_key",
@@ -6056,7 +6168,11 @@
    "TestInitiativeIdentifiers.test_every_spelling_of_every_initiative_is_answered",
    "TestARetryBudgetIsNotSpentOnASessionThatDied.test_the_call_the_death_landed_under_is_told_and_the_next_call_reaches",
    "TestARetryBudgetIsNotSpentOnASessionThatDied.test_an_unanswered_read_is_made_again_within_the_budget",
-   "TestARetryBudgetIsNotSpentOnASessionThatDied.test_an_unanswered_write_is_not_made_again_within_any_budget"
+   "TestARetryBudgetIsNotSpentOnASessionThatDied.test_an_unanswered_write_is_not_made_again_within_any_budget",
+   "TestTheBodyWriteRecordThisAdapterKeeps.test_a_held_write_that_moves_no_body_records_no_holder",
+   "TestTheBodyWriteRecordThisAdapterKeeps.test_a_save_the_backend_refuses_records_no_holder",
+   "TestTheBodyWriteRecordThisAdapterKeeps.test_a_record_the_backend_attributes_elsewhere_names_no_holder",
+   "TestTheBodyWriteRecordThisAdapterKeeps.test_a_sibling_bodys_record_names_no_holder"
   ],
   "tests/tracker/test_linear_tool_arguments.py": [
    "test_the_sweep_reaches_every_tool_the_adapter_names",
@@ -6665,7 +6781,13 @@
    "TestPrincipalAuthoredBodies.test_a_machine_authored_body_is_still_replaceable",
    "TestACriterionKeyReadThroughThePortAddressesItsWrites.test_a_criterion_key_read_through_the_port_is_taken_by_its_three_writes",
    "TestACriterionKeyReadThroughThePortAddressesItsWrites.test_a_repeated_finish_and_a_repeated_move_back_write_nothing",
-   "TestACriterionKeyReadThroughThePortAddressesItsWrites.test_a_supplied_holder_nobody_granted_refuses_the_move_back"
+   "TestACriterionKeyReadThroughThePortAddressesItsWrites.test_a_supplied_holder_nobody_granted_refuses_the_move_back",
+   "TestSurfaceWriteProvenance.test_two_holders_writing_one_body_read_back_as_that_ordered_pair",
+   "TestSurfaceWriteProvenance.test_a_holder_writing_twice_is_named_once",
+   "TestSurfaceWriteProvenance.test_a_change_that_is_not_a_body_write_adds_no_holder",
+   "TestSurfaceWriteProvenance.test_an_unwritten_body_names_no_holder",
+   "TestSurfaceWriteProvenance.test_a_single_writer_body_write_names_no_holder",
+   "TestSurfaceWriteProvenance.test_provenance_is_not_answered_for_a_body_this_port_cannot_write"
   ],
   "tests/types/test_audit_mandate_independent.py": [
    "test_judgment_and_observation_roundtrip_flat_json",
