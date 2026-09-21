@@ -13,7 +13,13 @@ method, that method's identity parameters AND the types they carry, the row it
 returns, and the two modules where the role and its implementation are DECLARED.
 A declaration is not a dependency, so those two are the dependency rule's only
 exemptions, and adding a second method to either role reddens the single-name
-unpackings below rather than silently halving what is checked.
+unpackings below rather than silently halving what is checked.  The set of names
+a module can hold the role under is derived the same way, and is wider than the
+role: it is the role plus every class in the tree declaring the role's one
+method.  A consumer annotated with a concrete resolver reaches exactly as far as
+one annotated with the role, so naming the implementation is no way around the
+dependency rule — and since depending on an implementation where a narrow role
+would do is itself a finding here, the wider set is the right answer twice over.
 
 The resolution walk is a SIGNATURE shape, not an expression walk: a function
 that reads the family, declares the identity the role addresses a criterion by,
@@ -104,6 +110,35 @@ DECLARATIONS = frozenset(
 )
 
 
+def _classes_declaring_the_role(root: Path) -> frozenset[str]:
+    """Every class in the tree that declares the role's one method.
+
+    Derived from the tree rather than listed, because the set has to grow by
+    itself: a second implementation added tomorrow is a holder of the role the
+    day it lands, without anyone remembering to write it down here.
+    """
+    return frozenset(
+        node.name
+        for path in sorted(root.rglob("*.py"))
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.ClassDef)
+        and any(
+            isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and member.name == RESOLVE
+            for member in node.body
+        )
+    )
+
+
+#: The names a module can hold the resolving role under: the role itself and
+#: every class that implements it. A consumer annotated with a concrete
+#: resolver holds the role just as surely as one annotated with the role, so
+#: both trigger the dependency rule — and since depending on an implementation
+#: where a narrow role would do is itself a finding here, the wider set is the
+#: right answer twice over.
+RESOLVER_NAMES = frozenset({ROLE}) | _classes_declaring_the_role(SOURCE)
+
+
 def _names(tree: ast.AST, wanted: frozenset[str]) -> bool:
     """Whether the module names any of *wanted*: bare, attribute or imported."""
     for node in ast.walk(tree):
@@ -186,14 +221,19 @@ def _sites_in(root: Path) -> dict[str, list[str]]:
 
 
 def _family_dependents(root: Path) -> dict[str, list[str]]:
-    """Each module that names the narrow role and the family surface both."""
+    """Each module that holds the resolving role and the family surface both.
+
+    Holding the role means naming it OR naming a class that implements it: a
+    consumer annotated with a concrete resolver has the same reach as one
+    annotated with the role, and must not also carry a roster to search.
+    """
     found = {}
     for path in sorted(root.rglob("*.py")):
         relative = path.relative_to(root).as_posix()
         if relative in DECLARATIONS:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        if not _names(tree, frozenset({ROLE})):
+        if not _names(tree, RESOLVER_NAMES):
             continue
         also = sorted(
             name
@@ -248,6 +288,17 @@ def test_one_site_turns_a_criterion_identity_into_its_sub_issue() -> None:
 def test_no_consumer_of_the_resolver_also_takes_the_criterion_family() -> None:
     """A holder of the narrow role may not also hold a roster to search."""
     assert _family_dependents(SOURCE) == {}
+
+
+def test_holding_the_role_includes_holding_a_class_that_implements_it() -> None:
+    """Annotating the concrete resolver is holding the role (KOD-651).
+
+    The rule above triggers on the shipped implementation as well as on the
+    role, so a consumer cannot keep both surfaces by naming the class instead
+    of the narrow role it plays. The set is read off the tree, so it is the
+    role, its shipped implementation, and whatever else declares that method.
+    """
+    assert {ROLE, NativeCriterionResolver.__name__} <= RESOLVER_NAMES
 
 
 def test_no_module_scans_for_checkbox_syntax() -> None:
