@@ -43,6 +43,21 @@ def test_scope_outcomes_extend_the_existing_workflow_vocabulary(name: str) -> No
     )
 
 
+def test_the_scope_outcome_vocabulary_is_closed() -> None:
+    """The scope-prefixed members are the literal set and nothing size-shaped (KOD-726).
+
+    ``scope_converged_with_residual`` has no producer; its retirement is
+    KOD-767's, in the slice that next touches ``outcome.py``, and that slice
+    rewrites this set. The set is pinned as it stands, not as a count
+    (KOD-781).
+    """
+    assert {m.name for m in WorkflowOutcome if m.name.startswith("scope_")} == {
+        "scope_converged",
+        "scope_converged_with_residual",
+        "scope_stopped_short",
+    }
+
+
 def reading(
     *,
     members: tuple[str, ...],
