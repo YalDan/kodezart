@@ -756,6 +756,332 @@ addresses cannot create different alarm identities through formatting.
 The alarm vocabulary and payload validation are available independently of
 signal computation and of the writers that publish it; constructing a model
 enables neither.
+
+### Supervisor pass
+
+`services.supervisor_pass.SupervisorPass` is one scheduled tick over the
+scopes `OperationConfig.supervisor_scopes` declares, registered on the
+existing scheduler by `composition/supervisor.py::build_supervisor_pass` with
+its interval and timeout from application configuration, no report, and no
+sleep, timer or clock of its own. `composition/passes.py` registers it only
+when a tracker is dialled and the roster is non-empty; either one absent
+registers nothing and logs `supervisor_pass_not_wired` naming which. The pass
+holds no port at all: the scope read is injected as a callable and the
+observation is the observer's, so it can reach no repository, session, queue
+or forge.
+
+Per scope it observes every ready lane with that lane's own roster and gap,
+and every finished member with neither — a raise standing on a lane that has
+since finished is cleared rather than left. Blocked and unapproved members are
+not observed: they are never fired, so they record nothing and there is no
+clock to measure. The accepted consequence is that a lane raised and then
+blocked by hand stays raised until it is ready again.
+
+One lane's failure is that lane's. Each scope read and each lane observation
+is contained, logged as `supervisor_scope_failed` or `supervisor_lane_failed`,
+and the tick then raises `SupervisorIncompleteError` naming what it could not
+reach, so the scheduler reports it failed with whatever it did write already
+on the tracker. Cancellation and the scheduler's own timeout are not a lane's
+failure and pass straight through.
+
+What the tick is observable by: an alarm is a record at
+`(LaneSubject(scope, lane), TALLY_UNMOVED)` on the lane's own issue whose
+readings replay to an alarm, announced by exactly one `run_alarm_raised` event
+on that lane's stream. A record whose readings replay to nothing is a tally
+reading kept so the next tick has an anchor, and it is written only when a
+lane moved while it still owed work — which is the only write a run that never
+stalls makes. There is no scope-subject alarm: a run event needs a lane key,
+and a scope's stall is some lane's stall.
+
+`services.tally_supervisor.TallySupervisor` is the writer the tick observes
+through.
+Per lane it reads the run-state record, reads the one alarm record at
+`(LaneSubject, TALLY_UNMOVED)` on that lane's issue, composes what the
+address should hold through `domain.tally_record`, and writes only when the
+two differ. A lane with no run-state record is passed over before the address
+is read. The record is rewritten in place — a clear is an edit showing the
+tally moving, never a delete — under a lease on exactly that one marker
+surface, which `domain.run_alarm_record.run_alarm_surface` is the single
+expression for. The lease is taken only around a write, because a lease is
+itself a comment on the carrier and a tick with nothing to say writes
+nothing. The record is written before its event: a record whose event was
+lost is repaired by the next tick, while an event without its record
+announces nothing. What the stream owes is read from the stream, so a
+condition firing across many ticks is announced once. The holder that takes
+the lease and the holder recorded on the alarm are the same string.
+
+`services.scope_tally.observe_scope_tally` reads current native membership and
+strict issue classification twice before computing `tally_unmoved`. Its roster
+uses the same ORGANIZE work-target predicate as the gap: criterion and
+record-shaped issues are excluded without pruning deliverable descendants.
+The governed GROOM → TICKET → CRITERIA sequence selects adjacent configured
+terminal markers independently of table order. A member carrying the next
+marker while fewer than all members carry the current marker returns a scope
+alarm. Missing phase labels count as open; unreadable or changed membership
+and classification refuse. Required semantic mappings must be present, and
+aliased phase or classification markers refuse instead of changing the roster.
+
+The signal retains the exact configuration references, native scope address,
+roster keys and member label projections as readings, so replay needs no port.
+A missing member reading or null/empty marker set counts as open in the pure
+predicate. The final execution transition still requires a native member
+lane-dispatched event reader and explicitly refuses before querying.
+
+`tally_unmoved` has a second arm, chosen by the subject's kind and sharing the
+signal: under a `LaneSubject` it reads one lane's tally twice. A `LaneTally` is
+that reading — the criterion sub-issue keys the lane's subtree still owes,
+sorted, and the commit shas its run-state record carries, in recorded order.
+The arm takes four readings: the earlier tally, the current one, the earlier
+reading's identities that have since closed, and
+`run_alarm_max_commits_without_closure`. It returns an alarm when the lane owes
+work, closed none of what it owed, and recorded more commits since the earlier
+reading than the bound allows. The clock is therefore the lane's own record: a
+lane nobody fires records nothing and is quiet by arithmetic. Work counts
+identities and never lengths, the same position `domain/fire_plateau` states
+for the walk's own plateau, and closure is the walk's own arithmetic rather
+than a second one. A subject with neither arm refuses. `domain/tally_record`
+composes those readings from the tracker and decides what the one record at
+the address should hold next; whether a record is an alarm is answered by
+replaying its readings, never by whether it carries a bound, because the scope
+arm raises with none.
+
+`domain.run_shape.escalation_ageing` measures an unresolved escalation in
+recorded lane commits after its raise SHA and recorded walker ticks since
+raise. Either count exceeding its own AppConfig limit returns the observation;
+when both exceed, the commit bound has deterministic precedence. Equal counts
+remain clean. The function retains six readings in order: the escalation JSON,
+its resolution JSON, the ordered commit SHA projection, the tick-age count,
+the configured commit limit and the configured tick limit. Each value keeps
+its source reference and original bytes. Replaying those readings with the
+alarm's subject and raising provenance reconstructs the same alarm.
+
+`services.run_shape.observe_escalation_ageing` consumes already-read tracker
+projections and reads the current addressed decision through `TrackerPort`.
+It has no writer or repository dependency. Missing escalation reads, malformed
+counts, and absent or duplicate raise positions refuse observation; they do
+not manufacture an unanswered question or a clean result. The configured
+limits are nonnegative counts, defaulting to five commits and ten ticks.
+`services.escalation_signals.observe_recorded_escalation_ageing` supplies the
+escalation and commit readings from their actual configured native records.
+The escalation reader consumes the existing writer's seven-field JSON, with
+strict occurrence identity and no interpretation of legacy prose. The lane
+record's ordered commits must completely reach its declared head and agree
+with its count. Both native records and the exact decision resolution used
+by the shared observer are checked again; a changed source refuses the
+observation, including a newly answered or withdrawn decision. All returned readings preserve
+their source comment identities, and neither collector writes or reads Git.
+The walker's recorded tick-age input remains unwired, and no tick of any
+pass reaches these readers. Leased alarm persistence exists, but only the
+lane tally arm writes through it. These readers do not declare the complete
+signal table or a boot capability for it.
+
+`barren_tick_with_diff_growth` compares recorded files-changed and
+commits-ahead against their own configured bounds when a tick closes no
+previously-open reference. Its six readings carry the prior open identities,
+current closed identities, both lane-base growth counts and both limits.
+Only an identity present in both reference sets establishes progress;
+newly-added closed work and disappeared old work do not. Files take
+deterministic precedence if both limits are exceeded. The default bounds
+are ten files and five commits; both are configurable nonnegative counts.
+
+The read-only `observe_barren_tick` service uses `read_criteria` and the shared
+criterion gap arithmetic to obtain current closure. Done closes a criterion;
+cancellation or duplication needs an established supersession reference
+supplied by its owning reader. It retains the returned closure projection
+for replay and makes no tracker writes or version-control calls. Its shared
+`read_barren_tick` assembly also retains the exact criterion snapshot used
+for that observation. `observe_recorded_barren_tick` supplies both growth
+counters from an actual `LaneRecordReader` read, carrying the native comment
+identity and that record's head on each projection. It checks the addressed
+comment and complete criterion snapshot again before returning; source drift
+refuses both an alarm and a quiet result. It reads the declared counters
+without inferring them from commit rows or checking their agreement, which
+belongs to the separate record-consistency signal.
+
+The previous tick's open identities and established supersession references
+still require explicit supplied provenance. Their collectors remain separate
+work and no tick reaches them; leased alarm persistence exists, and only the
+lane tally arm writes through it. These bounded record reads do not provide
+an atomic tracker transaction or an execution event stream.
+
+`surface_contended` counts distinct opaque run-holder identities for one
+complete `WritableSurface` address. Three readings carry that address, its
+ordered holder history and the configured limit (one holder by default).
+The address must match the alarm subject, and address/history references
+must name the same provenance source. Repeated writes by one holder count
+once; different runs writing the same address remain in its whole history.
+Different issue/marker/surface addresses are evaluated independently.
+
+`observe_surface_contention` only supplies the AppConfig limit to explicit
+provenance inputs. It does not provide a tracker provenance reader: ordered
+successful-write history carrying run identities across all six surface
+kinds still depends on the universal holder-aware writer foundation. Vendor
+account authors and change timestamps cannot supply those run identities.
+The pure count and replay tests do not establish that producer or its port
+conformance, and the leased alarm writer that exists observes the lane tally
+arm only.
+
+`write_back_missing` compares one event's explicitly declared
+`WritableSurface` with a successful keyed-record presence reading. The
+presence source must be that complete canonical address, including its
+marker. Only a strict boolean is accepted; an unreadable or omitted lookup
+cannot become absence. The resulting surface alarm retains both raw
+readings and has no threshold bound. Event-to-target projection and complete
+record collection belong to their producers and are not supplied by this
+predicate; it adds no competing event vocabulary or inferred target mapping.
+
+The existing `WorkRef` carries the observer's `landing` fact as `landed`,
+`not_landed` or `unknown`, alongside its branch and pushed head. The native
+work-ref marker serializes that field; older markers without it read as
+unknown, and malformed values refuse. Observers amend the existing record
+when they record a landing. The append-only `record_work_ref` operation
+retains its one-deliverable rule and never silently replaces that record.
+No landing fact is inferred from a merge strategy, Git ancestry or forge
+state, and no second landing carrier is introduced on the lane run record.
+The base resolver discards explicitly landed inputs before looking up their
+remote branch. An all-landed input set therefore uses the configured trunk;
+a mixed set retains only the other recorded inputs. Unknown and not-landed
+inputs keep the existing resolution path, including a typed refusal when
+their branch is missing. Multiple deliverable records refuse as ambiguous
+before choosing a base.
+
+On the scope path those deliverable refs do not come from refs recorded against
+the blocker's issue. `WorkRefReader` is the one read role base resolution makes
+them through, and the scoped composition serves it from the blocker's own lane
+run-state record: one ref per record, at the DELIVERABLE branch the record's
+associations name, and no landing, so it reads unknown and keeps the existing
+resolution path (KOD-776, KOD-842). The per-issue pass keeps the port itself.
+
+The assumed-landed arm — a closed blocker carrying no deliverable ref anywhere
+on its ancestor chain contributes no input, because its work reached the trunk
+outside this operation's delivery loop — is reached only after one
+`open_delivery_exists` read about that blocker answered that no open delivery
+holds its work. The walker makes that read, once per named blocker per turn and
+before the base is resolved: an open delivery refuses the lane with the
+resolution error the base would otherwise have been wrong about, no open
+delivery states the assumption in the log under `base_input_no_open_delivery`,
+and a forge that cannot answer raises its own typed error, which is neither
+answer (KOD-721, KOD-777). The resolver names the blockers and holds no forge
+collaborator that could settle them.
+
+At the walk's one clean exit the scope terminal reports. It reads the tick's
+own ready set for which members owe nothing, and each lane's run-state record
+for the branch and pull request that lane carries; it remembers nothing of the
+invocation, so a killed run re-enters and reports the same way. Before the
+event is built and before anything is written, the vector is asserted to cover
+every lane of that reading, compared by key; a vector that does not is an alarm
+rather than an ending, so the invocation ends there with nothing posted instead
+of a short report being published as a complete one. Its one write
+is the container's status update, through `ScopeStatusWriter` and no port
+member, gated exactly under its own destination as DERIVED content — a gate
+that altered the report refuses the write rather than publishing a different
+claim. Nothing is leased, claimed or marked in progress for it, and no
+writable-surface address is taken: `CONTAINER_STATUS_UPDATE` keeps no
+production writer, and exactly-one follows from the terminal running once
+(KOD-788). That write sits outside the write-back verifier under a named
+call-site register entry rather than a new read-back arm, because the walk it
+reports on has ended and there is no judged commit to verify it against
+(KOD-806). A milestone or issue scope has no status surface at the backend, so
+it ends with the terminal event alone and `scope_status_surface_absent` in the
+log; no containing project is written in its place.
+
+`commits_ahead_of_record` compares four projections from one lane record:
+lane key, declared head, commits-ahead count and ordered `LaneCommit` rows.
+Each frozen row carries exactly `sha`, `subject` and `issue_id`. Either
+direction of count disagreement raises the lane alarm, with no configured
+bound. Subject/source mismatches, inconsistent SHA stamps and ambiguous
+commit identities refuse observation. Commit subjects and issue mentions
+never affect the count. A wholly stale record whose terms agree remains
+invisible: the declared head is retained for replay and is never resolved
+against a repository. Both predicates remain pure.
+
+`services.lane_record_signals.observe_commits_ahead_of_record` supplies the
+commit-consistency inputs through the addressed `LaneRecordReader`. One
+successful tracker read provides the lane key, recorded head, declared count
+and enumerated rows; all four projections retain that native comment identity
+and its recorded head. A supplied record reference must match, and missing,
+malformed, duplicated or unreadable records retain the reader's refusal.
+The service performs no repository read or tracker write and does not turn
+an unreadable record into an empty lane. The signal's whole-record-staleness
+limit remains unchanged. Event-to-target collection for skipped writes remains separate work, and
+nothing observes this signal: the leased writer that exists observes the lane
+tally arm only.
+
+`record_superseded` compares explicit assertions about the same field in the
+same lane. Its three raw readings contain the record's `LaneFieldValue`, an
+event's `LaneFieldValue`, and the lane record's ordered commit SHA projection.
+The frozen field projection carries only `lane_key`, `field_key` and an
+opaque string `value`; each assertion's SHA remains on its `AlarmReading`.
+History must name the same record source, and both asserted SHAs must occur
+exactly once. Missing or ambiguous history refuses even when values agree.
+
+A differing decoded value raises `RECORD_SUPERSEDED` only when the event's
+SHA stands strictly after the record's SHA in that series. Earlier or equal
+positions cannot supersede it, and equal values stay clean. No timestamp,
+SHA spelling, event-body interpretation or repository read establishes the
+order. The alarm retains all original readings and has no threshold bound.
+The field projection is an observation input, not a new run-event vocabulary;
+the event/record readers must supply those assertions and the commit order.
+Their collectors remain separate work, and nothing observes this signal: the
+leased writer that exists observes the lane tally arm only.
+
+`rulings_outpace_closures` counts distinct machine-authored ruling identities
+added since the recorded last-closure snapshot. Its five readings preserve
+the baseline/current ruling projections, prior open/current closed references
+and the actual `run_alarm_max_rulings_without_closure` bound (default five,
+configurable and nonnegative). Only the intersection of the two obligation
+sets establishes a closure. Repeated identities, amended answers and principal
+rulings cannot inflate the count. Required authorship comes from the ruling
+artifact, using the owner's `RulingId` and `RulingAuthor` vocabulary; transport
+authors and timestamps cannot supply it. The read-only service obtains current
+criterion closure through the shared gap arithmetic for every declared lane
+issue. `read_lane_rulings` now obtains those projections from full native
+ruling comments for every explicitly supplied lane member. The configured
+`ruling` occurrence marker is separate from escalation decision replies;
+`RulingRecordReader` checks exact question identity, native ownership and
+required authorship before projecting it. `observe_recorded_ruling_growth`
+combines that current read with live closure and the caller's retained
+baseline. Amendments keep their deterministic question identity and cannot
+reset the baseline. The native arm's `rule_open_questions` step now writes
+each pinned answer as a verified, leased marker comment on the issue whose own
+text raised the question, before the loop; the lane-membership producer and
+persisted window advancement remain separate implementation work.
+
+The criterion-lifecycle code conformance module checks both identity owners:
+`CriterionRef` is constructed by the full tracker-spec reader and `RulingId`
+by the ruling mint. Its shared static guard covers direct, qualified, imported
+and assigned constructor aliases, including calls in function headers. Ruling
+address fields retain the minted type through containers and forward references;
+text, other untyped values and rebinding the identity name fail the guard.
+Native and fake tracker fixtures show that duplicate or amended criterion text
+does not change the addressed keys. Evaluator state/body writer adoption and
+the separate model-membership and spec-backend invariants remain unfinished.
+
+`resolve_criterion` is the shared native-key resolver in `criterion_sources`.
+It reads the complete current child family through `TrackerPort.read_criteria`
+and returns the one full `TrackerIssue` with the requested own key. A missing,
+multiple or unreadable match raises `CriterionResolutionError` naming both
+the key and its owning issue; no text matching, checkbox address or cached
+criterion set participates. Duplicate pagination of the same native object is
+still handled by the adapter's existing enumeration contract. Audit claim,
+Evidence, repository-source and forge consumers use this resolver and retain
+their own state eligibility and final source-coherence checks. The generic
+resolver admits every workflow state and performs no write. Leased state and
+Evidence writer adoption remains separate.
+
+`structural_write_uncrosses_milestone` compares complete lane membership
+snapshots. The collector reads both the fire subtree and native milestone
+membership through the port, including archived issues, and preserves the
+returned state, parent and membership facts. Conflicting versions of a shared
+member refuse observation instead of pretending the reads are atomic. The
+prior graph must support crossing under the charter: completed fire, all
+members completed or canceled with recorded supersession. A newly present
+unresolved member while the fire remains completed raises the alarm; an
+existing member changing only state does not. No derived crossed flag or vendor change
+timestamp replaces this graph comparison. Both signals preserve their raw
+readings for replay; the structural signal has no threshold. Retaining prior
+snapshots remains separate work, and nothing observes either signal: the
+leased writer that exists observes the lane tally arm only.
 ## Audit coverage selection
 
 `AuditCoverage` visits the supplied complete eligible snapshot in state-change
