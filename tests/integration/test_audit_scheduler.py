@@ -316,10 +316,14 @@ def test_partial_configuration_refuses_before_scheduling(missing):
             is False
         )
         return
-    with pytest.raises(OperationMemberAbsentError):
+    with pytest.raises(OperationMemberAbsentError) as refused:
         verify_audit_configuration(
             config=config, operation=operation, tracker=tracker, forge=forge
         )
+    if missing == "audit_scopes":
+        # The retired key's arm is the one that empties the surviving table, so
+        # it is also the only place the surviving table's NAME is refused by.
+        assert refused.value.missing == "organize_scopes"
 
 
 @pytest.mark.parametrize(
