@@ -66,6 +66,7 @@ from tests.fakes import (
 from tests.prompts.sets import V5_SET
 from tests.prompts.test_minimal_floor import minimal_fixture
 from tests.prompts.test_operation_config import raw_example, write_toml
+from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
 from tests.services.test_pass_scheduler import Metronome, _settle
 from tests.services.test_prompt_pass import example_config
@@ -195,6 +196,38 @@ async def _registrations(
 
 #: The vendor's own words when a credential holds no scope for a scan.
 DIAGNOSIS = "auth_insufficient_scope: this credential cannot read those"
+
+
+#: What the standing-scope pass is registered under, spelled here rather
+#: than imported: the name is what an operator reads in a log and what a
+#: later pass-set assertion enumerates, so a rename must redden this too.
+HEARTBEAT_PASS = "scope_heartbeat"
+
+#: The deployment half of a standing-scope operation: the owner bounds both
+#: passes require, and no gate on either prompt pass, so what the schedule
+#: holds is decided by the declared rows alone.
+STANDING_SCOPE_SETTINGS: dict[str, object] = {
+    "organize": {"max_admission_rounds": 2, "max_convergence_rounds": 2},
+    "write_back": {"max_verify_rounds": 2},
+    "fire_prep_pass_gate_signals": [],
+    "grooming_pass_gate_signals": [],
+}
+
+
+def standing_scope_operation(*, scopes: bool = True) -> OperationConfig:
+    """The declared organize table, with or without one standing-scope row."""
+    fields = declared_operation().model_dump()
+    fields["organize_scopes"] = (
+        [
+            {
+                "scope": {"kind": "project", "key": "standing-project"},
+                "repo_url": fields["repos"][0]["url"],
+            }
+        ]
+        if scopes
+        else []
+    )
+    return OperationConfig.model_validate(fields)
 
 
 async def _runtime(
@@ -399,6 +432,65 @@ async def test_the_boot_seam_registers_the_prompt_passes(tmp_path: Path) -> None
         PromptKey.GROOMING_PASS.value,
     }
     assert runtime.lifecycle is None
+
+
+async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_cadence(
+    tmp_path: Path,
+) -> None:
+    """The standing scopes' own pass, beside the tick that grooms them.
+
+    One registration for the whole operation, on the cadence the dispatch
+    scans already run on, and with no report: it opens no session, so a tick
+    of it is not a run anything could record. The grooming pass is still
+    there once — the two are the two sides of scope approval, not
+    alternatives — and the cadence is read off the configuration rather than
+    spelled here.
+    """
+    config = _config(tmp_path, **STANDING_SCOPE_SETTINGS)
+    runtime = await _runtime(
+        tmp_path,
+        tracker=FakeTrackerPort(),
+        runner=FakeAgentRunner(events=[]),
+        operation=standing_scope_operation(),
+        **STANDING_SCOPE_SETTINGS,
+    )
+
+    registered = [entry.name for entry in runtime.scheduler.passes]
+    (heartbeat,) = [
+        entry for entry in runtime.scheduler.passes if entry.name == HEARTBEAT_PASS
+    ]
+    assert heartbeat.interval_seconds == config.dispatch_pass_interval_seconds
+    assert heartbeat.timeout_seconds == config.dispatch_pass_timeout_seconds
+    assert heartbeat.report is None
+    assert registered.count(HEARTBEAT_PASS) == 1
+    assert registered.count(PromptKey.GROOMING_PASS.value) == 1
+
+
+async def test_an_operation_with_no_standing_scope_registers_no_heartbeat(
+    tmp_path: Path,
+) -> None:
+    """Non-vacuity for the registration above: the rows are what wire it.
+
+    The same deployment over the same owner bounds, with the standing rows
+    removed, schedules neither the organize tick nor the heartbeat — which
+    is why the exact pass-set assertions in this module stay as they are.
+    """
+    runtime = await _runtime(
+        tmp_path,
+        tracker=FakeTrackerPort(),
+        runner=FakeAgentRunner(events=[]),
+        operation=standing_scope_operation(scopes=False),
+        **{
+            key: value
+            for key, value in STANDING_SCOPE_SETTINGS.items()
+            if key != "organize"
+        },
+    )
+
+    assert {entry.name for entry in runtime.scheduler.passes} == {
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    }
 
 
 async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(

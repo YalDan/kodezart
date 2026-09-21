@@ -31,6 +31,11 @@ organize_mandates = []
 # Explicit scope-to-repository bindings for the native Organize owner.
 # Each row names scope = { kind = "issue", key = "native-parent-key" }
 # and repo_url matching one declared [[repos]] URL; no cross-product is inferred.
+# These are the standing scopes: groomed before approval on the grooming
+# cadence, and submitted as scope runs by the scope_heartbeat pass once the
+# row carries scope_labels.approved, on the dispatch cadence and lane. That
+# pass writes nothing to the tracker. Empty declares none and schedules
+# neither pass.
 organize_scopes = []
 # Independent native Audit roster. Each row declares scope, repo_url and
 # report_issue_key (the actual tracker issue receiving the verified summary).

@@ -9,6 +9,8 @@ from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
+    JobQueue,
+    JobRegistry,
     OutboundContentGate,
     PromptSetProvider,
     TrackerPort,
@@ -19,6 +21,7 @@ from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.organize_owner import OrganizeOwner
 from kodezart.services.organize_tick import OrganizeTarget, OrganizeTick
 from kodezart.services.scope_entry import ScopeEntry
+from kodezart.services.scope_heartbeat import ScopeHeartbeat
 from kodezart.services.scope_organizer import ScopeOrganizer
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.organize import ResolvedMandateSpec
@@ -193,6 +196,39 @@ def verify_organize_configuration(
                 missing=missing, stops="configured Organize scheduling"
             )
     return True
+
+
+def build_scope_heartbeat(
+    *,
+    config: AppConfig,
+    operation: OperationConfig,
+    tracker: TrackerPort | None,
+    queue: JobQueue,
+    registry: JobRegistry,
+) -> ScopeHeartbeat | None:
+    """Absent means no standing scope is declared; partial config refuses.
+
+    The same predicate the scheduled organize tick is built on, so a
+    deployment gets both passes over the declared rows or neither. The
+    heartbeat itself needs nothing an owner needs: the three reads an
+    approval question takes, and the queue this process submits onto.
+    """
+    if not verify_organize_configuration(
+        config=config, operation=operation, tracker=tracker
+    ):
+        return None
+    if tracker is None:
+        raise OperationMemberAbsentError(
+            missing="tracker", stops="configured Organize scheduling"
+        )
+    return ScopeHeartbeat(
+        approvals=tracker,
+        queue=queue,
+        registry=registry,
+        bindings=operation.organize_scopes,
+        trunks={repo.url: repo.trunk for repo in operation.repos},
+        lane=config.dispatch_lane,
+    )
 
 
 def build_organize_tick(
