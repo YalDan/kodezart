@@ -14,6 +14,7 @@ from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_cross_off import (
     CARRIED_REASON,
+    LAPSE_POINTER,
     LAPSE_REASON,
     UNDEMONSTRATED_REASON,
     evaluation_observation,
@@ -1906,3 +1907,132 @@ async def test_a_lapse_with_no_escalation_writer_refuses_before_the_session():
     assert raised == []
     assert lane.port.issues[LAPSED].state_kind is WorkflowStateKind.COMPLETED
     assert evidence_of(lane, LAPSED).graded_sha == lane.repo.shas[0]
+
+
+# ---------------------------------------------------------------------------
+# A lapse is a state move; a grading behind head that still stands is not
+# (KOD-409).
+# ---------------------------------------------------------------------------
+
+#: The criterion whose grading still stands at the new head: graded at the same
+#: sha as the lapsed one, over a prefix the lane's own commits never touch.
+STANDING = OWED_KEYS[1]
+
+
+async def test_a_lapse_is_a_state_move_back_while_a_standing_grading_stays_counted():
+    """Two gradings at one sha, one head move, and one record read for both.
+
+    Both criteria pass at the first iteration, at the same sha, behind the
+    head the second iteration grades. They differ in two things only: the
+    class each grading declares and the prefix it names. The one resting on a
+    performed observation names a prefix the lane's own next commit touches;
+    the expensive one names a prefix nothing in this lane ever touches.
+
+    So the lapse IS a state move: that sub-issue goes back to the team's
+    unstarted state, keeping the sha it was graded at with its pointer saying
+    that grading lapsed, and the iteration row reports it ungraded with the
+    harness's own lapse reason rather than refuted — nothing announces a
+    regression for it. The other arm moves nowhere: it stays finished, keeps
+    the sha it was graded at, is not asked about again, and its row carries
+    the carried reason with the class and prefixes its own grading declared.
+
+    Clause 5 of the Check is what the shared sha buys: both arms were graded
+    at one commit, read against one head, out of one commit-record read. An
+    implementation keyed on the graded sha equalling the head answers the same
+    thing to both, so whichever answer it gives, one arm reds. This fixture
+    states no lapse arithmetic of its own — it imports neither the rule nor
+    its reading and injects no reading anywhere. Every reading in it comes
+    from the loop's own call.
+
+    The owning issue is written by nobody: its finished state is the tracker's
+    own rollup over these sub-issues, which is also what a new fire over the
+    same subject reads — it owes the lapsed criterion again and does not owe
+    the standing one.
+    """
+    lane = Lane(
+        evaluations=[
+            criteria_echo(
+                keys=OWED_KEYS,
+                passed={LAPSED, STANDING},
+                declared={
+                    LAPSED: {
+                        "rederivationClass": "observed",
+                        "exercisedPaths": [TOUCHED_PREFIX],
+                    },
+                    STANDING: {
+                        "rederivationClass": "expensive",
+                        "exercisedPaths": [UNTOUCHED_PREFIX],
+                    },
+                },
+            ),
+            criteria_echo(keys=OWED_KEYS[2:], passed=()),
+        ],
+        max_iterations=2,
+    )
+    asked = asked_about(lane, STANDING)
+    events = await lane.run()
+
+    graded_sha, head_sha = lane.repo.shas[0], lane.repo.shas[1]
+    assert graded_sha != head_sha
+    reads = [
+        call
+        for call in lane.git.calls
+        if call[0] == "diff_summary" and call[2] in lane.repo.shas
+    ]
+    assert reads == [("diff_summary", CACHE_PATH, graded_sha, head_sha)]
+
+    # The lapse arm: a state move back, not a refutation.
+    assert lane.port.issues[LAPSED].state_kind is WorkflowStateKind.UNSTARTED
+    assert LAPSED not in completed(lane.port)
+    lapsed_row = evidence_of(lane, LAPSED)
+    assert lapsed_row.graded_sha == graded_sha
+    assert lapsed_row.test.endswith(LAPSE_POINTER)
+    # Done and then nothing: the stage write that finished it is the only one
+    # the board was handed for it, so it never passed through In Review on the
+    # way back — and that stage is written nowhere in the whole run.
+    assert [stage for key, stage in lane.port.workflow_writes if key == LAPSED] == [
+        LifecycleStage.DONE
+    ]
+    assert LifecycleStage.IN_REVIEW not in {
+        stage for _, stage in lane.port.workflow_writes
+    }
+    # The owning issue's own state is written by nobody: it is the rollup.
+    assert [key for key, _ in lane.port.workflow_writes if key == SUBJECT] == []
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert [
+        event.criterion_id
+        for event in posted
+        if event.kind is RunEventKind.CRITERION_REFUTED
+    ] == []
+
+    # The standing arm: behind head, not lapsed, and still counted.
+    assert lane.port.issues[STANDING].state_kind is WorkflowStateKind.COMPLETED
+    assert STANDING in completed(lane.port)
+    assert evidence_of(lane, STANDING).graded_sha == graded_sha
+    assert check_of(STANDING) not in lane.executor.evaluation_prompts[1]
+    assert sorted(asked) == ["edit_description", "set_workflow_state"]
+
+    iterations = [
+        event for event in events if isinstance(event, WorkflowIterationEvent)
+    ]
+    assert len(iterations) == 2
+    rows = {
+        result.criterion_id: result
+        for result in iterations[1].evaluation.criteria_results
+    }
+    assert set(rows) == set(OWED_KEYS)
+    assert rows[LAPSED].passed is False
+    assert rows[LAPSED].reasoning == LAPSE_REASON
+    assert rows[STANDING].passed is True
+    assert rows[STANDING].reasoning == CARRIED_REASON
+    assert rows[STANDING].rederivation_class is RederivationClass.expensive
+    assert rows[STANDING].exercised_paths == (UNTOUCHED_PREFIX,)
+
+    # What a new fire over the same subject owes, read the way its entry
+    # barrier reads it: the lapsed criterion is owed again, the standing one
+    # is not.
+    spec = await lane.criteria.read_spec(issue_key=SUBJECT)
+    current = await lane.criteria.read_current(spec=spec)
+    owed = {criterion.id for criterion in current.criteria}
+    assert LAPSED in owed
+    assert STANDING not in owed
