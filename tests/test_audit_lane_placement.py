@@ -28,7 +28,7 @@ import pytest
 from kodezart.chains.audit_sweep import AuditReadSweep, AuditReadSweepResult
 from kodezart.chains.write_back_verifier import FreshWriteBackJudge, WriteBackVerifier
 from kodezart.composition.audit import build_audit_pass
-from kodezart.core.protocols import WriteBackJudge, WriteBackStep
+from kodezart.core.protocols import LaneEventHistory, WriteBackJudge, WriteBackStep
 from kodezart.types.domain.audit import AuditClaimReport, AuditVerdict
 from kodezart.types.domain.criterion_lifecycle import CrossOffState
 from kodezart.types.domain.delivery import CheckRedClass
@@ -64,6 +64,7 @@ def declared_in(obj: Declared) -> str:
 PLACEMENTS: tuple[tuple[Declared, str], ...] = (
     (WriteBackStep, "core/protocols.py"),
     (WriteBackJudge, "core/protocols.py"),
+    (LaneEventHistory, "core/protocols.py"),
     (WriteBackVerifier, "chains/write_back_verifier.py"),
     (FreshWriteBackJudge, "chains/write_back_verifier.py"),
     (AuditReadSweep, "chains/audit_sweep.py"),
@@ -226,6 +227,19 @@ def test_each_named_module_owns_the_symbol_the_placement_names() -> None:
     assert [declared_in(symbol) for symbol, _ in PLACEMENTS] == [
         path for _, path in PLACEMENTS
     ]
+
+
+def test_the_grading_history_role_holds_its_one_read_and_nothing_beside_it() -> None:
+    """A narrowed role's narrowness is a property, so it is asserted.
+
+    ``TrackerPort`` already carries ``post_run_event``, so a role widened
+    with it still satisfies every holder and every composition site, and
+    the other guards in this module and in the docs read class names rather
+    than members. What the role leaves out is the whole of its point: no
+    append, so a holder cannot add the grading whose absence it reads for.
+    Read off the protocol object, the way the write-back roles' shapes are.
+    """
+    assert step_members(LaneEventHistory) == frozenset({"lane_run_events"})
 
 
 def test_the_pass_builder_is_wired_into_the_scheduled_passes() -> None:
