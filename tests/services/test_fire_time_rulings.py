@@ -23,9 +23,13 @@ from kodezart.domain.rulings import (
 )
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.services.agent_service import AgentService
+from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import RulingAnswer, RulingAuthor, RulingClass
+from kodezart.types.domain.audit_forge import AuditForgeRequest
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOffState
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -36,7 +40,11 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker import (
+    IssueRelation,
+    IssueRelationKind,
+    WorkflowStateKind,
+)
 from tests.chains.test_native_fire import (
     DELIVERABLE_CHILD,
     DIRECT_OWED,
@@ -70,6 +78,10 @@ HOLDER = "actual-parent-job"
 #: it is prose: the two cases are the difference between the two readings,
 #: so they must be the same key.
 ABSENT_KEY = "fire/absent"
+
+#: What an audit request and a recorded verdict carry beside their criterion.
+GRADED_SHA = "a" * 40
+REPO_URL = "https://example.invalid/fixture-owner/fixture-repo"
 
 #: A Check two readings fit, and the answer that pins one of them.
 AMBIGUOUS_CHECK = "the run is finished when the queue is drained"
@@ -928,6 +940,25 @@ def unlabel(port, key) -> None:
     port.issues[key] = port.issues[key].model_copy(update={"issue_labels": frozenset()})
 
 
+def absorb(port, key, *, successor) -> None:
+    """Close one criterion as a duplicate of the one that absorbed it.
+
+    The board's act, made on the double's own issue table, so no write
+    journal moves and the supersession cannot be mistaken for something a
+    pass wrote.  The pointer to the successor is a fact on the superseded
+    row itself, which is where the vendor carries it.
+    """
+    port.issues[key] = port.issues[key].model_copy(
+        update={
+            "state_name": "Duplicate",
+            "state_kind": WorkflowStateKind.DUPLICATE,
+            "relations": (
+                IssueRelation(kind=IssueRelationKind.DUPLICATE, issue_key=successor),
+            ),
+        }
+    )
+
+
 @pytest.mark.parametrize(
     "offending",
     [DELIVERABLE_CHILD, ABSENT_KEY, DIRECT_OWED.upper()],
@@ -1057,6 +1088,76 @@ async def test_a_criterion_the_answer_does_not_address_leaving_still_records(
 
     record = await pinned_record(port, answer, before=before)
     assert record.issue_ref == DIRECT_OWED
+
+
+async def test_an_identity_a_successor_absorbed_is_still_addressable_at_the_write(
+    repository,
+) -> None:
+    """A superseded criterion is still a name a record may be addressed to.
+
+    The board closes the criterion whose text raised the question as a
+    duplicate of its neighbour. That takes it out of the roster the pass is
+    shown — the fire owes nothing on it any more — and leaves it in the
+    family the write resolves against, which is the whole of what a permanent
+    alias amounts to. Each of the three referents keyed by it is then
+    resolved the way its own call site resolves it: the record's minted
+    identity through the step's own write, a recorded verdict and an audit
+    request through the shared native resolver.
+    """
+    answer = one_answer()
+    port = tracker(bodies={DIRECT_OWED: ambiguous_body()})
+    absorb(port, DIRECT_OWED, successor=DIRECT_OWED_TOO)
+    executor = Executor([[answer]])
+    step, spec, current, _, port, _, repo_path, base = await build(
+        repository, executor, port=port
+    )
+    # Superseded: out of what the fire owes, still one of the subject's
+    # criterion sub-issues.
+    assert DIRECT_OWED not in {criterion.id for criterion in current.criteria}
+    assert DIRECT_OWED in set(spec.criteria)
+    before = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    # The write resolved the key against the family it read for itself, so
+    # the record landed under the minted identity of the superseded key.
+    record = await pinned_record(port, answer, before=before)
+    assert record.ruling_id == mint_ruling_id(issue_ref=DIRECT_OWED, question=QUESTION)
+    # A recorded verdict keyed by it answers with its own row, in its own
+    # state, carrying the pointer to what absorbed it.
+    cross_off = CriterionCrossOff(
+        criterion=DIRECT_OWED,
+        state=CrossOffState.passed,
+        evidence=CriterionEvidence(graded_sha=GRADED_SHA, test="the case above"),
+    )
+    superseded = await resolve_criterion(
+        tracker=port, issue_key=SUBJECT, criterion_key=cross_off.criterion
+    )
+    assert superseded.issue_key == DIRECT_OWED
+    assert superseded.state_kind is WorkflowStateKind.DUPLICATE
+    assert [
+        relation.issue_key
+        for relation in superseded.relations
+        if relation.kind is IssueRelationKind.DUPLICATE
+    ] == [DIRECT_OWED_TOO]
+    # And an audit request keyed by it answers with the same row.
+    request = AuditForgeRequest(
+        criterion_key=DIRECT_OWED, lane_issue_key=SUBJECT, repo_url=REPO_URL
+    )
+    assert (
+        await resolve_criterion(
+            tracker=port,
+            issue_key=request.lane_issue_key,
+            criterion_key=request.criterion_key,
+        )
+        == superseded
+    )
+    # Non-vacuous, and nothing rebinds: the successor is its own row and is
+    # not what either of the two answered with.
+    successor = await resolve_criterion(
+        tracker=port, issue_key=SUBJECT, criterion_key=DIRECT_OWED_TOO
+    )
+    assert successor.issue_key == DIRECT_OWED_TOO and successor != superseded
 
 
 async def test_the_family_is_read_again_after_the_session_and_before_the_write(
