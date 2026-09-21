@@ -363,7 +363,24 @@ a lapse is the criterion being owed again, not a regression, so the take-back
 that reports one and the take-back that reports nothing are one act with one
 difference. A lapse repeated in a later iteration finds the sub-issue already
 unstarted and writes nothing at all. Nothing else is written: no parent's
-state, and no comment per criterion. The owning issue's finished state is the
+state, and no comment per criterion.
+
+Which criteria an iteration is asked about follows from the same reading. The
+loop remembers what its last evaluation graded as graph state, and at the next
+iteration asks, for each of those gradings, whether it still stands at the new
+head — reading the changed paths of the commit record between that grading's own
+sha and the new head, one read per distinct graded sha, and none at all for a
+cheap grading, which is owed again on any head move. A grading that still stands
+is withheld from the session and written nowhere; an expensive one that has
+stopped standing goes back to the session, because the loop can re-derive it; one
+resting on a performed observation is not re-derived at all, because the loop
+cannot perform the observation, and is taken back instead. What reaches the gate
+is still the whole roster: a withheld criterion carries the row its standing
+grading earns, with the harness's own reason in place of a verdict nobody asked
+for, so the denominator does not move between iterations and the gate cannot
+clear over an outstanding lapse. Nothing persists that memory — the scope arm
+runs with no checkpointer — so a killed run re-enters from the board with every
+criterion its roster owes to be graded again. The owning issue's finished state is the
 tracker's own rollup over its criterion sub-issues, which `SubtreeClosure`
 reads, so the scope walker sees a lane close with no further write.
 

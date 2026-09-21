@@ -47,6 +47,7 @@ from kodezart.types.domain.criteria import (
     CriterionId,
     ExecutionCriterion,
 )
+from kodezart.types.domain.criterion_lifecycle import RederivationClass
 from kodezart.types.domain.grading import IterationGrade
 
 MISSING_RESULT_REASONING = (
@@ -86,6 +87,12 @@ def grade_iteration(
 
     for criterion in criteria:
         answer = answered.get(criterion.id)
+        # The declaration travels with the verdict: this rebuild is the only
+        # thing between the answer and the cross-off, so a class dropped here
+        # is a class no criterion ever holds. A criterion with no answer, or
+        # two, declares nothing, exactly as it passes nothing.
+        declared = RederivationClass.cheap
+        exercised: tuple[str, ...] = ()
         if answer is None:
             missing_ids.append(criterion.id)
             passed, reasoning = False, MISSING_RESULT_REASONING
@@ -93,6 +100,7 @@ def grade_iteration(
             passed, reasoning = False, DUPLICATE_RESULT_REASONING
         else:
             passed, reasoning = answer.passed, answer.reasoning
+            declared, exercised = answer.rederivation_class, answer.exercised_paths
         # The report carries the harness's text, never the echo.
         results.append(
             CriterionResult(
@@ -100,6 +108,8 @@ def grade_iteration(
                 criterion=criterion.text,
                 passed=passed,
                 reasoning=reasoning,
+                rederivation_class=declared,
+                exercised_paths=exercised,
             )
         )
         if not passed:

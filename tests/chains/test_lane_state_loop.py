@@ -12,6 +12,7 @@ from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import LaneStateWriter
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.criterion_cross_off import (
+    CARRIED_REASON,
     UNDEMONSTRATED_REASON,
     evaluation_observation,
 )
@@ -24,7 +25,10 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import ResultEvent, WorkflowIterationEvent
 from kodezart.types.domain.branch import BranchRole, trunk_base
-from kodezart.types.domain.criterion_lifecycle import CrossOffState
+from kodezart.types.domain.criterion_lifecycle import (
+    CrossOffState,
+    RederivationClass,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import (
     OperationConfig,
@@ -49,6 +53,7 @@ from tests.chains.test_native_fire import (
     TRUNK_SHA,
     NativeExecutor,
     board,
+    check_of,
     criterion_body,
     engine,
     native_evaluation,
@@ -1321,3 +1326,123 @@ async def test_a_refutation_the_loop_died_inside_certifies_no_failing_grading(dr
     spec = await lane.criteria.read_spec(issue_key=SUBJECT)
     current = await lane.criteria.read_current(spec=spec)
     assert (broken in {criterion.id for criterion in current.criteria}) is owed_again
+
+
+# ---------------------------------------------------------------------------
+# The loop re-derives only a grading that has stopped standing (KOD-695).
+# ---------------------------------------------------------------------------
+
+CARRIED = OWED_KEYS[0]
+#: A prefix the lane's own commits never touch, and one every commit does.
+UNTOUCHED_PREFIX = "docs/"
+TOUCHED_PREFIX = "lane-0.py"
+
+
+def declaring(prefix: str) -> dict:
+    """The first grading's echo: one criterion passes and declares its cost."""
+    return criteria_echo(
+        keys=OWED_KEYS,
+        passed={CARRIED},
+        declared={
+            CARRIED: {
+                "rederivationClass": "expensive",
+                "exercisedPaths": [prefix],
+            }
+        },
+    )
+
+
+def evidence_of(lane: Lane, key: str):
+    return parse_criterion_evidence(lane.port.issues[key].body)
+
+
+async def test_a_grading_that_still_stands_is_neither_dispatched_again_nor_re_ticked():
+    """Two iterations, one head move, and one criterion nobody grades twice.
+
+    The first grading passes one criterion and declares it expensive over a
+    prefix the lane's commits never touch. At the second iteration the head
+    has moved, so the loop reads the changed paths of the commit record
+    between the sha that grading was taken at and the new head: nothing that
+    grading exercised moved, so the verdict still stands. The session is not
+    asked about it, and the board is not written for it — its state and its
+    Evidence row are the ones the first grading left, byte for byte.
+
+    The whole roster still reaches the gate: the iteration event carries a
+    passing row for the carried criterion with the harness's own reason, so
+    the denominator does not move between iterations and acceptance is never
+    over a shrinking set.
+    """
+    lane = Lane(
+        evaluations=[
+            declaring(UNTOUCHED_PREFIX),
+            criteria_echo(keys=OWED_KEYS[1:], passed=()),
+        ],
+        max_iterations=2,
+    )
+    events = await lane.run()
+
+    assert len(lane.executor.evaluation_prompts) == 2
+    assert check_of(CARRIED) in lane.executor.evaluation_prompts[0]
+    assert check_of(CARRIED) not in lane.executor.evaluation_prompts[1]
+    assert all(
+        check_of(key) in lane.executor.evaluation_prompts[1] for key in OWED_KEYS[1:]
+    )
+
+    first_grading = evidence_of(lane, CARRIED)
+    assert lane.port.issues[CARRIED].state_kind is WorkflowStateKind.COMPLETED
+    assert first_grading.graded_sha == lane.repo.shas[0]
+    # One tick for it, in the iteration that graded it, and no second one.
+    assert [key for key, _ in lane.port.workflow_writes].count(CARRIED) == 1
+    assert [write[0] for write in lane.port.issue_writes].count(CARRIED) == 1
+
+    iterations = [
+        event for event in events if isinstance(event, WorkflowIterationEvent)
+    ]
+    assert len(iterations) == 2
+    rows = {
+        result.criterion_id: result
+        for result in iterations[1].evaluation.criteria_results
+    }
+    assert set(rows) == set(OWED_KEYS)
+    assert rows[CARRIED].passed is True
+    assert rows[CARRIED].reasoning == CARRIED_REASON
+    assert rows[CARRIED].rederivation_class is RederivationClass.expensive
+    assert rows[CARRIED].exercised_paths == (UNTOUCHED_PREFIX,)
+
+
+async def test_an_expensive_grading_whose_paths_moved_is_dispatched_again():
+    """The same lane, one prefix later: the grading stops standing and is re-asked.
+
+    The declared prefix is one the lane's own commits touch, so the commit
+    record between the graded sha and the new head reaches beneath it. The
+    loop may re-derive an expensive grading, so the criterion goes back to the
+    session rather than being taken back, and the fresh grading restamps it at
+    the new head.
+    """
+    lane = Lane(
+        evaluations=[
+            declaring(TOUCHED_PREFIX),
+            criteria_echo(keys=OWED_KEYS, passed={CARRIED}),
+        ],
+        max_iterations=2,
+    )
+    events = await lane.run()
+
+    assert len(lane.executor.evaluation_prompts) == 2
+    assert check_of(CARRIED) in lane.executor.evaluation_prompts[1]
+    assert lane.port.issues[CARRIED].state_kind is WorkflowStateKind.COMPLETED
+    assert evidence_of(lane, CARRIED).graded_sha == lane.repo.shas[1]
+
+    iterations = [
+        event for event in events if isinstance(event, WorkflowIterationEvent)
+    ]
+    assert len(iterations) == 2
+    rows = {
+        result.criterion_id: result
+        for result in iterations[1].evaluation.criteria_results
+    }
+    assert set(rows) == set(OWED_KEYS)
+    assert rows[CARRIED].reasoning != CARRIED_REASON
+    # The re-derived grading declares nothing this time, so it is cheap again:
+    # the later declaration wins, exactly as the model's own reading says.
+    assert rows[CARRIED].rederivation_class is RederivationClass.cheap

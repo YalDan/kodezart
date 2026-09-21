@@ -13,12 +13,15 @@ command, reads no tree and asks no session, so the same inputs read the
 same way in a fixture as in a fire.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
+from typing import NamedTuple
 
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criterion_lifecycle import (
     PATH_BOUND_CLASSES,
+    CriterionCrossOff,
+    CrossOffState,
     ExercisedPath,
     RederivationClass,
 )
@@ -105,3 +108,80 @@ def _beneath(path: str, prefix: str) -> bool:
     """
     stem = prefix.rstrip("/")
     return path == stem or path.startswith(f"{stem}/")
+
+
+class HeldStanding(NamedTuple):
+    """What an earlier iteration's gradings are worth to the next one.
+
+    Every prior cross-off is in exactly one of the first three fields, in the
+    order it arrived: what still stands, what this iteration may grade again,
+    and what has lapsed and it may not. ``newly_lapsed`` is a subset of
+    ``lapsed``, so a transition can be read without any arithmetic of the
+    caller's own.
+    """
+
+    carried: tuple[CriterionCrossOff, ...]
+    rederive: tuple[CriterionCrossOff, ...]
+    lapsed: tuple[CriterionCrossOff, ...]
+    newly_lapsed: tuple[CriterionCrossOff, ...]
+
+
+def held_standing(
+    *,
+    prior: Sequence[CriterionCrossOff],
+    head_sha: str,
+    changesets: Mapping[str, ChangesetDigest],
+) -> HeldStanding:
+    """Partition *prior* by what each grading is still worth at *head_sha*.
+
+    A grading that did not pass is owed again whatever moved, and so is a
+    passing cheap one: re-deriving it costs nothing worth reasoning about.
+    A passing path-bound grading is asked the rule once, with the changed
+    paths of the commit record between its own sha and *head_sha*, and lands
+    in ``carried`` when it still stands. When it does not, an expensive one
+    goes to ``rederive`` — the loop can grade it again — and one resting on a
+    performed observation goes to ``lapsed``, because the loop cannot.
+
+    A grading already lapsed stays lapsed and never reaches ``rederive``: a
+    grading that has lapsed does not un-lapse, and putting it back in front of
+    the session would grade the very obligation the board now says is owed to
+    somebody outside this loop.
+
+    This function compares nothing itself. It asks the rule once per standing
+    path-bound grading and reads the answer, which is what keeps one
+    expression the only place the two revisions are weighed.
+    """
+    carried: list[CriterionCrossOff] = []
+    rederive: list[CriterionCrossOff] = []
+    lapsed: list[CriterionCrossOff] = []
+    newly_lapsed: list[CriterionCrossOff] = []
+    for cross_off in prior:
+        if cross_off.state is CrossOffState.lapsed:
+            lapsed.append(cross_off)
+            continue
+        if (
+            cross_off.state is not CrossOffState.passed
+            or cross_off.rederivation_class not in PATH_BOUND_CLASSES
+        ):
+            rederive.append(cross_off)
+            continue
+        state = graded_state(
+            graded_sha=cross_off.evidence.graded_sha,
+            head_sha=head_sha,
+            rederivation_class=cross_off.rederivation_class,
+            exercised_paths=cross_off.exercised_paths,
+            changeset=changesets.get(cross_off.evidence.graded_sha),
+        )
+        if state is GradedState.counted:
+            carried.append(cross_off)
+        elif cross_off.rederivation_class is RederivationClass.observed:
+            lapsed.append(cross_off)
+            newly_lapsed.append(cross_off)
+        else:
+            rederive.append(cross_off)
+    return HeldStanding(
+        carried=tuple(carried),
+        rederive=tuple(rederive),
+        lapsed=tuple(lapsed),
+        newly_lapsed=tuple(newly_lapsed),
+    )

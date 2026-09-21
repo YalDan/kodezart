@@ -8,7 +8,7 @@ this repository through the production reader it is written by.
 
 import json
 import re
-from collections.abc import Awaitable, Callable, Container, Sequence
+from collections.abc import Awaitable, Callable, Container, Mapping, Sequence
 
 import httpx
 
@@ -89,14 +89,24 @@ class LaneRepo:
         self.pushed = self.head
 
 
-def criteria_echo(*, keys: Sequence[str], passed: Container[str]) -> dict:
+def criteria_echo(
+    *,
+    keys: Sequence[str],
+    passed: Container[str],
+    declared: Mapping[str, Mapping[str, object]] | None = None,
+) -> dict:
     """One evaluator echo per criterion of *keys*, passing exactly *passed*.
 
     The raw agent answer, as the only thing a lane test scripts: which of the
     criteria a grading passed is the whole variable, so every test that drives
     a loop or a walk builds its evaluations here rather than repeating the
     shape of an echo.
+
+    *declared* adds the re-derivation class and exercised prefixes one echo
+    states, keyed by criterion. Absent, an echo declares nothing, which is
+    what every grading that does not care about re-derivation answers.
     """
+    stated = declared or {}
     return {
         "criteriaResults": [
             {
@@ -104,6 +114,7 @@ def criteria_echo(*, keys: Sequence[str], passed: Container[str]) -> dict:
                 "criterion": "an evaluator echo",
                 "passed": key in passed,
                 "reasoning": "Observed the selected check.",
+                **stated.get(key, {}),
             }
             for key in keys
         ]
