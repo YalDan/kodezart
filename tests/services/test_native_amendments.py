@@ -49,6 +49,13 @@ REPO_URL = "https://example.invalid/owner/repo"
 QUOTE = "def answer(): return 42"
 #: The Check an upheld amendment replaces the claimed criterion's text with.
 AMENDED_CHECK = "the amended observable Check"
+#: A finding whose fault lies outside the criterion: the demonstration is
+#: unavailable in this environment, and no implementation at base is at fault.
+UNVERIFIABLE_HERE = {
+    "verdict": "unverifiable",
+    "smallest_repair": "environment_supply",
+    "missing_resource": "network access for the demonstration",
+}
 
 
 async def git(cwd, *args):
@@ -94,6 +101,8 @@ class Executor:
         ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
         mutate=None,
         subject=None,
+        claimed_capability=None,
+        finding=None,
     ):
         self.calls = []
         self.claim = claim
@@ -102,6 +111,8 @@ class Executor:
         self.ground = ground
         self.mutate = mutate
         self.subject = subject or {"kind": "criterion", "id": DIRECT_OWED}
+        self.claimed_capability = claimed_capability
+        self.finding = finding
 
     async def stream(self, **kwargs):
         self.calls.append(kwargs)
@@ -114,7 +125,9 @@ class Executor:
                 "base_sha": await git(kwargs["cwd"], "rev-parse", "HEAD"),
                 "ground": self.ground,
                 "reproduced": self.reproduced,
-                "finding": {
+                "finding": self.finding
+                if self.finding is not None
+                else {
                     "verdict": "infeasible" if self.reproduced else "feasible",
                     "smallest_repair": "criterion_text" if self.reproduced else "none",
                     "refutation": "A reproduced semantic contradiction."
@@ -162,7 +175,7 @@ class Executor:
                         "stage": "implementation",
                         "ground": self.ground,
                         "departure": "Use the proposed alternative behavior.",
-                        "claimed_capability": None,
+                        "claimed_capability": self.claimed_capability,
                     }
                 ]
             }
@@ -197,12 +210,17 @@ async def build(
     repo_url=REPO_URL,
     frozen_spec=None,
     held=None,
+    runner_environment=None,
 ):
     """*held* is the roster a run this fixture reconstructs already holds.
 
     A run that crossed its own criteria off leaves nothing Todo, so a
     fixture rebuilding that run's wiring reads its obligations the way the
     run's own barriers do: against the roster it entered with.
+
+    *runner_environment* is the one repository's declared environment facts,
+    the single field the writer gate reads off a matched repository. Omitted,
+    the entry carries the field's own default rather than an assumed empty map.
     """
     repo, base = repository
     git_service = SubprocessGitService(remote="origin")
@@ -244,7 +262,15 @@ async def build(
         runner=service,
         prompts=prompts,
         skills=SUPPRESS_ALL_SKILLS,
-        repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
+        repositories=(
+            RepoEntry(url=REPO_URL, trunk="main")
+            if runner_environment is None
+            else RepoEntry(
+                url=REPO_URL,
+                trunk="main",
+                runner_environment=dict(runner_environment),
+            ),
+        ),
         gate=gate or PassThroughGate(),
         max_verify_rounds=2,
         lease_seconds=900,
