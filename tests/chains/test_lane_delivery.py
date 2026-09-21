@@ -1,13 +1,19 @@
 """Native lane delivery uses real coordinator logic and boundary doubles."""
 
 import asyncio
+import inspect
 
 import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.lane_delivery import LaneDeliveryCoordinator
-from kodezart.core.protocols import PRCreator
+from kodezart.core.protocols import (
+    FireCriteriaReader,
+    LaneStateWriter,
+    PRCreator,
+    TrackerPort,
+)
 from kodezart.domain.errors import (
     BaseResolutionError,
     CheckObservationError,
@@ -42,6 +48,7 @@ from tests.fakes import (
     FakePRStateReader,
     PassThroughGate,
     make_prompt_provider,
+    nothing_written,
 )
 
 SHA = "a" * 40
@@ -101,10 +108,23 @@ async def setup(*, monitor=None, git=None, repositories=(), bound=1, watches=2):
 
 
 async def deliver(parts, *, stalled=False, remediation=False):
-    owner, state, context, *_ = parts
-    return await owner.deliver(
-        state=state, context=context, stalled=stalled, remediation_available=remediation
-    )
+    """Drive one delivery and hold the coordinator to its write set (KOD-326).
+
+    The projection is taken before the call and compared after it on every
+    way out — a result, a refusal, a cancellation — so each fixture in this
+    module makes the claim by driving the coordinator at all.
+    """
+    owner, state, context, _, _, _, tracker = parts
+    unwritten = nothing_written(tracker)
+    try:
+        return await owner.deliver(
+            state=state,
+            context=context,
+            stalled=stalled,
+            remediation_available=remediation,
+        )
+    finally:
+        assert unwritten(), "the coordinator wrote to the tracker"
 
 
 async def test_green_opens_on_actual_head_and_resolved_base_and_round_trips():
@@ -152,14 +172,12 @@ async def test_missing_resolved_base_never_falls_back_to_trunk():
 
 async def test_open_pr_replay_reuses_native_head_lookup_without_generation():
     parts = await setup()
-    owner, state, context, creator, *_ = parts
+    owner, _, _, creator, *_ = parts
     owner._pr_state_reader.records[(REPO, 7)] = pr_identity(number=7)
     owner._forge_query = FakeForgeQuery(
         open_prs={(REPO, HEAD): ("https://github.com/owner/repo/pull/7", 7)}
     )
-    result = await owner.deliver(
-        state=state, context=context, stalled=False, remediation_available=False
-    )
+    result = await deliver(parts)
     assert result.pr.number == 7 and creator.calls == []
 
 
@@ -238,6 +256,51 @@ async def test_zero_rerun_bound_spends_no_probe_and_exhausted_budget_comments():
     assert (
         len([call for call in parts[3].calls if call["method"] == "comment_on_pr"]) == 1
     )
+
+
+async def test_the_only_failure_path_write_is_the_forge_s_pull_request_comment():
+    """The one write an exhausted budget makes goes to the forge, not the board.
+
+    It is ``PRCreator.comment_on_pr``, so the tracker write set is empty on
+    this path exactly as it is on the green one: the coordinator holds no
+    tracker port to write through.  The projection is taken here rather than
+    read off the driver so the claim is legible at the call site.
+    """
+    parts = await setup(monitor=FakeCIMonitor(passed=False), bound=0)
+    tracker = parts[6]
+    unwritten = nothing_written(tracker)
+
+    result = await deliver(parts)
+
+    assert result.outcome is WorkflowOutcome.ci_failed_fix_budget_exhausted
+    assert (
+        len([call for call in parts[3].calls if call["method"] == "comment_on_pr"]) == 1
+    )
+    assert tracker.comment_writes == []
+    assert unwritten()
+
+
+async def test_a_coordinator_write_through_any_collaborator_reds_every_fixture():
+    """The driver's claim is live, and it reaches below the coordinator's code.
+
+    A write made by a collaborator while the coordinator is driving it lands
+    in a journal the projection covers, so the driver reds — which is what
+    makes every other fixture in this module an assertion rather than a hope.
+    """
+    parts = await setup()
+    owner, tracker = parts[0], parts[6]
+    inner = owner._criteria_reader
+
+    class Writing:
+        async def read_current(self, *, spec, held=None):
+            await tracker.post_comment(
+                issue_key=SUBJECT, body="a write made under the coordinator"
+            )
+            return await inner.read_current(spec=spec, held=held)
+
+    owner._criteria_reader = Writing()
+    with pytest.raises(AssertionError, match="wrote to the tracker"):
+        await deliver(parts)
 
 
 async def test_stalled_lane_uses_the_same_open_watch_path_without_a_fix():
@@ -331,6 +394,31 @@ def test_creator_has_no_merge_or_workflow_state_capability():
     assert not hasattr(FakePRCreator(), "merge_pr")
 
 
+async def test_the_coordinator_holds_no_tracker_port_and_no_lane_state_writer():
+    """No board-writing role is asked for, and none is held.
+
+    The constructor's roles are the coordinator's whole declared reach: the
+    one tracker-facing role among them is a reader, so the two negatives are
+    not vacuous.  The instance is then checked as it stands, one level deep;
+    a write made through a collaborator's own tracker is the driver's catch.
+    """
+    roles = {
+        parameter.annotation
+        for parameter in inspect.signature(
+            LaneDeliveryCoordinator.__init__
+        ).parameters.values()
+        if parameter.name != "self"
+    }
+    assert TrackerPort not in roles
+    assert LaneStateWriter not in roles
+    assert FireCriteriaReader in roles
+
+    owner, *_, tracker = await setup()
+
+    assert isinstance(tracker, TrackerPort)
+    assert not any(isinstance(held, TrackerPort) for held in vars(owner).values())
+
+
 async def test_delivery_refuses_incoherent_wire_outcome():
     result = await deliver(await setup())
     wire = result.model_dump()
@@ -420,7 +508,8 @@ async def test_n_plus_one_lanes_share_the_configured_watch_bound(bound):
                 self.active -= 1
 
     monitor = Overlapping()
-    owner, initial, context, *_ = await setup(monitor=monitor, watches=bound)
+    parts = await setup(monitor=monitor, watches=bound)
+    owner, initial, context, *_ = parts
     snapshots = {}
     states = []
     for i in range(bound + 1):
@@ -459,6 +548,9 @@ async def test_n_plus_one_lanes_share_the_configured_watch_bound(bound):
             return record.url, number
 
     owner._pr_creator = UniquePRs()
+    # These lanes are the subject, so they are driven directly rather than
+    # through the shared driver; the same claim is made once around them all.
+    unwritten = nothing_written(parts[6])
     tasks = [
         asyncio.create_task(
             owner.deliver(
@@ -477,3 +569,4 @@ async def test_n_plus_one_lanes_share_the_configured_watch_bound(bound):
     assert {result.lane_key for result in results} == set(snapshots)
     assert all(result.outcome is WorkflowOutcome.ci_passed for result in results)
     assert monitor.peak == bound and monitor.active == 0
+    assert unwritten()
