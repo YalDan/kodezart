@@ -1028,6 +1028,42 @@ async def test_the_entry_reads_the_subtree_once_for_the_spec_and_the_roster():
     }
 
 
+async def test_the_delivering_entry_reads_the_subtree_once_as_well():
+    """The counted claim holds on the delivering branch, not only the owed one.
+
+    The sibling above counts the reading the loop enters on.  This entry has a
+    second branch, and one roster read is the property the whole entry exists
+    for, so the branch that answers the delivering roster is counted too: a
+    second walk taken only when delivering would otherwise be nobody's
+    business.  Same double, the board a delivering lane actually stands on:
+    the roster is read after the lane's own evaluation finished what it owed,
+    because the delivering branch refuses a subtree that still owes.  Finished
+    directly rather than through an entry read, so the count below is this
+    call's alone.
+    """
+    port = CountingTracker()
+    for key in OWED_KEYS:
+        finished(port, key)
+
+    spec, roster = await TrackerCriteria(tracker=port).read_entry(
+        issue_key=SUBJECT, delivering=True
+    )
+
+    assert port.spec_reads == 1
+    assert port.subtree_reads == 1
+    assert set(spec.criteria) == {
+        DIRECT_OWED,
+        DIRECT_DONE,
+        NESTED_OWED,
+        DIRECT_OWED_TOO,
+        NESTED_DONE,
+    }
+    # The delivering roster is the whole subtree, not the owed selection the
+    # sibling case gets, which is what makes this a different branch rather
+    # than the same one with a flag.
+    assert {criterion.id for criterion in roster.criteria} == set(spec.criteria)
+
+
 OWED_KEYS = (DIRECT_OWED, DIRECT_OWED_TOO, NESTED_OWED)
 
 
