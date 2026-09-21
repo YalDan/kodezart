@@ -67,13 +67,15 @@ TYPE_TESTS = {
         "domain/workflow_state.py::current_fire_spec",
     )
 }
-#: Two model-method calls on a receiver whose own function states no type for
-#: it (a comprehension variable, a classmethod's cls).  The shared walk
-#: reports them because silence about a receiver is not a statement that it
-#: is something else; each was read and makes no draft.
+#: One model-method call on a receiver whose own function states no type for it
+#: (a comprehension variable).  The shared walk reports it because silence about
+#: a receiver is not a statement that it is something else; it was read and makes
+#: no draft.  The classmethod that used to sit beside it, the run context's parse
+#: from its configurable, states its own receiver now (KOD-695), so the walk no
+#: longer has to guess and the register no longer carries it.
 UNSTATED_RECEIVERS = {
     "build": ("chains/lane_delivery.py::__init__",),
-    "parse": ("types/domain/workflow.py::from_configurable",),
+    "parse": (),
 }
 
 REGISTER = {
@@ -104,9 +106,10 @@ CRITERIA_ANCHOR = (
     "    require_unamended_subject("
     'issue_key=issue_key, entry=state["lane_entry"], spec=spec)\n'
 )
-TRACKER_ANCHOR = (
-    "        return tracker_spec_from_issues(subject=subject, criteria=criteria)\n"
-)
+#: The adapter no longer composes the spec — KOD-710 moved that to the stage that
+#: is its one caller — so the point where the arm holds a tracker body is the
+#: subject it returns from the entry read.
+TRACKER_ANCHOR = "        return subject\n"
 
 #: Where a tracker body is in hand, the name holding it, and the function the
 #: report would name.  Each anchor is asserted unique before it is replaced.
@@ -117,7 +120,7 @@ PLANT_SITES = (
         "subject",
         "tracker_spec_from_issues",
     ),
-    ("adapters/linear/tracker.py", TRACKER_ANCHOR, "subject", "read_fire_spec"),
+    ("adapters/linear/tracker.py", TRACKER_ANCHOR, "subject", "read_fire_subject"),
     ("chains/criteria.py", CRITERIA_ANCHOR, "spec", "revalidate_criteria"),
 )
 
