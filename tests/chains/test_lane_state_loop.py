@@ -1861,7 +1861,7 @@ async def test_an_observed_grading_asks_one_question_and_the_lane_keeps_grading(
     assert [
         event.kind
         for event in posted
-        if event.kind is RunEventKind.CRITERION_REFUTED and event.criterion_id == LAPSED
+        if event.kind is RunEventKind.CRITERION_REFUTED and event.subject_key == LAPSED
     ] == []
 
     # The rest of the lane keeps being graded, at every iteration after the
@@ -2000,7 +2000,7 @@ async def test_a_lapse_is_a_state_move_back_while_a_standing_grading_stays_count
     assert [key for key, _ in lane.port.workflow_writes if key == SUBJECT] == []
     posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
     assert [
-        event.criterion_id
+        event.subject_key
         for event in posted
         if event.kind is RunEventKind.CRITERION_REFUTED
     ] == []
