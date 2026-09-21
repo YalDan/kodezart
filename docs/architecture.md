@@ -447,6 +447,14 @@ withholding, and a criterion the mutant grading fails or does not answer for is
 not a survivor, because a verdict read in a tree the sha does not name is no
 more the branch's than a pass read there is.
 
+A check whose assertion observes nothing about the subject under test — a
+double constructed and handed to none of the subjects — passes in the mutant
+tree for the same reason it passes in the clean one, so it survives every
+removal and reaches that same reading with that same value. No second reading
+is taken for it, and no detector of its own is built: one mechanism resolves
+both, and what tells the two readings apart on the record is
+`UndemonstratedReason`, never a fifth cross-off state.
+
 A native evaluation whose grading did stand then runs each criterion it passed
 through that criterion's own check again, in a further tree the loop owns at the
 commit the recorded base resolves to. A check that already passes there passes

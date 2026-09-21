@@ -2764,3 +2764,121 @@ async def test_a_removal_that_pushed_to_the_loop_branch_refuses_the_iteration(tm
         await lane.run()
 
     assert finished(lane.port, TOLD_APART) == set()
+
+
+#: The fixture criterion whose check constructs a double and wires it nowhere.
+MUTATION_UNWIRED = f"{SUBJECT}/check-unwired"
+VACUOUS = {MUTATION_UNWIRED: "unwired"}
+
+
+def reasons_given(lane) -> list[tuple[CrossOffState, UndemonstratedReason | None]]:
+    """Every cross-off the lane's writer received, as state and reading."""
+    received: list[tuple[CrossOffState, UndemonstratedReason | None]] = []
+    writer = lane.loop._lane_state
+    written = writer.write_cross_offs
+
+    async def observed(*, lane, dispatched, cross_offs):
+        received.extend(
+            (cross_off.state, cross_off.undemonstrated_reason)
+            for cross_off in cross_offs
+        )
+        await written(lane=lane, dispatched=dispatched, cross_offs=cross_offs)
+
+    writer.write_cross_offs = observed
+    return received
+
+
+async def test_a_check_whose_double_reaches_no_subject_resolves_undemonstrated(
+    tmp_path,
+):
+    """A check that observes nothing about the subject survives every removal.
+
+    Its double is constructed and handed to none of the subjects under test,
+    so every assertion in it is about the double: it passes in the graded tree
+    and in a copy with the behaviour gone, for the same reason both times. No
+    second reading is taken for it — the mutation reading already resolves it
+    and names why — and its sub-issue is untouched.
+    """
+    lane = mutation_lane(tmp_path, checks=VACUOUS)
+    before = (
+        lane.port.issues[MUTATION_UNWIRED].state_name,
+        lane.port.issues[MUTATION_UNWIRED].body,
+    )
+    received = reasons_given(lane)
+
+    await lane.run()
+
+    assert received == [
+        (CrossOffState.undemonstrated, UndemonstratedReason.check_survived_mutation)
+    ]
+    assert finished(lane.port, VACUOUS) == set()
+    assert (
+        lane.port.issues[MUTATION_UNWIRED].state_name,
+        lane.port.issues[MUTATION_UNWIRED].body,
+    ) == before
+    with pytest.raises(ValueError, match="Evidence"):
+        parse_criterion_evidence(lane.port.issues[MUTATION_UNWIRED].body)
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert survived(posted) == [(MUTATION_UNWIRED, lane.repo.head)]
+
+
+async def test_the_vacuous_reading_is_the_same_value_the_mutation_reading_produced(
+    tmp_path,
+):
+    """ "That same resolution": one value, compared rather than restated.
+
+    Read off the two runs in this module rather than from repeated literals,
+    so a second mechanism for one state — a reason of its own, a kind of its
+    own — would show up here as a difference between them.
+    """
+    vacuous = mutation_lane(tmp_path / "vacuous", checks=VACUOUS)
+    vacuous_received = reasons_given(vacuous)
+    await vacuous.run()
+    vacuous_posted = await vacuous.port.lane_run_events(
+        issue_key=SUBJECT, lane_key=SUBJECT
+    )
+
+    survivor = mutation_lane(tmp_path / "survivor", checks=TOLD_APART)
+    survivor_received = reasons_given(survivor)
+    await survivor.run()
+    survivor_posted = await survivor.port.lane_run_events(
+        issue_key=SUBJECT, lane_key=SUBJECT
+    )
+
+    withheld = [
+        (state, reason)
+        for state, reason in survivor_received
+        if state is CrossOffState.undemonstrated
+    ]
+    assert vacuous_received == withheld
+    assert {
+        event.kind for event in vacuous_posted if event.subject_key is not None
+    } == {event.kind for event in survivor_posted if event.subject_key is not None}
+
+
+async def test_a_vacuous_check_does_not_count_toward_the_iterations_passes(tmp_path):
+    """It is the only criterion that would otherwise have passed, and it does not.
+
+    So the iteration's pass count excludes it and the verdict is a rejection:
+    a check that cannot fail counting toward the demonstrated set is exactly
+    the accounting this reading exists to refuse.
+    """
+    lane = mutation_lane(tmp_path, checks=VACUOUS)
+
+    events = await lane.run()
+
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert [event.verdict for event in iterations] == [AcceptVerdict.rejected]
+    assert [
+        (result.criterion_id, result.passed, result.reasoning)
+        for result in iterations[-1].evaluation.criteria_results
+    ] == [
+        (
+            MUTATION_UNWIRED,
+            False,
+            UNDEMONSTRATED_REASONS[UndemonstratedReason.check_survived_mutation],
+        )
+    ]
+    assert iterations[-1].trajectory.best_passed_count == 0
+    assert [record.passed_count for record in iterations[-1].trajectory.records] == [0]
+    assert finished(lane.port, VACUOUS) == set()
