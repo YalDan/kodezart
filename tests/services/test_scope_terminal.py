@@ -27,6 +27,7 @@ from kodezart.services.scope_terminal import ScopeTerminal
 from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.gating import (
     ContentClass,
+    DurabilityCategory,
     GateDecision,
     GateVerdict,
     OutboundDestination,
@@ -45,6 +46,8 @@ from kodezart.types.domain.scope import ResolvedScope, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
 from kodezart.types.domain.scope_terminal import ScopeLaneEntry, ScopeTerminalEvent
 from kodezart.types.domain.tracker import IssuePriority, TrackerComment
+from tests.adapters.test_judgment_scanner import ScriptedAuditExecutor, audit_result
+from tests.core.test_durable_admission import configured_gate
 from tests.fakes import (
     FIXTURE_EPOCH,
     FakeScopeStatusWriter,
@@ -181,6 +184,42 @@ async def test_the_write_is_declared_derived_on_its_own_destination() -> None:
     assert gate.content_classes == [ContentClass.DERIVED]
     assert [visibility for _, visibility, _ in gate.calls] == [RepoVisibility.PUBLIC]
     assert [shape for _, _, shape in gate.calls] == [WriterShape.PROSE]
+
+
+async def test_the_terminals_roster_is_admitted_and_refused_by_durability() -> None:
+    """The real writer's own value, over the shipped gate composition.
+
+    The status update is the surface this writer owns and it is read as one
+    moment, so the report is posted byte for byte with no judgment session.
+    The same value carried to a durable surface is refused there, by the same
+    rule, still with no session and with nothing posted.
+    """
+    executor = ScriptedAuditExecutor([audit_result([])])
+    gate = await configured_gate(executor=executor)
+    status = FakeScopeStatusWriter()
+
+    event = await terminal(status=status, gate=gate).report(
+        ready=reading(ready=("A", "B"), closed=("C",))
+    )
+
+    assert status.posts == [(PROJECT, render_scope_status(event))]
+    assert executor.calls == []
+
+    refused = await gate.gate(
+        content=render_scope_status(event),
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_DESCRIPTION,
+        content_class=ContentClass.DERIVED,
+        aggregates=scope_status_aggregates(event),
+    )
+
+    assert refused.verdict is GateVerdict.BLOCKED
+    assert refused.categories == (DurabilityCategory.IDENTIFIER_ROSTER,)
+    assert refused.hits[0].source is not None
+    assert refused.hits[0].source.field == "lanes.issue"
+    assert executor.calls == []
+    assert status.posts == [(PROJECT, render_scope_status(event))]
 
 
 async def test_the_report_declares_its_lane_roster_from_the_event() -> None:

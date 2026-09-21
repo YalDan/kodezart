@@ -9,11 +9,16 @@ dropped a lane from a scope that never held it (KOD-471).
 
 import pytest
 
-from kodezart.domain.scope_terminal import lane_roster
+from kodezart.domain.scope_terminal import lane_roster, scope_status_aggregates
+from kodezart.types.domain.gating import IdentifierRoster
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ResolvedScope, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
-from kodezart.types.domain.scope_terminal import ScopeLaneEntry, derive_scope_outcome
+from kodezart.types.domain.scope_terminal import (
+    ScopeLaneEntry,
+    ScopeTerminalEvent,
+    derive_scope_outcome,
+)
 from kodezart.types.domain.topology import BlockedIssue
 from kodezart.types.domain.tracker import IssuePriority
 from tests.fakes import make_tracker_issue
@@ -161,3 +166,26 @@ def test_the_derivation_never_produces_a_third_reading() -> None:
         WorkflowOutcome.scope_converged,
         WorkflowOutcome.scope_stopped_short,
     }
+
+
+def test_the_status_aggregates_are_one_roster_of_the_lane_keys_in_order() -> None:
+    """One roster, the lane issue keys, in the vector's own order.
+
+    Nothing is counted out of the rendered body, and no count is declared:
+    the report states no number in digits.
+    """
+    event = ScopeTerminalEvent(
+        scope=SCOPE,
+        lanes=(entry("A", done=True), entry("B", done=True), entry("C", done=True)),
+        outcome=WorkflowOutcome.scope_converged,
+    )
+
+    assert scope_status_aggregates(event) == (
+        IdentifierRoster(field="lanes.issue", identities=("A", "B", "C")),
+    )
+
+    empty = ScopeTerminalEvent(
+        scope=SCOPE, lanes=(), outcome=WorkflowOutcome.scope_stopped_short
+    )
+    (roster,) = scope_status_aggregates(empty)
+    assert roster.identities == ()
