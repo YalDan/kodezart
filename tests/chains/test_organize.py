@@ -1641,3 +1641,4 @@ def test_the_call_site_count_reads_each_form_the_call_can_take(form, body, expec
     planted = gap_call_sites({"services/planted.py": body}, callees)
     assert len(planted) == expected
     assert all(relative == "services/planted.py" for relative, _line, _name in planted)
+    assert all(name in callees for _relative, _line, name in planted)
