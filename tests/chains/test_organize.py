@@ -1254,6 +1254,83 @@ async def test_mention_ripple_bumps_the_stamp_without_entering_the_gap():
     assert tuple(item.issue_key for item in gap) == (SUBJECT,)
 
 
+async def test_two_ticks_with_nothing_changed_between_them_leave_the_second_gap_empty():
+    """Nothing changed between two ticks, so the second tick's gap is empty.
+
+    Tick one is the sequence a tick runs: read the revisions, assess every
+    member, compute the gap.  Then the tick's own write lands — a record
+    comment on the subject that names its neighbour — and the fake stamps the
+    issue it wrote, exactly as a backend does; the mention ripple moves the
+    neighbour's stamp for a body nobody touched.  Tick two reads the same
+    bodies and the same admissions and finds the same empty gap, although
+    every stamp in the scope moved.
+
+    A witness, not a fix: ``organize_gap`` has no change-stamp clause at all
+    and says so in its own docstring, so this passes on arrival and stays to
+    say so.  It runs over the in-process fake because the ripple is written
+    onto the double's own record; the adapter arm's stamp movement under a
+    real edit is
+    ``test_port_criterion_changes_use_only_surface_digests_for_parent_gap``.
+    """
+    revisions = (*organized_family(), *organized_family(MENTIONED))
+    keys = tuple(revision.issue.issue_key for revision in revisions)
+    clock = datetime(2026, 6, 1, tzinfo=UTC)
+    source = FakeTrackerPort(
+        issues=[revision.issue for revision in revisions], clock=lambda: clock
+    )
+    executor = RecordingExecutor([])
+    workspace = RecordingWorkspace()
+    admission = consumer(source, executor, workspace)
+
+    assert gap_of(await read_gap_revisions(source, keys), admissions=()) != ()
+
+    judged = []
+    for key in keys:
+        executor.events = [
+            result(
+                structured_output={
+                    "issue_id": key,
+                    "verdict": "buildable",
+                    "evidence": "The current body is implementable.",
+                }
+            )
+        ]
+        judged.append(
+            await admission.assess(
+                request().model_copy(
+                    update={
+                        "issue_key": key,
+                        "scope": ScopeRef(
+                            kind=ScopeKind.ISSUE,
+                            key=(await source.read_issue(issue_key=key)).parent_key
+                            or key,
+                        ),
+                    }
+                )
+            )
+        )
+    baseline = tuple(value.model_dump_json() for value in judged)
+    assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+
+    before = {key: await source.read_issue(issue_key=key) for key in keys}
+    await source.post_comment(
+        issue_key=SUBJECT, body=f"Organized {SUBJECT}; see {MENTIONED}."
+    )
+    ripple_vendor_stamp(source, MENTIONED, clock)
+    after = {key: await source.read_issue(issue_key=key) for key in keys}
+
+    assert after[SUBJECT].updated_at > before[SUBJECT].updated_at
+    assert after[MENTIONED].updated_at > before[MENTIONED].updated_at
+    assert all(after[key].body == before[key].body for key in keys)
+    calls = len(executor.calls)
+
+    assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+    for value in judged:
+        assert await admission.is_live(value) is True
+    assert len(executor.calls) == calls
+    assert tuple(value.model_dump_json() for value in judged) == baseline
+
+
 def test_gap_has_no_amendment_input_or_body_judgment_branch():
     tree = ast.parse(inspect.getsource(organize_gap))
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
