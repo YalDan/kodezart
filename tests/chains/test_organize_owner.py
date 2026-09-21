@@ -940,6 +940,30 @@ def regrowth(monkeypatch, *, mandate, instance=True):
     return owner, board, executor, observed
 
 
+def child_verifications(executor):
+    """How many verify sessions were spent on the planted criterion child.
+
+    One per dry round, which is what makes this a count of dry rounds. A
+    criterion child is reached by the dry round's scope-wide verification
+    alone — the in-round verification is of the subject the step authored —
+    so a second dry round in any phase doubles this number.
+
+    ``VERIFY_OPENING`` is the opening the verify dispatch carries and the
+    assess dispatch does not; the issue a session was spent on is the last
+    key its prompt names, as the module reads it everywhere else.
+    """
+    return len(
+        [
+            call
+            for call in executor.calls
+            if call["output_format"]["schema"].get("title") == "AdmissionJudgment"
+            and VERIFY_OPENING in call["prompt"]
+            and re.findall(r"<issue_key>(.*?)</issue_key>", call["prompt"])[-1:]
+            == ["restating-criterion"]
+        ]
+    )
+
+
 async def test_live_mandate_regrows_the_class_and_the_pass_does_not_converge(
     monkeypatch,
 ):
@@ -985,6 +1009,9 @@ async def test_removed_mandate_leaves_the_same_authoring_step_dry(monkeypatch):
         for call in executor.calls
         if call["output_format"]["schema"].get("title") == "OrganizeProposal"
     ]
+    # One dry round per phase and no more: the first dry round of each phase
+    # is the one that converges it.
+    assert child_verifications(executor) == len(report.completed_phases)
     assert {"body complete", "criteria complete"} <= set(parent.labels)
 
 
@@ -1010,9 +1037,9 @@ async def test_the_sentence_and_not_the_instance_decides_whether_the_class_regro
     With the sentence on the parent the class regrows and the pass does not
     converge whether or not the child's prose carries an instance of it, and
     nobody plants an instance where there was none. Without the sentence the
-    same board converges.
+    same board converges, on the first dry round of each phase.
     """
-    owner, board, _executor, observed = regrowth(
+    owner, board, executor, observed = regrowth(
         monkeypatch, mandate=mandate, instance=instance
     )
     report = await run_owner(owner)
@@ -1023,6 +1050,7 @@ async def test_the_sentence_and_not_the_instance_decides_whether_the_class_regro
             "ticket",
             "criteria",
         ]
+        assert child_verifications(executor) == len(report.completed_phases)
         return
     assert report.halt.cause == "convergence_exhausted"
     assert report.halt.bound.value == report.halt.bound.rounds_used == 2
