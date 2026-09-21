@@ -122,10 +122,25 @@ def _declared_members(node: ast.ClassDef) -> frozenset[str]:
     return frozenset(name for name in members if not name.startswith("_"))
 
 
-def _is_protocol(node: ast.ClassDef) -> bool:
-    return any(
-        isinstance(base, ast.Name) and base.id == "Protocol" for base in node.bases
+def _protocol_names(tree: ast.Module) -> frozenset[str]:
+    """Every name this module binds ``typing.Protocol`` to.
+
+    Read out of the module's own imports rather than assumed to be the
+    word ``Protocol``: ``from typing import Protocol as _P`` and a class
+    based on ``_P`` is the same copied protocol under another spelling, and
+    a base matched by spelling alone misses it.
+    """
+    return frozenset(
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "typing"
+        for alias in node.names
+        if alias.name == "Protocol"
     )
+
+
+def _is_protocol(node: ast.ClassDef, names: frozenset[str]) -> bool:
+    return any(isinstance(base, ast.Name) and base.id in names for base in node.bases)
 
 
 def _rebindings(tree: ast.Module) -> frozenset[str]:
@@ -178,11 +193,12 @@ def _role_shaped_classes(root: Path) -> dict[str, list[str]]:
     """
     found: dict[str, list[str]] = {}
     for module, tree in _modules(root):
+        protocols = _protocol_names(tree)
         copies = sorted(
             {
                 f"{node.name} as {role}"
                 for node in ast.walk(tree)
-                if isinstance(node, ast.ClassDef) and _is_protocol(node)
+                if isinstance(node, ast.ClassDef) and _is_protocol(node, protocols)
                 for role, shape in ROLE_SHAPES.items()
                 if _declared_members(node) == shape and OWNERS[role] != module
             }
@@ -248,10 +264,15 @@ def test_the_pass_builder_is_wired_into_the_scheduled_passes() -> None:
     The builder's placement clause is two statements, not one: where it
     is declared and where the scheduled passes pick it up. Asserting only
     the first would pass over a builder nothing calls.
+
+    What is collected is the name the import BINDS, not the name it reads
+    from: ``import build_audit_pass as _make_audit`` binds another word, and
+    a set of the read names would report the builder as imported while the
+    call below reaches for something else.
     """
     tree = ast.parse((SOURCE / "composition" / "passes.py").read_text())
     imported = {
-        alias.name
+        alias.asname or alias.name
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
         and node.module == "kodezart.composition.audit"
