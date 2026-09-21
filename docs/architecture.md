@@ -80,7 +80,7 @@ does not exist.
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
 | RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
-| TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
+| TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop. The authorship read answers the backend's own attribution of a body together with the distinct holders whose recorded writes replaced it, in the order the backend placed those records; it is asked only of the two body surfaces the port can replace |
 | TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |
 | TrackerCriteriaReader | LinearMcpTracker | Full current criterion families for resolution and audit consumers |
 | CriterionResolver | NativeCriterionResolver | Resolves one criterion identity to its own sub-issue, or refuses; the narrow role a consumer that needs a single criterion depends on, carrying no family read of its own |

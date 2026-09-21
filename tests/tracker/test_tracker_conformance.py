@@ -33,6 +33,8 @@ from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLab
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import (
+    BODY_AUTHORSHIP_SURFACES,
+    DescriptionWriteAuthority,
     SurfaceAuthorship,
     SurfaceKind,
     SurfaceLease,
@@ -2673,8 +2675,7 @@ class TestPrincipalAuthoredBodies:
     ) -> None:
         assert (
             await tracker.read_surface_authorship(surface=PRINCIPAL_DESCRIPTION)
-            is SurfaceAuthorship.PRINCIPAL_AUTHORED
-        )
+        ).authorship is SurfaceAuthorship.PRINCIPAL_AUTHORED
 
     async def test_a_body_this_writer_is_attributed_reads_as_machine_authored(
         self,
@@ -2682,8 +2683,7 @@ class TestPrincipalAuthoredBodies:
     ) -> None:
         assert (
             await tracker.read_surface_authorship(surface=CLAIMED_DESCRIPTION)
-            is SurfaceAuthorship.MACHINE_AUTHORED
-        )
+        ).authorship is SurfaceAuthorship.MACHINE_AUTHORED
 
     async def test_authorship_is_not_answered_for_a_body_this_port_cannot_write(
         self,
@@ -2938,3 +2938,242 @@ class TestACriterionKeyReadThroughThePortAddressesItsWrites:
         assert (
             await tracker.read_issue(issue_key=row.issue_key)
         ).state_kind is WorkflowStateKind.COMPLETED
+
+
+#: The criterion sub-issue the provenance property addresses, and the body
+#: it starts from.  Seeded into that property's own workspace rather than
+#: into the shared one: every ordinary case reads its scan, its scope and
+#: its listings off the shared workspace, and a member added there would
+#: move answers nothing in this property is about.
+PROVENANCE_CRITERION = "FIX-4"
+PROVENANCE_CRITERION_BODY = (
+    "**Check:** a stated predicate\n\n**Do:** stated guidance\n\n**Evidence:**\n"
+)
+
+#: The two holders the ordered pair is read back as.
+FIRST_WRITER = "first-writing-job"
+SECOND_WRITER = "second-writing-job"
+
+#: One address per answerable kind, so the property is stated once over the
+#: set and the kind under test is the only thing that varies.
+PROVENANCE_SURFACES: dict[SurfaceKind, WritableSurface] = {
+    SurfaceKind.ISSUE_DESCRIPTION: CLAIMED_DESCRIPTION,
+    SurfaceKind.CRITERION_SUB_ISSUE: WritableSurface(
+        kind=SurfaceKind.CRITERION_SUB_ISSUE,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=PROVENANCE_CRITERION),
+    ),
+}
+
+
+def unanswerable_surface(kind: SurfaceKind) -> WritableSurface:
+    """One address of *kind*, under that kind's own addressing rule.
+
+    Built per kind rather than listed, because a container surface needs a
+    container reference and a marker-keyed comment needs its marker: an
+    address table written out by hand would go stale the moment the
+    vocabulary grows a tenth member.
+    """
+    if kind is SurfaceKind.MARKER_COMMENT:
+        return MARKER_A
+    if kind in {
+        SurfaceKind.CONTAINER_DESCRIPTION,
+        SurfaceKind.CONTAINER_STATUS_UPDATE,
+    }:
+        return WritableSurface(
+            kind=kind, ref=ScopeRef(kind=ScopeKind.PROJECT, key="fixture-project")
+        )
+    return WritableSurface(kind=kind, ref=CLAIMED_REF)
+
+
+async def held_body_write(
+    tracker: TrackerPort, *, surface: WritableSurface, holder: str, replacement: str
+) -> DescriptionEditResult:
+    """One holder taking the surface, replacing the body, and standing down.
+
+    The lease is released after each write, so the pair the property reads
+    back cannot have come from a lease still standing: a record outlives
+    the grant that authorized it, which is the whole point of recording it.
+    """
+    surfaces = frozenset({surface})
+    await tracker.acquire_surfaces(
+        surfaces=surfaces, holder=holder, lease_seconds=LEASE_SECONDS
+    )
+    try:
+        current = await tracker.read_issue(issue_key=surface.ref.key)
+        return await tracker.edit_description(
+            target=surface.ref.key,
+            expected=current.body,
+            replacement=replacement,
+            authorization=DescriptionWriteAuthority(holder=holder, surface=surface),
+        )
+    finally:
+        await tracker.release_surfaces(surfaces=surfaces, holder=holder)
+
+
+class TestSurfaceWriteProvenance:
+    """Who has written a body, answered from records and never from a stamp.
+
+    The question is asked of exactly the surfaces whose body this port can
+    replace, and it is asked of every one of them: the parameters are read
+    off the answerable set itself, so widening that set without widening
+    the answer fails here rather than passing unnoticed.  The other kinds
+    are unanswerable by design and are refused, not answered.
+    """
+
+    @pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
+    async def provenance_tracker(
+        self,
+        request: pytest.FixtureRequest,
+        server: FakeLinearMcpServer,
+        clock: FixtureClock,
+    ) -> TrackerPort:
+        """Every implementation, over a workspace holding a criterion body.
+
+        The shared workspace holds no criterion sub-issue, and one of the
+        two answerable kinds has no address without one.  Seeded here so
+        the member exists before the port is built, which is what carries
+        it into the double as well as the adapter.
+        """
+        server.issues[PROVENANCE_CRITERION] = FakeMcpIssue(
+            id=PROVENANCE_CRITERION,
+            title="a criterion of the claimable issue",
+            description=PROVENANCE_CRITERION_BODY,
+            parent_id=CLAIMED_ISSUE,
+            labels=[ISSUE_LABELS["criterion"]],
+            status="Todo",
+            status_type="unstarted",
+            created_at=FIXTURE_NOW - timedelta(days=2),
+            updated_at=FIXTURE_NOW,
+        )
+        factory = TRACKER_IMPLEMENTATIONS[request.param]
+        port = factory(TrackerWorkspace(server=server, clock=clock))
+        return await port if isawaitable(port) else port
+
+    @pytest.mark.parametrize("kind", sorted(BODY_AUTHORSHIP_SURFACES))
+    async def test_two_holders_writing_one_body_read_back_as_that_ordered_pair(
+        self,
+        provenance_tracker: TrackerPort,
+        kind: SurfaceKind,
+    ) -> None:
+        """The distinct holders, in the order the backend placed them."""
+        surface = PROVENANCE_SURFACES[kind]
+        for holder in (FIRST_WRITER, SECOND_WRITER):
+            assert (
+                await held_body_write(
+                    provenance_tracker,
+                    surface=surface,
+                    holder=holder,
+                    replacement=f"a body {holder} put there",
+                )
+                is DescriptionEditResult.EDITED
+            )
+
+        answer = await provenance_tracker.read_surface_authorship(surface=surface)
+
+        assert answer.holders == (FIRST_WRITER, SECOND_WRITER)
+        assert answer.authorship is SurfaceAuthorship.MACHINE_AUTHORED
+
+    @pytest.mark.parametrize("kind", sorted(BODY_AUTHORSHIP_SURFACES))
+    async def test_a_holder_writing_twice_is_named_once(
+        self,
+        provenance_tracker: TrackerPort,
+        kind: SurfaceKind,
+    ) -> None:
+        """Three writes by two holders answer the pair, at first occurrence."""
+        surface = PROVENANCE_SURFACES[kind]
+        for round_number, holder in enumerate(
+            (FIRST_WRITER, SECOND_WRITER, FIRST_WRITER)
+        ):
+            await held_body_write(
+                provenance_tracker,
+                surface=surface,
+                holder=holder,
+                replacement=f"a body {holder} put there, round {round_number}",
+            )
+
+        answer = await provenance_tracker.read_surface_authorship(surface=surface)
+
+        assert answer.holders == (FIRST_WRITER, SECOND_WRITER)
+
+    @pytest.mark.parametrize("kind", sorted(BODY_AUTHORSHIP_SURFACES))
+    async def test_a_change_that_is_not_a_body_write_adds_no_holder(
+        self,
+        provenance_tracker: TrackerPort,
+        kind: SurfaceKind,
+    ) -> None:
+        """A move that touches no body adds nobody, and moves no digest.
+
+        Stated through the port's own body digest rather than through a
+        vendor stamp, so both arms answer the same question: the digest is
+        what changes when and only when a body changes.
+        """
+        surface = PROVENANCE_SURFACES[kind]
+        for holder in (FIRST_WRITER, SECOND_WRITER):
+            await held_body_write(
+                provenance_tracker,
+                surface=surface,
+                holder=holder,
+                replacement=f"a body {holder} put there",
+            )
+        before = await provenance_tracker.read_issue_revision(issue_key=surface.ref.key)
+        written = await provenance_tracker.read_surface_authorship(surface=surface)
+
+        await provenance_tracker.set_workflow_state(
+            issue_key=surface.ref.key, stage=LifecycleStage.IN_PROGRESS
+        )
+
+        after = await provenance_tracker.read_issue_revision(issue_key=surface.ref.key)
+        assert after.body_digest == before.body_digest
+        assert (
+            (await provenance_tracker.read_surface_authorship(surface=surface)).holders
+            == written.holders
+            == (FIRST_WRITER, SECOND_WRITER)
+        )
+
+    @pytest.mark.parametrize("kind", sorted(BODY_AUTHORSHIP_SURFACES))
+    async def test_an_unwritten_body_names_no_holder(
+        self,
+        provenance_tracker: TrackerPort,
+        kind: SurfaceKind,
+    ) -> None:
+        """A body no holder wrote answers the empty set, not the creator."""
+        answer = await provenance_tracker.read_surface_authorship(
+            surface=PROVENANCE_SURFACES[kind]
+        )
+
+        assert answer.holders == ()
+
+    @pytest.mark.parametrize("kind", sorted(BODY_AUTHORSHIP_SURFACES))
+    async def test_a_single_writer_body_write_names_no_holder(
+        self,
+        provenance_tracker: TrackerPort,
+        kind: SurfaceKind,
+    ) -> None:
+        """A write that names no holder has no holder to record."""
+        surface = PROVENANCE_SURFACES[kind]
+        before = await provenance_tracker.read_issue(issue_key=surface.ref.key)
+
+        result = await provenance_tracker.edit_description(
+            target=surface.ref.key,
+            expected=before.body,
+            replacement="a body the single writer put there",
+        )
+
+        assert result is DescriptionEditResult.EDITED
+        assert (
+            await provenance_tracker.read_surface_authorship(surface=surface)
+        ).holders == ()
+
+    @pytest.mark.parametrize(
+        "kind", sorted(set(SurfaceKind) - BODY_AUTHORSHIP_SURFACES)
+    )
+    async def test_provenance_is_not_answered_for_a_body_this_port_cannot_write(
+        self,
+        provenance_tracker: TrackerPort,
+        kind: SurfaceKind,
+    ) -> None:
+        """Every kind outside the answerable set is refused, not answered."""
+        with pytest.raises(ValueError):
+            await provenance_tracker.read_surface_authorship(
+                surface=unanswerable_surface(kind)
+            )

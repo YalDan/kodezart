@@ -173,8 +173,10 @@ from kodezart.types.domain.surface import (
     SurfaceAuthorship,
     SurfaceKind,
     SurfaceLease,
+    SurfaceProvenance,
     WritableSurface,
     WriteRevalidation,
+    ordered_holders,
     require_body_authorship_surface,
 )
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
@@ -3620,6 +3622,10 @@ class FakeTrackerPort:
         #: text nobody attributed is text the double itself stands behind,
         #: and a case meaning a principal's words says so here.
         self.body_authorship: dict[str, SurfaceAuthorship] = dict(body_authorship or {})
+        #: Every held body write this double took, per surface, in the order
+        #: it took them.  Recorded rather than derived, for the reason the
+        #: adapter records it: nothing about a body says who replaced it.
+        self.body_write_holders: dict[WritableSurface, list[str]] = {}
         #: The semantic classifications this workspace resolves to the scope
         #: admission vocabulary's approved member — empty unless a
         #: configuration actually aliases the two.
@@ -4290,9 +4296,12 @@ class FakeTrackerPort:
 
     async def read_surface_authorship(
         self, *, surface: WritableSurface
-    ) -> SurfaceAuthorship:
+    ) -> SurfaceProvenance:
         require_body_authorship_surface(surface)
-        return self._body_authorship(surface.ref.key)
+        return SurfaceProvenance(
+            authorship=self._body_authorship(surface.ref.key),
+            holders=ordered_holders(self.body_write_holders.get(surface, ())),
+        )
 
     def _body_authorship(self, issue_key: str) -> SurfaceAuthorship:
         return self.body_authorship.get(issue_key, SurfaceAuthorship.MACHINE_AUTHORED)
@@ -4378,6 +4387,10 @@ class FakeTrackerPort:
             ),
         )
         await self.update_issue(issue_key=target, body=body)
+        if authorization is not None:
+            self.body_write_holders.setdefault(authorization.surface, []).append(
+                authorization.holder
+            )
         return DescriptionEditResult.EDITED
 
     async def set_workflow_state(
