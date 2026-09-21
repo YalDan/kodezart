@@ -22,9 +22,11 @@ from kodezart.domain.lane_record import (
     next_lane_record,
     render_lane_record,
 )
+from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain import run_state
 from kodezart.types.domain.branch import BranchAssociation, BranchRole, WorkRefRole
 from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.criteria import CriterionId
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.run_state import (
@@ -33,6 +35,7 @@ from kodezart.types.domain.run_state import (
     LanePR,
     LaneRunState,
 )
+from kodezart.types.domain.trajectory import IterationRecord
 from tests.identity_guards import construction_sites, model_value_sites
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
@@ -841,6 +844,62 @@ def test_a_head_that_returns_to_an_earlier_sha_is_recorded_as_its_own_act():
         "Second change",
         "Reset",
     ]
+
+
+def test_the_rows_are_the_commit_acts_and_not_the_loop_iterations():
+    """One row per commit act, whatever the loop's iteration count is (KOD-681).
+
+    An iteration that produced no commit changed no tree, so the workspace
+    still stands at the previous head and the record has nothing new to
+    record for it; an iteration that landed on a head already recorded is
+    likewise no new act. The trajectory is the witness here and nowhere in
+    production: the record composes its rows from the commit receipt, and
+    this test states what the two sequences may and may not have in common.
+    """
+    lane = binding()
+    iterations = (
+        ("a" * 40, "First change"),
+        (None, "Nothing to commit"),
+        ("b" * 40, "Second change"),
+        ("b" * 40, "Same head again"),
+        (None, "Nothing to commit either"),
+    )
+    trajectory = fold_trajectory(
+        [
+            IterationRecord(
+                iteration=index,
+                passed_count=index,
+                failing_criterion_ids=[CriterionId("KOD-681")],
+                commit_sha=sha,
+            )
+            for index, (sha, _) in enumerate(iterations, start=1)
+        ],
+        plateau_window=2,
+    )
+
+    record = None
+    head: str | None = None
+    for sha, subject in iterations:
+        head = sha if sha is not None else head
+        assert head is not None
+        record = next_lane_record(
+            prior=record,
+            lane=lane,
+            branch_url="https://forge.example/branch/ordinary-name",
+            head_sha=head,
+            pushed_head_sha=None,
+            changeset=changeset(commits=1, files=1),
+            subject=subject,
+        )
+
+    assert record is not None
+    assert [(row.sha, row.subject, row.issue_id) for row in record.commits] == [
+        ("a" * 40, "First change", lane.lane_key),
+        ("b" * 40, "Second change", lane.lane_key),
+    ]
+    assert len(record.commits) == 2
+    assert len(trajectory.records) == 5
+    assert len(record.commits) != len(trajectory.records)
 
 
 def test_recording_the_same_head_twice_leaves_the_record_unchanged():
