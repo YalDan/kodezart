@@ -331,6 +331,14 @@ def test_creator_has_no_merge_or_workflow_state_capability():
     assert not hasattr(FakePRCreator(), "merge_pr")
 
 
+def test_coordinator_exposes_only_the_delivery_entry_point():
+    assert {
+        name
+        for name, method in vars(LaneDeliveryCoordinator).items()
+        if not name.startswith("_") and callable(method)
+    } == {"deliver"}
+
+
 async def test_delivery_refuses_incoherent_wire_outcome():
     result = await deliver(await setup())
     wire = result.model_dump()
