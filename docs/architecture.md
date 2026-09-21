@@ -368,8 +368,10 @@ tracker for such an attempt.
 
 `render_lane_record` places one readable JSON value under that marker, followed
 by fixed re-entry guidance. The record preserves three-state remote head facts,
-ordered `LaneCommit` rows, `LanePR` and explicitly typed `BranchAssociation`
-roles, parents and run identities. Its loop branch must appear in the association
+ordered `LaneCommit` rows — one row per commit act, not one per loop iteration:
+a head already recorded appends no second row, and a head that returns to an
+earlier sha is a new act with a row of its own (KOD-681) — `LanePR` and
+explicitly typed `BranchAssociation` roles, parents and run identities. Its loop branch must appear in the association
 set, and each run has at most one deliverable. Branch names do not supply roles.
 The model follows the declared list fields: field assignment is frozen, but
 the lists are not deeply immutable. Consumers must not mutate retained evidence;
