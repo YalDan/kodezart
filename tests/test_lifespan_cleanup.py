@@ -9,6 +9,7 @@ import pytest
 from fastapi import FastAPI
 
 from kodezart import main
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.composition.jobs import build_job_queue
 from kodezart.config.app import AppConfig
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
@@ -273,6 +274,59 @@ async def test_lifespan_exit_releases_once_in_dependency_order(resources, except
         assert resources.events.index("checkpoint.close") > resources.events.index(
             "queue.stop"
         )
+    finally:
+        await settle_fixture(resources)
+
+
+async def test_the_engine_the_queue_and_the_watchers_read_one_job_registry(
+    resources, monkeypatch
+):
+    """One record store, built before the engine, and handed to all four holders.
+
+    The scope arm inside the engine reads liveness from the records the queue
+    writes, so the entry that refuses a second run over a live scope and the
+    pass that reports one are two readers of a single store. Handed a store
+    of its own, the entry would find nothing live and refuse nothing while
+    the pass went on reporting the run as LIVE — and two walks would share
+    one scope (KOD-880). Identity is the claim, not delegation: a holder
+    given the queue instead reads the same records through another object
+    and would satisfy a weaker assertion.
+    """
+    held = {}
+    original_queue = main.build_job_queue
+
+    def engine(**kwargs):
+        held["engine"] = kwargs["scope_registry"]
+        return object()
+
+    def queue(**kwargs):
+        held["queue"] = kwargs["registry"]
+        return original_queue(**kwargs)
+
+    def service(**kwargs):
+        held["service"] = kwargs["registry"]
+        return None
+
+    original_dispatch = main.build_dispatch_runtime
+
+    async def dispatch(**kwargs):
+        held["dispatch"] = kwargs["registry"]
+        return await original_dispatch(**kwargs)
+
+    monkeypatch.setattr(main, "build_workflow_engine", engine)
+    monkeypatch.setattr(main, "build_job_queue", queue)
+    monkeypatch.setattr(main, "build_job_service", service)
+    monkeypatch.setattr(main, "build_dispatch_runtime", dispatch)
+    try:
+        async with resources.app.router.lifespan_context(resources.app):
+            pass
+        assert held["engine"] is held["queue"]
+        assert held["engine"] is held["service"]
+        assert held["engine"] is held["dispatch"]
+        assert isinstance(held["engine"], InMemoryJobRegistry)
+        # And it is the store the queue actually writes into, rather than one
+        # the queue was handed and then replaced with its own.
+        assert resources.queues[0].registry is held["engine"]
     finally:
         await settle_fixture(resources)
 
