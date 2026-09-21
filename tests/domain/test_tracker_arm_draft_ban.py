@@ -8,18 +8,39 @@ is, so a third entry in any kind is read rather than absorbed.
 
 The scanned surface is derived, not listed: every module that imports or
 declares the class, reaches it through a module it imports, or imports a
-carrier whose annotation hands the value around.  Every construction form the
-shared walk knows is reported — the class call, the building and parsing
+carrier whose annotation hands the value around.  The construction forms the
+shared walk knows are reported — the class call, the building and parsing
 model methods however the receiver is reached, a subclass, an adapter or
 partial built around the class, ``type(x)(...)`` and ``x.__class__(...)``.
+The adapter and partial forms are caught when the class is handed bare: the
+walk reads an argument that spells the class itself, so a class wrapped in a
+generic or a union — ``TypeAdapter(list[TicketDraftOutput])``,
+``TypeAdapter(TicketDraftOutput | None)``, a subscript and a binary operation
+rather than the class — is not seen by this walk.
 
-Stated blind spot: a construction that names the class only inside a string
-constant, such as ``getattr(module, "TicketDraftOutput")`` or a
-``model_fields`` lookup keyed by a word, or that never names it at all, as in
-``AuthoredSpec.model_fields["ticket"].annotation(...)``, is invisible to this
-walk and to any other static one: a string constant is read here only inside
-an annotation, never as a receiver or a lookup key.  Nothing at head does it,
-and a reader who wants it closed has to run the code rather than read it.
+Stated blind spots.  A construction whose receiver is reached through a string
+constant — ``getattr(agent, "TicketDraftOutput")``, a ``model_fields`` lookup
+keyed by a word — names the class nowhere this walk reads, because a string
+constant is read here only inside an annotation, never as a receiver or a
+lookup key.  Less escapes than that sentence alone suggests: in a module the
+derived surface already holds, such a receiver handed a model method is still
+reported, as one of the unstated-receiver parses below, since silence about a
+receiver is not a statement that it is something else.  What goes unreported
+is a call that is no model method at all, as in
+``AuthoredSpec.model_fields["ticket"].annotation(...)``, and any form at all
+in a module the derived surface never reaches.
+
+A draft parsed through a carrier model is the other blind spot:
+``AuthoredSpec.model_validate({"ticket": {...}})`` makes the draft in a nested
+parse and names its class nowhere, so the register reports it nowhere.  It is
+the natural nested route a tracker-arm bypass would take, and what stops it at
+head is two side effects rather than this ban — the floor below reds on any
+carrier or class import into ``domain/fire_spec.py``, and the arm-reads guard
+(KOD-410) reds when the body read is off a spec.  Nothing at head writes
+either form.  Closing the string-constant one means running the code rather
+than reading it; closing the carrier one means registering construction over
+every holder class of the draft on the arm, which needs a decision about the
+holder construction the arm may legitimately do.
 """
 
 import pytest
@@ -142,7 +163,10 @@ def test_the_tracker_arm_modules_are_on_the_scanned_surface():
 
     ``domain/fire_spec.py`` is not a holder at head — it captures a subject
     and names no draft — so the reddening plant below imports the class,
-    which is the natural form a bypass would take.
+    which is the natural form a bypass would take.  That second assertion is a
+    statement of head rather than a ban: any carrier or class import into that
+    module reds it, and its message is what tells a reader who adds a
+    legitimate one that the surface moved.
     """
     holders = value_holders(source_tree(), identity=DRAFT)
 
