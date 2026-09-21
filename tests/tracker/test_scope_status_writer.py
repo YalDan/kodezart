@@ -29,6 +29,7 @@ from tests.tracker.connected_app_status_update_contract import (
 from tests.tracker.test_scope_reads import (
     INITIATIVE,
     MILESTONE,
+    OTHER_PROJECT,
     PROJECT,
     ScopeMcpServer,
 )
@@ -188,6 +189,25 @@ async def test_the_read_lists_the_containers_updates_newest_first() -> None:
         "project": PROJECT.key,
         "orderBy": "createdAt",
     }
+
+
+async def test_the_listing_answers_the_addressed_container_and_no_other() -> None:
+    """The double holds every container's updates, and lists one container's.
+
+    A double answering its whole store would let the adapter read as
+    addressed while the target it sent went nowhere, and the terminal would
+    compare its vector against a neighbouring project's newest report.
+    """
+    other = ScopeRef(kind=ScopeKind.PROJECT, key=OTHER_PROJECT)
+    server = ScopeMcpServer()
+    role = LinearScopeStatusUpdates(caller=server)
+    await role.post_status_update(ref=other, body=EARLIER)
+    await role.post_status_update(ref=PROJECT, body=BODY)
+
+    bodies = await role.status_update_bodies(ref=PROJECT)
+
+    assert list(bodies) == [BODY]
+    assert list(await role.status_update_bodies(ref=other)) == [EARLIER]
 
 
 async def test_the_servers_listing_answers_the_measured_envelope() -> None:

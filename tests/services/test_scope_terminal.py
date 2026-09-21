@@ -750,6 +750,30 @@ async def test_a_report_that_differs_from_the_newest_one_is_posted() -> None:
     assert status.reads == [PROJECT]
 
 
+async def test_an_older_report_equal_to_this_vector_under_a_newer_one_is_posted() -> (
+    None
+):
+    """What is compared is the NEWEST carried report, not any carried report.
+
+    A container carrying a converged report with a stopped-short one over it
+    is a container whose latest word is stopped-short.  Rendering the
+    converged vector again must post.  Compared against the whole carried
+    list instead, the older equal report would suppress this one and the
+    container's newest status update would go on saying stopped-short over a
+    scope that has converged (KOD-879).
+    """
+    older = rendered(closed=("A",))
+    newer = rendered(ready=("A",))
+    status = seeded((PROJECT, older), (PROJECT, newer))
+
+    event = await terminal(status=status).report(ready=reading(closed=("A",)))
+
+    assert len(status.posts) == 3
+    assert status.posts[2] == (PROJECT, older)
+    assert status.reads == [PROJECT]
+    assert event.outcome is WorkflowOutcome.scope_converged
+
+
 async def test_only_this_terminals_reports_are_compared() -> None:
     """A person's note on the surface is passed over, not compared.
 
@@ -811,3 +835,14 @@ async def test_the_heading_the_filter_reads_is_the_one_the_rendering_writes() ->
     assert body.startswith(SCOPE_STATUS_HEADING)
     assert latest_scope_report([body]) == body
     assert latest_scope_report([BY_HAND]) is None
+
+
+def test_a_body_that_quotes_the_heading_mid_sentence_is_not_a_report() -> None:
+    """The filter reads the heading where the rendering writes it: at the start.
+
+    A person's note quoting the heading inside a sentence is still a note.
+    Matched anywhere in the body instead, that note would be taken for the
+    newest report and, differing from this walk's vector, would cost one
+    extra post over a container whose report had not changed.
+    """
+    assert latest_scope_report([f"see {SCOPE_STATUS_HEADING}..."]) is None
