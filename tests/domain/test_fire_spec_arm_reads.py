@@ -18,6 +18,12 @@ The one thing a module may do with an arm's text besides hand it to the
 formatter is hand it to the one digest function, which hashes the bytes and
 renders nothing.  Those positions are counted apart and pinned exactly.
 
+One module reads the text itself, and it is named below rather than excused:
+deciding whether an answer exceeds what the subject stated means reading what
+the subject stated.  It renders nothing and reaches no prompt, so it is a read
+of the text and not a second formatter, and it is listed so that a second one
+cannot arrive unnoticed.
+
 Stated blind spots: scopes are module-wide, so a word bound to a spec
 anywhere in a module is a spec wherever that module reads it; a tuple-unpack
 target and a starred argument bind nothing; a spec handed to a lambda's
@@ -381,6 +387,13 @@ DIGEST_POSITIONS = {
     "domain/lane_entry.py": ("require_unamended_subject",),
 }
 
+#: The one position that reads an arm's text without handing it to the
+#: formatter or the digest: an answer is measured against the deliverables the
+#: subject's own text states, so the section has to be read to be measured
+#: against (KOD-629).  It renders nothing and reaches no prompt.  A second entry
+#: here is a decision recorded in this comment, not a convenience.
+TEXT_READS = {"services/fire_time_rulings.py": ("FireTimeRulings.rule",)}
+
 
 def _control(source: str) -> tuple[int, int]:
     """How many reads and digests a control module adds to the scan."""
@@ -401,7 +414,7 @@ def test_no_module_beside_the_formatter_reads_an_arm_itself():
     fixed point, and every read of the arm's own text off one of them is a
     site.
     """
-    assert _report(PACKAGE) == {"read": {}, "digested": DIGEST_POSITIONS}
+    assert _report(PACKAGE) == {"read": TEXT_READS, "digested": DIGEST_POSITIONS}
 
 
 def test_the_partition_is_reached_by_every_kind_of_root():
@@ -469,10 +482,16 @@ def test_the_scan_catches_a_spec_held_by_a_model_field():
 
 
 def test_the_scan_catches_a_spec_held_by_a_state_key_or_a_port_read():
+    # The port read this name refers to no longer answers a spec: KOD-710 moved
+    # the composition to the stage that is its one caller, so no port member
+    # returns one.  The second root is therefore the reader's return, which is
+    # the shape that remains, and the two reads below are still two roots.
     control = (
+        "from kodezart.domain.workflow_state import original_fire_spec\n"
+        "\n"
         "async def node(state, tracker):\n"
         '    held = state["fire_spec"]\n'
-        '    fetched = await tracker.read_fire_spec(issue_key="KOD-1")\n'
+        "    fetched = original_fire_spec(state)\n"
         "    return held.body, fetched.body\n"
     )
     assert _control(control) == (2, 0)
@@ -531,7 +550,7 @@ def test_the_scan_catches_a_spec_handed_to_an_unannotated_parameter_in_the_tree(
 
     report = _report(sources)
 
-    assert report["read"] == {IMPLEMENTATION: ("_own_text",)}
+    assert report["read"] == {**TEXT_READS, IMPLEMENTATION: ("_own_text",)}
     assert report["digested"] == DIGEST_POSITIONS
 
 
@@ -588,7 +607,7 @@ def test_the_scan_catches_a_spec_handed_to_an_unannotated_parameter(
     )
     report = _report({**PACKAGE, "caller.py": caller, "control.py": probe})
 
-    assert report["read"] == {"control.py": (reported,)}
+    assert report["read"] == {**TEXT_READS, "control.py": (reported,)}
 
 
 def test_a_spec_handed_on_through_two_unannotated_helpers_is_followed():
@@ -614,7 +633,7 @@ def test_a_spec_handed_on_through_two_unannotated_helpers_is_followed():
     )
     report = _report({**PACKAGE, "caller.py": caller, "control.py": control})
 
-    assert report["read"] == {"control.py": ("helper2",)}
+    assert report["read"] == {**TEXT_READS, "control.py": ("helper2",)}
 
 
 @pytest.mark.parametrize(
