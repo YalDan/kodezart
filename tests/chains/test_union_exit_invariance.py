@@ -13,7 +13,11 @@ import pytest
 from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
 from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.config.app import AppConfig
-from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
+from kodezart.domain.errors import (
+    CheckChainExecutionError,
+    GitOperationError,
+    MergeConflictError,
+)
 from kodezart.services.union_composition import UnionComposition
 from kodezart.types.domain.operation import CheckStep
 from kodezart.types.domain.union import UnionLaneHead, UnionOutcome
@@ -359,3 +363,23 @@ async def test_a_planted_publication_is_on_the_record_and_moves_a_ref(
     assert await fixture.refs() != before
     assert "refs/heads/union" in await pinned.git(fixture.remote, "show-ref")
     assert fixture.git.removed == fixture.git.created
+
+
+async def test_a_publication_git_refuses_is_on_the_record_all_the_same(tmp_path):
+    """The record is appended BEFORE the call, and that is what makes it a witness.
+
+    A refused publication moves no ref, so the ref comparison above is blind
+    to it: the only thing that can say the step asked is the record.  Append
+    it after the call instead and both witnesses go blind together on exactly
+    the publication a best-effort caller is likeliest to leave behind.
+    """
+    fixture = await build_delivery(tmp_path / "world")
+    tree = fixture.observer
+    before = await fixture.refs()
+    publisher = RecordingPublisher()
+
+    with pytest.raises(GitOperationError):
+        await publisher.push(str(tree), "bad..ref")
+
+    assert publisher.publications == [("push", str(tree), "bad..ref")]
+    assert await fixture.refs() == before
