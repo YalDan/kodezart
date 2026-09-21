@@ -323,6 +323,13 @@ _FAULT_OUTSIDE = {
             UpheldReason.COST_MEASURED_AFFORDABLE,
             id="cost_decides_before_the_fault_line",
         ),
+        pytest.param(
+            {"finding": _FAULT_OUTSIDE, "reproduced": False},
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+            id="fault_outside_criterion_asked_before_reproduction",
+        ),
     ],
 )
 def test_the_fault_line_is_asked_after_cost_and_before_reproduction(
@@ -337,7 +344,7 @@ def test_the_fault_line_is_asked_after_cost_and_before_reproduction(
     a fault in the criterion's own text authorizes an amendment, a fault outside
     it never does. Cost is not one of the four grounds, so deciding it above the
     fault line still asks the fault line before any ground, and that landed
-    order is pinned here.
+    order is pinned here, the reproduction half by the unreproduced row.
     """
     value = amended()
     claim = AmendmentClaim.model_validate(
@@ -346,7 +353,7 @@ def test_the_fault_line_is_asked_after_cost_and_before_reproduction(
     judgment = AmendmentJudgment.model_validate(
         value.judgment.model_dump() | judgment_changes
     )
-    assert judgment.reproduced
+    assert judgment.reproduced is judgment_changes.get("reproduced", True)
     assert upheld_reason(claim, judgment, environment=environment) is expected
 
 
