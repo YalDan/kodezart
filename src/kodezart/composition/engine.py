@@ -34,6 +34,7 @@ from kodezart.core.protocols import (
     BranchMerger,
     FireCriteriaSource,
     GitService,
+    JobRegistry,
     OutboundContentGate,
     PromptSetProvider,
     RefPublisher,
@@ -218,6 +219,7 @@ def build_workflow_engine(
     criteria: FireCriteriaSource | None = None,
     scope_tracker: TrackerPort | None = None,
     scope_status: ScopeStatusUpdates | None = None,
+    scope_registry: JobRegistry | None = None,
     operation: OperationConfig | None = None,
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.
@@ -434,6 +436,11 @@ def build_workflow_engine(
             # scope arm composed without one would walk, certify nothing and
             # say nothing, which is the state the terminal exists to end.
             raise ValueError("Scope execution requires a scope status writer")
+        if scope_registry is None:
+            # Refused for the same shape of reason: an arm composed without a
+            # record store cannot see another job over the same scope, and
+            # would walk beside it over every lane of it.
+            raise ValueError("Scope execution requires a job registry")
         if operation is None:
             # The marker every lane's record is read and written under comes
             # from here, so this is the typed absence refusal the rest of
@@ -458,6 +465,7 @@ def build_workflow_engine(
             prompts=prompts,
             skills=skills,
             gate=gate,
+            registry=scope_registry,
         )
         scoped_arm = build_scope_runtime(
             tracker=scope_tracker,

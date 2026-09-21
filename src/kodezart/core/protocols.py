@@ -2146,6 +2146,15 @@ class JobRegistry(Protocol):
         """The job's current record, or ``None`` when unknown or evicted."""
         ...
 
+    async def live_for_scope(self, *, scope: ScopeRef) -> Sequence[JobRecord]:
+        """Every job addressed at *scope* that is not TERMINAL, oldest first.
+
+        Whichever lane it was submitted on: two walks over one scope
+        contend over every lane of it, and the two submitters a deployment
+        has — an HTTP route and the scheduled pass — do not share a lane.
+        """
+        ...
+
 
 @runtime_checkable
 class RunStateReader(Protocol):

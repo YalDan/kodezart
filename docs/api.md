@@ -109,13 +109,15 @@ See [running a scope](running-a-scope.md) for the configuration one needs.
 
 A scoped job that does reach the scoped arm can still end before it walks
 anything, at its entry, and each of those endings is typed and carries the
-addressed scope. `ScopeNotApprovedError` means the addressed scope carries no
-approval, on itself or on any container above it: nothing about the scope was
-read and no member was touched. `OrganizeHaltError` means an organize stage of
+addressed scope. `ScopeRunLiveError` means another job over the same scope was
+submitted earlier in this process and is still live; it names that job and its
+lane, and nothing about the scope was read. `ScopeNotApprovedError` means the
+addressed scope carries no approval, on itself or on any container above it:
+nothing about the scope was read and no member was touched. `OrganizeHaltError` means an organize stage of
 the approved run stopped and retains its exact halt report — including the halt
 that names the members a stage did not label, which is how a run ends when one
-member of the scope cannot be carried through a stage. Both terminate the
-job with outcome `engine_error`; no event type or event field is added for
+member of the scope cannot be carried through a stage. Each of them terminates
+the job with outcome `engine_error`; no event type or event field is added for
 them. The first `scope_walk` observation of a run follows its entry, so an
 observation is evidence that the entry passed.
 

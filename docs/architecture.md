@@ -105,7 +105,7 @@ does not exist.
 | JobQueue          | AsyncioJobQueue          | In-process lanes, bounded depth and concurrency      |
 | DispatchProducer | FireDispatcher | Ranks an approved scan and launches one fire per pass |
 | DispatchProducer | ScopeDispatcher | Walks a scope's ready set and launches one lane per pass, over criterion sub-issues rather than a deliverable's workflow field |
-| JobRegistry       | AsyncioJobQueue          | The same queue read as a record store                |
+| JobRegistry | InMemoryJobRegistry, AsyncioJobQueue | The records the queue writes into, built before the engine so a scope run's entry reads liveness from it; a live job is found by its scope on any lane |
 | RunStateReader    | LangGraphRunStateReader  | Reads a run's checkpointed state                     |
 | PromptProvider    | InRepoPromptRegistry     | Prompt sets as directories of templates              |
 | PromptSetProvider | InRepoPromptRegistry     | Set content belonging to no key: lens definitions, the system-prompt append |
@@ -209,7 +209,10 @@ approved initiative are both admitted, and a milestone is admitted by its
 owning project. A scope with no approval anywhere above it refuses by type
 before a single member is read, which is a different outcome from a scope that
 is approved and has nothing left to do: that one is walked and observed once,
-with nothing dispatched. The per-member approval reading inside `read_scope_ready`
+with nothing dispatched. `ScopeRunLiveError` refuses ahead of even that read:
+it means another job over the same scope was submitted earlier in this process
+and is still live; it names that job and its lane, and nothing about the scope
+was read. The per-member approval reading inside `read_scope_ready`
 is unchanged and still decides each lane (KOD-425); this is the run's own
 admission, not a substitute for it.
 
@@ -454,16 +457,18 @@ pass reads each `[[organize_scopes]]` row on the dispatch cadence and submits a
 scope run for every row that is approved and has no live job, onto the
 configured dispatch lane. It opens no session, takes no surface lease and makes
 no tracker write: applying the label is somebody else's act and this pass only
-observes it. Its report names every declared row as submitted, live, converged,
-unapproved or failed, so "nobody has approved this scope yet" is an answer read
-off the tick rather than inferred from silence. What it remembers about a row is
-this process's own, keyed by the scope, and so is the queue it submits onto —
-which is why a registry that has forgotten a job is not read as a run still
-walking. A row whose last run in this process ended with every lane done is not
-submitted again while its reading is the same, and an added member, a criterion
-moved out of Done or a change of approval re-arms it; a restarted process walks
-a converged row once on its first tick, and that walk posts no second status
-update.
+observes it. Liveness is the record store's answer for the scope on every lane,
+so a run submitted over HTTP is live to the pass and no second walk of that
+scope is submitted beside it. Its report names every declared row as submitted,
+live, converged, unapproved or failed, so "nobody has approved this scope yet"
+is an answer read off the tick rather than inferred from silence. What it
+remembers about a row is this process's own, keyed by the scope, and so is the
+queue it submits onto — which is why a record store that has forgotten a job is
+not read as a run still walking. A row whose last run in this process ended with
+every lane done is not submitted again while its reading is the same, and an
+added member, a criterion moved out of Done or a change of approval re-arms it;
+a restarted process walks a converged row once on its first tick, and that walk
+posts no second status update.
 
 One predicate answers whether a phase may act on a member now, and every gate
 read and approval read in the owner is that predicate: a run stage is admitted

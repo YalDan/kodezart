@@ -286,6 +286,27 @@ async def test_a_run_that_stopped_short_frees_the_scope_for_the_next_tick(
     assert len(queue.submissions) == 2
 
 
+async def test_a_run_live_on_another_lane_is_reported_live() -> None:
+    """Liveness is the scope's address on every lane, not this pass's memory.
+
+    A run somebody posted over HTTP lands on a lane this pass never submits
+    onto, so a memory of what this pass submitted cannot see it — and the two
+    walks would run in parallel over one scope and contend over every lane.
+    """
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    posted = await queue.submit(
+        lane="somebody-elses-lane",
+        request=standing_scope_submission(binding=bindings(FIRST)[0], trunk=TRUNK),
+    )
+
+    report = await heartbeat(port, queue).tick()
+
+    assert outcomes(report) == [(FIRST, HeartbeatOutcome.LIVE)]
+    assert report.entries[0].job_id == posted.job_id
+    assert [lane for lane, _ in queue.submissions] == ["somebody-elses-lane"]
+
+
 async def test_an_evicted_record_is_not_a_live_job() -> None:
     """A registry that forgot a job says nothing about a run still walking.
 
@@ -542,17 +563,20 @@ async def test_a_readiness_read_that_failed_costs_a_tick_and_not_a_submission() 
 
 
 async def test_a_restarted_process_submits_on_its_first_tick() -> None:
-    """The memory is one process's memory of one process's queue.
+    """The memory is one process's, and a restart inherits no live job.
 
     A fresh heartbeat over the same board and the same approved scope
-    submits, because the queue a restart inherits is empty too. An instance
-    that shared the memory would report the previous instance's job as live
-    and the scope would never run again.
+    submits, because the queue a restart would have re-used is gone with the
+    process. The double survives the restart here and stands for the record
+    store, so the previous job is ended first: a job still live on the store
+    is live whoever submitted it (KOD-880), and what this case is about is
+    the memory rather than liveness.
     """
     port = board(first=APPROVED)
     queue = FakeJobQueue()
 
     (submitted,) = (await heartbeat(port, queue).tick()).entries
+    queue.mark(submitted.job_id, JobState.TERMINAL)
     restarted = await heartbeat(port, queue).tick()
 
     assert outcomes(restarted) == [(FIRST, HeartbeatOutcome.SUBMITTED)]

@@ -1,5 +1,6 @@
 """An actual upheld departure must not invent an evaluator observation."""
 
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.config.app import AppConfig
@@ -77,6 +78,7 @@ async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
         ),
         operation=native_operation(),
         scope_tracker=port,
+        scope_registry=InMemoryJobRegistry(),
         scope_status=FakeScopeStatusWriter(),
         criteria=criteria,
         repositories=(RepoEntry(url=REPO_URL, trunk="main"),),

@@ -144,6 +144,7 @@ def build_scope_entry(
     prompts: PromptSetProvider,
     skills: SkillsSelection,
     gate: OutboundContentGate,
+    registry: JobRegistry,
 ) -> ScopeEntry:
     """What a scope run passes through before its first tick.
 
@@ -152,6 +153,9 @@ def build_scope_entry(
     declares no organize table has no stage to run: the walk starts, and
     every lane's own fire read refuses on the criteria-stage label the
     table would have named.
+
+    *registry* is the record store this run's liveness refusal reads, which
+    is the one the queue writes into.
     """
 
     def stages_for(url: str) -> ScopeOrganizer | None:
@@ -171,7 +175,7 @@ def build_scope_entry(
             under_approval=True,
         )
 
-    return ScopeEntry(approvals=tracker, stages_for=stages_for)
+    return ScopeEntry(approvals=tracker, stages_for=stages_for, registry=registry)
 
 
 def verify_organize_configuration(

@@ -572,7 +572,11 @@ async def test_setting_the_label_starts_a_run_that_stages_every_issue_then_walks
         port, lanes, monkeypatch=monkeypatch, builds=[], operation=operation
     )
     authored, edited = recording_stage_writes(port)
-    queue = build_job_queue(settings=JobQueueSettings(), workflow_engine=harness.engine)
+    queue = build_job_queue(
+        settings=JobQueueSettings(),
+        workflow_engine=harness.engine,
+        registry=harness.registry,
+    )
     await queue.start()
     try:
         beat = standing_heartbeat(port, queue, operation)
@@ -587,7 +591,7 @@ async def test_setting_the_label_starts_a_run_that_stages_every_issue_then_walks
         assert [(entry.scope, entry.outcome) for entry in unapproved.entries] == [
             (SCOPE, HeartbeatOutcome.UNAPPROVED)
         ]
-        assert list(queue._records) == []
+        assert list(queue.registry.records) == []
         assert harness.executor.organize_calls == []
         assert untouched()
 
@@ -604,7 +608,7 @@ async def test_setting_the_label_starts_a_run_that_stages_every_issue_then_walks
         live = await beat.tick()
         assert [entry.outcome for entry in live.entries] == [HeartbeatOutcome.LIVE]
         assert live.entries[0].job_id == submitted.job_id
-        assert list(queue._records) == [submitted.job_id]
+        assert list(queue.registry.records) == [submitted.job_id]
 
         events, at_first_walk = await drain(queue, submitted.job_id, port=port)
         assert errors(events) == []
@@ -744,7 +748,11 @@ async def test_a_stage_two_escalation_holds_the_run_before_any_fire_and_stays_vi
             refuses="B",
         ),
     )
-    queue = build_job_queue(settings=JobQueueSettings(), workflow_engine=harness.engine)
+    queue = build_job_queue(
+        settings=JobQueueSettings(),
+        workflow_engine=harness.engine,
+        registry=harness.registry,
+    )
     await queue.start()
     try:
         beat = standing_heartbeat(port, queue, operation)

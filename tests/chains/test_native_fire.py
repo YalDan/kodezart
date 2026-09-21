@@ -14,6 +14,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.chains.criteria import (
     TrackerCriteria,
     require_current_native_snapshot,
@@ -1307,6 +1308,7 @@ async def test_production_constructor_wires_native_source_to_shared_consumers(
     router = build_workflow_engine(
         operation=native_operation(),
         scope_tracker=port,
+        scope_registry=InMemoryJobRegistry(),
         scope_status=FakeScopeStatusWriter(),
         config=AppConfig(
             write_back=WriteBackSettings(max_verify_rounds=2),

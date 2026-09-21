@@ -15,9 +15,10 @@ default of 1 is the only thing making runs serial.
 import asyncio
 import uuid
 from collections import deque
-from collections.abc import AsyncIterator, Coroutine
+from collections.abc import AsyncIterator, Coroutine, Sequence
 from datetime import UTC, datetime
 
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
@@ -28,6 +29,7 @@ from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 from kodezart.types.domain.workflow import WorkflowSubmission
 
@@ -100,6 +102,12 @@ class _Lane:
 class AsyncioJobQueue:
     """Satisfies both ``JobQueue`` and ``JobRegistry``.
 
+    The records it writes live in an object built BEFORE it, and it delegates
+    both reads of the role to that object: a scope run's entry reads liveness
+    from the same store while this queue is in the middle of calling the
+    engine that reaches it, and a store owned by the queue could not be
+    handed to the engine the queue is constructed from.
+
     NOT PERSISTENT.  The queue lives in the serving process: a restart
     drops every job still waiting and terminates every job in flight.
     An HTTP-submitted fire lost to a restart is re-submitted by its
@@ -123,6 +131,7 @@ class AsyncioJobQueue:
         terminal_retention_seconds: float,
         event_buffer_retention_seconds: float,
         event_buffer_capacity: int,
+        registry: InMemoryJobRegistry | None = None,
     ) -> None:
         self._engine: WorkflowEngine = engine
         self._max_concurrent_runs_per_lane: int = max_concurrent_runs_per_lane
@@ -131,7 +140,11 @@ class AsyncioJobQueue:
         self._event_buffer_retention_seconds: float = event_buffer_retention_seconds
         self._event_buffer_capacity: int = event_buffer_capacity
         self._lanes: dict[str, _Lane] = {}
-        self._records: dict[str, JobRecord] = {}
+        #: Public, and read-only by convention: it is what a test enumerates
+        #: and what a scope run's entry was handed before this queue existed.
+        self.registry: InMemoryJobRegistry = (
+            InMemoryJobRegistry() if registry is None else registry
+        )
         self._requests: dict[str, WorkflowSubmission] = {}
         self._streams: dict[str, _JobStream] = {}
         self._evictions: set[asyncio.Task[None]] = set()
@@ -185,19 +198,17 @@ class AsyncioJobQueue:
             lane.workers.clear()
             lane.pending.clear()
         abandoned: list[str] = []
-        for job_id, record in list(self._records.items()):
-            if record.state is not JobState.TERMINAL:
-                self._records[job_id] = record.model_copy(
-                    update={
-                        "state": JobState.TERMINAL,
-                        "queue_position": None,
-                        "outcome": WorkflowOutcome.shutdown_abandoned,
-                    },
-                )
-                abandoned.append(job_id)
-                stream = self._streams.get(job_id)
-                if stream is not None:
-                    stream.close()
+        for record in self.registry.open():
+            self.registry.amend(
+                record.job_id,
+                state=JobState.TERMINAL,
+                queue_position=None,
+                outcome=WorkflowOutcome.shutdown_abandoned,
+            )
+            abandoned.append(record.job_id)
+            stream = self._streams.get(record.job_id)
+            if stream is not None:
+                stream.close()
         await self._log.ainfo(
             "job_queue_stopped",
             lanes=len(self._lanes),
@@ -220,6 +231,7 @@ class AsyncioJobQueue:
             state=JobState.QUEUED,
             queue_position=len(runtime.pending) + 1,
             submitted_at=datetime.now(tz=UTC),
+            scope=request.scope,
         )
         try:
             runtime.queue.put_nowait(job_id)
@@ -230,7 +242,7 @@ class AsyncioJobQueue:
             )
             raise QueueFullError(msg) from exc
         runtime.pending.append(job_id)
-        self._records[job_id] = record
+        self.registry.add(record)
         self._requests[job_id] = request
         self._streams[job_id] = _JobStream(self._event_buffer_capacity)
         await self._log.ainfo(
@@ -253,7 +265,11 @@ class AsyncioJobQueue:
 
     async def get(self, *, job_id: str) -> JobRecord | None:
         """The job's current record, or ``None`` when unknown or evicted."""
-        return self._records.get(job_id)
+        return await self.registry.get(job_id=job_id)
+
+    async def live_for_scope(self, *, scope: ScopeRef) -> Sequence[JobRecord]:
+        """Every job addressed at *scope* that is not TERMINAL, oldest first."""
+        return await self.registry.live_for_scope(scope=scope)
 
     # -- Dispatcher internals ------------------------------------------------
 
@@ -281,9 +297,8 @@ class AsyncioJobQueue:
         if job_id in runtime.pending:
             runtime.pending.remove(job_id)
         self._reindex(lane)
-        record = self._records[job_id]
-        self._records[job_id] = record.model_copy(
-            update={"state": JobState.RUNNING, "queue_position": None},
+        record = self.registry.amend(
+            job_id, state=JobState.RUNNING, queue_position=None
         )
         request = self._requests.pop(job_id)
         await self._log.ainfo("job_started", job_id=job_id, lane=lane)
@@ -337,10 +352,9 @@ class AsyncioJobQueue:
         stream = self._streams[job_id]
         if not stream.publish(event):
             return
-        record = self._records[job_id]
-        if record.truncated:
+        if self.registry.records[job_id].truncated:
             return
-        self._records[job_id] = record.model_copy(update={"truncated": True})
+        self.registry.amend(job_id, truncated=True)
         await self._log.awarning(
             "job_event_buffer_truncated",
             job_id=job_id,
@@ -353,13 +367,11 @@ class AsyncioJobQueue:
         lane: str,
         outcome: WorkflowOutcome | None,
     ) -> None:
-        record = self._records[job_id]
-        self._records[job_id] = record.model_copy(
-            update={
-                "state": JobState.TERMINAL,
-                "queue_position": None,
-                "outcome": outcome,
-            },
+        self.registry.amend(
+            job_id,
+            state=JobState.TERMINAL,
+            queue_position=None,
+            outcome=outcome,
         )
         self._streams[job_id].close()
         await self._log.ainfo(
@@ -385,9 +397,9 @@ class AsyncioJobQueue:
         dropped = stream.discard_buffer()
         if dropped == 0:
             return
-        record = self._records.get(job_id)
+        record = await self.registry.get(job_id=job_id)
         if record is not None and not record.truncated:
-            self._records[job_id] = record.model_copy(update={"truncated": True})
+            self.registry.amend(job_id, truncated=True)
         await self._log.ainfo(
             "job_event_buffer_dropped",
             job_id=job_id,
@@ -398,13 +410,11 @@ class AsyncioJobQueue:
     async def _drop_record_later(self, job_id: str) -> None:
         """Evict the record itself, so the registry cannot grow unbounded."""
         await asyncio.sleep(self._terminal_retention_seconds)
-        self._records.pop(job_id, None)
+        self.registry.forget(job_id)
         self._streams.pop(job_id, None)
 
     def _reindex(self, lane: str) -> None:
         for position, pending_id in enumerate(self._lanes[lane].pending, start=1):
-            record = self._records.get(pending_id)
+            record = self.registry.records.get(pending_id)
             if record is not None and record.state is JobState.QUEUED:
-                self._records[pending_id] = record.model_copy(
-                    update={"queue_position": position},
-                )
+                self.registry.amend(pending_id, queue_position=position)

@@ -12,6 +12,7 @@ import pytest
 import structlog.testing
 from langgraph.checkpoint.memory import InMemorySaver
 
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.composition.jobs import build_job_queue
@@ -299,6 +300,12 @@ class Harness:
     git: object
     persister: object
     merger: object
+    registry: InMemoryJobRegistry
+    """The record store the composed scope arm reads liveness from.
+
+    Held here so a test that also builds a queue builds it on the SAME store:
+    two stores would let the entry's refusal read an empty one while the queue
+    wrote the other."""
 
 
 def runtime(
@@ -356,6 +363,7 @@ def runtime(
     )
     artifacts = FakeArtifactPersister()
     status = FakeScopeStatusWriter() if status is None else status
+    registry = InMemoryJobRegistry()
     saver = saver or InMemorySaver()
     merger = (
         FakeBranchMerger(
@@ -404,6 +412,7 @@ def runtime(
             checkpointer=saver,
             criteria=TrackerCriteria(tracker=port),
             scope_tracker=port,
+            scope_registry=registry,
             scope_status=status,
         )
     return Harness(
@@ -418,6 +427,7 @@ def runtime(
         git,
         persister,
         merger,
+        registry,
     )
 
 
@@ -465,7 +475,11 @@ async def test_request_queue_constructor_reaches_real_native_graph_without_child
         port=board(lanes=("A", "B"), blocked={"B": ("A",)}),
         lanes=("A", "B"),
     )
-    queue = build_job_queue(settings=JobQueueSettings(), workflow_engine=harness.engine)
+    queue = build_job_queue(
+        settings=JobQueueSettings(),
+        workflow_engine=harness.engine,
+        registry=harness.registry,
+    )
     handler = AgentHandler(harness.service, SUPPRESS_ALL_SKILLS, queue=queue)
     await queue.start()
     try:
@@ -502,7 +516,7 @@ async def test_request_queue_constructor_reaches_real_native_graph_without_child
         finished = await queue.get(job_id=record.job_id)
         assert finished.state is JobState.TERMINAL
         assert finished.outcome is WorkflowOutcome.scope_converged
-        assert list(queue._records) == [record.job_id]
+        assert list(queue.registry.records) == [record.job_id]
         assert harness.port.claim_writes == []
         # The only bodies the walk wrote are the two Evidence rows its own
         # evaluations stamped; no child job and no claim was written at all.
@@ -1376,6 +1390,7 @@ async def test_every_scoped_fire_pins_its_open_questions_before_its_first_iterat
         harness.git,
         harness.persister,
         harness.merger,
+        harness.registry,
     )
 
     events = await bounded_walk(harness)

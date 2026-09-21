@@ -205,7 +205,7 @@ async def test_composed_retention_delays_drive_real_eviction(configured, monkeyp
         assert await _drain(queue, record.job_id) == []
         assert await queue.get(job_id=record.job_id) is not None
         releases[settings.terminal_retention_seconds].set()
-        await _until(lambda: record.job_id not in queue._records)
+        await _until(lambda: record.job_id not in queue.registry.records)
         assert await queue.get(job_id=record.job_id) is None
     finally:
         await queue.stop()

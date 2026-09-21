@@ -4,6 +4,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.config.app import AppConfig
@@ -84,6 +85,7 @@ async def make_runtime(
         ),
         operation=None if no_operation else operation,
         scope_tracker=port,
+        scope_registry=InMemoryJobRegistry(),
         scope_status=FakeScopeStatusWriter(),
         criteria=source,
         repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
