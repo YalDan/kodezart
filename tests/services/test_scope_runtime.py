@@ -37,11 +37,13 @@ from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import BaseResolutionError, ScopedExecutionUnavailableError
+from kodezart.services import scope_runtime
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.scope_entry import ScopeEntry
 from kodezart.services.scope_runtime import (
+    PLATEAU_BOUND,
     ScopeWorkflowEngine,
     _LastFire,
     _owed_identities,
@@ -366,6 +368,35 @@ async def test_a_fire_that_closed_nothing_it_owed_rests_the_lane() -> None:
     assert failures == []
     assert port.restored_states == [("A", "Todo")]
     assert port.issues["A"].state_name == "Todo"
+
+
+async def test_the_bound_is_one_tick_and_the_walk_spends_that_constant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bound's VALUE, and that the walk is what spends it (KOD-727).
+
+    The reading the walk makes is one tick long, so the constant's value is the
+    whole of the policy: at one, a fire that closed nothing of what its lane
+    owed ends that lane's turn, which the test above drives; at two the window
+    is never full and no fire ever ends a turn, so the arm is dead.  Both
+    fixtures that prove a lane closing one previously-open reference per tick
+    runs past the bound stay green at either value — a closure clears any
+    window — which is why the value is pinned here rather than inferred from
+    them.
+
+    The same board is read twice, so what the assertion rests on is the
+    constant and not the board: raising it is the only difference between a
+    rested lane and an untouched one, which a call site spelling the quantity
+    itself would not show.
+    """
+    assert PLATEAU_BOUND == 1
+    port = scope_board(criterion_row("A/check"))
+    last = await owed_by(port, engine(port), lane="A")
+
+    monkeypatch.setattr(scope_runtime, "PLATEAU_BOUND", 2)
+    rested, failures = await settle_on(port, last=last)
+
+    assert (rested, failures, port.restored_states) == ([], [], [])
 
 
 async def test_a_tick_that_closed_twelve_and_surfaced_twelve_is_not_a_plateau() -> None:
