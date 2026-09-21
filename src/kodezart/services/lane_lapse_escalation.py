@@ -92,6 +92,13 @@ class _LapseStep:
         There is no repair arm: the window is one round, so a finding here
         would be a round this step has no honest answer for — the question
         is the same question however it was read.
+
+        Which makes the refusal below unreachable as this caller drives it:
+        ``max_rounds=1`` means *finding* is never anything but ``None``, and
+        no test can reach the raise. It is kept, and said out loud here
+        rather than left for a reader to discover, because it records what
+        this step would refuse if the budget ever allowed a second round —
+        the protocol requires the parameter either way.
         """
         if finding is not None:
             raise NativeWriteRefusalError(
