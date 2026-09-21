@@ -113,6 +113,18 @@ def _strip(node: ast.expr) -> ast.expr:
     return node.value if isinstance(node, ast.Await) else node
 
 
+def _is_graded_key(node: ast.Subscript) -> bool:
+    """Whether *node* reads the graded identity out of a serialised record.
+
+    A record dumped to a mapping spells the same field as a constant key, so
+    ``record[GRADED]`` carries exactly the value ``record.GRADED`` does. The
+    key is compared with the derived identity rather than with a spelling
+    repeated here, so renaming the field on the record moves this arm too.
+    """
+    key = node.slice
+    return isinstance(key, ast.Constant) and key.value == GRADED
+
+
 def _names_the_graded_sha(node: ast.AST) -> bool:
     """Whether this expression spells the graded identity itself."""
     stack: list[ast.AST] = [node]
@@ -124,25 +136,31 @@ def _names_the_graded_sha(node: ast.AST) -> bool:
             return True
         if isinstance(current, ast.Name) and current.id == GRADED:
             return True
+        if isinstance(current, ast.Subscript) and _is_graded_key(current):
+            return True
         stack.extend(ast.iter_child_nodes(current))
     return False
 
 
-def _is_direct_read(node: ast.expr) -> bool:
+def _is_direct_read(node: ast.expr, aliases: frozenset[str] = frozenset()) -> bool:
     """Whether *node* IS the graded identity, or a literal collecting it.
 
-    One hop, deliberately: a local the identity was handed to as one
-    argument among many carries a value of some other kind, and following
-    those would make the walk report every reader downstream of a prompt or
-    a report that happens to quote the sha.
+    The identity itself, the same field read off a serialised record, a name
+    that already stands for it, or a container literal collecting any of
+    those. What is deliberately NOT followed is a local the identity was
+    handed to as one argument among many: that local carries a value of some
+    other kind, and following it would make the walk report every reader
+    downstream of a prompt or a report that happens to quote the sha.
     """
     value = _strip(node)
     if isinstance(value, ast.Attribute):
         return value.attr == GRADED
     if isinstance(value, ast.Name):
-        return value.id == GRADED
+        return value.id == GRADED or value.id in aliases
+    if isinstance(value, ast.Subscript):
+        return _is_graded_key(value)
     if isinstance(value, LITERALS):
-        return any(_is_direct_read(element) for element in value.elts)
+        return any(_is_direct_read(element, aliases) for element in value.elts)
     return False
 
 
@@ -166,15 +184,26 @@ def _bindings(scope: ast.AST) -> list[tuple[list[ast.expr], ast.expr]]:
 
 
 def _aliases(scope: ast.AST, inherited: frozenset[str]) -> frozenset[str]:
-    """The names that stand for the graded identity inside *scope*."""
+    """The names that stand for the graded identity inside *scope*.
+
+    Grown to a fixed point: a name bound from another name that already
+    stands for the identity stands for it too, because a plain rebinding
+    carries the same value rather than a value of another kind. A single pass
+    would also miss an alias bound before the name it is bound from.
+    """
     aliases = set(inherited)
-    for targets, value in _bindings(scope):
-        if not _is_direct_read(value):
-            continue
-        for target in targets:
-            aliases.update(
-                node.id for node in ast.walk(target) if isinstance(node, ast.Name)
-            )
+    bindings = _bindings(scope)
+    changed = True
+    while changed:
+        previous = set(aliases)
+        for targets, value in bindings:
+            if not _is_direct_read(value, frozenset(aliases)):
+                continue
+            for target in targets:
+                aliases.update(
+                    node.id for node in ast.walk(target) if isinstance(node, ast.Name)
+                )
+        changed = aliases != previous
     return frozenset(aliases)
 
 
@@ -285,6 +314,18 @@ def test_every_exemption_carries_the_reason_it_is_one():
             "    taken = evidence.graded_sha\n"
             "    return taken is not head_sha\n",
             id="aliased-operand",
+        ),
+        pytest.param(
+            "def lapsed(evidence, head_sha):\n"
+            f"    recorded = evidence.{GRADED}\n"
+            "    taken = recorded\n"
+            "    return taken is not head_sha\n",
+            id="twice-aliased-operand",
+        ),
+        pytest.param(
+            "def lapsed(evidence, head_sha):\n"
+            f"    return evidence.model_dump()[{GRADED!r}] != head_sha\n",
+            id="serialised-record-subscript",
         ),
         pytest.param(
             "def lapsed(evidence, head_sha, resolve):\n"
