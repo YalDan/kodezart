@@ -32,6 +32,9 @@ elsewhere, of a surface somebody nominated.
 One class of the shipped proxy is out of this census: a model configuration
 whose `extra` setting is loosened from forbidding unknown fields to
 allowing them.  The tree carries none today and nothing here would see one.
+A second class is out of it too: `addopts` (with `-k` or `--deselect`),
+`testpaths`, and `collect_ignore` in a conftest can each stop a test being
+collected at all, and nothing here reads them; they are a later slice.
 
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
@@ -131,11 +134,20 @@ ALLOWED_GATED_MARKS: dict[str, tuple[str, ...]] = {
 #: compared exactly, because a rule relaxed there is a hole no inline
 #: directive shows: the row for `src/kodezart/config/git.py` below is one
 #: that landed unnoticed.
+#:
+#: The linter's table is pinned whole rather than at its lint subtree alone.
+#: The keys that decide which files it reads at all -- the exclusions, the
+#: includes, the inherited configuration -- are an open family, and one
+#: exact table subsumes them where a hand-written list of hole spellings
+#: would not.  So a key that narrows the tree the linter reads, a key that
+#: widens it, a raised line length (which is one rule's threshold) and a
+#: formatter change are each a row edit here, with the reason written beside
+#: it.
 CONFIG_TABLES: tuple[str, ...] = (
     "tool.mypy",
     "tool.pydantic-mypy",
     "tool.pytest.ini_options.filterwarnings",
-    "tool.ruff.lint",
+    "tool.ruff",
 )
 CONFIG_BASELINE: dict[str, object] = {
     "tool.mypy": {
@@ -163,43 +175,51 @@ CONFIG_BASELINE: dict[str, object] = {
     # Every warning fails the suite.  A bare category here would re-open
     # the hole that setting closes.
     "tool.pytest.ini_options.filterwarnings": ("error",),
-    "tool.ruff.lint": {
-        "select": (
-            "E",
-            "W",
-            "F",
-            "I",
-            "B",
-            "C4",
-            "UP",
-            "N",
-            "ANN",
-            "S",
-            "A",
-            "ARG",
-            "RUF",
-        ),
-        "ignore": ("S101",),
-        "per-file-ignores": {
-            "tests/**/*.py": (
-                "S101",
-                "ARG001",
-                "ARG002",
+    "tool.ruff": {
+        "target-version": "py312",
+        "line-length": 88,
+        # No exclusion key, no include key: the linter reads whatever the
+        # gate hands it, which is both trees the census walks.
+        "src": ("src", "tests"),
+        "lint": {
+            "select": (
+                "E",
+                "W",
+                "F",
+                "I",
+                "B",
+                "C4",
+                "UP",
+                "N",
                 "ANN",
-                "S105",
-                "S108",
-                "S603",
-                "S607",
+                "S",
+                "A",
+                "ARG",
+                "RUF",
             ),
-            # Four rows on shipped modules: temporary-path defaults and
-            # token-shaped constants the rules read as findings.
-            "src/kodezart/config/app.py": ("S108",),
-            "src/kodezart/config/git.py": ("S108",),
-            "src/kodezart/types/domain/prompts.py": ("S105",),
-            "src/kodezart/types/domain/session.py": ("S105",),
-            "tests/types/**/*.py": ("A005",),
+            "ignore": ("S101",),
+            "per-file-ignores": {
+                "tests/**/*.py": (
+                    "S101",
+                    "ARG001",
+                    "ARG002",
+                    "ANN",
+                    "S105",
+                    "S108",
+                    "S603",
+                    "S607",
+                ),
+                # Four rows on shipped modules: temporary-path defaults and
+                # token-shaped constants the rules read as findings.
+                "src/kodezart/config/app.py": ("S108",),
+                "src/kodezart/config/git.py": ("S108",),
+                "src/kodezart/types/domain/prompts.py": ("S105",),
+                "src/kodezart/types/domain/session.py": ("S105",),
+                "tests/types/**/*.py": ("A005",),
+            },
+            "isort": {"known-first-party": ("kodezart",)},
         },
-        "isort": {"known-first-party": ("kodezart",)},
+        "format": {"quote-style": "double", "indent-style": "space"},
     },
 }
 
@@ -248,8 +268,11 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
     "# type: ignore[arg-type]",
     "# noqa: E501",
     "# ruff: noqa",
+    "# flake8: noqa",
+    "# isort: skip_file",
     "# mypy: ignore-errors",
     "# mypy: disable-error-code=attr-defined",
+    "# mypy: allow-untyped-defs",
 )
 
 #: The files the three tools discover instead of the project file.  A
@@ -476,8 +499,8 @@ def test_the_configuration_scan_sees_a_new_per_file_row(tmp_path: Path) -> None:
     assert mutated != original
 
     read = negative_shape.config_tables(copy, CONFIG_TABLES)
-    rows = read["tool.ruff.lint"]["per-file-ignores"]
-    pinned = CONFIG_BASELINE["tool.ruff.lint"]["per-file-ignores"]
+    rows = read["tool.ruff"]["lint"]["per-file-ignores"]
+    pinned = CONFIG_BASELINE["tool.ruff"]["lint"]["per-file-ignores"]
 
     assert read != CONFIG_BASELINE
     assert read["tool.mypy"]["strict"] is False
@@ -485,7 +508,7 @@ def test_the_configuration_scan_sees_a_new_per_file_row(tmp_path: Path) -> None:
     assert {key: row for key, row in rows.items() if key in pinned} == pinned
     assert [key for key in read if read[key] != CONFIG_BASELINE[key]] == [
         "tool.mypy",
-        "tool.ruff.lint",
+        "tool.ruff",
     ]
 
 
