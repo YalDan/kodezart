@@ -4,9 +4,12 @@ from datetime import timedelta
 
 import pytest
 
+from kodezart.chains.criteria import TrackerCriteria
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import (
     CriterionReadError,
     EmptyFireCriteriaError,
+    FireSpecEntryError,
     InvalidFireCriterionError,
 )
 from kodezart.domain.ticket import format_fire_spec
@@ -38,7 +41,12 @@ def server():
             description="**Check:** The behavior is observable.\n\n**Evidence:** —",
         ),
         FakeMcpIssue(id="ordinary/1", parent_id=SUBJECT),
-        FakeMcpIssue(id="grandchild/1", parent_id=CRITERION, labels=[LABEL]),
+        FakeMcpIssue(
+            id="grandchild/1",
+            parent_id=CRITERION,
+            labels=[LABEL],
+            description="**Check:** A criterion under a criterion is in the subtree.",
+        ),
         FakeMcpIssue(
             id="empty/1",
             labels=FIRE_ENTRY_LABELS,
@@ -52,13 +60,13 @@ def server():
 async def test_empty_spec_refuses_but_ordinary_criteria_read_stays_empty(tracker):
     assert tuple(await tracker.read_criteria(issue_key="empty/1")) == ()
     with pytest.raises(EmptyFireCriteriaError) as raised:
-        await tracker.read_fire_spec(issue_key="empty/1")
+        await TrackerCriteria(tracker=tracker).read_spec(issue_key="empty/1")
     assert raised.value.issue_key == "empty/1"
 
 
 async def test_failed_subject_lookup_is_not_a_successful_empty_spec(tracker):
     with pytest.raises(CriterionReadError) as raised:
-        await tracker.read_fire_spec(issue_key="missing/1")
+        await tracker.read_fire_subject(issue_key="missing/1")
     assert raised.value.issue_key == "missing/1"
 
 
@@ -66,11 +74,11 @@ async def test_spec_captures_opaque_child_keys_verbatim_body_and_subject_version
     tracker, tracker_writes
 ):
     before = tracker_writes()
-    spec = await tracker.read_fire_spec(issue_key=SUBJECT)
+    spec = await TrackerCriteria(tracker=tracker).read_spec(issue_key=SUBJECT)
     assert isinstance(spec, TrackerSpec)
     assert spec.subject == SUBJECT
     assert spec.body == BODY
-    assert spec.criteria == (CRITERION,)
+    assert spec.criteria == (CRITERION, "grandchild/1")
     assert spec.read_at_version == FIXTURE_NOW.isoformat()
     assert format_fire_spec(spec) == BODY
     assert tracker_writes() == before
@@ -82,7 +90,7 @@ async def test_a_spec_read_hydrates_its_subject_exactly_once(tracker, server):
     else:
         server.calls.clear()
 
-    await tracker.read_fire_spec(issue_key=SUBJECT)
+    await tracker.read_fire_subject(issue_key=SUBJECT)
 
     if isinstance(tracker, FakeTrackerPort):
         assert tracker.issue_reads.count(SUBJECT) == 1
@@ -97,8 +105,9 @@ async def test_incomplete_child_listing_is_not_an_empty_spec():
         issues=[FakeMcpIssue(id=SUBJECT, labels=FIRE_ENTRY_LABELS)],
         tool_errors={"list_issues": "unavailable"},
     )
-    with pytest.raises(CriterionReadError):
-        await tracker_over(server).read_fire_spec(issue_key=SUBJECT)
+    with pytest.raises(FireSpecEntryError) as raised:
+        await TrackerCriteria(tracker=tracker_over(server)).read_spec(issue_key=SUBJECT)
+    assert isinstance(raised.value.__cause__, TrackerUnavailableError)
     assert not server.tool_calls("save_issue")
 
 
@@ -125,7 +134,9 @@ async def test_subject_changed_during_membership_read_does_not_mix_text_and_vers
             ),
         ]
     )
-    spec = await tracker_over(server).read_fire_spec(issue_key=SUBJECT)
+    spec = await TrackerCriteria(tracker=tracker_over(server)).read_spec(
+        issue_key=SUBJECT
+    )
     assert spec.body == BODY
     assert spec.read_at_version == FIXTURE_NOW.isoformat()
     assert server.issues[SUBJECT].description == "A later amendment."
@@ -159,7 +170,7 @@ async def test_missing_empty_or_ambiguous_check_refuses_at_the_spec_read(
         server.issues[CRITERION].description = body
     before = tracker_writes()
     with pytest.raises(InvalidFireCriterionError) as raised:
-        await tracker.read_fire_spec(issue_key=SUBJECT)
+        await TrackerCriteria(tracker=tracker).read_spec(issue_key=SUBJECT)
     assert raised.value.issue_key == SUBJECT
     assert raised.value.criterion_key == CRITERION
     assert tracker_writes() == before
@@ -192,8 +203,8 @@ async def test_check_content_is_read_without_rewriting_criterion_or_parent(
     else:
         server.issues[CRITERION].description = body
     before = tracker_writes()
-    spec = await tracker.read_fire_spec(issue_key=SUBJECT)
-    assert spec.criteria == (CRITERION,)
+    spec = await TrackerCriteria(tracker=tracker).read_spec(issue_key=SUBJECT)
+    assert spec.criteria == (CRITERION, "grandchild/1")
     assert spec.body == BODY
     assert (await tracker.read_issue(issue_key=CRITERION)).body == body
     assert tracker_writes() == before
@@ -214,7 +225,7 @@ async def test_unknown_backend_state_refuses_at_spec_read_without_guessing_by_na
         ]
     )
     with pytest.raises(CriterionReadError) as raised:
-        await tracker_over(server).read_fire_spec(issue_key=SUBJECT)
+        await TrackerCriteria(tracker=tracker_over(server)).read_spec(issue_key=SUBJECT)
     assert raised.value.__cause__ is not None
     assert "no domain mapping" in str(raised.value.__cause__)
     assert not server.tool_calls("save_issue")

@@ -1099,13 +1099,15 @@ class TrackerPort(
         """
         ...
 
-    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
-        """Capture the subject once and read its full criterion membership.
+    async def read_fire_subject(self, *, issue_key: str) -> TrackerIssue:
+        """Capture the subject once, admitted to a fire, as the tracker reports it.
 
         Require the subject's configured criteria phase marker and current
-        inherited execution approval. Empty membership or missing Check also
-        raises here. This read never reruns an admission session; legal
-        criterion-state policy remains a separate entry requirement.
+        inherited execution approval, from the one hydration that answers
+        its key, text and version. Criterion membership is not read here:
+        the fire measures it over the subject's subtree. This read never
+        reruns an admission session; legal criterion-state policy remains a
+        separate entry requirement.
         """
         ...
 
@@ -1923,16 +1925,23 @@ class FireCriteriaReader(Protocol):
 
 @runtime_checkable
 class FireCriteriaSource(FireCriteriaReader, Protocol):
-    """Capture an admitted native subject once and refresh its obligations."""
+    """Enter a fire on one reading of its subject's subtree, then refresh it."""
 
-    async def read_spec(self, *, issue_key: str) -> TrackerSpec:
-        """Capture tracker-authored subject data or raise a typed refusal."""
-        ...
+    async def read_entry(
+        self, *, issue_key: str, delivering: bool = False
+    ) -> tuple[TrackerSpec, TrackerCriterionSet]:
+        """Admit the subject, capture its spec, and answer the entry roster.
 
-    async def read_finished(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
-        """Return the subtree's counting criteria, every one of them finished.
+        One reading of the subject's subtree serves both values, so the
+        emptiness that refuses a fire and the roster the loop starts on can
+        never be answers to two different questions. The captured spec names
+        every criterion sub-issue under the subject — its own children and,
+        recursively, its deliverable children's — and a subtree holding none
+        is a typed refusal here, before any roster is selected.
 
-        The reading a lane owing nothing enters on. It holds no unstarted
+        Without *delivering* the roster is the subtree's unstarted criteria,
+        and a subtree with none of those is a typed refusal. With it, the
+        reading a lane owing nothing enters on: it holds no unstarted
         criterion for :meth:`read_current` to answer with, and what its
         delivery stands on is instead that every criterion of its subtree
         that counts is finished, which is what the cross-offs of its own

@@ -84,7 +84,7 @@ does not exist.
 | WorkRefReader | LinearMcpTracker | The one read base resolution makes to find a blocker's branch, narrowed out of the port rather than added to it; on the per-issue pass it is the refs recorded against the issue |
 | WorkRefReader | RecordedDeliverableRefs | The same read on the scope path, answered from the blocker's own lane run-state record, which is where a lane's deliverable branch is written. A peer, selected at the composition root — not a fallback |
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers |
-| FireCriteriaSource | TrackerCriteria | Captures the typed native subject specification and supplies current criterion reads |
+| FireCriteriaSource | TrackerCriteria | Composes the typed native subject specification from the admitted subject and its subtree's criteria, and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
 | TrackerScopeApprovalReader | LinearMcpTracker | The three reads an approval question needs — a node's own labels, its parent edge, the per-issue cascade — narrowed out of the port; a scope run's entry and the heartbeat depend on it alone |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
@@ -220,7 +220,9 @@ those, the approved members whose criterion gap is EMPTY: they are no lane to
 work, and on an origin whose lane can deliver the walker dispatches them for
 their delivery alone, before it fires any ready lane (KOD-844). Record issues
 and criteria are never selected and never reported that way either; an approved
-deliverable without its own criteria refuses. Deliverable
+deliverable without its own criteria refuses. That refusal is the walk's
+candidate selection, not the fire entry's reading, which measures membership
+over the whole subtree (see the native arm below). Deliverable
 workflow state does not decide either gap or subtree closure. An in-scope blocker
 closes only when all its criterion children and every deliverable child's full
 subtree close, including children outside a container's membership filter.
@@ -294,8 +296,8 @@ receives (KOD-431, KOD-785). The one forge read a lane's turn makes is about a
 closed blocker recording no branch (KOD-777, below). A deliver-only entry enters
 the fire graph already accepted — the
 verdict states the entry's own fact, that every criterion of the subtree is
-Done — reads its roster as the whole finished subtree through
-`FireCriteriaSource.read_finished`, and is routed past the loop to
+Done — reads its roster as the whole finished subtree out of the entry's one
+subtree reading, and is routed past the loop to
 consolidation: what such a lane is missing is not work but the consolidation,
 review and pull request that follow one. A criterion reopened between the walk's
 selection and that reading refuses with `FireSpecEntryError` naming it, before
@@ -1048,8 +1050,10 @@ text raised the question, before the loop; the lane-membership producer and
 persisted window advancement remain separate implementation work.
 
 The criterion-lifecycle code conformance module checks both identity owners:
-`CriterionRef` is constructed by the full tracker-spec reader and `RulingId`
-by the ruling mint. Its shared static guard covers direct, qualified, imported
+`CriterionRef` is constructed by the subject specification formatter in
+`domain/fire_spec.py`, which the fire's entry composes over the admitted
+subject and its subtree's criteria, and `RulingId` by the ruling mint.
+Its shared static guard covers direct, qualified, imported
 and assigned constructor aliases, including calls in function headers. Ruling
 address fields retain the minted type through containers and forward references;
 text, other untyped values and rebinding the identity name fail the guard.
@@ -1402,7 +1406,18 @@ been retired. They are not an alternate execution path or evidence of a
 completed fire.
 
 The native arm's order is `resolve_visibility`, `revalidate_criteria`,
-`rule_open_questions`, `run_ralph_loop`. The question step asks one read-only
+`rule_open_questions`, `run_ralph_loop`. The entry step reads the subject once
+through the port, which admits it and lists nothing, and then measures
+criterion membership over that subject's subtree through the same scope
+membership read every later barrier re-takes. One reading answers both the
+specification the fire is graded against and the roster its loop starts on, so
+the captured specification names every criterion sub-issue under the subject —
+its own children and, recursively, its deliverable children's. A subtree
+holding none is refused with `EmptyFireCriteriaError` naming the subject,
+before the question step and before the loop's graph is dispatched (the pinned
+interim on KOD-786; what the walk does with such a member is decided there, not
+here). There is no second, narrower reading in which the subject's own
+criterion children alone admit or refuse a fire (KOD-790). The question step asks one read-only
 pass under the `fire_time_ruling` role what the subject text and the current
 Checks leave open, pins each answer on the issue whose text raised it, reads it
 back, and only then enters the loop. An open question whose answer cannot be

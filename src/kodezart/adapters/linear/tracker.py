@@ -87,11 +87,7 @@ from kodezart.domain.errors import (
     TransientAPIError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
-from kodezart.domain.fire_spec import (
-    body_digest,
-    require_fire_entry,
-    tracker_spec_from_issues,
-)
+from kodezart.domain.fire_spec import body_digest, require_fire_entry
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.organize_graph import (
     changed_peers,
@@ -128,7 +124,6 @@ from kodezart.domain.tracker_writes import (
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefLanding, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.escalation import EscalationResolution
-from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.operation import (
     LifecycleStage,
@@ -1988,7 +1983,7 @@ class LinearMcpTracker:
         _, criteria = await self._read_criterion_family(issue_key=issue_key)
         return criteria
 
-    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+    async def read_fire_subject(self, *, issue_key: str) -> TrackerIssue:
         if self._criteria_stage_label_key is not None and not self._issue_labels.get(
             self._criteria_stage_label_key
         ):
@@ -2003,40 +1998,28 @@ class LinearMcpTracker:
                 approved=approved,
                 criteria_stage_label_key=self._criteria_stage_label_key,
             )
-            _, criteria = await self._read_criterion_family(
-                issue_key=subject.issue_key, subject=subject
-            )
         except (TrackerUnavailableError, TrackerProtocolError) as exc:
             raise CriterionReadError(
                 issue_key=issue_key, reason="the tracker read failed or was incomplete"
             ) from exc
-        return tracker_spec_from_issues(subject=subject, criteria=criteria)
+        return subject
 
     async def _read_criterion_family(
-        self, *, issue_key: str, subject: TrackerIssue | None = None
+        self, *, issue_key: str
     ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
         self._classification_label(
             "criterion", stops="criterion sub-issue membership cannot be read"
         )
         try:
-            if subject is None:
-                payload = await self._call(
-                    _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+            payload = await self._call(
+                _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+            )
+            wire = self._validate(LinearAddressedIssueWire, payload, _TOOL_GET_ISSUE)
+            if not wire.matches_requested(issue_key):
+                raise CriterionReadError(
+                    issue_key=issue_key, reason="parent identity changed"
                 )
-                wire = self._validate(
-                    LinearAddressedIssueWire, payload, _TOOL_GET_ISSUE
-                )
-                if not wire.matches_requested(issue_key):
-                    raise CriterionReadError(
-                        issue_key=issue_key, reason="parent identity changed"
-                    )
-                parent = self._to_issue(wire)
-            else:
-                if subject.issue_key != issue_key:
-                    raise CriterionReadError(
-                        issue_key=issue_key, reason="supplied parent identity changed"
-                    )
-                parent = subject
+            parent = self._to_issue(wire)
             return parent, await self._read_criteria(parent=parent)
         except (TrackerUnavailableError, TrackerProtocolError) as exc:
             raise CriterionReadError(

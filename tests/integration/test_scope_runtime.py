@@ -2231,13 +2231,13 @@ def subject_reads(port, monkeypatch) -> list[str]:
     apart.
     """
     reads: list[str] = []
-    answering = port.read_fire_spec
+    answering = port.read_fire_subject
 
     async def counted(*, issue_key):
         reads.append(issue_key)
         return await answering(issue_key=issue_key)
 
-    monkeypatch.setattr(port, "read_fire_spec", counted)
+    monkeypatch.setattr(port, "read_fire_subject", counted)
     return reads
 
 
@@ -2810,17 +2810,17 @@ async def test_a_reopened_criterion_refuses_a_deliver_only_entry(monkeypatch):
             trunk="main",
             evaluations=one_check_echoes("A", rounds=4),
         )
-        read_spec = port.read_fire_spec
+        read_subject = port.read_fire_subject
         reopened: list[str] = []
 
         async def reopening(*, issue_key):
-            spec = await read_spec(issue_key=issue_key)
+            subject = await read_subject(issue_key=issue_key)
             if not reopened:
                 reopened.append(issue_key)
                 owed_again(port)
-            return spec
+            return subject
 
-        monkeypatch.setattr(port, "read_fire_spec", reopening)
+        monkeypatch.setattr(port, "read_fire_subject", reopening)
         events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
 
         assert reopened == ["A"]

@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.tracker import build_tracker, criteria_stage_label_key
 from kodezart.config.app import AppConfig
@@ -645,7 +646,7 @@ async def test_the_shipped_scope_config_answers_each_adapter_point_of_need():
     server.issues[built.lanes["A"]].labels.append(
         loaded.issue_labels[criteria_stage_label_key(loaded)]
     )
-    spec = await tracker.read_fire_spec(issue_key=built.lanes["A"])
+    spec = await TrackerCriteria(tracker=tracker).read_spec(issue_key=built.lanes["A"])
     assert list(spec.criteria) == list(built.criteria["A"])
 
     await tracker.set_workflow_state(

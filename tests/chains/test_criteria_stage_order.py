@@ -17,6 +17,7 @@ import re
 
 import pytest
 
+from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.errors import EmptyFireCriteriaError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.types.domain.organize_owner import CriteriaProposal
@@ -194,7 +195,7 @@ async def test_each_created_criterion_sub_issue_resolves_by_its_own_key(staged):
         assert resolved.issue_key == key
         assert resolved.parent_key == CLAIMED_ISSUE
         assert CRITERION_KEY in resolved.issue_labels
-    spec = await reader.read_fire_spec(issue_key=CLAIMED_ISSUE)
+    spec = await TrackerCriteria(tracker=reader).read_spec(issue_key=CLAIMED_ISSUE)
     assert sorted(spec.criteria) == keys
     assert spec.subject == CLAIMED_ISSUE
 
@@ -241,5 +242,5 @@ async def test_stage_marker_without_criterion_sub_issues_refuses_admission(stage
     reader = staged.reader()
     assert tuple(await reader.read_criteria(issue_key=CLAIMED_ISSUE)) == ()
     with pytest.raises(EmptyFireCriteriaError) as caught:
-        await reader.read_fire_spec(issue_key=CLAIMED_ISSUE)
+        await TrackerCriteria(tracker=reader).read_spec(issue_key=CLAIMED_ISSUE)
     assert caught.value.issue_key == CLAIMED_ISSUE
