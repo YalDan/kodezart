@@ -481,6 +481,50 @@ def test_cost_never_authorizes_amendment_and_requires_recorded_base_measurement(
 
 
 @pytest.mark.parametrize(
+    "mutation,message",
+    [
+        ("drop_measurement", "retains the actual measurement"),
+        ("drop_measured_by", "retains the actual measurement"),
+        ("contradicting_affordability", "match the measured affordability"),
+    ],
+)
+def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_amendment(
+    mutation, message
+):
+    """The record shape behind the three arms, at the level the arms are stored.
+
+    A measured-cost reason cannot be stored without both halves of the
+    measurement — what was observed and how it was produced — and cannot be
+    stored against an affordability the measurement contradicts. The closing half
+    is that no measured cost reaches the applied form at all.
+
+    The contradicting row flips the measured affordability and leaves the reason
+    alone on purpose: flipping the reason instead would also trip the completed
+    refusal's publication rule, and which validator speaks first is not something
+    this assertion depends on.
+    """
+    value = record(reason="cost_measured_affordable").model_dump()
+    cost = value["judgment"]["finding"]["cost_claim"]
+    if mutation == "drop_measurement":
+        cost["measurement"] = None
+    elif mutation == "drop_measured_by":
+        value["judgment"]["measured_by"] = None
+    else:
+        cost["measurement"]["affordable"] = False
+    with pytest.raises(ValidationError) as failure:
+        UpheldAmendment.model_validate(value)
+    assert message in str(failure.value)
+
+    applied = amended().model_dump()
+    applied["judgment"]["finding"]["cost_claim"] = {
+        "assertion": "A measured cost",
+        "measurement": {"observed": "Executed once at base", "affordable": True},
+    }
+    with pytest.raises(ValidationError, match="requires its own reproduced judgment"):
+        AmendedAmendment.model_validate(applied)
+
+
+@pytest.mark.parametrize(
     "mutation",
     [
         "missing_publication",
