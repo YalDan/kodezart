@@ -333,13 +333,14 @@ def test_an_unannotated_parameter_handed_a_bound_value_at_a_call_is_a_seed(
     assert parameters_receiving(unrelated, yields=hands_a_spec) == {}
 
 
-@pytest.mark.parametrize(
-    ("route", "imported", "call"),
-    [
-        ("module_alias", "import kodezart.b as helpers", "helpers._own_text(spec)"),
-        ("submodule_import", "from kodezart import b", "b._own_text(spec)"),
-    ],
-)
+#: The two spellings that route a receiver to a module of the tree.
+MODULE_ROUTES = [
+    ("module_alias", "import kodezart.b as helpers", "helpers._own_text(spec)"),
+    ("submodule_import", "from kodezart import b", "b._own_text(spec)"),
+]
+
+
+@pytest.mark.parametrize(("route", "imported", "call"), MODULE_ROUTES)
 def test_a_callee_reached_through_a_module_route_is_that_modules_own_definition(
     route, imported, call
 ):
@@ -349,6 +350,28 @@ def test_a_callee_reached_through_a_module_route_is_that_modules_own_definition(
     assert parameters_receiving(trees, yields=hands_a_spec) == {
         ("b.py", "_own_text"): frozenset({"value"})
     }
+
+
+@pytest.mark.parametrize(("route", "imported", "call"), MODULE_ROUTES)
+def test_a_module_route_reaches_no_method_of_the_routed_module(route, imported, call):
+    """A module route lands on what the module states, never inside a class.
+
+    The same two routes over a module whose only ``_own_text`` is a method:
+    the top-level map holds no definition of that name, so the call reaches
+    none and no parameter receives the spec. Read off the module's every
+    definition instead, the method would be the target, and since a module
+    receiver fills no parameter its ``self`` would take the spec.
+    """
+    trees = parsed(
+        {
+            "a.py": caller(imported, call),
+            "b.py": "class Holder:\n"
+            "    def _own_text(self, value):\n"
+            "        return value.body\n",
+        }
+    )
+
+    assert parameters_receiving(trees, yields=hands_a_spec) == {}
 
 
 def test_a_receiver_that_spells_no_module_is_every_method_of_that_name():
