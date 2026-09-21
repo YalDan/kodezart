@@ -1530,6 +1530,31 @@ class ScopeStatusWriter(Protocol):
 
 
 @runtime_checkable
+class ScopeStatusReader(Protocol):
+    """Read the status updates a scope's container already carries.
+
+    One member, narrowed beside the writer rather than added to the port
+    (KOD-829): the scope terminal asks what is already there so that a
+    report equal to the newest one is not posted a second time, and no
+    other consumer asks the container anything. The answer is newest
+    first, and a container carrying none answers empty rather than
+    refusing.
+    """
+
+    async def status_update_bodies(self, *, ref: ScopeRef) -> Sequence[str]: ...
+
+
+@runtime_checkable
+class ScopeStatusUpdates(ScopeStatusReader, ScopeStatusWriter, Protocol):
+    """The container-status role whole: read what is there, post what should be.
+
+    One class serves both over the tracker's caller, and the terminal's own
+    collaborator is one surface it reads and then writes — so it depends on
+    this rather than on two parameters that could be given two objects.
+    """
+
+
+@runtime_checkable
 class SurfaceLeaseTracker(Protocol):
     """Exactly the lease calls one writing job's own lifetime makes.
 

@@ -145,6 +145,7 @@ from kodezart.types.domain.operation import (
     ScopeLabel,
 )
 from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
+from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
@@ -3329,6 +3330,51 @@ class FakeLinearMcpServer:
         unmeasured, so what comes back is minimal and the adapter reads
         none of it.
         """
+        kind, target = self._status_update_target(arguments)
+        self.status_updates.append((kind, target, str(arguments.get("body", ""))))
+        return {"success": True}
+
+    def _tool_get_status_updates(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """One container's status updates, in the MEASURED listing envelope.
+
+        Addressed and refused exactly as the create is — the ``type`` says
+        which container and the argument of that same name carries the
+        target — because it is the same declaration with the same target
+        forms, and a read that accepted a payload the create refuses would
+        let an adapter address the two differently.
+
+        The items are answered OLDEST first, with a synthetic ascending
+        ``createdAt`` apiece, so what puts the newest first is the adapter's
+        own ordering rather than the position this server happened to list
+        them in.
+        """
+        kind, target = self._status_update_target(arguments)
+        bodies = [
+            body
+            for held_kind, held_target, body in self.status_updates
+            if (held_kind, held_target) == (kind, target)
+        ]
+        return {
+            "statusUpdates": [
+                {
+                    "id": f"status-update-{index}",
+                    "body": body,
+                    "createdAt": (FIXTURE_EPOCH + timedelta(seconds=index)).isoformat(),
+                }
+                for index, body in enumerate(bodies)
+            ],
+            "hasNextPage": False,
+            "cursor": None,
+        }
+
+    def _status_update_target(
+        self,
+        arguments: Mapping[str, object],
+    ) -> tuple[str, str]:
+        """The container both status-update tools address, or a tool error."""
         kind = arguments.get("type")
         holders: Mapping[str, Mapping[str, object]] = {
             "project": self.projects,
@@ -3345,8 +3391,7 @@ class FakeLinearMcpServer:
         if target not in holders[str(kind)]:
             msg = f"fake workspace has no {kind} {target!r}"
             raise LookupError(msg)
-        self.status_updates.append((str(kind), target, str(arguments.get("body", ""))))
-        return {"success": True}
+        return str(kind), target
 
     def _tool_list_issue_statuses(
         self,
@@ -4979,16 +5024,23 @@ class FakeTrackerPort:
 
 
 class FakeScopeStatusWriter:
-    """In-process ``ScopeStatusWriter`` that records what it was asked to post.
+    """In-process ``ScopeStatusUpdates``: the container, posted to and read.
 
     It refuses exactly what the shipped adapter refuses before any call — a
     scope kind with no status surface, and a body with nothing in it — and
     records nothing when it does, so a fixture cannot read a refused post as
     a landed one.
+
+    The read answers this container's OWN posts, newest first, which is what
+    makes a report already there and a report on another container different
+    answers here as they are at the backend.  ``reads`` is the journal of
+    what it was asked about, so "read before written" is an observation and
+    not a story.
     """
 
     def __init__(self) -> None:
         self.posts: list[tuple[ScopeRef, str]] = []
+        self.reads: list[ScopeRef] = []
 
     async def post_status_update(self, *, ref: ScopeRef, body: str) -> None:
         await asyncio.sleep(0)
@@ -5001,6 +5053,15 @@ class FakeScopeStatusWriter:
                 ref=ref, reason="a status update with no body states nothing"
             )
         self.posts.append((ref, body))
+
+    async def status_update_bodies(self, *, ref: ScopeRef) -> Sequence[str]:
+        await asyncio.sleep(0)
+        if ref.kind not in STATUS_UPDATE_SCOPE_KINDS:
+            raise ScopeStatusError(
+                ref=ref, reason="this scope kind carries no status update"
+            )
+        self.reads.append(ref)
+        return tuple(body for posted, body in reversed(self.posts) if posted == ref)
 
 
 def _comparable(value: object) -> object:
@@ -5237,10 +5298,22 @@ class FakeJobQueue:
         await asyncio.sleep(0)
         return self.records.get(job_id)
 
-    def mark(self, job_id: str, state: JobState) -> None:
-        """Move a submitted job to *state*, as the dispatcher would observe."""
+    def mark(
+        self,
+        job_id: str,
+        state: JobState,
+        *,
+        outcome: WorkflowOutcome | None = None,
+    ) -> None:
+        """Move a submitted job to *state*, as the dispatcher would observe.
+
+        The outcome is optional because the real queue writes one only when
+        it reaches TERMINAL, and writes none at all for a run that ended
+        without classifying itself — which is a distinct fact a consumer
+        reading the record has to be able to meet.
+        """
         self.records[job_id] = self.records[job_id].model_copy(
-            update={"state": state},
+            update={"state": state, "outcome": outcome},
         )
 
 

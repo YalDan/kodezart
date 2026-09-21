@@ -89,7 +89,9 @@ does not exist.
 | TrackerScopeApprovalReader | LinearMcpTracker | The three reads an approval question needs — a node's own labels, its parent edge, the per-issue cascade — narrowed out of the port; a scope run's entry and the heartbeat depend on it alone |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
-| ScopeStatusWriter | LinearScopeStatusWriter | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
+| ScopeStatusWriter | LinearScopeStatusUpdates | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
+| ScopeStatusReader | LinearScopeStatusUpdates | The one read the scope terminal makes before its one write: the reports the container already carries, so a report is posted once across a restart; a role beside the port, over the tracker's caller |
+| ScopeStatusUpdates | LinearScopeStatusUpdates | The container-status role whole, read and write, one class over the tracker's caller |
 | SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
 | RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: one keyed record read and rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
@@ -452,12 +454,16 @@ pass reads each `[[organize_scopes]]` row on the dispatch cadence and submits a
 scope run for every row that is approved and has no live job, onto the
 configured dispatch lane. It opens no session, takes no surface lease and makes
 no tracker write: applying the label is somebody else's act and this pass only
-observes it. Its report names every declared row as submitted, live, unapproved
-or failed, so "nobody has approved this scope yet" is an answer read off the
-tick rather than inferred from silence. The map of what it submitted is this
-process's own, keyed by the scope, and so is the queue it submits onto — which
-is why a restarted process submits again on its first tick, and why a registry
-that has forgotten a job is not read as a run still walking.
+observes it. Its report names every declared row as submitted, live, converged,
+unapproved or failed, so "nobody has approved this scope yet" is an answer read
+off the tick rather than inferred from silence. What it remembers about a row is
+this process's own, keyed by the scope, and so is the queue it submits onto —
+which is why a registry that has forgotten a job is not read as a run still
+walking. A row whose last run in this process ended with every lane done is not
+submitted again while its reading is the same, and an added member, a criterion
+moved out of Done or a change of approval re-arms it; a restarted process walks
+a converged row once on its first tick, and that walk posts no second status
+update.
 
 One predicate answers whether a phase may act on a member now, and every gate
 read and approval read in the owner is that predicate: a run stage is admitted
@@ -975,10 +981,14 @@ of a short report being published as a complete one. Its one write
 is the container's status update, through `ScopeStatusWriter` and no port
 member, gated exactly under its own destination as DERIVED content — a gate
 that altered the report refuses the write rather than publishing a different
-claim. Nothing is leased, claimed or marked in progress for it, and no
+claim. Before it posts, it reads the container's recent status updates through
+`ScopeStatusReader` and posts only when its report differs from the latest
+report of this operation already there; a read that refuses propagates before
+any write, and a person's note on the same surface is passed over rather than
+compared. Nothing is leased, claimed or marked in progress for it, and no
 writable-surface address is taken: `CONTAINER_STATUS_UPDATE` keeps no
-production writer, and exactly-one follows from the terminal running once
-(KOD-788). That write sits outside the write-back verifier under a named
+production writer, and exactly-one follows from the terminal running once and
+comparing before it posts (KOD-788). That write sits outside the write-back verifier under a named
 call-site register entry rather than a new read-back arm, because the walk it
 reports on has ended and there is no judged commit to verify it against
 (KOD-806). A milestone or issue scope has no status surface at the backend, so

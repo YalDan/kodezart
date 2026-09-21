@@ -38,7 +38,7 @@ from kodezart.core.protocols import (
     PromptSetProvider,
     RefPublisher,
     RepoCache,
-    ScopeStatusWriter,
+    ScopeStatusUpdates,
     TrackerPort,
     WorkflowEngine,
     WorkspaceProvider,
@@ -217,7 +217,7 @@ def build_workflow_engine(
     checkpointer: BaseCheckpointSaver[str] | None,
     criteria: FireCriteriaSource | None = None,
     scope_tracker: TrackerPort | None = None,
-    scope_status: ScopeStatusWriter | None = None,
+    scope_status: ScopeStatusUpdates | None = None,
     operation: OperationConfig | None = None,
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.

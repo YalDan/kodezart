@@ -24,7 +24,7 @@ from kodezart.config.app import AppConfig
 from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import TrackerUnavailableError
-from kodezart.core.protocols import ScopeStatusWriter, TrackerPort
+from kodezart.core.protocols import ScopeStatusUpdates, TrackerPort
 from kodezart.domain.errors import BaseResolutionError
 from kodezart.domain.scope_terminal import render_scope_status
 from kodezart.handlers.agent_handler import AgentHandler
@@ -634,17 +634,19 @@ async def test_the_walks_own_put_back_is_before_the_last_mark_and_not_the_termin
 
 
 def test_the_terminal_holds_no_tracker_port_to_write_through():
-    """The collaborators are a record reader, one write role and the gate.
+    """The collaborators are a record reader, the container-status role, the gate.
 
     Read off the constructor rather than asserted about instances: a port
     handed to the terminal later would be a write set nothing here bounds.
+    The role beside the port grew a read (KOD-879); the port grew nothing,
+    and the parameter set is the same three it always was.
     """
     parameters = inspect.signature(ScopeTerminal.__init__).parameters
     assert set(parameters) == {"self", "records", "status", "gate"}
     held = {
         name: value.annotation for name, value in parameters.items() if name != "self"
     }
-    assert held["status"] is ScopeStatusWriter
+    assert held["status"] is ScopeStatusUpdates
     assert TrackerPort not in held.values()
 
 
@@ -941,10 +943,14 @@ async def test_a_scratch_shaped_scope_ends_with_exactly_one_status_update():
     every lane holding an open, unmerged delivery, and the recorded columns are
     the fixture's own observations rather than values written here.
 
-    Driven twice over the same board and the same status writer, because
+    Driven twice over the same board and the same container, because
     exactly-one is a property of the terminal running once at a clean exit and
-    not of a mark it holds: the second invocation walks the same finished scope
-    and posts again, byte-identically, leaving the first update untouched.
+    not of a mark it holds: the second invocation walks the same finished
+    scope, renders the same vector, finds it already on the container and
+    posts nothing (KOD-879). Nothing is remembered between the two and no mark
+    is held — what the second invocation consults is the container's own
+    contents, which is why a terminal that deduped from memory is still
+    excluded.
 
     Doubles only — nothing here reaches a live workspace.
     """
@@ -1043,12 +1049,9 @@ async def test_a_scratch_shaped_scope_ends_with_exactly_one_status_update():
         assert len(ticks_of(second)) == 4
         assert [tick.dispatched for tick in ticks_of(second)] == [()] * 4
         assert len(terminals(second)) == 1
-        assert len(harness.status.posts) == 2
+        assert len(harness.status.posts) == 1
         assert harness.status.posts[0] == first_post
-        assert harness.status.posts[1] == (
-            SCRATCH,
-            render_scope_status(terminals(second)[0]),
-        )
+        assert render_scope_status(terminals(second)[0]) == first_post[1]
         assert second_writes == []
     finally:
         await forge.close()

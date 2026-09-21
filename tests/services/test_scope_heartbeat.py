@@ -24,10 +24,24 @@ from kodezart.types.domain.operation import (
     OrganizeScopeBinding,
     ScopeLabel,
 )
-from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.scope import (
+    ResolvedScope,
+    ScopeContainer,
+    ScopeKind,
+    ScopeRef,
+)
 from kodezart.types.domain.scope_heartbeat import HeartbeatOutcome
+from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
 from kodezart.types.domain.session import PermissionMode, ToolPreset
-from tests.fakes import FIXTURE_EPOCH, FakeJobQueue, FakeTrackerPort, handed_over
+from kodezart.types.domain.tracker import IssuePriority
+from tests.fakes import (
+    FIXTURE_EPOCH,
+    FakeJobQueue,
+    FakeTrackerPort,
+    handed_over,
+    make_tracker_issue,
+)
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 
 #: The standing scopes: two projects under one initiative, both bound to the
@@ -94,14 +108,58 @@ def bindings(*refs: ScopeRef) -> tuple[OrganizeScopeBinding, ...]:
     return tuple(OrganizeScopeBinding(scope=ref, repo_url=REPO) for ref in refs)
 
 
+class Readings:
+    """The scripted readiness reading per scope, and what was asked for.
+
+    The pass depends on one CALL, so a case states the READING it answers
+    with rather than seeding a board for a subtree read to derive one from:
+    what the cases here are about is which roster the pass compares, and a
+    board would put the derivation of that roster between the case and the
+    claim.
+    """
+
+    def __init__(self, **rosters: tuple[str, ...]) -> None:
+        #: Per scope key, the member keys and whether each owes nothing.
+        self.lanes: dict[str, tuple[tuple[str, bool], ...]] = {}
+        self.asked: list[ScopeRef] = []
+        for name, members in rosters.items():
+            self.lanes[name] = tuple((key, True) for key in members)
+
+    def place(self, scope: ScopeRef, roster: tuple[tuple[str, bool], ...]) -> None:
+        """Answer *scope* with *roster* from now on."""
+        self.lanes[scope.key] = roster
+
+    async def __call__(self, ref: ScopeRef) -> ScopeReadySet:
+        self.asked.append(ref)
+        roster = self.lanes.get(ref.key, ())
+        rows = {key: make_tracker_issue(key) for key, _ in roster}
+        return ScopeReadySet(
+            scope=ResolvedScope(ref=ref, issues=tuple(rows.values())),
+            ready=tuple(
+                ScopeReadyLane(
+                    issue=rows[key],
+                    effective_priority=IssuePriority.NONE,
+                    gap=(make_tracker_issue(f"{key}/check"),),
+                    criteria=(make_tracker_issue(f"{key}/check"),),
+                )
+                for key, done in roster
+                if not done
+            ),
+            blocked=(),
+            closed=tuple(rows[key] for key, done in roster if done),
+        )
+
+
 def heartbeat(
     port: FakeTrackerPort,
     queue: FakeJobQueue,
     *refs: ScopeRef,
+    readings: Readings | None = None,
 ) -> ScopeHeartbeat:
     """One heartbeat over *refs*, in the order they are declared here."""
     return ScopeHeartbeat(
         approvals=port,
+        ready_for=Readings() if readings is None else readings,
         queue=queue,
         registry=queue,
         bindings=bindings(*(refs or (FIRST,))),
@@ -200,14 +258,27 @@ async def test_a_scope_whose_run_is_live_is_not_submitted_again() -> None:
     assert len(queue.submissions) == 1
 
 
-async def test_a_terminal_job_frees_the_scope_for_the_next_tick() -> None:
-    """The run ended, so the next tick is the next round of the same scope."""
+@pytest.mark.parametrize(
+    "outcome",
+    [WorkflowOutcome.scope_stopped_short, None],
+    ids=["stopped short", "no outcome recorded"],
+)
+async def test_a_run_that_stopped_short_frees_the_scope_for_the_next_tick(
+    outcome: WorkflowOutcome | None,
+) -> None:
+    """The run ended owing work, so the next tick is the next round of it.
+
+    Narrowed from "any terminal job frees the scope" to the endings that are
+    not a converged one (KOD-879): a run that stopped short leaves work, and
+    a run that reached TERMINAL without classifying itself has shown nothing
+    about the scope — so neither of them rests it.
+    """
     port = board(first=APPROVED)
     queue = FakeJobQueue()
     beat = heartbeat(port, queue)
 
     (submitted,) = (await beat.tick()).entries
-    queue.mark(submitted.job_id, JobState.TERMINAL)
+    queue.mark(submitted.job_id, JobState.TERMINAL, outcome=outcome)
     again = await beat.tick()
 
     assert outcomes(again) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
@@ -234,13 +305,249 @@ async def test_an_evicted_record_is_not_a_live_job() -> None:
     assert len(queue.submissions) == 2
 
 
+async def test_an_evicted_record_is_not_read_under_its_own_id_again() -> None:
+    """The eviction drops the memory, so the id is asked about once.
+
+    Kept, the forgotten id would be read on every later tick — a question
+    whose answer is known to be nothing, asked forever.
+    """
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    beat = heartbeat(port, queue)
+    asked: list[str] = []
+    original = queue.get
+
+    async def counting_get(*, job_id: str):
+        asked.append(job_id)
+        return await original(job_id=job_id)
+
+    queue.get = counting_get
+
+    (submitted,) = (await beat.tick()).entries
+    del queue.records[submitted.job_id]
+    await beat.tick()
+    (third,) = (await beat.tick()).entries
+
+    assert asked.count(submitted.job_id) == 1
+    assert third.outcome is HeartbeatOutcome.LIVE
+
+
+# ---------------------------------------------------------------------------
+# KOD-879 — a converged run rests the scope until its board moves, and what
+# re-arms it is a change in the reading or in approval.
+# ---------------------------------------------------------------------------
+
+#: The roster of the resting fixture: one member, owing nothing.
+AT_REST = (("A", True),)
+
+
+async def converged(beat: ScopeHeartbeat, queue: FakeJobQueue) -> str:
+    """Tick once, and end that run the way a finished walk ends it."""
+    (submitted,) = (await beat.tick()).entries
+    assert submitted.job_id is not None
+    queue.mark(
+        submitted.job_id,
+        JobState.TERMINAL,
+        outcome=WorkflowOutcome.scope_converged,
+    )
+    return submitted.job_id
+
+
+async def test_a_converged_run_rests_the_scope_while_its_roster_is_unchanged() -> None:
+    """The cost KOD-854 accepted, retired: one run per board, not per interval.
+
+    Re-submitted every tick, a finished approved scope walks again on the
+    dispatch cadence for as long as the process lives, and each walk is
+    another status update on its project.
+    """
+    port = board(first=APPROVED)
+    untouched = handed_over(port)
+    queue = FakeJobQueue()
+    readings = Readings(**{FIRST.key: ("A",)})
+    beat = heartbeat(port, queue, readings=readings)
+
+    job_id = await converged(beat, queue)
+    second = await beat.tick()
+    third = await beat.tick()
+
+    assert outcomes(second) == [(FIRST, HeartbeatOutcome.CONVERGED)]
+    assert outcomes(third) == [(FIRST, HeartbeatOutcome.CONVERGED)]
+    assert [entry.job_id for entry in (*second.entries, *third.entries)] == [job_id] * 2
+    assert second.ran is False
+    assert await beat.run(FIXTURE_EPOCH) is PassRun.SKIPPED
+    assert len(queue.submissions) == 1
+    assert untouched()
+
+
+async def test_an_added_member_re_arms_a_resting_scope() -> None:
+    """A member declared under the scope after it converged is work to do."""
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    readings = Readings(**{FIRST.key: ("A",)})
+    beat = heartbeat(port, queue, readings=readings)
+
+    await converged(beat, queue)
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.CONVERGED)]
+    readings.place(FIRST, (("A", True), ("B", True)))
+
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
+    assert len(queue.submissions) == 2
+
+
+async def test_a_removed_member_re_arms_a_resting_scope() -> None:
+    """A member moved off the scope changes the vector its report renders."""
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    readings = Readings(**{FIRST.key: ("A", "B")})
+    beat = heartbeat(port, queue, readings=readings)
+
+    await converged(beat, queue)
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.CONVERGED)]
+    readings.place(FIRST, AT_REST)
+
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
+    assert len(queue.submissions) == 2
+
+
+async def test_a_reopened_criterion_re_arms_a_resting_scope() -> None:
+    """A row that flips from done to owing is the audit's own re-arming.
+
+    Compared on membership alone, a criterion moved out of Done would leave
+    the roster equal and the scope would rest with work outstanding.
+    """
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    readings = Readings(**{FIRST.key: ("A",)})
+    beat = heartbeat(port, queue, readings=readings)
+
+    await converged(beat, queue)
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.CONVERGED)]
+    readings.place(FIRST, (("A", False),))
+
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
+    assert len(queue.submissions) == 2
+
+
+async def test_an_approval_change_re_arms_a_resting_scope() -> None:
+    """Approval withdrawn and granted again is a fresh round, not a rest.
+
+    The row keeps nothing across an interval in which nobody approved it, so
+    the tick after the label lands again submits rather than reporting the
+    ending it latched before the withdrawal.
+    """
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    beat = heartbeat(port, queue, readings=Readings(**{FIRST.key: ("A",)}))
+
+    await converged(beat, queue)
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.CONVERGED)]
+    port.scope_label_members[FIRST] = frozenset()
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.UNAPPROVED)]
+    port.scope_label_members[FIRST] = APPROVED
+
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
+    assert len(queue.submissions) == 2
+
+
+async def test_a_converged_ending_over_a_moved_roster_submits_instead_of_resting() -> (
+    None
+):
+    """The roster is read at the latch, so a board that moved during the run wins.
+
+    Latched without re-reading, the ending would rest a scope whose members
+    moved while its own walk was in flight.
+    """
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    readings = Readings(**{FIRST.key: ("A",)})
+    beat = heartbeat(port, queue, readings=readings)
+
+    (submitted,) = (await beat.tick()).entries
+    readings.place(FIRST, (("A", True), ("B", False)))
+    queue.mark(
+        submitted.job_id,
+        JobState.TERMINAL,
+        outcome=WorkflowOutcome.scope_converged,
+    )
+
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
+    assert len(queue.submissions) == 2
+
+
+async def test_an_empty_reading_after_a_converged_ending_is_not_rest() -> None:
+    """A reading offering no lane certifies nothing, so it rests nothing."""
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    readings = Readings(**{FIRST.key: ("A",)})
+    beat = heartbeat(port, queue, readings=readings)
+
+    (submitted,) = (await beat.tick()).entries
+    readings.place(FIRST, ())
+    queue.mark(
+        submitted.job_id,
+        JobState.TERMINAL,
+        outcome=WorkflowOutcome.scope_converged,
+    )
+
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
+    assert len(queue.submissions) == 2
+
+
+async def test_an_evicted_converged_record_costs_one_walk_and_nothing_else() -> None:
+    """Retention shorter than the interval degrades to one extra walk.
+
+    The record carrying the outcome can be evicted between two ticks, and
+    then the ending cannot be read at all: the scope is submitted once more,
+    and that walk's terminal finds its own report on the container and posts
+    nothing.
+    """
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    beat = heartbeat(port, queue, readings=Readings(**{FIRST.key: ("A",)}))
+
+    job_id = await converged(beat, queue)
+    del queue.records[job_id]
+
+    assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
+    assert len(queue.submissions) == 2
+
+
+async def test_a_readiness_read_that_failed_costs_a_tick_and_not_a_submission() -> None:
+    """A failed reading leaves the memory as it was, so the next tick retries.
+
+    Dropped on the failure, the scope would be submitted on the very tick the
+    board could not be read — a walk started on an unreadable board.
+    """
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    readings = Readings(**{FIRST.key: ("A",)})
+    beat = heartbeat(port, queue, readings=readings)
+    job_id = await converged(beat, queue)
+
+    async def refusing(ref: ScopeRef):
+        raise ScopeReadError("the readiness read failed", ref=ref)
+
+    beat._ready_for = refusing
+    failed = await beat.tick()
+
+    assert outcomes(failed) == [(FIRST, HeartbeatOutcome.FAILED)]
+    assert queue.submissions == [queue.submissions[0]]
+
+    beat._ready_for = readings
+    recovered = await beat.tick()
+
+    assert outcomes(recovered) == [(FIRST, HeartbeatOutcome.CONVERGED)]
+    assert recovered.entries[0].job_id == job_id
+    assert len(queue.submissions) == 1
+
+
 async def test_a_restarted_process_submits_on_its_first_tick() -> None:
-    """The map is one process's memory of one process's queue.
+    """The memory is one process's memory of one process's queue.
 
     A fresh heartbeat over the same board and the same approved scope
     submits, because the queue a restart inherits is empty too. An instance
-    that shared the map would report the previous instance's job as live and
-    the scope would never run again.
+    that shared the memory would report the previous instance's job as live
+    and the scope would never run again.
     """
     port = board(first=APPROVED)
     queue = FakeJobQueue()
