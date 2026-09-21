@@ -9,11 +9,13 @@ from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import DialledTracker, boot_tracker
 from kodezart.config.app import AppConfig
 from kodezart.core.errors import OperationConfigError
+from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_event import (
     DERIVED_RUN_EVENTS,
     RUN_EVENT_PUBLISHERS,
     SILENT_STATE_EVENTS,
+    UNDEMONSTRATED_EVENT_KINDS,
     RunEventKind,
     RunEventPublisher,
 )
@@ -53,6 +55,7 @@ def test_vocabulary_and_notification_partition_are_complete():
         "issue_crossed_off",
         "criterion_refuted",
         "escalation_raised",
+        "criterion_grading_unverified",
     }
     operation().require_run_event_table()
 
@@ -162,3 +165,17 @@ async def test_an_unconfigured_tracker_does_not_invent_an_event_table():
         )
         is None
     )
+
+
+def test_every_undemonstrated_reason_names_its_own_event_kind():
+    """The join between the two vocabularies is total and one to one.
+
+    A reason with no kind could not be recorded at all, and two reasons
+    sharing one kind would be one reason on the stream: a reader of the
+    comment could not tell which reading failed. So a reading added to the
+    reason enum cannot land without the kind that carries it.
+    """
+    assert set(UNDEMONSTRATED_EVENT_KINDS) == set(UndemonstratedReason)
+    kinds = tuple(UNDEMONSTRATED_EVENT_KINDS.values())
+    assert len(set(kinds)) == len(kinds)
+    assert set(kinds) <= set(RunEventKind)

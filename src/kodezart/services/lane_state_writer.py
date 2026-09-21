@@ -45,6 +45,7 @@ from kodezart.types.domain.criteria import TrackerCriterion
 from kodezart.types.domain.criterion_lifecycle import (
     CriterionCrossOff,
     CrossOffState,
+    UndemonstratedReason,
 )
 from kodezart.types.domain.gating import (
     ContentClass,
@@ -53,9 +54,15 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.persist import PersistResult
-from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_event import UNDEMONSTRATED_EVENT_KINDS, RunEventKind
 from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState
 from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
+
+#: The cross-off states whose write can announce something on the lane's
+#: run-event stream: a fail announces a refutation and an undemonstrated
+#: reading announces which reading failed. A pass and a lapse announce
+#: nothing, so an act holding only those reads no stream.
+ANNOUNCING_STATES = frozenset({CrossOffState.failed, CrossOffState.undemonstrated})
 
 
 class TrackerLaneStateWriter:
@@ -355,12 +362,23 @@ class TrackerLaneStateWriter:
         one and in order; anything else is a reading of some other roster
         and is refused before a single sub-issue is touched. A criterion
         this attempt neither passed nor had already finished is written
-        nowhere: the sub-issue keeps whatever an earlier attempt left on it,
-        and the unwritten verdict is on the iteration event and in this line.
+        nowhere on its own sub-issue: it keeps whatever an earlier attempt
+        left on it, because there is no verdict to write there.
         A criterion this attempt FAILED and this fire had already finished is
         a regression, and is taken back. A criterion whose earlier grading
         this attempt found LAPSED is taken back the same way and announced
-        nowhere: it is owed again, which is not a regression to report.
+        nowhere: it is owed again, which is not a regression to report. A
+        criterion this attempt read nothing about has the reading that failed
+        appended to the lane's run-event stream, keyed to that sub-issue and
+        at the sha the verdict would have been stamped with.
+
+        The stream is read once for the whole act, before any sub-issue is
+        touched, and only when the roster holds something the act could
+        announce — a fail or an undemonstrated reading: an attempt that
+        passed everything writes no event and reads no board, a take-back
+        announcing nothing asks the board nothing extra, and a stream that
+        will not parse refuses while every sub-issue still reads as whatever
+        the last attempt left on it.
         """
         addressed = tuple(str(cross_off.criterion) for cross_off in cross_offs)
         if addressed != tuple(str(criterion.id) for criterion in dispatched):
@@ -368,20 +386,36 @@ class TrackerLaneStateWriter:
                 lane_key=lane.lane_key,
                 reason="the cross-offs do not answer the dispatched criteria",
             )
+        events: tuple[LaneRunEvent, ...] = ()
+        if any(cross_off.state in ANNOUNCING_STATES for cross_off in cross_offs):
+            events = self._events(comments=await self._board(lane), lane=lane)
         for criterion, cross_off in zip(dispatched, cross_offs, strict=True):
             if cross_off.state is CrossOffState.passed:
                 await self._write_one(
                     lane=lane, criterion=criterion, cross_off=cross_off
                 )
                 continue
+            reason = cross_off.undemonstrated_reason
             await self._log.ainfo(
                 "criterion_not_crossed_off",
                 lane=lane.lane_key,
                 criterion=cross_off.criterion,
                 state=cross_off.state.value,
+                reason=None if reason is None else reason.value,
                 graded_sha=cross_off.evidence.graded_sha,
             )
-            if cross_off.state is CrossOffState.failed:
+            # On the reason rather than on the state: the cross-off's own
+            # invariant makes the two equivalent, and narrowing on it needs
+            # no refusal for a state this branch cannot be reached in.
+            if reason is not None:
+                await self._undemonstrated(
+                    lane=lane,
+                    criterion=criterion,
+                    cross_off=cross_off,
+                    reason=reason,
+                    events=events,
+                )
+            elif cross_off.state is CrossOffState.failed:
                 await self._take_back(
                     lane=lane,
                     criterion=criterion,
@@ -392,11 +426,48 @@ class TrackerLaneStateWriter:
                         subject_key=criterion.id,
                         graded_sha=cross_off.evidence.graded_sha,
                     ),
+                    events=events,
                 )
             elif cross_off.state is CrossOffState.lapsed:
                 await self._take_back(
-                    lane=lane, criterion=criterion, cross_off=cross_off, event=None
+                    lane=lane,
+                    criterion=criterion,
+                    cross_off=cross_off,
+                    event=None,
+                    events=events,
                 )
+
+    async def _undemonstrated(
+        self,
+        *,
+        lane: LaneBinding,
+        criterion: TrackerCriterion,
+        cross_off: CriterionCrossOff,
+        reason: UndemonstratedReason,
+        events: Sequence[LaneRunEvent],
+    ) -> None:
+        """Record which reading failed for one criterion, once.
+
+        The kind is the reason, so the stream says which reading failed with
+        no field of its own to keep in step.  Nothing on the sub-issue is
+        touched: no state move, no Evidence row, no description edit, because
+        there is no verdict to write there.
+
+        Identity is the whole value, so a graph-level retry of the same
+        grading at the same head adds nothing and the same criterion graded
+        again at a later head is its own event — the rule the refutation
+        beside it already follows.
+        """
+        event = LaneRunEvent(
+            kind=UNDEMONSTRATED_EVENT_KINDS[reason],
+            lane_key=lane.lane_key,
+            subject_key=criterion.id,
+            graded_sha=cross_off.evidence.graded_sha,
+        )
+        if event not in events:
+            await settle(
+                self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
+            )
 
     async def _write_one(
         self,
@@ -439,6 +510,7 @@ class TrackerLaneStateWriter:
         criterion: TrackerCriterion,
         cross_off: CriterionCrossOff,
         event: LaneRunEvent | None,
+        events: Sequence[LaneRunEvent],
     ) -> None:
         """Take back a criterion this fire finished, once, for either reason.
 
@@ -460,9 +532,10 @@ class TrackerLaneStateWriter:
 
         Everything knowable is read before anything is written: the state the
         board holds, the body the writes depend on, and — when there is an
-        event to announce — the stream, so a stream that will not parse
-        refuses while the sub-issue still reads as the pass it was. A
-        take-back announcing nothing asks the board nothing extra at all.
+        event to announce — the stream, read once for the whole act before
+        the first sub-issue is read, so a stream that will not parse refuses
+        while the sub-issue still reads as the pass it was. A take-back
+        announcing nothing asks the board nothing extra at all.
         The move back is then the FIRST write, because a
         criterion left finished is in no later fire's roster and would never
         be graded again: a failure after it leaves the criterion unstarted and
@@ -491,9 +564,7 @@ class TrackerLaneStateWriter:
         # refuses here, while the sub-issue still reads as the pass it was,
         # rather than after the move back has already taken it.
         self._evidence_body(issue=issue, criterion=criterion, cross_off=cross_off)
-        posted = event is not None and event in self._events(
-            comments=await self._board(lane), lane=lane
-        )
+        posted = event is not None and event in events
         await settle(self._tracker.reset_criterion_pending(expected=issue, holder=None))
         moved = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=moved, criterion=criterion)

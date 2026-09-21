@@ -38,11 +38,10 @@ from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criterion_cross_off import (
     base_answers,
     cross_offs_for,
-    demonstrated_criteria,
     evaluation_observation,
     iteration_output,
     passed_ids,
-    undemonstrated_output,
+    undemonstrated_reasons,
 )
 from kodezart.domain.errors import (
     BaseReadingUnavailableError,
@@ -86,6 +85,7 @@ from kodezart.types.domain.criterion_lifecycle import (
     PATH_BOUND_CLASSES,
     CriterionCrossOff,
     CrossOffState,
+    UndemonstratedReason,
 )
 from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.fire_spec import TrackerSpec
@@ -639,16 +639,20 @@ class RalphLoop:
         # Every path out of the dispatch below either sets it or raises, so
         # nothing downstream reads this initial value.
         graded_in: str = ""
+        # The output the standing grade was reconciled from, carried out for
+        # the same reason: a withheld verdict is decided by grading that same
+        # input again, so every correspondence fact comes back identical.
+        graded_output: AcceptanceCriteriaOutput | None = None
         # Whether the tree the standing grade was read from was the one the
         # graded sha names. The authored arm has no sha to stand for, so its
         # readings are of the ref it asked for and nothing else is claimed —
         # and for the same reason it takes no reading at the lane's base: it
         # owns no tree, stamps no sha and writes no cross-off, so there is no
         # claim about a branch for a base reading to qualify.
-        demonstrated = True
+        workspace_stood = True
 
         async def evaluate() -> IterationGrade:
-            nonlocal dispatched, graded_in, demonstrated
+            nonlocal dispatched, graded_in, graded_output, workspace_stood
             criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
             roster: TrackerCriterionSet | None = None
             if ctx.tracker_spec is not None:
@@ -767,7 +771,7 @@ class RalphLoop:
                         site="ralph_evaluator",
                         observe=observe,
                     )
-                    demonstrated = await read_workspace_head(
+                    workspace_stood = await read_workspace_head(
                         git=self._git, workspace=graded_in_path
                     ) == (native_ref, False)
             if observer is not None:
@@ -794,25 +798,19 @@ class RalphLoop:
                     "The native branch changed during evaluation"
                 )
             dispatched = tuple(criteria)
-            if not demonstrated:
-                await self._log.awarning(
-                    "evaluation_undemonstrated",
-                    site="ralph_evaluator",
-                    iteration=state["iteration"],
-                    graded_sha=native_ref,
-                )
-                output = undemonstrated_output(output)
             if reading and roster is not None:
-                # After the undemonstrated reading, not before: an attempt
-                # that proved nothing is a missing reading of the tree its sha
-                # names, which is no reason to un-carry an earlier grading —
-                # that one's reading is arithmetic and stands on its own.
+                # An attempt that proves nothing is a missing reading of the
+                # tree its sha names, which is no reason to un-carry an
+                # earlier grading — that one's reading is arithmetic and
+                # stands on its own, so the withholding after the dispatch
+                # leaves these rows alone.
                 output = iteration_output(
                     criteria=roster.criteria,
                     standing=prior,
                     reading=reading,
                     graded=output,
                 )
+            graded_output = output
             return grade_iteration(criteria, output)
 
         grade, unresolved, attempts = await until_permutation(
@@ -839,6 +837,40 @@ class RalphLoop:
                 unknown_ids=grade.unknown_ids,
                 duplicate_ids=grade.duplicate_ids,
             )
+        # One fold of every reading this attempt took, once per attempt rather
+        # than once per fan-in round, and one withholding site: the attempt's
+        # own output is graded again with the readings in hand, so a withheld
+        # criterion grades failed carrying the reading that failed while every
+        # correspondence fact of the grade is the value it already was. Grading
+        # ``grade.results`` instead would empty ``unknown_ids`` and
+        # ``duplicate_ids`` silently, because those rows are already gone.
+        #
+        # A criterion the reading carried or found lapsed was not read by this
+        # attempt at all — its row is the reading's — so no reading this
+        # attempt took can have failed for it, and it is left out here.
+        held = {str(criterion) for criterion in reading}
+        reasons = undemonstrated_reasons(
+            results=[
+                result
+                for result in grade.results
+                if str(result.criterion_id) not in held
+            ],
+            workspace_stood=workspace_stood,
+        )
+        # Every path out of the dispatch that returned a grade set the output,
+        # so the narrowing is the type's and not a second condition: no
+        # reading is withheld from an attempt that never graded anything.
+        if reasons and graded_output is not None:
+            await self._log.awarning(
+                "evaluation_undemonstrated",
+                site="ralph_evaluator",
+                iteration=state["iteration"],
+                graded_sha=native_ref,
+                reasons=sorted(
+                    (str(key), reason.value) for key, reason in reasons.items()
+                ),
+            )
+            grade = grade_iteration(dispatched, graded_output, undemonstrated=reasons)
         verdict = grade.verdict
         pending_failures = grade.failures
         reconciled = AcceptanceCriteriaOutput(
@@ -875,14 +907,13 @@ class RalphLoop:
         # or found lapsed was not graded by this attempt, so it is not read
         # at the base either: it is withheld from every session of this
         # iteration, and its cross-off is decided by the reading alone. A
-        # grading that did not stand needs no guard of its own here:
-        # ``undemonstrated_output`` above has already turned every result this
-        # attempt graded into a fail, and the carried rows ``iteration_output``
-        # puts back are the reading's, subtracted below, so it presents no
-        # passing id and the empty ``passing`` skips the reading.
+        # grading that did not stand needs no guard of its own here: the
+        # withholding above has already graded every result this attempt
+        # graded failed, and the carried rows ``iteration_output`` puts back
+        # are the reading's, subtracted below, so it presents no passing id
+        # and the empty ``passing`` skips the reading.
         at_base: Mapping[CriterionId, bool] = {}
         if native_ref is not None:
-            held = {str(criterion) for criterion in reading}
             passing = frozenset(
                 criterion
                 for criterion in passed_ids(grade.results)
@@ -909,8 +940,7 @@ class RalphLoop:
                 dispatched=dispatched,
                 graded_sha=native_ref,
                 graded_in=graded_in,
-                demonstrated=demonstrated,
-                at_base=at_base,
+                reasons=reasons,
                 iteration=state["iteration"],
                 standing=prior,
                 reading=reading,
@@ -977,8 +1007,7 @@ class RalphLoop:
         dispatched: Sequence[ExecutionCriterion],
         graded_sha: str,
         graded_in: str,
-        demonstrated: bool,
-        at_base: Mapping[CriterionId, bool],
+        reasons: Mapping[CriterionId, UndemonstratedReason],
         iteration: int,
         standing: Sequence[CriterionCrossOff],
         reading: Mapping[CriterionRef, GradedState],
@@ -1018,11 +1047,7 @@ class RalphLoop:
             observation=evaluation_observation(
                 session_id=graded_in, iteration=iteration
             ),
-            demonstrated=demonstrated_criteria(
-                results=grade.results,
-                graded_tree_stood=demonstrated,
-                at_base=at_base,
-            ),
+            reasons=reasons,
             standing=standing,
             reading=reading,
         )

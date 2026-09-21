@@ -1801,8 +1801,11 @@ class LaneStateWriter(Protocol):
         grading has lapsed goes the other way — back to the team's unstarted
         state, keeping the sha it was graded at with its pointer saying that
         grading lapsed — and nothing is announced for it, because a lapse is
-        the criterion being owed again and not a regression.
-        Nothing else is written anywhere, least of all a parent's state.
+        the criterion being owed again and not a regression. A criterion this
+        attempt read nothing about is recorded on the lane's run-event
+        stream, keyed to that sub-issue and naming which reading failed.
+        Nothing else is written anywhere, least of all a parent's state or
+        the sub-issue of a criterion no verdict addresses.
         """
         ...
 

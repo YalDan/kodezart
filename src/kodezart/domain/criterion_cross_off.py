@@ -14,7 +14,7 @@ holding the target's key, and a comparison that confirms a target is not one
 that finds one. Nothing here locates a criterion by prose or by checkbox.
 """
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 from typing import Final
 
@@ -38,6 +38,7 @@ from kodezart.types.domain.criterion_lifecycle import (
     CrossOffState,
     ExercisedPath,
     RederivationClass,
+    UndemonstratedReason,
 )
 from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
@@ -60,39 +61,23 @@ HELD_CRITERION_STATE = WorkflowStateKind.COMPLETED
 TICKABLE_STATES = frozenset({WorkflowStateKind.UNSTARTED, HELD_CRITERION_STATE})
 
 
-#: What stands in for a verdict when the grading proved nothing.
-#:
-#: Fixed text rather than the evaluator's own words: the evaluator answered
-#: about a tree, and what this says is that the tree it answered about was
-#: not the one the sha names. That is the harness's reading, not the
-#: session's, so the session's prose would misattribute it.
-UNDEMONSTRATED_REASON: Final[str] = (
-    "undemonstrated: the grading workspace held uncommitted changes, or its "
-    "head was not the sha this verdict would be stamped with, so what it read "
-    "is not what that sha names"
-)
+def undemonstrated_reasons(
+    *,
+    results: Sequence[CriterionResult],
+    workspace_stood: bool,
+) -> dict[CriterionId, UndemonstratedReason]:
+    """Which of this attempt's readings proved nothing, and which one failed.
 
-
-def undemonstrated_output(
-    output: AcceptanceCriteriaOutput,
-) -> AcceptanceCriteriaOutput:
-    """The same roster with no verdict standing and the reason in its place.
-
-    Every result, not only the passing ones: a fail recorded from a tree
-    nobody can name is no more a reading than a pass from one.
+    The workspace reading is about the whole tree, so when it fails nothing
+    read in that tree stands and every criterion carries it.  Otherwise
+    nothing was withheld from anything.
     """
-    return AcceptanceCriteriaOutput(
-        criteria_results=[
-            CriterionResult(
-                criterion_id=result.criterion_id,
-                criterion=result.criterion,
-                passed=False,
-                reasoning=UNDEMONSTRATED_REASON,
-            )
-            for result in output.criteria_results
-        ],
-        sherlock_flags=list(output.sherlock_flags),
-    )
+    if not workspace_stood:
+        return {
+            result.criterion_id: UndemonstratedReason.workspace_not_the_graded_sha
+            for result in results
+        }
+    return {}
 
 
 def evaluation_observation(*, session_id: str, iteration: int) -> str:
@@ -103,9 +88,10 @@ def evaluation_observation(*, session_id: str, iteration: int) -> str:
 #: What stands in for a verdict this attempt did not ask for, because the
 #: verdict an earlier one reached still stands.
 #:
-#: Fixed text, for the reason the undemonstrated one above is: this is the
-#: harness's arithmetic over what moved since that grading, not a session's
-#: reading of anything, so a session's prose would misattribute it.
+#: Fixed text, for the reason the undemonstrated sentences in
+#: ``criteria_grading`` are: this is the harness's arithmetic over what moved
+#: since that grading, not a session's reading of anything, so a session's
+#: prose would misattribute it.
 CARRIED_REASON: Final[str] = (
     "carried: nothing this grading exercised moved since the sha it was "
     "graded at, so the verdict it reached still stands and was not asked again"
@@ -305,15 +291,19 @@ def demonstrated_criteria(
     )
 
 
-def cross_off_state(*, passed: bool, demonstrated: bool) -> CrossOffState:
-    """What one result is worth, given whether its grading stood at all.
+def cross_off_state(
+    *, passed: bool, reason: UndemonstratedReason | None
+) -> CrossOffState:
+    """What one result is worth, given which reading of its tree failed.
 
-    *demonstrated* decides before the result does: a verdict produced from a
-    tree the sha does not name is neither this criterion's pass nor its
-    fail, and recording it as either would put a claim about the branch on
-    the board that nothing on the branch supports.
+    *reason* decides before the result does: a verdict produced where no
+    reading of the tree says anything about this criterion is neither its
+    pass nor its fail, and recording it as either would put a claim about
+    the branch on the board that nothing on the branch supports.  The
+    function names the thing it decides on, because the state now has more
+    than one trigger.
     """
-    if not demonstrated:
+    if reason is not None:
         return CrossOffState.undemonstrated
     return CrossOffState.passed if passed else CrossOffState.failed
 
@@ -323,7 +313,7 @@ def cross_offs_for(
     results: Sequence[CriterionResult],
     graded_sha: str,
     observation: str,
-    demonstrated: Collection[CriterionId],
+    reasons: Mapping[CriterionId, UndemonstratedReason],
     standing: Sequence[CriterionCrossOff] = (),
     reading: Mapping[CriterionRef, GradedState] = MappingProxyType({}),
 ) -> tuple[CriterionCrossOff, ...]:
@@ -334,12 +324,11 @@ def cross_offs_for(
     either per criterion would be a second place for the same sha to drift
     from.
 
-    *demonstrated* is per criterion, because one of the two facts behind it
-    is: the workspace either stood at that sha for the whole attempt or it
-    did not, but whether the same check already passed at the lane's base is
-    a fact about one criterion. ``demonstrated_criteria`` folds both into the
-    ids whose reading stands, and an id absent from it has no reading of the
-    branch at all.
+    *reasons* is per criterion, because a reading can fail for one
+    criterion of an attempt and hold for the next. It is consulted for a
+    criterion this attempt graded afresh and for no other: a counted or
+    lapsed criterion was not read by this attempt at all, so no reading of
+    this attempt can have failed for it.
 
     *reading* is what an earlier grading is still worth, for the criteria
     this attempt therefore did not grade afresh; *standing* carries those
@@ -350,7 +339,7 @@ def cross_offs_for(
     prefixes carried, so what the board is told is that the grading is owed
     again rather than that it failed.
 
-    Each arm decides the four facts a cross-off carries and one construction
+    Each arm decides the five facts a cross-off carries and one construction
     below makes the value out of them, so the state, the sha and the class
     reach the board through one expression however they were reached.
     """
@@ -367,10 +356,8 @@ def cross_offs_for(
             built.append(held[criterion])
             continue
         if state is None:
-            verdict = cross_off_state(
-                passed=result.passed,
-                demonstrated=result.criterion_id in demonstrated,
-            )
+            withheld = reasons.get(result.criterion_id)
+            verdict = cross_off_state(passed=result.passed, reason=withheld)
             recorded, pointer = attempt
             rederivation_class, exercised_paths = declared_class(
                 rederivation_class=result.rederivation_class,
@@ -378,6 +365,7 @@ def cross_offs_for(
             )
         else:
             prior = held[criterion]
+            withheld = None
             verdict = CrossOffState.lapsed
             recorded = prior.evidence.graded_sha
             pointer = lapse_observation(observation=prior.evidence.test)
@@ -390,6 +378,7 @@ def cross_offs_for(
                 evidence=CriterionEvidence(graded_sha=recorded, test=pointer),
                 rederivation_class=rederivation_class,
                 exercised_paths=exercised_paths,
+                undemonstrated_reason=withheld,
             )
         )
     return tuple(built)

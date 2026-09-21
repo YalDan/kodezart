@@ -375,7 +375,11 @@ the refuting grading then goes on its Evidence row, and one `criterion_refuted`
 event is posted under `marker_prefixes.run_event` last. That order is what the
 act guarantees: a failure anywhere after the move back leaves the criterion
 owed, and the next fire re-grades it, instead of leaving it certified at a sha
-that failed it.
+that failed it. The lane's event stream is read once for the whole act, before
+any sub-issue is touched, and only when the roster holds a fail or an
+undemonstrated reading, so a refutation and an undemonstrated reading in one
+attempt share that one reading of the board; for a criterion the attempt read
+nothing about, its event is the act's only write.
 
 A criterion whose grading no longer stands goes back the same way and announces
 nothing. The sub-issue returns to the team's unstarted state, keeping the sha it
@@ -420,8 +424,12 @@ reads whether it holds uncommitted changes and what its head is; a verdict from
 a workspace that held changes, or stood at another head, was read from a working
 copy rather than from the branch, so every result of the attempt is regraded as
 not passed with one fixed reason and each cross-off carries
-`CrossOffState.undemonstrated` instead of a pass or a fail. Nothing reaches the
-tracker for such an attempt.
+`CrossOffState.undemonstrated` beside the reading that failed instead of a pass
+or a fail. What reaches the tracker for such an attempt is one event per
+criterion, appended to the lane's run-event stream, naming that reading, keyed
+to the criterion's sub-issue and carrying the sha the verdict would have been
+stamped with. The sub-issue itself is untouched: there is no verdict to write on
+it, so its state does not move and its Evidence row is not stamped.
 
 A native evaluation whose grading did stand then runs each criterion it passed
 through that criterion's own check again, in a further tree the loop owns at the
