@@ -311,6 +311,28 @@ async def test_a_run_live_on_another_lane_is_reported_live() -> None:
     assert [lane for lane, _ in queue.submissions] == ["somebody-elses-lane"]
 
 
+async def test_the_oldest_of_two_live_jobs_is_the_one_reported() -> None:
+    """Two runs over one scope, and the row names the one that started first.
+
+    The store answers oldest first, and the row is about the walk in
+    progress: naming the newest would point the memory at the job the entry
+    is about to refuse, and if both ended between two ticks that ending
+    would read as a non-converged one and cost the scope a needless walk.
+    """
+    port = board(first=APPROVED)
+    queue = FakeJobQueue()
+    submission = standing_scope_submission(binding=bindings(FIRST)[0], trunk=TRUNK)
+    posted = await queue.submit(lane="somebody-elses-lane", request=submission)
+    later = await queue.submit(lane=LANE, request=submission)
+
+    report = await heartbeat(port, queue).tick()
+
+    assert outcomes(report) == [(FIRST, HeartbeatOutcome.LIVE)]
+    assert report.entries[0].job_id == posted.job_id
+    assert report.entries[0].job_id != later.job_id
+    assert len(queue.submissions) == 2
+
+
 async def test_an_evicted_record_is_not_a_live_job() -> None:
     """A registry that forgot a job says nothing about a run still walking.
 
