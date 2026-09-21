@@ -13,6 +13,7 @@ from typing import Final, Literal
 from claude_agent_sdk.types import AgentDefinition as SDKAgentDefinition
 from claude_agent_sdk.types import SystemPromptPreset
 
+from kodezart.types.domain.session import AllowedTools, ToolPreset
 from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionEffort,
@@ -132,3 +133,26 @@ def map_model(policy: SessionPolicy, construction_model: str | None) -> str | No
     if policy.model is not None:
         return policy.model
     return construction_model
+
+
+_SDK_TOOL_PRESETS: Final[dict[ToolPreset, tuple[str, ...]]] = {
+    ToolPreset.EVALUATION: ("Read", "Glob", "Grep", "Bash"),
+    ToolPreset.DELEGATED_EVALUATION: ("Read", "Glob", "Grep", "Bash", "Agent"),
+    ToolPreset.AUTHORING: (
+        "Read",
+        "Glob",
+        "Grep",
+        "Bash",
+        "Agent",
+        "WebSearch",
+        "WebFetch",
+    ),
+    ToolPreset.IMPLEMENTATION: ("Read", "Glob", "Grep", "Bash", "Edit", "Write"),
+}
+
+
+def map_allowed_tools(selection: AllowedTools) -> list[str]:
+    """Expand an application bundle or retain the caller's open selectors."""
+    if isinstance(selection, list):
+        return selection
+    return list(_SDK_TOOL_PRESETS[selection])

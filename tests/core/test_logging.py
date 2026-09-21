@@ -6,25 +6,20 @@ formatter was added to the chain those tracebacks serialized as
 that has since exited.
 """
 
-import pytest
+from kodezart.core.logging import get_logger
+from tests.core.test_logging_chain import configured_chain
 
-from kodezart.core.logging import configure_logging, get_logger
 
-
-def test_a_logged_exception_reaches_the_line_as_a_traceback(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """The rendered line carries the frames, and no object repr survives."""
-    configure_logging(log_level="INFO", pretty=False)
-    log = get_logger("tests.core.test_logging")
-
-    try:
-        msg = "boom"
-        raise ValueError(msg)
-    except ValueError:
-        log.exception("stream_failed")
-
-    out = capsys.readouterr().out
+def test_a_logged_exception_reaches_the_line_as_a_traceback() -> None:
+    """Render native frames and restore the log sink before capture closes."""
+    with configured_chain() as output:
+        log = get_logger("tests.core.test_logging")
+        try:
+            msg = "boom"
+            raise ValueError(msg)
+        except ValueError:
+            log.exception("stream_failed")
+        out = output.getvalue()
     assert "stream_failed" in out
     assert "Traceback (most recent call last)" in out
     assert "ValueError: boom" in out

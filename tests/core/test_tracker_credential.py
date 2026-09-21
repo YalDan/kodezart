@@ -26,7 +26,7 @@ from kodezart.main import create_app, lifespan
 _FIXTURE_BODY: Final[str] = "Q7" * 24
 _FIXTURE_CREDENTIAL: Final[str] = "lin_api_" + _FIXTURE_BODY
 
-_ENV_VAR: Final[str] = "KODEZART_TRACKER_TOKEN"
+_ENV_VAR: Final[str] = "KODEZART_TRACKER__TOKEN"
 
 
 def test_the_credential_resolves_from_its_kodezart_env_var(
@@ -35,7 +35,7 @@ def test_the_credential_resolves_from_its_kodezart_env_var(
     """The field is env-sourced under the shared prefix."""
     monkeypatch.setenv(_ENV_VAR, _FIXTURE_CREDENTIAL)
 
-    token = AppConfig().tracker_token
+    token = AppConfig().tracker.token
     assert token is not None
     assert token.get_secret_value() == _FIXTURE_CREDENTIAL
 
@@ -46,7 +46,7 @@ def test_an_unset_environment_yields_none_not_a_placeholder(
     """Absence is ``None`` — never an empty string standing in for a value."""
     monkeypatch.delenv(_ENV_VAR, raising=False)
 
-    assert AppConfig().tracker_token is None
+    assert AppConfig().tracker.token is None
 
 
 def test_an_unknown_sibling_key_still_trips_extra_forbid() -> None:
@@ -81,8 +81,8 @@ def test_repr_masks_the_credential(
 
     assert _FIXTURE_BODY not in repr(config)
     assert _FIXTURE_BODY not in str(config)
-    assert _FIXTURE_BODY not in repr(config.tracker_token)
-    assert _FIXTURE_BODY not in str(config.tracker_token)
+    assert _FIXTURE_BODY not in repr(config.tracker.token)
+    assert _FIXTURE_BODY not in str(config.tracker.token)
 
 
 def test_the_field_is_still_readable_after_being_excluded(
@@ -95,7 +95,7 @@ def test_the_field_is_still_readable_after_being_excluded(
     """
     monkeypatch.setenv(_ENV_VAR, _FIXTURE_CREDENTIAL)
 
-    token = AppConfig().tracker_token
+    token = AppConfig().tracker.token
     assert token is not None
     assert token.get_secret_value() == _FIXTURE_CREDENTIAL
 

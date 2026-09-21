@@ -15,13 +15,30 @@ keeps the claim honest until that lands.
 """
 
 from collections.abc import Sequence
-from datetime import date
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.organize import (
+    MANDATE_PHASE_ROLES,
+    MandateSpec,
+    OrganizeLabelNamespace,
+    ResolvedMandateSpec,
+    phase_marker_source,
+    split_label_key,
+)
+from kodezart.types.domain.privacy import PrivateSurface
+from kodezart.types.domain.run_event import (
+    DERIVED_RUN_EVENTS,
+    RUN_EVENT_PUBLISHERS,
+    SILENT_STATE_EVENTS,
+    RunEventEffect,
+    RunEventKind,
+    RunEventTableError,
+)
+from kodezart.types.domain.scope_address import ScopeRef
 
 #: The one stable document key the structure validators below and the pass
 #: templates address by name; it carries no accessor that refuses on absence,
@@ -66,9 +83,9 @@ class DocumentSystem(StrEnum):
 class RunKind(StrEnum):
     """Every kind of run the operation records — the record registry's keys.
 
-    Three members because the operation runs three kinds of thing worth a
-    record row: the two scheduled judgment passes and the fire a dispatch
-    starts.  ``records`` is keyed by these values, one declared destination
+    Each native or prompt-driven run owns a distinct record kind, including
+    the standing audit and the fire a dispatch starts. ``records`` is keyed by
+    these values, one declared destination
     per kind, so which log a run reports to is configuration rather than a
     name a session invents — and a key outside this vocabulary is a typo
     refused at load, not a destination nothing will ever write to
@@ -78,6 +95,7 @@ class RunKind(StrEnum):
     FIRE_PREP = "fire_prep"
     GROOMING = "grooming"
     FIRE = "fire"
+    AUDIT = "audit"
 
 
 class ConfigOwnership(StrEnum):
@@ -133,6 +151,18 @@ class QueueState(StrEnum):
     APPROVED = "approved"
     DONE = "done"
     DECISION = "decision"
+
+
+class ScopeLabel(StrEnum):
+    """Scope admission vocabulary, resolved separately from the issue queue.
+
+    The operation maps each semantic member to its tracker label. Queue
+    writes continue to address only ``QueueState`` and its own mapping.
+    """
+
+    TRIAGE = "triage"
+    PROPOSED = "proposed"
+    APPROVED = "approved"
 
 
 class LifecycleStage(StrEnum):
@@ -252,6 +282,13 @@ class TeamEntry(OperationModel):
     visibility: RepoVisibility | None = None
 
 
+class CheckPrerequisite(StrEnum):
+    """Environment facts that a repository may explicitly declare."""
+
+    REPOSITORY_HISTORY = "repository_history"
+    CREDENTIALS = "credentials"
+
+
 class CheckStep(OperationModel):
     """One command in a repository's check chain, and what gates it.
 
@@ -269,6 +306,8 @@ class CheckStep(OperationModel):
     name: str
     command: str
     depends_on: str | None = None
+    requires: tuple[CheckPrerequisite, ...] = ()
+    forge_check: str | None = None
 
 
 class RepoEntry(OperationModel):
@@ -281,8 +320,9 @@ class RepoEntry(OperationModel):
     only plausible default is the literal the base resolver is required to
     prove it never reads.
 
-    ``checks`` is consumed by prompt rendering alone — no deterministic
-    path executes these commands — and EMPTY is a named absence, not a
+    Check commands are rendered into prompts, never executed by this
+    model. Delivery also reads explicit forge-name and prerequisite
+    declarations from the chain. EMPTY is a named absence, not a
     hole (founder ruling 2026-09-01): the repository's own CI defines its
     gate, and copying that structure here would be a second surface for
     facts the repository owns, drifting the day its CI changes.  Declare
@@ -294,6 +334,8 @@ class RepoEntry(OperationModel):
     url: str
     trunk: str = Field(min_length=1)
     checks: tuple[CheckStep, ...] = ()
+    runner_environment: dict[CheckPrerequisite, bool] = Field(default_factory=dict)
+    forge_exempt: bool = False
 
 
 class DocumentEntry(OperationModel):
@@ -345,6 +387,63 @@ class DocumentEntry(OperationModel):
         return self
 
 
+class RecordOutcomeSource(StrEnum):
+    """Which observed outcome vocabulary a destination column represents."""
+
+    RUN = "run"
+    WORKFLOW = "workflow"
+
+
+class RecordOutcomeMapping(OperationModel):
+    """An explicit semantic source and its destination select options."""
+
+    @model_validator(mode="after")
+    def _nonempty_names(self) -> Self:
+        if not self.property.strip():
+            raise ValueError("outcome property must be nonempty")
+        for key, value in self.options.items():
+            source, separator, outcome = key.partition(".")
+            if (
+                source not in RecordOutcomeSource
+                or not separator
+                or not outcome.strip()
+                or not value.strip()
+            ):
+                raise ValueError(
+                    "outcome mappings require run.<value> or workflow.<value> "
+                    "and a nonempty destination option"
+                )
+        return self
+
+
+class RecordColumns(OperationModel):
+    """Explicit bindings for structural facts and session-authored narrative."""
+
+    def property_names(self) -> tuple[str, ...]:
+        return (
+            self.repo,
+            self.pr_url,
+            self.base_branch,
+            self.started,
+            self.ended,
+            self.duration,
+            self.iterations,
+            self.what_happened,
+        )
+
+    @model_validator(mode="after")
+    def _distinct_bindings(self) -> Self:
+        names = self.property_names()
+        if any(not name.strip() for name in names) or len(set(names)) != len(names):
+            raise ValueError("record columns require distinct nonempty property names")
+        if any(
+            not key.strip() or not value.strip()
+            for key, value in self.repo_options.items()
+        ):
+            raise ValueError("repository mappings require nonempty sources and options")
+        return self
+
+
 class RecordDestination(OperationModel):
     """A WRITE-side destination a pass records a row to.
 
@@ -364,7 +463,17 @@ class RecordDestination(OperationModel):
     id: str
     append_only: bool
 
-
+    @model_validator(mode="after")
+    def _structured_knowledge_destination(self) -> Self:
+        if self.outcome_mapping is not None or self.columns is not None:
+            if self.system is not DocumentSystem.KNOWLEDGE:
+                raise ValueError(
+                    "structured record bindings require a knowledge destination"
+                )
+        if self.outcome_mapping is not None and self.columns is not None:
+            if self.outcome_mapping.property in self.columns.property_names():
+                raise ValueError("the outcome property must have its own record column")
+        return self
 class Initiative(OperationModel):
     """An initiative the operation is steering toward.
 
@@ -379,38 +488,16 @@ class Initiative(OperationModel):
     target_date: date | None = None
 
 
-def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
-    """Every structural failure in one repository's check chain.
+class OrganizeScopeBinding(OperationModel):
+    """One explicit writable scope and the declared repository it is judged against."""
 
-    A chain that names a step twice, depends on a step that is not in it,
-    or closes a cycle cannot be classified into roots and cascades at all,
-    so it is rejected at load rather than mis-reported at run time.
-    """
-    failures: list[str] = []
-    seen: set[str] = set()
-    for step in steps:
-        if step.name in seen:
-            failures.append(f"duplicate step name {step.name!r}")
-        seen.add(step.name)
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
-    by_name = {step.name: step for step in steps}
-    for step in steps:
-        if step.depends_on is None:
-            continue
-        if step.depends_on not in by_name:
-            failures.append(
-                f"step {step.name!r} depends on unknown step {step.depends_on!r}",
-            )
-            continue
-        walked: set[str] = {step.name}
-        cursor: str | None = step.depends_on
-        while cursor is not None:
-            if cursor in walked:
-                failures.append(f"step {step.name!r} closes a dependency cycle")
-                break
-            walked.add(cursor)
-            cursor = by_name[cursor].depends_on
-    return failures
+
+class AuditScopeBinding(OperationModel):
+    """An explicit audit scope, declared repository and native report destination."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
 
 class OperationConfig(OperationModel):
@@ -439,25 +526,70 @@ class OperationConfig(OperationModel):
     agent_identities: list[str] = Field(default_factory=list)
     teams: dict[str, TeamEntry] = Field(default_factory=dict)
     queue_states: dict[str, str] = Field(default_factory=dict)
+    scope_labels: dict[str, str] = Field(default_factory=dict)
+    issue_labels: dict[str, str] = Field(default_factory=dict)
+    organize_mandates: tuple[MandateSpec, ...] = ()
+    organize_scopes: tuple[OrganizeScopeBinding, ...] = ()
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
+    run_event_states: dict[str, LifecycleStage | RunEventEffect] = Field(
+        default_factory=dict
+    )
+    marker_prefixes: dict[str, str] = Field(default_factory=dict)
     repos: list[RepoEntry] = Field(default_factory=list)
     documents: dict[str, DocumentEntry] = Field(default_factory=dict)
     records: dict[str, RecordDestination] = Field(default_factory=dict)
     knowledge: dict[str, str] = Field(default_factory=dict)
     endpoints: dict[str, str] = Field(default_factory=dict)
     initiatives: list[Initiative] = Field(default_factory=list)
-    # Prose describing the CLASS of thing this operation treats as private,
-    # never a list of instances. Prose generalizes to instances the operator
-    # never enumerated, and it lives operator-side, which together is the
-    # whole reason this is not a pattern list. ``None`` means the operator
-    # has not supplied one; the judgment scanner then refuses to register
-    # rather than registering with nothing to judge against.
-    private_surface: str | None = None
+    private_surface: PrivateSurface | None = None
+
+    @field_validator("private_surface", mode="before")
+    @classmethod
+    def _migrate_private_description(cls, value: object) -> object:
+        """Existing operator prose retains its exact bytes at the load boundary."""
+        return {"description": value} if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def _check_structure(self) -> Self:
         """Collect EVERY structural failure into one error, never the first."""
         failures: list[str] = []
+
+        if self.run_event_states:
+            try:
+                self.require_run_event_table()
+            except RunEventTableError as exc:
+                failures.extend(exc.failures)
+
+        try:
+            self.resolve_organize_mandates()
+        except ValueError as exc:
+            failures.append(str(exc))
+
+        if self.organize_scopes:
+            if not self.organize_mandates:
+                failures.append("organize_scopes requires configured organize_mandates")
+            refs = [binding.scope for binding in self.organize_scopes]
+            if len(refs) != len(set(refs)):
+                failures.append(
+                    "organize_scopes repeats or ambiguously binds one scope"
+                )
+            for binding in self.organize_scopes:
+                if sum(repo.url == binding.repo_url for repo in self.repos) != 1:
+                    failures.append(
+                        "each organize scope requires exactly one matching "
+                        "declared repository"
+                    )
+
+        if self.audit_scopes:
+            audit_refs = [binding.scope for binding in self.audit_scopes]
+            if len(audit_refs) != len(set(audit_refs)):
+                failures.append("audit_scopes repeats or ambiguously binds one scope")
+            for audit_binding in self.audit_scopes:
+                if sum(repo.url == audit_binding.repo_url for repo in self.repos) != 1:
+                    failures.append(
+                        "each audit scope requires exactly one matching "
+                        "declared repository"
+                    )
 
         if self.principals:
             approvers = [
@@ -513,12 +645,45 @@ class OperationConfig(OperationModel):
                         f"queue_states is missing required key {member.value!r}"
                     )
 
+        if self.scope_labels:
+            for scope_label in ScopeLabel:
+                if scope_label.value not in self.scope_labels:
+                    failures.append(
+                        f"scope_labels is missing required key {scope_label.value!r}"
+                    )
+
         if self.workflow_states:
             for stage in LifecycleStage:
                 if stage not in self.workflow_states:
                     failures.append(
                         f"workflow_states is missing required stage {stage.value!r}",
                     )
+
+        label_names = list(self.issue_labels.values())
+        failures.extend(
+            f"issue_labels[{name!r}] must name a nonempty tracker label"
+            for name, label in self.issue_labels.items()
+            if not name.strip() or not label.strip()
+        )
+        failures.extend(
+            f"issue_labels[{name!r}] {label!r} is not unique"
+            for name, label in self.issue_labels.items()
+            if label_names.count(label) > 1
+        )
+
+        prefixes = list(self.marker_prefixes.values())
+        failures.extend(
+            f"marker_prefixes[{purpose!r}] must name one nonempty marker token"
+            for purpose, prefix in self.marker_prefixes.items()
+            if not purpose
+            or not prefix
+            or any(character.isspace() or character in '<>[]:"' for character in prefix)
+        )
+        failures.extend(
+            f"marker_prefixes[{purpose!r}] {prefix!r} is not unique"
+            for purpose, prefix in self.marker_prefixes.items()
+            if prefixes.count(prefix) > 1
+        )
 
         if self.documents and CHECKPOINT_DOCUMENT_KEY not in self.documents:
             failures.append(
@@ -550,7 +715,7 @@ class OperationConfig(OperationModel):
         for index, repo in enumerate(self.repos):
             failures.extend(
                 f"repos[{index}].checks: {failure}"
-                for failure in _check_chain_failures(repo.checks)
+                for failure in check_chain_failures(repo.checks)
             )
 
         known_users = {p.tracker_user for p in self.principals}
@@ -703,6 +868,125 @@ class OperationConfig(OperationModel):
             )
         return scanned
 
+    def require_run_event_table(self) -> None:
+        """A declared event table is total; an absent one loads.
+
+        The one production caller is the load validator above, which asks this
+        only of an operation that declared rows: a table names an effect for
+        every event kind or it names a default and a disabled signal, and
+        neither is a thing this configuration has.
+
+        Nothing on the scope path reads the table. A run event's comment is
+        rendered from ``marker_prefixes`` alone, so an operation that declares
+        no table posts and reads its events exactly as one that does — which is
+        why dialling the tracker no longer asks for it.
+        """
+        vocabulary = {kind.value for kind in RunEventKind}
+        present = set(self.run_event_states)
+        failures = [
+            f"run_event_states is missing event {name!r}"
+            for name in sorted(vocabulary - present)
+        ]
+        failures.extend(
+            f"run_event_states names undeclared event {name!r}"
+            for name in sorted(present - vocabulary)
+        )
+        publishers = {kind.value for kind in RUN_EVENT_PUBLISHERS}
+        failures.extend(
+            f"run-event notification partition is missing {name!r}"
+            for name in sorted(vocabulary - publishers)
+        )
+        failures.extend(
+            f"run-event notification partition names undeclared event {name!r}"
+            for name in sorted(publishers - vocabulary)
+        )
+        for kind in RunEventKind:
+            if kind.value not in self.run_event_states:
+                continue
+            effect = self.run_event_states[kind.value]
+            if kind in DERIVED_RUN_EVENTS:
+                if effect is not RunEventEffect.DERIVED:
+                    failures.append(f"{kind.value!r} requires DERIVED")
+            elif kind in SILENT_STATE_EVENTS:
+                if effect is not RunEventEffect.NO_TRANSITION:
+                    failures.append(f"{kind.value!r} requires NO_TRANSITION")
+            elif not isinstance(effect, LifecycleStage):
+                failures.append(f"{kind.value!r} requires a named workflow state")
+        if failures:
+            raise RunEventTableError(tuple(failures))
+
+    def resolve_organize_mandates(self) -> tuple[ResolvedMandateSpec, ...]:
+        """Resolve every declared phase during ordinary configuration validation.
+
+        An absent table is a legitimate operation without an organizer table.
+        A declared table names every phase exactly once. The namespace in
+        each key selects its mapping; phase kind never guesses one. Approval
+        admits a member to a run stage and ends the pre-approval phase, and
+        it is never machine-written, so a run-stage row may gate on
+        ``scope_labels.approved`` by that exact reference; no row may mark
+        with it or gate through an alias of it.
+
+        Rows come back in the governed phase sequence with the lane role
+        each phase carries, so no reader downstream repeats the sequence
+        or re-derives from a kind what this row already states.
+        """
+        if not self.organize_mandates:
+            return ()
+
+        failures: list[str] = []
+        sequence = tuple(MANDATE_PHASE_ROLES)
+        kinds = [spec.kind for spec in self.organize_mandates]
+        for kind in sequence:
+            if kind not in kinds:
+                failures.append(f"organize_mandates is missing phase {kind.value!r}")
+            elif kinds.count(kind) > 1:
+                failures.append(f"organize_mandates repeats phase {kind.value!r}")
+
+        mappings = {
+            OrganizeLabelNamespace.SCOPE: self.scope_labels,
+            OrganizeLabelNamespace.ISSUE: self.issue_labels,
+        }
+        approved_label = self.scope_labels.get(ScopeLabel.APPROVED.value)
+        resolved: list[ResolvedMandateSpec] = []
+        for spec in sorted(
+            self.organize_mandates, key=lambda row: sequence.index(row.kind)
+        ):
+            labels: dict[str, str] = {}
+            for field, reference in (
+                ("gate_label_key", spec.gate_label_key),
+                ("terminal_marker_key", spec.terminal_marker_key),
+            ):
+                namespace, key = split_label_key(reference)
+                label = mappings[namespace].get(key)
+                location = f"organize_mandates[{spec.kind.value!r}].{field}"
+                if label is None or not label.strip():
+                    failures.append(
+                        f"{location} has no nonempty mapping for {reference!r}"
+                    )
+                elif label == approved_label and not (
+                    field == "gate_label_key"
+                    and namespace is OrganizeLabelNamespace.SCOPE
+                    and MANDATE_PHASE_ROLES[spec.kind].runs_under_approval
+                ):
+                    failures.append(
+                        f"{location} names scope approval, which ends organize"
+                    )
+                else:
+                    labels[field] = label
+            if "gate_label_key" in labels and "terminal_marker_key" in labels:
+                resolved.append(
+                    ResolvedMandateSpec(
+                        spec=spec,
+                        gate_label=labels["gate_label_key"],
+                        terminal_marker=labels["terminal_marker_key"],
+                        role=MANDATE_PHASE_ROLES[spec.kind],
+                        marker_source=phase_marker_source(spec.kind.value),
+                    )
+                )
+        if failures:
+            raise ValueError("; ".join(failures))
+        return tuple(resolved)
+
     def board_visibility(self, team_key: str | None) -> RepoVisibility:
         """The visibility posture of the board *team_key* names — fail-closed.
 
@@ -752,12 +1036,19 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "agent_identities": ConfigOwnership.EXTERNAL,
     "teams": ConfigOwnership.EXTERNAL,
     "queue_states": ConfigOwnership.OWNED,
+    "scope_labels": ConfigOwnership.OWNED,
+    "issue_labels": ConfigOwnership.OWNED,
+    "organize_mandates": ConfigOwnership.LOCAL,
+    "organize_scopes": ConfigOwnership.LOCAL,
+    "audit_scopes": ConfigOwnership.LOCAL,
+    "supervisor_scopes": ConfigOwnership.LOCAL,
     "workflow_states": ConfigOwnership.EXTERNAL,
+    "run_event_states": ConfigOwnership.LOCAL,
+    "marker_prefixes": ConfigOwnership.LOCAL,
     "repos": ConfigOwnership.LOCAL,
     "documents": ConfigOwnership.OWNED,
     "records": ConfigOwnership.EXTERNAL,
     "knowledge": ConfigOwnership.LOCAL,
     "endpoints": ConfigOwnership.LOCAL,
-    "initiatives": ConfigOwnership.EXTERNAL,
     "private_surface": ConfigOwnership.LOCAL,
 }
