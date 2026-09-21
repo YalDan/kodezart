@@ -17,10 +17,7 @@ import asyncio
 import structlog.testing
 
 from kodezart.composition.jobs import build_job_queue
-from kodezart.config.app import AppConfig
 from kodezart.config.job_queue import JobQueueSettings
-from kodezart.config.organize import OrganizeSettings
-from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.types.domain.dispatch import PassRun
@@ -38,6 +35,7 @@ from tests.fakes import (
     tracker_state,
 )
 from tests.integration.test_scope_entry import (
+    HEARTBEAT_CONFIG,
     RUN_BUDGET_SECONDS,
     OrganizingExecutor,
     approve,
@@ -219,13 +217,11 @@ async def test_a_converged_scope_rests_until_its_board_moves_and_a_restart_walks
 # KOD-880 — one walk per scope across the two lanes a deployment submits onto:
 # the HTTP routes' default and the dispatch lane the pass uses.
 # ---------------------------------------------------------------------------
-
-#: The dispatch cadence the composed pass is built with, read off the same
-#: configuration the builder reads so the two lanes are the deployment's own.
-HEARTBEAT_CONFIG = AppConfig(
-    organize=OrganizeSettings(max_admission_rounds=2, max_convergence_rounds=2),
-    write_back=WriteBackSettings(max_verify_rounds=2),
-)
+#
+# The dispatch lane is read off HEARTBEAT_CONFIG, which is the object
+# ``standing_heartbeat`` builds the pass with rather than a second
+# construction of the same values, so the lane a case names is the lane the
+# pass under test submits onto.
 
 
 class GatedExecutor(OrganizingExecutor):
