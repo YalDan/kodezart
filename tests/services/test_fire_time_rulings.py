@@ -13,7 +13,7 @@ from kodezart.chains.criteria import TrackerCriteria
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.amendment import NativeWriteRefusalError
-from kodezart.domain.errors import RulingUnrecordedError
+from kodezart.domain.errors import CriterionReadError, RulingUnrecordedError
 from kodezart.domain.fire_spec import DELIVERABLES_SECTION, deliverables_section
 from kodezart.domain.prompt_variables import tracker_checks_section
 from kodezart.domain.rulings import (
@@ -48,7 +48,9 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import (
+    DELIVERABLE_CHILD,
     DIRECT_OWED,
+    DIRECT_OWED_TOO,
     SUBJECT,
     check_of,
     criterion_body,
@@ -1288,3 +1290,172 @@ async def test_a_false_premise_is_regrounded_at_the_base_neither_closed_nor_cros
     after_first = board_state(port)
     await run(step, spec, current, repo_path, base)
     assert board_state(port) == after_first
+
+
+# ---------------------------------------------------------------------------
+# Which identities an answer may address, resolved against the criterion
+# family the write is made against rather than the set the fire entered on.
+# ---------------------------------------------------------------------------
+
+
+class MovesTheBoard(Executor):
+    """Runs *move* as the answering pass opens, so the family changes under it.
+
+    The move is the board's, not the step's: it rewrites the double's own
+    issue table directly, so no write journal moves and ``board_state`` cannot
+    mistake it for something this pass wrote.
+    """
+
+    def __init__(self, sessions, *, move) -> None:
+        super().__init__(sessions)
+        self._move = move
+
+    async def stream(self, **kwargs):
+        schema = (kwargs.get("output_format") or {}).get("schema", {})
+        if schema.get("title") == "RulingOutput":
+            self._move()
+        async for event in super().stream(**kwargs):
+            yield event
+
+
+def unlabel(port, key) -> None:
+    """Take one criterion out of its family the way the board would."""
+    port.issues[key] = port.issues[key].model_copy(update={"issue_labels": frozenset()})
+
+
+@pytest.mark.parametrize(
+    "offending",
+    [DELIVERABLE_CHILD, "fire/absent", DIRECT_OWED.upper()],
+    ids=["subtree-not-a-criterion", "absent", "case-differs"],
+)
+async def test_a_key_the_criterion_family_does_not_hold_is_refused_before_any_write(
+    repository, offending
+) -> None:
+    """Three keys that do not resolve, none of which reaches the board.
+
+    An issue of the subject's subtree that is no criterion, a key no issue
+    carries, and a key differing from a real one only in case. Each is refused
+    under the fire's subject with the offending key in the reason, and the
+    board is equal in every key — including the lease journal, because the
+    refusal is ahead of the lease.
+    """
+    executor = Executor([[one_answer(issueRef=offending)]])
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor
+    )
+    before = board_state(port)
+
+    with pytest.raises(RulingUnrecordedError) as caught:
+        await run(step, spec, current, repo_path, base)
+
+    assert caught.value.issue_key == SUBJECT
+    assert offending in caught.value.reason
+    assert board_state(port) == before
+    # The pass did run and nothing downstream of it did: no judgement was
+    # opened and the outbound gate was never reached.
+    assert len(executor.question_prompts) == 1
+    assert executor.judged_artifacts == []
+    assert gate.content_classes == []
+
+
+async def test_a_reference_lost_between_the_session_and_the_write_is_refused(
+    repository,
+) -> None:
+    """The key was addressable at entry and is not at the write, so it is refused."""
+    port = tracker(bodies={DIRECT_OWED: ambiguous_body()})
+    executor = MovesTheBoard([[one_answer()]], move=lambda: unlabel(port, DIRECT_OWED))
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor, port=port
+    )
+    # Non-vacuous: the key the answer addresses was in the entry set.
+    assert DIRECT_OWED in set(spec.criteria)
+    before = board_state(port)
+
+    with pytest.raises(RulingUnrecordedError) as caught:
+        await run(step, spec, current, repo_path, base)
+
+    assert caught.value.issue_key == SUBJECT
+    assert DIRECT_OWED in caught.value.reason
+    assert board_state(port) == before
+    assert executor.judged_artifacts == []
+    assert gate.content_classes == []
+
+
+async def test_a_criterion_the_answer_does_not_address_leaving_still_records(
+    repository,
+) -> None:
+    """The same mid-pass move on another criterion refuses nothing.
+
+    Without this, re-reading the family could be satisfied by refusing every
+    answer: here the family changes under the pass and the record the answer
+    actually addresses still lands.
+    """
+    answer = one_answer()
+    port = tracker(bodies={DIRECT_OWED: ambiguous_body()})
+    executor = MovesTheBoard([[answer]], move=lambda: unlabel(port, DIRECT_OWED_TOO))
+    step, spec, current, _, port, _, repo_path, base = await build(
+        repository, executor, port=port
+    )
+    assert {DIRECT_OWED, DIRECT_OWED_TOO} <= set(spec.criteria)
+    before = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    record = await pinned_record(port, answer, before=before)
+    assert record.issue_ref == DIRECT_OWED
+
+
+async def test_the_family_is_read_again_after_the_session_and_before_the_write(
+    repository,
+) -> None:
+    """The ordering is observable: the family read follows the answering pass."""
+    order: list[str] = []
+
+    class RecordsTheSession(Executor):
+        async def stream(self, **kwargs):
+            schema = (kwargs.get("output_format") or {}).get("schema", {})
+            if schema.get("title") == "RulingOutput":
+                order.append("session")
+            async for event in super().stream(**kwargs):
+                yield event
+
+    executor = RecordsTheSession([[one_answer()]])
+    step, spec, current, _, port, _, repo_path, base = await build(repository, executor)
+    inner = port.read_criteria
+
+    async def recorded_read(*, issue_key: str):
+        rows = await inner(issue_key=issue_key)
+        order.append("family")
+        return rows
+
+    port.read_criteria = recorded_read
+
+    await run(step, spec, current, repo_path, base)
+
+    assert order == ["session", "family"]
+
+
+async def test_a_family_read_that_fails_at_the_write_records_nothing_and_says_so(
+    repository,
+) -> None:
+    """An unreadable family is a fact about the tracker, so it propagates."""
+    executor = Executor([[one_answer()]])
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor
+    )
+    before = board_state(port)
+
+    async def unreadable(*, issue_key: str):
+        raise CriterionReadError(issue_key=issue_key, reason="the family is unreadable")
+
+    port.read_criteria = unreadable
+
+    with pytest.raises(CriterionReadError) as caught:
+        await run(step, spec, current, repo_path, base)
+
+    assert caught.value.issue_key == SUBJECT
+    # It is not reported as an answer this pass failed to record, and nothing
+    # was written: no fallback to the set the fire entered on.
+    assert not isinstance(caught.value, RulingUnrecordedError)
+    assert board_state(port) == before
+    assert gate.content_classes == []

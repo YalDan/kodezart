@@ -2,7 +2,7 @@
 
 import json
 from collections import Counter
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 
 from pydantic import ValidationError
 
@@ -22,6 +22,17 @@ from kodezart.types.domain.escalation import DeliverableEscalation
 #: as an absence it can read rather than an empty string it could mistake
 #: for a rendering failure.
 EMPTY_REGISTRY = "Confirmed empty ruling registry."
+
+
+def addressable_issues(*, subject: str, criteria: Iterable[str]) -> frozenset[str]:
+    """The issues an answer of one fire may address: the subject and its criteria.
+
+    Arithmetic over identities, not judgement, and the one place the set is
+    composed: the entry reading and the reading taken at the write go through
+    here, so a widening has a single site to bite at. Nothing is minted — the
+    keys arrive already carrying whatever identity the tracker reported.
+    """
+    return frozenset({subject, *(str(key) for key in criteria)})
 
 
 def owed_rulings(

@@ -1578,7 +1578,11 @@ here). There is no second, narrower reading in which the subject's own
 criterion children alone admit or refuse a fire (KOD-790). The question step asks one read-only
 pass under the `fire_time_ruling` role what the subject text and the current
 Checks leave open, pins each answer on the issue whose text raised it, reads it
-back, and only then enters the loop. An open question whose answer cannot be
+back, and only then enters the loop. The identities an answer may address are
+the subject and its criterion sub-issues, read from the tracker again after that
+pass and before the write, so a sub-issue the board removed or reparented while
+the pass ran no longer resolves and an answer addressed to one ends the fire
+`ruling_unrecorded` with nothing written. An open question whose answer cannot be
 confirmed on the tracker ends the fire `ruling_unrecorded`, with the loop
 un-entered. An answer that names work the subject's own `Deliverables` section
 does not state is not pinned at all: it is raised on the issue whose text raised
