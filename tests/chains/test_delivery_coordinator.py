@@ -18,8 +18,16 @@ from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.config.app import AppConfig
 from kodezart.domain.errors import CheckChainExecutionError, UnionHeadReadError
-from kodezart.types.domain.branch import WorkRef, WorkRefRole
-from kodezart.types.domain.operation import ScopeLabel
+from kodezart.domain.lane_record import render_lane_record
+from kodezart.services.lane_records import LaneRecordReader, RecordedDeliverableRefs
+from kodezart.types.domain.branch import (
+    BranchAssociation,
+    BranchRole,
+    WorkRef,
+    WorkRefRole,
+)
+from kodezart.types.domain.operation import OperationConfig, ScopeLabel
+from kodezart.types.domain.run_state import LaneCommit, LaneRunState
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import (
     IssuePriority,
@@ -63,6 +71,65 @@ def issue(key: str, **changes: object) -> TrackerIssue:
             "url": f"https://tracker.invalid/{key}",
             **changes,
         }
+    )
+
+
+#: The deployment whose marker prefixes a lane's run-state record is written
+#: and read under, so a record this module writes is one the shipped reader
+#: addresses rather than a body under a marker nothing resolves.
+RECORD_OPERATION = OperationConfig(
+    operation_name="union-fixture",
+    workspace="fixture",
+    marker_prefixes={"run_state": "union-fixture-run-state"},
+)
+
+#: The sha a lane's record stands at. Only the branch it names reaches the
+#: measurement; the head every lane composes at is read off the remote.
+RECORDED_SHA = "c" * 40
+
+
+def recorded_run_state(lane: str, *, deliverable: str) -> str:
+    """One lane's run-state record, naming *deliverable* by its ROLE.
+
+    The loop association names the deliverable it derives from and the
+    deliverable association names its base, which is what the shipped
+    resolution reads a branch out of — never the branch's own name.
+    """
+    record = LaneRunState(
+        lane_key=lane,
+        branch=f"{lane}-loop",
+        branch_url=f"https://tracker.invalid/branch/{lane}-loop",
+        head_sha=RECORDED_SHA,
+        pushed_head_sha=RECORDED_SHA,
+        commits_ahead=1,
+        files_changed=1,
+        commits=[
+            LaneCommit(sha=RECORDED_SHA, subject=f"the change of {lane}", issue_id=lane)
+        ],
+        associations=[
+            BranchAssociation(
+                branch=f"{lane}-loop",
+                role=BranchRole.LOOP,
+                derived_from=deliverable,
+                run_id="run-one",
+            ),
+            BranchAssociation(
+                branch=deliverable,
+                role=BranchRole.DELIVERABLE,
+                derived_from="main",
+                run_id="run-one",
+            ),
+        ],
+    )
+    return render_lane_record(
+        record=record, marker_prefixes=RECORD_OPERATION.marker_prefixes
+    )
+
+
+def recorded_refs(port: FakeTrackerPort) -> RecordedDeliverableRefs:
+    """The scope path's own carrier for a lane's deliverable branch."""
+    return RecordedDeliverableRefs(
+        records=LaneRecordReader(tracker=port, operation=RECORD_OPERATION)
     )
 
 
@@ -142,10 +209,16 @@ class Fixture:
         self.context = context
         self.tracker = scope.tracker()
 
-    def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:
+    def coordinator(
+        self, runner: object = None, refs: object = None
+    ) -> ScopeUnionCoordinator:
         return ScopeUnionCoordinator(
             scope_kind=PROJECT.kind,
             tracker=self.tracker,
+            # The port carrier by default, which is what every case below
+            # about the roster's shape pins; a case about which carrier
+            # answers on the scope path names the record reader instead.
+            refs=self.tracker if refs is None else refs,
             git=self.git,
             runner=runner
             or SubprocessCheckChainRunner(
@@ -249,6 +322,51 @@ async def test_a_lane_with_two_recorded_deliverable_refs_refuses(delivery):
         await delivery.coordinator().verify()
 
     assert "more than one" in raised.value.reason
+    assert delivery.git.created == []
+
+
+async def test_a_scope_lanes_branch_is_the_one_its_record_names(delivery):
+    """The record is the carrier on the scope path, with no port ref anywhere.
+
+    Nothing on the scope path writes a deliverable ref through the port, so a
+    roster read from the port answers nothing for every lane a scope walk
+    delivered. Here each lane carries only its run-state record, and the
+    roster is exactly the branches those records name, in planner order.
+    """
+    for lane in OPENED_ORDER:
+        delivery.tracker.recorded_work_refs[lane] = []
+        await delivery.tracker.post_comment(
+            issue_key=lane,
+            body=recorded_run_state(lane, deliverable=f"work/{lane}"),
+        )
+    delivery.tracker.marker_prefixes = dict(RECORD_OPERATION.marker_prefixes)
+
+    result = await delivery.coordinator(refs=recorded_refs(delivery.tracker)).verify()
+
+    assert result.composition_order == ("z", "a")
+    assert [head.branch for head in result.lane_heads] == ["work/z", "work/a"]
+    assert result.lane_heads == (
+        delivery.scope.by_lane["z"],
+        delivery.scope.by_lane["a"],
+    )
+    assert result.outcome is UnionOutcome.GREEN
+    assert delivery.tracker.recorded_work_refs == {"a": [], "z": []}
+
+
+async def test_a_port_work_ref_alone_leaves_a_scope_lane_unbranched(delivery):
+    """A ref on the port and no record refuses, which reds a read of the port.
+
+    The fixture's refs are exactly what the port answers; the record reader
+    finds no comment for either lane, so the typed refusal names the first
+    ranked lane and no scratch tree is obtained.
+    """
+    assert delivery.tracker.recorded_work_refs["z"] != []
+    delivery.tracker.marker_prefixes = dict(RECORD_OPERATION.marker_prefixes)
+
+    with pytest.raises(UnionHeadReadError) as raised:
+        await delivery.coordinator(refs=recorded_refs(delivery.tracker)).verify()
+
+    assert raised.value.reason == "a ranked lane records no deliverable ref: z"
     assert delivery.git.created == []
 
 
