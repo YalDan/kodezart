@@ -389,6 +389,17 @@ async def test_the_fault_line_separates_a_fault_in_the_criterion_from_one_outsid
 async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated(
     repository, affordable
 ):
+    """One case per arm, keyed on the measurement, and no arm amends.
+
+    No recorded measurement is the unreproduced-ground arm. A measurement
+    showing the expense is not incurred is the affordable arm, and its discharge
+    is that the claimed subject's whole record is byte-identical afterwards — the
+    historical 2026-08 measurement is not reproduced here. A measurement showing
+    the expense is incurred is the uneconomic arm, which escalates on the owning
+    issue carrying that same measurement. The session census is the literal that
+    says no arm reaches the amendment-text stage.
+    """
+
     async def observe(title, payload, kwargs):
         if title == "AmendmentJudgment":
             measurement = None
@@ -419,10 +430,20 @@ async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalat
     tip = await git(repo, "rev-parse", "main")
     files = (await git(repo, "ls-tree", "-r", "--name-only", "main")).splitlines()
     assert files == ["newer.py", "policy.py"]
+    base_size = int(await git(repo, "cat-file", "-s", f"{repository[1]}:policy.py"))
     try:
         events = await drive(service, guard, repository)
         report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
         refusal = report.upheld[0]
+        titles = [c["output_format"]["schema"]["title"] for c in executor.calls]
+        # No arm amends: no amendment-text session on any arm, and only the
+        # uneconomic arm runs a second verified write for its escalation.
+        assert titles == [
+            "NativeWriterOutput",
+            "AmendmentJudgment",
+            "WriteBackFinding",
+        ] + (["WriteBackFinding"] if affordable is False else [])
+        assert len(report.verdicts) == 1 and report.verdicts[0].verdict == "upheld"
         assert refusal.reason is (
             UpheldReason.GROUND_NOT_REPRODUCED
             if affordable is None
@@ -440,10 +461,40 @@ async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalat
         assert ("decision" in port.issues[DIRECT_OWED].issue_labels) is (
             affordable is False
         )
+        # The recorded measurement, in the verdict's own evidence: what was
+        # observed is tied to the repository at the resolved base, and how it was
+        # produced is the separate field. Both reach the archived record.
+        cost = refusal.judgment.finding.cost_claim
+        content = refusal.publication.record.artifact.content
+        assert (cost.measurement is None) is (affordable is None)
+        assert refusal.judgment.base_sha == repository[1]
+        if affordable is None:
+            assert refusal.judgment.measured_by is None
+        else:
+            assert cost.measurement.observed == (
+                f"measured 12 minutes over {base_size} bytes at base"
+            )
+            assert refusal.judgment.measured_by == "timed the actual base demonstration"
+            assert cost.measurement.observed in content
+            assert refusal.judgment.measured_by in content
+        if affordable:
+            # The discharge of the affordable arm: the whole claimed record, not
+            # only its body, is what it was before the run.
+            settled = port.issues[DIRECT_OWED]
+            assert settled.model_dump(exclude={"updated_at"}) == prior.model_dump(
+                exclude={"updated_at"}
+            )
         if affordable is False:
             assert refusal.publication.kind == "escalated"
             assert (
                 "measured 12 minutes" in refusal.publication.escalation.artifact.content
+            )
+            assert (
+                refusal.publication.escalation.artifact.surface.ref.key == DIRECT_OWED
+            )
+            assert (
+                refusal.judgment.measured_by
+                in refusal.publication.escalation.artifact.content
             )
         assert not any(isinstance(e, ResultEvent) for e in events)
         assert (
