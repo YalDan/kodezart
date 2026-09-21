@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.api.v1.router import v1_router
 from kodezart.chains.criteria import TrackerCriteria
@@ -163,6 +164,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             observed_release("checkpointer", checkpointer_context.__aexit__)
         )
         app.state.checkpointer = checkpointer
+        # Built BEFORE the engine, because the scope arm inside it reads
+        # liveness from this store while the queue that writes it is calling
+        # that engine: one object, three holders, and the queue is the only
+        # one that writes.
+        job_registry = InMemoryJobRegistry()
         workflow_engine = build_workflow_engine(
             config=config,
             operation=operation,
@@ -186,6 +192,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ),
             scope_tracker=dialled.tracker if dialled is not None else None,
             scope_status=dialled.status if dialled is not None else None,
+            scope_registry=job_registry,
         )
         app.state.workflow_engine = workflow_engine
 
@@ -195,13 +202,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         job_queue = build_job_queue(
             settings=config.queue,
             workflow_engine=workflow_engine,
+            registry=job_registry,
         )
         app.state.job_queue = job_queue
         cleanup.push_async_callback(observed_release("queue", job_queue.stop))
         await job_queue.start()
 
         app.state.job_service = build_job_service(
-            registry=job_queue,
+            registry=job_registry,
             checkpointer=checkpointer,
         )
 
@@ -211,7 +219,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             dialled=dialled,
             github_api=github_api,
             queue=job_queue,
-            registry=job_queue,
+            registry=job_registry,
             gate=gate,
             git=stack.git,
             cache=stack.cache,

@@ -788,8 +788,8 @@ pass takes the place of the withheld dispatch scan and reuses its knobs —
 `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` — and submits onto
 `KODEZART_DISPATCH_LANE`. It adds no configuration field of its own, opens no
 session and writes nothing to the tracker. A row that is not approved is
-reported as unapproved and never submitted; a row whose run is still live is
-not submitted again; a row whose last run in this process ended with every
+reported as unapproved and never submitted; a row whose run is live on any lane
+is not submitted again; a row whose last run in this process ended with every
 lane done rests until its members move; a restarted process submits every
 approved row on its first tick, and that walk posts no status update the project
 already carries.

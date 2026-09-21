@@ -17,6 +17,7 @@ import inspect
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.composition.jobs import build_job_queue
@@ -87,6 +88,10 @@ from tests.integration.test_scope_runtime import (
 from tests.lane_fixture import ScopeForgeWire
 from tests.services.test_scope_runtime_static import imported_modules, path_of
 from tests.tracker.test_linear_tool_roster import SOURCE_ROOT
+
+#: "the caller said nothing about this" where ``None`` is itself an answer
+#: a case gives.
+_UNSET = object()
 
 
 def terminals(events):
@@ -251,13 +256,18 @@ async def test_a_scope_with_no_status_surface_ends_with_the_event_alone():
     assert harness.status.posts == []
 
 
-def compose_scope_arm(*, status):
-    """The composition call, with the scope arm's writer left to the caller."""
+def compose_scope_arm(*, status, registry=_UNSET):
+    """The composition call, with the arm's own collaborators left to the caller.
+
+    ``registry`` defaults to a real store, so a case about the writer refusal
+    does not have to say anything about the store and the other way round.
+    """
     workspace = FakeWorkspaceProvider()
     port = board(lanes=("A",))
     return build_workflow_engine(
         operation=native_operation(),
         scope_tracker=port,
+        scope_registry=InMemoryJobRegistry() if registry is _UNSET else registry,
         scope_status=status,
         criteria=TrackerCriteria(tracker=port),
         config=AppConfig(
@@ -299,8 +309,19 @@ def test_a_scope_arm_composed_without_a_status_writer_refuses():
         compose_scope_arm(status=None)
 
 
-def test_the_same_composition_with_a_writer_builds():
-    """The control: nothing else about that call is what the refusal is about."""
+def test_a_scope_arm_composed_without_a_job_registry_refuses():
+    """Refused for the shape of reason the writer's absence is refused for.
+
+    An arm composed without a record store cannot see another job over the
+    same scope, so it would walk beside that job over every lane of it — and
+    a store built after the arm could not be the one the arm reads (KOD-880).
+    """
+    with pytest.raises(ValueError, match="job registry"):
+        compose_scope_arm(status=FakeScopeStatusWriter(), registry=None)
+
+
+def test_the_same_composition_with_both_builds():
+    """The control: nothing else about that call is what either refusal is about."""
     assert compose_scope_arm(status=FakeScopeStatusWriter()) is not None
 
 
@@ -325,7 +346,11 @@ async def test_a_status_update_that_cannot_be_posted_ends_the_job_with_no_event(
     carries no report for a consumer to read as a finished scope.
     """
     harness = runtime(port=board(lanes=("A",)), status=RefusingStatusWriter())
-    queue = build_job_queue(settings=JobQueueSettings(), workflow_engine=harness.engine)
+    queue = build_job_queue(
+        settings=JobQueueSettings(),
+        workflow_engine=harness.engine,
+        registry=harness.registry,
+    )
     handler = AgentHandler(harness.service, SUPPRESS_ALL_SKILLS, queue=queue)
     await queue.start()
     try:

@@ -506,6 +506,24 @@ class ScopeNotApprovedError(ScopeReadError):
         super().__init__("scope is not approved", ref=ref)
 
 
+class ScopeRunLiveError(ScopeReadError):
+    """Another job over the same scope was submitted earlier and is still live.
+
+    A ``ScopeReadError`` for the reason ``ScopeNotApprovedError`` is one: a
+    live scope fact read at entry, refusing the run before any member is
+    read. The live job and its lane are named because they are what an
+    operator acts on — the run to wait for, and where to find it.
+    """
+
+    def __init__(self, *, ref: ScopeRef, job_id: str, lane: str) -> None:
+        self.job_id: str = job_id
+        self.lane: str = lane
+        super().__init__(
+            f"a run of this scope is already live: job {job_id} on lane {lane!r}",
+            ref=ref,
+        )
+
+
 class ScopedExecutionUnavailableError(Exception):
     """An addressed scope cannot execute through the legacy workflow pipeline."""
 

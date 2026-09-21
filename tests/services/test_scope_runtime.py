@@ -58,6 +58,7 @@ from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import (
     FakeDeliveryProbe,
     FakeGitService,
+    FakeJobQueue,
     FakeRepoCache,
     FakeScopeStatusWriter,
     FakeTrackerPort,
@@ -138,7 +139,9 @@ def engine(
             status=FakeScopeStatusWriter(),
             gate=PassThroughGate(),
         ),
-        entry=ScopeEntry(approvals=port, stages_for=lambda _url: None),
+        entry=ScopeEntry(
+            approvals=port, stages_for=lambda _url: None, registry=FakeJobQueue()
+        ),
         cache=FakeRepoCache(),
         repositories=repositories,
         git_base_url="https://forge.invalid",

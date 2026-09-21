@@ -3,6 +3,7 @@
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.write_back_verifier import WriteBackVerifier
 from kodezart.composition.engine import build_workflow_engine
@@ -61,6 +62,7 @@ async def actual_fire(repository, executor, port, saver, *, held=None):
             issue_labels={"decision": "decision"},
         ),
         scope_tracker=port,
+        scope_registry=InMemoryJobRegistry(),
         scope_status=FakeScopeStatusWriter(),
         criteria=source,
         repositories=(RepoEntry(url=REPO_URL, trunk="main"),),

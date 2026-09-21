@@ -12,18 +12,33 @@ board, the operation, the staging engine and the drain are the same ones that
 clause is pinned over.
 """
 
+import asyncio
+
 import structlog.testing
 
 from kodezart.composition.jobs import build_job_queue
+from kodezart.config.app import AppConfig
 from kodezart.config.job_queue import JobQueueSettings
+from kodezart.config.organize import OrganizeSettings
+from kodezart.config.write_back import WriteBackSettings
+from kodezart.core.constants import DEFAULT_LANE
+from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope_heartbeat import HeartbeatOutcome
+from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.requests.agent import WorkflowRequest
 from tests.chains.test_native_fire import native_evaluation
-from tests.fakes import FIXTURE_EPOCH, TRACKER_WRITE_JOURNALS, tracker_state
+from tests.fakes import (
+    FIXTURE_EPOCH,
+    SUPPRESS_ALL_SKILLS,
+    TRACKER_WRITE_JOURNALS,
+    tracker_state,
+)
 from tests.integration.test_scope_entry import (
+    RUN_BUDGET_SECONDS,
     OrganizingExecutor,
     approve,
     drain,
@@ -34,6 +49,7 @@ from tests.integration.test_scope_entry import (
     standing_heartbeat,
     standing_operation,
 )
+from tests.integration.test_scope_runtime import ORIGIN, SCOPE
 
 #: Two lanes, neither blocking the other, so the first walk of an approved
 #: board finishes both and the scope converges — which is the precondition
@@ -125,7 +141,11 @@ async def test_a_converged_scope_rests_until_its_board_moves_and_a_restart_walks
         executor=converging_executor(port, rounds=3),
     )
     recording_stage_writes(port)
-    queue = build_job_queue(settings=JobQueueSettings(), workflow_engine=harness.engine)
+    queue = build_job_queue(
+        settings=JobQueueSettings(),
+        workflow_engine=harness.engine,
+        registry=harness.registry,
+    )
     await queue.start()
     try:
         beat = standing_heartbeat(port, queue, operation)
@@ -153,7 +173,7 @@ async def test_a_converged_scope_rests_until_its_board_moves_and_a_restart_walks
                 HeartbeatOutcome.CONVERGED
             ]
             assert resting.entries[0].job_id == submitted.job_id
-            assert list(queue._records) == [submitted.job_id]
+            assert list(queue.registry.records) == [submitted.job_id]
         assert await beat.run(FIXTURE_EPOCH) is PassRun.SKIPPED
         assert untouched()
 
@@ -192,4 +212,212 @@ async def test_a_converged_scope_rests_until_its_board_moves_and_a_restart_walks
             HeartbeatOutcome.CONVERGED
         ]
     finally:
+        await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# KOD-880 — one walk per scope across the two lanes a deployment submits onto:
+# the HTTP routes' default and the dispatch lane the pass uses.
+# ---------------------------------------------------------------------------
+
+#: The dispatch cadence the composed pass is built with, read off the same
+#: configuration the builder reads so the two lanes are the deployment's own.
+HEARTBEAT_CONFIG = AppConfig(
+    organize=OrganizeSettings(max_admission_rounds=2, max_convergence_rounds=2),
+    write_back=WriteBackSettings(max_verify_rounds=2),
+)
+
+
+class GatedExecutor(OrganizingExecutor):
+    """The organize double, with the first lane session of a walk held open.
+
+    A refusal that happens only while another walk is live cannot be observed
+    on a fixture where the two walks race: the earlier walk has to still be
+    live when the later one reaches its entry. So the first session that is
+    not an organize session — the first lane fire of the walk — announces
+    itself and then waits until the case releases it.
+    """
+
+    def __init__(self, evaluations, *, port):
+        super().__init__(evaluations, port=port)
+        self.reached = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def stream(self, **kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        if title not in {"AdmissionJudgment", "OrganizeProposal", "WriteBackFinding"}:
+            self.reached.set()
+            await self.release.wait()
+        async for event in super().stream(**kwargs):
+            yield event
+
+
+def counting_member_reads(port):
+    """The board's member reads, counted, so "nothing was read" is a number."""
+    calls = []
+    original = port.scope_issues
+
+    async def counted(*, ref):
+        calls.append(ref)
+        return await original(ref=ref)
+
+    port.scope_issues = counted
+    return calls
+
+
+def posting(harness, queue):
+    """The HTTP route's own call: one scope request onto the routes' lane."""
+    return AgentHandler(
+        harness.service, SUPPRESS_ALL_SKILLS, queue=queue
+    ).submit_workflow(
+        WorkflowRequest(
+            prompt="Run approved scope",
+            repo_url=ORIGIN,
+            scope={"kind": "project", "key": SCOPE.key},
+        ),
+        lane=DEFAULT_LANE,
+    )
+
+
+def dispatched(events):
+    """What one walk fired, off its last observation.
+
+    The observation's roster is cumulative across the walk's ticks, so the
+    last one is the whole of what that invocation dispatched — and a stream
+    carrying no observation at all is a walk that never began.
+    """
+    observations = [
+        event.observation for event in events if isinstance(event, ScopeWalkEvent)
+    ]
+    return list(observations[-1].dispatched) if observations else []
+
+
+async def test_a_posted_run_is_live_to_the_heartbeat_across_lanes(monkeypatch):
+    """A run somebody posted holds the row, and the pass says so.
+
+    The two submitters do not share a lane, so a pass consulting only what it
+    submitted itself would submit a second walk of a scope already being
+    walked. It reports the posted job instead, by that job's own id, and once
+    that job has ended the next tick submits onto its own lane — so the two
+    records between them carry both lanes a deployment uses.
+    """
+    port = standing_board(LANES)
+    operation = standing_operation()
+    harness = staging_runtime(
+        port,
+        LANES,
+        monkeypatch=monkeypatch,
+        builds=[],
+        operation=operation,
+        executor=converging_executor(port, rounds=2),
+    )
+    recording_stage_writes(port)
+    queue = build_job_queue(
+        settings=JobQueueSettings(),
+        workflow_engine=harness.engine,
+        registry=harness.registry,
+    )
+    await queue.start()
+    try:
+        assert DEFAULT_LANE != HEARTBEAT_CONFIG.dispatch_lane
+        beat = standing_heartbeat(port, queue, operation)
+        approve(port)
+        posted = await posting(harness, queue)
+
+        live = await beat.tick()
+
+        assert [entry.outcome for entry in live.entries] == [HeartbeatOutcome.LIVE]
+        assert live.entries[0].job_id == posted.job_id
+        assert live.ran is False
+        assert list(queue.registry.records) == [posted.job_id]
+
+        events, _ = await drain(queue, posted.job_id)
+        assert errors(events) == []
+        assert len(terminals(events)) == 1
+        assert sorted(dispatched(events)) == sorted(LANES)
+        assert len(harness.status.posts) == 1
+
+        # The row is free again, and the pass submits onto its OWN lane: the
+        # two records carry the two lanes a deployment submits onto.
+        reopen(port, REOPENED)
+        (submitted,) = (await beat.tick()).entries
+        assert submitted.outcome is HeartbeatOutcome.SUBMITTED
+        assert {record.lane for record in queue.registry.records.values()} == {
+            DEFAULT_LANE,
+            HEARTBEAT_CONFIG.dispatch_lane,
+        }
+        await drain(queue, submitted.job_id)
+    finally:
+        await queue.stop()
+
+
+async def test_a_post_beside_a_live_heartbeat_run_is_refused_at_its_entry(monkeypatch):
+    """The other direction: the walk the pass started is the earlier one.
+
+    The posted job is refused at its entry, by type, naming the job it yields
+    to and its lane — and it reads nothing about the scope on the way out. The
+    earlier walk is untouched by the refusal: it converges, each lane fires
+    once across both jobs, and one status update lands.
+    """
+    port = standing_board(LANES)
+    operation = standing_operation()
+    executor = GatedExecutor(
+        [
+            native_evaluation(checks={f"{key}/check": f"{key} live Check  bytes"})
+            for key in LANES
+            for _ in range(2)
+        ],
+        port=port,
+    )
+    harness = staging_runtime(
+        port,
+        LANES,
+        monkeypatch=monkeypatch,
+        builds=[],
+        operation=operation,
+        executor=executor,
+    )
+    recording_stage_writes(port)
+    queue = build_job_queue(
+        settings=JobQueueSettings(),
+        workflow_engine=harness.engine,
+        registry=harness.registry,
+    )
+    await queue.start()
+    try:
+        beat = standing_heartbeat(port, queue, operation)
+        approve(port)
+        (submitted,) = (await beat.tick()).entries
+        assert submitted.outcome is HeartbeatOutcome.SUBMITTED
+
+        # The pass's job is inside its walk, with a lane session open, so it is
+        # provably live when the posted job reaches its own entry.
+        async with asyncio.timeout(RUN_BUDGET_SECONDS):
+            await executor.reached.wait()
+        member_reads = counting_member_reads(port)
+        posted = await posting(harness, queue)
+
+        refused, _ = await drain(queue, posted.job_id)
+
+        (failure,) = errors(refused)
+        assert failure.error_kind == "ScopeRunLiveError"
+        assert submitted.job_id in failure.error
+        assert HEARTBEAT_CONFIG.dispatch_lane in failure.error
+        record = await queue.get(job_id=posted.job_id)
+        assert record.outcome is WorkflowOutcome.engine_error
+        # Nothing about the scope was read for the refused job, and it never
+        # reached a walk at all.
+        assert member_reads == []
+        assert dispatched(refused) == []
+
+        executor.release.set()
+        walked, _ = await drain(queue, submitted.job_id)
+
+        assert errors(walked) == []
+        (report,) = terminals(walked)
+        assert report.outcome is WorkflowOutcome.scope_converged
+        assert sorted(dispatched(walked) + dispatched(refused)) == sorted(LANES)
+        assert len(harness.status.posts) == 1
+    finally:
+        executor.release.set()
         await queue.stop()

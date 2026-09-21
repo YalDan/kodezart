@@ -7,6 +7,7 @@ than defines.
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
+from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
 from kodezart.config.job_queue import JobQueueSettings
 from kodezart.core.protocols import JobRegistry, WorkflowEngine
@@ -17,10 +18,18 @@ def build_job_queue(
     *,
     settings: JobQueueSettings,
     workflow_engine: WorkflowEngine,
+    registry: InMemoryJobRegistry | None = None,
 ) -> AsyncioJobQueue:
-    """The in-process queue, with its validated capacity and retention settings."""
+    """The in-process queue, with its validated capacity and retention settings.
+
+    *registry* is the record store the queue writes into. A deployment builds
+    it BEFORE the engine and passes the same object to both, so a scope run's
+    entry reads liveness from the store this queue is writing; absent, the
+    queue builds its own and nothing outside it reads the records.
+    """
     return AsyncioJobQueue(
         engine=workflow_engine,
+        registry=registry,
         max_concurrent_runs_per_lane=settings.max_concurrent_runs_per_lane,
         max_depth_per_lane=settings.max_depth_per_lane,
         terminal_retention_seconds=settings.terminal_retention_seconds,

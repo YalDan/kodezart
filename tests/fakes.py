@@ -5272,6 +5272,7 @@ class FakeJobQueue:
             state=self._states.get(job_id, JobState.QUEUED),
             queue_position=len(self.submissions) + 1,
             submitted_at=FIXTURE_EPOCH,
+            scope=request.scope,
         )
         self.submissions.append((lane, request))
         self.records[job_id] = record
@@ -5297,6 +5298,20 @@ class FakeJobQueue:
     async def get(self, *, job_id: str) -> JobRecord | None:
         await asyncio.sleep(0)
         return self.records.get(job_id)
+
+    async def live_for_scope(self, *, scope: ScopeRef) -> Sequence[JobRecord]:
+        """Every held job addressed at *scope* that is not TERMINAL.
+
+        Insertion order, which is submission order here, and on whatever lane
+        each was submitted: a fixture seeding a job on another lane is exactly
+        what a per-lane read would fail to see.
+        """
+        await asyncio.sleep(0)
+        return tuple(
+            record
+            for record in self.records.values()
+            if record.scope == scope and record.state is not JobState.TERMINAL
+        )
 
     def mark(
         self,

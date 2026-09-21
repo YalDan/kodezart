@@ -10,7 +10,6 @@ from kodezart.domain.scope_submission import standing_scope_submission
 from kodezart.domain.scope_terminal import LaneRoster, lane_roster, roster_at_rest
 from kodezart.services.scope_approval import scope_approved
 from kodezart.types.domain.dispatch import PassRun
-from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import OrganizeScopeBinding
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeRef
@@ -51,7 +50,8 @@ class ScopeHeartbeat:
     this pass only observes it, so there is no surface here for a second
     holder to contend over (KOD-788).
 
-    Liveness is the registry's answer for the scope; the memory is this
+    Liveness is the registry's answer for the scope, on every lane, so a run
+    somebody posted over HTTP is live to this pass. The memory is this
     process's own, keyed by the SCOPE, and holds either the job whose ending
     has not been read yet or the roster a converged ending was latched
     against. Shared between instances it would be one process's memory
@@ -147,31 +147,33 @@ class ScopeHeartbeat:
     async def _reach(self, binding: OrganizeScopeBinding) -> HeartbeatEntry:
         """What this tick does about one standing scope.
 
-        Five steps, in this order: a live job, approval, a converged ending
-        to latch, a latched ending still standing, and otherwise a
-        submission. A step that raises leaves the row's memory as it was, so
-        a readiness read that failed costs the row one tick rather than
-        turning into a submission.
+        Five steps, in this order: a live job over the scope, approval, a
+        converged ending to latch, a latched ending still standing, and
+        otherwise a submission. A step that raises leaves the row's memory as
+        it was, so a readiness read that failed costs the row one tick rather
+        than turning into a submission.
         """
         scope = binding.scope
-        remembered = self._memory.get(scope)
-        watched = await self._watched_record(remembered)
-        # The live question is asked FIRST, and from this process's own
-        # record: it is the cheaper answer, and a second run of a scope
-        # already being walked would contend with itself over every lane of
-        # it. That record is read ONCE and answers both questions asked of
-        # it — whether the job is still walking, and, when it is not, how it
-        # ended.
-        if watched is not None and watched.state is not JobState.TERMINAL:
+        # The live question is asked FIRST, and of the record store by the
+        # SCOPE's own address on every lane: it is the cheaper answer, a
+        # second run of a scope already being walked would contend with
+        # itself over every lane of it, and a run somebody posted over HTTP
+        # lands on a different lane from the one this pass submits onto — so
+        # a memory of what this pass submitted cannot see it.
+        live = await self._registry.live_for_scope(scope=scope)
+        if live:
+            walking = live[0]
+            self._memory[scope] = _Watching(job_id=walking.job_id)
             return HeartbeatEntry(
-                scope=scope, outcome=HeartbeatOutcome.LIVE, job_id=watched.job_id
+                scope=scope, outcome=HeartbeatOutcome.LIVE, job_id=walking.job_id
             )
+        remembered = self._memory.get(scope)
         if not await scope_approved(ref=scope, tracker=self._approvals):
             # A change of approval is what re-arms a resting scope: the row
             # keeps nothing across an interval in which nobody approved it.
             self._memory.pop(scope, None)
             return HeartbeatEntry(scope=scope, outcome=HeartbeatOutcome.UNAPPROVED)
-        rest = await self._at_rest(binding, remembered, watched)
+        rest = await self._at_rest(binding, remembered)
         if rest is not None:
             return HeartbeatEntry(
                 scope=scope, outcome=HeartbeatOutcome.CONVERGED, job_id=rest.job_id
@@ -198,40 +200,26 @@ class ScopeHeartbeat:
             job_id=submitted.job_id,
         )
 
-    async def _watched_record(self, remembered: _Memory | None) -> JobRecord | None:
-        """The record of the job whose ending has not been read yet.
-
-        ``None`` where nothing is remembered, where what is remembered is a
-        latched ending — whose job reached TERMINAL to be latched at all — or
-        where the registry has forgotten the job. An evicted record is not a
-        live job: the registry forgetting one says nothing about a run still
-        walking, and reading the absence as live would retire the scope from
-        every later tick.
-        """
-        if not isinstance(remembered, _Watching):
-            return None
-        return await self._registry.get(job_id=remembered.job_id)
-
     async def _at_rest(
         self,
         binding: OrganizeScopeBinding,
         remembered: _Memory | None,
-        ended: JobRecord | None,
     ) -> _Converged | None:
         """The latched ending this scope rests on, or ``None`` to submit.
 
-        Two readings of the memory. A job whose ending had not been read yet
-        is read here, off the record the caller already fetched: an ending
-        that is not a converged one, a record the registry has forgotten, or
-        a roster that is not at rest drops the memory and the scope is
-        submitted — so a run that stopped short frees the scope for the next
-        tick exactly as it always did. A latched ending is re-checked against
-        a fresh roster: an added member, a removed one, a criterion moved out
-        of Done or a member's own approval withdrawn changes the roster and
-        the scope is submitted again.
+        Two readings of the memory. A job whose ending has not been read yet
+        is read now, by its own id: an ending that is not a converged one, a
+        record the registry has forgotten — an evicted record says nothing
+        about how its run ended — or a roster that is not at rest drops the
+        memory and the scope is submitted, so a run that stopped short frees
+        the scope for the next tick exactly as it always did. A latched
+        ending is re-checked against a fresh roster: an added member, a
+        removed one, a criterion moved out of Done or a member's own approval
+        withdrawn changes the roster and the scope is submitted again.
         """
         scope = binding.scope
         if isinstance(remembered, _Watching):
+            ended = await self._registry.get(job_id=remembered.job_id)
             if ended is None or ended.outcome is not WorkflowOutcome.scope_converged:
                 self._memory.pop(scope, None)
                 return None
