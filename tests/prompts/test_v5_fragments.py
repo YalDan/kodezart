@@ -234,8 +234,8 @@ def test_the_legacy_set_declares_no_system_prompt_append() -> None:
 # ---------------------------------------------------------------------------
 
 #: One sentence per reading of the standard, in the order the fragment states
-#: them. Imported by the loop suite, which asserts the same six sentences
-#: reach the writer and the grader, so the readings have one source too.
+#: them. Imported by the loop suite, which asserts the same sentences reach
+#: the writer and the grader, so the readings have one source too.
 ENGINEERING_READINGS: tuple[str, ...] = (
     "SOLID, DRY, hexagonal, and KISS as the way to get there.",
     "Ports are narrow role protocols the application defines, and a consumer "
@@ -243,10 +243,98 @@ ENGINEERING_READINGS: tuple[str, ...] = (
     "One adapter package per vendor, the vendor's wire shapes inside it, and no "
     "judgement in an adapter.",
     "Judgement is a prompt and arithmetic is a plain function.",
+    "A new vendor, a new pass or a new backend is a new module, not a new "
+    "branch in an existing one.",
+    "A test double answers its port's questions the way the real implementation "
+    "does; a double that accepts what the real one refuses, or whose signature "
+    "differs from the port it stands for, is a defect and not a convenience.",
     "Typed errors before any backend call.",
     "The smallest change that satisfies the criterion: delete rather than carry, "
     "and no abstraction, parameter or file beyond what the task requires.",
 )
+
+#: The principles the standard names. The count lives here and nowhere else:
+#: SOLID's five, plus DRY, hexagonal and KISS, is the eight the standard has
+#: to name for the refutation to be able to report "the principle breached".
+#: Matched case-insensitively, because a name that opens a sentence is
+#: capitalised and the same name mid-sentence is not.
+ENGINEERING_PRINCIPLES: tuple[str, ...] = (
+    "single responsibility",
+    "open/closed",
+    "Liskov substitution",
+    "interface segregation",
+    "dependency inversion",
+    "DRY",
+    "hexagonal",
+    "KISS",
+)
+
+#: The names the standard attaches to a reading, as it attaches them. Not
+#: derived from the tuple above: two of the eight are named in the standard's
+#: opening sentence rather than in front of a reading, and two share one label
+#: because the sentence they are read from states both.
+ENGINEERING_PRINCIPLE_LABELS: frozenset[str] = frozenset(
+    {
+        "Interface segregation and dependency inversion",
+        "Single responsibility",
+        "Open/closed",
+        "Liskov substitution",
+        "KISS",
+    },
+)
+
+
+def engineering_standard() -> str:
+    """The standard's own paragraph of the append, as one line of prose."""
+    paragraphs = [
+        block
+        for block in fragment("house_rules").split("\n\n")
+        if block.startswith("Engineering standard:")
+    ]
+    assert len(paragraphs) == 1, "the append states its standard in one paragraph"
+    return prose(paragraphs[0])
+
+
+def principle_labels(paragraph: str) -> frozenset[str]:
+    """Every name *paragraph* puts in front of a reading, one per sentence."""
+    return frozenset(
+        sentence.split(" — ")[0]
+        for sentence in paragraph.split(". ")
+        if " — " in sentence
+    )
+
+
+@pytest.mark.parametrize("principle", ENGINEERING_PRINCIPLES)
+def test_the_engineering_standard_names_each_of_its_eight_principles(
+    principle: str,
+) -> None:
+    """Named one by one, so dropping any one name reds its own case.
+
+    The refutation fragment has the session put "the principle breached" in
+    its reasoning; a principle the standard never names cannot be reported
+    under that instruction, and open/closed and Liskov substitution were the
+    two it did not name.
+    """
+    assert principle.lower() in engineering_standard().lower()
+
+
+def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
+    """The count, asserted over the text rather than described beside it.
+
+    Two halves, because either one holds while the other is broken: every
+    declared name is found, so an eighth cannot be dropped silently, and the
+    names put in front of a reading are exactly the declared labels, so a
+    ninth cannot arrive as a label. A ninth smuggled into the opening
+    sentence's list instead breaks that sentence's own reading pin.
+    """
+    paragraph = engineering_standard()
+    named = [
+        principle
+        for principle in ENGINEERING_PRINCIPLES
+        if principle.lower() in paragraph.lower()
+    ]
+    assert len(named) == 8
+    assert principle_labels(paragraph) == ENGINEERING_PRINCIPLE_LABELS
 
 
 @pytest.mark.parametrize("reading", ENGINEERING_READINGS)
