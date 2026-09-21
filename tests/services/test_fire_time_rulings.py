@@ -49,6 +49,7 @@ from tests.fakes import (
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_native_amendments import (
     Workspaces,
+    git,
     repository,
 )
 
@@ -128,6 +129,37 @@ def contradiction_answer(**changes) -> dict[str, object]:
         "rejectedAlternative": (
             f"{LOSING}: the drop side loses, under which no retry can happen."
         ),
+    }
+    return one_answer(**{**fields, **changes})
+
+
+#: An artifact the Check names but does not identify, and the precedent in
+#: THIS tree it is to follow: policy.py is the one file at the base commit.
+MODEL = "WorkflowsResponse"
+CALL_SITE = "the adapter's list_workflows call"
+PRECEDENT_FILE = "policy.py"
+PRECEDENT = f"{PRECEDENT_FILE} — the frozen response model this tree already has"
+ARTIFACT_CHECK = (
+    "the workflows listing is validated as a typed response "
+    "before the adapter returns it"
+)
+ARTIFACT_QUESTION = "Which response model does the listing validate against, and where?"
+
+
+def artifact_body() -> str:
+    return criterion_body(DIRECT_OWED).replace(check_of(DIRECT_OWED), ARTIFACT_CHECK)
+
+
+def artifact_answer(**changes) -> dict[str, object]:
+    """One answer naming the artifact and its precedent, with any field overridable."""
+    fields: dict[str, object] = {
+        "question": ARTIFACT_QUESTION,
+        "rulingClass": "pin_artifact",
+        "resolution": (
+            f"The listing validates against {MODEL}, consumed at {CALL_SITE}."
+        ),
+        "rejectedAlternative": None,
+        "repoEvidence": [PRECEDENT],
     }
     return one_answer(**{**fields, **changes})
 
@@ -706,3 +738,40 @@ async def test_a_contradiction_answer_with_no_losing_side_is_refused_before_any_
     assert executor.judged_artifacts == []
     assert len(executor.question_prompts) == 1
     assert gate.content_classes == []
+
+
+async def test_an_invented_artifact_pins_its_model_call_site_and_in_repo_precedent(
+    repository,
+) -> None:
+    """The Check names an artifact it does not identify; the record identifies it.
+
+    "In-repo" is a checked fact and not a string: the precedent names a file
+    the tree actually carries at the base the pass stood at (KOD-627).  The
+    precedent rides in the record's evidence as data — the instruction to name
+    one is prose in the shipped role, and no model validator requires it.
+    """
+    answer = artifact_answer()
+    executor = Executor([[answer], [answer]])
+    step, spec, current, _, port, _, repo_path, base = await build(
+        repository, executor, port=tracker(bodies={DIRECT_OWED: artifact_body()})
+    )
+    before = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    record = await pinned_record(port, answer, before=before)
+    assert record.ruling_class is RulingClass.PIN_ARTIFACT
+    assert MODEL in record.resolution and CALL_SITE in record.resolution
+    assert record.rejected_alternative is None
+    assert record.repo_evidence == (PRECEDENT,)
+    # Non-vacuous: the Check itself names neither the model nor the call site,
+    # so neither could have reached the loop by riding in the issue's text.
+    assert MODEL not in artifact_body() and CALL_SITE not in artifact_body()
+    # The precedent's file is in the tree at the base the pass read.
+    at_base = (await git(repo_path, "ls-tree", "--name-only", base)).splitlines()
+    assert PRECEDENT_FILE in at_base
+    # A second pass over the same fixture writes nothing and judges nothing.
+    after_first = board_state(port)
+    await run(step, spec, current, repo_path, base)
+    assert board_state(port) == after_first
+    assert len(executor.judged_artifacts) == 1

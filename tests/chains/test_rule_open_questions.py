@@ -64,9 +64,15 @@ from tests.fakes import (
     FakeWorkspaceProvider,
 )
 from tests.services.test_fire_time_rulings import (
+    ARTIFACT_CHECK,
+    CALL_SITE,
     CONTRADICTION_CHECK,
     LOSING,
+    MODEL,
+    PRECEDENT,
     STANDING,
+    artifact_answer,
+    artifact_body,
     contradiction_answer,
     contradiction_body,
 )
@@ -741,6 +747,13 @@ async def test_the_first_iteration_prompt_carries_the_pinned_answer(
             (STANDING, LOSING),
             id="resolve_contradiction",
         ),
+        pytest.param(
+            artifact_body,
+            artifact_answer,
+            ARTIFACT_CHECK,
+            (MODEL, CALL_SITE, PRECEDENT),
+            id="pin_artifact",
+        ),
     ],
 )
 async def test_the_first_iteration_prompt_carries_what_each_class_of_answer_pins(
@@ -787,6 +800,12 @@ async def test_the_first_iteration_prompt_carries_what_each_class_of_answer_pins
     assert answered["question"] in block
     assert answered["question"] not in outside
     assert check in outside
+    # What an artifact answer pins is nowhere in the prompt but the block: the
+    # model, the call site and the precedent reach iteration 1 through the
+    # record alone.  The contradiction's two sides are the Check's own words
+    # and stand outside it legitimately, so that row is not held to this.
+    if body is artifact_body:
+        assert all(text not in outside for text in pinned)
     # Read off the board at loop start, not carried in graph state.  One
     # writer session opened, and it saw exactly the one record.
     assert len(executor.execution_prompts) == 1
