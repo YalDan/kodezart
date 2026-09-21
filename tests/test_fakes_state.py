@@ -1,13 +1,15 @@
-"""The handover check the write-nothing passes are held to, checked itself.
+"""The handover checks the write-nothing passes are held to, checked themselves.
 
-``tests.fakes.handed_over`` is what every "this pass wrote nothing to the
-board" assertion in the suite comes down to: the double's whole surface is
-rendered when the board is handed over and compared when the answer is
-asked for. An answer of ``True`` for a board something DID write to would
-make all of those assertions agree with the write they exist to catch, and
-none of them would report it — the failure is silent by construction,
-because a check that always answers "untouched" looks exactly like a
-consumer that touched nothing.
+``tests.fakes.handed_over`` and ``tests.fakes.nothing_written`` are what every
+"this pass wrote nothing to the board" assertion in the suite comes down to:
+the first renders the double's whole surface when the board is handed over and
+compares it when the answer is asked for; the second compares the same
+rendering projected onto the journals a write can land in, which is the claim
+a consumer that legitimately reads the board can still make. An answer of
+``True`` for a board something DID write to would make all of those assertions
+agree with the write they exist to catch, and none of them would report it —
+the failure is silent by construction, because a check that always answers
+"untouched" looks exactly like a consumer that touched nothing.
 
 So the answer is exercised here directly: one write per journal the check
 declares it reaches, each through the port's own method, each asked to come
@@ -37,6 +39,7 @@ from tests.fakes import (
     FakeTrackerPort,
     handed_over,
     make_tracker_issue,
+    nothing_written,
     tracker_state,
 )
 
@@ -174,6 +177,7 @@ async def test_a_write_on_any_journal_answers_that_the_board_was_touched(
     """One write, anywhere the double records one, and the answer is False."""
     port = board()
     untouched = handed_over(port)
+    unwritten = nothing_written(port)
     before = tracker_state(port)[journal]
 
     await WRITES[journal](port)
@@ -182,10 +186,12 @@ async def test_a_write_on_any_journal_answers_that_the_board_was_touched(
     # is this journal's coverage rather than some other journal's.
     assert tracker_state(port)[journal] != before
     assert untouched() is False
+    # The projection reaches this journal too: a narrowed one would agree.
+    assert unwritten() is False
 
 
 async def test_a_board_nothing_wrote_to_answers_that_it_is_untouched() -> None:
-    """The other half: the check is an observation, not a standing refusal.
+    """The other half: the checks are observations, not standing refusals.
 
     Answering False for an untouched board would fail every write-nothing
     case in the suite instead of the writes they are about.
@@ -195,3 +201,20 @@ async def test_a_board_nothing_wrote_to_answers_that_it_is_untouched() -> None:
     untouched = handed_over(port)
 
     assert untouched() is True
+    assert nothing_written(port)() is True
+
+
+async def test_a_read_moves_the_whole_surface_but_not_the_write_set() -> None:
+    """Where the two answerers part: a read is a touch, and it is not a write.
+
+    A consumer that re-reads the board before every barrier cannot claim the
+    whole surface stood still, and still owes the narrower claim.
+    """
+    port = board()
+    untouched = handed_over(port)
+    unwritten = nothing_written(port)
+
+    await port.read_issue(issue_key=ISSUE)
+
+    assert untouched() is False
+    assert unwritten() is True

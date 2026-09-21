@@ -5197,6 +5197,29 @@ def handed_over(port: FakeTrackerPort) -> Callable[[], bool]:
     return lambda: tracker_state(port) == before
 
 
+def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
+    """Answer, later, whether *port*'s write journals are as they were.
+
+    ``handed_over`` compares the double's whole surface, reads included: the
+    claim for a pass that must not touch the board at all.  A consumer that
+    legitimately READS the board — a lane's delivery re-reads its criteria
+    before every barrier — needs the narrower claim: of the journals a write
+    can land in, none moved.  The projection is the declared journal set,
+    checked to be reached before the answer is handed out, as ``handed_over``
+    does.  Attributes outside the set (``issue_reads``, ``scans``, a
+    subclass's own counters) are outside the claim by construction.
+    """
+
+    def journals() -> dict[str, object]:
+        state = tracker_state(port)
+        return {name: state[name] for name in TRACKER_WRITE_JOURNALS if name in state}
+
+    before = journals()
+    missed = TRACKER_WRITE_JOURNALS - set(before)
+    assert missed == frozenset(), f"the state rendering reaches no {sorted(missed)}"
+    return lambda: journals() == before
+
+
 class FakeDeliveryProbe:
     """One forge double, answering both questions the native client answers.
 
