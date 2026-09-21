@@ -22,6 +22,7 @@ from kodezart.domain.errors import CheckChainExecutionError
 from tests.chains.test_delivery_coordinator import RaisingRunner
 from tests.chains.test_delivery_coordinator import delivery as delivery
 from tests.chains.test_delivery_coordinator import repository as repository
+from tests.chains.test_union_exit_invariance import RecordingPublisher
 from tests.fakes import FakeDeliveryProbe, FakePRCreator, FakePRStateReader
 from tests.services import test_union_composition as pinned
 
@@ -84,24 +85,6 @@ QUERY_DOUBLES: tuple[tuple[type, frozenset[str], type, frozenset[str]], ...] = (
         frozenset({"open_delivery_exists", "read_pr_state"}),
     ),
 )
-
-
-class ForbiddenPublisher(pinned.ObservedGit):
-    """The git port the union step actually holds, with publication fatal.
-
-    Every one of these is reachable on the object the composition is given,
-    so a step that grew a publish makes the case fail rather than pass
-    quietly against a double that could not have been asked.
-    """
-
-    async def push(self, cwd: str, branch: str) -> None:
-        raise AssertionError("the union step pushed a branch")
-
-    async def merge_branch(self, cwd: str, source_branch: str) -> None:
-        raise AssertionError("the union step merged a branch")
-
-    async def delete_remote_branch(self, repo_path: str, branch: str) -> None:
-        raise AssertionError("the union step deleted a remote branch")
 
 
 def union_import_closure() -> tuple[str, ...]:
@@ -261,7 +244,7 @@ async def test_verifying_publishes_nothing_and_leaves_every_ref_identical(
     delivery, tmp_path
 ) -> None:
     """Both the returning and the raising path leave the world where it was."""
-    delivery.git = ForbiddenPublisher()
+    delivery.git = RecordingPublisher()
     author, remote = tmp_path / "repo", tmp_path / "remote.git"
     before = (await show_ref(author), await show_ref(remote))
 
@@ -269,8 +252,10 @@ async def test_verifying_publishes_nothing_and_leaves_every_ref_identical(
 
     assert result.checks is not None
     assert (await show_ref(author), await show_ref(remote)) == before
+    assert delivery.git.publications == []
 
     with pytest.raises(CheckChainExecutionError):
         await delivery.coordinator(RaisingRunner()).verify()
 
     assert (await show_ref(author), await show_ref(remote)) == before
+    assert delivery.git.publications == []

@@ -5,6 +5,7 @@ no AST inventory or object-holdings heuristic is treated as runtime proof.
 """
 
 import asyncio
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
 from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.config.app import AppConfig
 from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
+from kodezart.services.union_composition import UnionComposition
 from kodezart.types.domain.operation import CheckStep
 from kodezart.types.domain.union import UnionLaneHead, UnionOutcome
 from kodezart.types.domain.union_tick import UnionTickContext
@@ -172,25 +174,35 @@ async def build_delivery(
     )
 
 
-class ForbiddenPublisher(pinned.ObservedGit):
-    """The git port the union step actually holds, with publication fatal.
+class RecordingPublisher(pinned.ObservedGit):
+    """The real git port, remembering every publication it was asked for.
 
-    Every one of these is reachable on the object the composition is given,
-    so a step that grew a publish makes the case fail rather than pass
-    quietly against a double that could not have been asked.
+    It still publishes.  A double that refused would show only that its
+    refusal was reached, and a best-effort publish that swallowed the
+    refusal would leave every ref where it was; a port that publishes and
+    remembers being asked gives two witnesses that cannot cover for each
+    other.  The record is appended before the call, so an attempt is on it
+    whether or not it landed.
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.publications: list[tuple[str, str, str]] = []
+
     async def push(self, cwd: str, branch: str) -> None:
-        raise AssertionError("the union step pushed a branch")
+        self.publications.append(("push", cwd, branch))
+        await super().push(cwd, branch)
 
     async def merge_branch(self, cwd: str, source_branch: str) -> None:
-        raise AssertionError("the union step merged a branch")
+        self.publications.append(("merge_branch", cwd, source_branch))
+        await super().merge_branch(cwd, source_branch)
 
     async def delete_remote_branch(self, repo_path: str, branch: str) -> None:
-        raise AssertionError("the union step deleted a remote branch")
+        self.publications.append(("delete_remote_branch", repo_path, branch))
+        await super().delete_remote_branch(repo_path, branch)
 
 
-class PathlessConflict(ForbiddenPublisher):
+class PathlessConflict(RecordingPublisher):
     """A refused merge git named no conflicting path for."""
 
     async def merge_scratch_head(self, **kwargs: object) -> None:
@@ -201,7 +213,7 @@ class PathlessConflict(ForbiddenPublisher):
         )
 
 
-class BlockedCreate(ForbiddenPublisher):
+class BlockedCreate(RecordingPublisher):
     """A git port that parks inside worktree creation until released."""
 
     def __init__(self) -> None:
@@ -265,25 +277,25 @@ async def drive_cancellation(fixture) -> None:
 
 
 EXIT_SCENARIOS = (
-    ("a green union", None, ForbiddenPublisher, drive_green),
-    ("a merge conflict", CONFLICTING_EDITS, ForbiddenPublisher, drive_merge_conflict),
+    ("a green union", None, RecordingPublisher, drive_green),
+    ("a merge conflict", CONFLICTING_EDITS, RecordingPublisher, drive_merge_conflict),
     ("a conflict naming no path", None, PathlessConflict, drive_pathless_conflict),
     (
         "a chain that cannot be classified",
         None,
-        ForbiddenPublisher,
+        RecordingPublisher,
         drive_unclassifiable_chain,
     ),
     (
         "a repository declaring no chain",
         None,
-        ForbiddenPublisher,
+        RecordingPublisher,
         drive_undeclared_chain,
     ),
     (
         "a chain that cannot be observed",
         None,
-        ForbiddenPublisher,
+        RecordingPublisher,
         drive_unobservable_chain,
     ),
     ("cancellation while composing", None, BlockedCreate, drive_cancellation),
@@ -307,9 +319,43 @@ async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
 
     await drive(fixture)
 
+    assert fixture.git.publications == [], name
     assert await fixture.refs() == before, name
     assert fixture.git.created == fixture.git.removed, name
     assert all(not Path(path).exists() for path in fixture.git.created), name
     assert (
         await pinned.git(fixture.observer, "worktree", "list", "--porcelain")
     ).count("worktree ") == 1
+
+
+async def test_a_planted_publication_is_on_the_record_and_moves_a_ref(
+    tmp_path, monkeypatch
+):
+    """Both witnesses above are live: one swallowed push is seen by each.
+
+    Planted on the method the green path calls once over the scratch tree,
+    through the very port the step holds, in the best-effort shape the
+    record's refutation used; the swallow hides nothing from a port that
+    remembers being asked, and the ref it moved is on the remote.
+    """
+    fixture = await build_delivery(tmp_path / "world", git=RecordingPublisher())
+    before = await fixture.refs()
+    scratch_sha = UnionComposition._scratch_sha
+
+    async def publishing(self, worktree):
+        with suppress(Exception):
+            await self._git.push(worktree, "union")
+        return await scratch_sha(self, worktree)
+
+    monkeypatch.setattr(UnionComposition, "_scratch_sha", publishing)
+
+    result = await fixture.coordinator().verify()
+
+    assert result.outcome is UnionOutcome.GREEN
+    assert [(kind, branch) for kind, _, branch in fixture.git.publications] == [
+        ("push", "union")
+    ]
+    assert fixture.git.publications[0][1] in fixture.git.created
+    assert await fixture.refs() != before
+    assert "refs/heads/union" in await pinned.git(fixture.remote, "show-ref")
+    assert fixture.git.removed == fixture.git.created
