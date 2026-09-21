@@ -722,8 +722,11 @@ def test_only_the_selectable_backend_roster_may_name_a_vendor():
     assert VENDOR_ROSTER.relative_to(REPO_ROOT).as_posix() not in invariant_sources()
     # The record's own scan is a second scan, never a second exemption: the
     # roster stays the one place a vendor may be named, so it must be absent
-    # from this set rather than filtered out of it.
+    # from this set rather than filtered out of it. Absence alone reads the
+    # same as exemption to the membership assertion, so the derivation is read
+    # too: it writes no filter naming the roster at all.
     assert VENDOR_ROSTER.relative_to(REPO_ROOT).as_posix() not in record_sources()
+    assert "VENDOR_ROSTER" not in inspect.getsource(record_sources)
 
 
 @pytest.mark.parametrize(
