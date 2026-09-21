@@ -300,9 +300,10 @@ async def test_a_scope_deployment_schedules_the_organize_tick_and_no_per_issue_p
     A scope run needs one declared team and one declared repository; a tracker
     is dialled and a delivery probe is configured. On the state this fixture is
     in, boot used to schedule an hourly dispatch pass and both session passes
-    over that team's whole board. What this deployment gets is the organize tick
-    and the standing scopes' own heartbeat beside it — neither of which scans a
-    board — with no lifecycle watcher behind it, and both existing "not wired"
+    over that team's whole board. What this deployment gets is the organize tick,
+    the standing scopes' own heartbeat beside it and the observation tick that
+    watches each lane's run shape — none of which scans a board — with no
+    lifecycle watcher behind it, and both existing "not wired"
     lines carry the reason as a field rather than leaving an operator to read
     three true premises and a schedule with no per-issue pass in it.
     """
@@ -311,6 +312,7 @@ async def test_a_scope_deployment_schedules_the_organize_tick_and_no_per_issue_p
         config, operation, board, tracker, prompts, ledger, forge=FakeDeliveryProbe()
     )
     assert [entry.name for entry in runtime.scheduler.passes] == [
+        "supervisor",
         PromptKey.GROOMING_PASS.value,
         HEARTBEAT_PASS,
     ]

@@ -53,9 +53,9 @@ from kodezart.types.domain.audit_runtime import (
 from kodezart.types.domain.audit_terminal import AuditTerminalObservation
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import (
-    AuditScopeBinding,
     LifecycleStage,
     OperationConfig,
+    OrganizeScopeBinding,
     RepoEntry,
     RunKind,
 )
@@ -91,7 +91,15 @@ class _AuditAttempt:
 
 @dataclass(frozen=True)
 class AuditTarget:
-    binding: AuditScopeBinding
+    """One audited scope, with its report destination already resolved.
+
+    The destination is a plain string here rather than the row's optional
+    member: a row that declares none stops the audit's composition by name,
+    so a target that exists has one and nothing downstream re-asks.
+    """
+
+    binding: OrganizeScopeBinding
+    report_issue_key: str
     repository: RepoEntry
     sweep: AuditReadSweep
     publisher: AuditPublisher
@@ -575,10 +583,8 @@ class AuditScheduledPass:
             raise AuditClaimReadError(
                 "the audit summary repository has no remote trunk head"
             )
-        destination = await self._tracker.read_issue(
-            issue_key=target.binding.report_issue_key
-        )
-        if destination.issue_key != target.binding.report_issue_key:
+        destination = await self._tracker.read_issue(issue_key=target.report_issue_key)
+        if destination.issue_key != target.report_issue_key:
             raise AuditClaimReadError(
                 "the audit report destination returned another identity"
             )

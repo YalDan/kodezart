@@ -6,7 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.adapters.toml_operation_config import (
+    RETIRED_SCOPE_KEYS,
+    load_operation_config,
+)
 from kodezart.config.app import AppConfig
 from kodezart.core.errors import (
     OperationConfigError,
@@ -44,8 +47,17 @@ from tests.prompts.sets import PER_RUN
 from tests.prompts.test_prompt_wiring import load_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EXAMPLE = REPO_ROOT / "docs" / "operation.example.toml"
-CUTOVER = REPO_ROOT / "docs" / "cutover_mapping.md"
+DOCS = REPO_ROOT / "docs"
+EXAMPLE = DOCS / "operation.example.toml"
+CUTOVER = DOCS / "cutover_mapping.md"
+
+#: Every prose page and shipped operation file an operator reads, derived
+#: rather than listed: a page added later is covered the day it lands.
+PROSE_AND_SHIPPED_FILES = [
+    REPO_ROOT / "README.md",
+    *sorted(DOCS.rglob("*.md")),
+    *sorted(DOCS.glob("*.toml")),
+]
 SET_DIR = REPO_ROOT / "src" / "kodezart" / "prompts" / "sets" / "claude-opus"
 PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
 
@@ -124,9 +136,12 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
 
     Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
     registry) and by ``private_surface`` under KOD-106 R2 (the operator's
-    prose description of what this operation treats as private).  The
-    census stays total and stays ``==``; a census loosened to a containment
-    check stops being one.
+    prose description of what this operation treats as private).  Shrank by
+    ``audit_scopes`` and ``supervisor_scopes`` under KOD-885: an operation
+    declares each scope once, under ``organize_scopes``, and every pass that
+    works scope by scope is composed from that one table.  The census stays
+    total and stays ``==``; a census loosened to a containment check stops
+    being one.
     """
     fields = OperationConfig.model_fields
     assert set(fields) == {
@@ -140,8 +155,6 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "issue_labels",
         "organize_mandates",
         "organize_scopes",
-        "audit_scopes",
-        "supervisor_scopes",
         "workflow_states",
         "run_event_states",
         "marker_prefixes",
@@ -638,9 +651,12 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     # the mapping can no longer be checked against what it was derived from.
     native = dict(markdown_rows("## Native OperationConfig consumers"))
     assert native == {
-        "organize_scopes": "composition/organize.py::build_organize_tick",
-        "audit_scopes": "composition/audit.py::build_audit_pass",
-        "supervisor_scopes": "composition/supervisor.py::build_supervisor_pass",
+        "organize_scopes": (
+            "composition/organize.py::build_organize_tick, "
+            "composition/organize.py::build_scope_heartbeat, "
+            "composition/audit.py::build_audit_pass, "
+            "composition/supervisor.py::build_supervisor_pass"
+        ),
         "workflow_states.done": "adapters/linear/tracker.py::set_workflow_state",
     }
     assert set(mapped).isdisjoint(native)
@@ -683,6 +699,27 @@ def test_example_toml_is_annotated_and_covers_every_field() -> None:
         assert field in text
     assert CHECKPOINT_DOCUMENT_KEY in text
     example_config()
+
+
+@pytest.mark.parametrize(
+    "path",
+    PROSE_AND_SHIPPED_FILES,
+    ids=lambda path: path.relative_to(REPO_ROOT).as_posix(),
+)
+def test_no_document_or_shipped_operation_file_names_a_retired_scope_key(
+    path: Path,
+) -> None:
+    """The pages carry the one scope table and no second spelling of it.
+
+    The loader's refusal is the whole migration instruction, so a page that
+    still names a retired key is offering an operator a file that will not
+    load.  The keys come from the loader's own mapping and the files from the
+    tree, so neither side of this is a list kept by hand.
+    """
+    assert PROSE_AND_SHIPPED_FILES
+    text = path.read_text(encoding="utf-8")
+    named = [key for key in RETIRED_SCOPE_KEYS if key in text]
+    assert named == [], f"{path.name} names {named}"
 
 
 def test_readme_points_at_the_operation_config_documents() -> None:

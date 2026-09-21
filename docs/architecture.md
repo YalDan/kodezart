@@ -29,8 +29,10 @@ All cross-layer dependencies point inward through protocols defined in
 (`main.py` `lifespan()`).
 Dialling the tracker consults no run-event table; a declared one is checked when
 the operation file loads. An operation that declares `[[organize_scopes]]`
-schedules the organize tick and the audit pass only — the per-issue dispatch
-pass, the two remaining prompt passes and the lifecycle watcher are withheld.
+schedules the passes that read that one table — the organize tick, the scope
+heartbeat, the observation tick where a tracker is dialled and the audit where
+one is configured — and withholds the per-issue machine: the dispatch pass, the
+two remaining prompt passes and the lifecycle watcher are not built.
 The lifespan registers each acquired resource with an `AsyncExitStack`.
 Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
 their records, then closes their transports; the checkpointer retains its
@@ -760,7 +762,8 @@ enables neither.
 ### Supervisor pass
 
 `services.supervisor_pass.SupervisorPass` is one scheduled tick over the
-scopes `OperationConfig.supervisor_scopes` declares, registered on the
+scopes `OperationConfig.organize_scopes` declares, of which the tick reads
+each row's scope and nothing else, registered on the
 existing scheduler by `composition/supervisor.py::build_supervisor_pass` with
 its interval and timeout from application configuration, no report, and no
 sleep, timer or clock of its own. `composition/passes.py` registers it only

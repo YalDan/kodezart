@@ -544,20 +544,21 @@ def check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
 
 
 class OrganizeScopeBinding(OperationModel):
-    """One explicit writable scope and the declared repository it is judged against."""
+    """One declared scope, the repository it is judged against, and — where an
+    audit is configured — the issue its verified summary is reported on.
+
+    The one scope table of the operation.  Every pass that works scope by
+    scope is composed from these rows: the organize tick and the heartbeat
+    over the whole row, the observation tick over the scope alone, and the
+    audit over the row and the destination below.  ``report_issue_key`` is
+    optional because a deployment that configures no audit has nowhere to
+    report; a configured audit refuses by name on a row that omits it.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
     scope: ScopeRef
     repo_url: str = Field(min_length=1)
-
-
-class AuditScopeBinding(OperationModel):
-    """An explicit audit scope, declared repository and native report destination."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
-    scope: ScopeRef
-    repo_url: str = Field(min_length=1, pattern=r"\S")
-    report_issue_key: str = Field(min_length=1, pattern=r"\S")
+    report_issue_key: str | None = Field(default=None, min_length=1, pattern=r"\S")
 
 
 class OperationConfig(OperationModel):
@@ -590,8 +591,6 @@ class OperationConfig(OperationModel):
     issue_labels: dict[str, str] = Field(default_factory=dict)
     organize_mandates: tuple[MandateSpec, ...] = ()
     organize_scopes: tuple[OrganizeScopeBinding, ...] = ()
-    audit_scopes: tuple[AuditScopeBinding, ...] = ()
-    supervisor_scopes: tuple[ScopeRef, ...] = ()
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
     run_event_states: dict[str, LifecycleStage | RunEventEffect] = Field(
         default_factory=dict
@@ -638,17 +637,6 @@ class OperationConfig(OperationModel):
                 if sum(repo.url == binding.repo_url for repo in self.repos) != 1:
                     failures.append(
                         "each organize scope requires exactly one matching "
-                        "declared repository"
-                    )
-
-        if self.audit_scopes:
-            audit_refs = [binding.scope for binding in self.audit_scopes]
-            if len(audit_refs) != len(set(audit_refs)):
-                failures.append("audit_scopes repeats or ambiguously binds one scope")
-            for audit_binding in self.audit_scopes:
-                if sum(repo.url == audit_binding.repo_url for repo in self.repos) != 1:
-                    failures.append(
-                        "each audit scope requires exactly one matching "
                         "declared repository"
                     )
 
@@ -1113,8 +1101,6 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "issue_labels": ConfigOwnership.OWNED,
     "organize_mandates": ConfigOwnership.LOCAL,
     "organize_scopes": ConfigOwnership.LOCAL,
-    "audit_scopes": ConfigOwnership.LOCAL,
-    "supervisor_scopes": ConfigOwnership.LOCAL,
     "workflow_states": ConfigOwnership.EXTERNAL,
     "run_event_states": ConfigOwnership.LOCAL,
     "marker_prefixes": ConfigOwnership.LOCAL,

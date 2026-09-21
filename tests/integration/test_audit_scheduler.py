@@ -19,6 +19,7 @@ from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.dispatch import PassRun, SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from tests.chains.test_organize import RecordingExecutor, RecordingWorkspace, result
+from tests.domain.test_organize import mandate_operation_fields
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentRunner,
@@ -66,6 +67,35 @@ async def test_absent_audit_configuration_has_a_named_runtime_event():
     assert absent[0]["reason"] == "audit_unconfigured"
 
 
+#: Comment identities the organize owner resolves while it is being built, so
+#: an absent one is a boot failure rather than a lane failure.
+ORGANIZE_OWNER_PREFIXES: dict[str, str] = {"ruling": "configured-organize-verdict"}
+
+
+def declare_organize_owner(fields):
+    """*fields* with the organize owner a declared scope roster requires.
+
+    The one scope table is read by the organize tick as well as the audit, and
+    a row without the mandate table and the labels its stages gate on is a
+    partial configuration refused at load. The owner also resolves one comment
+    identity while it is being built, so that prefix goes here beside the rest:
+    a fixture declaring a row and none of this describes a deployment that
+    cannot boot. Merged rather than assigned, so a caller that already declares
+    one of these keeps its own values.
+    """
+    owner = mandate_operation_fields()
+    for table in ("scope_labels", "issue_labels"):
+        fields[table] = {**owner[table], **fields.get(table, {})}
+    fields["organize_mandates"] = (
+        fields.get("organize_mandates") or owner["organize_mandates"]
+    )
+    fields["marker_prefixes"] = {
+        **ORGANIZE_OWNER_PREFIXES,
+        **fields.get("marker_prefixes", {}),
+    }
+    return fields
+
+
 def dependencies():
     fields = base_operation().model_dump()
     fields["marker_prefixes"]["audit"] = "configured-audit-record"
@@ -74,14 +104,14 @@ def dependencies():
         criterion="acceptance-condition", decision="needs decision"
     )
     fields["workflow_states"] = WORKFLOW_STATE_NAMES
-    fields["audit_scopes"] = [
+    fields["organize_scopes"] = [
         {
             "scope": EMPTY_PROJECT.model_dump(),
             "repo_url": fields["repos"][0]["url"],
             "report_issue_key": ROOT.key,
         }
     ]
-    operation = OperationConfig.model_validate(fields)
+    operation = OperationConfig.model_validate(declare_organize_owner(fields))
     config = AppConfig(
         _env_file=None,
         audit={"timeout_seconds": 17},
@@ -90,6 +120,7 @@ def dependencies():
         audit_full_sweep_interval_seconds=120,
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
+        organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
     )
     server = ScopeMcpServer()
     server._comment_clock = lambda: FIXTURE_NOW
@@ -103,9 +134,22 @@ def dependencies():
 
 
 async def schedule_over(
-    config, operation, server, tracker, forge, *, verdict="holds", gate=None
+    config,
+    operation,
+    server,
+    tracker,
+    forge,
+    *,
+    verdict="holds",
+    gate=None,
+    reconciled=None,
 ):
-    """Every pass this deployment registers, and the executor standing behind it."""
+    """Every pass this deployment registers, and the executor standing behind it.
+
+    *reconciled* is the operation the dialled tracker carries, where a caller
+    needs it to differ from the one handed in raw. Left out, the two are one
+    object, so nothing downstream can tell which copy it was handed.
+    """
     workspace = RecordingWorkspace()
     executor = RecordingExecutor(
         [
@@ -125,7 +169,7 @@ async def schedule_over(
         dialled=DialledTracker(
             tracker=tracker,
             caller=server,
-            operation=operation,
+            operation=operation if reconciled is None else reconciled,
             ledger=SelfWriteLedger(),
             status=FakeScopeStatusWriter(),
         ),
@@ -164,27 +208,29 @@ async def runtime(
 async def test_actual_scheduled_audit_collects_and_verifies_native_summary(observing):
     """The configured audit is registered, runs, and reports once per window.
 
-    The observing arm declares an observation roster on the same operation, so
-    this deployment registers the observation tick as well. The tick is
-    registered after the audit and appends itself to the same schedule, so the
-    audit registration is only safe if nothing in that arm edits what stands
-    before it: both names are asserted, and the audit pass read below and
-    everything asserted about it are the same either way.
+    One declared roster composes both passes, so this deployment registers the
+    observation tick as well. The tick is registered after the audit and appends
+    itself to the same schedule, so the audit registration is only safe if
+    nothing in that arm edits what stands before it: both names are asserted,
+    and the audit pass read below and everything asserted about it are the same
+    either way.
+
+    The two arms differ in what the dialled tracker's reconciled copy declares —
+    the same object on one, an emptied roster on the other — and the tick
+    registers either way, because every arm of the factory reads the copy it was
+    handed. A tick composed from the other copy would observe rows the organize
+    tick beside it never grooms.
     """
     config, operation, server, tracker, forge = dependencies()
-    if observing:
-        operation = OperationConfig.model_validate(
-            {
-                **operation.model_dump(),
-                "supervisor_scopes": [EMPTY_PROJECT.model_dump()],
-            }
-        )
+    reconciled = (
+        None if observing else operation.model_copy(update={"organize_scopes": ()})
+    )
     registered, executor = await schedule_over(
-        config, operation, server, tracker, forge
+        config, operation, server, tracker, forge, reconciled=reconciled
     )
     names = {entry.name for entry in registered}
     assert "audit" in names
-    assert ("supervisor" in names) is observing
+    assert "supervisor" in names
     (scheduled,) = [entry for entry in registered if entry.name == "audit"]
     assert scheduled.interval_seconds == 60
     assert scheduled.timeout_seconds == 17
@@ -240,6 +286,12 @@ async def test_summary_exhaustion_retains_actual_rounds_and_repeats_uncovered_wi
     ["operation", "tracker", "forge", "audit", "write_back", "audit_scopes", "marker"],
 )
 def test_partial_configuration_refuses_before_scheduling(missing):
+    """Each absent collaborator of a configured audit, named before scheduling.
+
+    The audit's own settings are the switch rather than a requirement: with
+    them absent this is not a partial audit but a deployment with none, so that
+    arm asks for the answer rather than the refusal.
+    """
     config, operation, _, tracker, forge = dependencies()
     if missing == "operation":
         operation = None
@@ -254,8 +306,16 @@ def test_partial_configuration_refuses_before_scheduling(missing):
         if missing == "marker":
             fields["marker_prefixes"].pop("audit")
         else:
-            fields["audit_scopes"] = []
+            fields["organize_scopes"] = []
         operation = OperationConfig.model_validate(fields)
+    if missing == "audit":
+        assert (
+            verify_audit_configuration(
+                config=config, operation=operation, tracker=tracker, forge=forge
+            )
+            is False
+        )
+        return
     with pytest.raises(OperationMemberAbsentError):
         verify_audit_configuration(
             config=config, operation=operation, tracker=tracker, forge=forge
@@ -290,7 +350,7 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
     fields["issue_labels"].update(
         criterion="acceptance-condition", decision="needs decision"
     )
-    fields["audit_scopes"] = [
+    fields["organize_scopes"] = [
         {
             "scope": EMPTY_PROJECT.model_dump(),
             "repo_url": fields["repos"][0]["url"],
@@ -311,6 +371,7 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
         write_back=None
         if configuration == "missing_policy"
         else {"max_verify_rounds": 2},
+        organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         github_token=SecretStr("fixture-audit-token").get_secret_value(),
         ticket_review_mode="reviewed",
         fire_prep_pass_gate_signals=[],
@@ -368,7 +429,7 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
     monkeypatch.setattr(main, "build_git_stack", lambda **_kwargs: stack)
     if configuration == "missing_roster":
         operation = OperationConfig.model_validate(
-            {**operation.model_dump(), "audit_scopes": ()}
+            {**operation.model_dump(), "organize_scopes": ()}
         )
     app = main.create_app()
     app.state.config = config
@@ -380,7 +441,7 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
             raised.value.missing
             == {
                 "missing_policy": "write_back",
-                "missing_roster": "audit_scopes",
+                "missing_roster": "organize_scopes",
                 "missing_criterion": "issue_labels['criterion']",
             }[configuration]
         )
@@ -476,9 +537,13 @@ async def test_one_refused_binding_does_not_starve_the_next_scope():
 
     config, operation, server, tracker, forge = dependencies()
     fields = operation.model_dump()
-    fields["audit_scopes"] = (
-        *fields["audit_scopes"],
-        {**fields["audit_scopes"][0], "scope": EMPTY_INITIATIVE.model_dump()},
+    # The second scope is a whole row of the one table, carrying its own
+    # repository and its own report destination: a roster where one scope's
+    # audit destination stood in for another's would make the next scope's
+    # completion an accident of ordering.
+    fields["organize_scopes"] = (
+        *fields["organize_scopes"],
+        {**fields["organize_scopes"][0], "scope": EMPTY_INITIATIVE.model_dump()},
     )
     operation = OperationConfig.model_validate(fields)
     scheduled, executor = await runtime(

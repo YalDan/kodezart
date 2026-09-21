@@ -20,6 +20,7 @@ from kodezart.composition.tracker import criteria_stage_label_key
 from kodezart.config.organize import OrganizeSettings
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import ScopeNotApprovedError, WorkspaceError
+from kodezart.domain.run_alarm_record import MARKER_PURPOSE
 from kodezart.main import create_app, lifespan
 from kodezart.services.scope_approval import scope_approved
 from kodezart.services.tracker_boot import owned_mappings
@@ -340,11 +341,12 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
     """The acceptance preamble, with nothing substituted but the transport.
 
     A deployment configured from the shipped file and the page's own environment
-    block boots, reconciles its mappings into the team, schedules the organize
-    tick and the standing scopes' heartbeat and nothing else, holds no
-    checkpointer, and writes no label onto any issue. Its first scoped run is
-    refused by type before a member is read, because nobody has approved the
-    project yet, and it leaves the board untouched.
+    block boots, reconciles its mappings into the team, schedules the passes that
+    read its one scope table — the observation tick that watches each lane's run
+    shape, the organize tick and the standing scopes' heartbeat — and nothing
+    else, holds no checkpointer, and writes no label onto any issue. Its first
+    scoped run is refused by type before a member is read, because nobody has
+    approved the project yet, and it leaves the board untouched.
 
     Then the approval label is applied — by this test, standing for the person
     whose act it is — and the same run is admitted: it passes the approval
@@ -392,9 +394,15 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
             ref.describe() for ref in owned_mappings(loaded)
         }
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
+            "supervisor",
             PromptKey.GROOMING_PASS.value,
             HEARTBEAT_PASS,
         ]
+        # The observation tick records each lane's alarm under a configured
+        # prefix and refuses that lane by name without one, so a file that
+        # schedules the tick and declares no prefix is a file that stops at its
+        # first observed lane.
+        assert MARKER_PURPOSE in loaded.marker_prefixes
         assert app.state.checkpointer is None
         for name in ("scheduled_passes_not_wired", "prompt_passes_not_wired"):
             withheld = logged(events, name)
