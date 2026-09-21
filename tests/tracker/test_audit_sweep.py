@@ -24,6 +24,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.audit_terminal import AuditTerminalReader
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import (
     AUDIT_CLAIM_SCHEMA,
@@ -176,7 +177,7 @@ async def setup(tracker, server):
         records = LaneRecordReader(tracker=tracker, operation=selected_op)
         prompts = load_registry()
         claims = AuditClaimVerifier(
-            tracker=tracker,
+            resolver=NativeCriterionResolver(tracker=tracker),
             records=records,
             git=selected_git,
             cache=selected_cache,
@@ -187,7 +188,7 @@ async def setup(tracker, server):
             remote=config.git.remote,
         )
         evidence = AuditEvidenceVerifier(
-            tracker=tracker,
+            resolver=NativeCriterionResolver(tracker=tracker),
             records=records,
             git=selected_git,
             cache=selected_cache,
@@ -216,7 +217,7 @@ async def setup(tracker, server):
         overclaims = (
             AuditOverclaimVerifier(
                 sources=AuditSourceReader(
-                    tracker=tracker,
+                    resolver=NativeCriterionResolver(tracker=tracker),
                     records=records,
                     git=selected_git,
                     source=selected_source or Source(),
@@ -240,7 +241,7 @@ async def setup(tracker, server):
         removals = (
             DetectorRemovalVerifier(
                 sources=AuditSourceReader(
-                    tracker=tracker,
+                    resolver=NativeCriterionResolver(tracker=tracker),
                     records=records,
                     git=selected_git,
                     source=selected_source or Source(),

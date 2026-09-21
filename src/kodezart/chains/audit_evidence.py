@@ -3,18 +3,17 @@
 from kodezart.chains.audit_pass import AuditClaimVerifier
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import (
+    CriterionResolver,
     GitService,
     GitSourceReader,
     LaneEventHistory,
     RepoCache,
-    TrackerPort,
 )
 from kodezart.domain.audit_claims import evidence_row_history, restamp_verdict
 from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.domain.lapse import GradedState, graded_state
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES, parse_audit_evidence
-from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import read_replace_refs
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
@@ -39,7 +38,7 @@ class AuditEvidenceVerifier:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        resolver: CriterionResolver,
         records: LaneRecordReader,
         git: GitService,
         source: GitSourceReader,
@@ -48,7 +47,7 @@ class AuditEvidenceVerifier:
         operation: OperationConfig,
         remote: str,
     ) -> None:
-        self._tracker = tracker
+        self._resolver = resolver
         self._records = records
         self._git = git
         self._source = source
@@ -58,8 +57,7 @@ class AuditEvidenceVerifier:
         self._remote = remote
 
     async def _criterion(self, request: AuditClaimRequest) -> TrackerIssue:
-        return await resolve_criterion(
-            tracker=self._tracker,
+        return await self._resolver.resolve_criterion(
             issue_key=request.lane_issue_key,
             criterion_key=request.criterion_key,
         )

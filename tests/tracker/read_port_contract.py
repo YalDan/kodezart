@@ -10,9 +10,10 @@ from kodezart.core.protocols import (
     OutboundContentGate,
     RepoCache,
 )
+from kodezart.domain.errors import CriterionResolutionError
 from kodezart.services.assertion_drift import AssertionDriftDetector
 from kodezart.services.audit_sources import AuditSourceReader
-from kodezart.services.criterion_sources import resolve_criterion
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.lane_records import LaneRecordReader
@@ -30,6 +31,15 @@ class CommentInput:
 class CriterionInput:
     async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
         return ()
+
+
+class ResolverInput:
+    async def resolve_criterion(
+        self, *, issue_key: str, criterion_key: str
+    ) -> TrackerIssue:
+        raise CriterionResolutionError(
+            issue_key=issue_key, criterion_key=criterion_key, reason="no family here"
+        )
 
 
 class DocumentInput:
@@ -56,7 +66,7 @@ async def compose(
     EscalationRecordReader(tracker=comments, operation=operation)
     rulings = RulingRecordReader(tracker=comments, operation=operation)
     sources = AuditSourceReader(
-        tracker=criteria,
+        resolver=ResolverInput(),
         records=records,
         git=git,
         source=source,
@@ -67,7 +77,9 @@ async def compose(
     RecordedAssertionDriftDetector(
         tracker=criteria, sources=sources, rulings=rulings, detector=detector
     )
-    AuditForgeVerifier(tracker=criteria, ci=None, operation=operation, config=config)
+    AuditForgeVerifier(
+        resolver=ResolverInput(), ci=None, operation=operation, config=config
+    )
     FireContextAssembler(
         tracker=DocumentInput(),
         gate=gate,
@@ -75,4 +87,6 @@ async def compose(
         max_bytes=64,
         fetch_timeout_seconds=1,
     )
-    await resolve_criterion(tracker=criteria, issue_key="owner", criterion_key="child")
+    await NativeCriterionResolver(tracker=criteria).resolve_criterion(
+        issue_key="owner", criterion_key="child"
+    )

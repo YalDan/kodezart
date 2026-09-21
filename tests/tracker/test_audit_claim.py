@@ -12,6 +12,7 @@ from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import NoStructuredOutputError
 from kodezart.domain.errors import AuditClaimReadError, InvalidFireCriterionError
 from kodezart.domain.lane_record import render_lane_record
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, ResultEvent
 from kodezart.types.domain.audit import (
@@ -113,7 +114,7 @@ async def setup(tracker):
 
     def build(set_name=V5_SET, *, remote="configured-remote"):
         return AuditClaimVerifier(
-            tracker=tracker,
+            resolver=NativeCriterionResolver(tracker=tracker),
             records=LaneRecordReader(tracker=tracker, operation=OPERATION),
             cache=cache,
             git=git,
@@ -371,7 +372,7 @@ async def test_actual_agent_service_forwards_fresh_dispatch_and_detached_workspa
         executor=executor, workspace=workspace, git_base_url="https://forge.invalid"
     )
     verifier = AuditClaimVerifier(
-        tracker=tracker,
+        resolver=NativeCriterionResolver(tracker=tracker),
         records=LaneRecordReader(tracker=tracker, operation=OPERATION),
         cache=cache,
         git=git,

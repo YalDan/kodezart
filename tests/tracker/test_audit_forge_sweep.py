@@ -8,6 +8,7 @@ from kodezart.chains.audit_forge import AuditForgeVerifier
 from kodezart.config.app import AppConfig
 from kodezart.domain.errors import AgentSDKError, AuditClaimReadError
 from kodezart.domain.lane_record import parse_lane_record, render_lane_record
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import AuditVerdict
@@ -33,7 +34,7 @@ def selected_operation(operation, case="green"):
 
 def verifier(tracker, operation, ci):
     return AuditForgeVerifier(
-        tracker=tracker,
+        resolver=NativeCriterionResolver(tracker=tracker),
         ci=ci,
         operation=operation,
         config=AppConfig(_env_file=None, delivery_red_rerun_max_attempts=1),

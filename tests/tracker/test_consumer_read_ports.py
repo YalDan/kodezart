@@ -20,7 +20,7 @@ from kodezart.domain.errors import (
     LaneRecordReadError,
     RulingRecordReadError,
 )
-from kodezart.services.criterion_sources import resolve_criterion
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.lane_records import LaneRecordReader
@@ -149,14 +149,14 @@ async def test_criterion_only_reader_observes_native_edits_and_preserves_source(
     tracker: TrackerPort, tracker_writes
 ):
     criteria = CriteriaOnly(tracker)
-    first = await resolve_criterion(
-        tracker=criteria, issue_key=APPROVED_ISSUE, criterion_key=CRITERION
+    first = await NativeCriterionResolver(tracker=criteria).resolve_criterion(
+        issue_key=APPROVED_ISSUE, criterion_key=CRITERION
     )
     assert first.body.endswith("unchanged bytes λ\n")
     await tracker.update_issue(issue_key=CRITERION, body="**Check:** Changed source.\n")
     before = tracker_writes()
-    second = await resolve_criterion(
-        tracker=criteria, issue_key=APPROVED_ISSUE, criterion_key=CRITERION
+    second = await NativeCriterionResolver(tracker=criteria).resolve_criterion(
+        issue_key=APPROVED_ISSUE, criterion_key=CRITERION
     )
     assert second.body == "**Check:** Changed source.\n" and first != second
     assert tracker_writes() == before
@@ -180,10 +180,8 @@ async def test_criterion_only_reader_does_not_turn_refusal_into_absence(
     with pytest.raises(
         asyncio.CancelledError if kind == "cancelled" else CriterionResolutionError
     ) as caught:
-        await resolve_criterion(
-            tracker=CriteriaOnly(tracker),
-            issue_key=APPROVED_ISSUE,
-            criterion_key=CRITERION,
+        await NativeCriterionResolver(tracker=CriteriaOnly(tracker)).resolve_criterion(
+            issue_key=APPROVED_ISSUE, criterion_key=CRITERION
         )
     if kind == "cancelled":
         assert caught.value is failure

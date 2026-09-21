@@ -18,6 +18,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.rulings import render_ruling
 from kodezart.services.assertion_drift import AssertionDriftDetector
 from kodezart.services.audit_sources import AuditSourceReader
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.recorded_assertion_drift import (
     PROTECTION_LAPSED,
@@ -92,7 +93,7 @@ async def native(claim_setup, tracker, repo, tmp_path):
         return RecordedAssertionDriftDetector(
             tracker=port,
             sources=AuditSourceReader(
-                tracker=port,
+                resolver=NativeCriterionResolver(tracker=port),
                 records=LaneRecordReader(tracker=port, operation=OPERATION),
                 git=native_git,
                 source=git_source,

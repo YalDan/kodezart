@@ -5,6 +5,11 @@ becomes. It makes no judgement of its own: the state is the result's own
 pass, the sha is the commit the workspace was graded at, and the Evidence
 pointer names the session and the iteration that produced the verdict
 rather than repeating the evaluator's prose, which nothing reads back.
+
+The stale-write precondition below compares the addressed issue's own Check
+body with the criterion's text. That is not a lookup: the caller arrived
+holding the target's key, and a comparison that confirms a target is not one
+that finds one. Nothing here locates a criterion by prose or by checkbox.
 """
 
 from collections.abc import Mapping, Sequence

@@ -6,13 +6,12 @@ from typing import assert_never
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     CIMonitor,
-    TrackerCriteriaReader,
+    CriterionResolver,
 )
 from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES, parse_audit_evidence
 from kodezart.services.check_classification import classify_red_checks
-from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
 from kodezart.types.domain.check_observation import (
@@ -39,12 +38,12 @@ class AuditForgeVerifier:
     def __init__(
         self,
         *,
-        tracker: TrackerCriteriaReader,
+        resolver: CriterionResolver,
         ci: CIMonitor | None,
         operation: OperationConfig,
         config: AppConfig,
     ) -> None:
-        self._tracker = tracker
+        self._resolver = resolver
         self._ci = ci
         self._operation = operation
         self._config = config
@@ -62,8 +61,7 @@ class AuditForgeVerifier:
 
     async def observe(self, request: AuditForgeRequest) -> AuditForgeObservation:
         try:
-            criterion = await resolve_criterion(
-                tracker=self._tracker,
+            criterion = await self._resolver.resolve_criterion(
                 issue_key=request.lane_issue_key,
                 criterion_key=request.criterion_key,
             )
@@ -75,8 +73,7 @@ class AuditForgeVerifier:
             observed = await asyncio.create_task(
                 self._forge(request=request, criterion=criterion, evidence=evidence)
             )
-            if criterion != await resolve_criterion(
-                tracker=self._tracker,
+            if criterion != await self._resolver.resolve_criterion(
                 issue_key=request.lane_issue_key,
                 criterion_key=request.criterion_key,
             ):
