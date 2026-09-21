@@ -42,13 +42,16 @@ from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import (
     DIRECT_DONE,
     DIRECT_OWED,
+    DIRECT_OWED_TOO,
     NATIVE_SESSION,
+    NESTED_OWED,
     OWED_KEYS,
     STAGE_KEY,
     SUBJECT,
     TRUNK_SHA,
     NativeExecutor,
     board,
+    check_of,
     criterion_body,
     engine,
     native_evaluation,
@@ -114,6 +117,7 @@ class Lane:
         max_iterations=1,
         lane_operation=None,
         port=None,
+        repo=None,
         publishes=None,
         work_base_ref="main",
         resumed_head_sha=None,
@@ -125,7 +129,10 @@ class Lane:
         self.work_base_ref = work_base_ref
         self.resumed_head_sha = resumed_head_sha
         self.repo_url = repo_url
-        self.repo = LaneRepo(branch=BRANCH)
+        # A second run over a repository a first run left behind continues
+        # that repository's commits, the way a resumed lane continues the
+        # branch it pushed rather than starting one of its own.
+        self.repo = LaneRepo(branch=BRANCH) if repo is None else repo
         self.git = LaneGit(self.repo)
         self.port = tracker() if port is None else port
         self.criteria = CountingCriteria(tracker=self.port)
@@ -607,6 +614,10 @@ def graded(passed, keys=OWED_KEYS) -> dict:
     return criteria_echo(keys=keys, passed=passed)
 
 
+#: What is still Todo once the first iteration below crossed one criterion off.
+REMAINING = (DIRECT_OWED_TOO, NESTED_OWED)
+
+
 def closure(port) -> SubtreeClosure:
     """The rollup a walker reads a subject's finished state from."""
     return SubtreeClosure(facts=dict(port.issues), ref=SCOPE_OF_SUBJECT)
@@ -623,6 +634,76 @@ def completed(port) -> set[str]:
 def states(port) -> dict[str, WorkflowStateKind]:
     """Every issue on the board by the state a cross-off could move it to."""
     return {key: issue.state_kind for key, issue in port.issues.items()}
+
+
+async def test_a_fire_killed_between_iterations_resumes_on_criteria_still_todo_alone():
+    """The second run owes exactly what the board says is still Todo (KOD-400).
+
+    Run one is killed at the first session of its second iteration, after
+    the first iteration's cross-off landed and its commit was pushed.
+    Nothing of it survives but the board and the repository.  Run two is a
+    fresh engine over both, continuing the loop branch at the pushed head.
+    Its dispatched roster is the Todo set and nothing else, it opens one
+    session, and the criterion run one finished carries run one's grading,
+    byte for byte, when run two is over.
+    """
+    first = Lane(
+        evaluations=[graded({DIRECT_OWED}), graded(OWED_KEYS)], max_iterations=2
+    )
+    port, repo = first.port, first.repo
+
+    def die(execution: int) -> None:
+        if execution == 2:
+            raise ConnectionResetError("the lane was killed between iterations")
+
+    first.executor.on_execution = die
+    with pytest.raises(ConnectionResetError):
+        await first.run()
+
+    assert completed(port) == {DIRECT_OWED}
+    assert repo.pushed == repo.head
+    commits_at_kill = len(repo.shas)
+    evidence_at_kill = port.issues[DIRECT_OWED].body
+    assert parse_criterion_evidence(evidence_at_kill).test == evaluation_observation(
+        session_id=NATIVE_SESSION, iteration=1
+    )
+    moves, edits = written(port)
+    del first
+
+    second = Lane(
+        evaluations=[graded(set(REMAINING), keys=REMAINING)],
+        port=port,
+        repo=repo,
+        work_base_ref=BRANCH,
+        resumed_head_sha=repo.pushed,
+    )
+    dispatched = (await second.arguments())["acceptance_criteria"]
+    assert {criterion.id for criterion in dispatched} == set(REMAINING)
+    assert len(dispatched) == len(REMAINING)
+
+    events = await second.run()
+
+    assert len(second.executor.execution_prompts) == 1
+    assert len(second.executor.evaluation_prompts) == 1
+    for prompt in (
+        *second.executor.execution_prompts,
+        *second.executor.evaluation_prompts,
+    ):
+        assert check_of(DIRECT_OWED) not in prompt
+        assert all(check_of(key) in prompt for key in REMAINING)
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert {r.criterion_id for r in iterations[0].evaluation.criteria_results} == set(
+        REMAINING
+    )
+    assert completed(port) == set(OWED_KEYS)
+    assert closure(port).is_closed(SUBJECT)
+    # Not re-graded and not re-stamped: the row run one wrote is the row
+    # standing, and nothing addressed to that criterion was written after.
+    assert port.issues[DIRECT_OWED].body == evidence_at_kill
+    assert DIRECT_OWED not in {key for key, *_ in port.workflow_writes[moves:]}
+    assert DIRECT_OWED not in {key for key, *_ in port.issue_writes[edits:]}
+    assert len(repo.shas) == commits_at_kill + 1
+    assert (await second.record()).branch == BRANCH
 
 
 async def test_cross_offs_appear_on_the_tracker_between_iterations():
