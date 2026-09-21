@@ -221,6 +221,47 @@ async def test_an_authorized_edit_writes_the_description_alone_and_keeps_the_tit
     assert board.server.issues[KEY].status == "Done"
 
 
+@pytest.mark.parametrize(
+    "expected",
+    [
+        pytest.param(BODY, id="identical"),
+        pytest.param(
+            "**Check:** the cleared prior\n\n**Do:** old guidance\n\n**Evidence:**\n",
+            id="already_present",
+        ),
+    ],
+)
+async def test_an_authorized_replay_of_the_same_bytes_is_unchanged_and_sends_no_write(
+    expected,
+):
+    """The authorized no-op is a no-op at the board, not a second identical write.
+
+    Both arms of the replacement's no-op are here: the request that asks for
+    the bytes it names, and the request whose bytes the row already carries
+    after an earlier round landed them. Either one returning EDITED would send
+    a second edit of bytes already on the board.
+    """
+    board, tracker = board_and_tracker()
+
+    async with lease(tracker):
+        result = await tracker.edit_description(
+            target=KEY,
+            expected=expected,
+            replacement=BODY,
+            authorization=DescriptionWriteAuthority(
+                holder=HOLDER,
+                surface=WritableSurface(
+                    kind=SurfaceKind.CRITERION_SUB_ISSUE,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=KEY),
+                ),
+            ),
+        )
+
+    assert result is DescriptionEditResult.UNCHANGED
+    assert not any(name == "save_issue" for name, _ in board.calls)
+    assert board.server.issues[KEY].description == BODY
+
+
 async def test_description_authority_target_mismatch_refuses_before_any_backend_call():
     board, tracker = board_and_tracker()
     before = list(board.calls)
