@@ -1,5 +1,6 @@
 """Pure readings of one scope reading, and the body its report renders to."""
 
+from kodezart.types.domain.gating import IdentifierRoster, TrackerAggregate
 from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 
@@ -64,3 +65,19 @@ def render_scope_status(event: ScopeTerminalEvent) -> str:
         )
         lines.append(f"- [{mark}] {lane.issue} \u2014 {branch} \u2014 {delivery}")
     return "\n".join(lines)
+
+
+def scope_status_aggregates(event: ScopeTerminalEvent) -> tuple[TrackerAggregate, ...]:
+    """The tracker values the report renders: one roster, the lane issue keys.
+
+    Built from the same vector :func:`render_scope_status` renders, so the
+    values the gate classifies and the lines a reader sees cannot disagree,
+    and the identities are counted where the writer holds them rather than
+    read back out of the body.  No count is declared: the body carries no
+    count in digits.
+    """
+    return (
+        IdentifierRoster(
+            field="lanes.issue", identities=tuple(lane.issue for lane in event.lanes)
+        ),
+    )
