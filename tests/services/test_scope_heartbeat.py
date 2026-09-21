@@ -351,14 +351,26 @@ async def test_the_tick_answers_ran_only_when_it_started_something(
 
 
 def standing_operation(*, scopes: bool) -> OperationConfig:
-    """The declared operation, with or without its standing-scope rows."""
+    """The declared operation, with or without its standing-scope rows.
+
+    Two rows, both bound to the one fixture repository, as the hand-built
+    cases above are: a builder handing the pass a prefix of the declared
+    rows leaves the second scope out of the report and off the queue, which
+    one row cannot tell apart from the whole roster.
+
+    That repository's trunk is declared away from the default name so the
+    submitted base is pinned against what the operation declares rather
+    than against the name a builder could spell for itself.
+    """
     fields = declared_operation().model_dump()
+    fields["repos"][0]["trunk"] = TRUNK
     fields["organize_scopes"] = (
         [
             {
-                "scope": FIRST.model_dump(mode="json"),
+                "scope": ref.model_dump(mode="json"),
                 "repo_url": fields["repos"][0]["url"],
             }
+            for ref in (FIRST, SECOND)
         ]
         if scopes
         else []
@@ -418,20 +430,23 @@ async def test_a_declared_row_without_a_tracker_refuses() -> None:
         built(standing_operation(scopes=True), tracker=None)
 
 
-async def test_the_built_heartbeat_submits_the_declared_row_on_the_dispatch_lane() -> (
-    None
-):
-    """The composed pass, ticked: configuration reaches the submission.
+async def test_the_built_heartbeat_submits_every_declared_standing_scope() -> None:
+    """The composed pass, ticked: configuration reaches the submissions.
 
-    The lane and the trunk are read off the configuration and the operation
-    rather than spelled here, so a builder wiring either of them from
-    somewhere else fails against the source it was supposed to use.
+    Both declared rows, so a builder handing the pass anything short of the
+    whole roster reports one scope and queues one job. The lane and the
+    trunk are read off the configuration and the operation rather than
+    spelled here, so a builder wiring either of them from somewhere else
+    fails against the source it was supposed to use.
     """
     operation = standing_operation(scopes=True)
     repo = operation.repos[0]
+    # The declared trunk carries the name a builder cannot guess: a base
+    # spelled as the default would agree with this assertion otherwise.
+    assert repo.trunk != "main"
     port = FakeTrackerPort(
         scope_containers=containers(),
-        scope_label_members={FIRST: APPROVED},
+        scope_label_members={FIRST: APPROVED, SECOND: APPROVED},
     )
     untouched = handed_over(port)
     queue = FakeJobQueue()
@@ -447,9 +462,13 @@ async def test_the_built_heartbeat_submits_the_declared_row_on_the_dispatch_lane
 
     report = await beat.tick()
 
-    assert outcomes(report) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
-    ((lane, request),) = queue.submissions
-    assert lane == config.dispatch_lane
-    assert request.repo_url == repo.url
-    assert request.base_spec == trunk_base(repo.trunk)
+    assert outcomes(report) == [
+        (FIRST, HeartbeatOutcome.SUBMITTED),
+        (SECOND, HeartbeatOutcome.SUBMITTED),
+    ]
+    assert [lane for lane, _ in queue.submissions] == [config.dispatch_lane] * 2
+    requests = [request for _, request in queue.submissions]
+    assert [request.scope for request in requests] == [FIRST, SECOND]
+    assert [request.repo_url for request in requests] == [repo.url] * 2
+    assert [request.base_spec for request in requests] == [trunk_base(repo.trunk)] * 2
     assert untouched()
