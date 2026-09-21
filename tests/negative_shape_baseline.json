@@ -73,6 +73,7 @@
   "tests/chains/test_native_artifact_readback.py": 9,
   "tests/chains/test_native_delivery.py": 45,
   "tests/chains/test_native_fire.py": 156,
+  "tests/chains/test_native_fire_surface.py": 11,
   "tests/chains/test_native_fresh_boundaries.py": 22,
   "tests/chains/test_native_parent_resume.py": 69,
   "tests/chains/test_native_port_failures.py": 2,
@@ -363,7 +364,7 @@
   "tests/test_mandate_dispatch_sites.py": 9,
   "tests/test_organize_portability.py": 14,
   "tests/test_release.py": 4,
-  "tests/test_suppression_baseline.py": 24,
+  "tests/test_suppression_baseline.py": 32,
   "tests/tools/test_scratch_scope.py": 60,
   "tests/tracker/test_alarm_independent.py": 4,
   "tests/tracker/test_artifact_native_fields.py": 9,
@@ -1523,6 +1524,15 @@
    "test_only_a_lane_entered_to_deliver_is_prepared_already_accepted",
    "test_the_step_before_the_loop_routes_a_delivering_lane_past_it",
    "test_a_delivering_lane_reads_its_finished_roster_once_and_then_holds_it"
+  ],
+  "tests/chains/test_native_fire_surface.py": [
+   "test_every_lane_module_is_walked_and_recorded",
+   "test_every_test_import_the_lane_reaches_resolves_inside_the_census",
+   "test_the_lane_reaches_the_shared_fakes_and_more_than_itself",
+   "test_nothing_the_lane_reaches_carries_a_gated_mark",
+   "test_the_suite_reads_no_deployment_file",
+   "test_the_walk_follows_an_import_made_inside_a_function",
+   "test_the_walk_reaches_a_module_that_declares_itself_gated"
   ],
   "tests/chains/test_native_fresh_boundaries.py": [
    "test_native_checkpoint_effect_requires_unchanged_judgment_snapshot",
@@ -5017,7 +5027,11 @@
    "test_the_tree_carries_exactly_the_suppressions_the_baseline_names",
    "test_no_shipped_module_suppresses_the_type_checker_or_the_linter",
    "test_a_suppression_inside_a_string_is_not_counted_as_one",
+   "test_each_directive_form_is_read_from_a_comment",
    "test_the_tree_carries_exactly_the_skip_forms_the_baseline_names",
+   "test_the_tree_carries_exactly_the_gated_marks_the_baseline_names",
+   "test_the_gate_deselects_exactly_the_markers_the_project_declares",
+   "test_a_mark_inside_a_docstring_is_not_a_site",
    "test_the_resolver_sees_each_form_through_each_alias_shape",
    "test_every_form_is_controlled",
    "test_a_recorded_test_declaration_never_vanishes",
@@ -5028,7 +5042,8 @@
    "test_the_comparison_reports_a_vanished_name_a_missing_row_and_nothing_else",
    "test_the_comparison_reports_a_shortfall_and_not_a_surplus",
    "test_the_gate_configuration_is_the_pinned_literal",
-   "test_the_configuration_scan_sees_a_new_per_file_row"
+   "test_the_configuration_scan_sees_a_new_per_file_row",
+   "test_the_project_file_is_the_only_tool_configuration"
   ],
   "tests/tools/test_scratch_scope.py": [
    "test_build_writes_three_lanes_with_their_criteria_and_one_blocker_edge",
