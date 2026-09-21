@@ -20,7 +20,12 @@ from kodezart.services.native_amendments import (
     NATIVE_WRITING_STAGES,
     NativeAmendments,
 )
-from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent, Ruling
+from kodezart.types.domain.agent import (
+    NativeAmendmentEvent,
+    ResultEvent,
+    Ruling,
+    RulingProtectedTestRef,
+)
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
 from kodezart.types.domain.gating import (
@@ -60,6 +65,29 @@ UNVERIFIABLE_HERE = {
     "smallest_repair": "environment_supply",
     "missing_resource": "network access for the demonstration",
 }
+#: A designated protected test and the weakening edit a writer proposes to it.
+PROTECTED_PATH = "tests/test_pinned_boundary.py"
+PROTECTED_NAME = "test_the_boundary_holds"
+PROTECTED_BODY = "def test_the_boundary_holds():\n    assert answer() == 42\n"
+WEAKENED_BODY = "def test_the_boundary_holds():\n    assert answer() is not None\n"
+
+
+def pinned_designation(*, issue_ref):
+    """A record on *issue_ref* designating the one protected test above.
+
+    The designation's owner is the record's own minted identity, which is what
+    the record's validator requires, and the identity differs per issue, so two
+    of these are two records claiming one address.
+    """
+    data = ruling_data(issue_ref=issue_ref)
+    data["protected_tests"] = (
+        RulingProtectedTestRef(
+            source_ref=data["ruling_id"],
+            path=PROTECTED_PATH,
+            qualified_name=PROTECTED_NAME,
+        ),
+    )
+    return Ruling.model_validate(data)
 
 
 async def git(cwd, *args):
@@ -649,6 +677,42 @@ async def test_an_unreadable_registry_is_refused_before_the_writer_session(
     monkeypatch.setattr(port, "list_comments", unavailable)
     try:
         with pytest.raises(NativeWriteRefusalError, match="registry is unreadable"):
+            await drive(service, guard, repository)
+        assert executor.calls == []
+        assert (
+            await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
+            == ""
+        )
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_roster_designating_one_test_twice_is_refused_before_the_writer_session(
+    repository,
+):
+    """One designated address must resolve to exactly one claimable record.
+
+    Each record's own validator forbids a repeated address inside itself; two
+    records claiming one address is the case nothing caught, and a change to that
+    test would then have no single addressee. The read that composes the roster
+    refuses it, so no session is started and no branch is published.
+    """
+    port = tracker()
+    for issue_key in (SUBJECT, DIRECT_OWED):
+        await port.post_comment(
+            issue_key=issue_key,
+            body=render_ruling(
+                ruling=pinned_designation(issue_ref=issue_key),
+                lane_key=SUBJECT,
+                marker_prefixes={"ruling": "fixture-pinned"},
+            ),
+        )
+    executor = Executor(claim=False)
+    service, guard, workspace, _ = await build(repository, executor, port=port)
+    try:
+        with pytest.raises(
+            NativeWriteRefusalError, match="designates one protected test twice"
+        ):
             await drive(service, guard, repository)
         assert executor.calls == []
         assert (

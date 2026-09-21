@@ -7,21 +7,27 @@ import pytest
 
 from kodezart.domain.amendment import AmendmentWriteBackRefusalError
 from kodezart.domain.fire_spec import criterion_field_bodies
+from kodezart.domain.rulings import render_ruling
 from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.amendment_write import AmendmentRecord
 from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
-from tests.chains.test_native_fire import DIRECT_DONE, DIRECT_OWED, tracker
+from tests.chains.test_native_fire import DIRECT_DONE, DIRECT_OWED, SUBJECT, tracker
 from tests.services.test_native_amendments import (
     AMENDED_CHECK,
+    PROTECTED_BODY,
+    PROTECTED_NAME,
+    PROTECTED_PATH,
     UNVERIFIABLE_HERE,
+    WEAKENED_BODY,
     Executor,
     build,
     cleanup,
     drive,
     git,
+    pinned_designation,
     repository,
 )
 
@@ -637,5 +643,92 @@ async def test_amendment_refuses_external_authority_drift_across_fresh_sessions(
         )
         if boundary == "author":
             assert "the amended observable Check" not in port.issues[DIRECT_OWED].body
+    finally:
+        await cleanup(workspace)
+
+
+async def test_designated_protected_test_change_is_upheld_and_never_reaches_the_branch(
+    repository,
+):
+    """A weakening edit to a designated protected test is claimed, not committed.
+
+    The claim's subject is the pinned record that designates the test, addressed
+    by that record's own identity — no subject kind of its own is involved. The
+    writer really performs the edit in its own workspace, and on the default
+    upheld arm the test's bytes on the loop branch are the same object as before
+    the run, the branch head is unmoved, nothing is pushed, and the refusal is
+    recorded against the record's own marker-comment surface, which still carries
+    the designation.
+    """
+    port = tracker()
+    pinned = pinned_designation(issue_ref=SUBJECT)
+    body = render_ruling(
+        ruling=pinned,
+        lane_key=SUBJECT,
+        marker_prefixes={"ruling": "fixture-pinned"},
+    )
+    await port.post_comment(issue_key=SUBJECT, body=body)
+    repo = repository[0]
+    designated = Path(repo, PROTECTED_PATH)
+    designated.parent.mkdir(parents=True, exist_ok=True)
+    designated.write_text(PROTECTED_BODY)
+    await git(repo, "add", ".")
+    await git(repo, "commit", "-m", "the designated boundary test")
+    tip = await git(repo, "rev-parse", "main")
+    # The blob id is the byte-exact handle; reading the file back through a
+    # command would strip trailing bytes.
+    blob = await git(repo, "rev-parse", f"main:{PROTECTED_PATH}")
+    weakened = []
+
+    async def weaken(title, payload, kwargs):
+        if title != "NativeWriterOutput":
+            return
+        target = Path(kwargs["cwd"], PROTECTED_PATH)
+        assert target.read_text() == PROTECTED_BODY
+        target.write_text(WEAKENED_BODY)
+        weakened.append(target.read_text())
+        payload["claims"][0]["departure"] = (
+            "Weaken the designated boundary test's assertion."
+        )
+
+    executor = Executor(
+        subject={"kind": "ruling", "id": pinned.ruling_id}, mutate=weaken
+    )
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        refusal = report.upheld[0]
+        assert refusal.subject.kind == "ruling"
+        assert refusal.subject.id == pinned.ruling_id
+        assert refusal.reason is UpheldReason.GROUND_NOT_REPRODUCED
+        assert len(report.verdicts) == 1
+        # The edit really existed in the writer's session.
+        assert weakened == [WEAKENED_BODY]
+        # And it reached no branch: the same object id for the designated test,
+        # the same branch head, and no remote branch at all.
+        assert await git(repo, "rev-parse", f"native-test:{PROTECTED_PATH}") == blob
+        assert await git(repo, "rev-parse", "native-test") == tip
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
+        assert not any(isinstance(e, ResultEvent) for e in events)
+        assert refusal.publication.kind == "recorded"
+        archived = AmendmentRecord.model_validate_json(
+            refusal.publication.record.artifact.content.partition("\n")[2]
+        )
+        assert archived.disposition == "accepted_and_not_actioned"
+        # The prior bytes of the record's own surface, designation included.
+        assert PROTECTED_PATH in archived.prior.content
+        assert PROTECTED_NAME in archived.prior.content
+        assert port.comments[0].body == body
+        assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
+            "NativeWriterOutput",
+            "AmendmentJudgment",
+            "WriteBackFinding",
+        ]
+        # The designation and the convention that addresses it reached both
+        # sessions that read the roster.
+        assert PROTECTED_PATH in executor.calls[0]["prompt"]
+        assert PROTECTED_PATH in executor.calls[1]["prompt"]
+        assert "designates it" in executor.calls[0]["prompt"]
     finally:
         await cleanup(workspace)

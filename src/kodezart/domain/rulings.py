@@ -1,6 +1,7 @@
 """The configured comment representation of a pinned fire-time ruling."""
 
 import json
+from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 
 from pydantic import ValidationError
@@ -80,6 +81,23 @@ def owed_rulings(
 def pinned_registry(rulings: Sequence[Ruling]) -> str:
     """The text a session is shown for the answers already pinned."""
     return "\n".join(ruling.model_dump_json() for ruling in rulings) or EMPTY_REGISTRY
+
+
+def repeated_designations(records: Sequence[Ruling]) -> tuple[tuple[str, str], ...]:
+    """Designated-test addresses more than one pinned record claims, in order.
+
+    Arithmetic, not judgement. A change to a designated protected test is
+    claimed against the pinned record that designates it, so each address must
+    resolve to exactly one claimable identity. Within one record the record's
+    own validator already forbids a repeated address; across records nothing
+    does, and an address two records claim has no single addressee.
+    """
+    counts: Counter[tuple[str, str]] = Counter(
+        (reference.path, reference.qualified_name)
+        for record in records
+        for reference in record.protected_tests or ()
+    )
+    return tuple(sorted(address for address, count in counts.items() if count >= 2))
 
 
 def ruling_marker(

@@ -44,6 +44,13 @@ CASE_JUDGE: dict[str, str] = {
     "base_sha": "a" * 40,
 }
 
+#: The exact clause every shipped writer contract must state, whitespace-normalized
+#: because the member wraps its own lines.
+DESIGNATION_CLAUSE = (
+    "A change to a designated protected test is itself such a departure, "
+    "addressed to the pinned record that designates it."
+)
+
 #: Per role: how the rendered block delimits its value, then every tag the member
 #: carries paired with the bound name rendered inside it, in the member's own
 #: order, and the case that binds them. The bound set and the tag census are
@@ -79,6 +86,24 @@ def test_each_role_is_a_data_file_in_every_shipped_set() -> None:
             assert (root / name / member).is_file(), f"{name} supplies no {member}"
     # And nothing in the prompts package is code that could serve a role.
     assert list(root.parent.rglob("*.py")) == []
+
+
+def test_every_shipped_set_states_the_designated_test_convention() -> None:
+    """Derived over the sets root, so a third set is covered the day it lands.
+
+    The convention the precommit read enforces is also stated to the writer: a
+    change to a designated protected test is a departure addressed to the pinned
+    record that designates it, not a change the writer may simply make.
+    """
+    names = shipped_sets()
+    assert names
+    for name in names:
+        body = (
+            operation_registry(default_set=name)
+            .template_for(PromptKey.NATIVE_WRITER_CONTRACT)
+            .body
+        )
+        assert DESIGNATION_CLAUSE in " ".join(body.split())
 
 
 @pytest.mark.parametrize("default_set", [OPUS_SET, V5_SET])
