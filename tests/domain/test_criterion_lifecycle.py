@@ -733,6 +733,44 @@ def test_an_attribute_the_workspace_does_not_declare_is_named_not_ignored():
 
 
 @pytest.mark.parametrize(
+    ("source", "named"),
+    [
+        pytest.param(
+            spec_shaped_module("workspace.server()"),
+            (f"workspace.server: reaches past the {PORT_TYPE}",),
+            id="method-spelled field",
+        ),
+        pytest.param(
+            spec_shaped_module(
+                "await workspace.native().read_planning_issue(issue_key='k')"
+            ),
+            (
+                "workspace.native().read_planning_issue: "
+                "not a member ModelWorkspace declares",
+                f"workspace.native: reaches past the {PORT_TYPE}",
+            ),
+            id="method-spelled chain",
+        ),
+        pytest.param(
+            spec_shaped_module("await handle.read_criteria(issue_key='k')")
+            + "\n\n@pytest.fixture\n"
+            + "def other(workspace):\n    return workspace.native\n",
+            (f"workspace.native: reaches past the {PORT_TYPE}",),
+            id="non-port fixture",
+        ),
+    ],
+)
+def test_a_handle_taken_outside_the_port_fixture_is_named_as_a_reach(source, named):
+    """A field is a handle where the port fixture takes it, a reach anywhere else.
+
+    The name of the failure is the assertion: a read spelled as a call reaches
+    past the port just as a plain attribute read does, and a chain names the
+    one true line for each of its attributes.
+    """
+    assert port_reaches(source) == named
+
+
+@pytest.mark.parametrize(
     "read",
     [
         "await workspace.seed([])",
