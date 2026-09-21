@@ -470,16 +470,16 @@ def test_the_retired_lane_report_vocabulary_is_gone_from_the_module_it_lived_in(
     The guard above reads this service's source, and the retired states enum
     was never declared here: it was declared in the wire-vector module, so
     re-adding it there passed both that guard and the rest of the suite. Read
-    the wire-vector module's own syntax tree with the same machinery, so a
-    states enum reappearing there under any name, or any class naming itself a
-    report, is what this refuses.
+    the wire-vector module's own syntax tree with the same machinery. The
+    allowlist is what refuses a revival: this module declares those two classes
+    and nothing else, so a states enum reappearing here under any name — or any
+    class naming itself a report — is a class the set equality does not hold.
     """
     declared = defined_classes(inspect.getsource(scope_terminal_types))
 
     assert set(declared) == {"ScopeLaneEntry", "ScopeTerminalEvent"}
     for name, bases in declared.items():
         assert not VOCABULARY_BASES.intersection(bases), f"{name} declares a vocabulary"
-        assert "Report" not in name
 
 
 # ---------------------------------------------------------------------------
