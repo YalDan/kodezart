@@ -91,12 +91,20 @@ def test_a_path_bound_grading_carries_when_nothing_it_exercised_moved(
     ],
 )
 def test_a_path_at_or_beneath_an_exercised_prefix_lapses_the_grading(moved):
+    """Two prefixes are declared, and the one that moved is the second.
+
+    ``one of its prefixes`` is a quantifier over everything the grading
+    exercised, not a reading of the first thing it happens to name. The
+    first prefix here is a directory nothing in the record touched, so a
+    rule consulting only the first would carry a grading whose other
+    prefix moved.
+    """
     assert (
         graded_state(
             graded_sha=GRADED,
             head_sha=HEAD,
             rederivation_class=RederivationClass.expensive,
-            exercised_paths=("src/kodezart/domain",),
+            exercised_paths=("src/kodezart/adapters", "src/kodezart/domain"),
             changeset=digest("docs/architecture.md", moved),
         )
         is GradedState.lapsed
