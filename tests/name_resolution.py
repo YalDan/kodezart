@@ -22,7 +22,13 @@ that needs it imports it from there.
 
 Blind spots, stated once: a tuple-unpacking target binds nothing here, a
 starred argument lands on no parameter, and a string constant is a value,
-never a route to a name.
+never a route to a name.  The receiver offset assumes the receiver fills the
+first parameter, so an unbound method called with an explicit instance —
+``Reader._own_text(reader, spec)`` — hands that instance to the parameter
+after the receiver's own and every later argument lands one place early or on
+nothing.  Only an absolute ``kodezart.`` import names a module of the tree: a
+relative import is neither a route nor a home, so a call to a name it binds
+reaches no definition; no module under the package writes one.
 """
 
 import ast
@@ -426,6 +432,10 @@ def parameters_receiving(
     receiver is a value whose type is not resolved here, so the callee is
     every method of that name in the package and the parameter the receiver
     fills is skipped.
+
+    Only a ``def`` is a definition here, so a value handed to a lambda's
+    parameter — inline, bound by an assignment, or handed as a sort key — and
+    a value bound into a ``functools.partial`` land on no parameter at all.
 
     One call edge, never deeper: a value handed on from the callee is the
     callee's own site to answer for.
