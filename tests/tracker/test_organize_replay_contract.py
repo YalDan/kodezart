@@ -29,6 +29,7 @@ from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.errors import OrganizeWriteRefusalError
 from kodezart.domain.organize import stage_rows
 from kodezart.services.agent_service import AgentService
 from kodezart.services.organize_owner import OrganizeOwner
@@ -36,11 +37,14 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
 from kodezart.types.domain.organize_owner import OrganizeReport
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind
+from kodezart.types.domain.tracker import TrackerIssueRevision
 from tests.chains.test_organize import RecordingWorkspace, result
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeGitService,
     FakeLinearMcpServer,
+    FakeMcpIssue,
     PassThroughGate,
 )
 from tests.prompts.test_organize_mandate_bindings import declared_operation
@@ -48,6 +52,7 @@ from tests.prompts.test_prompt_wiring import load_registry
 from tests.tracker.conftest import (
     APPROVED_ISSUE,
     CLAIMED_ISSUE,
+    FIXTURE_NOW,
     TRACKER_IMPLEMENTATIONS,
     FixtureClock,
     TrackerWorkspace,
@@ -105,6 +110,15 @@ CRITERIA_STAGE_LABEL_KEY = next(
 SCOPE = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
 MEMBERS = (CLAIMED_ISSUE, APPROVED_ISSUE)
 
+#: A third member, for the one case that needs three roles at once: a member
+#: that owes the marker and so opens the round, a labelled member a finding
+#: names, and a labelled member no finding names. Two members cannot state
+#: that case at all — a round is entered only while somebody owes the
+#: marker, so on a two-member board the labelled member nothing refuted
+#: would have nowhere to stand.
+THIRD_MEMBER = "FIX-4"
+WIDENED = (*MEMBERS, THIRD_MEMBER)
+
 #: The project the members belong to, and the container the approved member
 #: is set on. Approval reaches a member through the cascade here, which is
 #: how an operator grants it: per project, not per issue.
@@ -123,6 +137,17 @@ SUFFICIENT_BODY = "Sufficient body grounded in the declared source."
 #: label, and a roster that read it as one would treat a member nothing has
 #: admitted as already done.
 PROVENANCE_FOOTER = "\n\n---\norganized by kodezart"
+#: A body a member's admission answers is a specification gap, so the owner
+#: asks its author for a new one. Any body the double is told to refuse
+#: would do; it is spelled as prose rather than as a flag because what the
+#: session reads is the body itself.
+SHORT_BODY = "A body naming no source."
+#: The revision a moved body reads as. The digest is opaque to consumers, so
+#: what makes this a move is only that it is not what the author read.
+MOVED_DIGEST = "the body moved under the run"
+#: The defect class a refutation carries. One of the declared rubric's is not
+#: required by the models, and this is the finding's own word for itself.
+FINDING_CLASS = "unstated-source"
 
 CRITERIA = ("Check prepared bytes",)
 ADMISSION_SCHEMA = "AdmissionJudgment"
@@ -226,6 +251,108 @@ class PortExecutor:
         yield result(structured_output=payload)
 
 
+class RefutingExecutor(PortExecutor):
+    """The port executor, carrying one finding on a named member's FIRST reading.
+
+    A finding is the only thing that puts a member already carrying the stage
+    marker back into the roster, so a case about that disjunct needs a
+    refutation that lands exactly once: on a labelled member the first
+    session naming it IS the dry round's re-verification, because the roster
+    of the round before it held the unlabelled members alone. Every later
+    reading of that member is the ordinary one, so the run converges instead
+    of refuting forever.
+
+    The verdict stays BUILDABLE. What reopens the member is the finding, not
+    a refusal, which is what keeps this case about the roster rather than
+    about the re-author route.
+    """
+
+    def __init__(self, tracker: TrackerPort, *, refutes: str) -> None:
+        super().__init__(tracker)
+        self._refutes = refutes
+        self.refuted = False
+
+    async def stream(self, **kwargs: object):
+        prompt = str(kwargs["prompt"])
+        if (
+            _schema_title(kwargs) == ADMISSION_SCHEMA
+            and f"<issue_key>{self._refutes}</issue_key>" in prompt
+            and not self.refuted
+        ):
+            self.refuted = True
+            self.calls.append(kwargs)
+            issue = await self._tracker.read_issue(issue_key=self._refutes)
+            yield result(
+                structured_output={
+                    "issueId": self._refutes,
+                    "verdict": "buildable",
+                    "evidence": f"Fresh board body checked: {issue.body}",
+                    "findings": [
+                        {
+                            "issueId": self._refutes,
+                            "defectClass": FINDING_CLASS,
+                            "evidence": "The body names no source for its subject.",
+                            "role": "instance",
+                        }
+                    ],
+                }
+            )
+            return
+        async for event in super().stream(**kwargs):
+            yield event
+
+
+class MovingAuthorExecutor(PortExecutor):
+    """Refuses one member's short body, and moves that body as it re-authors it.
+
+    The member's seeded body is the one this double answers is a
+    specification gap, so the owner asks its author for a replacement.
+    Answering that request also moves the member's revision AT THE PORT — so
+    both arms move the same way — which puts the move exactly where the
+    clause is about: after the read the author proposed against and before
+    the write the owner is about to make.
+    """
+
+    def __init__(self, tracker: TrackerPort, *, member: str) -> None:
+        super().__init__(tracker)
+        self._member = member
+        self._read_revision = tracker.read_issue_revision
+        self.moved = False
+        tracker.read_issue_revision = self._revision
+
+    async def _revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        revision = await self._read_revision(issue_key=issue_key)
+        if self.moved and issue_key == self._member:
+            return revision.model_copy(update={"body_digest": MOVED_DIGEST})
+        return revision
+
+    def _names(self, prompt: str) -> bool:
+        return f"<issue_key>{self._member}</issue_key>" in prompt
+
+    async def stream(self, **kwargs: object):
+        prompt = str(kwargs["prompt"])
+        title = _schema_title(kwargs)
+        if title == ADMISSION_SCHEMA and self._names(prompt):
+            issue = await self._tracker.read_issue(issue_key=self._member)
+            if issue.body == SHORT_BODY:
+                self.calls.append(kwargs)
+                yield result(
+                    structured_output={
+                        "issueId": self._member,
+                        "verdict": "not_buildable",
+                        "evidence": "The body names no source for its subject.",
+                        "inventedDecision": "Which source the subject is grounded in.",
+                        "refusalKind": "spec_gap",
+                    }
+                )
+                return
+        async for event in super().stream(**kwargs):
+            yield event
+        if title == PROPOSAL_SCHEMA and CRITERIA_AUTHOR_PROMPT not in prompt:
+            if self._names(prompt):
+                self.moved = True
+
+
 @dataclass
 class ReplayBoard:
     """One implementation, the board behind it, and a fresh owner per ask."""
@@ -234,14 +361,20 @@ class ReplayBoard:
     server: FakeLinearMcpServer
     observed: Callable[[], tuple[object, ...]]
 
-    def owner(self) -> tuple[OrganizeOwner, PortExecutor]:
+    def owner(
+        self, sessions: PortExecutor | None = None
+    ) -> tuple[OrganizeOwner, PortExecutor]:
         """A NEW owner over the same board, through the public constructor.
 
         Each ask builds its own owner and its own session log, so a case
         about what a restarted process reads can hold two owners over one
         board and count the second one's sessions on their own.
+
+        *sessions* is the caller's executor when the case is about what one
+        session's answer does to the next step: the owner is still the
+        composed one, and only the answers differ.
         """
-        sessions = PortExecutor(self.tracker)
+        sessions = PortExecutor(self.tracker) if sessions is None else sessions
         workspace = RecordingWorkspace()
         owner = build_organize_owner(
             config=AppConfig(
@@ -269,9 +402,11 @@ class ReplayBoard:
         )
         return owner, sessions
 
-    async def run(self) -> tuple[OrganizeReport, PortExecutor]:
+    async def run(
+        self, sessions: PortExecutor | None = None
+    ) -> tuple[OrganizeReport, PortExecutor]:
         """One pass of a fresh owner over this board."""
-        owner, sessions = self.owner()
+        owner, sessions = self.owner(sessions)
         return await self.replay(owner), sessions
 
     async def replay(self, owner: OrganizeOwner) -> OrganizeReport:
@@ -298,14 +433,27 @@ def _board(
 ) -> FakeLinearMcpServer:
     """The fixture workspace, widened by exactly what a run stage needs.
 
-    One scope of two members, both groomed and both in the approved
-    project; *bodies* states each member's own body and *marked* the
-    members that already carry both stage markers.
+    One scope of the members *bodies* names, all groomed and all in the
+    approved project; *bodies* states each member's own body and *marked* the
+    members that already carry both stage markers. A member the fixture
+    workspace does not hold is minted here as a child of the addressed issue,
+    on the declared team and in the ordinary unstarted state, so the widened
+    board differs from the narrow one by its membership alone.
     """
     server = fixture_server(clock=clock)
     server.projects[PROJECT.key] = _project_payload([APPROVED_LABEL])
     server.issues[APPROVED_ISSUE].parent_id = CLAIMED_ISSUE
-    for key in MEMBERS:
+    for key in bodies:
+        if key not in server.issues:
+            server.issues[key] = FakeMcpIssue(
+                id=key,
+                title="a further member of the same scope",
+                status="Todo",
+                status_type="unstarted",
+                parent_id=CLAIMED_ISSUE,
+                created_at=FIXTURE_NOW,
+                updated_at=FIXTURE_NOW,
+            )
         native = server.issues[key]
         native.project = PROJECT_NAME
         native.project_id = PROJECT.key
@@ -373,6 +521,138 @@ async def footer_board(
     )
 
 
+@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
+async def short_body_board(
+    request: pytest.FixtureRequest, clock: FixtureClock
+) -> ReplayBoard:
+    """Every implementation, over a board whose addressed member owes a body.
+
+    Nothing is marked, and the addressed member's body is the short one: the
+    stage admits it as a specification gap and asks its author for a new
+    body, which is the only path on which a body edit happens at all.
+    """
+    return await _dialled(
+        request.param,
+        _board(
+            clock,
+            bodies={CLAIMED_ISSUE: SHORT_BODY, APPROVED_ISSUE: SUFFICIENT_BODY},
+        ),
+        clock,
+    )
+
+
+@pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
+async def widened_board(
+    request: pytest.FixtureRequest, clock: FixtureClock
+) -> ReplayBoard:
+    """Every implementation, over the three-member board the roster case needs.
+
+    Two members carry both stage markers and one carries neither. The
+    unmarked member is what opens the round; the two marked ones are what the
+    roster has to tell apart, and only a finding of this run may tell them
+    apart.
+    """
+    return await _dialled(
+        request.param,
+        _board(
+            clock,
+            bodies=dict.fromkeys(WIDENED, SUFFICIENT_BODY),
+            marked=MEMBERS,
+        ),
+        clock,
+    )
+
+
+def label_set_verifications(sessions: PortExecutor) -> list[str]:
+    """The members whose stage marker this run asked a write-back to verify.
+
+    Read off the artifact each write-back session carries rather than
+    counted: the artifact names the surface that was written, so a marker
+    verification is distinguishable from a body one and a member that already
+    carried its marker is visible as a verification nobody owed.
+    """
+    verified: list[str] = []
+    for call in sessions.schemas(WRITE_BACK_SCHEMA):
+        match = re.search(
+            r"<written_artifact>\s*(.*?)\s*</written_artifact>",
+            str(call["prompt"]),
+            re.S,
+        )
+        assert match is not None, "a write-back session carries its artifact"
+        surface = json.loads(match[1])["surface"]
+        if surface["kind"] == SurfaceKind.ISSUE_LABEL_SET.value:
+            verified.append(str(surface["ref"]["key"]))
+    return verified
+
+
+async def test_the_body_edit_asserts_its_revision_before_it_edits(
+    short_body_board: ReplayBoard,
+) -> None:
+    """A body that moved between the author's read and the write is refused.
+
+    The author proposes against the revision it read. The owner re-reads that
+    revision before it writes, so a body somebody else moved in between is a
+    body this proposal was never about: the write refuses by name and the
+    board is left exactly as it was. Without that re-read the proposal lands
+    on top of the other writer's words.
+    """
+    written = len(short_body_board.observed())
+    owner, sessions = short_body_board.owner(
+        MovingAuthorExecutor(short_body_board.tracker, member=CLAIMED_ISSUE)
+    )
+
+    with pytest.raises(OrganizeWriteRefusalError, match="source revision changed"):
+        await short_body_board.replay(owner)
+
+    assert isinstance(sessions, MovingAuthorExecutor)
+    assert sessions.moved, "the author was asked for a body, which is what moved it"
+    assert sessions.named(PROPOSAL_SCHEMA, CLAIMED_ISSUE), (
+        "the refusal is about a proposal that was actually made"
+    )
+    assert len(short_body_board.observed()) == written
+    assert (
+        await short_body_board.tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    ).body == SHORT_BODY
+
+
+async def test_a_labelled_body_is_reworked_only_when_a_finding_names_it(
+    widened_board: ReplayBoard,
+) -> None:
+    """The disjunct that puts a marked member back into the roster, and only it.
+
+    The unmarked member opens the round; the dry round that follows refutes
+    one member that already carries the marker, and the next round works it
+    because a finding of this run names it. The other marked member is named
+    by nothing and is never authored. Neither of them is marked a second
+    time: the marker each already carries is the record of the admission test
+    that set it, so the write-back that verifies a marker is asked for the
+    member that owed one and for nobody else.
+    """
+    report, sessions = await widened_board.run(
+        RefutingExecutor(widened_board.tracker, refutes=APPROVED_ISSUE)
+    )
+
+    assert report.halt is None, report.halt
+    assert [phase.value for phase in report.completed_phases] == [
+        row.spec.kind.value for row in RUN_STAGES
+    ]
+    assert isinstance(sessions, RefutingExecutor)
+    assert sessions.refuted, "the dry round did refute the member this case is about"
+    for key in WIDENED:
+        assert await widened_board.marker_keys(key) == frozenset(STAGE_MARKER_KEYS)
+    # The refuted member is back in the roster and is authored; the marked
+    # member no finding names is not.
+    assert sessions.named(PROPOSAL_SCHEMA, APPROVED_ISSUE), (
+        "a finding of this run reopens the member it names"
+    )
+    assert sessions.named(PROPOSAL_SCHEMA, CLAIMED_ISSUE) == [], (
+        "a marked member nothing refuted is out of the roster"
+    )
+    # And no marker already on the board was verified again: the two members
+    # that carried theirs are absent from what the write-back was asked.
+    assert sorted(set(label_set_verifications(sessions))) == [THIRD_MEMBER]
+
+
 async def test_the_first_pass_labels_every_member_on_every_implementation(
     unlabelled_board: ReplayBoard,
 ) -> None:
@@ -411,6 +691,7 @@ async def test_a_second_pass_over_the_same_board_issues_zero_writes(
 
     settled = len(sessions.calls)
     written = len(unlabelled_board.observed())
+    assert written > 0, "the first pass over an unmarked board writes"
     second = await unlabelled_board.replay(owner)
 
     assert second.halt is None, second.halt
@@ -438,6 +719,7 @@ async def test_a_fresh_owner_reads_every_labelled_member_as_labelled(
     assert first_sessions.calls, "the first pass over an unmarked board opens sessions"
 
     written = len(unlabelled_board.observed())
+    assert written > 0, "the first pass over an unmarked board writes"
     fresh_owner, fresh_sessions = unlabelled_board.owner()
     assert fresh_owner is not first_owner
     second = await unlabelled_board.replay(fresh_owner)

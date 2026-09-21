@@ -38,6 +38,15 @@ REGISTRY_FIXTURES = frozenset({"tracker", "adapter"})
 #: for a conformance case to obtain one.
 BACKEND_BUILDERS = frozenset({"linear_over_fake_mcp", "build_tracker"})
 
+#: The registry itself.  Subscripted by the arm a fixture was parametrised
+#: with it routes a case; subscripted by a NAME it pins the case to one
+#: implementation while every parametrised id keeps collecting, which is the
+#: same silence a hand-built adapter produces and is refused for the same
+#: reason.  A helper that takes the arm and forgets it is the shape this
+#: catches: the ids stay, the arms stop differing, and only one backend is
+#: ever exercised.
+REGISTRY = "TRACKER_IMPLEMENTATIONS"
+
 
 def _fixture_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
     """The ``params`` a ``@pytest.fixture`` decorator states, unparsed."""
@@ -61,6 +70,20 @@ def _is_fixture(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return False
 
 
+def _pinned_arms(node: ast.AST) -> set[str]:
+    """The constant keys *node* subscripts the registry with, if any."""
+    pinned: set[str] = set()
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Subscript):
+            continue
+        source = child.value
+        if not (isinstance(source, ast.Name) and source.id == REGISTRY):
+            continue
+        if isinstance(child.slice, ast.Constant):
+            pinned.add(repr(child.slice.value))
+    return pinned
+
+
 def _called_names(node: ast.AST) -> set[str]:
     called: set[str] = set()
     for child in ast.walk(node):
@@ -80,17 +103,21 @@ def _requested_fixtures(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str
 def test_conformance_modules_build_no_tracker_outside_the_registry() -> None:
     """A hand-built adapter beside these cases cannot come back unnoticed.
 
-    Two things are refused: a fixture that dials a backend itself, and a
-    fixture parametrised over arms it names rather than over the registry.
-    Either one would let a registered adapter go unexercised while the
-    module still collected a full-looking set of ids.  A module that
+    Three things are refused: a fixture that dials a backend itself, a
+    fixture parametrised over arms it names rather than over the registry,
+    and a registry subscript naming one implementation anywhere in the
+    module.  Each one would let a registered adapter go unexercised while
+    the module still collected a full-looking set of ids.  A module that
     reaches no registered implementation at all is refused too, so the
     routing cannot be removed rather than repaired.
     """
     faults: dict[str, list[str]] = {}
     for module in CONFORMANCE_MODULES:
         tree = ast.parse((TRACKER_TESTS / module).read_text(encoding="utf-8"))
-        found: list[str] = []
+        found: list[str] = [
+            f"the registry is subscripted by {arm}"
+            for arm in sorted(_pinned_arms(tree))
+        ]
         routed = False
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
