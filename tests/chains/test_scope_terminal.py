@@ -973,6 +973,8 @@ GIT_PORT_ADAPTERS = "kodezart.adapters.git"
 #: derivation that had gone empty cannot report the same clean result as a
 #: clean surface. This is a floor under the derivation, not the surface that
 #: is scanned: the scanned surface is derived and this set never bounds it.
+#: Its own count is asserted where it is used, because an empty floor holds
+#: under a subset check and would leave a collapsed derivation unreported.
 GIT_PORT_ANCHORS = frozenset(
     {"remote_branch_sha", "current_sha", "tree_of", "worktree_identity"}
 )
@@ -1060,7 +1062,8 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
     so the absence is asserted over the syntax tree.
 
     Non-vacuous in both directions. The name set is held against an anchor per
-    noun, so a derivation gone empty cannot report a clean result; the scanned
+    noun and the anchor set against its own count, so neither a derivation gone
+    empty nor an emptied floor can report a clean result; the scanned
     surface is held against the five modules this claim is about, one of them
     reached only through another, so neither a surface gone empty nor one that
     had stopped following the imports out can either; and the modules that DO
@@ -1068,7 +1071,7 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
     detector cannot.
     """
     names = git_port_names()
-    assert GIT_PORT_ANCHORS <= names, sorted(names)
+    assert len(GIT_PORT_ANCHORS) >= 4 and GIT_PORT_ANCHORS <= names, sorted(names)
     modules = terminal_modules()
     assert {
         TERMINAL_SEED,
