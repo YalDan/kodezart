@@ -11,6 +11,7 @@ import pytest
 import structlog.testing
 
 from kodezart.domain.errors import LaneEntryError
+from kodezart.domain.lane_entry import recorded_branches, recorded_commit
 from kodezart.domain.lane_record import render_lane_record
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
@@ -26,13 +27,27 @@ DELIVERABLE = "kodezart/KOD-684-0a1b2c3d"
 LOOP = f"{DELIVERABLE}-ralph-11112222"
 REMOTE = "fixture-remote"
 RECORDED_HEAD = "a" * 40
+#: The best commit of a run that did not converge: a row after the head field.
+BEST_COMMIT = "b" * 40
 REMOTE_HEAD = "c" * 40
+#: Where the base stands, and where a deliverable branch that has taken
+#: nothing from its loop still stands with it.
+BASE_TIP = "e" * 40
 DIGEST = "d" * 64
 OPEN = ("KOD-684/check",)
 
 
-def record(*, extra: tuple[BranchAssociation, ...] = ()) -> LaneRunState:
-    """This lane's record, as the writer left it after a pushed commit."""
+def record(
+    *,
+    rows: tuple[LaneCommit, ...] | None = None,
+    extra: tuple[BranchAssociation, ...] = (),
+) -> LaneRunState:
+    """This lane's record, as the writer left it after a pushed commit.
+
+    ``rows`` is the commit-act sequence; production writes it ending at the
+    head field, and a case that gives its own is a lane whose record names a
+    commit the head field does not.
+    """
     return LaneRunState(
         lane_key=LANE,
         branch=LOOP,
@@ -41,7 +56,11 @@ def record(*, extra: tuple[BranchAssociation, ...] = ()) -> LaneRunState:
         pushed_head_sha=RECORDED_HEAD,
         commits_ahead=1,
         files_changed=1,
-        commits=[LaneCommit(sha=RECORDED_HEAD, subject="feat: one", issue_id=LANE)],
+        commits=list(
+            rows
+            if rows is not None
+            else (LaneCommit(sha=RECORDED_HEAD, subject="feat: one", issue_id=LANE),)
+        ),
         body_digest=DIGEST,
         associations=[
             BranchAssociation(
@@ -126,6 +145,49 @@ async def test_a_record_level_with_the_remote_says_nothing():
     assert isinstance(entry, ResumedLane)
     assert entry.head_sha == RECORDED_HEAD
     assert [item for item in logs if item["event"] == "lane_record_head_differs"] == []
+
+
+async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
+    """The record is the only source of what this lane committed (KOD-705).
+
+    The run did not converge: its best commit is the last row, which is
+    neither the head field nor the loop tip the remote now holds. Re-entry
+    resolves that commit through the loop level and reports it, while the
+    deliverable branch still stands at its base tip — every fact by sha, none
+    by branch name.
+    """
+    stored = record(
+        rows=(
+            LaneCommit(sha=RECORDED_HEAD, subject="feat: one", issue_id=LANE),
+            LaneCommit(sha=BEST_COMMIT, subject="feat: two", issue_id=LANE),
+        )
+    )
+    port = await board(stored)
+    # The loop tip is a third sha, and the deliverable branch has taken
+    # nothing yet: it is still where its base is.
+    remote_shas: dict[str, str | None] = {
+        LOOP: REMOTE_HEAD,
+        DELIVERABLE: BASE_TIP,
+        BASE: BASE_TIP,
+    }
+    git = FakeGitService(remote_branch_shas=remote_shas)
+
+    with structlog.testing.capture_logs() as logs:
+        entry = await reader(port, git).read(
+            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+        )
+
+    resolved = recorded_commit(record=stored, branches=recorded_branches(record=stored))
+    assert resolved.sha == BEST_COMMIT
+    assert resolved.sha not in (stored.head_sha, REMOTE_HEAD)
+    differs = [item for item in logs if item["event"] == "lane_record_head_differs"]
+    assert len(differs) == 1
+    assert differs[0]["recorded_head"] == BEST_COMMIT
+    assert differs[0]["remote_head"] == REMOTE_HEAD
+    assert remote_shas[DELIVERABLE] == remote_shas[BASE]
+    assert isinstance(entry, ResumedLane)
+    assert entry.head_sha == REMOTE_HEAD
+    assert entry.deliverable_branch != entry.loop_branch
 
 
 async def test_associations_that_settle_nothing_refuse_before_the_remote_read():
