@@ -1940,6 +1940,146 @@ async def test_each_dispatch_of_one_run_carries_the_same_engineering_standard() 
         assert reading in prose(standard)
 
 
+async def test_the_native_evaluation_arm_carries_the_same_engineering_standard() -> (
+    None
+):
+    """The other evaluation arm, which is the one a tracker subject grades on.
+
+    The node dispatches the grade twice over: against a branch when the
+    subject is authored, and into a workspace it owns when the subject is
+    tracker-native. The census above reads the first; this reads the second,
+    so an arm whose policy was mangled cannot hide behind the arm the
+    authored fixture happens to select.
+
+    Only the evaluate node is driven, in a graph of its own, because the
+    execute node ahead of it demands the whole native write path (its source
+    reader, its amendment owner and its lane writer) to reach an arm that is
+    chosen here by the tracker subject alone.
+    """
+    from langgraph.graph import END, START, StateGraph
+
+    from kodezart.core.errors import NoStructuredOutputError
+    from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
+    from kodezart.types.domain.fire_spec import TrackerSpec
+    from kodezart.types.domain.ralph_outcome import PendingRalphOutcome
+    from kodezart.types.domain.workflow import RalphLoopContext, RalphLoopState
+    from tests.chains.test_dispatch_definitions import (
+        RecordingRunner,
+        evaluator_dispatches,
+        v5_provider,
+    )
+    from tests.prompts.test_v5_fragments import ENGINEERING_READINGS, prose
+
+    #: The sha the graded branch and the graded workspace both stand at, so
+    #: the grade is demonstrated and the node takes no undemonstrated path.
+    graded_sha = "a" * 40
+    checks = TrackerCriterionSet(
+        criteria=[TrackerCriterion(id="KOD-884-1", text="Tests pass")],
+    )
+
+    class StandingChecks:
+        """Criteria reader double: the roster does not move under the node."""
+
+        async def read_current(
+            self,
+            *,
+            spec: TrackerSpec,
+            held: TrackerCriterionSet | None = None,
+        ) -> TrackerCriterionSet:
+            """Answer every read with the one roster this drive dispatched."""
+            return checks
+
+    class ResolvedHead:
+        """Git source double: one sha, for the branch and for the workspace."""
+
+        async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+            """The complete sha *ref* names, which is the graded one here."""
+            return graded_sha
+
+    # One registry for both arms: the string the native arm records is
+    # compared with the string the writer was handed, not with the set read
+    # a second time.
+    provider = v5_provider()
+    authored = await evaluator_dispatches(provider)
+    standard = {
+        dispatch.method: dispatch.policy.system_prompt_append
+        for dispatch in authored.dispatches
+    }["stream_workflow"]
+    assert standard is not None
+
+    git = FakeGitService()
+    runner = RecordingRunner()
+    loop = RalphLoop(
+        runner,
+        max_iterations=1,
+        plateau_window=2,
+        git=git,
+        cache=FakeRepoCache(),
+        prompts=provider,
+        skills=SUPPRESS_ALL_SKILLS,
+        retry_max_attempts=1,
+        retry_initial_interval=1.0,
+        fan_in_max_attempts=1,
+        delay_floor_for=no_delay_floor,
+        criteria_reader=StandingChecks(),
+        source=ResolvedHead(),
+        workspace=FakeWorkspaceProvider(git=git),
+    )
+    spec = TrackerSpec(
+        subject="KOD-884",
+        body="fix it",
+        criteria=(),
+        read_at_version="read-once",
+    )
+    context = RalphLoopContext(
+        prompt=spec.body,
+        repo_path="/tmp/native-standard",
+        repo_url=None,
+        cache_key="native-standard",
+        surface_holder="native-standard",
+        base_spec=trunk_base("main"),
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=["Bash"],
+        feature_branch="kodezart/test-12345678",
+        ralph_branch="kodezart/test-12345678-ralph-abcdef01",
+        work_base_ref="main",
+        acceptance_criteria=list(checks.criteria),
+        tracker_spec=spec,
+        repo_visibility=RepoVisibility.UNKNOWN,
+    )
+    graph = StateGraph(RalphLoopState)
+    graph.add_node("evaluate", loop._evaluate_node)
+    graph.add_edge(START, "evaluate")
+    graph.add_edge("evaluate", END)
+
+    # The recording runner answers a workspace dispatch with no result, so
+    # the node raises after it has dispatched — what it CARRIED is the
+    # subject, and the raise is the fixture's silence, not a verdict.
+    with pytest.raises(NoStructuredOutputError):
+        async for _event in graph.compile().astream(
+            {
+                "iteration": 1,
+                "verdict": AcceptVerdict.rejected,
+                "pending_failures": [],
+                "iteration_records": [],
+                "outcome": PendingRalphOutcome(),
+            },
+            config={"configurable": {**context.model_dump(), "thread_id": "native"}},
+            stream_mode="custom",
+        ):
+            pass
+
+    assert [dispatch.method for dispatch in runner.dispatches] == [
+        "stream_in_workspace",
+    ]
+    native = runner.dispatches[0].policy.system_prompt_append
+    assert native == standard
+    assert native is not None
+    assert "hexagonal" in native
+    for reading in ENGINEERING_READINGS:
+        assert reading in prose(native)
+
+
 async def test_a_legacy_run_carries_no_effort_at_any_dispatch() -> None:
     """The mechanism is opt-in per set: the legacy set dispatches as before."""
     from tests.chains.test_dispatch_definitions import (
