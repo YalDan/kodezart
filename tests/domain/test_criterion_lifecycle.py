@@ -910,6 +910,24 @@ def test_qualified_shadow_cannot_make_text_an_identity(declaration):
     )
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["ruling_id", "ruling_ids", "ruling_ref", "ruling_refs", "supersedes"],
+)
+def test_every_ruling_address_name_refuses_a_bare_string_annotation(field):
+    """Each name in the guard's set is a name the guard actually acts on.
+
+    Over real `src/` the entries are indistinguishable from one another: every
+    field is already typed, so removing a name from the set changes nothing
+    observable and a guard entry that does nothing reads exactly like one that
+    works. Fed a crafted record per name, the entry has to report — which is
+    what makes a later untyped field under `types/` a failure rather than a
+    silent pass.
+    """
+    assert invalid_ruling_fields(f"class Record:\n    {field}: str") == (2,)
+    assert invalid_ruling_fields(f"class Record:\n    {field}: RulingId") == ()
+
+
 def test_aliasing_a_local_namespace_preserves_its_untyped_address_refusal():
     assert invalid_ruling_fields(
         "class Types:\n    RulingId = str\n"
