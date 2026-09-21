@@ -21,6 +21,7 @@ from kodezart.domain.lane_record import render_lane_record
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.services.audit_sources import AuditSourceReader
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import DETECTOR_REMOVAL_SCHEMA
 from kodezart.types.domain.audit import AuditClaimRequest, AuditVerdict
@@ -213,7 +214,7 @@ async def build(tracker, tmp_path):
             git_base_url="https://example.invalid",
         )
         sources = AuditSourceReader(
-            tracker=tracker,
+            resolver=NativeCriterionResolver(tracker=tracker),
             records=LaneRecordReader(tracker=tracker, operation=fixtures.OPERATION),
             git=git,
             source=source,

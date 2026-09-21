@@ -758,6 +758,28 @@ class TrackerCriteriaReader(Protocol):
 
 
 @runtime_checkable
+class CriterionResolver(Protocol):
+    """Resolve one criterion identity to its own sub-issue, or refuse.
+
+    The narrow role a consumer that needs ONE criterion depends on. It carries
+    no family read, so a holder cannot search a roster itself; a consumer that
+    genuinely needs the whole family takes ``TrackerCriteriaReader`` instead.
+    """
+
+    async def resolve_criterion(
+        self, *, issue_key: str, criterion_key: str
+    ) -> TrackerIssue:
+        """The one current sub-issue of *issue_key* whose own key is *criterion_key*.
+
+        Membership, identity and full source are one observation against a
+        fresh read. A key that resolves to no current sub-issue, to more than
+        one, or against an unreadable or ambiguous family raises
+        ``CriterionResolutionError``; it never becomes a null answer.
+        """
+        ...
+
+
+@runtime_checkable
 class TrackerContextReader(Protocol):
     """Read the documents referenced by a fire's issue."""
 

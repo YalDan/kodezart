@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from kodezart.chains.audit_forge import AuditForgeVerifier
 from kodezart.config.app import AppConfig
 from kodezart.domain.errors import AuditEvidenceReadError, ForgeAPIError
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
 from kodezart.types.domain.delivery import CheckRedClass
@@ -56,7 +57,7 @@ async def setup(tracker):
 
     def build(ci, *, repository=REPOSITORY, bound=1):
         return AuditForgeVerifier(
-            tracker=tracker,
+            resolver=NativeCriterionResolver(tracker=tracker),
             ci=ci,
             operation=OperationConfig(
                 operation_name="fixture", workspace="fixture", repos=[repository]

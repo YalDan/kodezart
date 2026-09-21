@@ -4,6 +4,7 @@ import json
 
 from kodezart.core.protocols import (
     AgentRunner,
+    CriterionResolver,
     GitService,
     PromptSetProvider,
     RepoCache,
@@ -14,7 +15,6 @@ from kodezart.domain.errors import AuditClaimReadError, CriterionResolutionError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES
 from kodezart.services.audit_sessions import judge_in_workspace
-from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import (
     read_remote_head,
     read_replace_refs,
@@ -61,7 +61,7 @@ class AuditClaimVerifier:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        resolver: CriterionResolver,
         records: LaneRecordReader,
         cache: RepoCache,
         git: GitService,
@@ -71,7 +71,7 @@ class AuditClaimVerifier:
         skills: SkillsSelection,
         remote: str,
     ) -> None:
-        self._tracker = tracker
+        self._resolver = resolver
         self._records = records
         self._cache = cache
         self._git = git
@@ -83,8 +83,7 @@ class AuditClaimVerifier:
 
     async def _criterion(self, request: AuditClaimRequest) -> TrackerIssue:
         try:
-            return await resolve_criterion(
-                tracker=self._tracker,
+            return await self._resolver.resolve_criterion(
                 issue_key=request.lane_issue_key,
                 criterion_key=request.criterion_key,
             )

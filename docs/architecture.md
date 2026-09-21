@@ -81,6 +81,7 @@ does not exist.
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
 | TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |
 | TrackerCriteriaReader | LinearMcpTracker | Full current criterion families for resolution and audit consumers |
+| CriterionResolver | NativeCriterionResolver | Resolves one criterion identity to its own sub-issue, or refuses; the narrow role a consumer that needs a single criterion depends on, carrying no family read of its own |
 | WorkRefReader | LinearMcpTracker | The one read base resolution makes to find a blocker's branch, narrowed out of the port rather than added to it; on the per-issue pass it is the refs recorded against the issue |
 | WorkRefReader | RecordedDeliverableRefs | The same read on the scope path, answered from the blocker's own lane run-state record, which is where a lane's deliverable branch is written. A peer, selected at the composition root — not a fallback |
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers |
@@ -1078,17 +1079,21 @@ Native and fake tracker fixtures show that duplicate or amended criterion text
 does not change the addressed keys. Evaluator state/body writer adoption
 remains unfinished.
 
-`resolve_criterion` is the shared native-key resolver in `criterion_sources`.
-It reads the complete current child family through `TrackerPort.read_criteria`
-and returns the one full `TrackerIssue` with the requested own key. A missing,
+`CriterionResolver` is the narrow role for resolving one criterion, and
+`NativeCriterionResolver` in `criterion_sources` is its one implementation. It
+reads the complete current child family through `TrackerCriteriaReader` and
+returns the one full `TrackerIssue` with the requested own key. A missing,
 multiple or unreadable match raises `CriterionResolutionError` naming both
 the key and its owning issue; no text matching, checkbox address or cached
 criterion set participates. Duplicate pagination of the same native object is
-still handled by the adapter's existing enumeration contract. Audit claim,
-Evidence, repository-source and forge consumers use this resolver and retain
-their own state eligibility and final source-coherence checks. The generic
-resolver admits every workflow state and performs no write. Leased state and
-Evidence writer adoption remains separate.
+still handled by the adapter's existing enumeration contract. The audit claim,
+Evidence, repository-source and forge consumers take the role — not
+`TrackerPort.read_criteria` — and retain their own state eligibility and final
+source-coherence checks, so none of them holds a roster it could search itself.
+A consumer that genuinely needs the whole family takes `TrackerCriteriaReader`
+instead; that is the different read surface the role exists to separate out. The
+generic resolver admits every workflow state and performs no write. Leased state
+and Evidence writer adoption remains separate.
 
 `structural_write_uncrosses_milestone` compares complete lane membership
 snapshots. The collector reads both the fire subtree and native milestone

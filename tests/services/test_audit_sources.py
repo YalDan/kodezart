@@ -8,6 +8,7 @@ from kodezart.config.app import AppConfig
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.lane_record import render_lane_record
 from kodezart.services.audit_sources import AuditSourceReader
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
 from tests.tracker import test_audit_evidence as fixtures
 from tests.tracker.conftest import clock as clock
@@ -23,7 +24,7 @@ server = fixtures.server
 def reader(setup, tracker):
     _, _, git, source, cache, *_ = setup
     return AuditSourceReader(
-        tracker=tracker,
+        resolver=NativeCriterionResolver(tracker=tracker),
         records=LaneRecordReader(tracker=tracker, operation=fixtures.OPERATION),
         git=git,
         source=source,

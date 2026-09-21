@@ -11,6 +11,7 @@ from kodezart.config.app import AppConfig
 from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.lane_record import render_lane_record
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
@@ -93,7 +94,7 @@ async def setup(claim_setup, tracker):
 
     def build(**changes):
         values = {
-            "tracker": tracker,
+            "resolver": NativeCriterionResolver(tracker=tracker),
             "records": LaneRecordReader(tracker=tracker, operation=OPERATION),
             "git": git,
             "source": source,

@@ -29,6 +29,7 @@ from kodezart.services.audit_runtime import AuditScheduledPass, AuditTarget
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.audit_terminal import AuditTerminalReader
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.operation import (
     LifecycleStage,
@@ -107,8 +108,9 @@ def build_audit_read_sweep(
 ) -> AuditReadSweep:
     records = LaneRecordReader(tracker=tracker, operation=operation)
     source = SubprocessGitSourceReader()
+    resolver = NativeCriterionResolver(tracker=tracker)
     claims = AuditClaimVerifier(
-        tracker=tracker,
+        resolver=resolver,
         records=records,
         cache=cache,
         git=git,
@@ -119,7 +121,7 @@ def build_audit_read_sweep(
         remote=config.git.remote,
     )
     evidence = AuditEvidenceVerifier(
-        tracker=tracker,
+        resolver=resolver,
         records=records,
         git=git,
         source=source,
@@ -146,7 +148,7 @@ def build_audit_read_sweep(
         remote=config.git.remote,
     )
     sources = AuditSourceReader(
-        tracker=tracker,
+        resolver=resolver,
         records=records,
         git=git,
         source=source,
@@ -185,7 +187,7 @@ def build_audit_read_sweep(
             git=source,
         ),
         forge=AuditForgeVerifier(
-            tracker=tracker, ci=ci, operation=operation, config=config
+            resolver=resolver, ci=ci, operation=operation, config=config
         ),
     )
 

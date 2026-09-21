@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from kodezart.core.protocols import TrackerCriteriaReader
 from kodezart.domain.errors import CriterionReadError, CriterionResolutionError
-from kodezart.services.criterion_sources import resolve_criterion
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from tests.fakes import FakeMcpIssue, FakeTrackerPort
 from tests.tracker import test_criterion_reader as fixtures
 from tests.tracker.conftest import STATE_TYPES
@@ -17,6 +18,11 @@ base_server = fixtures.server
 PARENT = fixtures.PARENT
 FIRST = fixtures.FIRST
 SECOND = fixtures.SECOND
+
+
+def resolver(tracker: TrackerCriteriaReader) -> NativeCriterionResolver:
+    """The shipped resolver over whichever registered family reader is under test."""
+    return NativeCriterionResolver(tracker=tracker)
 
 
 @pytest.fixture
@@ -41,8 +47,8 @@ async def test_resolution_preserves_own_key_full_source_and_every_state(
     ):
         await tracker.restore_workflow_state(issue_key=FIRST, state_name=state)
         before = tracker_writes()
-        resolved = await resolve_criterion(
-            tracker=tracker, issue_key=PARENT, criterion_key=FIRST
+        resolved = await resolver(tracker).resolve_criterion(
+            issue_key=PARENT, criterion_key=FIRST
         )
         assert resolved == await tracker.read_issue(issue_key=FIRST)
         assert resolved.state_name == state and resolved.body.endswith(
@@ -59,8 +65,8 @@ async def test_identical_text_and_parent_prose_cannot_redirect_the_native_key(
     await tracker.update_issue(issue_key=PARENT, body=f"- [x] {SECOND}: {first.body}")
     before = tracker_writes()
     for key in (FIRST, SECOND):
-        resolved = await resolve_criterion(
-            tracker=tracker, issue_key=PARENT, criterion_key=key
+        resolved = await resolver(tracker).resolve_criterion(
+            issue_key=PARENT, criterion_key=key
         )
         assert resolved.issue_key == key and resolved.body == first.body
     assert tracker_writes() == before
@@ -74,7 +80,7 @@ async def test_no_current_direct_criterion_refuses_with_both_identities_and_no_w
 ):
     before = tracker_writes()
     with pytest.raises(CriterionResolutionError, match="0 current") as raised:
-        await resolve_criterion(tracker=tracker, issue_key=PARENT, criterion_key=key)
+        await resolver(tracker).resolve_criterion(issue_key=PARENT, criterion_key=key)
     assert raised.value.issue_key == PARENT and raised.value.criterion_key == key
     assert PARENT in str(raised.value) and key in str(raised.value)
     assert tracker_writes() == before
@@ -85,11 +91,11 @@ async def test_successful_empty_family_is_not_an_unreadable_family(
 ):
     before = tracker_writes()
     with pytest.raises(CriterionResolutionError, match="0 current") as empty:
-        await resolve_criterion(tracker=tracker, issue_key=SECOND, criterion_key=FIRST)
+        await resolver(tracker).resolve_criterion(issue_key=SECOND, criterion_key=FIRST)
     assert empty.value.__cause__ is None
     with pytest.raises(CriterionResolutionError, match="unreadable") as unreadable:
-        await resolve_criterion(
-            tracker=tracker, issue_key="missing/parent", criterion_key=FIRST
+        await resolver(tracker).resolve_criterion(
+            issue_key="missing/parent", criterion_key=FIRST
         )
     assert unreadable.value.issue_key == "missing/parent"
     assert unreadable.value.criterion_key == FIRST
@@ -102,7 +108,7 @@ async def test_each_resolution_reads_current_native_membership(
     tracker, server, tracker_writes, change
 ):
     assert (
-        await resolve_criterion(tracker=tracker, issue_key=PARENT, criterion_key=FIRST)
+        await resolver(tracker).resolve_criterion(issue_key=PARENT, criterion_key=FIRST)
     ).issue_key == FIRST
     if isinstance(tracker, FakeTrackerPort):
         update = (
@@ -117,7 +123,7 @@ async def test_each_resolution_reads_current_native_membership(
         server.issues[FIRST].parent_id = SECOND
     before = tracker_writes()
     with pytest.raises(CriterionResolutionError, match="0 current"):
-        await resolve_criterion(tracker=tracker, issue_key=PARENT, criterion_key=FIRST)
+        await resolver(tracker).resolve_criterion(issue_key=PARENT, criterion_key=FIRST)
     assert tracker_writes() == before
 
 
@@ -143,7 +149,7 @@ async def test_nonconforming_family_never_selects_a_first_or_neighbor(
     monkeypatch.setattr(tracker, "read_criteria", AsyncMock(return_value=rows))
     before = tracker_writes()
     with pytest.raises(CriterionResolutionError) as raised:
-        await resolve_criterion(tracker=tracker, issue_key=PARENT, criterion_key=FIRST)
+        await resolver(tracker).resolve_criterion(issue_key=PARENT, criterion_key=FIRST)
     assert raised.value.issue_key == PARENT and raised.value.criterion_key == FIRST
     assert (
         "2 current" if damage == "multiple" else "ambiguous membership"
@@ -159,7 +165,7 @@ async def test_cancellation_is_not_reclassified_as_resolution_failure(
     )
     before = tracker_writes()
     with pytest.raises(asyncio.CancelledError):
-        await resolve_criterion(tracker=tracker, issue_key=PARENT, criterion_key=FIRST)
+        await resolver(tracker).resolve_criterion(issue_key=PARENT, criterion_key=FIRST)
     assert tracker_writes() == before
 
 
@@ -182,8 +188,8 @@ async def test_native_last_page_and_duplicate_page_overlap_preserve_one_full_obj
             "last": {"issues": [{"id": key}], "hasNextPage": False},
         },
     )
-    resolved = await resolve_criterion(
-        tracker=tracker_over(native), issue_key=parent, criterion_key=key
+    resolved = await resolver(tracker_over(native)).resolve_criterion(
+        issue_key=parent, criterion_key=key
     )
     assert resolved.issue_key == key and resolved.body == body
     assert [call.get("cursor") for call in native.tool_calls("list_issues")] == [
@@ -200,8 +206,7 @@ async def test_native_last_page_and_duplicate_page_overlap_preserve_one_full_obj
 async def test_native_incomplete_family_cannot_become_a_missing_key():
     native = ChildPagesServer(pages={None: {"issues": [], "hasNextPage": True}})
     with pytest.raises(CriterionResolutionError, match="unreadable") as raised:
-        await resolve_criterion(
-            tracker=tracker_over(native),
+        await resolver(tracker_over(native)).resolve_criterion(
             issue_key="PARENT/1",
             criterion_key="condition/二",
         )
