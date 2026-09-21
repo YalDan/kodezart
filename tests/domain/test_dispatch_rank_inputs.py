@@ -22,10 +22,14 @@ package, so the question of which dispatch does not arise: an ordering that
 consults priority anywhere is registered.
 
 Blind spots, stated: a name assembled from parts rather than joined by
-underscores is not matched; a quantity derived without any of these words is
-caught by the shape pins and by nothing else, which is why the pins are the
-guard and the nets are nets; a length taken of a local name rather than of a
-field is not a text-length read; strings and comments are not scanned. The
+underscores is not matched; a size used as a filter rather than as an
+ordering, or an ordering that reads no priority name in a definition the
+register does not count, is outside every pin here — the register catches a
+size only once it enters an ordering that also consults priority, which is the
+mutation this guard exists for; a length taken of a local name rather than of
+a field is not a text-length read, and a length taken of a field that is not a
+text column — a count of relations, the size of a label set — is outside the
+text-length net; strings and comments are not scanned. The
 words ``effort``, ``remaining`` and ``size`` are deliberately absent from the
 vocabulary because the package uses them for a session effort setting, for
 iteration and round counters, and for page sizes.
@@ -425,8 +429,18 @@ def test_no_length_of_an_issue_text_column_is_taken_anywhere_in_the_package():
 
     assert columns
     assert taken == {}
-    assert text_length_reads(ast.parse(inspect.getsource(fire_plateau))) == frozenset()
-    assert text_length_reads(ast.parse(inspect.getsource(dispatch))) == frozenset()
+    assert (
+        text_length_reads(ast.parse(inspect.getsource(fire_plateau))) & columns
+        == frozenset()
+    )
+    assert (
+        text_length_reads(ast.parse(inspect.getsource(dispatch))) & columns
+        == frozenset()
+    )
+    assert (
+        text_length_reads(ast.parse("def f(ticks):\n    return len(ticks)\n"))
+        == frozenset()
+    )
     assert text_length_reads(
         ast.parse("def f(issue):\n    return len(issue.body)\n")
     ) == frozenset({"body"})
@@ -518,5 +532,5 @@ def test_the_plateau_bound_is_a_tick_count_and_not_a_rank_input():
     modules = {key.split("::")[0] for key in ordering_sites(PARSED)}
 
     assert PLATEAU not in modules
-    assert text_length_reads(PARSED[PLATEAU]) == frozenset()
+    assert text_length_reads(PARSED[PLATEAU]) & text_columns() == frozenset()
     assert estimate_identifiers(PARSED[PLATEAU]) == frozenset()
