@@ -1324,7 +1324,11 @@ async def test_two_ticks_with_nothing_changed_between_them_leave_the_second_gap_
     assert all(after[key].body == before[key].body for key in keys)
     calls = len(executor.calls)
 
-    assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+    current = await read_gap_revisions(source, keys)
+    assert {r.issue.issue_key: r.issue.updated_at for r in current} == {
+        key: after[key].updated_at for key in keys
+    }
+    assert gap_of(current, admissions=judged) == ()
     for value in judged:
         assert await admission.is_live(value) is True
     assert len(executor.calls) == calls
