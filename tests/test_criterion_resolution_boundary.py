@@ -9,32 +9,43 @@ being handed a roster plus permission to search it.  A third, separate clause is
 kept: no module carries a checkbox shape it could locate a write target by.
 
 Every name the walk keys on is read off the shipped objects — the role, its one
-method, that method's own identity parameters, the row it returns, and the two
-modules where the role and its implementation are DECLARED.  A declaration is
-not a dependency, so those two are the dependency rule's only exemptions, and
-adding a second method to either role reddens the single-name unpackings below
-rather than silently halving what is checked.
+method, that method's identity parameters AND the types they carry, the row it
+returns, and the two modules where the role and its implementation are DECLARED.
+A declaration is not a dependency, so those two are the dependency rule's only
+exemptions, and adding a second method to either role reddens the single-name
+unpackings below rather than silently halving what is checked.
 
 The resolution walk is a SIGNATURE shape, not an expression walk: a function
-that reads the family, declares every identity parameter the role declares, and
-returns exactly one row is a resolution however it performs the lookup — by
+that reads the family, declares the identity the role addresses a criterion by,
+and returns exactly one row is a resolution however it performs the lookup — by
 dict index, by ``.get``, by a keys list and ``.index()``, or behind an alias.
-The refuted predecessor walked comparison nodes and so missed all four, and it
-counted MODULES rather than sites, which let two resolutions in one allowed
-module pass.  The count here is of sites.
+The refuted predecessor walked comparison nodes and so missed all four lookup
+shapes, and it counted MODULES rather than sites, which let two resolutions in
+one allowed module pass.  The count here is of sites.
+
+Declaring that identity is read two ways, either sufficing, because a name and a
+type each see what the other is blind to: a parameter set spelling the role's
+own identity names, whatever it annotates them; or a parameter set that is in
+type exactly the role's identity and nothing besides, whatever it spells them.
+The second closes renaming, and it has to be exact rather than at least, because
+a function handed MORE than an identity has more to go on than an identity —
+which is what keeps an honest creation, given a criterion's own content as well,
+off a report it does not belong on.
 
 What this cannot see: the walk is textual and executes nothing, so a resolution
 assembled at runtime or reached through a wrapper whose own signature declares
-no identity is outside it.  It is a boundary check over declared surfaces, not
-a decision procedure over behaviour; the behaviour that a native key cannot be
-redirected by identical text or parent prose is pinned by the resolution suite,
-not here.
+no identity is outside it.  So is one that pads its signature past the role's
+identity while spelling none of its names.  It is a boundary check over declared
+surfaces, not a decision procedure over behaviour; the behaviour that a native
+key cannot be redirected by identical text or parent prose is pinned by the
+resolution suite, not here.
 """
 
 import ast
 import inspect
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -52,6 +63,23 @@ FAMILY_ROLE = TrackerCriteriaReader.__name__
 (RESOLVE,) = tuple(name for name in vars(CriterionResolver) if not name.startswith("_"))
 IDENTITY_PARAMETERS = frozenset(
     set(inspect.signature(getattr(CriterionResolver, RESOLVE)).parameters) - {"self"}
+)
+
+
+def _annotation_name(annotation: object) -> str:
+    """How a shipped annotation is spelled in source, so the two compare."""
+    return getattr(annotation, "__name__", None) or str(annotation)
+
+
+#: What the role's identities ARE rather than how they are spelled: the
+#: annotations its identity parameters carry, as a multiset. Read this way, a
+#: second resolution site cannot escape the walk by renaming its parameters.
+IDENTITY_ANNOTATIONS = Counter(
+    _annotation_name(parameter.annotation)
+    for name, parameter in inspect.signature(
+        getattr(CriterionResolver, RESOLVE)
+    ).parameters.items()
+    if name in IDENTITY_PARAMETERS
 )
 ROW = TrackerIssue.__name__
 #: The return annotations that say "exactly one criterion row", optional
@@ -98,12 +126,37 @@ def _reads_the_family(node: ast.AST) -> bool:
 
 
 def _declares_an_identity(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Whether every identity the role addresses a criterion by is a parameter."""
+    """Whether the parameters carry the identities the role addresses by.
+
+    Two readings, and either one declares it, because a name and a type each
+    see what the other is blind to.
+
+    By NAME: a parameter set spelling the role's own identity names declares
+    that identity however it is annotated, which is how a site that annotates
+    nothing at all is still seen.
+
+    By TYPE: a parameter set that is, in type, exactly what the role declares
+    and nothing besides — the identity and no other information — declares it
+    under any spelling whatever.  This is the reading that closes renaming.
+    Exactly, not at least: a function handed MORE than an identity has more to
+    go on than an identity, which is what makes an honest creation taking a
+    criterion's own content a different act from resolving a key, and the only
+    thing that tells the two apart once spelling is no longer the test.
+    """
     args = node.args
-    declared = {
-        argument.arg for argument in (*args.posonlyargs, *args.args, *args.kwonlyargs)
-    }
-    return IDENTITY_PARAMETERS <= declared
+    parameters = [
+        argument
+        for argument in (*args.posonlyargs, *args.args, *args.kwonlyargs)
+        if argument.arg != "self"
+    ]
+    if IDENTITY_PARAMETERS <= {argument.arg for argument in parameters}:
+        return True
+    annotated = Counter(
+        ast.unparse(argument.annotation)
+        for argument in parameters
+        if argument.annotation is not None
+    )
+    return annotated == IDENTITY_ANNOTATIONS
 
 
 def _returns_one_row(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -251,17 +304,35 @@ def test_a_second_resolution_in_one_module_counts_as_two_sites() -> None:
     assert len(_resolution_sites(ast.parse(source))) == 2
 
 
-def test_a_family_read_without_a_criterion_identity_is_not_a_resolution() -> None:
-    """Creating a criterion that is absent addresses no key: there is none yet."""
+def test_a_resolution_that_renames_its_identities_is_reported() -> None:
+    """The identity is the types the parameters carry, not the names (KOD-651).
+
+    A site spelling the owning issue and the criterion identity anything it
+    likes still declares them, so the house parameter names are not what the
+    rule rests on and departing from them buys no cover.
+    """
     source = (
-        "async def create_if_absent(*, parent_key: str, check: str"
-        ") -> TrackerIssue:\n"
-        "    children = await self.read_criteria(issue_key=parent_key)\n"
-        "    existing = existing_criterion(parent_key=parent_key, check=check,"
-        " children=children)\n"
-        "    return existing if existing is not None else await create(check)\n"
+        "async def target(self, *, parent: str, key: str) -> TrackerIssue:\n"
+        "    rows = tuple(await self.tracker.read_criteria(issue_key=parent))\n"
+        "    return {row.issue_key: row for row in rows}[key]\n"
     )
-    assert _resolution_sites(ast.parse(source)) == []
+    assert _resolution_sites(ast.parse(source))
+
+
+def test_a_family_read_without_a_criterion_identity_is_not_a_resolution() -> None:
+    """Creating a criterion that is absent addresses no key: there is none yet.
+
+    Read off the SHIPPED creation rather than a source of this test's own
+    making, because the thing to keep honest is the real one: the adapter reads
+    the whole family, hands back one row, and is not resolving an identity — it
+    is given a criterion's title, Check, Do and holder, which is strictly more
+    than an identity and the reason the walk must not report it.  A stub of two
+    strings would not carry that, and reading the identity by type rather than
+    by name is exactly what makes the difference load-bearing.
+    """
+    module = SOURCE / "adapters" / "linear" / "tracker.py"
+    tree = ast.parse(module.read_text(encoding="utf-8"))
+    assert _resolution_sites(tree) == []
 
 
 def test_a_protocol_declaration_is_not_an_implementation() -> None:
