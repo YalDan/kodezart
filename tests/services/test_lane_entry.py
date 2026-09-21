@@ -177,6 +177,11 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
             issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
         )
 
+    # What "the deliverable branch still stands at its base tip" means at
+    # re-entry: nothing addresses that branch at all. One remote read, at the
+    # branch the LOOP role resolves, so the deliverable branch is left where
+    # its base is by the reader never asking about it.
+    assert git.calls == [("remote_branch_sha", "/clone", REMOTE, LOOP)]
     resolved = recorded_commit(record=stored, branches=recorded_branches(record=stored))
     assert resolved.sha == BEST_COMMIT
     assert resolved.sha not in (stored.head_sha, REMOTE_HEAD)
@@ -184,7 +189,10 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
     assert len(differs) == 1
     assert differs[0]["recorded_head"] == BEST_COMMIT
     assert differs[0]["remote_head"] == REMOTE_HEAD
-    assert remote_shas[DELIVERABLE] == remote_shas[BASE]
+    # And the commit the reader reports is neither the base tip the
+    # deliverable branch sits on nor the loop tip the remote holds — by sha,
+    # read off the reader's own output rather than off the fixture's dict.
+    assert differs[0]["recorded_head"] not in (BASE_TIP, REMOTE_HEAD)
     assert isinstance(entry, ResumedLane)
     assert entry.head_sha == REMOTE_HEAD
     assert entry.deliverable_branch != entry.loop_branch
