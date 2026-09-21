@@ -837,9 +837,10 @@ async def test_a_false_premise_is_regrounded_at_the_base_neither_closed_nor_cros
     assert record.resolution == REGROUNDED
     assert record.rejected_alternative is None
     # Both trees the pass opened stood at the base, and the premise is false
-    # there: the module the Check names is not in that tree, and the one the
-    # answer re-grounds on is.
+    # there: the Check on the board rests on the module the base lacks, that
+    # module is not in the tree, and the one the answer re-grounds on is.
     assert [call["ref"] for _, call in workspace.acquired] == [base, base]
+    assert ABSENT_MODULE in premise_body()
     at_base = (await git(repo_path, "ls-tree", "--name-only", base)).splitlines()
     assert ABSENT_MODULE not in at_base and PRECEDENT_FILE in at_base
     # (a) Not closed.  No state moved and no description was written; the
