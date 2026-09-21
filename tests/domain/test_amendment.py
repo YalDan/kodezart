@@ -8,6 +8,7 @@ from kodezart.handlers.agent_handler import _queued_event_payload
 from kodezart.types.domain.agent import NativeAmendmentEvent
 from kodezart.types.domain.agent import RulingId as ExistingRulingId
 from kodezart.types.domain.amendment import (
+    AmendedAmendment,
     AmendmentClaim,
     AmendmentJudgment,
     AmendmentReport,
@@ -86,6 +87,73 @@ def record(
     )
 
 
+def _holds(artifact):
+    return WriteBackResult(
+        verdict="holds",
+        artifact=artifact,
+        rounds=(
+            WriteBackFinding(
+                verdict="holds", evidence="Fixture verified.", cited_refs=()
+            ),
+        ),
+    )
+
+
+def amended(identity="opaque/criterion"):
+    """An applied amendment on a criterion subject, the arm that carries no reason."""
+    subject = TypeAdapter(AmendmentSubject).validate_python(
+        {"kind": "criterion", "id": identity}
+    )
+    surface = WritableSurface(
+        kind=SurfaceKind.CRITERION_SUB_ISSUE,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=identity),
+    )
+    prior = TrackerArtifact(
+        surface=surface, native_ref=identity, content="[prior criterion row]"
+    )
+    return AmendedAmendment(
+        claim=AmendmentClaim(
+            subject=subject,
+            stage="implementation",
+            ground="unsatisfiable_at_base",
+            departure="A proposed change",
+            claimed_capability=None,
+        ),
+        judgment=AmendmentJudgment(
+            subject=subject,
+            base_sha="a" * 40,
+            ground="unsatisfiable_at_base",
+            reproduced=True,
+            finding={
+                "verdict": "infeasible",
+                "smallest_repair": "criterion_text",
+                "refutation": "No implementation at base satisfies the text.",
+            },
+            citations=({"path": "policy.py", "quote": "def answer(): return 42"},),
+            measured_by=None,
+        ),
+        prior=prior,
+        archive=_holds(
+            TrackerArtifact(
+                surface=WritableSurface(
+                    kind=SurfaceKind.MARKER_COMMENT,
+                    ref=surface.ref,
+                    marker="[amendment:fixture]",
+                ),
+                native_ref="actual-archive",
+                content="[archived prior criterion row]",
+            )
+        ),
+        applied=_holds(
+            TrackerArtifact(
+                surface=surface,
+                native_ref=identity,
+                content="[amended criterion row]",
+            )
+        ),
+    )
+
+
 def test_same_ruling_newtype_object_reexported_and_native_ids_remain_opaque():
     assert ExistingRulingId is RulingId
     for identity in ["vendor/二", "KOD-97-AC-3", "some key"]:
@@ -130,6 +198,47 @@ def test_pure_counts_separate_subject_kind_identity_and_reason():
     )
     assert repeated_upheld(reports) == counted
     assert [report.model_dump_json() for report in reports] == before
+
+
+def test_the_reason_vocabulary_is_exactly_these_four():
+    assert [(member.name, member.value) for member in UpheldReason] == [
+        ("GROUND_NOT_REPRODUCED", "ground_not_reproduced"),
+        ("ENVIRONMENT_LACKS_CAPABILITY", "environment_lacks_capability"),
+        ("COST_MEASURED_AFFORDABLE", "cost_measured_affordable"),
+        ("COST_MEASURED_UNECONOMIC", "cost_measured_uneconomic"),
+    ]
+
+
+def test_a_verdict_and_its_reason_cannot_be_constructed_apart():
+    """The pairing is the shape: upheld requires a reason, amended has no such field.
+
+    No validator states it — an upheld record carries `reason` as a required,
+    non-nullable field and an amended record declares none under `extra="forbid"`,
+    so the bad pairing is unconstructible rather than rejected.
+    """
+    upheld = record().model_dump()
+    assert (
+        UpheldAmendment.model_validate(upheld).reason
+        is UpheldReason.GROUND_NOT_REPRODUCED
+    )
+    for broken in (
+        {key: value for key, value in upheld.items() if key != "reason"},
+        upheld | {"reason": None},
+    ):
+        with pytest.raises(ValidationError):
+            UpheldAmendment.model_validate(broken)
+        with pytest.raises(ValidationError):
+            AmendmentReport.model_validate({"verdicts": [broken]})
+    applied = amended().model_dump()
+    assert (
+        AmendmentReport.model_validate({"verdicts": [applied]}).verdicts[0].verdict
+        == "amended"
+    )
+    for reason in (*[member.value for member in UpheldReason], None):
+        with pytest.raises(ValidationError):
+            AmendedAmendment.model_validate(applied | {"reason": reason})
+        with pytest.raises(ValidationError):
+            AmendmentReport.model_validate({"verdicts": [applied | {"reason": reason}]})
 
 
 def test_claim_cannot_carry_writer_reasoning_unknown_stage_or_unknown_ground():
