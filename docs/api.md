@@ -368,6 +368,9 @@ An `amended` entry retains the exact prior tracker artifact, its verified archiv
 and the verified applied native amendment. Criterion amendments retire prior
 Evidence and Class and reset the existing criterion before changing its Check.
 Unconfirmed writes refuse before commit and produce no completed amendment.
+A change to a test a pinned record designates as protected is claimed against
+that record itself; the precommit read refuses a roster in which two records
+designate one test, before any writer session.
 
 Repeated entries count the exact upheld subject kind, identity and reason across
 the current inner loop. The event can appear inside `scope_lane.event`; neither

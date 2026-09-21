@@ -35,7 +35,7 @@ from kodezart.domain.errors import (
     WriteBackReadError,
 )
 from kodezart.domain.fire_spec import criterion_check
-from kodezart.domain.rulings import pinned_registry
+from kodezart.domain.rulings import pinned_registry, repeated_designations
 from kodezart.services.amendment_writeback import (
     AmendmentSource,
     AmendmentWriteBack,
@@ -206,6 +206,10 @@ class NativeAmendments:
         if len(identities) != len(set(identities)):
             raise NativeWriteRefusalError(
                 "The pinned ruling roster repeats an identity"
+            )
+        if repeated_designations([record for _, record in rulings]):
+            raise NativeWriteRefusalError(
+                "The pinned roster designates one protected test twice"
             )
         return criterion_issues, tuple(
             sorted(rulings, key=lambda row: row[1].ruling_id)

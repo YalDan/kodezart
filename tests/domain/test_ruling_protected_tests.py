@@ -8,9 +8,14 @@ from typing import get_type_hints
 import pytest
 from pydantic import ValidationError
 
-from kodezart.domain.rulings import parse_ruling, render_ruling
+from kodezart.domain.rulings import parse_ruling, render_ruling, repeated_designations
 from kodezart.types.domain.agent import Ruling, RulingId, RulingProtectedTestRef
 from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
+
+#: Two designated-test addresses whose sorted order is the reverse of the order
+#: the rows below write them in, so a dropped sort is visible.
+CONTRACT = ("tests/test_contract.py", "TestContract.test_expected_value")
+BOUNDARY = ("tests/test_boundary.py", "test_the_boundary_holds")
 
 
 def designated(**changes):
@@ -113,6 +118,43 @@ def test_invalid_native_designation_refuses_instead_of_losing_protection(change)
     _, text, _ = round_trip(designated())
     with pytest.raises(ValueError):
         parse_ruling(body=change(text), lane_key=LANE, marker_prefixes=PREFIXES)
+
+
+@pytest.mark.parametrize(
+    "rows,expected",
+    [
+        ([(CONTRACT,), (CONTRACT,)], (CONTRACT,)),
+        ([(CONTRACT,), (("tests/test_contract.py", "test_a_second_name"),)], ()),
+        ([(CONTRACT,), (("tests/test_second_file.py", CONTRACT[1]),)], ()),
+        ([(CONTRACT,)], ()),
+        ([(CONTRACT,), None], ()),
+        ([(CONTRACT, BOUNDARY), (CONTRACT, BOUNDARY)], (BOUNDARY, CONTRACT)),
+    ],
+)
+def test_repeated_designations_names_an_address_two_records_claim(rows, expected):
+    """One address, two claimants: the path and the name together are the address.
+
+    A shared path under two names, and one name under two paths, are two
+    addresses and not a repeat. A record that recorded no designation at all
+    contributes nothing. The returned addresses are sorted, not in the order the
+    records were read.
+    """
+    records = []
+    for index, addresses in enumerate(rows):
+        data = ruling_data(question=f"Which reading applies to case {index}?")
+        data["protected_tests"] = (
+            None
+            if addresses is None
+            else tuple(
+                RulingProtectedTestRef(
+                    source_ref=data["ruling_id"], path=path, qualified_name=name
+                )
+                for path, name in addresses
+            )
+        )
+        records.append(Ruling.model_validate(data))
+    assert len({record.ruling_id for record in records}) == len(rows)
+    assert repeated_designations(records) == expected
 
 
 def test_native_designation_has_a_typed_ruling_owner():

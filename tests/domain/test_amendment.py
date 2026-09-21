@@ -1,5 +1,7 @@
 """Native semantic addresses and report arithmetic preserve exact identities."""
 
+from typing import get_args
+
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
@@ -211,6 +213,10 @@ def test_the_ground_vocabulary_gained_no_member_when_the_subject_widened():
 
     Widening the subject to the pinned-answer kind added no member here: the same
     four grounds are read against whichever kind the claim names.
+
+    The subject itself stays two members, derived off the annotation rather than
+    listed: a change to a test a pinned record designates as protected is
+    addressed under that record's existing member, so no third member is owed.
     """
     assert [(member.name, member.value) for member in AmendmentGround] == [
         ("UNSATISFIABLE_AT_BASE", "unsatisfiable_at_base"),
@@ -218,6 +224,15 @@ def test_the_ground_vocabulary_gained_no_member_when_the_subject_widened():
         ("PREMISE_FALSE_AT_BASE", "premise_false_at_base"),
         ("REQUIRES_BREAKING_HOUSE_RULE", "requires_breaking_house_rule"),
     ]
+    members = get_args(get_args(AmendmentSubject)[0])
+    assert [member.model_fields["kind"].default for member in members] == [
+        "criterion",
+        "ruling",
+    ]
+    with pytest.raises(ValidationError):
+        TypeAdapter(AmendmentSubject).validate_python(
+            {"kind": "protected_test", "id": "tests/test_pinned_boundary.py"}
+        )
     value = amended()
     with pytest.raises(ValidationError):
         AmendmentClaim.model_validate(
