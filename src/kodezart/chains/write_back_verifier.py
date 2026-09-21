@@ -14,7 +14,6 @@ holds, which is not necessarily the string the writing step composed.
 
 import re
 from collections.abc import Sequence
-from typing import Protocol, runtime_checkable
 
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import (
@@ -23,6 +22,8 @@ from kodezart.core.protocols import (
     PromptSetProvider,
     TrackerPort,
     WorkspaceProvider,
+    WriteBackJudge,
+    WriteBackStep,
 )
 from kodezart.domain.errors import WriteBackReadError
 from kodezart.services.audit_sessions import judge_in_workspace
@@ -37,51 +38,12 @@ from kodezart.types.domain.audit import AuditVerdict, TrackerArtifact
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.domain.surface import WritableSurface
 from kodezart.types.domain.write_back import (
     WriteBackFinding as WriteBackFinding,
 )
 from kodezart.types.domain.write_back import (
     WriteBackResult as WriteBackResult,
 )
-
-
-@runtime_checkable
-class WriteBackStep(Protocol):
-    """One writing step, as the verifier drives it.
-
-    The step owns its own write.  It already knows which surface it
-    addresses and under which precondition, and a verifier that re-derived
-    that would be a second statement of it, free to disagree.
-    """
-
-    @property
-    def surface(self) -> WritableSurface:
-        """The surface this step writes, and the one re-read after it."""
-        ...
-
-    async def write(self, *, finding: WriteBackFinding | None) -> None:
-        """Put this step's text on its surface.
-
-        ``None`` is the first round.  A repair round carries the previous
-        round's finding, so the step repairs what was actually found
-        rather than rewriting from scratch and re-introducing it.
-        """
-        ...
-
-
-@runtime_checkable
-class WriteBackJudge(Protocol):
-    """Judge the artifact that landed, in a session that wrote none of it.
-
-    Fresh by construction: a judgment made inside the writing session
-    inherits that session's transcript, and a reader that already believes
-    the claim is not the reader this loop exists to consult.
-    """
-
-    async def judge(self, *, artifact: TrackerArtifact, ref: str) -> WriteBackFinding:
-        """Judge *artifact*'s claims against the repository at *ref*."""
-        ...
 
 
 class WriteBackVerifier:

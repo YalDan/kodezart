@@ -12,6 +12,7 @@ from kodezart.types.domain.amendment import (
     NativeWriterStart,
 )
 from kodezart.types.domain.assertion_drift import GitSourceBlob
+from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.check_chain import CheckChainResult
 from kodezart.types.domain.check_observation import CIWatchResult
@@ -89,6 +90,7 @@ from kodezart.types.domain.tracker import (
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
+from kodezart.types.domain.write_back import WriteBackFinding
 
 
 @runtime_checkable
@@ -1745,6 +1747,44 @@ class LaneStateWriter(Protocol):
         the criterion being owed again and not a regression.
         Nothing else is written anywhere, least of all a parent's state.
         """
+        ...
+
+
+@runtime_checkable
+class WriteBackStep(Protocol):
+    """One writing step, as the verifier drives it.
+
+    The step owns its own write.  It already knows which surface it
+    addresses and under which precondition, and a verifier that re-derived
+    that would be a second statement of it, free to disagree.
+    """
+
+    @property
+    def surface(self) -> WritableSurface:
+        """The surface this step writes, and the one re-read after it."""
+        ...
+
+    async def write(self, *, finding: WriteBackFinding | None) -> None:
+        """Put this step's text on its surface.
+
+        ``None`` is the first round.  A repair round carries the previous
+        round's finding, so the step repairs what was actually found
+        rather than rewriting from scratch and re-introducing it.
+        """
+        ...
+
+
+@runtime_checkable
+class WriteBackJudge(Protocol):
+    """Judge the artifact that landed, in a session that wrote none of it.
+
+    Fresh by construction: a judgment made inside the writing session
+    inherits that session's transcript, and a reader that already believes
+    the claim is not the reader this loop exists to consult.
+    """
+
+    async def judge(self, *, artifact: TrackerArtifact, ref: str) -> WriteBackFinding:
+        """Judge *artifact*'s claims against the repository at *ref*."""
         ...
 
 

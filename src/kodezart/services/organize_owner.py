@@ -13,7 +13,6 @@ from kodezart.chains.organize import OrganizeAdmission
 from kodezart.chains.organize_author import OrganizeAuthor, ProposedWrite
 from kodezart.chains.write_back_verifier import (
     WriteBackFinding,
-    WriteBackJudge,
     WriteBackResult,
     WriteBackVerifier,
 )
@@ -25,7 +24,12 @@ from kodezart.core.errors import (
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.owned_tasks import settle
-from kodezart.core.protocols import OutboundContentGate, PromptSetProvider, TrackerPort
+from kodezart.core.protocols import (
+    OutboundContentGate,
+    PromptSetProvider,
+    TrackerPort,
+    WriteBackJudge,
+)
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
