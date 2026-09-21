@@ -261,8 +261,25 @@ def test_the_holdings_walk_reaches_a_collaborator_inside_a_container() -> None:
     assert [value for value in held if is_forge_shaped(value)] != []
 
 
-async def test_the_union_step_holds_no_forge_collaborator_at_all(delivery) -> None:
+#: Every git double the runtime cases here and in the exit sibling actually
+#: hand the step.  The holdings claim is about the object the step is built
+#: with, so it is made over each of them rather than over whichever one a
+#: fixture happens to default to: a double that grew a forge-shaped method
+#: would otherwise be a collaborator no case looks at.  ``ReachableForgeGit``
+#: below is excluded on purpose — it carries a forge by design.
+PRODUCTION_GIT_DOUBLES: tuple[type, ...] = (pinned.ObservedGit, RecordingPublisher)
+
+
+@pytest.mark.parametrize(
+    "double",
+    PRODUCTION_GIT_DOUBLES,
+    ids=[cls.__name__ for cls in PRODUCTION_GIT_DOUBLES],
+)
+async def test_the_union_step_holds_no_forge_collaborator_at_all(
+    delivery, double: type
+) -> None:
     """Over the object a production call site builds, not a hand-picked field."""
+    delivery.git = double()
     subject = delivery.coordinator()
 
     held = held_by(subject)

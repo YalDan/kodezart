@@ -201,9 +201,11 @@ class RecordingPublisher(pinned.ObservedGit):
         self.publications.append(("merge_branch", cwd, source_branch))
         await super().merge_branch(cwd, source_branch)
 
-    async def delete_remote_branch(self, repo_path: str, branch: str) -> None:
-        self.publications.append(("delete_remote_branch", repo_path, branch))
-        await super().delete_remote_branch(repo_path, branch)
+    async def delete_remote_branch(self, cwd: str, remote: str, branch: str) -> None:
+        # The remote belongs in the record: "which ref would have gone" is the
+        # fact, and the branch name alone does not say which repository's.
+        self.publications.append(("delete_remote_branch", cwd, f"{remote}/{branch}"))
+        await super().delete_remote_branch(cwd, remote, branch)
 
 
 class PathlessConflict(RecordingPublisher):
@@ -332,15 +334,27 @@ async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
     ).count("worktree ") == 1
 
 
-async def test_a_planted_publication_is_on_the_record_and_moves_a_ref(
-    tmp_path, monkeypatch
-):
-    """Both witnesses above are live: one swallowed push is seen by each.
+#: A branch no repository in the fixture has, so the merge and the deletion
+#: planted below are refused by git the moment they are tried: the control is
+#: about what reaches the record, and a publication that LANDED would change
+#: the world the other cases measure.
+MISSING_BRANCH = "no/such/branch"
+
+
+async def test_every_planted_publication_kind_is_on_the_record(tmp_path, monkeypatch):
+    """Both witnesses above are live, for each publication the port declares.
 
     Planted on the method the green path calls once over the scratch tree,
     through the very port the step holds, in the best-effort shape the
     record's refutation used; the swallow hides nothing from a port that
-    remembers being asked, and the ref it moved is on the remote.
+    remembers being asked, and the ref the push moved is on the remote.
+
+    All three publishing methods get a control, not just the push: a record
+    that only ever proves it can see a push says nothing about a merge or a
+    deletion arriving by the same route.  The merge and the deletion name a
+    branch that does not exist, so each is refused and each is on the record
+    anyway — which is the refused-publication property, exercised here on the
+    two kinds a swallowing caller would use.
     """
     fixture = await build_delivery(tmp_path / "world", git=RecordingPublisher())
     before = await fixture.refs()
@@ -349,6 +363,10 @@ async def test_a_planted_publication_is_on_the_record_and_moves_a_ref(
     async def publishing(self, worktree):
         with suppress(Exception):
             await self._git.push(worktree, "union")
+        with suppress(Exception):
+            await self._git.merge_branch(worktree, MISSING_BRANCH)
+        with suppress(Exception):
+            await self._git.delete_remote_branch(worktree, "upstream", MISSING_BRANCH)
         return await scratch_sha(self, worktree)
 
     monkeypatch.setattr(UnionComposition, "_scratch_sha", publishing)
@@ -357,11 +375,16 @@ async def test_a_planted_publication_is_on_the_record_and_moves_a_ref(
 
     assert result.outcome is UnionOutcome.GREEN
     assert [(kind, branch) for kind, _, branch in fixture.git.publications] == [
-        ("push", "union")
+        ("push", "union"),
+        ("merge_branch", MISSING_BRANCH),
+        ("delete_remote_branch", f"upstream/{MISSING_BRANCH}"),
     ]
-    assert fixture.git.publications[0][1] in fixture.git.created
+    assert all(cwd in fixture.git.created for _, cwd, _ in fixture.git.publications)
     assert await fixture.refs() != before
     assert "refs/heads/union" in await pinned.git(fixture.remote, "show-ref")
+    assert f"refs/heads/{MISSING_BRANCH}" not in await pinned.git(
+        fixture.remote, "show-ref"
+    )
     assert fixture.git.removed == fixture.git.created
 
 
