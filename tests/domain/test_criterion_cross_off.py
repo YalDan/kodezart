@@ -7,9 +7,12 @@ import pytest
 
 from kodezart.core.protocols import LaneStateTracker
 from kodezart.domain.criterion_cross_off import (
+    CARRIED_REASON,
+    LAPSE_REASON,
     cross_offs_for,
     declared_class,
     evaluation_observation,
+    iteration_output,
     lapse_observation,
     require_tickable,
     tick_anchor,
@@ -18,7 +21,7 @@ from kodezart.domain.criterion_evidence import apply_evidence, parse_criterion_e
 from kodezart.domain.errors import StaleWriteError
 from kodezart.domain.fire_spec import criterion_ref, replace_criterion_fields
 from kodezart.domain.lapse import GradedState
-from kodezart.types.domain.agent import CriterionResult
+from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import (
@@ -463,13 +466,14 @@ STANDING_SHA = "1" * 40
 
 def standing_cross_off(
     *,
+    key: str = KEY,
     state: CrossOffState = CrossOffState.passed,
     rederivation_class: RederivationClass = RederivationClass.expensive,
     exercised_paths: tuple[str, ...] = ("src/kodezart/domain/",),
 ) -> CriterionCrossOff:
     """The cross-off an earlier attempt finished this criterion with."""
     return CriterionCrossOff(
-        criterion=criterion_ref(CriterionId(KEY)),
+        criterion=criterion_ref(CriterionId(key)),
         state=state,
         evidence=CriterionEvidence(
             graded_sha=STANDING_SHA,
@@ -625,3 +629,130 @@ def test_a_declaration_that_earns_no_class_reaches_the_board_as_cheap(
     assert crossed.rederivation_class is RederivationClass.cheap
     assert crossed.exercised_paths == ()
     assert crossed.state is CrossOffState.passed
+
+
+# ---------------------------------------------------------------------------
+# The whole roster's reading: this session's rows beside the standing ones.
+# ---------------------------------------------------------------------------
+
+SECOND_KEY = "lane/second"
+SECOND_CHECK = "the check the second criterion states"
+UNKNOWN_KEY = "lane/nobody-dispatched"
+
+
+def two_criterion_roster() -> tuple[TrackerCriterion, TrackerCriterion]:
+    """The roster the gate and the trajectory read, whatever was dispatched."""
+    return (
+        criterion(),
+        TrackerCriterion(id=CriterionId(SECOND_KEY), text=SECOND_CHECK),
+    )
+
+
+def session_row(*, key: str, text: str, passed: bool = True) -> CriterionResult:
+    """One row the evaluation session itself answered."""
+    return CriterionResult(
+        criterion_id=CriterionId(key),
+        criterion=text,
+        passed=passed,
+        reasoning="Observed the selected check.",
+    )
+
+
+def graded_output(*rows: CriterionResult) -> AcceptanceCriteriaOutput:
+    return AcceptanceCriteriaOutput(criteria_results=list(rows))
+
+
+@pytest.mark.parametrize(
+    "state,passed,reason",
+    [
+        pytest.param(GradedState.counted, True, CARRIED_REASON, id="still-standing"),
+        pytest.param(GradedState.lapsed, False, LAPSE_REASON, id="lapsed"),
+    ],
+)
+def test_the_roster_row_a_withheld_criterion_earns_reads_its_standing_grading(
+    state, passed, reason
+):
+    """A lapse is not a pass, and the row the gate reads has to say which (KOD-695).
+
+    The gate and the trajectory read the roster entire, so the denominator
+    cannot move with whatever subset the session was handed. A withheld
+    criterion therefore gets the row its standing grading earns — and a
+    lapse read as a pass is a complete, clearing roster over an obligation
+    the board is at the same moment holding in Todo.
+
+    The class and the prefixes come from the standing grading too, so the
+    next iteration reads the same declaration back rather than whatever a
+    later session would have declared.
+    """
+    standing = standing_cross_off(
+        rederivation_class=RederivationClass.observed,
+        exercised_paths=("docs/architecture.md",),
+    )
+
+    output = iteration_output(
+        criteria=two_criterion_roster(),
+        standing=[standing],
+        reading={standing.criterion: state},
+        graded=graded_output(session_row(key=SECOND_KEY, text=SECOND_CHECK)),
+    )
+
+    withheld, graded = output.criteria_results
+    assert withheld.criterion_id == KEY
+    assert withheld.passed is passed
+    assert withheld.reasoning == reason
+    assert withheld.criterion == CHECK
+    assert withheld.rederivation_class is RederivationClass.observed
+    assert withheld.exercised_paths == ("docs/architecture.md",)
+    assert (graded.criterion_id, graded.passed) == (SECOND_KEY, True)
+
+
+def test_a_session_row_for_a_withheld_criterion_does_not_override_the_harness_row():
+    """A session does not get to answer an obligation it was not handed.
+
+    The harness's reading of a withheld criterion is arithmetic over what
+    moved since its grading. A session row for it is an answer to a question
+    nobody asked, and letting it through would let a hallucinated pass
+    overwrite a lapse.
+    """
+    standing = standing_cross_off()
+
+    output = iteration_output(
+        criteria=two_criterion_roster(),
+        standing=[standing],
+        reading={standing.criterion: GradedState.lapsed},
+        graded=graded_output(
+            session_row(key=KEY, text=CHECK, passed=True),
+            session_row(key=SECOND_KEY, text=SECOND_CHECK),
+        ),
+    )
+
+    rows = [row for row in output.criteria_results if row.criterion_id == KEY]
+    assert [(row.passed, row.reasoning) for row in rows] == [(False, LAPSE_REASON)]
+
+
+def test_a_duplicate_row_and_a_row_for_an_undispatched_id_are_passed_through():
+    """Both are the reconciler's to report, and filtering them here hides them.
+
+    A second row for one id and a row for an id nobody dispatched are how a
+    hallucinated roster shows itself. Dropping them here would leave it
+    looking complete.
+    """
+    standing = standing_cross_off()
+
+    output = iteration_output(
+        criteria=two_criterion_roster(),
+        standing=[standing],
+        reading={standing.criterion: GradedState.counted},
+        graded=graded_output(
+            session_row(key=SECOND_KEY, text=SECOND_CHECK),
+            session_row(key=SECOND_KEY, text=SECOND_CHECK, passed=False),
+            session_row(key=UNKNOWN_KEY, text="a check no roster carries"),
+        ),
+    )
+
+    assert [(row.criterion_id, row.passed) for row in output.criteria_results] == [
+        (KEY, True),
+        (SECOND_KEY, True),
+        (SECOND_KEY, False),
+        (UNKNOWN_KEY, True),
+    ]
