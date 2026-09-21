@@ -1627,6 +1627,20 @@ class RunAlarmTracker(SurfaceLeaseTracker, Protocol):
     ) -> LaneRunEvent: ...
 
 
+@runtime_checkable
+class LaneEventHistory(Protocol):
+    """The one read a grading's provenance needs, and no write beside it.
+
+    A role narrowed out of the port rather than a widening of it. What it
+    leaves out is the point: no append, so a holder of this role cannot add
+    the grading whose absence it is reading for.
+    """
+
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]: ...
+
+
 #: Called with the workspace a commit was made in and the receipt it
 #: returned, between the push and the completion of the persisting phase.
 AfterPublish = Callable[[str, PersistResult], Awaitable[None]]

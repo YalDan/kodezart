@@ -1,5 +1,8 @@
 """Pure readings of what a scope member's own tracker state says to audit."""
 
+from collections.abc import Sequence
+
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_runtime import (
     AuditClaimPublication,
@@ -44,6 +47,40 @@ def mandate_escalation_key(*, issue_key: str) -> str:
     question already answered (KOD-522).
     """
     return issue_key
+
+
+def evidence_row_history(
+    *, events: Sequence[LaneRunEvent], criterion_key: str
+) -> tuple[str, ...]:
+    """The commits this criterion's grading was recorded at, in write order.
+
+    An event keyed to another subject is another criterion's grading, and
+    one naming no commit is not a grading at all.  Nothing else narrows the
+    set: the stream is append-only, so its own order is the order the
+    gradings landed, and no roster of event kinds is written down here to
+    go stale.
+    """
+    return tuple(
+        event.graded_sha
+        for event in events
+        if event.subject_key == criterion_key and event.graded_sha is not None
+    )
+
+
+def restamp_verdict(*, history: Sequence[str], graded_sha: str) -> AuditVerdict:
+    """HOLDS when the LAST recorded grading names the row's own commit.
+
+    REFUTED otherwise, and never UNVERIFIABLE: this reads a stream it
+    already holds, so there is nothing left unsettled to report (KOD-506).
+
+    Membership anywhere in the history would not do.  An entry followed by
+    a later recorded grading IS later than the restamp, so a row pointing
+    behind the grading that actually last ran would be admitted, and order
+    is the only thing an append-only stream guarantees.
+    """
+    if history and history[-1] == graded_sha:
+        return AuditVerdict.HOLDS
+    return AuditVerdict.REFUTED
 
 
 def reopens_criterion(publication: AuditPublication) -> bool:

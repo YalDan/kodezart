@@ -13,6 +13,7 @@ from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.composition.audit import build_audit_pass
 from kodezart.config.app import AppConfig
 from kodezart.domain.criterion_evidence import render_evidence_field
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_runtime import AuditRunIncompleteError
 from kodezart.types.domain.agent import (
@@ -22,11 +23,14 @@ from kodezart.types.domain.agent import (
     DETECTOR_REMOVAL_SCHEMA,
     WRITE_BACK_SCHEMA,
 )
+from kodezart.types.domain.audit import AuditVerdict
+from kodezart.types.domain.audit_evidence import AuditRestampTrace
 from kodezart.types.domain.audit_overclaim import OverclaimKind
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.surface import SurfaceKind
 from tests.chains.test_organize import RecordingExecutor, result
 from tests.fakes import (
@@ -58,6 +62,10 @@ from tests.tracker.test_state_history import server as server
 #: subject of a session off the prompt rather than off a module constant, so a
 #: scope with several criteria answers per criterion.
 BASE_CHECK = "The current check.txt contains the committed contents."
+
+#: The lane the fixture's own record is written under, so an event seeded
+#: into the stream is one this scope's requests actually read.
+LANE_KEY = "opaque:lane \u03bb"
 
 
 def criterion_body(*, check: str, graded_sha: str) -> str:
@@ -629,6 +637,50 @@ async def test_two_unchanged_sweeps_hold_one_escalation_for_a_reworded_mandate(
     assert EARLIER_WORDING in raised[0][1]
     assert LATER_WORDING in raised[1][1]
     assert raised[0][1] != raised[1][1]
+    assert not workspace._workspaces
+
+
+async def test_the_composed_sweep_traces_a_criterion_restamp_to_its_lanes_gradings(
+    native_audit,
+):
+    """The arm is reachable from composition, not only from a unit fixture.
+
+    The lane's stream holds one grading of CHILD, at the commit before the
+    one its Evidence row names, so the trace refuses and says why. It is an
+    observation and not a publication: the refusal moves no state, writes no
+    comment of its own and leaves the scope complete.
+    """
+    audit, _executor, server, tracker, _git, workspace, repository = native_audit
+    _remote, _author, _observer, prior, head = repository
+    await tracker.post_run_event(
+        issue_key=ROOT,
+        event=LaneRunEvent(
+            kind=RunEventKind.CRITERION_REFUTED,
+            lane_key=LANE_KEY,
+            subject_key=CHILD,
+            graded_sha=prior,
+        ),
+    )
+    comments_before = len(server.comments)
+
+    assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    scope = audit.last_report.scopes[0]
+    assert scope.status == "complete", audit.last_report.model_dump_json()
+
+    traces = [
+        row for row in scope.raw_observations if isinstance(row, AuditRestampTrace)
+    ]
+    assert len(traces) == 1, [type(row).__name__ for row in scope.raw_observations]
+    assert traces[0].criterion_key == CHILD
+    assert traces[0].recorded_evidence.graded_sha == head
+    assert traces[0].history == (prior,)
+    assert traces[0].verdict is AuditVerdict.REFUTED
+
+    # An observation, not a publication: no state move and no extra comment
+    # beyond the records this pass already published.
+    assert state_writes(server) == []
+    assert server.issues[CHILD].status == "Done"
+    assert len(server.comments) - comments_before == len(scope.writes)
     assert not workspace._workspaces
 
 

@@ -7,7 +7,10 @@ from inspect import signature
 import pytest
 
 from kodezart.chains.audit_detection_removal import DetectorRemovalVerifier
-from kodezart.chains.audit_evidence import AuditEvidenceVerifier
+from kodezart.chains.audit_evidence import (
+    AuditEvidenceVerifier,
+    AuditRestampVerifier,
+)
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.chains.audit_sweep import AuditReadSweep
@@ -256,6 +259,7 @@ async def setup(tracker, server):
             operation=selected_op,
             claims=claims,
             evidence=evidence,
+            restamps=AuditRestampVerifier(events=tracker),
             mandates=mandates,
             terminals=terminals,
             git=selected_git,

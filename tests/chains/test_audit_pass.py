@@ -1,23 +1,35 @@
 """Expected tracker review terminals are checked against actual forge facts."""
 
+from inspect import signature
 from unittest.mock import AsyncMock
 from urllib.parse import urlsplit
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
+from kodezart.chains.audit_evidence import AuditRestampVerifier
 from kodezart.config.app import AppConfig
-from kodezart.domain.errors import AuditClaimReadError, PRStateReadError
+from kodezart.core.errors import TrackerUnavailableError
+from kodezart.domain.errors import (
+    AuditClaimReadError,
+    AuditEvidenceReadError,
+    PRStateReadError,
+)
 from kodezart.domain.lane_record import render_lane_record
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.services.audit_terminal import AuditTerminalReader
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.types.domain.audit import AuditVerdict
+from kodezart.types.domain.audit import AuditClaimRequest, AuditVerdict
+from kodezart.types.domain.audit_evidence import AuditRestampTrace
 from kodezart.types.domain.audit_terminal import (
     AuditTerminalRequest,
     TerminalDiscrepancy,
 )
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneRunState
 from tests.adapters.test_github_api import _make_client
 from tests.domain.test_lane_record import record_data
@@ -331,3 +343,171 @@ async def test_expected_review_requires_parent_state_and_every_completed_criteri
     with pytest.raises(AuditClaimReadError, match="expected review terminal"):
         await reader.observe(REQUEST)
     assert not git.calls and not forge[2]
+
+
+# ---------------------------------------------------------------------------
+# Restamp traceability: the Evidence row's commit against the lane's gradings
+# ---------------------------------------------------------------------------
+
+LANE = "lane:alpha"
+#: Two commits, so a history can name one and a row the other.
+RESTAMPED_AT = "c" * 40
+LATER_GRADING = "d" * 40
+ANOTHER_CRITERION = "terminal/other-criterion"
+
+
+def restamp_request() -> AuditClaimRequest:
+    """The criterion whose Evidence row a trace is read for."""
+    return AuditClaimRequest(
+        criterion_key=CHILD, lane_issue_key=ISSUE, lane_key=LANE, repo_url=REPO
+    )
+
+
+def evidence_row(graded_sha: str) -> CriterionEvidence:
+    return CriterionEvidence(graded_sha=graded_sha, test="tests/example.py::case")
+
+
+async def record_grading(tracker, *, graded_sha, subject_key=CHILD):
+    """Post one grading through the port's own append, never a hand-built body."""
+    return await tracker.post_run_event(
+        issue_key=ISSUE,
+        event=LaneRunEvent(
+            kind=RunEventKind.CRITERION_REFUTED,
+            lane_key=LANE,
+            subject_key=subject_key,
+            graded_sha=graded_sha,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("recorded_at", "verdict"),
+    [(LATER_GRADING, AuditVerdict.REFUTED), (RESTAMPED_AT, AuditVerdict.HOLDS)],
+)
+async def test_a_restamp_holds_only_when_the_last_recorded_grading_names_its_commit(
+    tracker, recorded_at, verdict
+):
+    """One fixture, two arms: the row is restamped at the same commit in both.
+
+    The first arm reds against an implementation that grades whether the
+    restamped verdict happens to be true at head, because nothing here is
+    read at head at all — only the stream the lane itself posted.
+    """
+    await record_grading(tracker, graded_sha=recorded_at)
+    trace = await AuditRestampVerifier(events=tracker).observe(
+        request=restamp_request(), evidence=evidence_row(RESTAMPED_AT)
+    )
+    assert trace is not None
+    assert trace.verdict is verdict
+    assert trace.criterion_key == CHILD
+    # The arm names what it refused against, not just that it refused.
+    assert trace.history == (recorded_at,)
+
+
+async def test_a_restamp_is_traced_to_the_last_grading_and_not_to_any_earlier_one(
+    tracker,
+):
+    """An entry followed by a later grading is itself later than the restamp."""
+    await record_grading(tracker, graded_sha=RESTAMPED_AT)
+    await record_grading(tracker, graded_sha=LATER_GRADING)
+    trace = await AuditRestampVerifier(events=tracker).observe(
+        request=restamp_request(), evidence=evidence_row(RESTAMPED_AT)
+    )
+    assert trace is not None
+    assert trace.history == (RESTAMPED_AT, LATER_GRADING)
+    assert trace.verdict is AuditVerdict.REFUTED
+
+
+async def test_another_criterions_grading_at_the_same_commit_traces_nothing(tracker):
+    """The stream is one lane's, so a subject key is what selects a criterion."""
+    await record_grading(
+        tracker, graded_sha=RESTAMPED_AT, subject_key=ANOTHER_CRITERION
+    )
+    assert (
+        await AuditRestampVerifier(events=tracker).observe(
+            request=restamp_request(), evidence=evidence_row(RESTAMPED_AT)
+        )
+        is None
+    )
+
+
+async def test_a_criterion_with_no_recorded_grading_is_not_traced(tracker):
+    """A passing cross-off posts no event, so an empty history is not a refusal.
+
+    Reading it as "no entry at this commit" would refute every criterion the
+    board ever finished.
+    """
+    assert (
+        await AuditRestampVerifier(events=tracker).observe(
+            request=restamp_request(), evidence=evidence_row(RESTAMPED_AT)
+        )
+        is None
+    )
+
+
+async def test_a_grading_naming_no_commit_is_not_a_grading_at_all(tracker):
+    """An event that is not about a grading has no commit and cannot be last."""
+    await record_grading(tracker, graded_sha=RESTAMPED_AT)
+    await tracker.post_run_event(
+        issue_key=ISSUE,
+        event=LaneRunEvent(
+            kind=RunEventKind.LANE_DISPATCHED, lane_key=LANE, subject_key=CHILD
+        ),
+    )
+    trace = await AuditRestampVerifier(events=tracker).observe(
+        request=restamp_request(), evidence=evidence_row(RESTAMPED_AT)
+    )
+    assert trace is not None
+    assert trace.history == (RESTAMPED_AT,)
+    assert trace.verdict is AuditVerdict.HOLDS
+
+
+def test_a_restamp_trace_is_read_from_the_stream_and_not_from_a_verdict():
+    """A verdict is never an input, so there is no parameter to supply one."""
+    parameters = set(signature(AuditRestampVerifier.observe).parameters)
+    assert parameters == {"self", "request", "evidence"}
+
+
+async def test_an_unreadable_grading_stream_is_a_typed_refusal_not_a_silent_absence():
+    """The sweep's one translation point needs a raise, not ``None``.
+
+    ``None`` means "nothing was ever recorded", which is a fact about the
+    lane. A stream that could not be read is not that fact.
+    """
+
+    class UnreadableStream:
+        async def lane_run_events(self, *, issue_key: str, lane_key: str):
+            raise TrackerUnavailableError("the lane stream could not be read")
+
+    with pytest.raises(AuditEvidenceReadError) as raised:
+        await AuditRestampVerifier(events=UnreadableStream()).observe(
+            request=restamp_request(), evidence=evidence_row(RESTAMPED_AT)
+        )
+    assert raised.value.criterion_key == CHILD
+
+
+@pytest.mark.parametrize(
+    ("history", "verdict"),
+    [
+        # The forge analogue's UNVERIFIABLE cannot be copied here: a trace
+        # carrying it does not validate.
+        ((RESTAMPED_AT,), AuditVerdict.UNVERIFIABLE),
+        # A verdict that disagrees with the history it was read from.
+        ((LATER_GRADING,), AuditVerdict.HOLDS),
+        ((RESTAMPED_AT,), AuditVerdict.REFUTED),
+        # An empty tuple is not a trace, so the model cannot be built on one.
+        ((), AuditVerdict.HOLDS),
+        ((), AuditVerdict.REFUTED),
+    ],
+)
+def test_a_restamp_trace_cannot_be_built_against_its_own_recorded_history(
+    history, verdict
+):
+    with pytest.raises(ValidationError):
+        AuditRestampTrace(
+            criterion_key=CHILD,
+            recorded_evidence=evidence_row(RESTAMPED_AT),
+            history=history,
+            verdict=verdict,
+            reason="a reading that does not follow what was read",
+        )

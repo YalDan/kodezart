@@ -2,7 +2,10 @@
 
 from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 from kodezart.chains.audit_detection_removal import DetectorRemovalVerifier
-from kodezart.chains.audit_evidence import AuditEvidenceVerifier
+from kodezart.chains.audit_evidence import (
+    AuditEvidenceVerifier,
+    AuditRestampVerifier,
+)
 from kodezart.chains.audit_forge import AuditForgeVerifier
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
@@ -187,6 +190,9 @@ def build_audit_read_sweep(
         operation=operation,
         claims=claims,
         evidence=evidence,
+        # TrackerPort satisfies the narrowed read-only role structurally, so
+        # the trace is reachable from composition with no adapter change.
+        restamps=AuditRestampVerifier(events=tracker),
         mandates=mandates,
         terminals=terminals,
         git=git,
