@@ -336,6 +336,12 @@ ordinary test/file/commit counts and a single public reference do not qualify.
 and original text identify a repair; unlocated or malformed findings never permit
 publication. Point-in-time comments allow aggregates, subject to privacy rules.
 
+A generated writer declares the tracker counts and rosters it renders as typed
+values beside the payload; the same durability rule decides them from the values
+with no session, and a refused structured value is named on the error by its
+field and value, never by string offsets. Ordinary counts of tests, files and
+commits are not tracker aggregates and are never declared.
+
 `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` controls only organization-privacy
 judgment:
 
@@ -357,10 +363,11 @@ answer" and "said it is clean" stay two distinct observable states.
 Organization-privacy judgment retains its publication/tracker authored routing
 and branch-name rule. Mandatory aggregate judgment also reaches durable authored
 repository artifacts. PRIVATE destinations retain the explicit no-scanner fast
-path. Credential refusal happens locally before any audit session. The only
-current DERIVED writers are point-in-time lifecycle comments. Typed generated
-durable-writer adoption remains unfinished; this increment does not infer native
-tracker ownership from authored criterion IDs.
+path. Credential refusal happens locally before any audit session. The scope
+terminal is the one DERIVED writer that renders a tracker roster, and it
+declares it as a typed value; no generated writer of a durable surface renders
+one yet. This increment does not infer native tracker ownership from authored
+criterion IDs.
 
 ### Operation config
 

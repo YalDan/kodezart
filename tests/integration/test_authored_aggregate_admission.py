@@ -1,4 +1,4 @@
-"""Authored tracker aggregates reach the actual PR writer's fresh judgment."""
+"""Authored and generated tracker aggregates reach the actual gate composition."""
 
 import pytest
 
@@ -12,6 +12,8 @@ from kodezart.types.domain.gating import (
     ContentClass,
     DurabilityCategory,
     GateVerdict,
+    IdentifierRoster,
+    ObjectCount,
     OutboundDestination,
     RedactionCategory,
     RepoVisibility,
@@ -356,19 +358,53 @@ async def test_single_public_reference_and_two_references_remain_ordinary_text(
         assert any(body in call["prompt"] for call in judge.calls)
 
 
-async def test_derived_technical_values_keep_the_existing_no_session_route(tmp_path):
-    judge = RecordedTextJudge("3 tests", None)
+@pytest.mark.parametrize(
+    ("content", "aggregates", "verdict"),
+    [
+        ("3 tests passed.", (), GateVerdict.CLEAN),
+        ("12 files changed.", (), GateVerdict.CLEAN),
+        ("2 commits implement the fix.", (), GateVerdict.CLEAN),
+        (
+            "3 tests passed.",
+            (ObjectCount(field="criteria", value=3),),
+            GateVerdict.BLOCKED,
+        ),
+        (
+            "see the lanes below",
+            (IdentifierRoster(field="lanes.issue", identities=("A", "B", "C")),),
+            GateVerdict.BLOCKED,
+        ),
+    ],
+)
+async def test_a_derived_durable_write_is_decided_by_its_declaration_not_a_session(
+    tmp_path, content, aggregates, verdict
+):
+    """A generated durable write opens no judgment session either way.
+
+    Basis for the rewrite. The test this replaces pinned "a DERIVED durable
+    payload is CLEAN with no session" as the whole rule, which let a
+    generated tracker count on a durable surface pass unexamined. The rule
+    is now that no session opens either way — asserted on every row — and
+    that the verdict follows the tracker aggregates the writer declared. An
+    undeclared count of tests, files or commits is a repository fact and
+    stays clean, which is the same protection the old test gave, stated for
+    the right reason.
+    """
+    judge = RecordedTextJudge(content, None)
     gate = await gate_with_judge(tmp_path, judge)
+
     decision = await gate.gate(
-        content="3 tests",
+        content=content,
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         destination=OutboundDestination.ARTIFACT_CRITERIA_JSON,
         content_class=ContentClass.DERIVED,
-        aggregates=(),
+        aggregates=aggregates,
     )
-    assert decision.verdict is GateVerdict.CLEAN
-    assert decision.content == "3 tests"
+
+    assert decision.verdict is verdict
+    if verdict is GateVerdict.CLEAN:
+        assert decision.content == content
     assert judge.calls == []
 
 

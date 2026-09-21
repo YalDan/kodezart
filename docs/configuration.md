@@ -612,8 +612,9 @@ Durable PUBLIC/UNKNOWN authored text uses the existing fresh content judgment.
 Tracker-object counts and rosters of at least three references block the whole
 write; ordinary test/file/commit counts remain permitted. This policy has no
 aggregate setting. Point-in-time comments allow aggregates subject to privacy;
-PRIVATE targets retain the existing fast path. Typed generated aggregate and
-terminal/residual writer adoption remain unfinished.
+PRIVATE targets retain the existing fast path. Generated writers declare their
+tracker aggregates as typed values at the gate; residual writer adoption
+(KOD-489) remains unfinished.
 
 
 The audit claim role is `audit_claim` in both prompt sets. Its `criterion_key`,
