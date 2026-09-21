@@ -2583,7 +2583,7 @@ async def test_workflow_cleans_artifacts_before_pr() -> None:
     ]
 
     assert len(persister.clean_calls) == 1
-    _, _, branch = persister.clean_calls[0]
+    branch = persister.clean_calls[0]["branch"]
     assert branch.startswith("kodezart/")
     assert "-ralph-" not in branch  # cleaned from feature branch, not ralph
 
