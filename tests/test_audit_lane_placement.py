@@ -127,19 +127,44 @@ def _is_protocol(node: ast.ClassDef) -> bool:
     )
 
 
+def _rebindings(tree: ast.Module) -> frozenset[str]:
+    """Each owned name this module binds at its top level by assignment.
+
+    A ``class`` is not the only way to state a symbol a second time:
+    ``SpecFinding = _LocalStub`` leaves the ``ImportFrom`` in place for the
+    import assertion to find and hands the rest of the module a local stub
+    under the owned name, which is the same evasion in one line.
+
+    Only a binding at the module's own top level shadows the name the
+    module reads, so the scan stops there: a local variable inside a
+    function is that function's own and shadows nothing.
+    """
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets: list[ast.expr] = list(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        names.update(
+            target.id
+            for target in targets
+            if isinstance(target, ast.Name) and target.id in OWNERS
+        )
+    return frozenset(names)
+
+
 def _redeclarations(root: Path) -> dict[str, list[str]]:
     """Each module under *root* declaring a symbol another module owns."""
     found: dict[str, list[str]] = {}
     for module, tree in _modules(root):
-        names = sorted(
-            {
-                node.name
-                for node in ast.walk(tree)
-                if isinstance(node, ast.ClassDef)
-                and node.name in OWNERS
-                and OWNERS[node.name] != module
-            }
-        )
+        declared = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name in OWNERS
+        } | _rebindings(tree)
+        names = sorted(name for name in declared if OWNERS[name] != module)
         if names:
             found[module] = names
     return found
@@ -286,6 +311,31 @@ def test_a_planted_stub_reds_the_single_declaration_assertion(
     monkeypatch.setattr(sys.modules[__name__], "SOURCE", tmp_path.resolve())
     with pytest.raises(AssertionError):
         test_no_module_but_the_owner_declares_a_cross_lane_symbol()
+
+
+def test_a_stub_rebound_to_the_owned_name_reds_the_single_declaration_assertion(
+    tmp_path: Path,
+) -> None:
+    """A class under a private name plus one rebind is the same evasion.
+
+    The module keeps its ``ImportFrom``, so the import assertion still
+    passes, and every read of the owned name below the rebind reaches the
+    local stub instead.  Planted on a tree of this control's own rather
+    than on the authored module, so what is demonstrated is the detector
+    answering and not the real tree happening to stay clean.
+    """
+    (tmp_path / "rebind.py").write_text(
+        "from pydantic import BaseModel\n"
+        "\n"
+        "from kodezart.types.domain.organize import SpecFinding\n"
+        "\n"
+        "\n"
+        "class _LocalSpecFinding(BaseModel): ...\n"
+        "\n"
+        "\n"
+        "SpecFinding = _LocalSpecFinding\n"
+    )
+    assert _redeclarations(tmp_path) == {"rebind.py": [SpecFinding.__name__]}
 
 
 def test_a_planted_role_copy_under_another_name_reds_the_shape_assertion(
