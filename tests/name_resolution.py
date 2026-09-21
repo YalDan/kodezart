@@ -22,13 +22,17 @@ that needs it imports it from there.
 
 Blind spots, stated once: a tuple-unpacking target binds nothing here, a
 starred argument lands on no parameter, and a string constant is a value,
-never a route to a name.  The receiver offset assumes the receiver fills the
-first parameter, so an unbound method called with an explicit instance —
+never a route to a name.  The receiver offset applies when the first parameter
+is spelled ``self`` or ``cls``, and assumes the receiver fills it, so an
+unbound method called with an explicit instance —
 ``Reader._own_text(reader, spec)`` — hands that instance to the parameter
-after the receiver's own and every later argument lands one place early or on
-nothing.  Only an absolute ``kodezart.`` import names a module of the tree: a
-relative import is neither a route nor a home, so a call to a name it binds
-reaches no definition; no module under the package writes one.
+after the receiver's own and every later argument lands one place late, on the
+parameter after its own, or off the end.  Only an absolute ``kodezart.``
+import names a module of the tree: a relative import is neither a route nor a
+home, so a call to a bare name it binds reaches no definition, and a relative
+module receiver — ``from . import b``, then ``b._own_text(spec)`` — spells no
+module of the tree and takes the every-method rule; no module under the
+package writes either form.
 """
 
 import ast
