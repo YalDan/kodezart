@@ -225,15 +225,6 @@ class TrackerCriteria:
             return spec, self._finished(spec, criteria)
         return spec, await self._owed(spec, criteria, frozenset())
 
-    async def read_spec(self, *, issue_key: str) -> TrackerSpec:
-        """The captured spec alone, over the same reading the entry takes.
-
-        A caller wanting only what the fire is graded against, not the roster
-        it would start on; an outage is never cached authority for either.
-        """
-        spec, _ = await self._capture(issue_key)
-        return spec
-
     async def _owed(
         self,
         spec: TrackerSpec,
@@ -291,8 +282,10 @@ class TrackerCriteria:
             ) from exc
         return await self._owed(spec, criteria, keys)
 
-    async def read_finished(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
-        """The counting criteria of the subject's subtree, all of them finished.
+    def _finished(
+        self, spec: TrackerSpec, criteria: Mapping[str, TrackerIssue]
+    ) -> TrackerCriterionSet:
+        """The counting roster a reading already taken leaves a lane standing on.
 
         A lane that owes nothing has no unstarted criterion for the owed
         reading to answer with, so the roster it stands on is read off the
@@ -314,19 +307,6 @@ class TrackerCriteria:
         refuses such a member: there is no obligation for a delivery to be
         the discharge of.
         """
-        try:
-            criteria = await self._read_subtree_criteria(spec)
-        except _TRANSPORT_FAILURES as exc:
-            raise FireSpecEntryError(
-                issue_key=spec.subject,
-                reason="current tracker criteria could not be read",
-            ) from exc
-        return self._finished(spec, criteria)
-
-    def _finished(
-        self, spec: TrackerSpec, criteria: Mapping[str, TrackerIssue]
-    ) -> TrackerCriterionSet:
-        """The counting roster a reading already taken leaves a lane standing on."""
         unfinished = sorted(
             key for key, issue in criteria.items() if is_open(issue.state_kind)
         )

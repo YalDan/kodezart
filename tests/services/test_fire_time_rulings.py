@@ -194,8 +194,7 @@ async def build(repository, executor, *, port=None, gate=None, prompts=None):
         lease_seconds=900,
     )
     criteria = TrackerCriteria(tracker=port)
-    spec = await criteria.read_spec(issue_key=SUBJECT)
-    current = await criteria.read_current(spec=spec, held=None)
+    spec, current = await criteria.read_entry(issue_key=SUBJECT)
     return step, spec, current, workspace, port, gate, str(repo), base
 
 

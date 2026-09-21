@@ -774,8 +774,7 @@ async def test_the_step_returns_no_update_into_graph_state() -> None:
         workspace=workspace,
     )
     source = TrackerCriteria(tracker=port)
-    spec = await source.read_spec(issue_key=SUBJECT)
-    current = await source.read_current(spec=spec, held=None)
+    spec, current = await source.read_entry(issue_key=SUBJECT)
     _, config = prepare(fire)
 
     update = await rule_open_questions(

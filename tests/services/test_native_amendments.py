@@ -194,7 +194,11 @@ async def build(
 
     A run that crossed its own criteria off leaves nothing Todo, so a
     fixture rebuilding that run's wiring reads its obligations the way the
-    run's own barriers do: against the roster it entered with.
+    run's own barriers do: against the roster it entered with. Such a run
+    carries its captured subject too, as *frozen_spec*, for the same reason
+    the source never re-reads the text into a resumed lane; without one this
+    fixture enters the subject itself, which is the reading a fresh run
+    makes and which requires the subtree to still owe something.
     """
     repo, base = repository
     git_service = SubprocessGitService(remote="origin")
@@ -216,7 +220,9 @@ async def build(
     )
     port = port or tracker()
     criteria = TrackerCriteria(tracker=port)
-    spec = frozen_spec or await criteria.read_spec(issue_key=SUBJECT)
+    spec = frozen_spec
+    if spec is None:
+        spec, _ = await criteria.read_entry(issue_key=SUBJECT)
     owner = NativeAmendments(
         tracker=port,
         operation=OperationConfig(
@@ -635,8 +641,7 @@ async def test_an_observed_amendment_keeps_the_roster_criterion_the_fire_finishe
     """
     port = tracker()
     source = TrackerCriteria(tracker=port)
-    spec = await source.read_spec(issue_key=SUBJECT)
-    entry = await source.read_current(spec=spec)
+    spec, entry = await source.read_entry(issue_key=SUBJECT)
     finished(port, DIRECT_OWED_TOO)
     executor = Executor(reproduced=True)
     service, guard, workspace, _ = await build(

@@ -68,8 +68,7 @@ async def setup(*, monitor=None, git=None, repositories=(), bound=1, watches=2):
     criteria = TrackerCriteria(tracker=tracker)
     fire = engine(criteria=criteria)
     state, config = prepare(fire, "real-job-id")
-    spec = await criteria.read_spec(issue_key=SUBJECT)
-    snapshot = await criteria.read_current(spec=spec)
+    spec, snapshot = await criteria.read_entry(issue_key=SUBJECT)
     state.update(
         fire_spec=spec, criterion_set=snapshot, feature_branch=HEAD, feature_tip_sha=SHA
     )

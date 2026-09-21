@@ -164,7 +164,8 @@ async def test_actual_composition_uses_remapped_criteria_row(server):
         caller=server,
     )
     entry = TrackerCriteria(tracker=port)
-    assert (await entry.read_spec(issue_key=SUBJECT)).criteria == (CRITERION,)
+    spec, _ = await entry.read_entry(issue_key=SUBJECT)
+    assert spec.criteria == (CRITERION,)
     # A different completed phase cannot stand in for the selected table row.
     server.issues[SUBJECT].labels = ["body complete", "authorized under this operation"]
     with pytest.raises(FireSpecEntryError, match="completion"):

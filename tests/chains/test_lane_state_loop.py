@@ -161,11 +161,10 @@ class Lane:
     async def arguments(self):
         """Everything the loop is dispatched with, for one run of this lane.
 
-        The two reads here are this fixture's own way in; what the node asks
+        The entry read here is this fixture's own way in; what the node asks
         the reader for starts at zero afterwards.
         """
-        spec = await self.criteria.read_spec(issue_key=SUBJECT)
-        entry = await self.criteria.read_current(spec=spec)
+        spec, entry = await self.criteria.read_entry(issue_key=SUBJECT)
         self.criteria.current_reads = 0
         return {
             "prompt": "Implement the current Checks.",
@@ -1318,6 +1317,5 @@ async def test_a_refutation_the_loop_died_inside_certifies_no_failing_grading(dr
     ] == []
     # What a new fire over the same subject owes, read the way its entry
     # barrier reads it: with no roster held, so nothing this run claimed.
-    spec = await lane.criteria.read_spec(issue_key=SUBJECT)
-    current = await lane.criteria.read_current(spec=spec)
+    _, current = await lane.criteria.read_entry(issue_key=SUBJECT)
     assert (broken in {criterion.id for criterion in current.criteria}) is owed_again

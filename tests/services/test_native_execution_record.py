@@ -81,7 +81,7 @@ class Arm:
         )
 
     async def guard(self):
-        spec = await self.criteria.read_spec(issue_key=SUBJECT)
+        spec, _ = await self.criteria.read_entry(issue_key=SUBJECT)
         return NativeAmendments(
             tracker=self.port,
             operation=native_operation(),
