@@ -27,7 +27,12 @@ port protocols, the privates off the adapter class, the surface off the
 enumeration, the module paths off the classes' own modules — so a rename
 moves the guard with the code.  The only spelled tokens are the backend's
 own field names for a parent and for labels, which have no Python owner to
-take them from.
+take them from.  The listing tool is recognised by every name the package
+binds to its value, pooled over the whole tree and resolved to each
+module's own words, and by the tool's literal, whether the tool is passed
+positionally or by keyword — so importing the constant from the module that
+binds it, importing it under another name, or spelling the tool inline are
+each still a listing.
 
 What it does not see: a member reached by reflection; a selection of
 criterion rows out of issues some container read already returned, which is
@@ -56,6 +61,7 @@ from tests.domain.test_criterion_cross_off import (
     qualified_names,
     source_tree,
 )
+from tests.identity_guards import _constructor_names
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 
@@ -137,10 +143,10 @@ def child_listing_definitions(tree: ast.Module, *, tools: set[str]) -> list[str]
     """Every definition in *tree* that lists children by parent on the wire.
 
     Both halves are required: a mapping display addressed by the parent
-    field, and a call passing one of the listing tool's own names.  A
-    definition holding a nested one holds what it holds, which is how the
-    page loop a listing is written as is attributed to the method that
-    addresses the parent.
+    field, and a call passing one of the listing tool's own names or the
+    tool's literal, positionally or by keyword.  A definition holding a
+    nested one holds what it holds, which is how the page loop a listing is
+    written as is attributed to the method that addresses the parent.
     """
     where = qualified_names(tree)
     found: set[str] = set()
@@ -155,8 +161,15 @@ def child_listing_definitions(tree: ast.Module, *, tools: set[str]) -> list[str]
         listed = any(
             isinstance(child, ast.Call)
             and any(
-                isinstance(argument, ast.Name) and argument.id in tools
-                for argument in child.args
+                (isinstance(argument, ast.Name) and argument.id in tools)
+                or (
+                    isinstance(argument, ast.Constant)
+                    and argument.value == LISTING_TOOL
+                )
+                for argument in (
+                    *child.args,
+                    *(keyword.value for keyword in child.keywords),
+                )
             )
             for child in inside
         )
@@ -165,9 +178,26 @@ def child_listing_definitions(tree: ast.Module, *, tools: set[str]) -> list[str]
     return sorted(found)
 
 
-def child_listings(tree: ast.Module) -> list[str]:
-    """The wire listings of one module, its own tool names resolved first."""
-    return child_listing_definitions(tree, tools=tool_names(tree, value=LISTING_TOOL))
+def listing_tool_names(sources: dict[str, str]) -> frozenset[str]:
+    """Every name *sources* binds to the listing tool, pooled over the map.
+
+    Pooled before any module is scanned, so a listing that imports the
+    tool's constant from the module that binds it is a listing where it is
+    sent rather than nowhere at all.
+    """
+    return frozenset(
+        name
+        for source in sources.values()
+        for name in tool_names(ast.parse(source), value=LISTING_TOOL)
+    )
+
+
+def child_listings(tree: ast.Module, pool: frozenset[str]) -> list[str]:
+    """The wire listings of one module, the pool resolved to its own words."""
+    local: set[str] = set()
+    for name in pool:
+        local |= _constructor_names(tree, name)
+    return child_listing_definitions(tree, tools=local)
 
 
 def scopes_naming(tree: ast.Module, *, attribute: str) -> list[str]:
@@ -206,6 +236,16 @@ def by_module(
     return found
 
 
+def wire_listings(sources: dict[str, str]) -> dict[str, list[str]]:
+    """Every module of *sources* that lists children by parent, by module.
+
+    The tool's names are pooled over the whole map once, before any module
+    is scanned, and then resolved to each module's own words.
+    """
+    pool = listing_tool_names(sources)
+    return by_module(sources, lambda tree: child_listings(tree, pool))
+
+
 def test_the_port_criterion_read_has_one_implementation_and_a_private_descent():
     sources = source_tree()
 
@@ -233,7 +273,8 @@ def test_the_port_criterion_read_has_one_implementation_and_a_private_descent():
     # resolve is made of and reads no criterion label at all.  Naming the
     # second is deliberate — widening the key would stop the guard seeing a
     # third listing.
-    assert by_module(sources, child_listings) == {
+    pool = listing_tool_names(sources)
+    assert by_module(sources, lambda tree: child_listings(tree, pool)) == {
         ADAPTER: [LinearMcpTracker._read_criteria.__qualname__],
         SCOPE_READER: [LinearScopeReader._subtree.__qualname__],
     }
@@ -273,7 +314,7 @@ LISTING_REPORTS = {
     "descent callers": lambda sources: by_module(
         sources, lambda tree: callers_of(tree, name=DESCENT)
     ),
-    "wire listings": lambda sources: by_module(sources, child_listings),
+    "wire listings": wire_listings,
 }
 
 #: Each way a second listing surface could arrive: the module it arrives
@@ -298,6 +339,39 @@ PLANTED_LISTINGS = {
         "class Second:\n"
         "    async def children(self, key):\n"
         f'        return await self._call(_TOOL, {{"{PARENT_FIELD}": key}})\n',
+        "wire listings",
+    ),
+    "a wire listing by imported constant": (
+        f"{ADAPTERS}/other/reader.py",
+        f"from {LinearMcpTracker.__module__} import _TOOL_LIST_ISSUES\n"
+        "class Second:\n"
+        "    async def children(self, key):\n"
+        "        return await self._call("
+        f'_TOOL_LIST_ISSUES, {{"{PARENT_FIELD}": key}})\n',
+        "wire listings",
+    ),
+    "a wire listing by aliased import": (
+        f"{ADAPTERS}/other/reader.py",
+        f"from {LinearMcpTracker.__module__} import _TOOL_LIST_ISSUES as _TOOL\n"
+        "class Second:\n"
+        "    async def children(self, key):\n"
+        f'        return await self._call(_TOOL, {{"{PARENT_FIELD}": key}})\n',
+        "wire listings",
+    ),
+    "a wire listing by literal tool name": (
+        f"{ADAPTERS}/other/reader.py",
+        "class Second:\n"
+        "    async def children(self, key):\n"
+        f'        return await self._call("{LISTING_TOOL}",'
+        f' {{"{PARENT_FIELD}": key}})\n',
+        "wire listings",
+    ),
+    "a wire listing by keyword tool name": (
+        f"{ADAPTERS}/other/reader.py",
+        "class Second:\n"
+        "    async def children(self, key):\n"
+        f'        return await self._call(tool="{LISTING_TOOL}",'
+        f' arguments={{"{PARENT_FIELD}": key}})\n',
         "wire listings",
     ),
 }
