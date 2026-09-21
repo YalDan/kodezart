@@ -97,7 +97,11 @@ def test_same_ruling_newtype_object_reexported_and_native_ids_remain_opaque():
 
 def test_pure_counts_separate_subject_kind_identity_and_reason():
     a = record()
+    # The same id string under a different kind: a count that drops the kind
+    # merges this with `a`.
     ruling = record(kind="ruling")
+    # The same subject as `a` under a second reason, repeated so that one
+    # subject carries two distinct counted rows.
     other_reason = record(reason="cost_measured_affordable")
     reports = [
         AmendmentReport(verdicts=items)
@@ -106,14 +110,24 @@ def test_pure_counts_separate_subject_kind_identity_and_reason():
             (other_reason,),
             (a, ruling),
             (a,),
+            (other_reason,),
         ]
     ]
     before = [report.model_dump_json() for report in reports]
     counted = repeated_upheld(reports)
-    assert [(item.subject.kind, item.reason, item.count) for item in counted] == [
-        ("criterion", UpheldReason.GROUND_NOT_REPRODUCED, 3),
-        ("ruling", UpheldReason.GROUND_NOT_REPRODUCED, 2),
+    assert [
+        (item.subject.kind, item.subject.id, item.reason, item.count)
+        for item in counted
+    ] == [
+        ("criterion", "opaque/criterion", UpheldReason.COST_MEASURED_AFFORDABLE, 2),
+        ("criterion", "opaque/criterion", UpheldReason.GROUND_NOT_REPRODUCED, 3),
+        ("ruling", "opaque/criterion", UpheldReason.GROUND_NOT_REPRODUCED, 2),
     ]
+    event = NativeAmendmentEvent(report=reports[-1], repeated=counted)
+    assert (
+        NativeAmendmentEvent.model_validate_json(event.model_dump_json()).repeated
+        == counted
+    )
     assert repeated_upheld(reports) == counted
     assert [report.model_dump_json() for report in reports] == before
 
