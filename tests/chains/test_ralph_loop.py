@@ -1913,6 +1913,33 @@ async def test_each_dispatch_of_one_run_carries_the_effort_its_role_declares() -
     assert provider.session_policy(PromptKey.EVALUATION).effort is evaluative
 
 
+async def test_each_dispatch_of_one_run_carries_the_same_engineering_standard() -> None:
+    """The writer is graded on the standard it was given, in a single run.
+
+    One string, not two equal ones: the append the implementation dispatch
+    carries IS the append the evaluation dispatch carries, and it names
+    hexagonal and every reading of the standard. The standard travels on the
+    session policy, so no rendered body moves to deliver it.
+    """
+    from tests.chains.test_dispatch_definitions import evaluator_dispatches, v5_provider
+    from tests.prompts.test_v5_fragments import ENGINEERING_READINGS, prose
+
+    runner = await evaluator_dispatches(v5_provider())
+
+    appends = {
+        dispatch.method: dispatch.policy.system_prompt_append
+        for dispatch in runner.dispatches
+    }
+    assert set(appends) == {"stream_workflow", "stream"}
+
+    standard = appends["stream_workflow"]
+    assert standard is not None
+    assert appends["stream"] == standard
+    assert "hexagonal" in standard
+    for reading in ENGINEERING_READINGS:
+        assert reading in prose(standard)
+
+
 async def test_a_legacy_run_carries_no_effort_at_any_dispatch() -> None:
     """The mechanism is opt-in per set: the legacy set dispatches as before."""
     from tests.chains.test_dispatch_definitions import (
