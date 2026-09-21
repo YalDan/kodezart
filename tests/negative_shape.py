@@ -66,8 +66,13 @@ SUPPRESSION: Final[re.Pattern[str]] = re.compile(
 )
 
 #: The forms that keep a collected test from running: the runner's own, and
-#: the standard library's, which the runner honours on a plain test function
-#: as well as on a case class.
+#: the standard library's.  Four of the standard library's -- the
+#: unconditional skip, the two conditional ones and the raised exception --
+#: the runner honours on a plain test function as well as on a case class, so
+#: each of those is a collected test that does not run.  The fifth, the
+#: expected failure, the runner honours on a case class only, and it is
+#: rostered for a reason of its own: a test carrying it is a test whose
+#: failure does not count, which is the same silence reached by another route.
 SKIP_FORMS: Final[frozenset[str]] = frozenset(
     {
         "pytest.mark.skip",
@@ -216,10 +221,10 @@ def _in_source_order(tree: ast.Module) -> list[ast.stmt]:
     The walk the parser's own helper does is breadth-first: it yields every
     module-body statement before any statement nested in a ``try``, an
     ``if`` or a function.  Reading bindings in that order reads an alias
-    assignment before the wrapped import it copies from, which is the one
-    shape the alias arms exist for, so the statements are sorted by where
-    they are written instead.  Bounded by the parse: the module has finitely
-    many statements and each is visited once.
+    assignment before the wrapped import it copies from, which is a shape the
+    alias arms exist for, so the statements are sorted by where they are
+    written instead.  Bounded by the parse: the module has finitely many
+    statements and each is visited once.
     """
     return sorted(
         (node for node in ast.walk(tree) if isinstance(node, ast.stmt)),
@@ -237,22 +242,25 @@ def form_bindings(tree: ast.Module) -> dict[str, str]:
     kept, so the standard library's own skip forms resolve the same way and
     an import of a package under a root binds nothing else.
 
-    An import is read wherever it sits.  One written inside the function
-    that calls the form binds the name for that call, and one wrapped in a
-    ``try`` or an ``if`` at module level binds it too; a module that imports
-    the root nowhere else would otherwise resolve none of its own calls.  An
-    alias assignment is read at module level only, which is the blind spot
-    the resolver states.
+    An import is read wherever it sits, and it binds the name for every use
+    in the module wherever that use sits.  One written inside the function
+    that calls the form binds the name for that call, and for a use spelled
+    above it as well; one wrapped in a ``try`` or an ``if`` at module level
+    binds it too.  A module that imports the root nowhere else would
+    otherwise resolve none of its own calls.  An alias assignment is read at
+    module level only, which is the blind spot the resolver states.
 
     One forward pass in source order is the whole semantics: a binding is
     read before anything written below it, so the alias an assignment copies
     is already bound when that assignment is reached however the import it
     came from was wrapped, and a name bound again replaces the binding it
-    had.  Source order, not scope: a name bound at module level and bound
-    again lower down inside a function is read everywhere as the lower
-    binding, so a module that spells one form at the top and rebinds the
-    same name to another below reports only the second.  A star import
-    binds nothing, and the roster states that.
+    had only when the rebinding is to a rooted origin -- the ``None`` an
+    except arm assigns is not one, so the import above it stands.  Source
+    order, not scope: a name bound at module level and bound again lower down
+    inside a function is read everywhere as the lower binding, so a module
+    that spells one form at the top and rebinds the same name to another
+    below reports only the second.  A star import binds nothing, and the
+    roster states that.
     """
     bindings: dict[str, str] = {}
     outer = {id(statement) for statement in tree.body}
@@ -301,7 +309,11 @@ def sites(module: Source, forms: frozenset[str]) -> tuple[str, ...]:
     Not followed, and so not seen: a form reached through ``getattr``, a
     marker added from a string at collection time, an alias bound inside a
     function, a module reached through ``importlib``, a star import from
-    pytest, an import from the private ``_pytest`` packages.
+    either root, a root reached only through a dotted import of a package
+    under it -- importing the mock package alone binds the dotted string and
+    not the root it sits under, so a skip decorator spelled on that root
+    after such an import alone resolves to nothing -- and an import from the
+    private ``_pytest`` packages.
     """
     bindings = form_bindings(module.tree)
     found: list[tuple[int, int, str]] = []

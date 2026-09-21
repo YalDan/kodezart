@@ -279,10 +279,14 @@ FORM_CONTROLS: tuple[tuple[str, str], ...] = (
         "import pytest\n@pytest.mark.skipif.with_args(True, reason='x')\n"
         "def test_a(): ...\n",
     ),
-    # The standard library's own forms.  The runner honours each of these on
-    # a plain test function, so each is a test that does not run; the suite
-    # binds the module nowhere today, which is why the roster gains no row.
-    # One binding shape each, as above.
+    # The standard library's own forms.  Four of them -- the unconditional
+    # skip, the two conditional ones and the raised exception -- the runner
+    # honours on a plain test function as well as on a case class, so each of
+    # those is a collected test that does not run.  The fifth, the expected
+    # failure, it honours on a case class only, and that one is rostered for a
+    # reason of its own: a test carrying it is a test whose failure does not
+    # count.  The suite binds the module nowhere today, which is why the
+    # roster gains no row.  One binding shape each, as above.
     ("unittest.skip", "import unittest\n@unittest.skip('x')\ndef test_a(): ...\n"),
     (
         "unittest.skipIf",
@@ -505,9 +509,13 @@ def test_every_form_is_controlled() -> None:
 def test_importing_the_mock_package_binds_no_skip_form() -> None:
     """Why the roster gains no row for the standard library's forms.
 
-    Most of the suite imports the mock package, and that import binds a
+    Most of the suite imports the mock package.  A from-import of it binds a
     member of the package, never the module whose skip forms the roster
-    names, so no module reports one of those forms today.
+    names.  The plain-import shape below is a weaker claim: a dotted import
+    of the package binds the dotted string and not the root it sits under, so
+    a form spelled on that root after such an import alone resolves to
+    nothing -- the blind spot the resolver states, not a property of the
+    package.  Either way, no module reports one of those forms today.
     """
     forms = SKIP_FORMS | negative_shape.gated_mark_forms()
     control = Source.of(
