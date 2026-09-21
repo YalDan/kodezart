@@ -2,7 +2,12 @@
 
 from collections.abc import Sequence
 
-from kodezart.types.domain.gating import ScanFailureKind, ScanHit
+from kodezart.types.domain.gating import (
+    ObjectCount,
+    ScanFailureKind,
+    ScanHit,
+    TrackerAggregate,
+)
 from kodezart.types.domain.organize_owner import OrganizeReport
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
@@ -606,6 +611,11 @@ class OutboundContentBlockedError(Exception):
     operator must be able to tell apart.  ``hits`` carries the per-span
     rationale, without which a human can neither confirm nor overrule the
     block — and a gate that cannot be confirmed gets worked around.
+
+    A structured finding is located by its field and value on the hit, never
+    by an offset into the rendered text: the writer repairs the value it
+    declared, and an offset for a value it never rendered as one substring
+    would be invented.
     """
 
     def __init__(
@@ -621,7 +631,9 @@ class OutboundContentBlockedError(Exception):
         if failure is not None:
             detail = f"{detail} (scan failure: {failure.value})"
         for hit in hits:
-            if hit.has_span and hit.matched_text is not None:
+            if hit.source is not None:
+                detail = f"{detail} ({_describe_source(hit.source)})"
+            elif hit.has_span and hit.matched_text is not None:
                 detail = (
                     f"{detail} (start: {hit.start}; end: {hit.end}; "
                     f"matched text: {hit.matched_text!r})"
@@ -631,6 +643,13 @@ class OutboundContentBlockedError(Exception):
         self.categories: tuple[str, ...] = tuple(categories)
         self.failure: ScanFailureKind | None = failure
         self.hits: tuple[ScanHit, ...] = tuple(hits)
+
+
+def _describe_source(source: TrackerAggregate) -> str:
+    """The declared value, named by its own field: what a writer repairs."""
+    if isinstance(source, ObjectCount):
+        return f"source: {source.field}; value: {source.value}"
+    return f"source: {source.field}; identities: {', '.join(source.identities)}"
 
 
 class QueueFullError(Exception):

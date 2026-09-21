@@ -15,7 +15,11 @@ import pytest
 import structlog.testing
 
 from kodezart.core.errors import LaneRosterArityError
-from kodezart.domain.errors import LaneRecordReadError, ScopeStatusError
+from kodezart.domain.errors import (
+    LaneRecordReadError,
+    OutboundContentBlockedError,
+    ScopeStatusError,
+)
 from kodezart.domain.scope_terminal import (
     render_scope_status,
     scope_status_aggregates,
@@ -30,8 +34,10 @@ from kodezart.types.domain.gating import (
     DurabilityCategory,
     GateDecision,
     GateVerdict,
+    IdentifierRoster,
     OutboundDestination,
     RepoVisibility,
+    ScanHit,
     TrackerAggregate,
     WriterShape,
 )
@@ -184,6 +190,51 @@ async def test_the_write_is_declared_derived_on_its_own_destination() -> None:
     assert gate.content_classes == [ContentClass.DERIVED]
     assert [visibility for _, visibility, _ in gate.calls] == [RepoVisibility.PUBLIC]
     assert [shape for _, _, shape in gate.calls] == [WriterShape.PROSE]
+
+
+class BlockingGate:
+    """A gate that refuses every payload, naming the value it was handed."""
+
+    async def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+        destination: OutboundDestination,
+        content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
+    ) -> GateDecision:
+        return GateDecision(
+            verdict=GateVerdict.BLOCKED,
+            content="",
+            categories=(DurabilityCategory.IDENTIFIER_ROSTER,),
+            hits=tuple(
+                ScanHit(category=DurabilityCategory.IDENTIFIER_ROSTER, source=aggregate)
+                for aggregate in aggregates
+            ),
+        )
+
+
+async def test_a_refused_typed_roster_posts_nothing() -> None:
+    """The refusal reaches the caller and the container is never written.
+
+    The value on the refusal is the one the writer declared, so what a reader
+    repairs is the roster rather than a position in a body that was never
+    posted.
+    """
+    status = FakeScopeStatusWriter()
+
+    with pytest.raises(OutboundContentBlockedError) as excinfo:
+        await terminal(status=status, gate=BlockingGate()).report(
+            ready=reading(ready=("A", "B"), closed=("C",))
+        )
+
+    (hit,) = excinfo.value.hits
+    assert hit.source == IdentifierRoster(
+        field="lanes.issue", identities=("A", "B", "C")
+    )
+    assert status.posts == []
 
 
 async def test_the_terminals_roster_is_admitted_and_refused_by_durability() -> None:
