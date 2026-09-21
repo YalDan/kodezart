@@ -44,13 +44,17 @@ def reading(
 ) -> ScopeReadySet:
     """One reading whose four groups are stated rather than computed."""
     rows = {key: make_tracker_issue(key) for key in members}
+    # Each ready lane's whole criterion roster here is its one open criterion,
+    # so the lane's ``criteria`` and its ``gap`` are the same rows.
+    rosters = {key: (make_tracker_issue(f"{key}/check"),) for key in ready}
     return ScopeReadySet(
         scope=ResolvedScope(ref=SCOPE, issues=tuple(rows[key] for key in members)),
         ready=tuple(
             ScopeReadyLane(
                 issue=rows[key],
                 effective_priority=IssuePriority.NONE,
-                gap=(make_tracker_issue(f"{key}/check"),),
+                gap=rosters[key],
+                criteria=rosters[key],
             )
             for key in ready
         ),
