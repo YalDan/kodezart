@@ -1,5 +1,6 @@
 """Read the one subject and criterion set held by either fire composition."""
 
+from kodezart.domain.errors import PersistedCriterionSetError
 from kodezart.types.domain.agent import TicketDraftOutput
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
@@ -15,12 +16,15 @@ def recorded_native_roster(
 ) -> TrackerCriterionSet | None:
     """The roster a native barrier was already judged against, or nothing.
 
-    A first entry has recorded no set, and an authored sweep records one of
-    another kind entirely; either way the barrier holds no native roster and
-    reads the entry-shaped Todo set. Every barrier that passes *held* asks
-    this one question, so it is answered here once.
+    A first entry has recorded no set and reads the entry-shaped Todo set.
+    A persisted artifact is the one carrier the native arm never reads
+    from, so one reaching here is refused, not read around as a first
+    entry. Every barrier that passes *held* asks this one question, so it
+    is answered here once.
     """
-    return criterion_set if isinstance(criterion_set, TrackerCriterionSet) else None
+    if isinstance(criterion_set, CriteriaArtifact):
+        raise PersistedCriterionSetError()
+    return criterion_set
 
 
 def validated_artifact(state: WorkflowState) -> CriteriaArtifact:

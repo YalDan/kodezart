@@ -346,6 +346,21 @@ class CriterionResolutionError(ValueError):
         )
 
 
+class PersistedCriterionSetError(Exception):
+    """A persisted criteria artifact reached a tracker-native barrier.
+
+    The native arm reads its criterion set from the tracker at every
+    barrier and carries it on no branch file and in no local state; a
+    document handed in where that read belongs is refused, not read past.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "a persisted criteria artifact cannot stand in for the tracker's "
+            "criterion set"
+        )
+
+
 class FireSpecEntryError(Exception):
     """The current subject lacks its machine completion or human approval."""
 

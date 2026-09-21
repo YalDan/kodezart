@@ -33,6 +33,7 @@ from kodezart.domain.errors import (
     FireSpecEntryError,
     InvalidFireCriterionError,
     LaneEntryError,
+    PersistedCriterionSetError,
     ScopedExecutionUnavailableError,
 )
 from kodezart.domain.thread_id import workflow_thread_id
@@ -53,7 +54,12 @@ from kodezart.types.domain.agent import (
     WorkflowReviewEvent,
 )
 from kodezart.types.domain.branch import trunk_base
-from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
+from kodezart.types.domain.criteria import (
+    ConjunctionVerdict,
+    CriteriaArtifact,
+    TrackerCriterion,
+    TrackerCriterionSet,
+)
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.lane_entry import DeliverOnlyLane, NewLane, ResumedLane
@@ -79,6 +85,7 @@ from tests.fakes import (
     FakeTrackerPort,
     FakeWorkspaceProvider,
     PassThroughGate,
+    make_criteria,
     make_prompt_provider,
     make_tracker_issue,
     no_delay_floor,
@@ -1936,3 +1943,33 @@ async def test_a_delivering_lane_reads_its_finished_roster_once_and_then_holds_i
     assert result["criterion_set"] == roster
     assert result["fire_spec"] is spec
     assert port.issues[DIRECT_DONE].state_kind is WorkflowStateKind.COMPLETED
+
+
+async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier():
+    """The set is read from the tracker at the write, never carried in (KOD-652).
+
+    A persisted criteria document handed to the native entry barrier is
+    refused by type before the barrier reads anything, so a run cannot
+    enter on criteria carried in on a branch file. The sibling case above
+    is the control: a roster of the kind the tracker read produces passes
+    through the same slot.
+    """
+    port = tracker()
+    source = TrackerCriteria(tracker=port)
+    spec = await source.read_spec(issue_key=SUBJECT)
+    counting = CountingSource(source)
+    state = {
+        "issue_key": SUBJECT,
+        "fire_spec": spec,
+        "lane_entry": entry_of("new"),
+        "criterion_set": CriteriaArtifact(
+            criteria=make_criteria("recorded"),
+            conjunction=ConjunctionVerdict(satisfiable=True),
+        ),
+    }
+
+    with pytest.raises(PersistedCriterionSetError):
+        await revalidate_criteria(state, {}, source=counting)
+
+    assert counting.calls == []
+    assert port.issues[DIRECT_OWED].state_kind is WorkflowStateKind.UNSTARTED
