@@ -37,6 +37,7 @@ from kodezart.domain.errors import (
     ScopeNotApprovedError,
     ScopePlanRefusalError,
     ScopeReadError,
+    WorkspaceError,
 )
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.git_url import resolve_repo_url
@@ -113,6 +114,7 @@ from tests.lane_fixture import (
     TRUNK_SHA,
     LaneRepo,
     ScopeForgeWire,
+    base_echo,
     criteria_echo,
 )
 
@@ -1979,6 +1981,208 @@ async def test_a_walk_that_breaks_what_it_finished_takes_it_back_once():
         *((key, LifecycleStage.DONE) for key in rest),
         (broken, LifecycleStage.DONE),
     ]
+
+
+# ---------------------------------------------------------------------------
+# KOD-610 — a criterion its lane's resolved base already satisfies stays owed,
+# and the walk that found it out finishes.
+# ---------------------------------------------------------------------------
+
+#: The stacked lane's roster: one criterion its base does not satisfy, and one
+#: it does. On the STACKED lane rather than on the blocker, because a criterion
+#: the base satisfies keeps its lane owed and a lane that stays owed never
+#: unblocks the lane behind it — so the base a blocker delivered is only
+#: reachable when the blocker itself finishes.
+STACKED_NAMES = ("check", "second")
+#: The same roster as the board's own keys for it.
+STACKED_CHECKS = tuple(f"B/{name}" for name in STACKED_NAMES)
+
+
+class BaseTreeExecutor(ObservedNativeExecutor):
+    """Notes which acquisition each base session's own tree came from.
+
+    The workspace double hands one path back for every acquisition, so the tree
+    a base session ran in is named by the acquisition that opened it — the last
+    one made when that session starts — and never by its path.
+    """
+
+    def __init__(self, evaluations):
+        super().__init__(evaluations)
+        #: The provider's own acquisition log, set once the harness is built.
+        self.acquisitions: list[dict[str, object]] = []
+        #: What each base session's tree was cut at, in order.
+        self.base_refs: list[str] = []
+
+    async def stream(self, **kwargs):
+        schema = (kwargs.get("output_format") or {}).get("schema", {})
+        if "baseCheckResults" in schema.get("properties", {}):
+            self.base_refs.append(self.acquisitions[-1]["ref"])
+        async for event in super().stream(**kwargs):
+            yield event
+
+
+class RefusedResolvedBase(WalkWorkspaces):
+    """Refuses the tree at a base a blocker's delivery resolved to.
+
+    Named by the shape of the acquisition rather than by a ref, because the ref
+    is a sha another lane produced during the walk: a detached tree cut off the
+    clone at a commit that is neither this lane's own head nor the trunk is the
+    tree at a resolved base and nothing else in this walk.
+    """
+
+    async def acquire(self, **arguments):
+        if (
+            arguments.get("repo_url") is None
+            and not arguments.get("create_branch", True)
+            and arguments["ref"] not in {self.repos.current.head, TRUNK_SHA}
+        ):
+            raise WorkspaceError("no tree can be cut at the resolved base")
+        return await super().acquire(**arguments)
+
+
+def stacked_board() -> FakeTrackerPort:
+    """Two lanes, the second blocked on the first and carrying two criteria."""
+    return board(lanes=("A", "B"), blocked={"B": ("A",)}, checks={"B": STACKED_NAMES})
+
+
+def stacked_walk(*, repos, port, executor, workspace=None):
+    """The composed engine over this walk's own repositories.
+
+    Built from the pieces ``resumable`` assembles rather than through it, so the
+    refusing variant can hand in its own provider while every other double stays
+    the family's own.
+    """
+    git = WalkGit(repos)
+    harness = runtime(
+        port=port,
+        lanes=("A", "B"),
+        executor=executor,
+        persister=WalkPersister(repos),
+        git=git,
+        source=WalkSource(repos),
+        workspace=(
+            WalkWorkspaces(repos, git=git)
+            if workspace is None
+            else workspace(repos, git)
+        ),
+        merger=WalkMerger(repos),
+        ref_publisher=WalkRefPublisher(repos),
+    )
+    executor.acquisitions = harness.workspace.acquisitions
+    return harness
+
+
+async def test_a_criterion_its_lanes_base_satisfies_stays_owed_and_the_walk_ends():
+    """The whole thing in process, over the real scope composition.
+
+    Lane A finishes and delivers; lane B is then prepared on the branch A's
+    record names, and B's criteria are read at the commit that branch stands at
+    — which is what shows the checks run at the base the walk RESOLVED and not
+    at a trunk somebody hard-coded. One of B's criteria already passes there, so
+    it is not moved to Done and lane B stays owed: the exclusion is the rollup's
+    own doing and no arithmetic was told about this case. B's other criterion is
+    finished in the same tick, the walk ends with no lane failure and no engine
+    error, and every tree it cut was given back.
+    """
+    other, satisfied = STACKED_CHECKS
+    repos = WalkRepos()
+    port = stacked_board()
+    executor = BaseTreeExecutor(
+        [
+            criteria_echo(keys=("A/check",), passed={"A/check"}),
+            criteria_echo(keys=("A/check",), passed={"A/check"}),
+            criteria_echo(keys=STACKED_CHECKS, passed=set(STACKED_CHECKS)),
+            criteria_echo(keys=STACKED_CHECKS, passed=set(STACKED_CHECKS)),
+            criteria_echo(keys=(satisfied,), passed={satisfied}),
+            criteria_echo(keys=(satisfied,), passed={satisfied}),
+        ]
+    )
+    executor.base_readings = [
+        base_echo(keys=("A/check",), satisfied=set()),
+        base_echo(keys=STACKED_CHECKS, satisfied={satisfied}),
+        base_echo(keys=(satisfied,), satisfied={satisfied}),
+    ]
+    harness = stacked_walk(repos=repos, port=port, executor=executor)
+
+    events = await bounded_walk(harness)
+
+    assert lane_failures(events) == ()
+    # B twice: a lane whose fire closed a criterion it owed is offered again in
+    # the same invocation (KOD-724), and the second fire reads the criterion the
+    # base satisfies at that base again and reaches the same answer.
+    assert ticks_of(events)[-1].dispatched == ("A", "B", "B")
+    assert ticks_of(events)[-1].unresolved_criteria == (satisfied,)
+    # The criterion the base does not satisfy is finished at its lane's head;
+    # the one it does satisfy is not moved at all, and neither lane's own issue
+    # is written by anything.
+    assert port.issues[other].state_kind is WorkflowStateKind.COMPLETED
+    assert port.issues[satisfied].state_kind is WorkflowStateKind.UNSTARTED
+    assert port.issues["B"].state_kind is WorkflowStateKind.UNSTARTED
+    assert port.workflow_writes == [
+        ("A/check", LifecycleStage.DONE),
+        (other, LifecycleStage.DONE),
+    ]
+    # B's base is the commit A's DELIVERED ref stands at, read off A's own
+    # record: the trunk answered A's base and could not have answered B's.
+    delivered = recorded_branches(
+        record=await lane_record(port, "A")
+    ).deliverable_branch
+    assert executor.base_refs == [
+        TRUNK_SHA,
+        repos.branches[delivered].head,
+        repos.branches[delivered].head,
+    ]
+    assert repos.branches[delivered].head != TRUNK_SHA
+    acquired = [call for call in harness.workspace.calls if call[0] == "acquire"]
+    released = [call for call in harness.workspace.calls if call[0] == "release"]
+    assert len(acquired) == len(released)
+
+
+async def test_a_walk_whose_resolved_base_cannot_be_read_still_fires_every_lane():
+    """A base tree nobody can cut ends no lane and no walk.
+
+    The same two lanes, with the tree at the resolved base refused. Lane A's
+    own base is the trunk and is read, so A finishes and delivers; lane B is
+    still fired, its base cannot be read at all, and every criterion it passed
+    at its head therefore stays owed rather than being crossed off on a reading
+    nobody took. The walk reports them unresolved, contains no lane failure, and
+    ends without an engine error.
+    """
+    repos = WalkRepos()
+    port = stacked_board()
+    executor = BaseTreeExecutor(
+        [
+            criteria_echo(keys=("A/check",), passed={"A/check"}),
+            criteria_echo(keys=("A/check",), passed={"A/check"}),
+            criteria_echo(keys=STACKED_CHECKS, passed=set(STACKED_CHECKS)),
+            criteria_echo(keys=STACKED_CHECKS, passed=set(STACKED_CHECKS)),
+        ]
+    )
+    executor.base_readings = [base_echo(keys=("A/check",), satisfied=set())]
+    harness = stacked_walk(
+        repos=repos,
+        port=port,
+        executor=executor,
+        workspace=lambda repos, git: RefusedResolvedBase(repos, git=git),
+    )
+
+    events = await bounded_walk(harness)
+
+    assert lane_failures(events) == ()
+    assert ticks_of(events)[-1].dispatched == ("A", "B")
+    assert ticks_of(events)[-1].unresolved_criteria == STACKED_CHECKS
+    assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+    assert [port.issues[key].state_kind for key in STACKED_CHECKS] == [
+        WorkflowStateKind.UNSTARTED,
+        WorkflowStateKind.UNSTARTED,
+    ]
+    assert port.workflow_writes == [("A/check", LifecycleStage.DONE)]
+    # A's own base was read, so this is a lane that could not read its base and
+    # not a walk in which nothing tried.
+    assert executor.base_refs == [TRUNK_SHA]
+    acquired = [call for call in harness.workspace.calls if call[0] == "acquire"]
+    released = [call for call in harness.workspace.calls if call[0] == "release"]
+    assert len(acquired) == len(released)
 
 
 # ---------------------------------------------------------------------------
