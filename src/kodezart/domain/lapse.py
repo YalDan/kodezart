@@ -60,31 +60,32 @@ def graded_state(
     rederivation_class: RederivationClass = RederivationClass.cheap,
     exercised_paths: Sequence[ExercisedPath] = (),
     changeset: ChangesetDigest | None = None,
-    base_stale: bool = False,
 ) -> GradedState:
     """Whether the grading taken at *graded_sha* still stands at *head_sha*.
 
-    Four arms, in one expression, in this order:
+    Three arms, in one expression, in this order:
 
-    1. a stale recorded base lapses the grading whatever it exercised: the
-       tree it was about was cut from a base that is gone, so no path
-       reading can rescue it;
-    2. the same sha counts, because nothing has moved at all;
-    3. a class outside :data:`PATH_BOUND_CLASSES` lapses on any head move:
+    1. the same sha counts, because nothing has moved at all;
+    2. a class outside :data:`PATH_BOUND_CLASSES` lapses on any head move:
        re-deriving it is cheap, so asking which paths moved buys nothing
        that re-deriving it would not answer better;
-    4. a path-bound grading lapses when the changed paths of the commit
+    3. a path-bound grading lapses when the changed paths of the commit
        record reach at or beneath one of the prefixes it exercised, and
        when there is no record to read.  An absent reading is not a
        reading that nothing moved.
+
+    The base a grading was taken on is not among the inputs.  Whether the
+    recorded base still holds is decided before any grading is read — a
+    stale recorded base means no verdict may be computed against it at all,
+    which is a refusal and not a reading of one grading (see
+    :mod:`kodezart.domain.base_staleness` and
+    :mod:`kodezart.domain.base_scope`).
 
     *changeset* is the digest of ``graded_sha..head_sha``, taken from the
     commit record; this function never asks a tree anything.
     """
     return (
-        GradedState.lapsed
-        if base_stale
-        else GradedState.counted
+        GradedState.counted
         if graded_sha == head_sha
         else GradedState.lapsed
         if rederivation_class not in PATH_BOUND_CLASSES
