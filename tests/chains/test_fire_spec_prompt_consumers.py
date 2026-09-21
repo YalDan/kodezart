@@ -256,11 +256,17 @@ async def test_recorded_goldens_are_extended_and_never_rebaselined(
         for site in sites
     }
     current = flat(json.loads(GOLDENS.read_text())["prompts"])
-    kept = kept_entries(recorded, current)
-    assert entry_digest(kept) == entry_digest(recorded), (
-        "entries recorded at the base of record moved: "
-        f"{sorted(key for key in recorded if kept[key] != recorded[key])}"
-    )
+    # The second probe is the current file with one key the base cannot carry.
+    # Today the two files hold the same keys, so a comparison written over the
+    # whole current mapping would read the same as this one; the sentinel parts
+    # them, and the comparison has to be over what the recorded keys hold.  That
+    # is the half of the Check that says the goldens may be extended.
+    for probe in (current, {**current, "sentinel/0/fix": "x"}):
+        kept = kept_entries(recorded, probe)
+        assert entry_digest(kept) == entry_digest(recorded), (
+            "entries recorded at the base of record moved: "
+            f"{sorted(key for key in recorded if kept[key] != recorded[key])}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -281,3 +287,15 @@ def test_the_base_comparison_refuses_a_moved_entry_and_allows_a_new_one(
     assert (
         entry_digest(kept_entries(recorded, current)) != entry_digest(recorded)
     ) is moved
+
+
+def test_the_entry_digest_reads_one_mapping_the_same_however_it_is_spelled() -> None:
+    """Canonical JSON, so the row above that reorders keys means what it says.
+
+    The reordered row reaches the digest through kept_entries, which rebuilds the
+    mapping in the recorded order whatever order it was handed -- so the digest's
+    own indifference to key order is asserted here, where dropping it reds.
+    """
+    assert entry_digest({"a/0/fix": "1", "a/1/fix": "2"}) == entry_digest(
+        {"a/1/fix": "2", "a/0/fix": "1"}
+    )

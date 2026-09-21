@@ -1,5 +1,7 @@
 """The pull-request node itself is the caller that cleans the artifact branch."""
 
+import uuid
+
 from kodezart.chains import authored_publication
 from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.branch import trunk_base
@@ -50,11 +52,16 @@ async def test_the_pull_request_node_cleans_the_feature_branch_it_is_about_to_op
     monkeypatch.setattr(
         authored_publication, "get_stream_writer", lambda: lambda _: None
     )
+    # Two values no double can be written to hold: the recorded mapping is
+    # graded against these locals, so a clean() that appends a fixed mapping
+    # whatever it is handed cannot satisfy the equality at the end.
+    branch = f"feature-{uuid.uuid4().hex}"
+    cache_key = uuid.uuid4().hex
     execution = ExecutionContext(
         prompt="The original dispatched prompt.",
         repo_path="/checkout",
         repo_url="https://github.com/example/project",
-        cache_key="original-job",
+        cache_key=cache_key,
         base_spec=trunk_base("selected-base"),
         permission_mode=PermissionMode.ACCEPT_EDITS,
         allowed_tools=["Read"],
@@ -64,7 +71,7 @@ async def test_the_pull_request_node_cleans_the_feature_branch_it_is_about_to_op
         "lane_entry": None,
         "fire_spec": AuthoredSpec(ticket=next(iter(tickets()))),
         "remediation_ticket": None,
-        "feature_branch": "feature",
+        "feature_branch": branch,
         # The loop branch is the one the node must not clean.
         "ralph_branch": "loop",
         "work_base_ref": "selected-base",
@@ -87,7 +94,7 @@ async def test_the_pull_request_node_cleans_the_feature_branch_it_is_about_to_op
         {
             "repo_path": "/checkout",
             "repo_url": "https://github.com/example/project",
-            "branch": "feature",
-            "cache_key": "original-job",
+            "branch": branch,
+            "cache_key": cache_key,
         }
     ]
