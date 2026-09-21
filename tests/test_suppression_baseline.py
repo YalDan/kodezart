@@ -20,7 +20,11 @@ one either.
 An assertion is counted, never compared.  The unit is the statement, so a
 weaker assertion replaced on the same line by a stronger one leaves the
 count alone and is invisible here by construction, which is the decision of
-record (KOD-865).  The tree's form-comparing instrument, the detector in
+record (KOD-865).  The floor is a count per file, so an assertion deleted
+from a file in the same change that adds another to that file is invisible
+in the same way; that is the price of a floor that lets every unlanded
+branch add tests without a table edit.  The tree's form-comparing
+instrument, the detector in
 `services/assertion_drift.py`, reads the shape of a designated test's
 assertions between two commits; that is a different question, asked
 elsewhere, of a surface somebody nominated.
@@ -396,6 +400,15 @@ def test_an_assert_over_three_lines_is_one() -> None:
     control = Source.of("control.py", "assert (\n    a\n)\nassert b\n")
 
     assert negative_shape.assert_count(control) == 2
+
+
+def test_an_assert_is_a_statement_and_not_a_line() -> None:
+    """Two on one line are two; one quoted in prose is none."""
+    two = Source.of("control.py", "x = 1; assert x; assert y\n")
+    prose = Source.of("control.py", '"""\nassert this is prose\n"""\nassert a\n')
+
+    assert negative_shape.assert_count(two) == 2
+    assert negative_shape.assert_count(prose) == 1
 
 
 def test_a_replaced_assert_leaves_the_count_unchanged() -> None:
