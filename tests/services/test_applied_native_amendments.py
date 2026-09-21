@@ -9,11 +9,13 @@ from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.amendment_write import AmendmentRecord
+from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.chains.test_native_fire import DIRECT_DONE, DIRECT_OWED, tracker
 from tests.services.test_native_amendments import (
     AMENDED_CHECK,
+    UNVERIFIABLE_HERE,
     Executor,
     build,
     cleanup,
@@ -274,6 +276,59 @@ async def test_applied_writeback_repairs_within_bound_without_rejudging_ground(
                 for c in executor.calls
             )
             == 1
+        )
+    finally:
+        await cleanup(workspace)
+
+
+async def test_undemonstrable_here_upholds_at_the_environment_reason_touching_nothing(
+    repository,
+):
+    """Undemonstrable here is a non-ground: the claim is refused, not actioned.
+
+    The Do's further clause — routing the claim to the parent lane's state — has
+    no production symbol at this head and is not built here; the capability is
+    named on the report and inside the recorded refusal.
+    """
+    port = tracker()
+    before = port.issues[DIRECT_DONE]
+    executor = Executor(
+        reproduced=True,
+        subject={"kind": "criterion", "id": DIRECT_DONE},
+        claimed_capability="network",
+        finding=UNVERIFIABLE_HERE,
+    )
+    service, guard, workspace, _ = await build(
+        repository,
+        executor,
+        port=port,
+        runner_environment={CheckPrerequisite.NETWORK: False},
+    )
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        refusal = report.upheld[0]
+        assert refusal.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+        assert refusal.claim.claimed_capability is CheckPrerequisite.NETWORK
+        assert refusal.claim.ground in AmendmentGround
+        assert refusal.publication.kind == "recorded"
+        record = refusal.publication.record.artifact
+        assert '"claimedCapability":"network"' in record.content
+        assert record.surface.ref.key == DIRECT_DONE
+        settled = port.issues[DIRECT_DONE]
+        assert settled.model_dump(exclude={"updated_at"}) == before.model_dump(
+            exclude={"updated_at"}
+        )
+        assert settled.state_kind is WorkflowStateKind.COMPLETED
+        assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
+            "NativeWriterOutput",
+            "AmendmentJudgment",
+            "WriteBackFinding",
+        ]
+        assert not any(isinstance(e, ResultEvent) for e in events)
+        assert (
+            await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
+            == ""
         )
     finally:
         await cleanup(workspace)
