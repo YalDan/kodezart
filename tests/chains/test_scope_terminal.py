@@ -951,17 +951,19 @@ def test_the_pull_request_column_detector_sees_each_shape_it_claims_to(
 
 
 # ---------------------------------------------------------------------------
-# KOD-585 — a report claims nothing about its own environment, because it
-# reads none of it: no module of the terminal reaches the git port.
+# KOD-585 — the report states what it read, and it reads no ref, no tree and
+# no working directory: no module of the terminal reaches the git port at all.
 # ---------------------------------------------------------------------------
 
-#: The concrete git adapters, so a report that imports one is seen without the
-#: port itself being named.
+#: The concrete adapter package, so a report that imports an implementation is
+#: seen without the port itself being named anywhere in it.
 GIT_PORT_ADAPTERS = "kodezart.adapters.git"
 
-#: One read per noun the criterion names, held against the derived set so a
-#: derivation that had gone empty cannot report the same clean result: a ref on
-#: the remote, a ref locally, a tree, a working directory.
+#: One name per noun the criterion names — a ref on the remote, a ref locally,
+#: a tree, a working directory — held against the derived set below, so a
+#: derivation that had gone empty cannot report the same clean result as a
+#: clean surface. This is a floor under the derivation, not the surface that
+#: is scanned: the scanned surface is derived and this set never bounds it.
 GIT_PORT_ANCHORS = frozenset(
     {"remote_branch_sha", "current_sha", "tree_of", "worktree_identity"}
 )
@@ -970,13 +972,18 @@ GIT_PORT_ANCHORS = frozenset(
 def git_port_names() -> frozenset[str]:
     """The port's own name and every operation it declares, off its members.
 
-    The whole declared surface and not a read/write split: the absence asserted
-    below is about a read, and scanning every operation is strictly stronger
-    while needing no verb or return-annotation classification. The cost, stated
-    rather than hidden: the set holds ordinary words (``commit``, ``push``,
-    ``fetch``, ``is_repo``, ``has_changes``, ``diff_summary``), so a report
-    module that grew an innocent ``.commit`` attribute would trip this. It is
-    green over the scanned surface today and the failure names file and line.
+    Derived from the protocol rather than listed, so an operation added to the
+    port is covered without this test being edited.
+
+    The whole declared surface, not a read/write split: a scan over every
+    operation is stronger than one over the reads alone while needing no verb
+    or return-annotation classification, which would be a second derivation
+    with controls of its own. The cost of that, stated rather than left to be
+    discovered: the derived set holds ordinary words (``commit``, ``push``,
+    ``fetch``, ``is_repo``, ``has_changes``, ``diff_summary``, ``add_all``,
+    ``reset_hard``), so a report module that grew an innocent ``.commit``
+    attribute would trip this. It is green over the scanned surface today, and
+    a failure names the offending file and line.
     """
     return frozenset(
         {
@@ -992,12 +999,18 @@ def git_port_names() -> frozenset[str]:
 
 
 def git_port_sites(source: str, *, label: str) -> list[str]:
-    """Every place *source* names the git port, an adapter of it, or one of its
-    operations."""
+    """Every place *source* names the git port, an adapter of it, or one of
+    its operations.
+
+    Blind spots, stated rather than hidden: a reach through ``getattr`` with a
+    computed name is not seen; a name spelled inside a larger string
+    annotation is not seen, because the literal arm is an equality and not a
+    substring; and a read more than one import hop from the act is outside the
+    scanned surface rather than outside this detector.
+    """
     names = git_port_names()
-    tree = ast.parse(source)
     sites: list[str] = []
-    for node in ast.walk(tree):
+    for node in ast.walk(ast.parse(source)):
         if (
             isinstance(node, ast.ImportFrom)
             and node.module is not None
@@ -1019,33 +1032,34 @@ def git_port_sites(source: str, *, label: str) -> list[str]:
             and isinstance(node.value, str)
             and node.value in names
         ):
-            # Equality and not a substring, so prose about a commit does not
+            # Equality and not a substring, so prose naming a commit does not
             # trip it while a dispatch on the operation's name does.
             sites.append(f'{label}:{node.lineno}: "{node.value}"')
     return sites
 
 
 def test_no_module_of_the_terminal_reaches_the_git_port():
-    """What the report states is what it read, and it reads no environment.
+    """What the report states is what it read, and it reads no ref at all.
 
-    No module of the terminal reaches a ref, a tree or a working directory, so
-    there is nothing about its own environment for the report to claim in the
-    first place. The port's reader is not missing from the tree: it belongs to
-    the delivery path, where a lane's run-state record reads it (KOD-585,
-    KOD-118).
+    A report makes no claim about its own environment because it takes no
+    environment fact: no module of the act, its readings or its vector names
+    the git port, an adapter of it, or any operation it declares. The port's
+    remote-ref reader belongs to the delivery path, where a lane's run-state
+    record reads it — a record, not a report (KOD-585, KOD-118).
 
-    The scanned surface is the one the guards beside this derive out of the
-    act's own import nodes, and the scanned names are derived off the port's
-    own members, so an operation added to the port, or a module the act starts
-    depending on, is covered without this test being edited.
+    Structural rather than behavioural: a read that RETURNED what the record
+    already holds would be invisible to every assertion over a rendered body,
+    so the absence is asserted over the syntax tree.
+
+    Non-vacuous in both directions. The name set is held against an anchor per
+    noun, so a derivation gone empty cannot report a clean result; the scanned
+    surface is held against the four modules this claim is about, so a surface
+    gone empty cannot either; and the modules that DO read a ref are found from
+    the tree by the two tests below, so a blind detector cannot.
     """
     names = git_port_names()
-    # Non-vacuity of the name set: it is not empty, and it does carry one read
-    # per noun — a remote ref, a local ref, a tree, a working directory.
-    assert GIT_PORT_ANCHORS <= names
+    assert GIT_PORT_ANCHORS <= names, sorted(names)
     modules = terminal_modules()
-    # Non-vacuity of the surface: it reaches the act, its vector, the rendering
-    # and the reading that produces the roster.
     assert {
         TERMINAL_SEED,
         TERMINAL_VECTOR,
@@ -1064,9 +1078,10 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
     assert offenders == {}
 
 
-#: One control per shape the detector claims to see: the call, the annotation
-#: before any call exists, the adapter import, and a second operation so the
-#: derived set is exercised beyond the one name the criterion leads with.
+#: One control per arm the detector claims, because a control for an arm
+#: cannot come from the scanned surface: that surface is expected to name
+#: nothing, so until these rows existed four of the five arms could be deleted
+#: with every assertion still passing.
 GIT_PORT_CONTROLS = (
     ("await self._git.remote_branch_sha(cwd, remote, branch)", ".remote_branch_sha"),
     ("def __init__(self, *, git: GitService) -> None: ...", "GitService"),
@@ -1078,6 +1093,7 @@ GIT_PORT_CONTROLS = (
         "identity = await git.worktree_identity(cwd, repository_path=path)",
         ".worktree_identity",
     ),
+    ('reader = getattr(git, "current_sha")', '"current_sha"'),
 )
 
 
@@ -1092,24 +1108,27 @@ def test_the_git_port_detector_sees_each_shape_it_claims_to(source, expected):
 
 
 def test_the_git_port_detector_finds_the_modules_that_do_read_a_ref():
-    """The control, derived from the tree rather than picked.
+    """The second control, derived from the tree rather than picked.
 
     Every production module whose text names the remote-ref read is a module
-    this detector must see; a detector finding nothing there would report the
-    same empty set over the terminal and say nothing.
+    this detector must see. It is also the other half of the non-vacuity
+    proof: these modules really do read a ref, none of them is in the scanned
+    surface, and the assertion above is empty anyway — so an empty result
+    there is a bounded surface declining to reach the port, not a detector
+    that cannot see one.
 
-    The module that declares the port is excluded, and the exclusion is derived
-    off the port rather than written down: there the name is a ``def``, which
-    is declaring the operation and not reaching it, so a detector firing there
-    would be detecting declarations.
+    The module that DECLARES the port is excluded, and the exclusion is
+    derived from the port rather than written down: declaring an operation as
+    a ``def`` is not reaching it, and a detector that fired there would be
+    detecting declarations.
     """
-    declaring = path_of(GitService.__module__)
+    declares = path_of(GitService.__module__)
     controls = [
         path
         for path in sorted(SOURCE_ROOT.rglob("*.py"))
-        if "remote_branch_sha" in path.read_text(encoding="utf-8") and path != declaring
+        if "remote_branch_sha" in path.read_text(encoding="utf-8") and path != declares
     ]
-    assert controls, "no production module reads a ref off a remote"
+    assert controls, "no production module reads a ref off the remote"
     unseen = [
         path.name
         for path in controls
