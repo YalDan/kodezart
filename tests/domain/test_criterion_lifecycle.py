@@ -44,7 +44,11 @@ from kodezart.types.domain.run_event import (
     RunEventTableError,
 )
 from kodezart.types.domain.tracker import TrackerBackend
-from tests.identity_guards import construction_sites, invalid_ruling_fields
+from tests.identity_guards import (
+    RULING_ADDRESS_NAMES,
+    construction_sites,
+    invalid_ruling_fields,
+)
 
 REPO_ROOT = Path(__file__).parents[2]
 SOURCE_ROOT = REPO_ROOT / "src" / "kodezart"
@@ -910,10 +914,7 @@ def test_qualified_shadow_cannot_make_text_an_identity(declaration):
     )
 
 
-@pytest.mark.parametrize(
-    "field",
-    ["ruling_id", "ruling_ids", "ruling_ref", "ruling_refs", "supersedes"],
-)
+@pytest.mark.parametrize("field", sorted(RULING_ADDRESS_NAMES))
 def test_every_ruling_address_name_refuses_a_bare_string_annotation(field):
     """Each name in the guard's set is a name the guard actually acts on.
 
