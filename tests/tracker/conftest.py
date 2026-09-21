@@ -349,19 +349,24 @@ async def _container_ancestry(
     return containers
 
 
-async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
+async def _snapshot(
+    source: TrackerPort, *, clock: Callable[[], datetime]
+) -> FakeTrackerPort:
     """Read the fixture workspace through the adapter into domain objects."""
     keys = [
         issue.issue_key
         for issue in await source.scan_issues(query=IssueQuery(page_size=PAGE_SIZE))
     ]
     issues = [await source.read_issue(issue_key=key) for key in keys]
+    containers = await _container_ancestry(source, issues=issues)
     # Probed rather than declared, for the reason the rest of this snapshot
     # is read rather than restated: the double must refuse exactly what the
     # workspace behind it refuses.
     refusals = await source.verify_scan_capability(signals=list(PassSignal))
     port = FakeTrackerPort(
         issues=issues,
+        marker_prefixes=MARKER_PREFIXES,
+        scope_containers=list(containers.values()),
         assets={key: await source.list_issue_assets(issue_key=key) for key in keys},
         documents={
             DOCUMENT_KEY: await source.read_document(document_key=DOCUMENT_KEY),
@@ -373,14 +378,28 @@ async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
             if (spec := await source.read_base_spec(issue_key=key)) is not None
         },
         scan_refusals=refusals,
+        writer_identities=await source.writer_identity(),
         known_identifiers=[
-            *(APPROVER, BYSTANDER),
+            *(APPROVER, BYSTANDER, AGENT_IDENTITY),
             *TEAM_IDENTIFIERS.values(),
             *QUEUE_STATE_LABELS.values(),
             *WORKFLOW_STATE_NAMES.values(),
         ],
-        clock=lambda: FIXTURE_NOW,
+        clock=clock,
     )
+    port.body_authorship = {
+        key: await source.read_surface_authorship(
+            surface=WritableSurface(
+                kind=SurfaceKind.ISSUE_DESCRIPTION,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=key),
+            )
+        )
+        for key in keys
+    }
+    port.issue_state_changes = {
+        key: (await source.read_issue_state_change(issue_key=key)).state_changed_at
+        for key in keys
+    }
     # A credential refused the review scan cannot read one, so the double it
     # seeds holds none — the same state the workspace behind it presents.
     if PassSignal.reviews_changed not in refusals:

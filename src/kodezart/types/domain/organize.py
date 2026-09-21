@@ -311,6 +311,66 @@ class MandateSpec(CamelCaseModel):
         return value
 
 
+class MandatePhaseRole(CamelCaseModel):
+    """One phase's differences that no operation configures.
+
+    The generative role that drafts a phase's writes, what its completion
+    marker attests to the readers downstream, and which side of scope
+    approval the phase runs on belong to the lane rather than to an
+    operator's label spellings.
+
+    ``runs_under_approval`` False: approval ends the phase (the
+    pre-approval pass). True: the phase is a stage of the approved scope
+    run; approval admits every member to it and it is complete only when
+    every member carries its marker.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    author_prompt_key: PromptKey
+    marks_specification_body: bool
+    marks_execution_stage: bool
+    runs_under_approval: bool
+
+
+#: The governed phase sequence, and the only place in the sources where a
+#: mandate kind selects anything. Downstream readers take what they need
+#: from the resolved row, never from the kind; configuration table order
+#: carries no ordering authority, this table's does.
+MANDATE_PHASE_ROLES: Mapping[MandateKind, MandatePhaseRole] = {
+    MandateKind.GROOM: MandatePhaseRole(
+        author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
+        marks_specification_body=False,
+        marks_execution_stage=False,
+        runs_under_approval=False,
+    ),
+    MandateKind.TICKET: MandatePhaseRole(
+        author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
+        marks_specification_body=True,
+        marks_execution_stage=False,
+        runs_under_approval=True,
+    ),
+    MandateKind.CRITERIA: MandatePhaseRole(
+        author_prompt_key=PromptKey.ORGANIZE_CRITERIA_AUTHOR,
+        marks_specification_body=False,
+        marks_execution_stage=True,
+        runs_under_approval=True,
+    ),
+}
+
+
+def phase_marker_source(phase: str) -> str:
+    """The configuration address of one phase's completion marker."""
+    return f"organize_mandates.{phase}.terminal_marker_key"
+
+
+def phase_successor(phase: MandateKind) -> MandateKind | None:
+    """The phase the governed sequence runs after *phase*, where there is one."""
+    sequence = tuple(MANDATE_PHASE_ROLES)
+    following = sequence.index(phase) + 1
+    return sequence[following] if following < len(sequence) else None
+
+
 class ResolvedMandateSpec(CamelCaseModel):
     """A validated phase specification, its labels and its lane role."""
 
@@ -319,9 +379,20 @@ class ResolvedMandateSpec(CamelCaseModel):
     spec: MandateSpec
     gate_label: str
     terminal_marker: str
+    role: MandatePhaseRole
+    marker_source: str
 
 
 class OrganizeAdmissionRequest(CamelCaseModel):
     """Source identity, rubric and repository base for one fresh judgment."""
 
     model_config = ConfigDict(frozen=True)
+
+    issue_key: str = Field(min_length=1)
+    scope: ScopeRef
+    mandate_rubric: str = Field(min_length=1)
+    repo_url: str = Field(min_length=1)
+    base_ref: str = Field(min_length=1)
+    cache_key: str | None = None
+    defect_classes: tuple[str, ...] = ()
+    admission_prompt_key: PromptKey = PromptKey.ORGANIZE_ASSESS
