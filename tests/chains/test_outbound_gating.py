@@ -208,7 +208,9 @@ async def test_every_workflow_writer_routes_through_the_gate() -> None:
     seen: list[str] = []
 
     class RecordingGate(PassThroughGate):
-        async def gate(self, *, content, visibility, shape, destination, content_class):
+        async def gate(
+            self, *, content, visibility, shape, destination, content_class, aggregates
+        ):
             seen.append(content)
             return await super().gate(
                 content=content,
@@ -216,6 +218,7 @@ async def test_every_workflow_writer_routes_through_the_gate() -> None:
                 shape=shape,
                 destination=destination,
                 content_class=content_class,
+                aggregates=aggregates,
             )
 
     engine = make_engine(

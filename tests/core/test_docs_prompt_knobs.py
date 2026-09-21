@@ -160,6 +160,7 @@ async def test_credential_gating_survives_a_copy_of_the_example_file() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
 
     assert decision.verdict is GateVerdict.BLOCKED

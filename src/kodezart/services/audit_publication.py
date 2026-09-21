@@ -60,6 +60,7 @@ class _AuditComment:
             shape=WriterShape.PROSE,
             destination=OutboundDestination.TRACKER_COMMENT,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
         # These are already validated observation payloads. A privacy rewrite
         # cannot silently change their cited native identity or source bytes.

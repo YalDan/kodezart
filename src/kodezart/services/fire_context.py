@@ -147,6 +147,7 @@ class FireContextAssembler:
             shape=_INBOUND_SHAPE,
             destination=_INBOUND_DESTINATION,
             content_class=_INBOUND_CONTENT_CLASS,
+            aggregates=(),
         )
         await self._log.ainfo(
             "fire_asset_gated",

@@ -212,6 +212,7 @@ class FireSpecification:
             shape=WriterShape.IDENTIFIER,
             destination=OutboundDestination.BRANCH_NAME,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
         feature_branch = f"kodezart/{slug}-{uuid.uuid4().hex[:8]}"
         ralph_branch = generate_ralph_branch_name(feature_branch)

@@ -268,6 +268,7 @@ class FireImplementation:
                     shape=WriterShape.PROSE,
                     destination=OutboundDestination.ARTIFACT_TICKET_JSON,
                     content_class=ContentClass.AUTHORED,
+                    aggregates=(),
                 ),
             },
             cache_key=ctx.cache_key,
@@ -319,6 +320,7 @@ class FireImplementation:
                 shape=WriterShape.PROSE,
                 destination=OutboundDestination.ARTIFACT_TICKET_JSON,
                 content_class=ContentClass.AUTHORED,
+                aggregates=(),
             ),
             "criteria.json": await gated_write(
                 gate=self._gate,
@@ -328,6 +330,7 @@ class FireImplementation:
                 shape=WriterShape.PROSE,
                 destination=OutboundDestination.ARTIFACT_CRITERIA_JSON,
                 content_class=ContentClass.AUTHORED,
+                aggregates=(),
             ),
         }
 

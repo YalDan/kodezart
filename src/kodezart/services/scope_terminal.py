@@ -142,6 +142,7 @@ class ScopeTerminal:
             visibility=RepoVisibility.PUBLIC,
             destination=OutboundDestination.TRACKER_STATUS_UPDATE,
             content_class=ContentClass.DERIVED,
+            aggregates=(),
             refusal=lambda: ScopeStatusError(
                 ref=event.scope,
                 reason="the outbound gate changed the derived report",

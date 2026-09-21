@@ -91,6 +91,7 @@ async def test_public_workspace_url_is_not_private_merely_because_of_its_host():
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == content
@@ -198,6 +199,7 @@ async def test_tracker_coordination_keeps_destination_judgment_distinct():
         shape=WriterShape.PROSE,
         destination=OutboundDestination.TRACKER_COMMENT,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
 
@@ -212,6 +214,7 @@ async def test_gate_retains_its_private_facts_despite_mutable_loaded_mapping():
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.REDACTED
 
@@ -232,6 +235,7 @@ async def test_real_toml_loader_supplies_the_composed_reference_policy(tmp_path)
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.DERIVED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.REDACTED
 
@@ -278,6 +282,7 @@ async def test_unreadable_or_ambiguous_url_is_not_clean(url):
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.failure is not None
@@ -312,6 +317,7 @@ async def test_host_and_workspace_matches_are_exact(content):
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == content
@@ -355,6 +361,7 @@ async def test_composed_judgment_retains_description_and_authored_provenance(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=content_class,
+        aggregates=(),
     )
     if content_class is ContentClass.AUTHORED:
         assert decision.verdict is GateVerdict.BLOCKED
@@ -389,6 +396,7 @@ async def test_credentials_still_block_without_starting_the_configured_judge(tmp
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert executor.calls == []

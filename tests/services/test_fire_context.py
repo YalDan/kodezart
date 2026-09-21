@@ -30,6 +30,7 @@ from kodezart.types.domain.gating import (
     OutboundDestination,
     RepoVisibility,
     ScanFailureKind,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.tracker import TrackerAsset
@@ -271,6 +272,7 @@ class ScriptedGate:
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         self.seen.append(content)
         self.postures.append((visibility, shape, destination, content_class))
@@ -293,6 +295,7 @@ async def test_the_shipped_gate_is_what_refuses_the_private_fixture() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
 

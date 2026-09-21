@@ -65,6 +65,7 @@ from kodezart.types.domain.gating import (
     GateVerdict,
     OutboundDestination,
     RepoVisibility,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.operation import OperationConfig
@@ -137,6 +138,7 @@ class _ExactEvidenceGate:
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         decision = await self._gate.gate(
             content=content,
@@ -144,6 +146,7 @@ class _ExactEvidenceGate:
             shape=shape,
             destination=destination,
             content_class=content_class,
+            aggregates=aggregates,
         )
         if decision.verdict is not GateVerdict.BLOCKED and decision.content != content:
             raise NativeWriteRefusalError(
@@ -275,6 +278,7 @@ class AmendmentWriteBack:
             visibility=visibility,
             destination=destination,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
             refusal=lambda: NativeWriteRefusalError(
                 "The outbound gate changed the exact amendment evidence or text"
             ),

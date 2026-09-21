@@ -5,9 +5,10 @@ observable: content is never silently dropped and never silently posted.
 """
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from types import MappingProxyType
+from typing import Annotated, Literal
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -85,6 +86,44 @@ class DurabilityCategory(StrEnum):
 
     OBJECT_COUNT = "object_count"
     IDENTIFIER_ROSTER = "identifier_roster"
+
+
+class ObjectCount(CamelCaseModel):
+    """A count of tracker objects a writer is about to render.
+
+    ``field`` is the writer's own field path for the number, so a refusal
+    hands back the place to repair rather than a position in the rendered
+    text.  Counts of tests, files and commits are repository facts, not
+    tracker aggregates, and have no member here: they are never declared.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["count"] = "count"
+    field: str = Field(min_length=1, pattern=r"\S")
+    value: int = Field(ge=0)
+
+
+class IdentifierRoster(CamelCaseModel):
+    """The tracker identities a writer is about to render.
+
+    ``field`` is the writer's own field path for the list.  The identities
+    are the values the writer held before it rendered anything, so counting
+    them is arithmetic over the source rather than a reparse of the body.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["roster"] = "roster"
+    field: str = Field(min_length=1, pattern=r"\S")
+    identities: tuple[Annotated[str, Field(min_length=1)], ...]
+
+
+#: One member per :class:`DurabilityCategory` member, discriminated on
+#: ``kind`` so a decision carrying one survives a JSON round trip exactly.
+type TrackerAggregate = Annotated[
+    ObjectCount | IdentifierRoster, Field(discriminator="kind")
+]
 
 
 type ScanCategory = RedactionCategory | DurabilityCategory
@@ -204,6 +243,61 @@ def durability_of(destination: OutboundDestination | None) -> SurfaceDurability:
     return DESTINATION_DURABILITY[destination]
 
 
+_COUNT_RATIONALE = (
+    "a count of tracker objects is read as current on a durable surface, so it "
+    "goes stale in place"
+)
+
+_ROSTER_RATIONALE = (
+    f"a roster of {TRACKER_ROSTER_MIN_REFERENCES} or more distinct tracker "
+    "identities is read as current on a durable surface, so it goes stale in place"
+)
+
+
+def aggregate_hits(
+    aggregates: Sequence[TrackerAggregate], *, destination: OutboundDestination
+) -> "tuple[ScanHit, ...]":
+    """The durable-write rule over declared tracker values. Arithmetic, no text.
+
+    This function has no ``content`` parameter, so it can never decide from
+    the rendered bytes: the structured values the writer declared are what
+    is classified.
+
+    A durable surface is read as current, so a tracker count or a tracker
+    roster written there is a claim that goes stale in place.  On a
+    point-in-time surface the same values describe one moment and pass.  A
+    count is a claim at any value, zero included — count claims are an
+    independent rule and not a consequence of the roster boundary.  A roster
+    is counted over DISTINCT identities against the one in-code minimum, so
+    a single reference, or one identity repeated, is a reference and not a
+    roster on every surface.
+    """
+    if durability_of(destination) is not SurfaceDurability.DURABLE:
+        return ()
+    hits: list[ScanHit] = []
+    for aggregate in aggregates:
+        match aggregate:
+            case ObjectCount():
+                hits.append(
+                    ScanHit(
+                        category=DurabilityCategory.OBJECT_COUNT,
+                        source=aggregate,
+                        rationale=_COUNT_RATIONALE,
+                    )
+                )
+            case IdentifierRoster() if (
+                len(set(aggregate.identities)) >= TRACKER_ROSTER_MIN_REFERENCES
+            ):
+                hits.append(
+                    ScanHit(
+                        category=DurabilityCategory.IDENTIFIER_ROSTER,
+                        source=aggregate,
+                        rationale=_ROSTER_RATIONALE,
+                    )
+                )
+    return tuple(hits)
+
+
 class ContentClass(StrEnum):
     """Where a payload CAME FROM, declared by the call site that built it.
 
@@ -255,6 +349,11 @@ class ScanHit(CamelCaseModel):
     span — "this paragraph implies an unreleased capability" has nothing to
     excise.  Redaction is span surgery, so a span-less hit blocks rather
     than redacts; :meth:`has_span` is what the gate asks.
+
+    ``source`` is set only by the deterministic rule over declared tracker
+    values, and it is the offending value itself: a structured finding is
+    about a value the writer held, not about a substring of what that value
+    was rendered into.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -264,6 +363,19 @@ class ScanHit(CamelCaseModel):
     end: int | None = Field(default=None, ge=0)
     rationale: str | None = None
     matched_text: str | None = None
+    source: TrackerAggregate | None = None
+
+    @model_validator(mode="after")
+    def _a_structured_finding_carries_no_offsets(self) -> "ScanHit":
+        """The locator of a typed value is the value; an offset would be invented."""
+        if self.source is not None and (
+            self.start is not None
+            or self.end is not None
+            or self.matched_text is not None
+        ):
+            msg = "a structured finding carries its source, never string offsets"
+            raise ValueError(msg)
+        return self
 
     @property
     def has_span(self) -> bool:

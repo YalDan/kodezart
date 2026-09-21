@@ -6,6 +6,7 @@ from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_exact
 from kodezart.types.domain.gating import (
     ContentClass,
+    IdentifierRoster,
     OutboundDestination,
     RepoVisibility,
     WriterShape,
@@ -13,6 +14,7 @@ from kodezart.types.domain.gating import (
 from tests.fakes import PassThroughGate
 
 FACTS = "the bytes whose worth is their exactness"
+ROSTER = IdentifierRoster(field="lanes.issue", identities=("A", "B", "C"))
 
 
 def refusal() -> Exception:
@@ -44,10 +46,35 @@ async def test_the_gate_is_asked_under_the_destination_and_class_it_was_given(
         visibility=RepoVisibility.PRIVATE,
         destination=destination,
         content_class=content_class,
+        aggregates=(),
         refusal=refusal,
     )
 
     assert result == FACTS
     assert gate.destinations == [destination]
     assert gate.content_classes == [content_class]
+    assert gate.aggregates == [()]
     assert gate.calls == [(FACTS, RepoVisibility.PRIVATE, WriterShape.PROSE)]
+
+
+async def test_the_helper_forwards_the_declared_aggregates_untouched():
+    """The declaration is the writer's; this helper neither builds nor edits it.
+
+    A helper that supplied the aggregates itself would be declaring on behalf
+    of a writer whose typed values it has never seen.
+    """
+    gate = PassThroughGate()
+
+    result = await gated_exact(
+        gate=gate,
+        log=get_logger(__name__),
+        content=FACTS,
+        visibility=RepoVisibility.PRIVATE,
+        destination=OutboundDestination.TRACKER_COMMENT,
+        content_class=ContentClass.DERIVED,
+        aggregates=(ROSTER,),
+        refusal=refusal,
+    )
+
+    assert result == FACTS
+    assert gate.aggregates == [(ROSTER,)]

@@ -43,6 +43,7 @@ from kodezart.types.domain.gating import (
     GateVerdict,
     OutboundDestination,
     RepoVisibility,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.operation import (
@@ -382,6 +383,7 @@ class AlteringGate(PassThroughGate):
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         await super().gate(
             content=content,
@@ -389,6 +391,7 @@ class AlteringGate(PassThroughGate):
             shape=shape,
             destination=destination,
             content_class=content_class,
+            aggregates=aggregates,
         )
         return GateDecision(
             verdict=GateVerdict.REDACTED, content=content.replace('"', "*", 1)
@@ -986,7 +989,8 @@ async def test_a_full_lane_of_ticks_leaves_state_and_full_sha_on_every_sub_issue
     state and the graded sha moved.
     """
     port = criteria_board()
-    lane_state = writer(port, lane_repo())
+    gate = PassThroughGate()
+    lane_state = writer(port, lane_repo(), gate)
     heads = [format(index, "040x") for index in (1, 2, 3)]
     bodies: dict[str, list[str]] = {key: [] for key in CRITERIA}
 
@@ -1007,6 +1011,14 @@ async def test_a_full_lane_of_ticks_leaves_state_and_full_sha_on_every_sub_issue
     # The first round moved every sub-issue; the two re-grades restamped the
     # sha without moving a state that was already Done.
     assert port.workflow_writes == [(key, LifecycleStage.DONE) for key in CRITERIA]
+    # The Evidence row is the one derived write of a durable surface in the
+    # source, and it declares no tracker aggregate: a graded sha and a test
+    # name are neither a tracker count nor a list of tracker identities. So
+    # the cheap path survives at a real durable writer.
+    assert gate.destinations[-1] is OutboundDestination.TRACKER_DESCRIPTION
+    assert gate.content_classes[-1] is ContentClass.DERIVED
+    assert gate.aggregates[-1] == ()
+    assert set(gate.aggregates) == {()}
 
 
 async def test_a_verdict_that_does_not_answer_the_dispatched_roster_writes_nothing():

@@ -28,6 +28,7 @@ from kodezart.types.domain.gating import (
     GateVerdict,
     OutboundDestination,
     RepoVisibility,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -70,6 +71,7 @@ class RewritingGate:
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         return GateDecision(verdict=self._verdict, content=self._content)
 

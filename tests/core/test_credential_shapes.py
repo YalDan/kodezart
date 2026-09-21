@@ -85,6 +85,7 @@ async def test_each_credential_this_build_can_hold_is_blocked_and_scrubbed(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
 
     assert decision.verdict is GateVerdict.BLOCKED, field

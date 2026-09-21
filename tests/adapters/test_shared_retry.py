@@ -434,6 +434,7 @@ async def test_composed_content_scanner_preserves_total_attempt_units(waits, tmp
         visibility=RepoVisibility.PUBLIC,
         shape=WriterShape.PROSE,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert result.failure is ScanFailureKind.TRANSPORT_ERROR
     assert len(executor.calls) == 3

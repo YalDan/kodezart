@@ -31,6 +31,7 @@ from kodezart.types.domain.gating import (
     GateDecision,
     OutboundDestination,
     RepoVisibility,
+    TrackerAggregate,
     WriterShape,
 )
 from tests.chains import test_organize_owner as organize_suite
@@ -92,6 +93,7 @@ class RecordingGate(PassThroughGate):
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         self._journal.gated(content)
         return await super().gate(
@@ -100,6 +102,7 @@ class RecordingGate(PassThroughGate):
             shape=shape,
             destination=destination,
             content_class=content_class,
+            aggregates=aggregates,
         )
 
 

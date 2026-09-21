@@ -203,6 +203,7 @@ class TrackerLifecycleWriter:
             shape=WriterShape.PROSE,
             destination=OutboundDestination.TRACKER_COMMENT,
             content_class=ContentClass.DERIVED,
+            aggregates=(),
         )
         await self._tracker.post_comment(issue_key=issue_key, body=body)
         await self._log.aerror(
@@ -260,6 +261,7 @@ class TrackerLifecycleWriter:
                 shape=WriterShape.PROSE,
                 destination=OutboundDestination.TRACKER_COMMENT,
                 content_class=ContentClass.DERIVED,
+                aggregates=(),
             )
             await lease.renew()
             await settle(

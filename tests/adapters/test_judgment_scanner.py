@@ -17,6 +17,7 @@ under test here is the MECHANISM around a verdict; the model is not, and a
 test that needed the model to be right would be measuring the wrong thing.
 """
 
+import ast
 import asyncio
 import inspect
 from collections.abc import AsyncIterator, Sequence
@@ -35,14 +36,17 @@ from kodezart.core.errors import ContentScannerBootError
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import ContentJudgment, OutboundContentGate
+from kodezart.services.amendment_writeback import _ExactEvidenceGate
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
 from kodezart.types.domain.gating import (
     ContentClass,
     GateVerdict,
+    ObjectCount,
     OutboundDestination,
     RedactionCategory,
     RepoVisibility,
     ScanFailureKind,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.operation import OperationConfig
@@ -311,6 +315,7 @@ async def test_every_failure_kind_blocks_and_names_itself(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.failure is kind
@@ -327,6 +332,7 @@ async def test_did_not_answer_and_said_clean_are_different_states() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     clean = await gate_over(FakeContentJudgment(hits=[])).gate(
         content=PROSE,
@@ -334,6 +340,7 @@ async def test_did_not_answer_and_said_clean_are_different_states() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert silent.verdict is not clean.verdict
     assert silent.failure is not None
@@ -351,13 +358,15 @@ async def gate_once(
     content: str,
     destination: OutboundDestination,
     content_class: ContentClass,
+    aggregates: tuple[TrackerAggregate, ...],
     visibility: RepoVisibility = RepoVisibility.PUBLIC,
     shape: WriterShape = WriterShape.PROSE,
 ) -> None:
     """Gate one payload through a judgment-routed double.
 
     ``content_class`` has no default here either: a helper that supplied one
-    would hide the very declaration these routing tests measure.
+    would hide the very declaration these routing tests measure.  Neither
+    does ``aggregates``, for the same reason.
     """
     await gate_over(scanner).gate(
         content=content,
@@ -365,6 +374,7 @@ async def gate_once(
         shape=shape,
         destination=destination,
         content_class=content_class,
+        aggregates=aggregates,
     )
 
 
@@ -376,6 +386,7 @@ async def test_a_derived_evaluator_cadence_payload_costs_nothing() -> None:
         content='{"criterion": "AC-1", "passed": true, "sha": "a1b2c3d"}',
         destination=OutboundDestination.PR_COMMENT,
         content_class=ContentClass.DERIVED,
+        aggregates=(),
     )
     assert scanner.calls == []
 
@@ -388,6 +399,7 @@ async def test_an_authored_pull_request_body_costs_exactly_one() -> None:
         content=PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert len(scanner.calls) == 1
 
@@ -404,6 +416,7 @@ async def test_a_branch_name_is_audited_despite_being_an_identifier(
         destination=OutboundDestination.BRANCH_NAME,
         shape=WriterShape.IDENTIFIER,
         content_class=content_class,
+        aggregates=(),
     )
     assert len(scanner.calls) == 1
 
@@ -420,6 +433,7 @@ async def test_a_private_target_costs_nothing_at_every_destination(
         destination=destination,
         visibility=RepoVisibility.PRIVATE,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert scanner.calls == []
 
@@ -432,6 +446,7 @@ async def test_the_repository_surface_is_out_of_scope_for_the_judgment_path() ->
         content=PROSE,
         destination=OutboundDestination.COMMIT_MESSAGE,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert scanner.calls == []
 
@@ -444,6 +459,7 @@ async def test_a_deterministic_block_short_circuits_the_model_call() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert judgment.calls == []
@@ -464,6 +480,7 @@ async def test_the_same_payload_triple_is_answered_once_per_run() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     second = await gate.gate(
         content=PROSE,
@@ -471,6 +488,7 @@ async def test_the_same_payload_triple_is_answered_once_per_run() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert len(scanner.calls) == 1
     assert first == second
@@ -487,6 +505,7 @@ async def test_a_changed_fragment_digest_invalidates_the_answer() -> None:
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
     assert len(scanner.calls) == 2
 
@@ -505,6 +524,7 @@ async def test_a_changed_destination_is_a_different_question() -> None:
             shape=WriterShape.PROSE,
             destination=destination,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
     assert len(scanner.calls) == 2
 
@@ -519,6 +539,7 @@ async def test_a_changed_content_class_is_a_different_question() -> None:
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
             content_class=kind,
+            aggregates=(),
         )
         for kind in (ContentClass.DERIVED, ContentClass.AUTHORED)
     ]
@@ -527,6 +548,37 @@ async def test_a_changed_content_class_is_a_different_question() -> None:
         GateVerdict.BLOCKED,
     ]
     assert judgment.calls == [PROSE]
+
+
+async def test_a_declared_aggregate_is_a_different_question() -> None:
+    """D: a verdict over no declared values never answers a call declaring some.
+
+    The two calls agree on every byte, the destination, the class and the
+    shape, so the memo would return the first answer for the second were the
+    declaration not part of the question.  The second is refused by the
+    deterministic rule, which is why the judgment is still asked only once.
+    """
+    judgment = FakeContentJudgment(hits=[])
+    gate = make_admission(judgment)
+    undeclared = await gate.gate(
+        content=PROSE,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+        aggregates=(),
+    )
+    declared = await gate.gate(
+        content=PROSE,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.PR_BODY,
+        content_class=ContentClass.AUTHORED,
+        aggregates=(ObjectCount(field="criteria", value=4),),
+    )
+    assert undeclared.verdict is GateVerdict.CLEAN
+    assert declared.verdict is GateVerdict.BLOCKED
+    assert len(judgment.calls) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -563,6 +615,7 @@ async def test_a_credential_shaped_payload_declared_authored_is_audited() -> Non
         content=CREDENTIAL_SHAPED,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert scanner.calls == [CREDENTIAL_SHAPED]
 
@@ -575,6 +628,7 @@ async def test_a_machine_derived_note_declared_derived_is_not_audited() -> None:
         content=DERIVED_NOTE,
         destination=OutboundDestination.TRACKER_COMMENT,
         content_class=ContentClass.DERIVED,
+        aggregates=(),
     )
     assert scanner.calls == []
 
@@ -585,10 +639,10 @@ def test_the_declared_class_can_never_be_omitted() -> None:
     A default would be a silent cheap path — the caller that forgot to think
     about provenance would get the unaudited answer and no diagnostic.
     The phase writers now call ``gated_write`` directly. This
-    asserts the static property that matters, at each of the four surfaces a
+    asserts the static property that matters, at each of the five surfaces a
     caller can reach the gate through: the parameter exists, it is annotated
     ``ContentClass``, and it carries NO DEFAULT.  Calling convention is not
-    asserted and deliberately so -- three of the four are keyword-only while
+    asserted and deliberately so -- four of the five are keyword-only while
     ``GitChangePersister._gated_message`` is positional-or-keyword, matching
     its neighbours, and that difference cannot produce the silent cheap path
     this test exists to prevent.
@@ -598,6 +652,7 @@ def test_the_declared_class_can_never_be_omitted() -> None:
         OutboundAdmission.gate,
         gated_write,
         GitChangePersister._gated_message,
+        _ExactEvidenceGate.gate,
     )
     for surface in surfaces:
         parameter = inspect.signature(surface).parameters["content_class"]
@@ -610,6 +665,79 @@ def test_the_declared_class_can_never_be_omitted() -> None:
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
+            aggregates=(),
+        )
+
+
+def _declared_parameters(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> dict[str, bool]:
+    """Every parameter of *node* by name, mapped to whether it has a default."""
+    args = node.args
+    positional = [*args.posonlyargs, *args.args]
+    defaulted = (
+        {arg.arg for arg in positional[len(positional) - len(args.defaults) :]}
+        if args.defaults
+        else set()
+    )
+    declared = {arg.arg: arg.arg in defaulted for arg in positional}
+    for arg, default in zip(args.kwonlyargs, args.kw_defaults, strict=True):
+        declared[arg.arg] = default is not None
+    return declared
+
+
+def test_every_surface_that_declares_provenance_declares_its_aggregates() -> None:
+    """P: the two declarations travel together, over the whole source tree.
+
+    Derived rather than listed: every function that takes a payload's
+    provenance also takes the tracker values behind it, and neither may have
+    a default, so a writer cannot be given a cheap path for one of the two
+    questions while stating the other.  The same holds at every call: a site
+    that names one keyword names both.
+
+    Blind spot, stated rather than closed: a call that passes the class
+    POSITIONALLY carries no ``content_class`` keyword and so is outside the
+    call scan.  ``GitChangePersister._gated_message``'s two callers are such
+    calls, and they are covered by the definition scan instead — the wrapper
+    they reach cannot forward what its own signature does not require.
+    """
+    source_root = Path(__file__).resolve().parents[2] / "src" / "kodezart"
+    definitions: dict[str, dict[str, bool]] = {}
+    calls: set[str] = set()
+    for path in sorted(source_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        where = path.relative_to(source_root).as_posix()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                declared = _declared_parameters(node)
+                if "content_class" in declared:
+                    definitions[f"{where}::{node.name}"] = declared
+            elif isinstance(node, ast.Call):
+                named = {keyword.arg for keyword in node.keywords}
+                if "content_class" in named:
+                    assert "aggregates" in named, f"{where}:{node.lineno}"
+                    calls.add(f"{where}:{node.lineno}")
+
+    for surface, declared in definitions.items():
+        assert "aggregates" in declared, surface
+        assert declared["content_class"] is False, surface
+        assert declared["aggregates"] is False, surface
+
+    assert "core/protocols.py::gate" in definitions
+    assert "adapters/outbound_admission.py::gate" in definitions
+    assert "adapters/outbound_admission.py::_decide" in definitions
+    assert "core/outbound_write.py::gated_write" in definitions
+    assert "core/outbound_write.py::gated_exact" in definitions
+    assert "adapters/git/change_persister.py::_gated_message" in definitions
+    assert len(calls) >= 28, len(calls)
+
+    with pytest.raises(TypeError, match="aggregates"):
+        gate_over().gate(  # type: ignore[call-arg]
+            content=PROSE,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.DERIVED,
         )
 
 
@@ -672,6 +800,7 @@ async def test_a_private_visibility_call_invokes_no_scanner_at_all(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == PROSE
@@ -717,6 +846,7 @@ async def test_privacy_opt_out_keeps_mandatory_authored_aggregate_judgment(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert result.verdict is GateVerdict.CLEAN
     assert len(executor.calls) == 1

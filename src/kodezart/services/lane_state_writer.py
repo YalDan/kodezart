@@ -552,6 +552,10 @@ class TrackerLaneStateWriter:
             visibility=visibility,
             destination=destination,
             content_class=ContentClass.DERIVED,
+            # Every commit row of a record carries this lane's own key, and
+            # commitsAhead/filesChanged are repository counts, not tracker
+            # objects; the Evidence body is a graded sha and a test name.
+            aggregates=(),
             refusal=lambda: LaneRecordWriteError(
                 lane_key=lane_key,
                 reason="the outbound gate changed the recorded lane facts",

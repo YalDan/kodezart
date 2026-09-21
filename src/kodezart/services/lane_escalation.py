@@ -81,6 +81,7 @@ class LaneEscalationWriter:
             shape=WriterShape.PROSE,
             destination=OutboundDestination.TRACKER_COMMENT,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
         stored_marker, separator, content = body.partition("\n")
         if stored_marker != marker or not separator:
@@ -118,6 +119,7 @@ class LaneEscalationWriter:
             shape=WriterShape.IDENTIFIER,
             destination=OutboundDestination.TRACKER_CLASSIFICATION,
             content_class=ContentClass.DERIVED,
+            aggregates=(),
         )
         if classification != "decision":
             raise OutboundContentBlockedError(
