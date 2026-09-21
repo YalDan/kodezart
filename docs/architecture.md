@@ -1362,6 +1362,16 @@ lane's own lapse observation reads that answer instead of weighing the two shas
 itself, so the lane-state writer and the audit cannot come to disagree about what
 a sha behind head is worth.
 
+A static assertion over the shipped sources reports any other body that compares
+a graded sha with a head sha, and names every reader that consults the rule. Both
+surfaces are derived — the identity off the Evidence record's own fields, the
+rule's module and name off the rule itself, the scanned tree off the package it is
+packaged in — so a rename carries the assertion with it. The identity checks that
+weigh a head against a head, and the self-resolution checks that ask whether a
+recorded revision is the commit it says it is, are provenance rather than
+standing: each is exempt by name, with its reason, and an exemption for a body
+that no longer compares anything is as red as a body nobody exempted.
+
 `AuditReadSweep` independently invokes `AuditForgeVerifier` for completed native
 criterion requests. The request's criterion, owning issue and repository come
 from the same native scope assembly as the other arms. The full forge reading
