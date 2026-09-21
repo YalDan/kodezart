@@ -63,6 +63,13 @@ from tests.fakes import (
     FakeTrackerPort,
     FakeWorkspaceProvider,
 )
+from tests.services.test_fire_time_rulings import (
+    CONTRADICTION_CHECK,
+    LOSING,
+    STANDING,
+    contradiction_answer,
+    contradiction_body,
+)
 
 #: Every criterion a finished subtree's roster carries, so a delivering
 #: lane's review can be answered without inventing an id.
@@ -722,6 +729,73 @@ async def test_the_first_iteration_prompt_carries_the_pinned_answer(
         assert all(
             ANSWER["resolution"] not in str(value) for value in snapshot.values()
         )
+
+
+@pytest.mark.parametrize(
+    "body, answer, check, pinned",
+    [
+        pytest.param(
+            contradiction_body,
+            contradiction_answer,
+            CONTRADICTION_CHECK,
+            (STANDING, LOSING),
+            id="resolve_contradiction",
+        ),
+    ],
+)
+async def test_the_first_iteration_prompt_carries_what_each_class_of_answer_pins(
+    body, answer, check, pinned
+) -> None:
+    """Whatever a class pins reaches the loop the same way: off the board, in the block.
+
+    The reading class is the test above; these are the other classes, one row
+    each.  What is asserted per row is the text that class exists to pin, and
+    that the question it answers stands only inside the block — while the
+    Check that raised it is still in front of the writer, so the block is not
+    carrying the whole prompt.
+    """
+    port = tracker(bodies={DIRECT_OWED: body()})
+    answered = answer()
+    executor = SnapshottingExecutor(
+        [native_evaluation(reconciled=True) for _ in range(4)], port=port
+    )
+    executor.question_answers = [{"rulings": [answered]}]
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        real_loop=True,
+        git=git,
+        workspace=workspace,
+    )
+    state, config = prepare(fire)
+
+    produced = await snapshots(fire, state, config)
+
+    prompt = executor.execution_prompts[0]
+    block = registry_block(prompt)
+    outside = prompt.replace(block, "")
+    ((_, record),) = await RulingRecordReader(
+        tracker=port, operation=native_operation()
+    ).read_issue(issue_key=DIRECT_OWED)
+    assert pinned_registry((record,)) in block
+    for text in pinned:
+        assert text in block
+    # The question stands only inside the block, in the record that answers it,
+    # and the Check whose text raised it still reaches the writer.
+    assert answered["question"] in block
+    assert answered["question"] not in outside
+    assert check in outside
+    # Read off the board at loop start, not carried in graph state.  One
+    # writer session opened, and it saw exactly the one record.
+    assert len(executor.execution_prompts) == 1
+    assert [len(snapshot) for snapshot in executor.board_at_execution] == [1]
+    assert produced and all(
+        answered["resolution"] not in str(value)
+        for snapshot in produced
+        for value in snapshot.values()
+    )
 
 
 async def test_the_first_iterations_block_is_read_off_the_tracker_at_loop_start() -> (
