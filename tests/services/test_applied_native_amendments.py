@@ -10,6 +10,7 @@ from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.amendment_write import AmendmentRecord
 from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.chains.test_native_fire import DIRECT_DONE, DIRECT_OWED, tracker
 from tests.services.test_native_amendments import (
     AMENDED_CHECK,
@@ -145,6 +146,66 @@ async def test_an_amended_criterion_keeps_its_key_and_title_token_before_and_aft
         settled = port.issues[DIRECT_OWED]
         assert (settled.issue_key, settled.title) == identity
         assert set(port.issues) == keys_before
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_replayed_amendment_leaves_the_criterion_sub_issue_byte_identical(
+    repository, monkeypatch
+):
+    """The same claim, judged again, edits the sub-issue to the bytes it already has.
+
+    A second historical record of the refusal is accepted: this is recovery, not an
+    exactly-once transaction, so the archive count is pinned rather than forbidden.
+    """
+    port = tracker()
+    service, guard, workspace, _ = await build(
+        repository, Executor(reproduced=True), port=port
+    )
+    try:
+        await drive(service, guard, repository)
+    finally:
+        await cleanup(workspace)
+    settled = port.issues[DIRECT_OWED]
+    first_archives = [
+        c for c in port.comments if c.body.startswith("[fixture-amendment:")
+    ]
+    assert AMENDED_CHECK in settled.body
+    assert len(first_archives) == 1
+
+    results = []
+    edit = port.edit_description
+
+    async def recorded(**kwargs):
+        results.append(await edit(**kwargs))
+        return results[-1]
+
+    monkeypatch.setattr(port, "edit_description", recorded)
+    service, replay_guard, workspace, _ = await build(
+        repository,
+        Executor(reproduced=True),
+        port=port,
+        frozen_spec=guard._spec,
+    )
+    try:
+        events = await drive(service, replay_guard, repository, resume=True)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        replay = report.verdicts[0]
+        assert replay.verdict == "amended"
+        assert json.loads(replay.prior.content)[0]["body"] == settled.body
+        assert port.issues[DIRECT_OWED].body == settled.body
+        assert port.issues[DIRECT_OWED].model_dump(
+            exclude={"updated_at"}
+        ) == settled.model_dump(exclude={"updated_at"})
+        assert results == [
+            DescriptionEditResult.UNCHANGED,
+            DescriptionEditResult.UNCHANGED,
+        ]
+        archives = [
+            c for c in port.comments if c.body.startswith("[fixture-amendment:")
+        ]
+        assert archives[0] == first_archives[0]
+        assert len(archives) == 2
     finally:
         await cleanup(workspace)
 
