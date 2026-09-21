@@ -1,10 +1,11 @@
 """Every ordering that consults priority reads the rank inputs alone (KOD-731).
 
 The guard is the shape of the rank, not a word list. Over the whole package it
-finds every ordering expression — a ``sorted``, ``.sort``, ``min`` or ``max``
-call, and every ``__lt__`` — whose key or arguments reach a rank name, and
-compares the sites it found, how many each definition holds and every
-attribute name read inside them to an exact register. A size fed into a rank
+finds every ordering expression — a ``sorted``, ``.sort``, ``min``, ``max``,
+``heapq.nsmallest`` or ``heapq.nlargest`` call, and every ``__lt__`` — whose
+key or arguments reach a rank name, and compares the sites it found, how many
+each definition holds and every attribute name read inside them to an exact
+register. A size fed into a rank
 has to be read off something, so an ordering that reads a name outside the
 rank inputs reds even when it spells no suspicious word: that is the mutation
 this guard exists for, ``estimate=len(issue.body)`` on the rank key and in
@@ -26,12 +27,20 @@ consults priority anywhere is registered.
 Blind spots, stated: a name assembled from parts rather than joined by
 underscores is not matched; a size used as a filter rather than as an
 ordering, or an ordering that reads no priority name in a definition the
-register does not count, is outside every pin here — the register catches a
-size only once it enters an ordering that also consults priority, which is the
-mutation this guard exists for; a length taken of a local name rather than of
-a field is not a text-length read, and a length taken of a field that is not a
-text column — a count of relations, the size of a label set — is outside the
-text-length net; strings and comments are not scanned. The
+register does not count, is outside every pin here. The register reads the
+names an ordering's key spells, not what those names were computed from: an
+ordering whose key reads a name outside the rank inputs is registered, but a
+size folded into a rank input *before* the ordering — a rank input rewritten
+from a count, whether in the producer or inside a registered definition —
+reaches the ordering under the rank input's own name and is outside every pin
+here. An ordering expression here is one of the six calls named above or a
+``__lt__``: ``bisect``, ``functools.cmp_to_key`` and a hand-rolled comparison
+loop are not ordering expressions to this guard, and a loop that compares two
+rank keys by hand is not detectable by call shape and is not claimed. A length
+taken of a local name rather than of a field is not a text-length read, and a
+length taken of a field that is not a text column — a count of relations, the
+size of a label set — is outside the text-length net; strings and comments are
+not scanned. The
 words ``effort``, ``remaining`` and ``size`` are deliberately absent from the
 vocabulary because the package uses them for a session effort setting, for
 iteration and round counters, and for page sizes.
@@ -94,7 +103,10 @@ RANK_INPUTS = frozenset(
 )
 #: The only functions an ordering key may call.
 RANK_CALLS = frozenset({priority_rank.__name__, rank_key.__name__})
-ORDERING_CALLS = frozenset({"sorted", "sort", "min", "max"})
+#: Every call that orders something by a key. The two ``heapq`` selections
+#: order by a key the way ``sorted`` does, and the callee's own attribute is no
+#: region, so each is found by the word it spells.
+ORDERING_CALLS = frozenset({"sorted", "sort", "min", "max", "nsmallest", "nlargest"})
 #: Words a size, an estimate or a remaining-work forecast would be spelled
 #: with, matched against an identifier's underscore-separated parts and any
 #: run of them.
@@ -416,15 +428,35 @@ def test_the_rank_key_is_priority_then_age_and_nothing_else():
 
 
 def test_every_ordering_that_consults_priority_reads_only_the_rank_inputs():
-    """The whole package's priority orderings, compared to the register."""
+    """The whole package's priority orderings, compared to the register.
+
+    The planted module is the library route the four builtins leave open: a
+    ``heapq`` selection whose key orders by the rank and by a relation count.
+    Planted into the scanned tree it becomes a sixth entry reading a name
+    outside the rank inputs, so the exact register reds.
+    """
     sites = ordering_sites(PARSED)
     calls = ordering_calls(PARSED)
+    planted = ast.parse(
+        "import heapq\n"
+        "\n"
+        f"from kodezart.domain.dispatch import {rank_key.__name__}\n"
+        "\n"
+        "def pick(rows):\n"
+        "    return heapq.nsmallest(\n"
+        f"        rows, 1, key=lambda r: ({rank_key.__name__}(r), len(r.relations))\n"
+        "    )\n"
+    )
+    with_planted = ordering_sites({**PARSED, "planted.py": planted})
 
     assert sites == DISPATCH_ORDERINGS
     for _key, (_count, reads) in sites.items():
         assert reads <= RANK_INPUTS
     for _key, named in calls.items():
         assert named <= RANK_CALLS
+    assert "relations" not in RANK_INPUTS
+    assert with_planted["planted.py::pick"] == (1, frozenset({"relations"}))
+    assert with_planted != DISPATCH_ORDERINGS
 
 
 def test_an_ordering_that_consults_the_rank_under_another_spelling_is_registered():
