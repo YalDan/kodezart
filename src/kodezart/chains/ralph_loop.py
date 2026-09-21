@@ -23,6 +23,7 @@ from kodezart.core.protocols import (
     FireCriteriaReader,
     GitService,
     GitSourceReader,
+    LaneLapseEscalator,
     LaneStateWriter,
     PromptSetProvider,
     RepoCache,
@@ -129,6 +130,7 @@ class RalphLoop:
         source: GitSourceReader | None = None,
         lane_state: LaneStateWriter | None = None,
         workspace: WorkspaceProvider | None = None,
+        lapse_escalations: LaneLapseEscalator | None = None,
     ) -> None:
         self._service = service
         self._criteria_reader = criteria_reader
@@ -136,6 +138,7 @@ class RalphLoop:
         self._source = source
         self._lane_state = lane_state
         self._workspace = workspace
+        self._lapse_escalations = lapse_escalations
         self._max_iterations = max_iterations
         self._plateau_window = plateau_window
         self._fan_in_max_attempts = fan_in_max_attempts
@@ -611,6 +614,12 @@ class RalphLoop:
                     for cross_off in standing.lapsed
                 },
             }
+        # Resolved before the session, not at the write: a lapse the loop
+        # cannot re-derive owes a question, and a lane that could not ask one
+        # refuses before it takes a criterion back rather than after. Held on
+        # the transition and not on the whole lapsed set, so a deployment that
+        # configures no escalation writer is not refused at every iteration.
+        escalator = self._lapse_escalator() if standing.newly_lapsed else None
 
         dispatched = tuple(ctx.acceptance_criteria)
         # The session the standing grade came from, carried out of the
@@ -858,6 +867,16 @@ class RalphLoop:
                 standing=prior,
                 reading=reading,
             )
+            if escalator is not None:
+                # After the move back, so a question never names a criterion
+                # the board still shows as satisfied. The field IS the
+                # transition: a grading that lapsed in an earlier iteration is
+                # in `lapsed` and not here, so nothing is asked twice.
+                await escalator.raise_lapses(
+                    lane=self._lane_binding(ctx),
+                    lapsed=standing.newly_lapsed,
+                    head_sha=native_ref,
+                )
         writer(event)
         if (
             trajectory.plateaued
@@ -1015,6 +1034,14 @@ class RalphLoop:
                 "Native execution requires the lane state writer"
             )
         return self._lane_state
+
+    def _lapse_escalator(self) -> LaneLapseEscalator:
+        """The role a lapsed observation's question is raised through."""
+        if self._lapse_escalations is None:
+            raise NativeWriteRefusalError(
+                "Native execution requires the lapse escalation writer"
+            )
+        return self._lapse_escalations
 
     def _route_after_execute(self, state: RalphLoopState) -> str:
         if state.get("amendment_blocked", False):

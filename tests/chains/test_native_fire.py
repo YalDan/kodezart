@@ -39,6 +39,7 @@ from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.workflow_state import validated_criteria
 from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
+from kodezart.services.lane_lapse_escalation import LaneLapseEscalations
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.accept import AcceptVerdict
@@ -213,6 +214,7 @@ def engine(
     workspace=None,
     lane_operation=None,
     writes_lane_state: bool = True,
+    raises_lapse_questions: bool = True,
     owns_workspace: bool = True,
     rulings=DEFAULT,
 ) -> RalphWorkflowEngine:
@@ -222,9 +224,9 @@ def engine(
     a test about what a commit leaves behind supplies its own repository, and
     a test about WHICH tree a lane opened supplies the workspace provider so
     it can read the acquisitions back.
-    *writes_lane_state* and *owns_workspace* are the two collaborators a test
-    withholds on purpose: a native loop without either is the wiring the
-    execute node refuses at, before it opens a session.
+    *writes_lane_state*, *raises_lapse_questions* and *owns_workspace* are the
+    collaborators a test withholds on purpose: a native loop without one of
+    them is the wiring a node refuses at, before it opens a session.
     """
     git = (
         git
@@ -273,6 +275,21 @@ def engine(
                     gate=gate,
                 )
                 if criteria is not None and writes_lane_state
+                else None
+            ),
+            lapse_escalations=(
+                LaneLapseEscalations(
+                    tracker=criteria._tracker,
+                    operation=lane_operation or native_operation(),
+                    runner=service,
+                    workspace=workspace,
+                    git=git,
+                    prompts=prompts,
+                    skills=SUPPRESS_ALL_SKILLS,
+                    gate=gate,
+                    lease_seconds=900,
+                )
+                if criteria is not None and raises_lapse_questions
                 else None
             ),
             service=service,

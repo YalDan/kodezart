@@ -1722,6 +1722,24 @@ class LaneStateWriter(Protocol):
 
 
 @runtime_checkable
+class LaneLapseEscalator(Protocol):
+    """The question a lane raises when a grading it cannot re-derive lapses."""
+
+    async def raise_lapses(
+        self, *, lane: LaneBinding, lapsed: Sequence[CriterionCrossOff], head_sha: str
+    ) -> None:
+        """Raise one question per newly lapsed grading of *lapsed*.
+
+        One act, described only by values the committing loop already holds:
+        the lane it is grading for, the gradings that stopped standing at
+        this head, and the head they stopped standing at. Which occurrence
+        each question is addressed under, which lease it is written beneath
+        and how it is judged are the writer's business and not the loop's.
+        """
+        ...
+
+
+@runtime_checkable
 class ArtifactPersister(Protocol):
     """Persists and cleans named files under .kodezart/ on a branch."""
 

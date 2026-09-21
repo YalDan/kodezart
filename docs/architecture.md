@@ -93,6 +93,7 @@ does not exist.
 | SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
 | RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: one keyed record read and rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
+| LaneLapseEscalator | LaneLapseEscalations | The one question a lane raises when a grading it cannot re-derive lapses: on the lane's own issue, keyed by that criterion, written after the move back and judged inside a verified window |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
 | NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and ruling records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication |
@@ -362,8 +363,14 @@ rather than a satisfied criterion. No event is composed and none is looked for:
 a lapse is the criterion being owed again, not a regression, so the take-back
 that reports one and the take-back that reports nothing are one act with one
 difference. A lapse repeated in a later iteration finds the sub-issue already
-unstarted and writes nothing at all. Nothing else is written: no parent's
-state, and no comment per criterion.
+unstarted and writes nothing at all. Nothing is written on the criterion itself
+beyond its state and its Evidence row, and no parent's workflow state. A grading
+resting on a performed observation, which the loop cannot re-derive, does leave
+one question — on the lane's own issue, after the move back, addressed under the
+criterion whose grading lapsed, so a later iteration and a later run rewrite the
+same question rather than adding a second one. That question is judged against
+the tree it was raised at before the raising step returns, and it marks its
+issue for decision.
 
 Which criteria an iteration is asked about follows from the same reading. The
 loop remembers what its last evaluation graded as graph state, and at the next
@@ -374,15 +381,16 @@ cheap grading, which is owed again on any head move. A grading that still stands
 is withheld from the session and written nowhere; an expensive one that has
 stopped standing goes back to the session, because the loop can re-derive it; one
 resting on a performed observation is not re-derived at all, because the loop
-cannot perform the observation, and is taken back instead. What reaches the gate
-is still the whole roster: a withheld criterion carries the row its standing
-grading earns, with the harness's own reason in place of a verdict nobody asked
-for, so the denominator does not move between iterations and the gate cannot
-clear over an outstanding lapse. Nothing persists that memory — the scope arm
-runs with no checkpointer — so a killed run re-enters from the board with every
-criterion its roster owes to be graded again. The owning issue's finished state is the
-tracker's own rollup over its criterion sub-issues, which `SubtreeClosure`
-reads, so the scope walker sees a lane close with no further write.
+cannot perform the observation, and is taken back instead — and asked about,
+once. What reaches the gate is still the whole roster: a withheld criterion
+carries the row its standing grading earns, with the harness's own reason in
+place of a verdict nobody asked for, so the denominator does not move between
+iterations and the gate cannot clear over an outstanding lapse. Nothing persists
+that memory — the scope arm runs with no checkpointer — so a killed run
+re-enters from the board with every criterion its roster owes to be graded
+again. The owning issue's finished state is the tracker's own rollup over its
+criterion sub-issues, which `SubtreeClosure` reads, so the scope walker sees a
+lane close with no further write.
 
 A native evaluation is graded in a workspace the loop owns, acquired at the sha
 the verdict will be stamped with. Before that workspace is released the loop
