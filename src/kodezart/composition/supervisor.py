@@ -7,7 +7,11 @@ from kodezart.config.app import AppConfig
 from kodezart.core.protocols import TrackerPort
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.pass_scheduler import ScheduledPass
-from kodezart.services.supervisor_pass import SUPERVISOR_TICK_NAME, SupervisorPass
+from kodezart.services.supervisor_pass import (
+    SUPERVISOR_TICK_NAME,
+    SupervisorPass,
+    supervisor_holder,
+)
 from kodezart.services.tally_supervisor import TallySupervisor
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.scope import ScopeRef
@@ -24,9 +28,11 @@ def build_supervisor_pass(
     and nothing else. It reports nowhere: the observation IS the record, and
     it is on the tracker where the next tick reads it.
 
-    The holder is this deployment's own process identity with the tick's name
-    on it, so a reader of a leased write can see which process wrote it, and
-    a re-entry by the same process is re-acquisition rather than contention.
+    The holder is the pass's own identity — the operation name with the
+    tick's name on it — so a reader of a leased write can see which pass
+    wrote it, and a re-entry by the same pass is re-acquisition rather than
+    contention. It is not composed from ``dispatch_holder``: that names the
+    process that holds fire claims, and a lease holder is never derived from it.
     """
     records = LaneRecordReader(tracker=tracker, operation=operation)
     tally = TallySupervisor(
@@ -34,7 +40,7 @@ def build_supervisor_pass(
         records=records,
         marker_prefixes=operation.marker_prefixes,
         max_commits_without_closure=config.run_alarm_max_commits_without_closure,
-        holder=f"{config.dispatch_holder}/{SUPERVISOR_TICK_NAME}",
+        holder=supervisor_holder(operation_name=operation.operation_name),
         lease_seconds=config.tracker.surface_lease_seconds,
     )
 

@@ -12,10 +12,11 @@ from kodezart.types.domain.surface import WritableSurface
 class RunSurfaceLease:
     """Acquire once, renew explicitly, and release after every exit.
 
-    The caller supplies the queue's actual job id and the complete write
-    set for this operation. The existing tracker port owns arbitration;
-    this component owns the lifetime of its requests. No timer renews the
-    lease and a failed renewal never becomes another acquisition.
+    The caller supplies the holder the lease is recorded under — the queue's
+    job id for a run, the pass identity for a scheduled pass — and the
+    complete write set for this operation. The existing tracker port owns
+    arbitration; this component owns the lifetime of its requests. No timer
+    renews the lease and a failed renewal never becomes another acquisition.
 
     Callers settle their writes before exiting the context, so release
     cannot race a detached mutation. Operations for the same job and set

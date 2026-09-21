@@ -1378,8 +1378,10 @@ class TrackerPort(
         not contention — re-acquisition succeeds and re-times the whole
         set — and an expired lease is free to anyone.
 
-        *holder* is the writing run's job id (``JobRecord.job_id``), never
-        the claim's process identity.
+        *holder* names the writer whose lifetime the lease follows: a run's
+        job id (``JobRecord.job_id``), or a scheduled pass's own identity for
+        a writer that is not a run. It is never the claim's process identity
+        (``dispatch_holder``) and never composed from it.
         """
         ...
 

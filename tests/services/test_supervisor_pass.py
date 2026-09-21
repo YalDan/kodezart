@@ -20,6 +20,7 @@ from kodezart.types.domain.tracker import IssuePriority
 from tests.fakes import FIXTURE_EPOCH, FakeTrackerPort, make_tracker_issue
 from tests.services.lane_tally_fixtures import (
     BOUND,
+    HOLDER,
     LEASE_SECONDS,
     PREFIXES,
     SCOPE,
@@ -230,7 +231,7 @@ async def test_cancellation_is_not_swallowed(stopped):
             records=LaneRecordReader(tracker=port, operation=operation()),
             marker_prefixes=PREFIXES,
             max_commits_without_closure=BOUND,
-            holder="kodezart/supervisor",
+            holder=HOLDER,
             lease_seconds=LEASE_SECONDS,
         )
 
