@@ -506,13 +506,20 @@ def standing_board(lanes, blocked=None):
     return port
 
 
+#: The configuration the composed pass is built with, and the one object a
+#: case reads the dispatch lane off: the lane the pass submits onto is a
+#: property of the configuration the pass was HANDED, so a second
+#: construction of the same values would pin the class's default instead.
+HEARTBEAT_CONFIG = AppConfig(
+    organize=OrganizeSettings(max_admission_rounds=2, max_convergence_rounds=2),
+    write_back=WriteBackSettings(max_verify_rounds=2),
+)
+
+
 def standing_heartbeat(port, queue, operation):
     """The composed pass over the same board and the same process's queue."""
     beat = organize_composition.build_scope_heartbeat(
-        config=AppConfig(
-            organize=OrganizeSettings(max_admission_rounds=2, max_convergence_rounds=2),
-            write_back=WriteBackSettings(max_verify_rounds=2),
-        ),
+        config=HEARTBEAT_CONFIG,
         operation=operation,
         tracker=port,
         queue=queue,
