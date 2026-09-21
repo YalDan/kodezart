@@ -1123,6 +1123,27 @@ def test_qualified_shadow_cannot_make_text_an_identity(declaration):
     )
 
 
+def test_the_ruling_address_names_are_the_five_the_guard_carries():
+    """The set's membership, stated once, because the arms below derive from it.
+
+    Deriving the arms from the set is what makes a sixth name arrive with an arm
+    of its own instead of silently uncovered.  It also means REMOVING a name
+    removes its arm, so a shrinking set would report nothing at all: four arms
+    would collect where five did, and nothing would be red.  This is the
+    assertion that reds instead.
+
+    Tying the set to the landed models was the other candidate and is refused on
+    purpose: `AmendmentRecord.id` and `RulingProtectedTestRef.source_ref` also
+    carry a ruling id, and a guard that reported any field named `id` annotated
+    as a bare string would report most of the tree.  Deriving from the models
+    would therefore need a list of names to ignore, which is the hand-listed
+    surface this set exists to avoid.
+    """
+    assert RULING_ADDRESS_NAMES == frozenset(
+        {"ruling_id", "ruling_ids", "ruling_ref", "ruling_refs", "supersedes"},
+    )
+
+
 @pytest.mark.parametrize("field", sorted(RULING_ADDRESS_NAMES))
 def test_every_ruling_address_name_refuses_a_bare_string_annotation(field):
     """Each name in the guard's set is a name the guard actually acts on.

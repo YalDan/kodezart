@@ -199,6 +199,14 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
     # deliverable branch sits on nor the loop tip the remote holds — by sha,
     # read off the reader's own output rather than off the fixture's dict.
     assert differs[0]["recorded_head"] not in (BASE_TIP, REMOTE_HEAD)
+    # The Check's other half, "the deliverable branch is still at its base
+    # tip", is carried by the single-read assertion above and by nothing else,
+    # and that is the whole of it: the reader never asks about that branch, so
+    # no answer it gives can mention where that branch stands.  The sha the
+    # fixture puts there is therefore arbitrary — moving it changes nothing, as
+    # it should not.  An assertion here that the base tip reaches neither
+    # answer would read like a pin and hold for the same reason the fixture
+    # value is arbitrary, so it is deliberately absent.
     assert isinstance(entry, ResumedLane)
     assert entry.head_sha == REMOTE_HEAD
     assert entry.deliverable_branch != entry.loop_branch
