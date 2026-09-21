@@ -575,6 +575,14 @@ def test_the_coordinator_branches_on_no_stalled_fact_and_names_no_do_not_merge_s
     ]
 
 
+def test_coordinator_exposes_only_the_delivery_entry_point():
+    assert {
+        name
+        for name, method in vars(LaneDeliveryCoordinator).items()
+        if not name.startswith("_") and callable(method)
+    } == {"deliver"}
+
+
 async def test_delivery_refuses_incoherent_wire_outcome():
     result = await deliver(await setup())
     wire = result.model_dump()
