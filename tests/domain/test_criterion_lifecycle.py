@@ -23,6 +23,7 @@ from collections.abc import Mapping
 from enum import StrEnum
 from functools import cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import get_args
 
 import pytest
@@ -205,6 +206,13 @@ def record_sources() -> Mapping[str, str]:
     port file and this lane's domain modules in one derived set, and it is
     grown as a fixed point over the tree, so nothing is transcribed here.
 
+    The breadth that follows from deriving it is intended, not accidental: the
+    answer spans ``composition/``, ``chains/``, ``services/`` and ``types/``
+    as well as the port file and this lane's domain modules, because a caller
+    handed the value back holds it. A red naming a holder outside ``domain/``
+    is therefore this guard working — that module can carry the record, so it
+    may name no vendor either — and not the scan reaching too far.
+
     Cached because one call parses the whole packaged tree, and the injected
     case below is parametrized over every member of the answer. The mapping
     is read-only: a caller that injects a spelling copies it first.
@@ -214,7 +222,7 @@ def record_sources() -> Mapping[str, str]:
         for path in sorted(SOURCE_ROOT.rglob("*.py"))
     }
     holders = value_holders(sources, identity=RECORD_IDENTITY)
-    return {name: sources[name] for name in sorted(holders)}
+    return MappingProxyType({name: sources[name] for name in sorted(holders)})
 
 
 def port_surface() -> frozenset[str]:
