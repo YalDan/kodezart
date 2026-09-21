@@ -1,6 +1,7 @@
 """Actual precommit graph, canonical write-back and Git publication ordering."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -380,14 +381,21 @@ async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalat
 ):
     async def observe(title, payload, kwargs):
         if title == "AmendmentJudgment":
+            measurement = None
+            if affordable is not None:
+                # The instrument is a real act in the judge's own worktree: it
+                # reads the repository at base and leaves nothing behind.
+                read = Path(kwargs["cwd"], "policy.py").read_bytes()
+                measurement = {
+                    "observed": f"measured 12 minutes over {len(read)} bytes at base",
+                    "affordable": affordable,
+                }
             payload["finding"] = {
                 "verdict": "feasible",
                 "smallest_repair": "none",
                 "cost_claim": {
                     "assertion": "The demonstration costs too much.",
-                    "measurement": None
-                    if affordable is None
-                    else {"observed": "measured 12 minutes", "affordable": affordable},
+                    "measurement": measurement,
                 },
             }
             payload["measured_by"] = (
@@ -397,6 +405,10 @@ async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalat
     executor = Executor(mutate=observe)
     service, guard, workspace, port = await build(repository, executor)
     prior = port.issues[DIRECT_OWED]
+    repo = repository[0]
+    tip = await git(repo, "rev-parse", "main")
+    files = (await git(repo, "ls-tree", "-r", "--name-only", "main")).splitlines()
+    assert files == ["newer.py", "policy.py"]
     try:
         events = await drive(service, guard, repository)
         report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
@@ -428,6 +440,17 @@ async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalat
             await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
             == ""
         )
+        # The measurement reached no branch: the same head sha and the same
+        # tracked files, and the worktree it ran in is gone.
+        assert await git(repo, "rev-parse", "main") == tip
+        assert await git(repo, "rev-parse", "native-test") == tip
+        assert (
+            await git(repo, "ls-tree", "-r", "--name-only", "native-test")
+        ).splitlines() == files
+        judge = executor.calls[1]
+        assert judge["output_format"]["schema"]["title"] == "AmendmentJudgment"
+        assert judge["cwd"] in workspace.released
+        assert not Path(judge["cwd"]).exists()
     finally:
         await cleanup(workspace)
 
