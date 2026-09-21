@@ -27,15 +27,25 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 #: The two trees the gate covers: shipped code and the suite that exercises it.
 SCANNED: Final[tuple[str, ...]] = ("src/kodezart", "tests")
 
+#: Both suffixes the gate's tools read.  The linter lints a stub under the
+#: same table as a module and honours a directive comment in it, and the
+#: type checker reads a stub sitting beside a module in place of that
+#: module and honours the stub's own inline setting, so a directive in a
+#: stub is a suppression and a walk over one suffix counts none of them.
+SOURCE_SUFFIXES: Final[tuple[str, ...]] = ("*.py", "*.pyi")
+
 #: The directive comments that take a line, or a whole file, out of the
 #: gate's reach.  The file-level forms are the cheapest hole of all: one
 #: comment at the top of a module and the tool reads none of it.  Every
 #: family below was verified against the binary the gate itself runs.  The
 #: linter honours its own whole-file exemption, the one it inherited from
 #: the linter it replaced, and the import-sorter exemptions, so all three
-#: are read.  The formatter the gate runs beside it honours its own
-#: whole-region pair and its per-statement form, so they are a family here
-#: too.  Any inline setting of the type checker is a per-module
+#: are read; it honours a sorter exemption spelled bare and spelled under
+#: its own prefix, so the prefix is optional there as it is on the
+#: exemption beside it.  The formatter the gate runs beside it honours its
+#: own whole-region pair and its per-statement form, and it honours the
+#: whole-region pair of the formatter it replaced, so all of those are one
+#: family here.  Any inline setting of the type checker is a per-module
 #: configuration change, the same class its own table in the project file
 #: pins, so the prefix alone is what is read: a match on prose would cost
 #: one row of the allowed map, which is the safe direction.  No form for a
@@ -49,12 +59,15 @@ SUPPRESSION: Final[re.Pattern[str]] = re.compile(
     r"#\s*(?:type:\s*ignore"
     r"|(?:ruff:\s*|flake8:\s*)?noqa"
     r"|mypy:"
-    r"|isort:\s*(?:skip_file|skip|off)"
-    r"|fmt:\s*(?:off|on|skip))",
+    r"|(?:ruff:\s*)?isort:\s*(?:skip_file|skip|off)"
+    r"|fmt:\s*(?:off|on|skip)"
+    r"|yapf:\s*(?:disable|enable))",
     re.IGNORECASE,
 )
 
-#: The pytest forms that keep a collected test from running.
+#: The forms that keep a collected test from running: the runner's own, and
+#: the standard library's, which the runner honours on a plain test function
+#: as well as on a case class.
 SKIP_FORMS: Final[frozenset[str]] = frozenset(
     {
         "pytest.mark.skip",
@@ -63,8 +76,19 @@ SKIP_FORMS: Final[frozenset[str]] = frozenset(
         "pytest.importorskip",
         "pytest.mark.xfail",
         "pytest.xfail",
+        "unittest.skip",
+        "unittest.skipIf",
+        "unittest.skipUnless",
+        "unittest.SkipTest",
+        "unittest.expectedFailure",
     }
 )
+
+#: The modules the form rosters name members of.  A chain resolves to a form
+#: only through a binding whose origin is one of these or a module under
+#: one, so the roster and the resolver cannot drift: a form added under a
+#: root that is not here would resolve nowhere and its control would red.
+FORM_ROOTS: Final[tuple[str, ...]] = ("pytest", "unittest")
 
 
 def gated_mark_forms() -> frozenset[str]:
@@ -91,21 +115,34 @@ class Source:
         return cls(path=path, text=data, tree=ast.parse(data))
 
 
-@functools.cache
-def sources() -> tuple[Source, ...]:
-    """Every module under the scanned trees, sorted per tree, parsed once."""
+def walk(root: Path) -> tuple[Source, ...]:
+    """Every module and stub under *root*'s scanned trees, sorted per tree.
+
+    Both suffixes are read because both tools read both, and a stub carries
+    a directive exactly as a module does.  *root* is a parameter so a
+    control can walk a tree it built rather than the repository.
+    """
     walked: list[Source] = []
     for tree in SCANNED:
-        for module in sorted((REPO_ROOT / tree).rglob("*.py")):
+        found = sorted(
+            path for suffix in SOURCE_SUFFIXES for path in (root / tree).rglob(suffix)
+        )
+        for module in found:
             text = module.read_bytes()
             walked.append(
                 Source(
-                    path=module.relative_to(REPO_ROOT).as_posix(),
+                    path=module.relative_to(root).as_posix(),
                     text=text,
                     tree=ast.parse(text),
                 )
             )
     return tuple(walked)
+
+
+@functools.cache
+def sources() -> tuple[Source, ...]:
+    """The repository's own walk, parsed once and shared by every reading."""
+    return walk(REPO_ROOT)
 
 
 @functools.cache
@@ -168,13 +205,20 @@ def _through(name: str | None, bindings: Mapping[str, str]) -> str | None:
     return f"{origin}.{rest}" if rest else origin
 
 
-def pytest_bindings(tree: ast.Module) -> dict[str, str]:
-    """Local name -> the dotted pytest origin the module bound it to.
+def _rooted(origin: str) -> bool:
+    """True when *origin* is a roster root or a module under one."""
+    return any(origin == root or origin.startswith(f"{root}.") for root in FORM_ROOTS)
+
+
+def form_bindings(tree: ast.Module) -> dict[str, str]:
+    """Local name -> the dotted origin the module bound it to.
 
     ``import pytest as pt`` binds ``pt``; ``from pytest import mark as m``
     binds ``m`` to the mark factory; a module-level ``marks = pytest.mark``
     binds ``marks`` to the same, and an annotated ``marks: Final =
-    pytest.mark`` binds the same way.  Only origins under pytest are kept.
+    pytest.mark`` binds the same way.  Only origins under a roster root are
+    kept, so the standard library's own skip forms resolve the same way and
+    an import of a package under a root binds nothing else.
 
     An import is read wherever it sits.  One written inside the function
     that calls the form binds the name for that call, and one wrapped in a
@@ -194,11 +238,11 @@ def pytest_bindings(tree: ast.Module) -> dict[str, str]:
     for statement in ast.walk(tree):
         if isinstance(statement, ast.Import):
             for alias in statement.names:
-                if alias.name == "pytest" or alias.name.startswith("pytest."):
+                if _rooted(alias.name):
                     bindings[alias.asname or alias.name] = alias.name
         elif isinstance(statement, ast.ImportFrom) and statement.level == 0:
             origin = statement.module or ""
-            if origin == "pytest" or origin.startswith("pytest."):
+            if _rooted(origin):
                 for alias in statement.names:
                     bindings[alias.asname or alias.name] = f"{origin}.{alias.name}"
         elif isinstance(statement, ast.Assign) and id(statement) in outer:
@@ -222,19 +266,21 @@ def pytest_bindings(tree: ast.Module) -> dict[str, str]:
 def sites(module: Source, forms: frozenset[str]) -> tuple[str, ...]:
     """The forms the module names in code, in file order.
 
-    Every name-or-attribute chain is resolved through the module's own pytest
+    Every name-or-attribute chain is resolved through the module's own
     bindings, so an aliased import names the same form.  A chain a longer one
     is built from is read in its own right, so a form is a site whatever
     continues it: the mark factory's own combinator takes a decorator form
     and returns another, and the longer chain that spells it is not in the
-    roster while the form it starts with is.  No form is a prefix of another
-    form, so nothing is counted twice.  A string constant is never a site.
+    roster while the form it starts with is.  No form is a chain another
+    form continues, so nothing is counted twice: two forms that share a
+    spelling up to a letter, as the conditional skips do, are still two
+    separate chains.  A string constant is never a site.
     Not followed, and so not seen: a form reached through ``getattr``, a
     marker added from a string at collection time, an alias bound inside a
     function, a module reached through ``importlib``, a star import from
     pytest, an import from the private ``_pytest`` packages.
     """
-    bindings = pytest_bindings(module.tree)
+    bindings = form_bindings(module.tree)
     found: list[tuple[int, int, str]] = []
     for node in ast.walk(module.tree):
         if not isinstance(node, ast.Name | ast.Attribute):

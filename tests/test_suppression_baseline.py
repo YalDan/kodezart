@@ -33,9 +33,15 @@ One class of the shipped proxy is out of this census: a model configuration
 whose `extra` setting is loosened from forbidding unknown fields to
 allowing them.  The tree carries none today and nothing here would see one.
 A second class is out of it too: `addopts` (with `-k` or `--deselect`),
-`testpaths`, `collect_ignore` in a conftest, and a module-level `__test__`
-set false can each stop a test being collected at all, and nothing here
-reads them; they are a later slice.
+`testpaths`, `collect_ignore` in a conftest, a module-level `__test__` set
+false, and a `parametrize` mark whose parameter set is empty (which the
+runner reports as a skip at collection, under a setting of its own table)
+can each stop a test being collected at all, and nothing here reads them;
+they are a later slice.  A third is out of it as well: a stub carrying no
+directive at all, sitting beside the module it shadows, takes that module
+out of the type checker's reach, because the checker reads the stub in
+place of it.  That shape has no directive to count and no roster can see
+it; it is a diff the code review has to catch.
 
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
@@ -224,12 +230,12 @@ CONFIG_BASELINE: dict[str, object] = {
     },
 }
 
-#: One hand-written source per form, each binding pytest a different way,
-#: so the import alias, the from-import, the assignment alias, a name bound
-#: twice, the annotated assignment and an import inside the function that
-#: calls the form each have a control, and so does a form a longer chain
-#: continues.  The tree aliases pytest nowhere today, so these are the only
-#: proof those arms work.
+#: One hand-written source per form, each binding the form's own module a
+#: different way, so the import alias, the from-import, the assignment
+#: alias, a name bound twice, the annotated assignment and an import inside
+#: the function that calls the form each have a control, and so does a form
+#: a longer chain continues.  The tree aliases neither module today, so
+#: these are the only proof those arms work.
 FORM_CONTROLS: tuple[tuple[str, str], ...] = (
     (
         "pytest.mark.skip",
@@ -272,6 +278,28 @@ FORM_CONTROLS: tuple[tuple[str, str], ...] = (
         "import pytest\n@pytest.mark.skipif.with_args(True, reason='x')\n"
         "def test_a(): ...\n",
     ),
+    # The standard library's own forms.  The runner honours each of these on
+    # a plain test function, so each is a test that does not run; the suite
+    # binds the module nowhere today, which is why the roster gains no row.
+    # One binding shape each, as above.
+    ("unittest.skip", "import unittest\n@unittest.skip('x')\ndef test_a(): ...\n"),
+    (
+        "unittest.skipIf",
+        "import unittest as ut\n@ut.skipIf(True, 'x')\ndef test_a(): ...\n",
+    ),
+    (
+        "unittest.skipUnless",
+        "from unittest import skipUnless as unless\n@unless(False, 'x')\n"
+        "def test_a(): ...\n",
+    ),
+    (
+        "unittest.SkipTest",
+        "import unittest\ndef test_a():\n    raise unittest.SkipTest('x')\n",
+    ),
+    (
+        "unittest.expectedFailure",
+        "from unittest import expectedFailure\n@expectedFailure\ndef test_a(): ...\n",
+    ),
 )
 
 #: One directive of each form the pattern claims to read, held as data and
@@ -283,6 +311,10 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
     "# ruff: noqa",
     "# flake8: noqa",
     "# isort: skip_file",
+    # The linter honours a sorter exemption under its own prefix as well as
+    # bare, and the bare spelling above does not read the prefixed one.
+    "# ruff: isort: skip_file",
+    "# ruff: isort: off",
     "# mypy: ignore-errors",
     "# mypy: disable-error-code=attr-defined",
     "# mypy: allow-untyped-defs",
@@ -294,6 +326,9 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
     # The formatter the gate runs honours this one and its partner, and a
     # per-statement form beside them.  The tree carries none today.
     "# fmt: off",
+    # The same formatter honours the whole-region pair of the formatter it
+    # replaced, so that pair is in the same family.  The tree carries none.
+    "# yapf: disable",
 )
 
 #: The files a tool discovers instead of, or ahead of, the project file.
@@ -339,6 +374,30 @@ def test_no_shipped_module_suppresses_the_type_checker_or_the_linter() -> None:
     carried = negative_shape.census(negative_shape.comment_directives)
 
     assert [path for path in carried if not path.startswith("tests/")] == []
+
+
+def test_the_walk_reads_a_stub_as_well_as_a_module(tmp_path: Path) -> None:
+    """A stub the tools read is a file the census has to read too.
+
+    The linter lints a stub under the same table and honours a directive
+    comment in it, and the type checker reads a stub beside a module in
+    place of that module and honours the stub's own inline setting.  Two
+    files under a walked tree, one of each suffix: both are walked, in one
+    order, and the stub's directive is read from it.
+    """
+    package = tmp_path / "src" / "kodezart" / "core"
+    package.mkdir(parents=True)
+    (package / "shadow.py").write_text("value = 1\n", encoding="utf-8")
+    (package / "shadow.pyi").write_text("import os  # noqa\n", encoding="utf-8")
+
+    walked = negative_shape.walk(tmp_path)
+
+    assert [module.path for module in walked] == [
+        "src/kodezart/core/shadow.py",
+        "src/kodezart/core/shadow.pyi",
+    ]
+    assert negative_shape.comment_directives(walked[0]) == ()
+    assert negative_shape.comment_directives(walked[1]) == ("# noqa",)
 
 
 def test_a_suppression_inside_a_string_is_not_counted_as_one() -> None:
@@ -423,6 +482,28 @@ def test_every_form_is_controlled() -> None:
     assert {form for form, _ in FORM_CONTROLS} == (
         SKIP_FORMS | negative_shape.gated_mark_forms()
     )
+
+
+def test_importing_the_mock_package_binds_no_skip_form() -> None:
+    """Why the roster gains no row for the standard library's forms.
+
+    Most of the suite imports the mock package, and that import binds a
+    member of the package, never the module whose skip forms the roster
+    names, so no module reports one of those forms today.
+    """
+    forms = SKIP_FORMS | negative_shape.gated_mark_forms()
+    control = Source.of(
+        "control.py",
+        "from unittest.mock import AsyncMock, patch\nimport unittest.mock\n"
+        "def test_a():\n    AsyncMock()\n    patch('x')\n",
+    )
+
+    assert negative_shape.form_bindings(control.tree) == {
+        "AsyncMock": "unittest.mock.AsyncMock",
+        "patch": "unittest.mock.patch",
+        "unittest.mock": "unittest.mock",
+    }
+    assert negative_shape.sites(control, forms) == ()
 
 
 def test_a_recorded_test_declaration_never_vanishes() -> None:
