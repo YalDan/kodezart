@@ -973,11 +973,14 @@ every lane of that reading, compared by key; a vector that does not is an alarm
 rather than an ending, so the invocation ends there with nothing posted instead
 of a short report being published as a complete one. Its one write
 is the container's status update, through `ScopeStatusWriter` and no port
-member, gated exactly under its own destination as DERIVED content — a gate
+member, gated exactly under its own destination as DERIVED content, carrying
+its lane roster to the gate as a typed value beside the rendered body — a gate
 that altered the report refuses the write rather than publishing a different
-claim. Nothing is leased, claimed or marked in progress for it, and no
-writable-surface address is taken: `CONTAINER_STATUS_UPDATE` keeps no
-production writer, and exactly-one follows from the terminal running once
+claim. The status update is a point-in-time surface, so the roster is
+admitted; the same value on a durable surface is refused by the durability
+rule before any write. Nothing is leased, claimed or marked in progress for
+it, and no writable-surface address is taken: no container-description
+destination exists, and exactly-one follows from the terminal running once
 (KOD-788). That write sits outside the write-back verifier under a named
 call-site register entry rather than a new read-back arm, because the walk it
 reports on has ended and there is no judged commit to verify it against

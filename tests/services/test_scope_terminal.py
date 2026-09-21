@@ -16,7 +16,10 @@ import structlog.testing
 
 from kodezart.core.errors import LaneRosterArityError
 from kodezart.domain.errors import LaneRecordReadError, ScopeStatusError
-from kodezart.domain.scope_terminal import render_scope_status
+from kodezart.domain.scope_terminal import (
+    render_scope_status,
+    scope_status_aggregates,
+)
 from kodezart.services import lane_reports
 from kodezart.services import scope_terminal as terminal_module
 from kodezart.services.lane_records import LaneRecordReader
@@ -178,6 +181,25 @@ async def test_the_write_is_declared_derived_on_its_own_destination() -> None:
     assert gate.content_classes == [ContentClass.DERIVED]
     assert [visibility for _, visibility, _ in gate.calls] == [RepoVisibility.PUBLIC]
     assert [shape for _, _, shape in gate.calls] == [WriterShape.PROSE]
+
+
+async def test_the_report_declares_its_lane_roster_from_the_event() -> None:
+    """The identities counted are the vector's, never keys read back out of it.
+
+    The roster the gate is handed is built from the same event the body is
+    rendered from, so the two cannot disagree about which lanes the report
+    names.
+    """
+    gate = PassThroughGate()
+
+    event = await terminal(gate=gate).report(
+        ready=reading(ready=("A", "B"), closed=("C",))
+    )
+
+    assert gate.aggregates == [scope_status_aggregates(event)]
+    (roster,) = gate.aggregates[0]
+    assert roster.field == "lanes.issue"
+    assert roster.identities == ("A", "B", "C")
 
 
 @pytest.mark.parametrize(

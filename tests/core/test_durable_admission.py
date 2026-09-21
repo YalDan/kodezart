@@ -15,6 +15,7 @@ from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.gating import (
     DESTINATION_DURABILITY,
     DESTINATION_SURFACE,
+    TRACKER_ROSTER_MIN_REFERENCES,
     ContentClass,
     DurabilityCategory,
     GateDecision,
@@ -432,3 +433,169 @@ def test_a_structured_finding_cannot_carry_string_offsets() -> None:
         ),
     )
     assert GateDecision.model_validate_json(decision.model_dump_json()) == decision
+
+
+# ---------------------------------------------------------------------------
+# One value, two surfaces: durability decides it (KOD-486)
+# ---------------------------------------------------------------------------
+
+PAIRED_SURFACES = [
+    (
+        OutboundDestination.TRACKER_DESCRIPTION,
+        OutboundDestination.TRACKER_STATUS_UPDATE,
+    ),
+    (OutboundDestination.PR_BODY, OutboundDestination.PR_COMMENT),
+    (OutboundDestination.ARTIFACT_CRITERIA_JSON, OutboundDestination.COMMIT_MESSAGE),
+]
+
+DECLARED_VALUES = [
+    (ObjectCount(field="lanes", value=3), DurabilityCategory.OBJECT_COUNT),
+    (ObjectCount(field="lanes", value=0), DurabilityCategory.OBJECT_COUNT),
+    (LANE_ROSTER, DurabilityCategory.IDENTIFIER_ROSTER),
+]
+
+
+@pytest.mark.parametrize(("value", "category"), DECLARED_VALUES)
+@pytest.mark.parametrize(("durable", "point_in_time"), PAIRED_SURFACES)
+async def test_the_same_structured_aggregate_is_refused_and_admitted_by_durability(
+    value, category, durable, point_in_time
+) -> None:
+    """One declaration, two real registered surfaces, two verdicts, no session.
+
+    The bytes name no issue key and carry no digit, so the only thing either
+    call has to decide from is the value the writer declared and how the
+    destination is read.  A count is refused at any value, zero included.
+    """
+    executor = ScriptedAuditExecutor([audit_result([])])
+    gate = await configured_gate(executor=executor)
+    content = "see the lanes below"
+
+    refused = await gate.gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=durable,
+        content_class=ContentClass.DERIVED,
+        aggregates=(value,),
+    )
+    admitted = await gate.gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=point_in_time,
+        content_class=ContentClass.DERIVED,
+        aggregates=(value,),
+    )
+
+    assert refused.verdict is GateVerdict.BLOCKED
+    assert refused.categories == (category,)
+    assert refused.hits[0].source == value
+    assert admitted.verdict is GateVerdict.CLEAN
+    assert admitted.content == content
+    assert executor.calls == []
+
+
+async def test_a_private_target_keeps_the_fast_path_for_typed_aggregates() -> None:
+    """A PRIVATE target is CLEAN before the rule, as it is before the judgment.
+
+    The durability rule is not a privacy rule, so prose and structure stay
+    under one visibility behaviour rather than two.
+    """
+    executor = ScriptedAuditExecutor([audit_result([])])
+    gate = await configured_gate(executor=executor)
+    content = "see the lanes below"
+
+    decision = await gate.gate(
+        content=content,
+        visibility=RepoVisibility.PRIVATE,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_DESCRIPTION,
+        content_class=ContentClass.DERIVED,
+        aggregates=(LANE_ROSTER,),
+    )
+
+    assert decision.verdict is GateVerdict.CLEAN
+    assert decision.content == content
+    assert executor.calls == []
+
+
+async def test_a_point_in_time_aggregate_still_meets_the_reference_scan() -> None:
+    """Admitted by the durability rule is not admitted by the privacy rules."""
+    gate = make_admission(
+        FakeContentJudgment(hits=[]),
+        private_surface=PrivateSurface(hosts=["forge.internal.invalid"]),
+    )
+    decision = await gate.gate(
+        content="see <https://forge.internal.invalid/owner/repo> for the lanes",
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_COMMENT,
+        content_class=ContentClass.DERIVED,
+        aggregates=(LANE_ROSTER,),
+    )
+    assert decision.verdict is GateVerdict.BLOCKED
+    assert decision.categories == (RedactionCategory.INFRA_ENDPOINTS,)
+
+
+@pytest.mark.parametrize("destination", list(OutboundDestination))
+async def test_a_typed_roster_below_the_boundary_is_a_reference_on_every_surface(
+    destination: OutboundDestination,
+) -> None:
+    """One and two identities are references; three is a roster, where durable.
+
+    The literals are spelled out beside the constant, so a change to the
+    boundary is caught rather than absorbed by a test that read it.
+    """
+    assert TRACKER_ROSTER_MIN_REFERENCES == 3
+    gate = await configured_gate()
+    verdicts = {}
+    for size in (1, 2, 3):
+        decision = await gate.gate(
+            content="see the lanes below",
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=destination,
+            content_class=ContentClass.DERIVED,
+            aggregates=(
+                IdentifierRoster(
+                    field="lanes.issue",
+                    identities=tuple("ABC"[:size]),
+                ),
+            ),
+        )
+        verdicts[size] = decision.verdict
+
+    assert verdicts[1] is GateVerdict.CLEAN
+    assert verdicts[2] is GateVerdict.CLEAN
+    durable = durability_of(destination) is SurfaceDurability.DURABLE
+    assert verdicts[3] is (GateVerdict.BLOCKED if durable else GateVerdict.CLEAN)
+
+
+async def test_a_roster_of_one_identity_repeated_is_one_reference() -> None:
+    """The boundary counts distinct identities, so a repeat adds no reference."""
+    decision = await (await configured_gate()).gate(
+        content="see the lanes below",
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_DESCRIPTION,
+        content_class=ContentClass.DERIVED,
+        aggregates=(IdentifierRoster(field="lanes.issue", identities=("A", "A", "A")),),
+    )
+    assert decision.verdict is GateVerdict.CLEAN
+
+
+async def test_undeclared_keys_in_the_bytes_are_clean_on_a_durable_surface() -> None:
+    """Nothing counts references out of the payload; the writer declares them."""
+    content = "ABC-1, ABC-2, ABC-3 are done."
+    executor = ScriptedAuditExecutor([audit_result([])])
+    decision = await (await configured_gate(executor=executor)).gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_DESCRIPTION,
+        content_class=ContentClass.DERIVED,
+        aggregates=(),
+    )
+    assert decision.verdict is GateVerdict.CLEAN
+    assert decision.content == content
+    assert executor.calls == []

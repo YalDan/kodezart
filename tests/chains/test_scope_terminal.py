@@ -26,7 +26,10 @@ from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.core.protocols import ScopeStatusWriter, TrackerPort
 from kodezart.domain.errors import BaseResolutionError
-from kodezart.domain.scope_terminal import render_scope_status
+from kodezart.domain.scope_terminal import (
+    render_scope_status,
+    scope_status_aggregates,
+)
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services import scope_terminal as terminal_module
 from kodezart.services.agent_service import AgentService
@@ -236,6 +239,7 @@ async def test_the_report_goes_through_the_gate_on_this_lanes_own_destination():
     at = gate.destinations.index(OutboundDestination.TRACKER_STATUS_UPDATE)
     assert gate.content_classes[at] is ContentClass.DERIVED
     assert gate.calls[at][0] == render_scope_status(report)
+    assert gate.aggregates[at] == scope_status_aggregates(report)
 
 
 async def test_a_scope_with_no_status_surface_ends_with_the_event_alone():

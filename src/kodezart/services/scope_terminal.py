@@ -4,7 +4,11 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_exact
 from kodezart.core.protocols import OutboundContentGate, ScopeStatusWriter
 from kodezart.domain.errors import LaneRecordReadError, ScopeStatusError
-from kodezart.domain.scope_terminal import lane_roster, render_scope_status
+from kodezart.domain.scope_terminal import (
+    lane_roster,
+    render_scope_status,
+    scope_status_aggregates,
+)
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_reports import assert_lane_roster
 from kodezart.types.domain.gating import (
@@ -134,6 +138,10 @@ class ScopeTerminal:
 
         The visibility stated is the tracker's own, which mirrors publicly;
         ``UNKNOWN`` would say a resolution failed, and none did.
+
+        The lane roster is handed to the gate as a typed value beside the
+        rendered body; the surface is point-in-time, so it is admitted, and
+        the same value on a durable surface is refused before any write.
         """
         body = await gated_exact(
             gate=self._gate,
@@ -142,7 +150,7 @@ class ScopeTerminal:
             visibility=RepoVisibility.PUBLIC,
             destination=OutboundDestination.TRACKER_STATUS_UPDATE,
             content_class=ContentClass.DERIVED,
-            aggregates=(),
+            aggregates=scope_status_aggregates(event),
             refusal=lambda: ScopeStatusError(
                 ref=event.scope,
                 reason="the outbound gate changed the derived report",
