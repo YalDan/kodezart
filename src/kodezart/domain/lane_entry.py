@@ -76,6 +76,39 @@ def recorded_branches(*, record: LaneRunState) -> RecordedBranches:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class RecordedCommit:
+    """A commit the record names, on the branch its LOOP role resolves it on."""
+
+    branch: str
+    sha: str
+
+
+def recorded_commit(
+    *, record: LaneRunState, branches: RecordedBranches
+) -> RecordedCommit:
+    """The best commit this lane recorded, resolved through the loop level.
+
+    At re-entry the record is the only source of what this lane committed.
+    The rows ARE the commit acts (KOD-681), so the last of them is the best
+    state the lane reached, and the branch it is reachable on is the one the
+    LOOP associations resolve — never a ref composed from another ref's
+    text.  A remote tip that has moved past it, or been reset behind it, does
+    not change which commit the record names.
+
+    A record naming no commit act refuses: a lane resumed against no
+    recorded commit has nothing to grade, and guessing a sha off the head
+    field would answer with a commit no row accounts for.
+    """
+    if not record.commits:
+        raise LaneEntryError(
+            issue_key=record.lane_key,
+            reason="the record names no commit act",
+            branches=(branches.loop_branch,),
+        )
+    return RecordedCommit(branch=branches.loop_branch, sha=record.commits[-1].sha)
+
+
 def recorded_entry(entry: LaneEntry | None) -> ResumedLane | DeliverOnlyLane | None:
     """The entry when it stands on a record, and ``None`` when it does not.
 

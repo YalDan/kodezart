@@ -260,8 +260,16 @@ fresh client needs no process cache, repository, trajectory or forge connection.
 
 `LaneEntryReader` gathers the facts one lane's entry is decided from and
 nothing else: the record, through that reader, and — only when a record exists
-— the remote head of the branch the record names. `decide_lane_entry` then
-decides from those facts alone. No record with an open criterion gap mints the
+— the remote head of the branch the record names. At re-entry the record is
+the only source of what the lane committed, so both are resolved through its
+associations before any remote is asked anything: `recorded_branches` resolves
+the loop, deliverable and base refs by ROLE, and `recorded_commit` names the
+commit the record holds as the last of its rows, on the branch the LOOP role
+resolves — never a ref composed from another ref's text, and never the head
+field read as the lane's best state. The remote head is read at that resolved
+branch and compared with that resolved sha; a record naming no commit act
+refuses, because a lane resumed against none has nothing to grade (KOD-705).
+`decide_lane_entry` then decides from those facts alone. No record with an open criterion gap mints the
 lane's two names and cuts its loop branch from the base that resolves now; no
 record with an empty gap is nothing to do. A record with an open gap resumes on
 the recorded LOOP and DELIVERABLE branches at the REMOTE head, whether or not a

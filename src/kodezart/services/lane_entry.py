@@ -4,9 +4,16 @@ from collections.abc import Sequence
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService
-from kodezart.domain.lane_entry import decide_lane_entry, recorded_branches
+from kodezart.domain.lane_entry import (
+    RecordedBranches,
+    RecordedCommit,
+    decide_lane_entry,
+    recorded_branches,
+    recorded_commit,
+)
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.lane_entry import LaneEntry
+from kodezart.types.domain.run_state import LaneRunState
 
 
 class LaneEntryReader:
@@ -42,30 +49,37 @@ class LaneEntryReader:
         """
         located = await self._records.find(issue_key=issue_key, lane_key=issue_key)
         record = located[1] if located is not None else None
-        # Which branches a record's associations resolve to is a fact of the
-        # record alone, and resolving them refuses. Asked here, so a record
-        # that settles no deliverable or no base refuses before the remote is
-        # asked anything about the branch it names.
-        recorded = (
-            None if record is None else (record, recorded_branches(record=record))
-        )
+        # Which branches a record's associations resolve to, and which commit
+        # its rows name, are facts of the record alone, and resolving them
+        # refuses. Asked here, so a record that settles no deliverable, no
+        # base or no commit act refuses before the remote is asked anything
+        # about the branch it names.
+        recorded: tuple[LaneRunState, RecordedBranches] | None = None
+        resolved: RecordedCommit | None = None
+        if record is not None:
+            branches = recorded_branches(record=record)
+            recorded = (record, branches)
+            resolved = recorded_commit(record=record, branches=branches)
+        # The remote is asked about the branch the LOOP role resolves, and the
+        # comparison is against the commit the rows name — never a field read
+        # as a name or as the lane's best state.
         remote_head = (
             None
-            if record is None
+            if resolved is None
             else await self._git.remote_branch_sha(
-                repo_path, self._remote, record.branch
+                repo_path, self._remote, resolved.branch
             )
         )
         if (
-            record is not None
+            resolved is not None
             and remote_head is not None
-            and remote_head != record.head_sha
+            and remote_head != resolved.sha
         ):
             await self._log.ainfo(
                 "lane_record_head_differs",
                 lane=issue_key,
-                branch=record.branch,
-                recorded_head=record.head_sha,
+                branch=resolved.branch,
+                recorded_head=resolved.sha,
                 remote_head=remote_head,
             )
         return decide_lane_entry(

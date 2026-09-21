@@ -11,8 +11,10 @@ from kodezart.domain.errors import LaneEntryError, SubjectAmendedError
 from kodezart.domain.fire_spec import body_digest
 from kodezart.domain.lane_entry import (
     RecordedBranches,
+    RecordedCommit,
     decide_lane_entry,
     recorded_branches,
+    recorded_commit,
     require_unamended_subject,
 )
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
@@ -37,9 +39,14 @@ def record(
     head: str = RECORDED_HEAD,
     digest: str | None = DIGEST,
     pr: LanePR | None = None,
+    rows: tuple[LaneCommit, ...] | None = None,
     extra: tuple[BranchAssociation, ...] = (),
 ) -> LaneRunState:
-    """One lane's record, as the writer leaves it after a pushed commit."""
+    """One lane's record, as the writer leaves it after a pushed commit.
+
+    ``rows`` is the commit-act sequence, which production writes ending at the
+    head; a case that gives its own says what the two may disagree about.
+    """
     return LaneRunState(
         lane_key=LANE,
         branch=loop,
@@ -48,7 +55,11 @@ def record(
         pushed_head_sha=head,
         commits_ahead=1,
         files_changed=1,
-        commits=[LaneCommit(sha=head, subject="feat: one", issue_id=LANE)],
+        commits=list(
+            rows
+            if rows is not None
+            else (LaneCommit(sha=head, subject="feat: one", issue_id=LANE),)
+        ),
         pr=pr,
         body_digest=digest,
         associations=[
@@ -218,6 +229,46 @@ def test_a_resumed_lane_carries_the_remote_head_not_the_recorded_one() -> None:
     )
     assert isinstance(entry, ResumedLane)
     assert entry.head_sha == REMOTE_HEAD != RECORDED_HEAD
+
+
+#: The best commit of a run that did not converge: recorded after the head
+#: field's sha, so neither the head nor a branch name can stand in for it.
+BEST_COMMIT = "b" * 40
+
+
+def test_the_recorded_commit_is_the_last_row_on_the_role_resolved_branch() -> None:
+    """At re-entry the record names the commit, and the roles name the branch.
+
+    The rows are the commit acts, so the last of them is the best state the
+    lane reached — not the head field, which a record may disagree with, and
+    not a ref composed from another ref's text. Asserted by sha, and the
+    branch by what the LOOP associations resolve.
+    """
+    source = record(
+        rows=(
+            LaneCommit(sha=RECORDED_HEAD, subject="feat: one", issue_id=LANE),
+            LaneCommit(sha=BEST_COMMIT, subject="feat: two", issue_id=LANE),
+        )
+    )
+    branches = recorded_branches(record=source)
+
+    resolved = recorded_commit(record=source, branches=branches)
+
+    assert resolved == RecordedCommit(branch=LOOP, sha=BEST_COMMIT)
+    assert resolved.sha != source.head_sha
+    assert resolved.branch == branches.loop_branch != branches.deliverable_branch
+
+
+def test_a_record_naming_no_commit_act_refuses_at_re_entry() -> None:
+    """A lane resumed against no recorded commit has nothing to grade.
+
+    The head field would answer with a sha no row accounts for, so the
+    resolution refuses and names the branch it was asked about instead.
+    """
+    source = record(rows=())
+    with pytest.raises(LaneEntryError, match="names no commit act") as caught:
+        recorded_commit(record=source, branches=recorded_branches(record=source))
+    assert caught.value.branches == (LOOP,)
 
 
 def test_a_recorded_branch_absent_from_the_remote_refuses_and_mints_nothing() -> None:
