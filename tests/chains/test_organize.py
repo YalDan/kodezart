@@ -1354,6 +1354,17 @@ def gap_computation_sites(sources):
     route, an assignment alias, a declaration, a bare or attribute spelling.
     A string constant is not a route, so the terminal vocabulary's ``in_gap``
     label stays out and the module list above stays the upper bound.
+    ``in_gap`` is the seed that keeps that negative live: the one module
+    spelling a seed name inside a string constant spells ``in_gap``, so a
+    string constant read as a route would pull it in.  Dropping the seed
+    changes no discovered module at head, and nothing here claims it would.
+
+    Two shapes are no route here, neither of them in the package at head: a
+    gap consumer handed a ``SubtreeClosure`` on an unannotated parameter, whose
+    root is the resolver's handed-parameter walk and is not wired into this
+    guard; and a parameter annotated with the quoted string
+    ``'SubtreeClosure'``, since a string constant is not a route, while a
+    parameter annotated with the type itself is discovered.
     """
     found = {}
     for relative, source in sources.items():
@@ -1383,6 +1394,18 @@ def test_no_gap_computation_call_site_reads_the_tracker_change_timestamp():
     assert discovered.keys() <= GAP_COMPUTATION_MODULES
     assert gap_sites_reading_the_change_stamp(source_tree()) == {}
     assert change_stamp_reads(ast.parse(inspect.getsource(organize_gap))) == set()
+
+
+def test_the_discovered_gap_sites_are_the_upper_bound_exactly():
+    """The derived surface is the whole bound, not merely inside it.
+
+    The guard above bounds the discovered set from above and holds a
+    three-module floor, so a seed dropped from ``GAP_ARITHMETIC_NAMES`` can
+    take a gap consumer off the scanned surface while both still hold:
+    ``chains/scope_walker.py`` is reached by ``SubtreeClosure`` alone and
+    consumes the gap through it. Equality is what reds then.
+    """
+    assert gap_computation_sites(source_tree()).keys() == GAP_COMPUTATION_MODULES
 
 
 @pytest.mark.parametrize(
