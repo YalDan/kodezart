@@ -2072,7 +2072,7 @@ class FakeArtifactPersister:
         persist_status: ArtifactPersistStatus = ArtifactPersistStatus.PERSISTED,
     ) -> None:
         self.persist_calls: list[tuple[str | None, str | None, str, str]] = []
-        self.clean_calls: list[tuple[str | None, str | None, str]] = []
+        self.clean_calls: list[Mapping[str, str | None]] = []
         self.artifacts: list[Mapping[str, str]] = []
         self._persist_status: ArtifactPersistStatus = persist_status
 
@@ -2098,7 +2098,14 @@ class FakeArtifactPersister:
         branch: str,
         cache_key: str | None = None,
     ) -> None:
-        self.clean_calls.append((repo_path, repo_url, branch))
+        self.clean_calls.append(
+            {
+                "repo_path": repo_path,
+                "repo_url": repo_url,
+                "branch": branch,
+                "cache_key": cache_key,
+            }
+        )
 
 
 DEFAULT_PROMPT_SET = "claude-opus"
