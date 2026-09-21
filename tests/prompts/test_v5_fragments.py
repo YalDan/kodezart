@@ -146,8 +146,7 @@ DESIGN_REVIEW_CONSUMERS = frozenset(
     {PromptKey.EVALUATION.value, PromptKey.POST_MERGE_REVIEW.value},
 )
 
-#: Each clause the refutation would stop asking for if it were dropped, in
-#: the order the fragment states them.
+#: Each clause the refutation would stop asking for if it were dropped.
 #:
 #: Whole clauses, not their tails: the scope the instruction applies over,
 #: the premise the named shape has to satisfy and the condition that earns a
@@ -157,7 +156,6 @@ DESIGN_REVIEW_CLAUSES: tuple[str, ...] = (
     "For every changed file",
     "try to refute that the change meets the engineering standard in your house rules",
     "name the simpler shape that would have satisfied the criterion; "
-    "that simpler shape is the refutation",
     "that simpler shape is the refutation",
     "When you can name a violation with file:line and the principle breached, fail",
     "fail every criterion whose evidence rests on that file",
