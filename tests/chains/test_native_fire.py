@@ -1030,6 +1030,11 @@ class NativeExecutor(FakeAgentExecutor):
         self.evaluation_workspaces = []
         self.remediation_prompts = []
         self.on_evaluation = None
+        #: Called with the count of execution sessions opened so far, at the
+        #: moment each one opens — the first thing an iteration does, before
+        #: it can have committed anything. A hook here is a kill BETWEEN two
+        #: iterations; the evaluation hook above is a kill inside one.
+        self.on_execution = None
         #: One answer set per pass through the question step, in order, and
         #: the prompt plus the whole call of each pass it opened.
         self.question_answers = []
@@ -1039,6 +1044,17 @@ class NativeExecutor(FakeAgentExecutor):
         #: and each judgement's whole call is kept beside the answer.
         self.findings = []
         self.judge_sessions = []
+
+    def _opened_execution(self, prompt) -> None:
+        """Record one execution session and tell the hook it opened.
+
+        The two execution arms differ only in the answer shape they are
+        asked for, so both reach the count and the hook through here rather
+        than each keeping its own idea of when a session begins.
+        """
+        self.execution_prompts.append(prompt)
+        if self.on_execution is not None:
+            self.on_execution(len(self.execution_prompts))
 
     async def stream(self, **kwargs):
         output_format = kwargs.get("output_format")
@@ -1081,10 +1097,10 @@ class NativeExecutor(FakeAgentExecutor):
                 self.on_remediation()
             output = {"instructions": "Repair only the observed failing behavior."}
         elif "claims" in properties:
-            self.execution_prompts.append(kwargs["prompt"])
+            self._opened_execution(kwargs["prompt"])
             output = {"claims": []}
         elif output_format is None:
-            self.execution_prompts.append(kwargs["prompt"])
+            self._opened_execution(kwargs["prompt"])
             output = None
         else:
             assert "requiredChanges" not in properties
