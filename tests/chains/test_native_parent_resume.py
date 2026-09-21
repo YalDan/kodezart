@@ -38,6 +38,16 @@ from tests.services.test_native_amendments import (
 __all__ = ["repository"]
 
 
+def schema_title(call: dict) -> str | None:
+    """The structured-output title one dispatch asked for, or nothing.
+
+    ``None`` is a real answer, not a missing one: a removal session's product
+    is the tree it edited, so it asks for no structured answer at all and
+    appears in a census of the roles a run dispatched as exactly that.
+    """
+    return ((call.get("output_format") or {}).get("schema") or {}).get("title")
+
+
 async def actual_fire(repository, executor, port, saver, *, held=None):
     service, _, workspace, _ = await build(repository, executor, port=port, held=held)
     source = TrackerCriteria(tracker=port)
@@ -162,8 +172,7 @@ async def test_fresh_parent_resumes_original_native_phase(
         native_calls = [
             call
             for call in executor.calls
-            if call.get("output_format", {}).get("schema", {}).get("title")
-            == "NativeWriterOutput"
+            if schema_title(call) == "NativeWriterOutput"
         ]
         assert len(native_calls) == 1
         original_workspace = native_calls[0]["cwd"]
@@ -222,14 +231,17 @@ async def test_fresh_parent_resumes_original_native_phase(
             assert await git(
                 repository[0], "ls-remote", "origin", "refs/heads/native-loop"
             )
-        titles = [
-            call.get("output_format", {}).get("schema", {}).get("title")
-            for call in second_executor.calls
-        ]
+        titles = [schema_title(call) for call in second_executor.calls]
         assert "NativeWriterOutput" not in titles
         assert "AmendmentJudgment" not in titles
         if position == "before_commit":
-            assert titles == ["CommitMessageOutput", "AcceptanceCriteriaOutput"]
+            # The trailing absence is the removal session: its product is the
+            # tree it edited, so it asks for no structured answer at all.
+            assert titles == [
+                "CommitMessageOutput",
+                "AcceptanceCriteriaOutput",
+                None,
+            ]
         assert (
             len([c for c in port.comments if c.body.startswith("[fixture-amendment:")])
             == 1
@@ -440,8 +452,7 @@ async def test_reconciled_checkpoint_refuses_invalidated_native_authority(
         path = next(
             call["cwd"]
             for call in executor.calls
-            if call.get("output_format", {}).get("schema", {}).get("title")
-            == "NativeWriterOutput"
+            if schema_title(call) == "NativeWriterOutput"
         )
         assert Path(path).exists()
         phase = next(
@@ -520,8 +531,7 @@ async def test_commit_without_saved_receipt_refuses_duplicate_persistence(
         path = next(
             call["cwd"]
             for call in executor.calls
-            if call.get("output_format", {}).get("schema", {}).get("title")
-            == "NativeWriterOutput"
+            if schema_title(call) == "NativeWriterOutput"
         )
         assert await git(path, "rev-parse", "HEAD") == original_sha
         before = await git(
@@ -616,8 +626,9 @@ async def test_saved_persist_receipt_resumes_without_writer_commit_or_push(
         )
         final = await fresh.native_graph.aget_state(config)
         assert final.values["total_iterations"] == 1
-        assert [call["output_format"]["schema"]["title"] for call in second.calls] == [
-            "AcceptanceCriteriaOutput"
+        assert [schema_title(call) for call in second.calls] == [
+            "AcceptanceCriteriaOutput",
+            None,
         ]
         assert (
             final.values["trajectory"].records[0].commit_sha == phase.receipt.commit_sha

@@ -57,9 +57,10 @@ from tests.chains.test_native_fire import (
     tracker,
 )
 from tests.domain.test_criterion_cross_off import callers_of
-from tests.fakes import make_tracker_issue
+from tests.fakes import make_criteria, make_tracker_issue
 from tests.lane_fixture import (
     ADDED_OWED,
+    FixtureTreeGit,
     LaneGit,
     LanePersister,
     LaneRepo,
@@ -69,6 +70,7 @@ from tests.lane_fixture import (
     criteria_echo,
     lane_forge,
 )
+from tests.mutation_fixture import MutationLaneFixture
 
 BRANCH = "ralph/fire-subject"
 FEATURE = "feature/fire-subject"
@@ -122,15 +124,31 @@ class Lane:
         writes_lane_state=True,
         owns_workspace=True,
         source=LaneSource,
+        mutation=None,
     ):
         self.work_base_ref = work_base_ref
         self.resumed_head_sha = resumed_head_sha
         self.repo_url = repo_url
         self.repo = LaneRepo(branch=BRANCH)
-        self.git = LaneGit(self.repo)
+        #: The fixture trees this lane is graded in, when it is graded against
+        #: real source: the trees and the checks that name them arrive as one
+        #: value, and its absence is a lane that takes no mutation reading.
+        self.mutation = mutation
+        self.git = (
+            LaneGit(self.repo)
+            if mutation is None
+            else FixtureTreeGit(self.repo, mutation.workspaces)
+        )
+        if mutation is not None:
+            mutation.workspaces.read_through(self.git)
         self.port = tracker() if port is None else port
         self.criteria = CountingCriteria(tracker=self.port)
-        self.executor = NativeExecutor(evaluations)
+        self.executor = NativeExecutor(
+            evaluations,
+            evaluate_in=None if mutation is None else mutation.evaluate_in,
+        )
+        if mutation is not None:
+            self.executor.on_mutation = mutation.remove_in
         self.persister = LanePersister(self.repo, publishes=publishes)
         self.fire = engine(
             criteria=self.criteria,
@@ -144,6 +162,8 @@ class Lane:
             lane_operation=lane_operation,
             writes_lane_state=writes_lane_state,
             owns_workspace=owns_workspace,
+            workspace=None if mutation is None else mutation.workspaces,
+            reads_mutation=mutation is not None,
         )
         self.loop = self.fire.implementation._quality_gate
 
@@ -1354,3 +1374,191 @@ async def test_a_refutation_the_loop_died_inside_certifies_no_failing_grading(dr
     spec = await lane.criteria.read_spec(issue_key=SUBJECT)
     current = await lane.criteria.read_current(spec=spec)
     assert (broken in {criterion.id for criterion in current.criteria}) is owed_again
+
+
+#: The fixture criteria of the mutation arm, and the check each one names.
+#:
+#: Real source in a real tree, so "this check still passed with the behaviour
+#: it names gone" is read off the checks rather than scripted onto a double.
+MUTATION_WIRED = f"{SUBJECT}/check-wired"
+MUTATION_TAUTOLOGY = f"{SUBJECT}/check-tautology"
+TOLD_APART = {MUTATION_WIRED: "wired", MUTATION_TAUTOLOGY: "tautology"}
+
+
+def mutation_lane(root, checks=TOLD_APART, **rest) -> Lane:
+    """One lane whose roster is *checks* and whose trees are really written."""
+    return Lane(
+        port=wide_board(tuple(checks)),
+        evaluations=[],
+        mutation=MutationLaneFixture(root=root, checks=checks),
+        **rest,
+    )
+
+
+def finished(port, keys) -> set[str]:
+    """Which of *keys* the board holds in its finished state."""
+    return {
+        key
+        for key in keys
+        if port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+    }
+
+
+def survived(events, kind=RunEventKind.CRITERION_CHECK_SURVIVED_MUTATION):
+    """The sub-issue keys and shas the stream names for one event kind."""
+    return [
+        (event.subject_key, event.graded_sha) for event in events if event.kind is kind
+    ]
+
+
+async def test_two_fixture_criteria_are_told_apart_by_the_mutant_tree(tmp_path):
+    """One run, two criteria, and only one of them says anything.
+
+    Both checks pass in the graded tree. In a copy of it with the behaviour
+    they name removed, the check that hands its double to the subject fails
+    and the one that asserts about its own inputs does not — so the first
+    keeps its pass and the second is withheld with the reading that failed.
+    """
+    lane = mutation_lane(tmp_path)
+
+    events = await lane.run()
+
+    assert finished(lane.port, TOLD_APART) == {MUTATION_WIRED}
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert survived(posted) == [(MUTATION_TAUTOLOGY, lane.repo.head)]
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert {
+        result.criterion_id: (result.passed, result.reasoning)
+        for result in iterations[-1].evaluation.criteria_results
+    } == {
+        MUTATION_WIRED: (True, "Ran the check wired names."),
+        MUTATION_TAUTOLOGY: (
+            False,
+            UNDEMONSTRATED_REASONS[UndemonstratedReason.check_survived_mutation],
+        ),
+    }
+
+
+async def test_a_criterion_whose_check_fails_in_the_mutant_tree_keeps_its_verdict(
+    tmp_path,
+):
+    """A fail read in the mutant tree is no more the branch's than a pass is.
+
+    So the harness withholds and never converts: the criterion is crossed off
+    at the sha the clean grading read, and no event on the lane names it.
+    """
+    lane = mutation_lane(tmp_path)
+
+    await lane.run()
+
+    assert (
+        parse_criterion_evidence(lane.port.issues[MUTATION_WIRED].body).graded_sha
+        == lane.repo.head
+    )
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert MUTATION_WIRED not in {event.subject_key for event in posted}
+
+
+async def test_the_surviving_criterion_reaches_no_passing_state(tmp_path):
+    """The fourth state reaches the writer, and the iteration is rejected.
+
+    Asked of the value the writer received rather than of the board alone: a
+    criterion recorded as undemonstrated and one the writer was simply never
+    told about leave the same unfinished sub-issue behind.
+    """
+    lane = mutation_lane(tmp_path)
+    states = recording(lane)
+
+    events = await lane.run()
+
+    assert [sorted(verdict) for verdict in states] == [
+        sorted((CrossOffState.passed, CrossOffState.undemonstrated))
+    ]
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert [event.verdict for event in iterations] == [AcceptVerdict.rejected]
+
+
+async def test_no_mutation_reading_runs_when_the_workspace_did_not_stand(tmp_path):
+    """Nothing read in a copy of a tree nobody can name stands either.
+
+    The mutation reading is taken in a copy of the graded tree, so a graded
+    tree that was not the branch's makes that copy worth no more than the
+    original: the whole roster carries the workspace reading and no removal
+    session opens at all.
+    """
+    lane = mutation_lane(tmp_path)
+    lane.executor.on_evaluation = lane.leave_changes_behind
+    states = recording(lane)
+
+    events = await lane.run()
+
+    assert lane.executor.mutation_prompts == []
+    assert states == [tuple(CrossOffState.undemonstrated for _ in TOLD_APART)]
+    iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    assert {
+        result.reasoning for result in iterations[-1].evaluation.criteria_results
+    } == {UNDEMONSTRATED_REASONS[UndemonstratedReason.workspace_not_the_graded_sha]}
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert survived(posted) == []
+    assert sorted(survived(posted, RunEventKind.CRITERION_GRADING_UNVERIFIED)) == (
+        sorted((key, lane.repo.head) for key in TOLD_APART)
+    )
+
+
+async def test_the_authored_arm_opens_no_mutation_session(tmp_path):
+    """No sha to stand for, so no tree to take a second reading in.
+
+    An authored fire grades the ref it asked for and claims nothing about a
+    commit, so there is no tree for a second reading to be taken in and no
+    cross-off for one to withhold.
+    """
+    authored = make_criteria("Tests pass")
+    lane = mutation_lane(tmp_path)
+    lane.executor.evaluate_in = lambda _: {
+        "criteriaResults": [
+            {
+                "criterionId": criterion.id,
+                "criterion": criterion.text,
+                "passed": True,
+                "reasoning": "Observed the selected check.",
+            }
+            for criterion in authored
+        ]
+    }
+    arguments = {
+        **await lane.arguments(),
+        "tracker_spec": None,
+        "acceptance_criteria": list(authored),
+    }
+
+    async for _ in lane.loop.run(**arguments):
+        pass
+
+    assert lane.executor.evaluation_prompts
+    assert lane.executor.mutation_prompts == []
+    assert finished(lane.port, TOLD_APART) == set()
+
+
+async def test_a_removal_that_pushed_to_the_loop_branch_refuses_the_iteration(tmp_path):
+    """The removing session holds write permission at the graded sha.
+
+    The node's own branch-moved refusal runs before the mutation pass, so a
+    push made by that session is caught after it or not at all — and an
+    iteration graded against a branch that has since moved is refused rather
+    than recorded.
+    """
+    lane = mutation_lane(tmp_path)
+    fixture = lane.mutation
+    removed = fixture.remove_in
+
+    def removes_and_pushes(workspace):
+        removed(workspace)
+        lane.repo.commit()
+
+    fixture.remove_in = removes_and_pushes
+    lane.executor.on_mutation = removes_and_pushes
+
+    with pytest.raises(NativeWriteRefusalError, match="during the mutation reading"):
+        await lane.run()
+
+    assert finished(lane.port, TOLD_APART) == set()

@@ -45,6 +45,7 @@ UTILITY_KEYS = (
     PromptKey.KNOWLEDGE_MAP,
     PromptKey.FIRE_RECORD,
     PromptKey.NATIVE_WRITER_CONTRACT,
+    PromptKey.MUTATION_SURVIVAL,
 )
 
 

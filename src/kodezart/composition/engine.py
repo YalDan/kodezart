@@ -50,6 +50,7 @@ from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
+from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
@@ -278,6 +279,16 @@ def build_workflow_engine(
         if scope_tracker is not None and operation is not None
         else None
     )
+    # One reader for every lane of this deployment: it holds no run state —
+    # the roster, the grade, the question and the tree all arrive per call —
+    # so every engine this composition compiles can share the one object.
+    mutation = MutationSurvivalReader(
+        runner=agent_service,
+        workspace=workspace,
+        git=git,
+        prompts=prompts,
+        skills=skills,
+    )
 
     def loop(saver: BaseCheckpointSaver[str] | None) -> RalphLoop:
         """The quality gate, with whatever the arm it serves persists to.
@@ -289,6 +300,7 @@ def build_workflow_engine(
         return RalphLoop(
             source=native_source,
             lane_state=lane_state,
+            mutation=mutation,
             amendments=(
                 NativeAmendments(
                     tracker=native_writes[0],

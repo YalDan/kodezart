@@ -50,6 +50,7 @@ from kodezart.domain.prompt_variables import (
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.git_observations import read_workspace_head
+from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.types.domain.accept import AcceptVerdict
@@ -122,6 +123,7 @@ class RalphLoop:
         source: GitSourceReader | None = None,
         lane_state: LaneStateWriter | None = None,
         workspace: WorkspaceProvider | None = None,
+        mutation: MutationSurvivalReader | None = None,
     ) -> None:
         self._service = service
         self._criteria_reader = criteria_reader
@@ -129,6 +131,7 @@ class RalphLoop:
         self._source = source
         self._lane_state = lane_state
         self._workspace = workspace
+        self._mutation = mutation
         self._max_iterations = max_iterations
         self._plateau_window = plateau_window
         self._fan_in_max_attempts = fan_in_max_attempts
@@ -585,13 +588,17 @@ class RalphLoop:
         # the same reason: a withheld verdict is decided by grading that same
         # input again, so every correspondence fact comes back identical.
         graded_output: AcceptanceCriteriaOutput | None = None
+        # The question the standing grade answered, carried out so the mutant
+        # tree is asked that question and no paraphrase of it.
+        graded_prompt: str = ""
         # Whether the tree the standing grade was read from was the one the
         # graded sha names. The authored arm has no sha to stand for, so its
         # readings are of the ref it asked for and nothing else is claimed.
         workspace_stood = True
 
         async def evaluate() -> IterationGrade:
-            nonlocal dispatched, graded_in, graded_output, workspace_stood
+            nonlocal dispatched, graded_in, graded_output, graded_prompt
+            nonlocal workspace_stood
             criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
             if ctx.tracker_spec is not None:
                 snapshot = await current_native_criteria(
@@ -709,6 +716,7 @@ class RalphLoop:
             )
             graded_in = result_event.session_id
             graded_output = output
+            graded_prompt = eval_prompt
             if (
                 native_ref is not None
                 and await self._resolve(cwd=cwd, ref=ctx.ralph_branch) != native_ref
@@ -750,8 +758,27 @@ class RalphLoop:
         # correspondence fact of the grade is the value it already was. Grading
         # ``grade.results`` instead would empty ``unknown_ids`` and
         # ``duplicate_ids`` silently, because those rows are already gone.
+        surviving: frozenset[CriterionId] = frozenset()
+        if native_ref is not None and workspace_stood and self._mutation is not None:
+            surviving = await self._mutation.survivors(
+                criteria=dispatched,
+                grade=grade,
+                evaluation_prompt=graded_prompt,
+                graded_sha=native_ref,
+                repo_path=cwd,
+                cache_key=ctx.cache_key,
+            )
+            # The removing session held write permission in a worktree at the
+            # graded sha, and the node's own branch-moved refusal ran before
+            # that session: a push made by it is caught here or nowhere.
+            if await self._resolve(cwd=cwd, ref=ctx.ralph_branch) != native_ref:
+                raise NativeWriteRefusalError(
+                    "The native branch changed during the mutation reading"
+                )
         reasons = undemonstrated_reasons(
-            results=grade.results, workspace_stood=workspace_stood
+            results=grade.results,
+            workspace_stood=workspace_stood,
+            surviving_checks=surviving,
         )
         # Every path out of the dispatch that returned a grade set the output,
         # so the narrowing is the type's and not a second condition: no

@@ -7,7 +7,7 @@ pointer names the session and the iteration that produced the verdict
 rather than repeating the evaluator's prose, which nothing reads back.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 
 from kodezart.domain.errors import StaleWriteError
 from kodezart.domain.fire_spec import (
@@ -47,19 +47,26 @@ def undemonstrated_reasons(
     *,
     results: Sequence[CriterionResult],
     workspace_stood: bool,
+    surviving_checks: Collection[CriterionId],
 ) -> dict[CriterionId, UndemonstratedReason]:
     """Which of this attempt's readings proved nothing, and which one failed.
 
     The workspace reading is about the whole tree, so when it fails nothing
-    read in that tree stands and every criterion carries it.  Otherwise
-    nothing was withheld from anything.
+    read in that tree stands and every criterion carries it — the mutation
+    reading included, which is taken in a copy of that same tree. Otherwise
+    the readings are one criterion at a time: a check that passed with the
+    behaviour it names gone read nothing about that behaviour.
     """
     if not workspace_stood:
         return {
             result.criterion_id: UndemonstratedReason.workspace_not_the_graded_sha
             for result in results
         }
-    return {}
+    return {
+        result.criterion_id: UndemonstratedReason.check_survived_mutation
+        for result in results
+        if result.criterion_id in surviving_checks
+    }
 
 
 def evaluation_observation(*, session_id: str, iteration: int) -> str:

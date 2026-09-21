@@ -214,6 +214,24 @@ class LaneGit(FakeGitService):
         )
 
 
+class FixtureTreeGit(LaneGit):
+    """Dirtiness read off the tree itself rather than declared per path.
+
+    A lane graded against real source has real edits to notice, so the
+    question "is this copy holding changes" is answered by comparing the
+    tree with the tree that was handed out — never by a flag a double was
+    told to raise, which would make the reading a stipulation.
+    """
+
+    def __init__(self, repo: LaneRepo, workspaces) -> None:
+        super().__init__(repo)
+        self._workspaces = workspaces
+
+    async def has_changes(self, cwd: str) -> bool:
+        self.calls.append(("has_changes", cwd))
+        return cwd in self.dirtied or self._workspaces.differs(cwd)
+
+
 def lane_forge() -> GitHubAPIClient:
     """The forge a lane records its branch page from, answering no request.
 

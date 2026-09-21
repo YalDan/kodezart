@@ -82,6 +82,11 @@ UNDEMONSTRATED_REASONS: Final[Mapping[UndemonstratedReason, str]] = MappingProxy
             "head was not the sha this verdict would be stamped with, so what it read "
             "is not what that sha names"
         ),
+        UndemonstratedReason.check_survived_mutation: (
+            "undemonstrated: the check this criterion names still passed after the "
+            "behaviour it names had been removed from the tree, so passing it is no "
+            "reading of that behaviour"
+        ),
     }
 )
 

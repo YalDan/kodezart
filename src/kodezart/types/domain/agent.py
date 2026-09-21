@@ -104,6 +104,8 @@ RaiseSite = Literal[
     "remediation_ticket",
     "content_audit",
     "fire_time_ruling",
+    "mutation_removal",
+    "mutation_evaluator",
 ]
 
 # ---------------------------------------------------------------------------

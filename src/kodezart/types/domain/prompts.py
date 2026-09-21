@@ -58,6 +58,9 @@ class PromptKey(StrEnum):
     FIRE_RECORD = "fire_record"
     #: The pre-loop step that finds a fire's open questions and answers them.
     FIRE_TIME_RULING = "fire_time_ruling"
+    #: The step that takes the behaviour a passing criterion names out of a
+    #: copy of the graded tree and reports nothing: its product is the tree.
+    MUTATION_SURVIVAL = "mutation_survival"
 
 
 class OrchestrationPrimitive(StrEnum):
