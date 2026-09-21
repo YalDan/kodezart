@@ -19,7 +19,7 @@ from kodezart.types.domain.surface import (
 )
 from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
-from tests.fakes import FakeMcpIssue, FakeTrackerPort, make_tracker_issue
+from tests.fakes import FakeMcpIssue
 from tests.services.test_run_surface_lease import _Board
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
@@ -353,87 +353,3 @@ async def test_generic_description_grant_cannot_write_a_native_criterion_body():
             )
     assert board.server.issues[KEY].description == BODY
     assert not any(name == "save_issue" for name, _ in board.calls)
-
-
-async def test_an_unleased_reset_moves_the_criterion_and_reads_no_lease_marker():
-    """The lane's own move-back consults no grant, and asks the board for none.
-
-    The regression write is the single writer's own act over its own lane,
-    so an absent holder is that write rather than an unheld one: the state
-    moves and no ownership marker is read at all. Read as an unheld write it
-    would refuse, and a criterion this fire broke would stay finished.
-    """
-    board, tracker = board_and_tracker()
-    expected = await tracker.read_issue(issue_key=KEY)
-    asked = len(board.calls)
-
-    reset = await tracker.reset_criterion_pending(expected=expected, holder=None)
-
-    assert reset.state_kind is WorkflowStateKind.UNSTARTED
-    assert [args for name, args in board.calls if name == "save_issue"] == [
-        {"id": KEY, "state": "fixture-team-Todo-id"}
-    ]
-    assert not [name for name, _ in board.calls[asked:] if name == "list_comments"]
-
-
-@pytest.mark.parametrize(
-    "holder", [pytest.param("", id="blank"), pytest.param("another-job", id="foreign")]
-)
-async def test_a_supplied_holder_nobody_granted_refuses_the_reset(holder):
-    """A holder that was supplied is a holder, and it has to hold the surface."""
-    board, tracker = board_and_tracker()
-    expected = await tracker.read_issue(issue_key=KEY)
-
-    with pytest.raises(SurfaceLeaseError):
-        await tracker.reset_criterion_pending(expected=expected, holder=holder)
-
-    assert not any(name == "save_issue" for name, _ in board.calls)
-    assert (
-        await tracker.read_issue(issue_key=KEY)
-    ).state_kind is WorkflowStateKind.COMPLETED
-
-
-def fake_board() -> FakeTrackerPort:
-    """The same finished criterion sub-issue, on the in-process double."""
-    return FakeTrackerPort(
-        issues=[
-            make_tracker_issue(PARENT),
-            make_tracker_issue(
-                KEY,
-                parent_key=PARENT,
-                issue_labels=frozenset({"criterion"}),
-                body=BODY,
-                state_name="Done",
-                state_kind=WorkflowStateKind.COMPLETED,
-            ),
-        ]
-    )
-
-
-@pytest.mark.parametrize(
-    "holder", [pytest.param("", id="blank"), pytest.param("another-job", id="foreign")]
-)
-async def test_the_double_refuses_a_supplied_holder_nobody_granted_too(holder):
-    """The double refuses what the adapter refuses, or it proves nothing.
-
-    Every consumer test of the regression path drives the double, so a
-    double that took any supplied holder would let a write the deployed
-    adapter refuses read as one it takes.
-    """
-    port = fake_board()
-    expected = await port.read_issue(issue_key=KEY)
-
-    with pytest.raises(SurfaceLeaseError):
-        await port.reset_criterion_pending(expected=expected, holder=holder)
-
-    assert port.issues[KEY].state_kind is WorkflowStateKind.COMPLETED
-
-
-async def test_the_double_takes_the_unleased_move_back_the_adapter_takes():
-    port = fake_board()
-    expected = await port.read_issue(issue_key=KEY)
-
-    reset = await port.reset_criterion_pending(expected=expected, holder=None)
-
-    assert reset.state_kind is WorkflowStateKind.UNSTARTED
-    assert port.issues[KEY].state_kind is WorkflowStateKind.UNSTARTED

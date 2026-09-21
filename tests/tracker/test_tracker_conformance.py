@@ -52,7 +52,7 @@ from kodezart.types.domain.tracker import (
     is_open,
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
-from tests.fakes import FakeLinearMcpServer, FakeMcpComment
+from tests.fakes import FakeLinearMcpServer, FakeMcpComment, FakeMcpIssue
 from tests.tracker.conftest import (
     APPROVED_ISSUE,
     APPROVER,
@@ -73,6 +73,7 @@ from tests.tracker.conftest import (
     TRACKER_IMPLEMENTATIONS,
     FixtureClock,
     TrackerWorkspace,
+    fixture_server,
     observed_writes,
 )
 from tests.tracker.lease_fixtures import leased_comment
@@ -2765,3 +2766,175 @@ class TestPrincipalAuthoredBodies:
         assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == (
             "a body this writer wrote and may rewrite"
         )
+
+
+#: A criterion sub-issue this writer authored and still owes: the one row
+#: the addressing property reads a key off and writes back through.
+OWED_CRITERION = "FIX-6"
+
+
+class TestACriterionKeyReadThroughThePortAddressesItsWrites:
+    """A criterion sub-issue key the port hands out is the key its writes take.
+
+    The three writes the lane's own evaluator makes, in the order and with
+    the signatures it makes them: the Evidence row edit under the read-back
+    body, the finish, and the move back.  Every assertion is a read-back of
+    state, never a look at a write log: the two implementations spell their
+    state names differently and log a move back differently, and
+    ``state_kind`` and ``body`` are what both answer the same.
+    """
+
+    @pytest.fixture
+    def server(self, clock: FixtureClock) -> FakeLinearMcpServer:
+        """The fixture workspace plus the one criterion sub-issue it lacks.
+
+        Dialled here rather than in the shared workspace so no module built
+        on that workspace sees an extra issue.  ``created_by`` stays unset:
+        the workspace then attributes the body to the dialled account, and
+        the bare description edit production makes is the ordinary write
+        rather than the principal-authorship refusal.
+        """
+        value = fixture_server(clock=clock)
+        value.issues[OWED_CRITERION] = FakeMcpIssue(
+            id=OWED_CRITERION,
+            title="a criterion this writer owes",
+            description=(
+                "**Check:** the check FIX-6 states\n\n"
+                "**Do:** the build FIX-6 names\n\n"
+                "**Evidence:**\n"
+            ),
+            parent_id=CLAIMED_ISSUE,
+            status="Todo",
+            status_type="unstarted",
+            labels=[ISSUE_LABELS["criterion"]],
+            created_at=FIXTURE_NOW - timedelta(days=2),
+            updated_at=FIXTURE_NOW,
+        )
+        return value
+
+    async def test_a_criterion_key_read_through_the_port_is_taken_by_its_three_writes(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The key the read hands out addresses all three writes that follow.
+
+        Nothing is composed from a title or a body here: the key the family
+        read reported is handed straight to the Evidence edit, to the finish
+        and to the move back, and each write's effect is read back off the
+        same key.  An implementation whose read answered with a key its own
+        writes did not accept would fail on the first of the three.
+        """
+        rows = await tracker.read_criteria(issue_key=CLAIMED_ISSUE)
+        assert {row.issue_key for row in rows} == {OWED_CRITERION}
+        row = next(r for r in rows if r.issue_key == OWED_CRITERION)
+        assert row.state_kind is WorkflowStateKind.UNSTARTED
+        stamped = row.body.replace(
+            "**Evidence:**", f"**Evidence:** graded at {'a' * 40}"
+        )
+
+        edited = await tracker.edit_description(
+            target=row.issue_key, expected=row.body, replacement=stamped
+        )
+
+        assert edited is DescriptionEditResult.EDITED
+        assert (
+            await tracker.read_issue(issue_key=row.issue_key)
+        ).state_kind is WorkflowStateKind.UNSTARTED
+
+        await tracker.set_workflow_state(
+            issue_key=row.issue_key, stage=LifecycleStage.DONE
+        )
+
+        finished = await tracker.read_issue(issue_key=row.issue_key)
+        assert finished.state_kind is WorkflowStateKind.COMPLETED
+        assert finished.body == stamped
+
+        await tracker.reset_criterion_pending(expected=finished, holder=None)
+
+        after = await tracker.read_issue(issue_key=row.issue_key)
+        assert after.state_kind is WorkflowStateKind.UNSTARTED
+        assert after.body == stamped
+        assert {
+            r.issue_key for r in await tracker.read_criteria(issue_key=CLAIMED_ISSUE)
+        } == {OWED_CRITERION}
+
+    async def test_a_repeated_finish_and_a_repeated_move_back_write_nothing(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """A write already standing is not written again, on either half.
+
+        The write-log half of this is decisive on the adapter, which sends a
+        state save for every move it makes, and vacuous on the double for
+        the move back, which enters no write tuple at all; the read-back
+        half holds on both.  This is the re-tick rider of the addressing
+        property, not a statement about how a grading reaches the row.
+        """
+        rows = await tracker.read_criteria(issue_key=CLAIMED_ISSUE)
+        row = next(r for r in rows if r.issue_key == OWED_CRITERION)
+        stamped = row.body.replace(
+            "**Evidence:**", f"**Evidence:** graded at {'b' * 40}"
+        )
+        await tracker.edit_description(
+            target=row.issue_key, expected=row.body, replacement=stamped
+        )
+        await tracker.set_workflow_state(
+            issue_key=row.issue_key, stage=LifecycleStage.DONE
+        )
+        finished = await tracker.read_issue(issue_key=row.issue_key)
+
+        written = tracker_writes()
+        await tracker.set_workflow_state(
+            issue_key=row.issue_key, stage=LifecycleStage.DONE
+        )
+
+        assert tracker_writes() == written
+        assert (
+            await tracker.read_issue(issue_key=row.issue_key)
+        ).state_kind is WorkflowStateKind.COMPLETED
+
+        await tracker.reset_criterion_pending(expected=finished, holder=None)
+        unstarted = await tracker.read_issue(issue_key=row.issue_key)
+        assert unstarted.state_kind is WorkflowStateKind.UNSTARTED
+
+        written = tracker_writes()
+        await tracker.reset_criterion_pending(expected=unstarted, holder=None)
+
+        assert tracker_writes() == written
+        replayed = await tracker.read_issue(issue_key=row.issue_key)
+        assert replayed.state_kind is WorkflowStateKind.UNSTARTED
+        assert replayed.body == stamped
+
+    @pytest.mark.parametrize(
+        "holder",
+        [pytest.param("", id="blank"), pytest.param("another-job", id="foreign")],
+    )
+    async def test_a_supplied_holder_nobody_granted_refuses_the_move_back(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        holder: str,
+    ) -> None:
+        """A holder that was supplied is a holder, and it has to hold live.
+
+        The absent holder of the case above is the single writer's own act
+        over its own lane and consults no grant; a supplied one that nobody
+        granted is refused on every implementation, with nothing written and
+        the criterion left finished.
+        """
+        rows = await tracker.read_criteria(issue_key=CLAIMED_ISSUE)
+        row = next(r for r in rows if r.issue_key == OWED_CRITERION)
+        await tracker.set_workflow_state(
+            issue_key=row.issue_key, stage=LifecycleStage.DONE
+        )
+        finished = await tracker.read_issue(issue_key=row.issue_key)
+        written = tracker_writes()
+
+        with pytest.raises(SurfaceLeaseError):
+            await tracker.reset_criterion_pending(expected=finished, holder=holder)
+
+        assert tracker_writes() == written
+        assert (
+            await tracker.read_issue(issue_key=row.issue_key)
+        ).state_kind is WorkflowStateKind.COMPLETED
