@@ -347,7 +347,9 @@ unverifiable checks; it does not establish scope acceptance. Internal pending
 remediation never appears as a terminal delivery event. A `skipped` delivery may
 carry the `ruling_unrecorded` outcome, which means the fire stopped before its
 first iteration because an open question raised on its own text carries no
-confirmed answer on the tracker. Consumers evaluating a later scope result must
+confirmed answer on the tracker, or because an answer named work the subject's
+own stated deliverables do not, which is raised on its owning issue rather than
+pinned. Consumers evaluating a later scope result must
 use these actual delivery records and current tracker obligations.
 
 ### Native Amendment Events (1)

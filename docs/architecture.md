@@ -1408,7 +1408,11 @@ pass under the `fire_time_ruling` role what the subject text and the current
 Checks leave open, pins each answer on the issue whose text raised it, reads it
 back, and only then enters the loop. An open question whose answer cannot be
 confirmed on the tracker ends the fire `ruling_unrecorded`, with the loop
-un-entered. Unlike the retired stack this one has a consumer: the loop's own
+un-entered. An answer that names work the subject's own `Deliverables` section
+does not state is not pinned at all: it is raised on the issue whose text raised
+the question, inside the same leased and verified window a pinned answer is
+written in, and the fire then ends `ruling_unrecorded`. Unlike the retired stack
+this one has a consumer: the loop's own
 writer contract renders the pinned answers it reads back.
 
 The scheduled pass gate keeps its vendor timestamp window for reply and

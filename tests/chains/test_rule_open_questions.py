@@ -11,7 +11,7 @@ import json
 import pytest
 
 from kodezart.chains.criteria import TrackerCriteria
-from kodezart.chains.fire_time_ruling import rule_open_questions
+from kodezart.chains.fire_time_ruling import route_after_questions, rule_open_questions
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import (
     NoStructuredOutputError,
@@ -69,6 +69,7 @@ from tests.services.test_fire_time_rulings import (
     ARTIFACT_CHECK,
     CALL_SITE,
     CONTRADICTION_CHECK,
+    EXCESS_DELIVERABLE,
     LOSING,
     MODEL,
     PRECEDENT,
@@ -81,6 +82,7 @@ from tests.services.test_fire_time_rulings import (
     contradiction_body,
     premise_answer,
     premise_body,
+    subject_body,
 )
 
 #: Every criterion a finished subtree's roster carries, so a delivering
@@ -546,6 +548,56 @@ async def test_an_unconfirmed_pin_halts_before_the_loop_with_its_own_outcome(
     assert not any("criteriaResults" in props for props in executor.schema_calls)
     assert all(call.get("branch_name") is None for call in workspace.acquisitions)
     # And the question pass itself did run, so the halt is about its answer.
+    assert len(executor.question_prompts) == 1
+
+
+async def test_an_answer_beyond_the_stated_deliverables_halts_before_the_loop() -> None:
+    """The excess arm through the composed node, not the component (KOD-629).
+
+    The answer names work the subject's own section does not state, so it is
+    raised on the issue whose text raised the question and nothing is pinned;
+    the step's own update ends the fire and the loop is never entered.
+    """
+    port = tracker(bodies={SUBJECT: subject_body(), DIRECT_OWED: contradiction_body()})
+    executor = NativeExecutor([])
+    executor.question_answers = [
+        {"rulings": [contradiction_answer(deliverable=EXCESS_DELIVERABLE)]}
+    ]
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        real_loop=True,
+        git=git,
+        workspace=workspace,
+    )
+    state, config = prepare(fire)
+    assert fire.native_graph is not None
+
+    updates = [
+        update
+        async for update in fire.native_graph.astream(
+            state, config=config, stream_mode="updates"
+        )
+    ]
+
+    assert next(update[STEP] for update in updates if STEP in update) == {
+        "ruling_unrecorded": True
+    }
+    assert route_after_questions({"ruling_unrecorded": True}) == "complete"
+    names = [name for update in updates for name in update]
+    assert names[names.index(STEP) + 1] == "complete"
+    assert "run_ralph_loop" not in names
+    assert executor.execution_prompts == []
+    # One question raised on the issue whose text raised it, nothing pinned.
+    prefix = native_operation().marker_prefixes["escalation"]
+    raised = [
+        comment for comment in port.comments if comment.body.startswith(f"[{prefix}")
+    ]
+    assert [comment.issue_key for comment in raised] == [DIRECT_OWED]
+    assert [comment for comment in port.comments if is_record(comment)] == []
+    # Non-vacuous: the pass that produced the answer did open.
     assert len(executor.question_prompts) == 1
 
 

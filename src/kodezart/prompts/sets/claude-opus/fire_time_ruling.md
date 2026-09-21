@@ -31,6 +31,11 @@ For each open question, answer with:
   questions above whose pinned answer this tree no longer bears out. Then it is
   that pinned question's exact words. The earlier answer stays where it is; your
   answer is a new one that names it.
+- `deliverable` — the item from the subject's own `Deliverables` section your
+  answer's work falls under, quoted exactly as that section states it. Null when
+  your answer needs nothing built beyond what that section already names. An
+  answer that would need something it does not name is raised for a decision
+  instead of being pinned.
 
 An answer stays inside the deliverables the issue already states. If the only
 answer you can give would add scope beyond them, leave that question

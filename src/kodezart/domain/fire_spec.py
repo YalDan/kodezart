@@ -16,7 +16,14 @@ from kodezart.types.domain.tracker import TrackerIssue
 
 _CRITERION_ROW = re.compile(r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+_LIST_ITEM = re.compile(r"^ {0,3}(?:[-*+]|\d+[.)])\s+(.*)$")
 CriterionField = Literal["Check", "Do", "Evidence", "Class"]
+
+#: The heading whose section states what the subject's own text commits to
+#: building. Matched on its exact text, so a section that states something
+#: else is a different section.
+DELIVERABLES_SECTION = "Deliverables"
 
 
 def body_digest(body: str) -> str:
@@ -93,6 +100,56 @@ def criterion_field_bodies(body: str, *, field: CriterionField) -> tuple[str, ..
     if active:
         checks.append("\n".join(lines).strip())
     return tuple(checks)
+
+
+def deliverables_section(body: str) -> tuple[str, ...]:
+    """Every item the subject's own ``Deliverables`` section names, in body order.
+
+    This reader's own fence and HTML-comment rules decide what is visible, so
+    a heading inside a fenced block or behind a comment is no heading and a
+    list item inside one is no item. That is why the section is read here
+    rather than in a module of its own: those two rules are this module's, and
+    a second statement of the body grammar would be free to disagree with it.
+
+    The section runs from a visible heading whose text is exactly
+    ``Deliverables`` to the next visible heading of any level, or the end of
+    the body. Items are the visible list items inside it, each stripped; prose
+    lines inside it are not items.
+
+    A body with no such section names nothing, and that is the same answer as
+    a section with no items: ``()``. One rule, no special case — nothing is
+    stated, so an answer that names a deliverable exceeds what is stated. Two
+    such headings contribute both their item lists: nothing here edits the
+    body, so an ambiguous section is not a row that has to be addressed.
+    """
+    items: list[str] = []
+    active = False
+    fence: tuple[str, int] | None = None
+    comment = False
+    for original in body.splitlines():
+        delimiter = _FENCE.match(original)
+        if fence is not None:
+            if (
+                delimiter is not None
+                and delimiter[1][0] == fence[0]
+                and len(delimiter[1]) >= fence[1]
+                and not delimiter[2].strip()
+            ):
+                fence = None
+            continue
+        line, comment = _without_comments(original, comment=comment)
+        delimiter = _FENCE.match(line)
+        if delimiter is not None:
+            fence = delimiter[1][0], len(delimiter[1])
+            continue
+        heading = _HEADING.match(line)
+        if heading is not None:
+            active = heading[2].strip() == DELIVERABLES_SECTION
+            continue
+        item = _LIST_ITEM.match(line) if active else None
+        if item is not None and item[1].strip():
+            items.append(item[1].strip())
+    return tuple(items)
 
 
 def _criterion_rows(body: str) -> tuple[tuple[str, int], ...]:
