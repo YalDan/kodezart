@@ -484,7 +484,11 @@ CRITERIA phase's terminal marker from `organize_mandates`, and live
 and body text cannot substitute. Approval may inherit, but phase completion
 belongs to the addressed subject. Each call reads current facts, including
 revocation, and never reruns ORGANIZE admission. Legal criterion-state policy
-and the complete scoped workflow remain separate implementation work.
+and the complete scoped workflow remain separate implementation work. A
+persisted criteria artifact handed to a tracker-native barrier raises
+`PersistedCriterionSetError` before any read; the native criterion set is
+read from the tracker at every barrier and is carried on no branch file and
+in no local state.
 
 `set_issue_classification` adds a configured semantic issue classification
 without replacing approval or unrelated labels; an identical replay writes
