@@ -1079,8 +1079,13 @@ The static guards under `tests/` resolve names through one shared resolver
 assignment alias is the same site under another spelling, and a parameter
 handed a value at a call is scanned as its holder.
 Native and fake tracker fixtures show that duplicate or amended criterion text
-does not change the addressed keys. Evaluator state/body writer adoption
-remains unfinished.
+does not change the addressed keys. Static modules beside it hold the same
+discipline over the read: the criterion template-row grammar is compiled in
+`domain/fire_spec.py` alone and read only there, no other module matches
+criterion-shaped text against a body, and criterion sub-issues reach the
+tracker only through the port's criterion read. Evaluator state/body writer
+adoption and the separate model-membership and spec-backend invariants remain
+unfinished.
 
 `resolve_criterion` is the shared native-key resolver in `criterion_sources`.
 It reads the complete current child family through `TrackerPort.read_criteria`

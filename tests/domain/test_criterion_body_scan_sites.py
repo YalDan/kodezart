@@ -43,8 +43,12 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.domain.fire_spec import criterion_field_bodies
-from tests.domain.test_criterion_cross_off import source_tree
+from kodezart.domain.fire_spec import (
+    criterion_check,
+    criterion_field_bodies,
+    tracker_spec_from_issues,
+)
+from tests.domain.test_criterion_cross_off import callers_of, source_tree
 from tests.identity_guards import _constructor_names
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
@@ -230,6 +234,41 @@ def body_scan_sites(sources: dict[str, str]) -> dict[str, list[str]]:
     return found
 
 
+def grammar_readers(
+    sources: dict[str, str],
+) -> tuple[frozenset[str], dict[str, list[str]]]:
+    """The grammar's own reader names, and every scope elsewhere calling one.
+
+    Readers begin as the scopes of the rule module that match its compiled
+    row pattern and grow, inside that module alone, by "calls a reader
+    name", to a fixed point: a helper extracted out of a reader is reached
+    by its caller and joins the set with it.  Consumers are every scope in
+    every other module that calls a reader name.  Both are derived; the
+    only input not read off the tree is the module the field reader lives
+    in, and that is read off the function.
+    """
+    rule = ast.parse(sources[RULE_MODULE])
+    readers = _module_sites(rule, frozenset(_pattern_names(rule)))
+    while True:
+        grown = {
+            caller for reader in readers for caller in callers_of(rule, name=reader)
+        }
+        if grown <= readers:
+            break
+        readers |= grown
+    consumers: dict[str, list[str]] = {}
+    for module, source in sources.items():
+        if module == RULE_MODULE:
+            continue
+        tree = ast.parse(source)
+        scopes = {
+            caller for reader in readers for caller in callers_of(tree, name=reader)
+        }
+        if scopes:
+            consumers[module] = sorted(scopes)
+    return frozenset(readers), consumers
+
+
 @cache
 def _grammar_pattern_names() -> frozenset[str]:
     """The names the shipped tree binds to a criterion-shaped pattern."""
@@ -258,6 +297,29 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
     assert set(found) == {RULE_MODULE}
     # Not vacuous: the owner is seen matching its own pattern.
     assert found[RULE_MODULE]
+
+
+def test_the_grammar_is_reached_from_outside_by_call_and_never_re_matched():
+    """The grammar is read by calling it, from modules that match nothing.
+
+    The reader set is grown inside the owner module, so non-vacuity is
+    stated at the three tiers the growth has to cross: the field reader the
+    rule names, the Check reader that calls it, and the spec capture that
+    calls that one.  A fixed point that stalled would lose the deepest.
+    """
+    sources = source_tree()
+
+    readers, consumers = grammar_readers(sources)
+
+    assert {
+        criterion_field_bodies.__name__,
+        criterion_check.__name__,
+        tracker_spec_from_issues.__name__,
+    } <= readers
+    assert consumers
+    # Reaching the grammar by call is the sanctioned way, so no consumer is
+    # among the modules the scan reports as matching shaped text itself.
+    assert set(consumers).isdisjoint(set(body_scan_sites(sources)) - {RULE_MODULE})
 
 
 @pytest.mark.parametrize(
@@ -380,3 +442,25 @@ def test_a_second_body_scan_anywhere_in_the_tree_fails_the_assertion(planted):
 
     assert set(found) == {RULE_MODULE, "services/reader.py"}
     assert found["services/reader.py"]
+
+
+def test_a_module_that_only_calls_the_reader_is_a_consumer_and_not_a_site():
+    """The sanctioned way of reading a row is not what the scan reports.
+
+    A module that quotes a criterion's Check by calling the field reader is
+    a consumer of the grammar, which the derivation must see, and no site,
+    which the scan must not report — otherwise the guard would forbid the
+    very reading the rule permits.
+    """
+    sources = source_tree()
+    sources["services/quoter.py"] = (
+        f"from {criterion_field_bodies.__module__} import"
+        f" {criterion_field_bodies.__name__}\n"
+        "def check(issue):\n"
+        f"    return {criterion_field_bodies.__name__}(issue.body, field='Check')\n"
+    )
+
+    _, consumers = grammar_readers(sources)
+
+    assert "services/quoter.py" in consumers
+    assert "services/quoter.py" not in body_scan_sites(sources)
