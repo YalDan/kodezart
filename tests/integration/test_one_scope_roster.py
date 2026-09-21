@@ -115,6 +115,14 @@ async def test_each_pass_is_composed_from_the_one_roster(monkeypatch, pass_name)
         # One construction per row, and the WHOLE row each time, in the order
         # the table declares it.
         assert [call["binding"] for call in calls] == declared
+        if pass_name == "audit":
+            # The destination is a sibling keyword of the row, not a member of
+            # it, so the comparison above does not reach it: a roster where one
+            # scope's report destination stood in for another's would compose a
+            # pass that reports scope B's verified summary onto scope A's issue.
+            assert [call["report_issue_key"] for call in calls] == [
+                row.report_issue_key for row in declared
+            ]
     # Composition only: the boot opened no session and wrote nothing.
     assert server.comments == []
 
