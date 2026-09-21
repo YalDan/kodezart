@@ -44,6 +44,7 @@ from tests.services.lane_tally_fixtures import (
     BOUND,
     PREFIXES,
     board,
+    checks,
     declared_set_fixture,
     subject,
 )
@@ -272,6 +273,69 @@ async def test_a_whole_tick_dispatches_no_agent_and_touches_no_repository(monkey
         )
         assert stored is not None
         assert is_raised(stored)
+
+
+#: A second declared scope beside :data:`SCOPE`, and the one stalled lane each
+#: of the two holds. One board carries both, so the only thing telling the two
+#: lanes apart is which scope declares it.
+SECOND_SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="second-scoped-project")
+PAIRED_LANES = {SCOPE: "LANE-D", SECOND_SCOPE: "LANE-E"}
+#: Written out rather than left to the board's default, so the crossing of the
+#: bound is a comparison the test makes and not one it assumes.
+STALL_COMMITS = ("sha-one", "sha-two")
+
+
+async def test_a_tick_observes_a_stalled_lane_under_every_declared_scope() -> None:
+    """KOD-103: the factory hands the tick the whole roster, not its head.
+
+    Both lanes are stalled the same way — more recorded commits than the bound
+    the deployment is built with, and every criterion still open — so a lane
+    left unobserved is a scope the roster never reached rather than a lane that
+    read as healthy. A tick over the first scope alone therefore leaves the
+    second scope's lane with no record and no event.
+    """
+    port = await board(
+        lanes=tuple(PAIRED_LANES.values()),
+        commits=STALL_COMMITS,
+        scopes={ref: (lane,) for ref, lane in PAIRED_LANES.items()},
+    )
+
+    # The stall, from the board and the configured bound: a lane whose recorded
+    # commits do not pass the bound, or whose roster is already closed, would
+    # satisfy what follows by never being measured.
+    assert len(STALL_COMMITS) > BOUND
+    for lane in PAIRED_LANES.values():
+        for key in checks(lane):
+            assert port.issues[key].state_kind is not WorkflowStateKind.COMPLETED
+
+    scheduled = build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            run_alarm_max_commits_without_closure=BOUND,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=declared(scopes=tuple(PAIRED_LANES)),
+        tracker=port,
+    )
+
+    async with asyncio.timeout(TICK_BOUND_SECONDS):
+        assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+
+    for ref, lane in PAIRED_LANES.items():
+        stored = await port.read_run_alarm(
+            issue_key=lane,
+            subject=LaneSubject(scope_key=ref.key, lane_key=lane),
+            signal=SIGNAL,
+        )
+        assert stored is not None, ref.key
+        assert is_raised(stored), ref.key
+        raised = [
+            event
+            for event in await port.lane_run_events(issue_key=lane, lane_key=lane)
+            if event.kind is RunEventKind.RUN_ALARM_RAISED
+        ]
+        assert len(raised) == 1, ref.key
 
 
 # ---------------------------------------------------------------------------

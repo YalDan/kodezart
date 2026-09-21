@@ -50,10 +50,16 @@ class Board:
     *states* and *state_changes* are the board's states as the tick found
     them. A state move that goes around the port's writers leaves no write
     log, so what it moved is only visible as a difference from a baseline.
+
+    *scope_keys* names the scope each lane is a member of, because an alarm
+    address is keyed by that scope: a board carrying lanes under two scopes
+    has two families of addresses, and reading both against one scope key
+    would call the second family a write nobody declared.
     """
 
     port: FakeTrackerPort
     lanes: tuple[str, ...]
+    scope_keys: dict[str, str] = field(default_factory=dict)
     allowed: set[tuple[str, str]] = field(default_factory=set)
     states: dict[str, tuple[str, WorkflowStateKind]] = field(default_factory=dict)
     state_changes: dict[str, datetime] = field(default_factory=dict)
@@ -70,8 +76,8 @@ def checks(lane):
     return (f"{lane}/check", f"{lane}/second")
 
 
-def subject(lane):
-    return LaneSubject(scope_key=SCOPE, lane_key=lane)
+def subject(lane, *, scope_key=SCOPE):
+    return LaneSubject(scope_key=scope_key, lane_key=lane)
 
 
 def criterion(key, *, lane, closed=False):
@@ -133,7 +139,7 @@ def lane_state(lane, *, commits):
 
 
 async def board(
-    *, lanes, commits=("sha-one", "sha-two"), prefixes=PREFIXES, scope=None
+    *, lanes, commits=("sha-one", "sha-two"), prefixes=PREFIXES, scope=None, scopes=None
 ):
     """Each lane's issue, its criterion family, and the record its loop left.
 
@@ -141,7 +147,19 @@ async def board(
     are its members and each is approved, so the walker's own ready read
     answers for it and a composed tick can read this board rather than a
     second one written to agree with it.
+
+    *scopes* says the same for more than one scope at once, as a mapping of
+    scope reference to the lanes that are its members, so one board can carry a
+    lane under each of several declared scopes. It and *scope* are two
+    spellings of the one membership map, so only one of them may be given.
     """
+    if scope is not None and scopes is not None:
+        raise ValueError("a board states its scope memberships once")
+    memberships = None
+    if scope is not None:
+        memberships = {scope: tuple(lanes)}
+    elif scopes is not None:
+        memberships = {ref: tuple(members) for ref, members in scopes.items()}
     port = FakeTrackerPort(
         issues=[
             row
@@ -149,16 +167,18 @@ async def board(
             for row in (
                 make_tracker_issue(
                     lane,
-                    issue_labels=frozenset() if scope is None else frozenset({STAGED}),
+                    issue_labels=frozenset()
+                    if memberships is None
+                    else frozenset({STAGED}),
                 ),
                 *subtree(lane),
             )
         ],
         marker_prefixes=prefixes,
-        scope_memberships=None if scope is None else {scope: tuple(lanes)},
-        criteria_stage_label_key=None if scope is None else STAGED,
+        scope_memberships=memberships,
+        criteria_stage_label_key=None if memberships is None else STAGED,
         scope_label_members=None
-        if scope is None
+        if memberships is None
         else {
             ScopeRef(kind=ScopeKind.ISSUE, key=lane): frozenset({ScopeLabel.APPROVED})
             for lane in lanes
@@ -172,7 +192,17 @@ async def board(
             ),
         )
     port.comment_writes.clear()
-    entry = Board(port=port, lanes=tuple(lanes))
+    entry = Board(
+        port=port,
+        lanes=tuple(lanes),
+        scope_keys=dict.fromkeys(lanes, SCOPE)
+        if memberships is None
+        else {
+            member: ref.key
+            for ref, members in memberships.items()
+            for member in members
+        },
+    )
     _rebase_states(entry)
     BOARDS.append(entry)
     return port
@@ -246,9 +276,11 @@ def supervisor(port, *, bound=BOUND, holder=HOLDER):
     )
 
 
-def alarm_marker(port, lane):
+def alarm_marker(port, lane, *, scope_key=SCOPE):
     return run_alarm_marker(
-        subject=subject(lane), signal=SIGNAL, marker_prefixes=port.marker_prefixes
+        subject=subject(lane, scope_key=scope_key),
+        signal=SIGNAL,
+        marker_prefixes=port.marker_prefixes,
     )
 
 
@@ -273,9 +305,12 @@ def declared_pairs(entry):
     """The ``(lane, marker)`` pairs this board's ticks may write under.
 
     Per lane: the lane's run-event stream, and the alarm marker when the board
-    configures an alarm prefix. The lane record's own marker is not among them
-    — the supervisor holds no surface there — so a write under it is outside
-    the set unless a test named it.
+    configures an alarm prefix. The alarm marker is keyed by the scope the lane
+    is a member of, as the board recorded it, so a board holding lanes under
+    two scopes declares each lane's own address and neither lane's address
+    covers the other. The lane record's own marker is not among them — the
+    supervisor holds no surface there — so a write under it is outside the set
+    unless a test named it.
     """
     pairs = [
         (
@@ -289,7 +324,10 @@ def declared_pairs(entry):
         for lane in entry.lanes
     ]
     if MARKER_PURPOSE in entry.port.marker_prefixes:
-        pairs.extend((lane, alarm_marker(entry.port, lane)) for lane in entry.lanes)
+        pairs.extend(
+            (lane, alarm_marker(entry.port, lane, scope_key=entry.scope_keys[lane]))
+            for lane in entry.lanes
+        )
     return pairs
 
 
