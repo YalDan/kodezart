@@ -11,7 +11,7 @@
   "tests/adapters/test_claude_client_executor.py": 18,
   "tests/adapters/test_claude_executors.py": 93,
   "tests/adapters/test_forge_query.py": 17,
-  "tests/adapters/test_git_artifact_persister.py": 19,
+  "tests/adapters/test_git_artifact_persister.py": 24,
   "tests/adapters/test_git_branch_merger.py": 62,
   "tests/adapters/test_git_change_persister.py": 65,
   "tests/adapters/test_git_ref_publisher.py": 7,
@@ -636,7 +636,11 @@
    "test_clean_noop_when_no_artifacts",
    "test_persist_skips_when_target_gitignores_artifact_dir",
    "test_persist_reports_ignored_by_target_status",
-   "test_persist_reports_unchanged_when_artifacts_already_committed"
+   "test_persist_reports_unchanged_when_artifacts_already_committed",
+   "test_the_persister_port_block_is_the_recorded_one",
+   "test_the_git_persister_adapter_is_the_recorded_one",
+   "test_a_widened_clean_signature_changes_the_port_digest",
+   "test_an_insertion_above_the_block_leaves_the_digest_unchanged"
   ],
   "tests/adapters/test_git_branch_merger.py": [
    "test_consolidate_fast_forwarded_creates_feature_branch",
