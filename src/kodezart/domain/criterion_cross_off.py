@@ -7,7 +7,8 @@ pointer names the session and the iteration that produced the verdict
 rather than repeating the evaluator's prose, which nothing reads back.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 from typing import Final
 
 from kodezart.domain.errors import StaleWriteError
@@ -16,10 +17,18 @@ from kodezart.domain.fire_spec import (
     criterion_ref,
     duplicated_row_labels,
 )
+from kodezart.domain.lapse import GradedState
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
 from kodezart.types.domain.criteria import TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
-from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOffState
+from kodezart.types.domain.criterion_lifecycle import (
+    PATH_BOUND_CLASSES,
+    CriterionCrossOff,
+    CrossOffState,
+    ExercisedPath,
+    RederivationClass,
+)
+from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 #: The state a criterion a fire finished sits in until something takes it back.
@@ -78,6 +87,43 @@ def undemonstrated_output(
 def evaluation_observation(*, session_id: str, iteration: int) -> str:
     """The pointer an Evidence row carries back to the grading it came from."""
     return f"evaluator session {session_id}, iteration {iteration}"
+
+
+#: What a pointer says once the grading it names no longer stands.
+LAPSE_POINTER: Final[str] = "that grading lapsed"
+
+
+def lapse_observation(*, observation: str) -> str:
+    """The pointer a lapsed grading leaves, beside the sha it was graded at.
+
+    The sha is not moved on and not cleared: a reader of the row must see
+    the gap between what was graded and where the branch went, which is
+    exactly what a sha with no pointer to a lapse cannot show. The pointer
+    keeps the grading it came from, so the reading stays traceable to the
+    session that produced the verdict that lapsed.
+    """
+    return f"{observation} — {LAPSE_POINTER}"
+
+
+def declared_class(
+    *, rederivation_class: RederivationClass, exercised_paths: Sequence[str]
+) -> tuple[RederivationClass, tuple[ExercisedPath, ...]]:
+    """The class and prefixes a declaration earns, normalised where it earns none.
+
+    A path-bound class is an exemption from re-derivation on every head
+    move, and the prefixes are what says when that exemption stops holding.
+    A declaration of one without them claims the exemption and gives no way
+    to end it, so it earns neither: it reads cheap, with no prefixes, and
+    the next head move re-derives it like any other cheap grading.
+
+    Read here rather than refused: the cross-off model raises on that pair,
+    and raising would take the whole fire down over one answer a session
+    gave. A prefix naming nothing is dropped for the same reason.
+    """
+    paths = tuple(path for path in exercised_paths if path.strip())
+    if rederivation_class in PATH_BOUND_CLASSES and not paths:
+        return RederivationClass.cheap, ()
+    return rederivation_class, paths
 
 
 def tick_anchor(criterion: TrackerCriterion) -> str:
@@ -140,21 +186,60 @@ def cross_offs_for(
     graded_sha: str,
     observation: str,
     demonstrated: bool,
+    standing: Sequence[CriterionCrossOff] = (),
+    reading: Mapping[CriterionRef, GradedState] = MappingProxyType({}),
 ) -> tuple[CriterionCrossOff, ...]:
     """The only site in the source that builds a cross-off and its evidence.
 
-    One evidence value serves the whole attempt: the sha and the session
-    pointer are the attempt's, not each criterion's, so a second copy per
-    criterion would be a second place for the same sha to drift from. So is
-    *demonstrated*: the workspace either stood at that sha for the whole
-    attempt or it did not.
+    One pair of facts serves the whole attempt: the sha and the session
+    pointer are the attempt's, not each criterion's, so a second reading of
+    either per criterion would be a second place for the same sha to drift
+    from. So is *demonstrated*: the workspace either stood at that sha for
+    the whole attempt or it did not.
+
+    *reading* is what an earlier grading is still worth, for the criteria
+    this attempt therefore did not grade afresh; *standing* carries those
+    gradings. A criterion the reading counts keeps its own cross-off
+    unchanged, sha and pointer included — arithmetic may not restate a
+    verdict it did not reach. A criterion the reading finds lapsed becomes
+    a lapsed cross-off at the sha it was graded at, with its class and its
+    prefixes carried, so what the board is told is that the grading is owed
+    again rather than that it failed.
+
+    Each arm decides the four facts a cross-off carries and one construction
+    below makes the value out of them, so the state, the sha and the class
+    reach the board through one expression however they were reached.
     """
-    evidence = CriterionEvidence(graded_sha=graded_sha, test=observation)
-    return tuple(
-        CriterionCrossOff(
-            criterion=criterion_ref(result.criterion_id),
-            state=cross_off_state(passed=result.passed, demonstrated=demonstrated),
-            evidence=evidence,
+    attempt = (graded_sha, observation)
+    held = {cross_off.criterion: cross_off for cross_off in standing}
+    if not reading.keys() <= held.keys():
+        raise ValueError("a standing reading names a criterion nothing is standing for")
+    built: list[CriterionCrossOff] = []
+    exercised_paths: tuple[ExercisedPath, ...]
+    for result in results:
+        criterion = criterion_ref(result.criterion_id)
+        state = reading.get(criterion)
+        if state is GradedState.counted:
+            built.append(held[criterion])
+            continue
+        if state is None:
+            verdict = cross_off_state(passed=result.passed, demonstrated=demonstrated)
+            recorded, pointer = attempt
+            rederivation_class, exercised_paths = RederivationClass.cheap, ()
+        else:
+            prior = held[criterion]
+            verdict = CrossOffState.lapsed
+            recorded = prior.evidence.graded_sha
+            pointer = lapse_observation(observation=prior.evidence.test)
+            rederivation_class = prior.rederivation_class
+            exercised_paths = prior.exercised_paths
+        built.append(
+            CriterionCrossOff(
+                criterion=criterion,
+                state=verdict,
+                evidence=CriterionEvidence(graded_sha=recorded, test=pointer),
+                rederivation_class=rederivation_class,
+                exercised_paths=exercised_paths,
+            )
         )
-        for result in results
-    )
+    return tuple(built)

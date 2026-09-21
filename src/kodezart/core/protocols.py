@@ -1711,8 +1711,12 @@ class LaneStateWriter(Protocol):
         is a reading of the roster it was graded against, and a partial
         one is no reading of it. A criterion this attempt passed gets its
         graded sha on its Evidence row and is then moved to
-        ``LifecycleStage.DONE``, in that order;
-        nothing else is written anywhere, least of all a parent's state.
+        ``LifecycleStage.DONE``, in that order. A criterion whose earlier
+        grading has lapsed goes the other way — back to the team's unstarted
+        state, keeping the sha it was graded at with its pointer saying that
+        grading lapsed — and nothing is announced for it, because a lapse is
+        the criterion being owed again and not a regression.
+        Nothing else is written anywhere, least of all a parent's state.
         """
         ...
 

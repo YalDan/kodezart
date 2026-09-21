@@ -8,17 +8,25 @@ import pytest
 from kodezart.core.protocols import LaneStateTracker
 from kodezart.domain.criterion_cross_off import (
     cross_offs_for,
+    declared_class,
     evaluation_observation,
+    lapse_observation,
     require_tickable,
     tick_anchor,
 )
 from kodezart.domain.criterion_evidence import apply_evidence, parse_criterion_evidence
 from kodezart.domain.errors import StaleWriteError
-from kodezart.domain.fire_spec import replace_criterion_fields
+from kodezart.domain.fire_spec import criterion_ref, replace_criterion_fields
+from kodezart.domain.lapse import GradedState
 from kodezart.types.domain.agent import CriterionResult
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
-from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOffState
+from kodezart.types.domain.criterion_lifecycle import (
+    PATH_BOUND_CLASSES,
+    CriterionCrossOff,
+    CrossOffState,
+    RederivationClass,
+)
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import make_tracker_issue
@@ -444,3 +452,138 @@ def test_an_unstarted_or_completed_criterion_carrying_its_check_is_tickable(
         ),
         criterion=criterion(),
     )
+
+
+# ---------------------------------------------------------------------------
+# A standing grading: counted unchanged, or lapsed beside the sha it holds.
+# ---------------------------------------------------------------------------
+
+STANDING_SHA = "1" * 40
+
+
+def standing_cross_off(
+    *,
+    state: CrossOffState = CrossOffState.passed,
+    rederivation_class: RederivationClass = RederivationClass.expensive,
+    exercised_paths: tuple[str, ...] = ("src/kodezart/domain/",),
+) -> CriterionCrossOff:
+    """The cross-off an earlier attempt finished this criterion with."""
+    return CriterionCrossOff(
+        criterion=criterion_ref(CriterionId(KEY)),
+        state=state,
+        evidence=CriterionEvidence(
+            graded_sha=STANDING_SHA,
+            test=evaluation_observation(session_id="first-session", iteration=1),
+        ),
+        rederivation_class=rederivation_class,
+        exercised_paths=exercised_paths,
+    )
+
+
+def for_reading(reading) -> tuple[CriterionCrossOff, ...]:
+    """This attempt's cross-offs, given what it read about the standing one."""
+    return cross_offs_for(
+        results=[result()],
+        graded_sha=GRADED_SHA,
+        observation=evaluation_observation(session_id="second-session", iteration=2),
+        demonstrated=True,
+        standing=[standing_cross_off()],
+        reading=reading,
+    )
+
+
+def test_a_grading_the_reading_counts_is_returned_exactly_as_it_stands():
+    """Arithmetic may not restate a verdict it did not reach.
+
+    The reading says the earlier grading still stands, so what this attempt
+    carries forward is that grading itself — its state, its sha and the
+    pointer back to the session that produced it — and not a fresh row
+    composed to look like one.
+    """
+    standing = standing_cross_off()
+    assert for_reading({standing.criterion: GradedState.counted}) == (standing,)
+
+
+def test_a_grading_the_reading_lapses_keeps_its_sha_and_says_it_lapsed():
+    """The row records the lapse beside the sha the grading was taken at."""
+    standing = standing_cross_off()
+    (lapsed,) = for_reading({standing.criterion: GradedState.lapsed})
+    assert lapsed.state is CrossOffState.lapsed
+    assert lapsed.evidence.graded_sha == STANDING_SHA
+    assert lapsed.evidence.test == lapse_observation(observation=standing.evidence.test)
+    assert lapsed.rederivation_class is standing.rederivation_class
+    assert lapsed.exercised_paths == standing.exercised_paths
+
+
+def test_a_criterion_with_no_reading_is_built_from_this_attempts_own_grade():
+    """The absent-reading arm is what every attempt without a standing one does."""
+    assert for_reading({}) == cross_offs_for(
+        results=[result()],
+        graded_sha=GRADED_SHA,
+        observation=evaluation_observation(session_id="second-session", iteration=2),
+        demonstrated=True,
+    )
+
+
+def test_a_reading_naming_a_criterion_nothing_stands_for_refuses():
+    """The reading and the standing gradings are one partition, or neither."""
+    with pytest.raises(ValueError, match="nothing is standing for"):
+        cross_offs_for(
+            results=[result()],
+            graded_sha=GRADED_SHA,
+            observation=evaluation_observation(session_id="s", iteration=2),
+            demonstrated=True,
+            standing=[],
+            reading={criterion_ref(CriterionId(KEY)): GradedState.counted},
+        )
+
+
+def test_a_lapsed_grading_round_trips_through_the_one_evidence_codec():
+    """The row is one fenced record of a sha and a pointer, read back as itself."""
+    (lapsed,) = for_reading({criterion_ref(CriterionId(KEY)): GradedState.lapsed})
+    written = apply_evidence(body=body(), evidence=lapsed.evidence)
+    assert parse_criterion_evidence(written) == lapsed.evidence
+
+
+@pytest.mark.parametrize(
+    "rederivation_class", sorted(PATH_BOUND_CLASSES, key=lambda one: one.value)
+)
+@pytest.mark.parametrize(
+    "paths", [pytest.param((), id="none"), pytest.param((" ",), id="blank")]
+)
+def test_a_path_bound_class_naming_no_prefix_earns_neither(rederivation_class, paths):
+    """The exemption and the prefixes that end it are declared together or not at all.
+
+    The cross-off model refuses that pair outright, so a declaration read
+    straight through would raise inside the write and take the fire with it.
+    """
+    assert declared_class(
+        rederivation_class=rederivation_class, exercised_paths=paths
+    ) == (RederivationClass.cheap, ())
+
+
+@pytest.mark.parametrize(
+    "rederivation_class", sorted(RederivationClass, key=lambda one: one.value)
+)
+def test_a_declaration_naming_its_prefixes_is_read_as_it_was_declared(
+    rederivation_class,
+):
+    assert declared_class(
+        rederivation_class=rederivation_class,
+        exercised_paths=["src/kodezart/domain/", "docs/architecture.md"],
+    ) == (rederivation_class, ("src/kodezart/domain/", "docs/architecture.md"))
+
+
+def test_a_normalised_declaration_builds_a_cross_off_the_model_accepts():
+    """The whole point: the pair the model raises on never reaches it."""
+    normalised, paths = declared_class(
+        rederivation_class=RederivationClass.observed, exercised_paths=()
+    )
+    built = CriterionCrossOff(
+        criterion=criterion_ref(CriterionId(KEY)),
+        state=CrossOffState.passed,
+        evidence=CriterionEvidence(graded_sha=GRADED_SHA, test="a pointer"),
+        rederivation_class=normalised,
+        exercised_paths=paths,
+    )
+    assert built.rederivation_class is RederivationClass.cheap

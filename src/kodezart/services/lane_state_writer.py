@@ -358,7 +358,9 @@ class TrackerLaneStateWriter:
         nowhere: the sub-issue keeps whatever an earlier attempt left on it,
         and the unwritten verdict is on the iteration event and in this line.
         A criterion this attempt FAILED and this fire had already finished is
-        a regression, and is taken back.
+        a regression, and is taken back. A criterion whose earlier grading
+        this attempt found LAPSED is taken back the same way and announced
+        nowhere: it is owed again, which is not a regression to report.
         """
         addressed = tuple(str(cross_off.criterion) for cross_off in cross_offs)
         if addressed != tuple(str(criterion.id) for criterion in dispatched):
@@ -380,7 +382,21 @@ class TrackerLaneStateWriter:
                 graded_sha=cross_off.evidence.graded_sha,
             )
             if cross_off.state is CrossOffState.failed:
-                await self._refute(lane=lane, criterion=criterion, cross_off=cross_off)
+                await self._take_back(
+                    lane=lane,
+                    criterion=criterion,
+                    cross_off=cross_off,
+                    event=LaneRunEvent(
+                        kind=RunEventKind.CRITERION_REFUTED,
+                        lane_key=lane.lane_key,
+                        subject_key=criterion.id,
+                        graded_sha=cross_off.evidence.graded_sha,
+                    ),
+                )
+            elif cross_off.state is CrossOffState.lapsed:
+                await self._take_back(
+                    lane=lane, criterion=criterion, cross_off=cross_off, event=None
+                )
 
     async def _write_one(
         self,
@@ -416,27 +432,38 @@ class TrackerLaneStateWriter:
             )
         )
 
-    async def _refute(
+    async def _take_back(
         self,
         *,
         lane: LaneBinding,
         criterion: TrackerCriterion,
         cross_off: CriterionCrossOff,
+        event: LaneRunEvent | None,
     ) -> None:
-        """Take back a criterion this fire finished and then broke, once.
+        """Take back a criterion this fire finished, once, for either reason.
+
+        Two readings end a criterion's finished state and they end it the
+        same way: a fresh grading refuted it, or the grading that finished
+        it no longer stands. Only the announcement differs, so it arrives as
+        *event*: a refutation is a regression and says so on the stream,
+        while a lapse is the criterion being owed again and says nothing,
+        which is also what makes a repeat lapse write nothing at all — the
+        early return below already reads the board as unfinished.
 
         A criterion the fresh read finds unfinished is no regression: it was
         never this fire's claim to take back. A criterion found finished is
-        taken back on a fail whoever moved it there — the roster carries no
+        taken back on either reading whoever moved it there — the roster carries no
         state and the Evidence row no run, so one a person moved into that
         state reads exactly like one this fire finished, and nothing but the
         evaluation step moves a criterion there, which makes that a protocol
         violation on the board rather than a case to tell apart here.
 
         Everything knowable is read before anything is written: the state the
-        board holds, the body the writes depend on, and the stream, so a
-        stream that will not parse refuses while the sub-issue still reads as
-        the pass it was. The move back is then the FIRST write, because a
+        board holds, the body the writes depend on, and — when there is an
+        event to announce — the stream, so a stream that will not parse
+        refuses while the sub-issue still reads as the pass it was. A
+        take-back announcing nothing asks the board nothing extra at all.
+        The move back is then the FIRST write, because a
         criterion left finished is in no later fire's roster and would never
         be graded again: a failure after it leaves the criterion unstarted and
         owed, and the next fire re-grades it, rather than certified at a sha
@@ -464,20 +491,16 @@ class TrackerLaneStateWriter:
         # refuses here, while the sub-issue still reads as the pass it was,
         # rather than after the move back has already taken it.
         self._evidence_body(issue=issue, criterion=criterion, cross_off=cross_off)
-        event = LaneRunEvent(
-            kind=RunEventKind.CRITERION_REFUTED,
-            lane_key=lane.lane_key,
-            subject_key=criterion.id,
-            graded_sha=cross_off.evidence.graded_sha,
+        posted = event is not None and event in self._events(
+            comments=await self._board(lane), lane=lane
         )
-        posted = event in self._events(comments=await self._board(lane), lane=lane)
         await settle(self._tracker.reset_criterion_pending(expected=issue, holder=None))
         moved = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=moved, criterion=criterion)
         await self._stamp(
             lane=lane, criterion=criterion, issue=moved, cross_off=cross_off
         )
-        if not posted:
+        if event is not None and not posted:
             await settle(
                 self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
             )

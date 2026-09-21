@@ -4,6 +4,7 @@ from typing import Self
 
 from pydantic import ConfigDict, Field, model_validator
 
+from kodezart.domain.lapse import GradedState, graded_state
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.audit import AuditClaimObservation, AuditVerdict
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
@@ -24,9 +25,18 @@ class AuditEvidenceObservation(CamelCaseModel):
 
     @property
     def is_lapse(self) -> bool:
+        """Whether a finished claim's recorded grading no longer stands.
+
+        The reading is the one rule's, not this model's: what a graded sha
+        is worth against a head sha is answered in one place, so the audit
+        lane and the lane-state writer cannot come to disagree about it.
+        """
         return (
             self.criterion.state_kind is WorkflowStateKind.COMPLETED
-            and self.recorded_evidence.graded_sha != self.head_sha
+            and graded_state(
+                graded_sha=self.recorded_evidence.graded_sha, head_sha=self.head_sha
+            )
+            is GradedState.lapsed
         )
 
     @model_validator(mode="after")

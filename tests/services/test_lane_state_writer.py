@@ -11,6 +11,7 @@ from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_cross_off import (
     cross_offs_for,
     evaluation_observation,
+    lapse_observation,
 )
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
@@ -22,10 +23,12 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.fire_spec import (
     criterion_field_bodies,
+    criterion_ref,
     replace_criterion_fields,
 )
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE
+from kodezart.domain.lapse import GradedState
 from kodezart.domain.run_event_stream import (
     RUN_EVENT_PURPOSE,
     LaneRunEvent,
@@ -1835,3 +1838,113 @@ async def test_a_failed_verdict_on_a_criterion_in_another_state_writes_nothing(s
     assert port.issue_writes == []
     assert port.workflow_writes == []
     assert refutations(port) == []
+
+
+# ---------------------------------------------------------------------------
+# The lapse: the same take-back, with nothing to report.
+# ---------------------------------------------------------------------------
+
+
+async def lapse(
+    lane_state,
+    *,
+    key: str,
+    standing_sha: str,
+    head_sha: str,
+) -> None:
+    """One attempt whose reading of *key*'s standing grading is that it lapsed.
+
+    The standing cross-off is the one an earlier attempt finished the
+    criterion with, so the reading arrives the way the loop hands it over:
+    the grading it was taken at, and the verdict arithmetic reached about it.
+    """
+    standing = cross_offs_for(
+        results=graded([key]),
+        graded_sha=standing_sha,
+        observation=evaluation_observation(session_id="eval-session", iteration=1),
+        demonstrated=True,
+    )
+    await lane_state.write_cross_offs(
+        lane=binding(),
+        dispatched=dispatched([key]),
+        cross_offs=cross_offs_for(
+            results=graded([key]),
+            graded_sha=head_sha,
+            observation=evaluation_observation(session_id="eval-session", iteration=2),
+            demonstrated=True,
+            standing=standing,
+            reading={criterion_ref(CriterionId(key)): GradedState.lapsed},
+        ),
+    )
+
+
+async def test_a_lapsed_grading_is_taken_back_with_the_sha_it_was_graded_at():
+    """The board says the criterion is owed again, and the gap stays legible.
+
+    The sub-issue leaves the finished state for the team's unstarted one,
+    and its Evidence row keeps the sha the lapsed grading was taken at with
+    a pointer saying that grading lapsed — a reader sees the gap between
+    what was graded and where the branch went, rather than a satisfied
+    criterion. The issue that owns it reopens by the tracker's own rollup,
+    written by nobody, while every criterion beside it stays finished.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    lapsing = CRITERIA[0]
+
+    await tick(lane_state, sha="1" * 40)
+    assert owning_closure(port).is_closed(LANE)
+
+    await lapse(lane_state, key=lapsing, standing_sha="1" * 40, head_sha="2" * 40)
+
+    issue = port.issues[lapsing]
+    assert issue.state_kind is WorkflowStateKind.UNSTARTED
+    evidence = parse_criterion_evidence(issue.body)
+    assert evidence.graded_sha == "1" * 40
+    assert evidence.test == lapse_observation(
+        observation=evaluation_observation(session_id="eval-session", iteration=1)
+    )
+    assert not owning_closure(port).is_closed(LANE)
+    assert all(
+        port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+        for key in CRITERIA[1:]
+    )
+
+
+async def test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra():
+    """A lapse is not a regression, so no event is composed and none is sought.
+
+    A refutation reads the stream first, to tell a second break of one
+    grading from the first. A lapse announces nothing, so there is no event
+    to look for: the listing a refutation pays for is not paid here, and the
+    stream is left exactly as the finishing attempt left it.
+    """
+    operation = lane_operation()
+    port = CountingBoard(
+        issues=[
+            make_tracker_issue(LANE, body="the lane's own text"),
+            *(
+                make_tracker_issue(
+                    key,
+                    parent_key=LANE,
+                    issue_labels=frozenset({"criterion"}),
+                    body=criterion_body(key),
+                )
+                for key in CRITERIA
+            ),
+        ],
+        marker_prefixes=operation.marker_prefixes,
+    )
+    lane_state = writer(port, lane_repo())
+    lapsing, broken = CRITERIA[0], CRITERIA[1]
+    await tick(lane_state, sha="1" * 40)
+
+    port.count_the_next_write()
+    await lapse(lane_state, key=lapsing, standing_sha="1" * 40, head_sha="2" * 40)
+    assert port.listings == 0
+    assert refutations(port) == []
+
+    port.count_the_next_write()
+    await tick(lane_state, sha="2" * 40, keys=[broken], failed=[broken])
+    assert port.listings == 1
+    assert [event.subject_key for event in refutations(port)] == [broken]

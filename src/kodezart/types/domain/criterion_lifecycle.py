@@ -37,6 +37,11 @@ class CrossOffState(StrEnum):
     sha names, and this is the state of having no such reading at all —
     the grading workspace held changes the sha does not, or its head was
     not that sha, so what was observed was somebody's working copy.
+
+    ``lapsed`` is not a fail either: the grading read the tree its sha
+    names and passed, and what has changed since is the tree, not the
+    reading. The criterion is owed again rather than broken, so a lapse
+    takes the satisfaction back without reporting a regression.
     """
 
     passed = "passed"
