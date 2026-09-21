@@ -2,7 +2,7 @@
 
 import pytest
 
-from kodezart.types.domain.operation import QueueState, ScopeLabel
+from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLabel
 
 
 @pytest.mark.parametrize("member", ["triage", "proposed", "approved"])
@@ -33,4 +33,16 @@ def test_existing_issue_queue_vocabulary_is_preserved() -> None:
         "triage",
         "proposed",
         "approved",
+    }
+
+
+def test_the_lifecycle_stage_vocabulary_is_closed() -> None:
+    """No size-, estimate- or forecast-based member joins unnoticed (KOD-726).
+
+    The set is the literal one, not a count (KOD-781).
+    """
+    assert {member.value for member in LifecycleStage} == {
+        "in_progress",
+        "in_review",
+        "done",
     }

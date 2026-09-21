@@ -51,7 +51,8 @@ terminal outcome classifier address different facts and remain separate.
 
 The retired alternative's `LaneDispatch`, `DeliveryContext`, `LaneDelivery`, PR
 content editor/query capabilities and their exclusive fixtures are removed.
-The actual PR-state audit reader and native lane reports remain. Unused scope
+The actual PR-state audit reader remains; the native lane report
+collection was retired in favour of `ScopeLaneEntry.done` (KOD-866). Unused scope
 terminal/residual wrappers are removed without deleting public outcome values.
 
 This change does not implement scoped dispatch, native terminal/residual

@@ -1,7 +1,6 @@
-"""The scope terminal's wire vector, and the lane report facts beside it."""
+"""The scope terminal's wire vector."""
 
 from collections.abc import Sequence
-from enum import StrEnum
 from typing import Annotated, Literal, Self
 
 from pydantic import (
@@ -15,27 +14,6 @@ from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_state import LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-
-
-class LaneReportState(StrEnum):
-    """A reported empty gap and a missing report are distinct facts."""
-
-    CONVERGED = "converged"
-    IN_GAP = "in_gap"
-    HALTED = "halted"
-    UNREPORTED = "unreported"
-
-
-class LaneReport(CamelCaseModel):
-    """One dispatched lane, including an explicit value for silence."""
-
-    model_config = ConfigDict(frozen=True)
-
-    lane_key: str = Field(min_length=1, pattern=r"\S")
-    issue_id: str = Field(min_length=1, pattern=r"\S")
-    state: LaneReportState
-    detail: str | None = None
-
 
 #: The scope kinds whose container carries a status update. A milestone and
 #: an issue have no such surface at the backend, so a scope addressed as one
