@@ -205,6 +205,36 @@ def test_a_record_issue_beside_a_criterion_joins_neither_the_gap_nor_the_roster(
     assert closure.open_criterion_keys() == open_keys
 
 
+@pytest.mark.parametrize("label", sorted(issue_tree.RECORD_KINDS))
+def test_a_criterion_carrying_a_record_label_is_still_read_as_a_criterion(label):
+    """Which arm wins when an issue carries both labels, and why it matters.
+
+    The walk tests the criterion arm before the record arm, and that order is
+    load-bearing in one direction only: read the other way round, an open
+    criterion that also carries a record label drops out of the gap, its lane
+    reads closed, and a lane ships with an unmet criterion. Read this way round
+    the worst case is a record that is graded, which no arithmetic acts on.
+
+    So the precedence is asserted rather than left to the order two branches
+    happen to sit in: swap them and this case reds.
+    """
+    lane = make_tracker_issue("lane")
+    both = make_tracker_issue(
+        "lane-AC-1",
+        parent_key="lane",
+        issue_labels=CRITERION | frozenset({label}),
+        state_kind=WorkflowStateKind.UNSTARTED,
+        state_name="Todo",
+        body="**Evidence:** —",
+    )
+    closure = SubtreeClosure(facts=facts_of(lane, both), ref=REF)
+
+    assert tuple(i.issue_key for i in closure.roster("lane")) == ("lane-AC-1",)
+    assert tuple(i.issue_key for i in closure.gap("lane")) == ("lane-AC-1",)
+    assert closure.is_closed("lane") is False
+    assert closure.open_criterion_keys() == ("lane-AC-1",)
+
+
 def test_issue_tree_module_imports_no_adapters_and_does_no_io():
     tree = ast.parse(inspect.getsource(issue_tree))
     modules = {
