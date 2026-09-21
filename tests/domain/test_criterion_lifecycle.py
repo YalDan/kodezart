@@ -1397,6 +1397,14 @@ def test_the_domain_package_has_one_satisfaction_carrier_and_its_state_is_the_en
             id="nested",
         ),
         pytest.param(
+            {
+                "criteria": tuple[CriterionRef | None, ...],
+                "state": dict[str, CrossOffState | None],
+            },
+            (SATISFACTION_CARRIER, "probe.Probe"),
+            id="nested twice",
+        ),
+        pytest.param(
             {"criterion": CriterionRef}, (SATISFACTION_CARRIER,), id="address only"
         ),
         pytest.param(
