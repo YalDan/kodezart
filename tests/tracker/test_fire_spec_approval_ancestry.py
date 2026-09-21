@@ -2,6 +2,7 @@
 
 import pytest
 
+from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.errors import FireSpecEntryError
 from kodezart.types.domain.operation import ScopeLabel
 from tests.tracker.conftest import FIRE_STAGE_KEY, FIRE_STAGE_LABEL
@@ -36,12 +37,13 @@ async def test_container_approval_and_revocation_reach_actual_spec_reader(
         }
     )
     approval.labels(ancestor, ScopeLabel.APPROVED)
-    spec = await approval.tracker.read_fire_spec(issue_key=CHILD.key)
+    entry = TrackerCriteria(tracker=approval.tracker)
+    spec = await entry.read_spec(issue_key=CHILD.key)
     assert spec.subject == CHILD.key
     assert spec.criteria == (criterion,)
     approval.labels(ancestor)
     with pytest.raises(FireSpecEntryError, match="approval"):
-        await approval.tracker.read_fire_spec(issue_key=CHILD.key)
+        await entry.read_spec(issue_key=CHILD.key)
     assert not approval.fake.issue_writes
     assert not approval.fake.comment_writes
     assert not approval.fake.claim_writes

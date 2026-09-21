@@ -256,16 +256,12 @@ def test_the_port_criterion_read_has_one_implementation_and_a_private_descent():
     assert by_module(sources, lambda tree: callers_of(tree, name=DESCENT)) == {
         ADAPTER: [LinearMcpTracker._read_criterion_family.__qualname__],
     }
-    # The exact pair, rather than "some port member": a third member that
+    # The exact caller, rather than "some port member": a second member that
     # reached the family read would be a new listing surface and should
-    # redden here until it is named.
+    # redden here until it is named. The fire entry is not one of them — it
+    # lists nothing and measures membership over the subtree instead.
     assert by_module(sources, lambda tree: callers_of(tree, name=FAMILY)) == {
-        ADAPTER: sorted(
-            [
-                LinearMcpTracker.read_criteria.__qualname__,
-                LinearMcpTracker.read_fire_spec.__qualname__,
-            ]
-        ),
+        ADAPTER: [LinearMcpTracker.read_criteria.__qualname__],
     }
     # Two definitions in the package list children by parent on the wire,
     # and each is named: the adapter's criterion descent, and the scope

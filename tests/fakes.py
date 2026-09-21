@@ -62,7 +62,7 @@ from kodezart.domain.errors import (
     WorkspaceError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
-from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
+from kodezart.domain.fire_spec import require_fire_entry
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.organize_graph import (
     changed_peers,
@@ -4211,7 +4211,7 @@ class FakeTrackerPort:
         _, criteria = await self._read_criterion_family(issue_key=issue_key)
         return criteria
 
-    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+    async def read_fire_subject(self, *, issue_key: str) -> TrackerIssue:
         if issue_key not in self.issues:
             raise CriterionReadError(
                 issue_key=issue_key, reason="parent issue is absent"
@@ -4222,23 +4222,16 @@ class FakeTrackerPort:
             approved=approved,
             criteria_stage_label_key=self.criteria_stage_label_key,
         )
-        _, criteria = await self._read_criterion_family(
-            issue_key=issue_key, subject=subject
-        )
-        return tracker_spec_from_issues(subject=subject, criteria=criteria)
+        return subject
 
     async def _read_criterion_family(
-        self, *, issue_key: str, subject: TrackerIssue | None = None
+        self, *, issue_key: str
     ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
         if issue_key not in self.issues:
             raise CriterionReadError(
                 issue_key=issue_key, reason="parent issue is absent"
             )
-        parent = (
-            subject
-            if subject is not None
-            else await self.read_issue(issue_key=issue_key)
-        )
+        parent = await self.read_issue(issue_key=issue_key)
         return parent, tuple(
             sorted(
                 (

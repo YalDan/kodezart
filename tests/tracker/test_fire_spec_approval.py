@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.tracker import build_tracker
 from kodezart.config.app import AppConfig
 from kodezart.core.backoff import RetryPolicy
@@ -65,7 +66,7 @@ async def test_either_missing_fact_refuses_actual_spec_read(
     if missing in {"completion", "both"}:
         marker(tracker, server, SUBJECT, False)
     with pytest.raises(FireSpecEntryError) as caught:
-        await tracker.read_fire_spec(issue_key=SUBJECT)
+        await tracker.read_fire_subject(issue_key=SUBJECT)
     assert caught.value.issue_key == SUBJECT
     assert tuple(
         row.issue_key for row in await tracker.read_criteria(issue_key=SUBJECT)
@@ -78,13 +79,13 @@ async def test_same_reader_observes_revocation_and_restoration(
     tracker, server, tracker_writes, revoked
 ):
     before = tracker_writes()
-    initial = await tracker.read_fire_spec(issue_key=SUBJECT)
+    initial = await tracker.read_fire_subject(issue_key=SUBJECT)
     change = approval if revoked == "approval" else marker
     change(tracker, server, SUBJECT, False)
     with pytest.raises(FireSpecEntryError):
-        await tracker.read_fire_spec(issue_key=SUBJECT)
+        await tracker.read_fire_subject(issue_key=SUBJECT)
     change(tracker, server, SUBJECT, True)
-    assert await tracker.read_fire_spec(issue_key=SUBJECT) == initial
+    assert await tracker.read_fire_subject(issue_key=SUBJECT) == initial
     assert tracker_writes() == before
 
 
@@ -102,14 +103,14 @@ async def test_only_approval_inherits_from_parent(tracker, server, tracker_write
         server.issues[SUBJECT].parent_id = PARENT
     approval(tracker, server, SUBJECT, False)
     approval(tracker, server, PARENT, True)
-    assert (await tracker.read_fire_spec(issue_key=SUBJECT)).subject == SUBJECT
+    assert (await tracker.read_fire_subject(issue_key=SUBJECT)).issue_key == SUBJECT
     approval(tracker, server, PARENT, False)
     with pytest.raises(FireSpecEntryError, match="approval"):
-        await tracker.read_fire_spec(issue_key=SUBJECT)
+        await tracker.read_fire_subject(issue_key=SUBJECT)
     approval(tracker, server, PARENT, True)
     marker(tracker, server, SUBJECT, False)
     with pytest.raises(FireSpecEntryError, match="completion"):
-        await tracker.read_fire_spec(issue_key=SUBJECT)
+        await tracker.read_fire_subject(issue_key=SUBJECT)
     assert tracker_writes() == before
 
 
@@ -127,7 +128,7 @@ async def test_parent_text_and_queue_label_do_not_supply_either_fact(
         )
     before = tracker_writes()
     with pytest.raises(FireSpecEntryError):
-        await tracker.read_fire_spec(issue_key=SUBJECT)
+        await tracker.read_fire_subject(issue_key=SUBJECT)
     assert tracker_writes() == before
 
 
@@ -140,7 +141,7 @@ async def test_missing_phase_configuration_is_explicit_at_point_of_need(
         tracker = tracker_over(server, criteria_stage_label_key=None)
     assert await tracker.read_criteria(issue_key=SUBJECT)
     with pytest.raises(OperationMemberAbsentError, match="terminal_marker_key"):
-        await tracker.read_fire_spec(issue_key=SUBJECT)
+        await tracker.read_fire_subject(issue_key=SUBJECT)
 
 
 async def test_actual_composition_uses_remapped_criteria_row(server):
@@ -162,11 +163,12 @@ async def test_actual_composition_uses_remapped_criteria_row(server):
         operation=OperationConfig.model_validate(fields),
         caller=server,
     )
-    assert (await port.read_fire_spec(issue_key=SUBJECT)).criteria == (CRITERION,)
+    entry = TrackerCriteria(tracker=port)
+    assert (await entry.read_spec(issue_key=SUBJECT)).criteria == (CRITERION,)
     # A different completed phase cannot stand in for the selected table row.
     server.issues[SUBJECT].labels = ["body complete", "authorized under this operation"]
     with pytest.raises(FireSpecEntryError, match="completion"):
-        await port.read_fire_spec(issue_key=SUBJECT)
+        await port.read_fire_subject(issue_key=SUBJECT)
     assert not server.tool_calls("save_issue")
 
 
@@ -174,7 +176,7 @@ async def test_native_missing_marker_mapping_refuses_without_tool_calls(server):
     server.calls.clear()
     port = tracker_over(server, criteria_stage_label_key="unmapped")
     with pytest.raises(OperationMemberAbsentError, match=r"issue_labels\.unmapped"):
-        await port.read_fire_spec(issue_key=SUBJECT)
+        await port.read_fire_subject(issue_key=SUBJECT)
     assert server.calls == []
 
 
@@ -185,7 +187,7 @@ async def test_cancellation_during_approval_propagates_without_spec_or_write(ser
 
     port = tracker_over(CanceledServer())
     with pytest.raises(asyncio.CancelledError):
-        await port.read_fire_spec(issue_key=SUBJECT)
+        await port.read_fire_subject(issue_key=SUBJECT)
 
 
 @pytest.mark.parametrize("omitted", ["labels", "parentId"])
@@ -203,7 +205,7 @@ async def test_native_incomplete_subject_facts_refuse_at_actual_spec_read(
 
     native = IncompleteServer(issues=list(server.issues.values()))
     with pytest.raises(CriterionReadError) as caught:
-        await tracker_over(native).read_fire_spec(issue_key=SUBJECT)
+        await tracker_over(native).read_fire_subject(issue_key=SUBJECT)
     assert caught.value.__cause__ is not None
     assert not native.tool_calls("save_issue")
 
@@ -225,5 +227,5 @@ async def test_absent_configured_mandates_refuse_only_at_fire_read(server):
     )
     assert await port.read_criteria(issue_key=SUBJECT)
     with pytest.raises(OperationMemberAbsentError, match="terminal_marker_key"):
-        await port.read_fire_spec(issue_key=SUBJECT)
+        await port.read_fire_subject(issue_key=SUBJECT)
     assert not server.tool_calls("save_issue")

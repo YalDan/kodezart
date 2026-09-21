@@ -2,9 +2,9 @@
 
 Two contracts live here.  The graph HOLDS no ticket- or criteria-generation
 node and reaches its loop only through the pre-loop re-validation step; the
-step reads what the fire owes from the tracker's own spec read, over the
-subject's whole subtree, and nothing carried alongside that read stands in
-for it.
+step admits the subject through the tracker's own read and measures what the
+fire owes over that subject's whole subtree, in one reading, and nothing
+carried alongside that read stands in for it.
 """
 
 import inspect
@@ -645,7 +645,7 @@ def test_the_addressed_issue_is_the_subject_the_run_carries() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The spec read is the source; the subtree is the extent it is read over.
+# The entry is the source; the subtree is the extent it reads over.
 # ---------------------------------------------------------------------------
 
 
@@ -692,23 +692,22 @@ async def test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads(
 
 
 async def test_a_criterion_the_spec_names_that_the_subtree_lost_refuses() -> None:
-    class Moving(FakeTrackerPort):
-        """A criterion archived between the spec read and the subtree read."""
+    """A criterion archived after the entry refuses at the next barrier.
 
-        async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
-            spec = await super().read_fire_spec(issue_key=issue_key)
-            del self.issues[DIRECT_OWED_TOO]
-            return spec
-
+    The entry composes its spec from the same reading it selects its roster
+    from, so inside it there is no interval for a criterion to disappear in.
+    The interval is between the entry and the next barrier, and that is where
+    the cross-check earns its keep: the captured spec still names a criterion
+    the subtree no longer holds, and the barrier refuses rather than quietly
+    grading the fire against a smaller obligation.
+    """
     port = tracker()
-    moving = Moving(
-        issues=list(port.issues.values()),
-        criteria_stage_label_key=STAGE_KEY,
-        scope_label_members=port.scope_label_members,
-    )
+    source = TrackerCriteria(tracker=port)
+    spec, _ = await source.read_entry(issue_key=SUBJECT)
+    del port.issues[DIRECT_OWED_TOO]
 
     with pytest.raises(InvalidFireCriterionError) as caught:
-        await TrackerCriteria(tracker=moving).read_owed_criteria(issue_key=SUBJECT)
+        await source.read_current(spec=spec)
 
     assert caught.value.criterion_key == DIRECT_OWED_TOO
 
@@ -716,18 +715,27 @@ async def test_a_criterion_the_spec_names_that_the_subtree_lost_refuses() -> Non
 async def test_a_criterion_the_fire_does_not_owe_is_not_revalidated() -> None:
     """A finished criterion is outside the obligation, so its body is too.
 
-    The subject's own direct family is validated whole by the spec read,
-    which is that read's contract.  What this stage adds is the subtree,
-    and there the state is what decides: a Done criterion under a
-    deliverable child is not re-read for a Check it no longer owes.
+    The entry validates the Check of every criterion the subtree holds,
+    whole, as it validated the direct family's whole: a malformed Check
+    refuses there wherever under the subject it sits.  What a barrier does
+    not re-read is a FINISHED criterion's Check — there the state is what
+    decides, so a Done criterion under a deliverable child is not re-read
+    for a Check it no longer owes.
     """
-    stage = TrackerCriteria(
-        tracker=tracker(bodies={NESTED_DONE: "no template rows at all"})
+    port = tracker()
+    stage = TrackerCriteria(tracker=port)
+    spec, _ = await stage.read_entry(issue_key=SUBJECT)
+    port.issues[NESTED_DONE] = port.issues[NESTED_DONE].model_copy(
+        update={"body": "no template rows at all"}
     )
 
-    owed = await stage.read_owed_criteria(issue_key=SUBJECT)
+    current = await stage.read_current(spec=spec)
 
-    assert set(owed) == {DIRECT_OWED, NESTED_OWED, DIRECT_OWED_TOO}
+    assert {criterion.id for criterion in current.criteria} == {
+        DIRECT_OWED,
+        NESTED_OWED,
+        DIRECT_OWED_TOO,
+    }
 
 
 def nested_only_board(*, nested: bool = True) -> FakeTrackerPort:
@@ -757,12 +765,12 @@ def nested_only_board(*, nested: bool = True) -> FakeTrackerPort:
 
 
 def unlisted_spec() -> TrackerSpec:
-    """A captured subject whose admission read named no direct criterion.
+    """A captured subject naming no criterion, for the barrier readings alone.
 
     Built by hand, the way ``test_a_subtree_holding_no_criterion_has_nothing
-    _to_deliver`` builds one: the admission read lists the subject's direct
-    family and refuses an empty one, so a subtree reading is reached with
-    the spec that read would have captured had it admitted the subject.
+    _to_deliver`` builds one: the entry's spec composition over the subtree
+    refuses an empty one, so a barrier reading is reached here with the spec
+    the entry would have captured had the subtree held nothing to refuse it.
     """
     return TrackerSpec(
         subject=SUBJECT,
@@ -775,13 +783,12 @@ def unlisted_spec() -> TrackerSpec:
 async def test_a_nested_only_owner_reads_non_empty_and_is_not_refused():
     """One criterion under a deliverable child is the owner's obligation.
 
-    The admission read — ``read_fire_spec`` through
-    ``tracker_spec_from_issues`` — lists the DIRECT family and refuses this
-    board at this head; that read is unchanged and is not this case's
-    subject.  What is asserted here is the subtree reading, the extent
-    emptiness is measured over: it answers the nested criterion and refuses
-    nothing.  Admitting such an owner at the fire entry is a production
-    decision no test here takes.
+    The extent is asserted first — the subtree answers the nested criterion,
+    the direct family answers nothing — and then the REAL entry is driven
+    over the same board: the fire is admitted, its captured spec names the
+    nested criterion, and the loop is entered with it.  A reading that
+    measured emptiness over the direct family again would refuse this board
+    here, before any session opens.
     """
     port = nested_only_board()
 
@@ -799,6 +806,33 @@ async def test_a_nested_only_owner_reads_non_empty_and_is_not_refused():
     # The direct family is empty while the subtree is not, which is the
     # whole of the difference the subtree extent turns on.
     assert tuple(await port.read_criteria(issue_key=SUBJECT)) == ()
+
+    nested_check = {NESTED_OWED: check_of(NESTED_OWED)}
+    executor = NativeExecutor(
+        [
+            native_evaluation(checks=nested_check),
+            native_evaluation(checks=nested_check),
+        ]
+    )
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        real_loop=True,
+        checkpointer=InMemorySaver(),
+    )
+
+    events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+    iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
+    assert {
+        result.criterion_id: result.criterion
+        for result in iteration.evaluation.criteria_results
+    } == nested_check
+    saved = fire.native_graph.get_state(
+        {"configurable": {"thread_id": workflow_thread_id("native-fire")}}
+    ).values
+    assert saved["fire_spec"].criteria == (NESTED_OWED,)
+    assert executor.evaluation_prompts != []
 
 
 @pytest.mark.parametrize("history", ["never minted", "minted then removed"])
@@ -888,10 +922,11 @@ async def test_the_actual_native_entry_refuses_a_zero_criterion_subtree_before_t
 ):
     """The real entry refuses an empty subtree before the loop's graph runs.
 
-    The wall the entry meets is the admission read inside ``read_fire_spec``,
-    reached from ``revalidate_criteria`` through ``read_spec``, which does
-    not convert it because ``EmptyFireCriteriaError`` is not one of the
-    transport failures that step turns into an entry error.  The loop is
+    The wall the entry meets is ``tracker_spec_from_issues``, reached from
+    ``revalidate_criteria`` through ``read_entry``'s spec composition over
+    the subtree reading, which does not convert it because
+    ``EmptyFireCriteriaError`` is not one of the transport failures that step
+    turns into an entry error.  The loop is
     the real one the engine composes, and its compiled graph is shown never
     to be streamed rather than assumed so; that nothing reaches the loop
     except through the pre-loop step is pinned by
@@ -919,7 +954,7 @@ async def test_the_pre_loop_step_refuses_an_empty_owed_reading_by_name():
     """The owed reading is the wall standing behind the admission read.
 
     The three walls the real entry meets, in the order it meets them: the
-    admission read over the direct family, pinned by the case above; the
+    spec composition over the subtree, pinned by the case above; the
     owed reading in ``TrackerCriteria.read_current``, pinned here by
     calling the step with a spec already captured, and whose deliver-only
     twin is pinned by
@@ -944,6 +979,36 @@ async def test_the_pre_loop_step_refuses_an_empty_owed_reading_by_name():
         await revalidate_criteria(state, {}, source=source)
 
     assert caught.value.issue_key == SUBJECT
+
+
+async def test_the_entry_reads_the_subtree_once_for_the_spec_and_the_roster():
+    """One walk answers both the captured extent and the entry roster.
+
+    The extent emptiness is measured over and the roster the loop starts on
+    were two readings of two different extents, which is how a subject whose
+    criteria all sit on its deliverables could be admitted by one and refused
+    by the other.  Counted rather than argued: one subject read, one resolve
+    of the subject's scope, five criteria named, three of them owed.
+    """
+    port = CountingTracker()
+
+    spec, roster = await TrackerCriteria(tracker=port).read_entry(issue_key=SUBJECT)
+
+    assert port.spec_reads == 1
+    assert port.subtree_reads == 1
+    assert set(spec.criteria) == {
+        DIRECT_OWED,
+        DIRECT_DONE,
+        NESTED_OWED,
+        DIRECT_OWED_TOO,
+        NESTED_DONE,
+    }
+    assert len(spec.criteria) == 5
+    assert {criterion.id for criterion in roster.criteria} == {
+        DIRECT_OWED,
+        DIRECT_OWED_TOO,
+        NESTED_OWED,
+    }
 
 
 OWED_KEYS = (DIRECT_OWED, DIRECT_OWED_TOO, NESTED_OWED)
@@ -1129,15 +1194,19 @@ class CountingTracker(FakeTrackerPort):
             scope_label_members=source.scope_label_members,
         )
         self.spec_reads = 0
+        #: Every resolve of a scope this board answered: the walk the subtree
+        #: reading is made of, counted so one reading can be told from two.
+        self.subtree_reads = 0
         self.unavailable = False
 
-    async def read_fire_spec(self, *, issue_key):
+    async def read_fire_subject(self, *, issue_key):
         self.spec_reads += 1
-        return await super().read_fire_spec(issue_key=issue_key)
+        return await super().read_fire_subject(issue_key=issue_key)
 
     async def scope_issues(self, *, ref):
         if self.unavailable:
             raise ConnectionError("tracker unavailable")
+        self.subtree_reads += 1
         return await super().scope_issues(ref=ref)
 
 
@@ -1174,6 +1243,9 @@ async def test_native_graph_executes_and_reviews_exact_checks():
     assert isinstance(saved["criterion_set"], TrackerCriterionSet)
     assert all(isinstance(c, TrackerCriterion) for c in validated_criteria(saved))
     assert saved["fire_spec"].subject == SUBJECT
+    # The captured extent is the subtree entire, the finished criteria and
+    # the nested one included, not the Todo roster the loop was handed.
+    assert saved["fire_spec"].criteria == tuple(sorted(ALL_CRITERIA))
     assert saved["fire_spec"].read_at_version
     assert saved["criteria_validation"] is None
     assert fire.implementation._artifact_persister.persist_calls == []
@@ -2125,20 +2197,17 @@ class CountingSource:
 
     def __init__(self, source: TrackerCriteria) -> None:
         self._source = source
-        #: Every reading made, by name, with the roster it was held to.
-        self.calls: list[tuple[str, TrackerCriterionSet | None]] = []
+        #: Every reading made, by name, with the roster it was held to or
+        #: the entry mode it was taken in.
+        self.calls: list[tuple[str, object]] = []
 
-    async def read_spec(self, *, issue_key: str):
-        self.calls.append(("read_spec", None))
-        return await self._source.read_spec(issue_key=issue_key)
+    async def read_entry(self, *, issue_key: str, delivering: bool = False):
+        self.calls.append(("read_entry", delivering))
+        return await self._source.read_entry(issue_key=issue_key, delivering=delivering)
 
     async def read_current(self, *, spec, held=None):
         self.calls.append(("read_current", held))
         return await self._source.read_current(spec=spec, held=held)
-
-    async def read_finished(self, *, spec):
-        self.calls.append(("read_finished", None))
-        return await self._source.read_finished(spec=spec)
 
 
 @pytest.mark.parametrize("round_two", [False, True])
@@ -2159,17 +2228,19 @@ async def test_a_delivering_lane_reads_its_finished_roster_once_and_then_holds_i
     counting = CountingSource(source)
     state = {
         "issue_key": SUBJECT,
-        "fire_spec": spec,
+        "fire_spec": spec if round_two else None,
         "lane_entry": entry_of("deliver_only"),
         "criterion_set": roster if round_two else None,
     }
 
     result = await revalidate_criteria(state, {}, source=counting)
 
-    expected = ("read_current", roster) if round_two else ("read_finished", None)
+    expected = ("read_current", roster) if round_two else ("read_entry", True)
     assert counting.calls == [expected]
     assert result["criterion_set"] == roster
-    assert result["fire_spec"] is spec
+    # Equal, not identical: the first pass composes its own spec, and
+    # finishing a criterion does not touch the subject it is composed from.
+    assert result["fire_spec"] == spec
     assert port.issues[DIRECT_DONE].state_kind is WorkflowStateKind.COMPLETED
 
 

@@ -471,24 +471,29 @@ and parent ref. Linear milestone metadata has `url=None`; its project URL is
 never substituted. Project and initiative metadata still require their native
 URLs, and issue refs use `read_issue` instead of container metadata.
 
-`read_fire_spec` captures the subject's body and version once, with its
-criterion sub-issue keys, and raises `EmptyFireCriteriaError` if that query
-finds none. A criterion without one nonempty Check field raises
-`InvalidFireCriterionError`; unknown backend workflow states retain the
-typed read failure. Declared states are decoded without deciding their
-eligibility for a fire. The same captured subject must carry the configured
-CRITERIA phase's terminal marker from `organize_mandates`, and live
-`execution_approved` ancestry must supply human approval. Missing facts raise
-`FireSpecEntryError`; absent phase or label configuration raises
-`OperationMemberAbsentError` at this read. Other phase markers, queue labels,
-and body text cannot substitute. Approval may inherit, but phase completion
-belongs to the addressed subject. Each call reads current facts, including
-revocation, and never reruns ORGANIZE admission. Legal criterion-state policy
-and the complete scoped workflow remain separate implementation work. A
-persisted criteria artifact handed to a tracker-native barrier raises
-`PersistedCriterionSetError` before any read; the native criterion set is
-read from the tracker at every barrier and is carried on no branch file and
-in no local state.
+`read_fire_subject` captures the subject's body and version once and lists
+nothing: the subject must carry the configured CRITERIA phase's terminal
+marker from `organize_mandates`, and live `execution_approved` ancestry must
+supply human approval. Missing facts raise `FireSpecEntryError`; absent phase
+or label configuration raises `OperationMemberAbsentError` at this read. Other
+phase markers, queue labels, and body text cannot substitute. Approval may
+inherit, but phase completion belongs to the addressed subject. Each call
+reads current facts, including revocation, and never reruns ORGANIZE
+admission. Declared states are decoded without deciding their eligibility for
+a fire; unknown backend workflow states retain the typed read failure.
+
+Criterion membership is not read there. The fire's entry composes the subject
+specification from that captured subject and its SUBTREE's criterion
+sub-issues — the subject's own criterion children and, recursively, those of
+its deliverable children — read through the same scope membership read every
+later barrier re-takes, and raises `EmptyFireCriteriaError` naming the subject
+when that subtree holds none. A criterion without one nonempty Check field
+raises `InvalidFireCriterionError`. Legal criterion-state policy and the
+complete scoped workflow remain separate implementation work. A persisted
+criteria artifact handed to a tracker-native barrier raises
+`PersistedCriterionSetError` before any read; the native criterion set is read
+from the tracker at every barrier and is carried on no branch file and in no
+local state.
 
 `set_issue_classification` adds a configured semantic issue classification
 without replacing approval or unrelated labels; an identical replay writes

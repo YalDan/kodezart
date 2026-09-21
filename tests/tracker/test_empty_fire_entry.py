@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
+from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.errors import CriterionReadError, EmptyFireCriteriaError
 from tests.chains.test_ralph_loop import _make_loop, _run_kwargs
 from tests.fakes import (
@@ -47,7 +48,7 @@ async def test_parent_heading_shapes_all_read_empty_and_refuse_fire(
     writes = tracker_writes()
     assert tuple(await tracker.read_criteria(issue_key=PARENT)) == ()
     with pytest.raises(EmptyFireCriteriaError) as caught:
-        await tracker.read_fire_spec(issue_key=PARENT)
+        await TrackerCriteria(tracker=tracker).read_spec(issue_key=PARENT)
     assert caught.value.issue_key == PARENT
     assert tracker_writes() == writes
 
@@ -71,7 +72,8 @@ async def test_once_present_then_absent_criteria_have_the_same_empty_reading(
             labels=[LABEL],
             description="**Check:** Observable behavior.",
         )
-    assert (await tracker.read_fire_spec(issue_key=PARENT)).criteria == (CHILD,)
+    entry = TrackerCriteria(tracker=tracker)
+    assert (await entry.read_spec(issue_key=PARENT)).criteria == (CHILD,)
     if isinstance(tracker, FakeTrackerPort):
         del tracker.issues[CHILD]
     else:
@@ -79,18 +81,18 @@ async def test_once_present_then_absent_criteria_have_the_same_empty_reading(
     writes = tracker_writes()
     assert tuple(await tracker.read_criteria(issue_key=PARENT)) == ()
     with pytest.raises(EmptyFireCriteriaError):
-        await tracker.read_fire_spec(issue_key=PARENT)
+        await entry.read_spec(issue_key=PARENT)
     assert tracker_writes() == writes
 
 
-@pytest.mark.parametrize("reader", ["read_criteria", "read_fire_spec"])
+@pytest.mark.parametrize("reader", ["read_criteria", "read_fire_subject"])
 async def test_unreadable_subject_cannot_become_a_successful_empty_set(tracker, reader):
     with pytest.raises(CriterionReadError) as caught:
         await getattr(tracker, reader)(issue_key="missing-subject")
     assert caught.value.issue_key == "missing-subject"
 
 
-@pytest.mark.parametrize("reader", ["read_criteria", "read_fire_spec"])
+@pytest.mark.parametrize("reader", ["read_criteria", "read_spec"])
 async def test_incomplete_successful_first_page_never_becomes_empty(reader):
     server = ChildPagesServer(
         pages={
@@ -99,8 +101,17 @@ async def test_incomplete_successful_first_page_never_becomes_empty(reader):
         }
     )
     server.issues["PARENT/1"].labels = FIRE_ENTRY_LABELS
-    with pytest.raises(CriterionReadError, match="pagination"):
-        await getattr(tracker_over(server), reader)(issue_key="PARENT/1")
+    tracker = tracker_over(server)
+    # The entry's own listing is the subtree walk, whose non-advancing cursor
+    # is its own protocol refusal; the chain types it as the same failed read
+    # the direct family answers with, and the walk's words are in the cause.
+    read = getattr(
+        tracker if reader == "read_criteria" else TrackerCriteria(tracker=tracker),
+        reader,
+    )
+    with pytest.raises(CriterionReadError) as caught:
+        await read(issue_key="PARENT/1")
+    assert "pagination" in f"{caught.value} {caught.value.__cause__}"
     assert server.tool_calls("save_issue") == []
 
 
