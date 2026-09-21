@@ -19,6 +19,7 @@ import pytest
 from kodezart.chains import delivery_coordinator
 from kodezart.core import protocols
 from kodezart.domain.errors import CheckChainExecutionError
+from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from tests.chains.test_delivery_coordinator import RaisingRunner
 from tests.chains.test_delivery_coordinator import delivery as delivery
 from tests.chains.test_delivery_coordinator import repository as repository
@@ -157,6 +158,91 @@ class Collaborators:
 
 async def show_ref(repository: Path) -> str:
     return await pinned.git(repository, "show-ref")
+
+
+#: The repository the seeded pull requests belong to.  The state reader
+#: checks each record's head and base against the URL it is asked with, so
+#: both halves of every seeded identity name this one.
+SEEDED_REPO_URL = "https://forge.invalid/o/r"
+
+#: Two pull requests, because "every pull request is still open" is a claim
+#: about a set: one seeded request cannot tell a walk over all of them from a
+#: read of the only one there is.
+SEEDED_NUMBERS: tuple[int, ...] = (17, 23)
+
+#: What both seeded requests must read as, before and after.
+ALL_OPEN: dict[int, PRLifecycle] = dict.fromkeys(SEEDED_NUMBERS, PRLifecycle.OPEN)
+
+
+def open_pull_request(number: int) -> PRState:
+    """One seeded request, OPEN, with an identity its reader accepts."""
+    return PRState(
+        url=f"{SEEDED_REPO_URL}/pull/{number}",
+        number=number,
+        head_repo_url=SEEDED_REPO_URL,
+        head_branch=f"work/{number}",
+        head_sha=f"{number:040x}",
+        base_repo_url=SEEDED_REPO_URL,
+        base_branch="main",
+        lifecycle=PRLifecycle.OPEN,
+    )
+
+
+class ReachableForgeGit(pinned.ObservedGit):
+    """The git port, carrying a forge the step could reach if it wanted one.
+
+    Every other case here asserts the production wiring holds no forge at
+    all, which is a claim about the object graph.  This double makes the
+    complementary runtime claim testable: it hangs a seeded state reader on
+    the one collaborator the step does hold, so a step that closed, reopened
+    or opened a pull request while verifying would have somewhere to do it
+    and the read-back below would report the difference.  It is a harness
+    for that read-back and is deliberately not one of the doubles the
+    production-wiring cases above run over.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.forge = FakePRStateReader(
+            records={
+                (SEEDED_REPO_URL, number): open_pull_request(number)
+                for number in SEEDED_NUMBERS
+            }
+        )
+
+
+async def lifecycles(forge: FakePRStateReader) -> dict[int, PRLifecycle]:
+    """Every request the forge holds, by the lifecycle the forge itself reports.
+
+    The walk is over the forge's own inventory and each answer comes back
+    through its state read, so a request closed, reopened or newly created
+    behind the step's back is a difference here.  Nothing the step wrote is
+    consulted.  Bounded by that inventory, which the seeding fixes at two.
+    """
+    return {
+        number: (
+            await forge.read_pr_state(repo_url=repo_url, pr_number=number)
+        ).lifecycle
+        for repo_url, number in sorted(forge.records)
+    }
+
+
+async def test_verifying_leaves_every_open_pull_request_open(delivery) -> None:
+    """Read back around the verify, not asserted of the step's own surface.
+
+    The port surfaces above show a merge cannot be spelled; this shows the
+    lifecycle of every open request is the same fact after the union step
+    returns as it was before it was called.
+    """
+    delivery.git = ReachableForgeGit()
+    forge = delivery.git.forge
+    before = await lifecycles(forge)
+
+    result = await delivery.coordinator().verify()
+
+    after = await lifecycles(forge)
+    assert result.checks is not None
+    assert (before, after) == (ALL_OPEN, ALL_OPEN)
 
 
 def test_the_forge_predicate_recognises_every_forge_double() -> None:
