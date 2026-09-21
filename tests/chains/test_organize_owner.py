@@ -1265,11 +1265,11 @@ class GapSpy:
         return tuple(ledger)
 
 
-def two_lane_board():
+def two_lane_board(**overrides):
     """An approved scope of two members, the second prepared from the start."""
     from tests.fakes import FakeMcpIssue
 
-    owner, board, executor = factory(under_approval=True)
+    owner, board, executor = factory(under_approval=True, **overrides)
     board.server.issues["second"] = FakeMcpIssue(
         id="second", parent_id=CLAIMED_ISSUE, description=PREPARED_BODY
     )
@@ -1410,3 +1410,148 @@ async def test_the_three_entries_take_their_work_sets_from_the_same_function(
         assert not [
             (name, args) for name, args in board.calls if name.startswith("save_")
         ]
+
+
+#: A criterion child of the first lane, planted so the first lane is out of the
+#: work set on re-entry: it carries the stage marker, both its surfaces are
+#: live, and a non-Canceled criterion child is the last clause that could put
+#: it back in. Verification still reaches it, which is the whole question here.
+CHECK_CHILD = "claimed-check"
+#: The opening the verify dispatch carries and the assess dispatch does not.
+VERIFY_OPENING = "Adversarially verify the current issue"
+
+
+def ticket_only(rows):
+    return tuple(row for row in rows if row.spec.kind is MandateKind.TICKET)
+
+
+def sessions(executor, since):
+    """The issue each session after *since* was spent on, by what it asked.
+
+    A write-back audit reads a written artifact rather than an issue, so it
+    belongs to none of the three sets.
+    """
+    assessed, verified, authored = set(), set(), set()
+    for call in executor.calls[since:]:
+        title = call["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", call["prompt"])
+        if title == "WriteBackFinding" or not keys:
+            continue
+        if title == "AdmissionJudgment":
+            (verified if VERIFY_OPENING in call["prompt"] else assessed).add(keys[-1])
+        elif title == "OrganizeProposal":
+            authored.add(keys[-1])
+    return frozenset(assessed), frozenset(verified), frozenset(authored)
+
+
+async def one_issue_gap_entry(monkeypatch, **overrides):
+    """A converged ticket stage re-entered owing exactly one of three members.
+
+    The stage marker is the only fact removed, and it is the only fact that
+    can be removed here: the phase markers are the one part of a member the
+    admitted context digest excludes, so every other perturbation would stale
+    every retained admission at once and put the whole scope in the work set.
+    The assessment of the member that lost its marker refuses, which is what
+    spends an author session on it; verification answers on the board.
+
+    The first lane keeps its marker, its live surfaces and a criterion child,
+    so no clause of the work-set arithmetic names it. Sessions are counted
+    from the re-entry, so the first run's work is not in the census.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = two_lane_board(phases=ticket_only, **overrides)
+    board.server.issues[CHECK_CHILD] = FakeMcpIssue(
+        id=CHECK_CHILD,
+        parent_id=CLAIMED_ISSUE,
+        labels=["check"],
+        description="The check names the source version.",
+    )
+    assert (await run_owner(owner)).halt is None
+    board.server.issues["second"].labels.remove("body complete")
+    landed = executor.stream
+
+    async def unprepared(**kwargs):
+        async for event in landed(**kwargs):
+            if (
+                kwargs["output_format"]["schema"].get("title") == "AdmissionJudgment"
+                and event.structured_output["issue_id"] == "second"
+                and VERIFY_OPENING not in kwargs["prompt"]
+            ):
+                event = result(
+                    structured_output={
+                        "issue_id": "second",
+                        "verdict": "not_buildable",
+                        "evidence": "The member owing the stage is not prepared.",
+                        "refusal_kind": "spec_gap",
+                        "invented_decision": "Prepare the member the stage owes.",
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", unprepared)
+    since = len(executor.calls)
+    spy = GapSpy(monkeypatch, executor)
+    return owner, board, executor, spy, since
+
+
+async def test_a_one_issue_gap_verifies_the_whole_scope_and_authors_the_one_issue(
+    monkeypatch,
+):
+    """Coverage is the scope's full issue set while the work set is one member.
+
+    The scope's full issue set is every organize subject of the snapshot plus
+    every criterion child of one, and the expectation is read off the board
+    rather than listed, so a fixture that grows a member grows it too.
+    """
+    owner, board, executor, spy, since = await one_issue_gap_entry(monkeypatch)
+    report = await run_owner(owner)
+    assert report.halt is None
+    assert report.completed_phases == (MandateKind.TICKET,)
+    assert [work for work, _ in spy.calls] == [frozenset({"second"})]
+    assessed, verified, authored = sessions(executor, since)
+    assert assessed == authored == frozenset({"second"})
+    assert verified == frozenset({CLAIMED_ISSUE, "second", CHECK_CHILD})
+    assert verified == {CLAIMED_ISSUE} | {
+        key
+        for key, native in board.server.issues.items()
+        if native.parent_id == CLAIMED_ISSUE
+    }
+    assert "body complete" in board.server.issues["second"].labels
+
+
+async def test_a_member_outside_the_work_set_that_fails_verification_is_reported(
+    monkeypatch,
+):
+    """The stage reports a refusal on a member no session of its own authored."""
+    owner, board, executor, spy, _since = await one_issue_gap_entry(
+        monkeypatch, convergence_bound=1
+    )
+    original = executor.stream
+
+    async def refusing(**kwargs):
+        async for event in original(**kwargs):
+            if (
+                kwargs["output_format"]["schema"].get("title") == "AdmissionJudgment"
+                and event.structured_output["issue_id"] == CLAIMED_ISSUE
+                and VERIFY_OPENING in kwargs["prompt"]
+            ):
+                event = result(
+                    structured_output={
+                        "issue_id": CLAIMED_ISSUE,
+                        "verdict": "not_buildable",
+                        "evidence": "The landed body names no source version.",
+                        "refusal_kind": "spec_gap",
+                        "invented_decision": "State the source version.",
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", refusing)
+    report = await run_owner(owner)
+    assert spy.calls[0][0] == frozenset({"second"})
+    assert report.halt.cause == "convergence_exhausted"
+    assert report.halt.bound.value == report.halt.bound.rounds_used == 1
+    assert [r.issue_id for r in report.halt.admission_results] == [CLAIMED_ISSUE]
+    assert "needs decision" in board.server.issues[CLAIMED_ISSUE].labels
+    assert "body complete" not in board.server.issues["second"].labels
