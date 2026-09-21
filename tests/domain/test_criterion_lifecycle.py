@@ -37,6 +37,7 @@ from kodezart.types.domain.criterion_lifecycle import (
     StickyClassError,
     held_rederivation_classes,
 )
+from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_event import (
     RUN_EVENT_PUBLISHERS,
@@ -1087,14 +1088,37 @@ def carries_graded_sha(
     return False
 
 
+def fields_reaching(record: type[BaseModel], leaf: object) -> tuple[str, ...]:
+    """The fields of a record whose annotation reaches ``leaf`` at any depth."""
+    return tuple(
+        name
+        for name, info in record.model_fields.items()
+        if any(found is leaf for found in _annotation_leaves(info.annotation))
+    )
+
+
 def boolean_verdicts(records: dict[str, type[BaseModel]]) -> tuple[str, ...]:
     """Every boolean-annotated field on a record that carries a graded sha."""
     return tuple(
         f"{name}.{field}"
         for name, record in sorted(records.items())
         if carries_graded_sha(record)
-        for field, info in record.model_fields.items()
-        if any(leaf is bool for leaf in _annotation_leaves(info.annotation))
+        for field in fields_reaching(record, bool)
+    )
+
+
+def satisfaction_carriers(records: dict[str, type[BaseModel]]) -> tuple[str, ...]:
+    """Every record that addresses a criterion and carries its satisfaction.
+
+    A record is a carrier when one field reaches ``CriterionRef`` and one
+    reaches ``CrossOffState``, each anywhere in its annotation: a carrier is
+    recognised by the two types it names, never by a field's name.
+    """
+    return tuple(
+        name
+        for name, record in sorted(records.items())
+        if fields_reaching(record, CriterionRef)
+        and fields_reaching(record, CrossOffState)
     )
 
 
@@ -1174,12 +1198,26 @@ def test_a_path_bound_cross_off_refuses_empty_exercised_paths(declared):
     )
 
 
-@pytest.mark.parametrize("blank", [(""), (" ",), ("\t",)])
-def test_an_exercised_path_that_names_nothing_refuses(blank):
-    with pytest.raises(ValidationError):
+@pytest.mark.parametrize(
+    ("blank", "refusal"),
+    [
+        ("", "string_too_short"),
+        (" ", "string_pattern_mismatch"),
+        ("\t", "string_pattern_mismatch"),
+    ],
+)
+def test_an_exercised_path_that_names_nothing_refuses(blank, refusal):
+    """Each case reaches the annotated path itself, and names the rule that
+    refused it: emptiness has its own rule, and a path of whitespace is
+    refused by the pattern alone.
+    """
+    with pytest.raises(ValidationError) as raised:
         cross_off(
             rederivation_class=RederivationClass.expensive, exercised_paths=(blank,)
         )
+    assert [(error["type"], error["loc"]) for error in raised.value.errors()] == [
+        (refusal, ("exercised_paths", 0))
+    ]
 
 
 def test_a_cheap_cross_off_carries_no_exercised_paths_and_still_validates():
@@ -1285,3 +1323,70 @@ def test_a_graded_sha_reached_through_a_record_cycle_is_still_found():
         "Probe", __base__=CamelCaseModel, ring=(_RingHead, ...), verdict=(bool, ...)
     )
     assert boolean_verdicts({"probe.Probe": probe}) == ("probe.Probe.verdict",)
+
+
+#: The one record in the domain package that addresses a criterion and carries
+#: that criterion's satisfaction.
+SATISFACTION_CARRIER = "criterion_lifecycle.CriterionCrossOff"
+
+
+def test_the_domain_package_has_one_satisfaction_carrier_and_its_state_is_the_enum():
+    """One per-criterion satisfaction carrier in the domain package, and its
+    state field is the enum itself, not a widening of it.
+
+    The boolean ban beside this count is over records carrying a graded sha.
+    ``CriterionResult.passed`` in ``types/domain/agent.py`` is the evaluator's
+    raw output that ``cross_off_state`` turns into a ``CrossOffState``; it
+    carries no graded sha and addresses no ``CriterionRef``, so it is outside
+    both the ban and this count.
+    """
+    assert satisfaction_carriers(domain_records()) == (SATISFACTION_CARRIER,)
+    assert fields_reaching(CriterionCrossOff, CrossOffState) == ("state",)
+    assert CriterionCrossOff.model_fields["state"].annotation is CrossOffState
+
+
+@pytest.mark.parametrize(
+    ("fields", "carriers"),
+    [
+        pytest.param(
+            {"criterion": CriterionRef, "state": CrossOffState},
+            (SATISFACTION_CARRIER, "probe.Probe"),
+            id="both",
+        ),
+        pytest.param(
+            {"criteria": tuple[CriterionRef, ...], "state": CrossOffState | None},
+            (SATISFACTION_CARRIER, "probe.Probe"),
+            id="nested",
+        ),
+        pytest.param(
+            {"criterion": CriterionRef}, (SATISFACTION_CARRIER,), id="address only"
+        ),
+        pytest.param(
+            {"state": CrossOffState}, (SATISFACTION_CARRIER,), id="state only"
+        ),
+        pytest.param(
+            {"criterion": str, "state": CrossOffState},
+            (SATISFACTION_CARRIER,),
+            id="plain address",
+        ),
+        pytest.param(
+            {"criterion": CriterionRef, "state": str},
+            (SATISFACTION_CARRIER,),
+            id="plain state",
+        ),
+    ],
+)
+def test_a_second_record_carrying_a_criterion_and_its_state_is_a_second_carrier(
+    fields, carriers
+):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        **{name: (annotation, ...) for name, annotation in fields.items()},
+    )
+    assert (
+        satisfaction_carriers(
+            {SATISFACTION_CARRIER: CriterionCrossOff, "probe.Probe": probe}
+        )
+        == carriers
+    )
