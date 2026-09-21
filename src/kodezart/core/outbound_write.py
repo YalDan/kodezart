@@ -12,6 +12,8 @@ writer whose event can drift, and a gate whose observability drifts per
 surface is one an operator cannot reason about.
 """
 
+from collections.abc import Callable
+
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import OutboundContentGate
 from kodezart.domain.errors import OutboundContentBlockedError
@@ -82,3 +84,35 @@ async def gated_write(
             hits=decision.hits,
         )
     return decision.content
+
+
+async def gated_exact(
+    *,
+    gate: OutboundContentGate,
+    log: BoundLogger,
+    content: str,
+    visibility: RepoVisibility,
+    destination: OutboundDestination,
+    content_class: ContentClass,
+    refusal: Callable[[], Exception],
+) -> str:
+    """Gate *content* and refuse unless every byte of it survives the gate.
+
+    Some surfaces carry content whose worth is its exactness — recorded
+    facts, quoted evidence — and a redacted variant of those is not a
+    weaker version of the write but a different claim.  Such a writer
+    cannot accept the gate's rewrite, so an altered result is refused with
+    the writer's own error rather than written.
+    """
+    result = await gated_write(
+        gate=gate,
+        log=log,
+        content=content,
+        visibility=visibility,
+        shape=WriterShape.PROSE,
+        destination=destination,
+        content_class=content_class,
+    )
+    if result != content:
+        raise refusal()
+    return result

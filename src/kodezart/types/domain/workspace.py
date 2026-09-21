@@ -28,6 +28,8 @@ class GitWorktreeIdentity(CamelCaseModel):
 class WorkspaceSnapshot(CamelCaseModel):
     """An actual acquisition and the native parent job that can resume it."""
 
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
     workspace_path: Nonblank
     workspace_id: Nonblank
     repository_path: Nonblank

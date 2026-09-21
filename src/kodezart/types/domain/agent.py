@@ -62,6 +62,13 @@ from kodezart.types.job_acceptance import (
 )
 
 
+class RulingAuthor(StrEnum):
+    """Authorship explicitly recorded by the ruling artifact's producer."""
+
+    MACHINE = "machine"
+    PRINCIPAL = "principal"
+
+
 # ---------------------------------------------------------------------------
 # Soft-failure raise-site identifier (typed alias)
 # ---------------------------------------------------------------------------
@@ -721,12 +728,58 @@ class GeneratedCriteriaOutput(CamelCaseModel):
 
 class RulingClass(StrEnum):
     """The four defects a fire-time ruling may resolve."""
+
+    PIN_READING = "pin_reading"
     PIN_ARTIFACT = "pin_artifact"
     REGROUND_PREMISE = "reground_premise"
+    RESOLVE_CONTRADICTION = "resolve_contradiction"
+
+
+class RulingProtectedTestRef(ProtectedTestRef):
+    """A native ruling designation retains the canonical typed owner identity."""
+
+    source_ref: RulingId = Field(min_length=1, pattern=r"\S")
 
 
 class Ruling(CamelCaseModel):
     """One pinned answer, with explicit authorship and its stable question key."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ruling_id: RulingId = Field(
+        min_length=1, pattern=r"\S", description="The harness-minted ruling identity."
+    )
+    issue_ref: str = Field(
+        min_length=1, pattern=r"\S", description="The owning tracker's issue key."
+    )
+    question: str = Field(
+        min_length=1, pattern=r"\S", description="The exact question being ruled on."
+    )
+    ruling_class: RulingClass = Field(
+        description="Which of the four permitted defects this ruling resolves."
+    )
+    resolution: str = Field(
+        min_length=1, pattern=r"\S", description="The pinned answer the fire consumes."
+    )
+    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(description="The losing reading or contradiction, or explicit absence.")
+    )
+    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
+        Field(
+            description="Repository evidence references supporting the pinned answer."
+        )
+    )
+    authored_by: RulingAuthor = Field(
+        description="Explicit machine or principal authorship, independent of account."
+    )
+    protected_tests: tuple[RulingProtectedTestRef, ...] | None = Field(
+        default=None,
+        description=(
+            "Tests explicitly designated as encoding this ruling. Each source_ref "
+            "is this ruling's identity. Null means designation was not recorded; "
+            "an empty list explicitly declares no protected tests."
+        ),
+    )
 
     @model_validator(mode="after")
     def name_rejected_reading(self) -> Self:
@@ -754,6 +807,47 @@ class Ruling(CamelCaseModel):
                 raise ValueError("duplicate protected test in one ruling")
             addresses.add(address)
         return self
+
+
+class RulingAnswer(CamelCaseModel):
+    """One answer as the pre-loop question step is told it, before any identity.
+
+    Everything a record needs EXCEPT its identity and its authorship: the
+    identity is minted from the exact pair by the one minting site, and the
+    authorship is stamped by the step, so neither can be answered. The field
+    constraints are ``Ruling``'s own; the validators are not repeated here,
+    because ``Ruling`` is the one statement of a valid record and it is what
+    ``owed_rulings`` builds.
+    """
+
+    issue_ref: str = Field(
+        min_length=1, pattern=r"\S", description="The owning tracker's issue key."
+    )
+    question: str = Field(
+        min_length=1, pattern=r"\S", description="The exact question being answered."
+    )
+    ruling_class: RulingClass = Field(
+        description="Which of the four permitted defects this answer resolves."
+    )
+    resolution: str = Field(
+        min_length=1, pattern=r"\S", description="The pinned answer the fire consumes."
+    )
+    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(description="The losing reading or contradiction, or explicit absence.")
+    )
+    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
+        Field(
+            description="Repository evidence references supporting the pinned answer."
+        )
+    )
+
+
+class RulingOutput(CamelCaseModel):
+    """Everything one open-question session returns; empty when nothing is open."""
+
+    rulings: tuple[RulingAnswer, ...] = Field(
+        description="One answer per open question; an empty list means none is open."
+    )
 
 
 class PRDescriptionOutput(CamelCaseModel):
@@ -922,6 +1016,8 @@ class WorkflowCompleteEvent(AgentEvent):
 class AuthoredWorkflowCompleteEvent(WorkflowCompleteEvent):
     """Existing authored HTTP terminal after external delivery completes."""
 
+    pr_url: str | None = None
+
 
 class WorkflowVisibilityEvent(AgentEvent):
     """Emitted once per run when repository visibility is resolved."""
@@ -1018,6 +1114,15 @@ class WorkflowTicketEvent(AgentEvent):
     mode: TicketReviewMode
 
 
+# The native graph forwards SDK events and emits only these progress variants.
+# Terminal events are consumed by its caller; authored ticket/artifact events
+# belong to the authored composition. Reuse models so wire validation preserves
+# every field rather than deserializing the AgentEvent base alone.
+class NativeAmendmentEvent(AgentEvent):
+    """Independent precommit findings; upheld departures were not actioned."""
+    report: AmendmentReport
+
+
 type NativeFireProgressEvent = Annotated[
     UserMessageEvent
     | AssistantTextEvent
@@ -1072,6 +1177,13 @@ PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema
 CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
+
+AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema()
+AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
+AMENDMENT_JUDGMENT_SCHEMA: dict[str, object] = AmendmentJudgment.model_json_schema()
+AMENDMENT_TEXT_SCHEMA: dict[str, object] = AmendmentTextOutput.model_json_schema()
+WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
+RULING_SCHEMA: dict[str, object] = RulingOutput.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The
 #: wire-contract tests and the dispatch-site guard both read this rather

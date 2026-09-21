@@ -5,18 +5,19 @@ record is one line appended to it — the same shape the scan checkpoint
 carries, so a tracker-side log reads as a plain dated list.  The append
 rides the vendor's patch operation rather than a read-modify-write of the
 whole content: two writers appending concurrently must not lose each
-other's lines (KOD-170).
+other's lines.
 
 Verification reads the document itself and looks for THIS run's row.  The
 document's ``updatedAt`` was the earlier answer — it moves on every write,
 so any run in the window answered for every other, and two fires swept at
-one shutdown produced one row (KOD-288).  What identifies a run in a log
+one shutdown produced one row.  What identifies a run in a log
 of runs is the record's own TITLE, and a row is a LINE that begins with
 it: the run's kind, its name and the instant it began, matched whole.  A
-substring of the log was the second wrong answer — a row for ``KOD-170``
-verified away the record owed to ``KOD-17``.
+substring of the log was the second wrong answer: a row for a longer
+issue key incorrectly verified a record owed to its shorter prefix.
 """
 
+from kodezart.adapters.record_failures import record_failure_boundary
 from kodezart.core.errors import McpTransportError
 from kodezart.core.protocols import McpToolCaller
 from kodezart.types.domain.operation import RecordDestination
@@ -47,27 +48,28 @@ class LinearRecordSink:
         line and against the whole title, because the title carries the
         run's own start stamp: that is what keeps a neighbour's row, a row
         for a longer name this one prefixes, and the same name from
-        another window out of this run's answer (KOD-288).
+        another window out of this run's answer.
         """
-        payload = await self._caller.call_tool(
-            name=_TOOL_GET_DOCUMENT,
-            arguments={"id": destination.id},
-        )
-        if not isinstance(payload, dict):
-            raise McpTransportError(
-                "the document read answered with no object to read content from",
-                server_name=self._server_name,
-                tool_name=_TOOL_GET_DOCUMENT,
+        with record_failure_boundary(destination=destination, record=record):
+            payload = await self._caller.call_tool(
+                name=_TOOL_GET_DOCUMENT,
+                arguments={"id": destination.id},
             )
-        content = payload.get("content")
-        if not isinstance(content, str):
-            raise McpTransportError(
-                "the document read carries no content to search for the run's row",
-                server_name=self._server_name,
-                tool_name=_TOOL_GET_DOCUMENT,
-            )
-        title = record.title()
-        return any(line.startswith(title) for line in content.splitlines())
+            if not isinstance(payload, dict):
+                raise McpTransportError(
+                    "the document read answered with no object to read content from",
+                    server_name=self._server_name,
+                    tool_name=_TOOL_GET_DOCUMENT,
+                )
+            content = payload.get("content")
+            if not isinstance(content, str):
+                raise McpTransportError(
+                    "the document read carries no content to search for the run's row",
+                    server_name=self._server_name,
+                    tool_name=_TOOL_GET_DOCUMENT,
+                )
+            title = record.title()
+            return any(line.startswith(title) for line in content.splitlines())
 
     async def write_record(
         self,
@@ -76,10 +78,11 @@ class LinearRecordSink:
         record: RunRecord,
     ) -> None:
         """Append the record's line to the destination document."""
-        await self._caller.call_tool(
-            name=_TOOL_SAVE_DOCUMENT,
-            arguments={
-                "id": destination.id,
-                "patch": [{"op": "append", "text": f"\n{record.line()}"}],
-            },
-        )
+        with record_failure_boundary(destination=destination, record=record):
+            await self._caller.call_tool(
+                name=_TOOL_SAVE_DOCUMENT,
+                arguments={
+                    "id": destination.id,
+                    "patch": [{"op": "append", "text": f"\n{record.line()}"}],
+                },
+            )

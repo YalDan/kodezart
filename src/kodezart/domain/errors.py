@@ -185,6 +185,37 @@ class StaleCommentWriteError(Exception):
         )
 
 
+class RulingRecordReadError(Exception):
+    """The addressed issue's ruling records are unreadable or ambiguous."""
+
+    def __init__(self, *, issue_key: str, lane_key: str | None, reason: str) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.reason = reason
+        region = (
+            "across its recorded lanes" if lane_key is None else f"for {lane_key!r}"
+        )
+        super().__init__(
+            f"rulings on {issue_key!r} {region} could not be read: {reason}"
+        )
+
+
+class RulingUnrecordedError(Exception):
+    """An open question was raised and its answer is not confirmed on the tracker.
+
+    One error for every way the pre-loop step can fail to leave a confirmed
+    record: the write refused, the lease was lost, the independent judgement
+    did not uphold what landed, or the read-back did not find the record it
+    had just written. What the consumer downstream needs is the same in every
+    case — the loop was not entered, because nothing it could read is there.
+    """
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"an open question on {issue_key!r} is unanswered: {reason}")
+
+
 class LaneEntryError(Exception):
     """A lane cannot be entered from the facts it presents, and nothing is minted.
 
@@ -203,6 +234,22 @@ class LaneEntryError(Exception):
         self.branches: tuple[str, ...] = tuple(branches)
         named = f" ({', '.join(self.branches)})" if self.branches else ""
         super().__init__(f"lane {issue_key!r} cannot be entered: {reason}{named}")
+
+
+class LaneRecordWriteError(Exception):
+    """One of the lane's own tracker writes cannot be made as asked.
+
+    Raised before the write whenever the facts it would state are not the
+    facts the observation holds: a record is never composed from an unread
+    prior or from a head the receipt did not name, and a verdict that
+    answers some other roster than the one it was dispatched against
+    reaches no criterion sub-issue at all.
+    """
+
+    def __init__(self, *, lane_key: str, reason: str) -> None:
+        self.lane_key = lane_key
+        self.reason = reason
+        super().__init__(f"lane record for {lane_key!r} could not be written: {reason}")
 
 
 class EscalationReadError(Exception):
@@ -263,6 +310,10 @@ class SubjectAmendedError(FireSpecEntryError):
 
 class EmptyFireCriteriaError(Exception):
     """A successful tracker spec read found no criterion sub-issues."""
+
+
+class InvalidFireCriterionError(Exception):
+    """A criterion cannot supply its required specification at fire entry."""
 
 
 class DuplicateIssueIdentityError(Exception):
@@ -624,6 +675,10 @@ class UnionUnstableError(Exception):
 
 class AuditClaimReadError(ValueError):
     """The claim's source or remote head cannot support this observation."""
+
+
+class WriteBackReadError(ValueError):
+    """An addressed artifact cannot be re-read completely for verification."""
 
 
 class PRStateReadError(ValueError):

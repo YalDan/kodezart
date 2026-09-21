@@ -40,6 +40,11 @@ organize_mandates = []
 # because that deployment is worked scope by scope. Empty keeps them, declares
 # no standing scope and schedules neither the organize tick nor the heartbeat.
 organize_scopes = []
+# Independent native Audit roster. Each row declares scope, repo_url and
+# report_issue_key (the actual tracker issue receiving the verified summary).
+# Requires AppConfig.audit.timeout_seconds, write_back.max_verify_rounds,
+# and configured audit/escalation marker prefixes. Absence schedules no audit.
+audit_scopes = []
 
 # Identities the agent posts under, in the order the pass templates address
 # them: the mention handle first, the account's plain name second. Must not
@@ -66,6 +71,16 @@ work_ref = "kodezart-workref"
 base_spec = "kodezart-basespec"
 repository = "kodezart-repo"
 issue_identity = "kodezart-issue"
+run_state = "run-state"
+# Appended once each and never rewritten: the lane's own run-event stream.
+run_event = "run-event"
+# One idempotent terminal outcome comment per queued job.
+run_outcome = "run-outcome"
+# One record per (subject, signal) run-shape alarm, rewritten in place.
+run_alarm = "run-alarm"
+# The amendment write-back's archive comments, and the audit's own records.
+amendment = "kodezart-amendment"
+audit = "kodezart-audit"
 decision = "decision"
 # Record-shaped issues carry history and are never scope fire candidates.
 tracker = "tracker"
@@ -371,5 +386,21 @@ notion_connector = "example-notion-connector-id"
 # criterion rollup. A run event's comment is rendered from [marker_prefixes]
 # alone, so an operation that omits this table still posts and reads events.
 [run_event_states]
+first_push = "NO_TRANSITION"
 pr_opened = "in_review"
+gate_green = "NO_TRANSITION"
+gate_red = "NO_TRANSITION"
+evaluator_accepted = "DERIVED"
+lane_plateaued = "in_review"
+issue_crossed_off = "NO_TRANSITION"
+criterion_refuted = "DERIVED"
+escalation_raised = "NO_TRANSITION"
+lane_dispatched = "in_progress"
 claim_lost = "in_progress"
+checks_green = "in_review"
+landed_and_verified = "DERIVED"
+criteria_halt = "in_progress"
+audit_refuted = "DERIVED"
+run_alarm_raised = "NO_TRANSITION"
+run_alarm_cleared = "NO_TRANSITION"
+node_session_started = "NO_TRANSITION"

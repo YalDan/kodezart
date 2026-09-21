@@ -1844,6 +1844,24 @@ def test_the_evaluate_dispatch_passes_an_empty_definition_set() -> None:
     assert "self._prompts.definitions()" not in block
 
 
+def evaluative_sites(source: str, schema_name: str) -> list[str]:
+    """Every dispatch in *source* whose output format names *schema_name*.
+
+    Derived by walking the schema's own occurrences rather than taking the
+    first, so an arm added beside an existing one is read too. Blind to a
+    dispatch that names its schema indirectly, which the module does not do
+    and which the first assertion above would still catch at the one site it
+    reads.
+    """
+    needle = f'"schema": {schema_name}'
+    sites: list[str] = []
+    cursor = 0
+    while (end := source.find(needle, cursor)) >= 0:
+        sites.append(source[source.rindex("self._service.stream", 0, end) : end])
+        cursor = end + len(needle)
+    return sites
+
+
 # ---------------------------------------------------------------------------
 # KOD-92-AC-2 — the effort each dispatch carries is its role's, in one run
 # ---------------------------------------------------------------------------

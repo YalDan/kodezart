@@ -190,6 +190,11 @@ class StdioKnowledge(BaseModel):
             raise ValueError("credential_env collides with an existing env entry")
         return self
 
+    @property
+    def authenticated(self) -> bool:
+        """Whether the credential has a validated delivery entry."""
+        return self.credential is not None
+
     def environment(self) -> dict[str, str]:
         """A fresh process environment with the explicit credential inserted."""
         env = dict(self.env)

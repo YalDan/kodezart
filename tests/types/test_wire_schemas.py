@@ -11,12 +11,13 @@ assertions about the wire are not pins of stripped output and are never
 deleted with the mechanism they outlived.
 """
 
+import ast
 import re
+import sys
+from collections import Counter
 from pathlib import Path
-
 import pytest
 from pydantic import BaseModel, ValidationError
-
 from kodezart.types.domain.agent import (
     WIRE_SCHEMAS,
     AcceptanceCriteriaOutput,
@@ -28,11 +29,29 @@ from kodezart.types.domain.agent import (
     DraftCritiqueOutput,
     GeneratedCriteriaOutput,
     PRDescriptionOutput,
+    RulingOutput,
     TicketDraftOutput,
     TicketReviewOutput,
 )
-from kodezart.types.domain.criteria import CRITERION_ID_PATTERN
+from kodezart.types.domain.amendment import AmendmentJudgment, NativeWriterOutput
+from kodezart.types.domain.amendment_write import AmendmentTextOutput
+from kodezart.types.domain.audit import (
+    AuditClaimJudgment,
+    AuditMandateJudgment,
+)
+from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
+from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
+from kodezart.types.domain.criteria import (
+    CRITERION_ID_PATTERN,
+)
+from kodezart.types.domain.organize import AdmissionJudgment
+from kodezart.types.domain.organize_owner import OrganizeProposal
+from kodezart.types.domain.remediation import RemediationPlan
+from kodezart.types.domain.write_back import WriteBackFinding
 from tests.types.schema_nodes import DEFS, schema_nodes
+
+
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "src" / "kodezart"

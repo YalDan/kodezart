@@ -152,6 +152,13 @@ class RalphLoopContext(ExecutionContext):
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
+    #: The remote head the lane's entry decided on, and ``None`` for a lane
+    #: that is cutting its branch rather than continuing one.  A first
+    #: iteration that checks an existing branch out gets the tree the CLONE
+    #: holds of it, so the loop compares the two before it opens a session:
+    #: a clone behind the head the entry read would carry work the criteria
+    #: the lane owes were already graded against.
+    resumed_head_sha: str | None = None
     acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
     repo_visibility: RepoVisibility
 
@@ -224,6 +231,7 @@ class WorkflowState(TypedDict):
     second scope base: what the run is diffed against stays
     ``base_spec`` on the execution context.
     """
+    lane_entry: LaneEntry | None
 
     feature_branch: str
     ralph_branch: str
@@ -255,3 +263,7 @@ class WorkflowState(TypedDict):
     repo_url: str | None
     repo_visibility: RepoVisibility
     trajectory: LoopTrajectory | None
+    #: Set by the pre-loop question step, and by nothing else, when an open
+    #: question it raised carries no confirmed answer on the tracker. Absent
+    #: on every other path, so every existing state literal stays valid.
+    ruling_unrecorded: NotRequired[bool]

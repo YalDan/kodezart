@@ -166,6 +166,29 @@ def rate_limit_delay_floor(config: AppConfig) -> DelayFloor:
     return floor_for
 
 
+def _native_writes(
+    *,
+    scope_tracker: TrackerPort | None,
+    operation: OperationConfig | None,
+    criteria: FireCriteriaSource | None,
+    config: AppConfig,
+) -> tuple[TrackerPort, OperationConfig, FireCriteriaSource, WriteBackSettings] | None:
+    """The four capabilities a native write needs, or nothing at all.
+
+    Stated once and returned as a tuple rather than as a boolean, because
+    every consumer of the answer needs the four values narrowed to their
+    non-optional types and a boolean would leave each one re-testing them.
+    """
+    if (
+        scope_tracker is None
+        or operation is None
+        or criteria is None
+        or config.write_back is None
+    ):
+        return None
+    return scope_tracker, operation, criteria, config.write_back
+
+
 def build_workflow_engine(
     *,
     config: AppConfig,

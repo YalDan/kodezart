@@ -564,6 +564,10 @@ class FakeGitService:
         self.calls.append(("has_changes", cwd))
         return self.has_changes_result
 
+    async def has_replace_refs(self, cwd: str) -> bool:
+        self.calls.append(("has_replace_refs", cwd))
+        return self.has_replace_refs_result
+
     async def is_path_ignored(self, cwd: str, path: str) -> bool:
         self.calls.append(("is_path_ignored", cwd, path))
         return self._is_path_ignored_result
@@ -1511,7 +1515,6 @@ def as_validated(
         ValidatedCriterion(
             id=criterion.id,
             text=criterion.text,
-            criterion_class=criterion.criterion_class,
             feasibility=CriterionFeasibility(
                 criterion_id=criterion.id,
                 verdict=verdict,
@@ -2375,6 +2378,10 @@ class FakeMcpIssue:
     attachments: list[FakeMcpAsset] = field(default_factory=list)
     documents: list[FakeMcpAsset] = field(default_factory=list)
     parent_id: str | None = None
+    #: The owning project, by display name and by id.  Both, because the
+    #: vendor reports both on an issue that has one: a fixture setting the
+    #: id alone would let a reader pass on a payload no workspace sends.
+    project: str | None = None
     project_id: str | None = None
     assignee: str | None = None
     #: The member the workspace attributes the issue to.  ``None`` is the
@@ -2933,6 +2940,23 @@ class FakeLinearMcpServer:
             msg = f"fake workspace has no project {query!r}"
             raise LookupError(msg)
         return project
+
+    def _tool_list_milestones(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """The milestone listing of a project this workspace holds.
+
+        A workspace whose issues report a project is asked for that
+        project's milestones by every reader assembling their context, so
+        a fake serving the project read and not this one would refuse a
+        call the live backend answers.
+        """
+        project = str(arguments["project"])
+        if project not in self.projects:
+            msg = f"fake workspace has no project {project!r}"
+            raise LookupError(msg)
+        return {"milestones": list(self.milestones.get(project, ()))}
 
     def _tool_list_comments(
         self,
@@ -4185,8 +4209,10 @@ class FakeTrackerPort:
         issue_key: str,
         stage: LifecycleStage,
     ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.state_name == stage.value:
+            return issue
         self.workflow_writes.append((issue_key, stage))
-        issue = self.issues[issue_key]
         self._state_kinds[issue.state_name] = issue.state_kind
         self._state_kinds[stage.value] = _STAGE_KIND[stage]
         updated = issue.model_copy(
@@ -4197,6 +4223,7 @@ class FakeTrackerPort:
         )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
+        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
         return updated
 
     async def restore_workflow_state(
@@ -4205,18 +4232,21 @@ class FakeTrackerPort:
         issue_key: str,
         state_name: str,
     ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.state_name == state_name:
+            return issue
         # A backend knows the kind of every state it defines, so the fake
         # does too: seeded from the fixture's issues and extended by every
         # write. An unknown name is a state no backend defined, and it
         # raises rather than inventing a kind for it.
         kind = self._state_kinds[state_name]
         self.restored_states.append((issue_key, state_name))
-        issue = self.issues[issue_key]
         updated = issue.model_copy(
             update={"state_name": state_name, "state_kind": kind},
         )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
+        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
         return updated
 
     async def set_queue_state(
@@ -4232,16 +4262,49 @@ class FakeTrackerPort:
         self._wrote(issue_key)
         return updated
 
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str, holder: str | None = None
+    ) -> TrackerIssue:
+        if classification in self.approval_classifications:
+            raise ApprovalLabelWriteError(
+                issue_key=issue_key, classification=classification
+            )
+        issue = await self.read_issue(issue_key=issue_key)
+        if holder is not None:
+            surface = classification_surface(issue)
+            grant = self.leases.get(surface)
+            owner = (
+                grant.holder
+                if grant is not None and grant.expires_at > self._clock()
+                else None
+            )
+            if not holder.strip() or holder != owner:
+                raise SurfaceLeaseError(
+                    "classification requires the actual issue surface holder",
+                    surface=surface,
+                    current_holder=owner,
+                )
+        if classification in issue.issue_labels:
+            return issue
+        self.classification_writes.append((issue_key, classification))
+        updated = issue.model_copy(
+            update={"issue_labels": issue.issue_labels | {classification}}
+        )
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
+
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         self._sequence += 1
         comment = TrackerComment(
             comment_key=f"comment-{self._sequence:04d}",
             issue_key=issue_key,
-            author_key="kodezart",
+            author_key=min(self.writer_identities, default=None),
             body=body,
             created_at=self._clock(),
         )
         self.comments.append(comment)
+        self.comment_writes.append((comment.comment_key, body))
         self._wrote(issue_key)
         return comment
 
@@ -4359,6 +4422,24 @@ class FakeTrackerPort:
             marker_prefixes=self.marker_prefixes,
         )
 
+    async def read_escalation_resolution(
+        self, *, issue_key: str, lane_key: str, escalation_key: str
+    ) -> EscalationResolution:
+        if self.comment_read_error is not None:
+            raise EscalationReadError(
+                issue_key=issue_key,
+                lane_key=lane_key,
+                escalation_key=escalation_key,
+                reason=self.comment_read_error,
+            )
+        return resolution_from_comments(
+            issue_key=issue_key,
+            lane_key=lane_key,
+            escalation_key=escalation_key,
+            prefixes=self.marker_prefixes,
+            comments=await self.list_comments(issue_key=issue_key),
+        )
+
     async def claim_issue(
         self,
         *,
@@ -4370,14 +4451,28 @@ class FakeTrackerPort:
         # a fake whose claim is not genuinely atomic proves nothing about
         # exactly-once semantics.
         await asyncio.sleep(0)
-        expires_at = self._clock() + timedelta(seconds=lease_seconds)
+        now = self._clock()
+        expires_at = now + timedelta(seconds=lease_seconds)
         held = self.claims.get(issue_key)
-        if held is not None and held.expires_at > self._clock():
+        # Decided by the same function the lease side is decided by, so
+        # this registry and a backend that keeps ownership on a comment
+        # log answer a holder that meets ITSELF the same way: one identity
+        # is what the arbitration is over, and re-acquiring what it
+        # already holds carries that ownership forward.
+        conflict = live_conflict(
+            requested=frozenset({issue_key}),
+            held={} if held is None else {issue_key: held},
+            holder=holder,
+            now=now,
+            order=lambda key: (key,),
+        )
+        if conflict is not None:
             return ClaimResult(
                 issue_key=issue_key,
                 status=ClaimStatus.LOST,
                 holder=holder,
                 expires_at=expires_at,
+                current_holder=conflict[1],
             )
         granted = ClaimResult(
             issue_key=issue_key,
@@ -4786,7 +4881,7 @@ class FakeJobQueue:
         states: Mapping[str, JobState] | None = None,
         events: Sequence[AgentEvent] = (),
     ) -> None:
-        self.submissions: list[tuple[str, WorkflowRequest]] = []
+        self.submissions: list[tuple[str, WorkflowSubmission]] = []
         self.records: dict[str, JobRecord] = {}
         self.attached: list[str] = []
         self._states: dict[str, JobState] = dict(states or {})
@@ -4903,11 +4998,12 @@ class RefusingRecordSink:
         destination: RecordDestination,
         record: RunRecord,
     ) -> bool:
-        raise self.failure(
-            "the record destination could not be read",
-            server_name="fixture-knowledge",
-            tool_name="API-query-data-source",
-        )
+        with record_failure_boundary(destination=destination, record=record):
+            raise self.failure(
+                "the record destination could not be read",
+                server_name="fixture-knowledge",
+                tool_name="API-query-data-source",
+            )
 
     async def write_record(
         self,
@@ -4915,11 +5011,12 @@ class RefusingRecordSink:
         destination: RecordDestination,
         record: RunRecord,
     ) -> None:
-        raise self.failure(
-            "the record destination refused the row",
-            server_name="fixture-knowledge",
-            tool_name="API-post-page",
-        )
+        with record_failure_boundary(destination=destination, record=record):
+            raise self.failure(
+                "the record destination refused the row",
+                server_name="fixture-knowledge",
+                tool_name="API-post-page",
+            )
 
 
 class BrokenRecordSink:

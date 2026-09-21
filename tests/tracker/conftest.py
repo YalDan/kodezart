@@ -271,6 +271,15 @@ def fixture_server(
     )
 
 
+#: The classification vocabulary a workspace is dialled with unless a case
+#: states its own: the operation's classifications plus the run-stage
+#: marker the fire read is keyed on.
+FIXTURE_ISSUE_LABELS: dict[str, str] = {
+    **ISSUE_LABELS,
+    FIRE_STAGE_KEY: FIRE_STAGE_LABEL,
+}
+
+
 def linear_over_fake_mcp(
     server: FakeLinearMcpServer,
     *,
@@ -307,6 +316,37 @@ def linear_over_fake_mcp(
         clock=clock,
         ledger=SelfWriteLedger(),
     )
+
+
+async def _container_ancestry(
+    source: TrackerPort, *, issues: Sequence[TrackerIssue]
+) -> dict[ScopeRef, ScopeContainer]:
+    """The approval containers the snapshot's own members report, read through.
+
+    A member reporting a project puts that project's label level into
+    every approval reading made about it, so a double seeded from a
+    workspace whose issues carry one has to hold the container too or it
+    answers a question the adapter answers from the backend. Read rather
+    than restated, for the reason the rest of the snapshot is read.
+
+    The walk is bounded by the refs already seen: a backend answering a
+    cycle of parents ends the walk instead of extending it.
+    """
+    frontier = [
+        ScopeRef(kind=ScopeKind.PROJECT, key=key)
+        for issue in issues
+        if (key := issue.project_id) is not None
+    ]
+    containers: dict[ScopeRef, ScopeContainer] = {}
+    while frontier:
+        ref = frontier.pop()
+        if ref in containers:
+            continue
+        container = await source.container_metadata(ref=ref)
+        containers[ref] = container
+        if container.parent is not None:
+            frontier.append(container.parent)
+    return containers
 
 
 async def _snapshot(source: TrackerPort) -> FakeTrackerPort:
@@ -442,6 +482,12 @@ class TrackerWorkspace:
     server: FakeLinearMcpServer
     clock: FixtureClock
     scope_labels: Mapping[str, str] | None = None
+    #: The classification vocabulary and the run-stage marker key. A case
+    #: running the organize stages states the mandate table's own marker
+    #: keys here, so both arms are dialled with the one vocabulary the
+    #: table names instead of the adapter arm carrying it alone.
+    issue_labels: Mapping[str, str] | None = None
+    criteria_stage_label_key: str | None = None
 
 
 #: Real adapters — every one must serve the fixture workspace unchanged.
@@ -536,6 +582,17 @@ def tracker_writes(
 ) -> Callable[[], tuple[object, ...]]:
     """Observe actual mutation calls independently of the port's return values."""
     return observed_writes(tracker, server)
+
+
+#: The adapter's mutation tools, read off the adapter's OWN names rather
+#: than spelled here.  Three, not two: the comment delete is a write like
+#: the save is, and an observation that counted the saves alone reported a
+#: released lease or a withdrawn comment as no write at all.  Derived from
+#: the constants so a tool renamed in the adapter and left behind here
+#: cannot quietly narrow what a case is allowed to call untouched.
+ADAPTER_WRITE_TOOLS: frozenset[str] = frozenset(
+    {_TOOL_SAVE_ISSUE, _TOOL_SAVE_COMMENT, _TOOL_DELETE_COMMENT}
+)
 
 
 def observed_writes(

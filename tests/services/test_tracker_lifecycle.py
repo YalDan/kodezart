@@ -38,6 +38,8 @@ def writer() -> tuple[TrackerLifecycleWriter, FakeTrackerPort]:
     tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
     return (
         TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
             tracker=tracker,
             gate=PassThroughGate(),
             clock=lambda: FIXTURE_EPOCH,
@@ -60,6 +62,8 @@ async def writer_over_a_held_ref() -> tuple[TrackerLifecycleWriter, FakeTrackerP
     )
     return (
         TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
             tracker=tracker,
             gate=PassThroughGate(),
             clock=lambda: FIXTURE_EPOCH,
@@ -101,10 +105,10 @@ class TestLifecycleWrites:
         )
         assert tracker.workflow_writes == [("K-1", LifecycleStage.IN_REVIEW)]
 
-    async def test_a_verified_merge_is_the_terminal_transition(self) -> None:
+    async def test_a_verified_merge_retires_only_the_queue_entry(self) -> None:
         write, tracker = writer()
         await write.on_verified_merge(issue_key="K-1")
-        assert tracker.workflow_writes == [("K-1", LifecycleStage.DONE)]
+        assert tracker.workflow_writes == []
         assert tracker.queue_writes == [("K-1", QueueState.DONE)]
 
     async def test_approval_is_never_demoted_before_the_terminal_write(self) -> None:
@@ -223,7 +227,6 @@ class TestTheDeliverableRef:
         assert conflict["offered_branch"] == FEATURE_BRANCH
         assert tracker.workflow_writes == [
             ("K-1", LifecycleStage.IN_REVIEW),
-            ("K-1", LifecycleStage.DONE),
         ]
         assert tracker.queue_writes == [("K-1", QueueState.DONE)]
 
@@ -277,7 +280,12 @@ class TestTheCommentRoutesThroughTheGate:
     async def test_the_comment_is_gated_at_the_tracker_destination(self) -> None:
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         gate = PassThroughGate()
-        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+        write = TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=gate,
+        )
 
         await write.on_terminal_outcome(
             issue_key="K-1",
@@ -293,7 +301,12 @@ class TestTheCommentRoutesThroughTheGate:
         """The repository's visibility is not the question on this surface."""
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         gate = PassThroughGate()
-        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+        write = TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=gate,
+        )
 
         await write.on_terminal_outcome(
             issue_key="K-1",
@@ -315,7 +328,12 @@ class TestTheCommentRoutesThroughTheGate:
         """
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         gate = PassThroughGate()
-        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+        write = TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=gate,
+        )
 
         await write.on_terminal_outcome(
             issue_key="K-1",
@@ -342,7 +360,12 @@ class TestTheCommentRoutesThroughTheGate:
         """
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         gate = PassThroughGate()
-        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+        write = TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=gate,
+        )
 
         await write.on_terminal_outcome(
             issue_key="K-1",
@@ -355,7 +378,12 @@ class TestTheCommentRoutesThroughTheGate:
 
     async def test_a_blocked_comment_is_never_posted(self) -> None:
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
-        write = TrackerLifecycleWriter(tracker=tracker, gate=BlockingGate())
+        write = TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=BlockingGate(),
+        )
 
         with pytest.raises(OutboundContentBlockedError) as excinfo:
             await write.on_terminal_outcome(
@@ -443,7 +471,12 @@ class TestTheFailureArm:
     ) -> None:
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         gate = PassThroughGate()
-        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+        write = TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=gate,
+        )
 
         await write.on_run_failed(
             issue_key="K-1",
@@ -459,8 +492,16 @@ class TestTheFailureArm:
     async def test_the_failure_comment_follows_the_boards_posture(self) -> None:
         """The put-back arm gates under the same per-board posture."""
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
+        await tracker.set_workflow_state(
+            issue_key="K-1", stage=LifecycleStage.IN_PROGRESS
+        )
         gate = PassThroughGate()
-        write = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+        write = TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=gate,
+        )
 
         await write.on_run_failed(
             issue_key="K-1",
@@ -477,7 +518,15 @@ class TestTheFailureArm:
     async def test_a_blocked_failure_comment_is_never_posted(self) -> None:
         """The put-back still lands; only the prose is the gate's to stop."""
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
-        write = TrackerLifecycleWriter(tracker=tracker, gate=BlockingGate())
+        await tracker.set_workflow_state(
+            issue_key="K-1", stage=LifecycleStage.IN_PROGRESS
+        )
+        write = TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=BlockingGate(),
+        )
 
         with pytest.raises(OutboundContentBlockedError):
             await write.on_run_failed(
@@ -492,13 +541,8 @@ class TestTheFailureArm:
         assert tracker.comments == []
 
 
-#: The ruling the failure arm runs under, as the docstring must name it:
-#: 2026-08-26, option (a) — restore the pre-claim state AND comment the
-#: failure, rather than comment alone.  A bare "(KOD-146, ruled)" sends a
-#: reader to an issue carrying several rulings with nothing saying which
-#: one this arm is, and the choice not taken is the one an operator is
-#: most likely to re-propose (KOD-266).
-FAILURE_ARM_RULING = ("KOD-146", "2026-08-26", "option (a)")
+#: The date and option identify the restore-state-and-comment ruling.
+FAILURE_ARM_RULING = ("2026-08-26", "option (a)")
 
 
 def test_the_failure_arms_docstring_cites_its_ruling_by_date() -> None:
