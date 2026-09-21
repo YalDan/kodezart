@@ -4,7 +4,12 @@ import pytest
 
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.errors import RulingUnrecordedError
-from kodezart.domain.rulings import EMPTY_REGISTRY, owed_rulings, pinned_registry
+from kodezart.domain.rulings import (
+    EMPTY_REGISTRY,
+    addressable_issues,
+    owed_rulings,
+    pinned_registry,
+)
 from kodezart.types.domain.agent import Ruling, RulingAnswer, RulingAuthor
 
 SUBJECT = "EXT/1"
@@ -33,6 +38,22 @@ def owed(*answers, recorded=()):
         addressable=ADDRESSABLE,
         recorded=recorded,
     )
+
+
+def test_the_addressable_set_is_the_subject_and_its_criterion_keys_alone() -> None:
+    """The set an answer is checked against is composed in exactly one place."""
+    keys = (CHECK, "EXT/1-b", "EXT/1-c")
+
+    composed = addressable_issues(subject=SUBJECT, criteria=keys)
+
+    assert composed == frozenset({SUBJECT, *keys})
+    assert isinstance(composed, frozenset)
+    # Exactly the subject plus each distinct key, so nothing was folded in.
+    assert len(composed) == 1 + len(keys)
+    # A neighbour issue of the same board is not addressable.
+    assert "EXT/2" not in composed
+    # And a fire whose subject carries no criteria addresses only itself.
+    assert addressable_issues(subject=SUBJECT, criteria=()) == frozenset({SUBJECT})
 
 
 def test_an_answer_becomes_a_machine_authored_record_under_a_minted_identity() -> None:

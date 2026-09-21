@@ -51,6 +51,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.prompt_variables import tracker_checks_section
 from kodezart.domain.rulings import (
+    addressable_issues,
     owed_rulings,
     pinned_registry,
     render_ruling,
@@ -227,9 +228,12 @@ class FireTimeRulings:
             )
         prefixes = dict(self._operation.marker_prefixes)
         configured_marker_prefix(prefixes, purpose="ruling")
-        addressable = frozenset(
-            {spec.subject, *(str(ref_item) for ref_item in spec.criteria)}
-        )
+        # Two readings of the same set, and neither substitutes for the other.
+        # Where this fire has already written is a question about the set it
+        # entered on, asked before the pass and shown to it as the registry.
+        # Which identities an answer may address is a question about the set at
+        # the moment of writing, so it is read again below.
+        addressable = addressable_issues(subject=spec.subject, criteria=spec.criteria)
         recorded = await self._recorded(addressable)
         answers = await self._answers(
             spec=spec,
@@ -243,7 +247,7 @@ class FireTimeRulings:
         owed = owed_rulings(
             subject=spec.subject,
             answers=answers.rulings,
-            addressable=addressable,
+            addressable=await self._resolvable(spec=spec),
             recorded=tuple(record.ruling_id for record in recorded),
         )
         if not owed:
@@ -279,6 +283,19 @@ class FireTimeRulings:
                 record for _, record in await self._records.read_issue(issue_key=key)
             )
         return tuple(sorted(records, key=lambda record: record.ruling_id))
+
+    async def _resolvable(self, *, spec: TrackerSpec) -> frozenset[str]:
+        """The identities an answer may address, read at the moment of writing.
+
+        The set the fire entered on is not it: a criterion sub-issue the board
+        removed or reparented while the pass ran no longer resolves. A read
+        that fails propagates, for the reason ``_recorded``'s does — nothing has
+        been written yet, so an unreadable family is a fact about the tracker.
+        """
+        rows = await self._tracker.read_criteria(issue_key=spec.subject)
+        return addressable_issues(
+            subject=spec.subject, criteria=(row.issue_key for row in rows)
+        )
 
     async def _answers(
         self,
