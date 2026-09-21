@@ -17,16 +17,25 @@ import pytest
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.criteria import mint_criteria, mint_criterion_id
 from kodezart.domain.criterion_amendment import require_criterion_source
-from kodezart.domain.errors import CriterionReadError, CriterionResolutionError
+from kodezart.domain.criterion_evidence import parse_criterion_evidence
+from kodezart.domain.errors import (
+    CriterionReadError,
+    CriterionResolutionError,
+    StaleWriteError,
+)
 from kodezart.domain.rulings import addressable_issues
 from kodezart.services.criterion_sources import resolve_criterion
+from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import RulingProtectedTestRef
 from kodezart.types.domain.audit_forge import AuditForgeRequest
-from kodezart.types.domain.criteria import DraftedCriterion
+from kodezart.types.domain.criteria import DraftedCriterion, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOffState
+from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.run_state import LaneBinding
 from kodezart.types.domain.tracker import IssueRelationKind, WorkflowStateKind
-from tests.fakes import FakeMcpIssue, FakeTrackerPort
+from tests.fakes import FakeGitService, FakeMcpIssue, FakeTrackerPort, PassThroughGate
+from tests.lane_fixture import lane_operation
 from tests.tracker.conftest import (
     FIRE_ENTRY_LABELS,
     FIXTURE_NOW,
@@ -82,13 +91,23 @@ def title_for(key: str) -> str:
     return f"{POSITIONS[key]} — the check {key} states"
 
 
+def check_of(key: str) -> str:
+    """The Check this sub-issue's own body carries, as a roster reads it."""
+    return f"the behaviour {key} names"
+
+
 def criterion_issue(key: str, *, parent: str = SUBJECT, **changes) -> FakeMcpIssue:
     fields: dict[str, object] = {
         "id": key,
         "title": title_for(key) if key in POSITIONS else f"the check {key} states",
         "parent_id": parent,
         "labels": [LABEL],
-        "description": f"**Check:** the behaviour {key} names\n\n{EVIDENCE}",
+        # Unstarted, which is the state a criterion awaiting its first
+        # verdict is in: a verdict is written from that state or from the
+        # finished one, and a family in neither could take none at all.
+        "status": "Todo",
+        "status_type": "unstarted",
+        "description": f"**Check:** {check_of(key)}\n\n{EVIDENCE}",
     }
     fields.update(changes)
     return FakeMcpIssue(**fields)
@@ -157,6 +176,47 @@ def renumber(tracker, server, key: str, title: str) -> None:
         tracker.issues[key] = tracker.issues[key].model_copy(update={"title": title})
     else:
         server.issues[key].title = title
+
+
+def lane_writer(tracker) -> TrackerLaneStateWriter:
+    """The component that puts a verdict on the sub-issue its key names.
+
+    Only the tracker is under test: the verdict write reads no repository and
+    composes no forge address, so the git service is a stub and there is no
+    forge to ask.
+    """
+    return TrackerLaneStateWriter(
+        tracker=tracker,
+        operation=lane_operation(),
+        git=FakeGitService(),
+        git_remote="origin",
+        forge=None,
+        gate=PassThroughGate(),
+    )
+
+
+def lane_of(subject: str) -> LaneBinding:
+    """The lane whose own work a verdict on *subject*'s criteria comes from."""
+    return LaneBinding(
+        lane_key=subject,
+        loop_branch=f"loop/{subject}",
+        deliverable_branch=f"deliverable/{subject}",
+        base_ref="trunk",
+        body_digest="f" * 64,
+        repo_url=REPO_URL,
+        repo_path=None,
+        run_id="fixture-run",
+        visibility=RepoVisibility.PRIVATE,
+    )
+
+
+def verdict_on(key: str) -> CriterionCrossOff:
+    """One passing verdict, keyed by the criterion it addresses."""
+    return CriterionCrossOff(
+        criterion=key,
+        state=CrossOffState.passed,
+        evidence=CriterionEvidence(graded_sha=GRADED_SHA, test="the case above"),
+    )
 
 
 async def test_a_removed_criterion_and_a_renumbered_remainder_move_no_identity(
@@ -333,6 +393,58 @@ async def test_a_verdict_a_designation_and_an_audit_request_resolve_through_the_
     # Non-vacuous: the family the survivor was read from held three members.
     assert len(family) == 3
     assert tracker_writes() == before
+
+
+async def test_a_verdict_is_written_onto_the_sub_issue_its_own_key_names(
+    tracker, server
+):
+    """The tie between a verdict in hand and its sub-issue, after a rewrite.
+
+    Made by the component that makes it in production rather than by a read
+    this fixture performs for itself: a writer resolving the verdict by the
+    criterion's position in the family would satisfy any statement the
+    fixture made on its own, and would put this verdict on the neighbour
+    that took the retired number.
+    """
+    retire(tracker, server, SECOND)
+    renumber(
+        tracker,
+        server,
+        THIRD,
+        title=title_for(THIRD).replace(TOKENS[THIRD], TOKENS[SECOND]),
+    )
+    writer = lane_writer(tracker)
+
+    await writer.write_cross_offs(
+        lane=lane_of(SUBJECT),
+        dispatched=(TrackerCriterion(id=THIRD, text=check_of(THIRD)),),
+        cross_offs=(verdict_on(THIRD),),
+    )
+
+    # Finished, at the sha it was graded at, on the row its key names.
+    ticked = await tracker.read_issue(issue_key=THIRD)
+    assert ticked.state_kind is WorkflowStateKind.COMPLETED
+    assert parse_criterion_evidence(ticked.body).graded_sha == GRADED_SHA
+    # And on no other row of the family: the one that kept its own token is
+    # untouched, and so is the one whose number this row took.
+    for untouched in (FIRST, SECOND):
+        other = await tracker.read_issue(issue_key=untouched)
+        assert other.state_kind is not WorkflowStateKind.COMPLETED
+        assert GRADED_SHA not in other.body and other.body.endswith(EVIDENCE)
+
+    # The retired identity's verdict is refused rather than written onto the
+    # neighbour that took its number.
+    with pytest.raises(StaleWriteError) as raised:
+        await writer.write_cross_offs(
+            lane=lane_of(SUBJECT),
+            dispatched=(TrackerCriterion(id=SECOND, text=check_of(SECOND)),),
+            cross_offs=(verdict_on(SECOND),),
+        )
+
+    assert raised.value.target == SECOND
+    survivor = await tracker.read_issue(issue_key=FIRST)
+    assert survivor.state_kind is not WorkflowStateKind.COMPLETED
+    assert GRADED_SHA not in survivor.body
 
 
 async def test_a_superseded_identity_stays_resolvable_and_names_what_absorbed_it(
