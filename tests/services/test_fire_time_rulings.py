@@ -18,6 +18,7 @@ from kodezart.domain.fire_spec import DELIVERABLES_SECTION, deliverables_section
 from kodezart.domain.prompt_variables import tracker_checks_section
 from kodezart.domain.rulings import (
     EMPTY_REGISTRY,
+    addressable_issues,
     escalation_marker,
     render_ruling,
     ruling_marker,
@@ -74,6 +75,12 @@ from tests.services.test_native_amendments import (
 __all__ = ["repository"]
 
 HOLDER = "actual-parent-job"
+
+#: A key no issue of this board carries.  Stated once and used both as a
+#: typed reference, where it is refused, and inside an answer's prose, where
+#: it is prose: the two cases are the difference between the two readings,
+#: so they must be the same key.
+ABSENT_KEY = "fire/absent"
 
 #: A Check two readings fit, and the answer that pins one of them.
 AMBIGUOUS_CHECK = "the run is finished when the queue is drained"
@@ -1325,7 +1332,7 @@ def unlabel(port, key) -> None:
 
 @pytest.mark.parametrize(
     "offending",
-    [DELIVERABLE_CHILD, "fire/absent", DIRECT_OWED.upper()],
+    [DELIVERABLE_CHILD, ABSENT_KEY, DIRECT_OWED.upper()],
     ids=["subtree-not-a-criterion", "absent", "case-differs"],
 )
 async def test_a_key_the_criterion_family_does_not_hold_is_refused_before_any_write(
@@ -1356,6 +1363,55 @@ async def test_a_key_the_criterion_family_does_not_hold_is_refused_before_any_wr
     assert len(executor.question_prompts) == 1
     assert executor.judged_artifacts == []
     assert gate.content_classes == []
+
+
+async def test_keys_an_answer_names_only_in_its_prose_are_prose_and_are_not_resolved(
+    repository,
+) -> None:
+    """The typed reference is resolved; ids in the answer's own words are not.
+
+    The record addresses the criterion whose Check raised the question, and
+    each of its three prose fields names, in words, a key that resolves
+    nowhere: an issue of the subject's subtree that is no criterion, and a
+    key no issue on this board carries. Addressed to either, the record is
+    refused (the case above, over the same two keys), so this case is what
+    tells the two readings apart: the record still lands, with its prose
+    intact, and nothing about it is refused.
+    """
+    answer = one_answer(
+        resolution=(
+            f"{RESOLUTION} The same reading was taken on {DELIVERABLE_CHILD}, "
+            f"and {ABSENT_KEY} never existed to take it on."
+        ),
+        rejectedAlternative=(
+            f"{REJECTED} It would have to hold for {DELIVERABLE_CHILD} too."
+        ),
+        repoEvidence=[EVIDENCE, f"{ABSENT_KEY} — no issue of this board carries it"],
+    )
+    executor = Executor([[answer]])
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor
+    )
+    # Non-vacuous: neither prose key is a member of the set an answer may
+    # address, so a reading that resolved them would refuse this record.
+    addressable = addressable_issues(subject=spec.subject, criteria=spec.criteria)
+    assert DELIVERABLE_CHILD not in addressable
+    assert ABSENT_KEY not in addressable
+    before = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    record = await pinned_record(port, answer, before=before)
+    # Pinned under the typed reference, carrying the prose as prose.
+    assert record.issue_ref == DIRECT_OWED
+    assert DELIVERABLE_CHILD in record.resolution and ABSENT_KEY in record.resolution
+    assert record.rejected_alternative is not None
+    assert DELIVERABLE_CHILD in record.rejected_alternative
+    assert [line for line in record.repo_evidence if ABSENT_KEY in line]
+    # And the pass ran to its end: the record was judged and gated, so
+    # nothing was refused earlier for a key named in the text.
+    assert len(executor.judged_artifacts) == 1
+    assert ContentClass.AUTHORED in gate.content_classes
 
 
 async def test_a_reference_lost_between_the_session_and_the_write_is_refused(
