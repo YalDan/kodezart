@@ -1048,7 +1048,9 @@ ruling comments for every explicitly supplied lane member. The configured
 required authorship before projecting it. `observe_recorded_ruling_growth`
 combines that current read with live closure and the caller's retained
 baseline. Amendments keep their deterministic question identity and cannot
-reset the baseline. The native arm's `rule_open_questions` step now writes
+reset the baseline. A reworded question is a different identity, so it is a new
+record that names the identity it replaces; the earlier record stays on its
+surface, unedited. The native arm's `rule_open_questions` step now writes
 each pinned answer as a verified, leased marker comment on the issue whose own
 text raised the question, before the loop; the lane-membership producer and
 persisted window advancement remain separate implementation work.

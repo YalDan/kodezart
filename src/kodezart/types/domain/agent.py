@@ -782,6 +782,14 @@ class Ruling(CamelCaseModel):
     authored_by: RulingAuthor = Field(
         description="Explicit machine or principal authorship, independent of account."
     )
+    supersedes: RulingId | None = Field(
+        default=None,
+        description=(
+            "The identity this record replaces, when its question restates an "
+            "earlier pinned question. Null when it replaces nothing. A record "
+            "never overwrites the one it supersedes."
+        ),
+    )
     protected_tests: tuple[RulingProtectedTestRef, ...] | None = Field(
         default=None,
         description=(
@@ -802,6 +810,12 @@ class Ruling(CamelCaseModel):
             and self.rejected_alternative is None
         ):
             raise ValueError("this ruling class must name its rejected alternative")
+        return self
+
+    @model_validator(mode="after")
+    def supersede_another_identity(self) -> Self:
+        if self.supersedes == self.ruling_id:
+            raise ValueError("a record cannot supersede its own question")
         return self
 
     @model_validator(mode="after")
@@ -848,6 +862,15 @@ class RulingAnswer(CamelCaseModel):
     repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
         Field(
             description="Repository evidence references supporting the pinned answer."
+        )
+    )
+    supersedes_question: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(
+            default=None,
+            description=(
+                "The exact earlier pinned question this answer's question restates, "
+                "when it restates one; null otherwise."
+            ),
         )
     )
 

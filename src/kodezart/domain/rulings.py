@@ -40,6 +40,13 @@ def owed_rulings(
     answer no valid record can be built from is refused rather than written,
     because each of the three would put text on the tracker that its reader
     could not address back to the issue whose text raised the question.
+
+    An answer whose question restates an earlier pinned one names that
+    earlier question's exact words, and the identity it replaces is minted
+    from them here: a restatement is a different question, so it is a new
+    record that names the one it replaces rather than an edit of it. Naming
+    its own question, or a question the tracker carries no answer for, is
+    refused for the same reason the three above are.
     """
     owed: dict[RulingId, Ruling] = {}
     seen: set[tuple[str, str]] = set()
@@ -59,13 +66,34 @@ def owed_rulings(
         identity = mint_ruling_id(issue_ref=answer.issue_ref, question=answer.question)
         if identity in recorded:
             continue
+        superseded: RulingId | None = None
+        if answer.supersedes_question is not None:
+            superseded = mint_ruling_id(
+                issue_ref=answer.issue_ref, question=answer.supersedes_question
+            )
+            if superseded == identity:
+                raise RulingUnrecordedError(
+                    issue_key=subject,
+                    reason=(
+                        f"an answer on {answer.issue_ref!r} supersedes its own question"
+                    ),
+                )
+            if superseded not in recorded:
+                raise RulingUnrecordedError(
+                    issue_key=subject,
+                    reason=(
+                        f"an answer on {answer.issue_ref!r} supersedes a question the "
+                        "tracker carries no answer for"
+                    ),
+                )
         try:
             ruling = Ruling.model_validate(
                 {
-                    **answer.model_dump(),
+                    **answer.model_dump(exclude={"supersedes_question"}),
                     "ruling_id": identity,
                     "authored_by": RulingAuthor.MACHINE,
                     "protected_tests": None,
+                    "supersedes": superseded,
                 }
             )
         except ValidationError as exc:
@@ -97,21 +125,28 @@ def ruling_marker(
 def render_ruling(
     *, ruling: Ruling, lane_key: str, marker_prefixes: Mapping[str, str]
 ) -> str:
-    """Render every required field, including authorship, in the pinned text."""
+    """Render every required field, including authorship, in the pinned text.
+
+    A field whose value is the absence itself is left out rather than
+    written as a null, which is what keeps the bytes of a record that
+    designates nothing and replaces nothing exactly what they were before
+    either field existed.
+    """
     _require_identity(ruling)
     marker = ruling_marker(
         ruling_id=ruling.ruling_id,
         lane_key=lane_key,
         marker_prefixes=marker_prefixes,
     )
+    absent = {
+        name
+        for name in ("protected_tests", "supersedes")
+        if getattr(ruling, name) is None
+    }
     return marked_comment_body(
         marker=marker,
         body="```json\n"
-        + ruling.model_dump_json(
-            by_alias=True,
-            indent=2,
-            exclude={"protected_tests"} if ruling.protected_tests is None else set(),
-        )
+        + ruling.model_dump_json(by_alias=True, indent=2, exclude=absent)
         + "\n```",
     )
 

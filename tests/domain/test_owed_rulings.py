@@ -113,6 +113,77 @@ def test_an_identity_the_tracker_already_carries_is_not_owed() -> None:
     )
 
 
+def test_a_restated_question_mints_a_new_identity_that_names_the_one_it_replaces() -> (
+    None
+):
+    """A restatement is a new record, and it addresses the earlier one.
+
+    The earlier identity is minted here from the exact words the answer
+    quotes, so the pointer is arithmetic over the same pair the first record
+    was addressed by rather than a second address the answer could choose.
+    """
+    (earlier,) = owed(answer())
+    restated = "Does a queue holding only failed items count as drained?"
+
+    (record,) = owed(
+        answer(question=restated, supersedes_question=QUESTION),
+        recorded=(earlier.ruling_id,),
+    )
+
+    assert record.ruling_id == mint_ruling_id(issue_ref=CHECK, question=restated)
+    assert record.ruling_id != earlier.ruling_id
+    assert record.supersedes == earlier.ruling_id
+    # The answer's own field never reaches the record, and nothing on the
+    # earlier record moved: this call built one new record and no edit.
+    assert "supersedes_question" not in Ruling.model_fields
+    assert earlier.supersedes is None
+    # A record that replaces nothing says so, rather than leaving it unstated.
+    (plain,) = owed(answer())
+    assert plain.supersedes is None
+
+
+def test_an_answer_naming_a_question_the_tracker_carries_no_answer_for_is_refused() -> (
+    None
+):
+    """A pointer at no record is an address a later reader cannot follow."""
+    with pytest.raises(RulingUnrecordedError) as caught:
+        owed(
+            answer(
+                question="A restatement of nothing pinned?",
+                supersedes_question="A question nobody answered.",
+            )
+        )
+
+    assert caught.value.issue_key == SUBJECT
+    assert "carries no answer for" in caught.value.reason
+    # Non-vacuous: the same answer is owed once that question is on record.
+    (earlier,) = owed(answer(question="A question nobody answered."))
+    (record,) = owed(
+        answer(
+            question="A restatement of nothing pinned?",
+            supersedes_question="A question nobody answered.",
+        ),
+        recorded=(earlier.ruling_id,),
+    )
+    assert record.supersedes == earlier.ruling_id
+
+
+def test_an_answer_cannot_name_its_own_question_as_the_one_it_replaces() -> None:
+    """Its own identity is the one address a record can never replace."""
+    (earlier,) = owed(answer())
+
+    with pytest.raises(RulingUnrecordedError) as caught:
+        owed(
+            answer(supersedes_question=QUESTION),
+            recorded=(),
+        )
+
+    assert "supersedes its own question" in caught.value.reason
+    # The record model refuses it too, so no other builder can construct one.
+    with pytest.raises(ValueError, match="supersede its own question"):
+        Ruling.model_validate({**earlier.model_dump(), "supersedes": earlier.ruling_id})
+
+
 def test_the_registry_text_is_one_json_line_per_record_or_the_stated_empty_form() -> (
     None
 ):

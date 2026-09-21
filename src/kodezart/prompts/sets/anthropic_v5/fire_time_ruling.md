@@ -27,6 +27,10 @@ For each open question, answer with:
   Null only where the class does not have a loser.
 - `repoEvidence` — the files, symbols or tests in THIS tree you actually read
   to decide. Do not invent references to fill the schema.
+- `supersedesQuestion` — null, unless your question restates one of the pinned
+  questions above whose pinned answer this tree no longer bears out. Then it is
+  that pinned question's exact words. The earlier answer stays where it is; your
+  answer is a new one that names it.
 
 An answer stays inside the deliverables the issue already states. If the only
 answer you can give would add scope beyond them, leave that question

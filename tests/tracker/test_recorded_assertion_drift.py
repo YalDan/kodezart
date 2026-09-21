@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
+import structlog.testing
 
 from kodezart.adapters.git.bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.git.service import SubprocessGitService
@@ -18,7 +19,10 @@ from kodezart.domain.rulings import render_ruling
 from kodezart.services.assertion_drift import AssertionDriftDetector
 from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.services.recorded_assertion_drift import RecordedAssertionDriftDetector
+from kodezart.services.recorded_assertion_drift import (
+    PROTECTION_LAPSED,
+    RecordedAssertionDriftDetector,
+)
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import Ruling, RulingProtectedTestRef
 from kodezart.types.domain.operation import OperationConfig
@@ -135,20 +139,60 @@ async def test_adding_an_unrelated_test_is_quiet(native, tracker, repo):
 
 
 @pytest.mark.parametrize("designation", ["unknown", "empty", "no-records"])
-async def test_unknown_is_refusal_but_successfully_read_empty_is_quiet(
+async def test_an_unknown_designation_lapses_and_a_read_empty_one_stays_quiet(
     native, tracker, tracker_writes, designation
 ):
+    """An absent designation drops that record's protection and is recorded.
+
+    The explicitly empty designation and the absent record set are separate
+    facts and neither lapses: only a null designation does, and the lapse is
+    named against the comment key and the identity that owns it.
+    """
     build, request, *_ = native
+    comment = ruling = None
     if designation != "no-records":
-        comment, _ = await seed(tracker, designation=designation)
+        comment, ruling = await seed(tracker, designation=designation)
     before = tracker_writes()
-    if designation == "unknown":
-        with pytest.raises(AssertionComparisonError, match="no recorded") as raised:
-            await build().compare(request)
-        assert raised.value.source_ref == comment.comment_key
-    else:
+
+    with structlog.testing.capture_logs() as logs:
         assert await build().compare(request) == ()
+
+    lapses = [entry for entry in logs if entry["event"] == PROTECTION_LAPSED]
+    if designation == "unknown":
+        assert comment is not None and ruling is not None
+        assert [(entry["source_ref"], entry["ruling_id"]) for entry in lapses] == [
+            (comment.comment_key, ruling.ruling_id)
+        ]
+    else:
+        assert lapses == []
     assert tracker_writes() == before
+
+
+async def test_a_duplicate_comment_key_still_refuses_when_its_designation_is_absent(
+    native, tracker, monkeypatch
+):
+    """The comment-key refusal is decided before protection lapses.
+
+    A record whose designation is absent is still one the reader must be able
+    to address, so a shared or blank comment key refuses the comparison rather
+    than lapsing quietly out of it.
+    """
+    build, request, *_ = native
+    await seed(tracker, designation="unknown")
+    await seed(tracker, owner=CHILD, designation="unknown")
+    consumer = build()
+    original = consumer._rulings.read_all
+
+    async def reused(**kwargs):
+        rows = await original(**kwargs)
+        return tuple(
+            (comment.model_copy(update={"comment_key": "shared-native-key"}), ruling)
+            for comment, ruling in rows
+        )
+
+    monkeypatch.setattr(consumer._rulings, "read_all", reused)
+    with pytest.raises(AssertionComparisonError, match="native comment key"):
+        await consumer.compare(request)
 
 
 async def test_each_owner_and_question_remains_a_separate_native_source(
