@@ -738,7 +738,7 @@ def test_every_surface_that_declares_provenance_declares_its_aggregates() -> Non
     assert len(calls) >= 28, len(calls)
 
     with pytest.raises(TypeError, match="aggregates"):
-        gate_over().gate(  # type: ignore[call-arg]
+        gate_over().gate(
             content=PROSE,
             visibility=RepoVisibility.PUBLIC,
             shape=WriterShape.PROSE,

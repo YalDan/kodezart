@@ -31,10 +31,7 @@ SUPPRESSION = re.compile(r"#\s*(?:type:\s*ignore|(?:ruff:\s*)?noqa)")
 #: code appears nowhere in this map, and a new entry is a decision, not a
 #: convenience -- it belongs in a commit that says why.
 ALLOWED: dict[str, tuple[str, ...]] = {
-    "tests/adapters/test_judgment_scanner.py": (
-        "# type: ignore[call-arg]",
-        "# type: ignore[call-arg]",
-    ),
+    "tests/adapters/test_judgment_scanner.py": ("# type: ignore[call-arg]",),
     "tests/core/test_config_error_redaction.py": (
         "# type: ignore[arg-type]",
         "# type: ignore[arg-type]",
