@@ -209,6 +209,16 @@ async def test_a_replayed_amendment_leaves_the_criterion_sub_issue_byte_identica
         ]
         assert archives[0] == first_archives[0]
         assert len(archives) == 2
+        # "The same claim" read back off the records, not built by the fixture:
+        # a replay of some other claim converging on the same text is not this.
+        first_record, replay_record = [
+            AmendmentRecord.model_validate_json(c.body.partition("\n")[2])
+            for c in archives
+        ]
+        assert (replay_record.claim, replay_record.judgment) == (
+            first_record.claim,
+            first_record.judgment,
+        )
     finally:
         await cleanup(workspace)
 
