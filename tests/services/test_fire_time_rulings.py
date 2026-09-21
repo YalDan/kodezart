@@ -180,6 +180,15 @@ def raised_comments(port):
     ]
 
 
+def pinned_bodies(port, prefixes):
+    """Every pinned comment on the board as an addressable, byte-exact triple."""
+    return [
+        (comment.issue_key, comment.comment_key, comment.body)
+        for comment in port.comments
+        if comment.body.startswith(f"[{prefixes['ruling']}")
+    ]
+
+
 def raised_body(comment):
     """The escalation's own payload, decoded out of its fenced framing."""
     _, separator, payload = comment.body.partition("\n```json\n")
@@ -988,18 +997,22 @@ async def test_a_restated_question_leaves_the_earlier_record_readable_and_unedit
         question=RESTATED_CONTRADICTION_QUESTION,
         supersedesQuestion=CONTRADICTION_QUESTION,
     )
-    executor = Executor([[earlier_answer], [later_answer]])
+    # The same question, arriving with a pointer to a question no record on
+    # this board answers, for the replay the fourth pass drives.
+    stale_pointer_answer = contradiction_answer(
+        question=RESTATED_CONTRADICTION_QUESTION,
+        supersedesQuestion="Which queue predicate did the earlier reading name?",
+    )
+    executor = Executor(
+        [[earlier_answer], [later_answer], [later_answer], [stale_pointer_answer]]
+    )
     step, spec, current, _, port, _, repo_path, base = await build(
         repository, executor, port=tracker(bodies={DIRECT_OWED: contradiction_body()})
     )
 
     assert await run(step, spec, current, repo_path, base) is None
     prefixes = native_operation().marker_prefixes
-    first_pass = [
-        (comment.issue_key, comment.comment_key, comment.body)
-        for comment in port.comments
-        if comment.body.startswith(f"[{prefixes['ruling']}")
-    ]
+    first_pass = pinned_bodies(port, prefixes)
     assert len(first_pass) == 1
 
     assert await run(step, spec, current, repo_path, base) is None
@@ -1016,16 +1029,25 @@ async def test_a_restated_question_leaves_the_earlier_record_readable_and_unedit
     assert records[later].supersedes == earlier
     assert records[earlier].supersedes is None
     # Both answers stand: the earlier comment is the same comment, unedited.
-    pinned = [
-        (comment.issue_key, comment.comment_key, comment.body)
-        for comment in port.comments
-        if comment.body.startswith(f"[{prefixes['ruling']}")
-    ]
+    pinned = pinned_bodies(port, prefixes)
     assert first_pass[0] in pinned
     assert len(pinned) == 2
     # The second pass was shown the first answer and did write its own.
     assert CONTRADICTION_QUESTION in executor.question_prompts[1]
     assert len(executor.judged_artifacts) == 2
+
+    # A third pass replaying the later answer owes nothing, and writes nothing.
+    assert await run(step, spec, current, repo_path, base) is None
+    assert pinned_bodies(port, prefixes) == pinned
+
+    # A fourth pass replays the same question carrying a pointer to a question
+    # the tracker carries no answer for.  The recorded-identity check runs
+    # before the pointer is minted, so the replay is dropped with the answer
+    # rather than refused: a pass over an answer already on record owes
+    # nothing, whatever the pointer it arrives with names.
+    assert await run(step, spec, current, repo_path, base) is None
+    assert pinned_bodies(port, prefixes) == pinned
+    assert len(executor.question_prompts) == 4
 
 
 async def test_a_contradiction_answer_with_no_losing_side_is_refused_before_any_lease(
