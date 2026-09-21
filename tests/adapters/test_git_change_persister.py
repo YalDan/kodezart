@@ -13,7 +13,10 @@ from kodezart.core.protocols import ChangePersister
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.types.domain.agent import ResultEvent
 from kodezart.types.domain.gating import (
+    ContentClass,
     GateVerdict,
+    IdentifierRoster,
+    OutboundDestination,
     RedactionCategory,
     RepoVisibility,
     WriterShape,
@@ -411,6 +414,36 @@ async def test_divergence_replay_message_routes_through_the_gate() -> None:
     assert result is not None
     assert recording_gate.calls
     assert recording_gate.calls[0][0] == "fake: HEAD commit message"
+
+
+async def test_the_commit_message_wrapper_forwards_the_declared_aggregates() -> None:
+    """The wrapper hands the declared aggregates on untouched.
+
+    Its own callers declare none, so calling it directly is the only route
+    from which a dropped declaration is observable.
+    """
+    recording_gate = PassThroughGate()
+    persister = GitChangePersister(
+        git=FakeGitService(has_changes_result=True),
+        committer_name="test",
+        committer_email="t@t.dev",
+        remote="origin",
+        prompts=make_prompt_provider(),
+        gate=recording_gate,
+    )
+    roster = IdentifierRoster(field="lanes.issue", identities=("A", "B", "C"))
+
+    await persister._gated_message(
+        "m",
+        RepoVisibility.PUBLIC,
+        OutboundDestination.COMMIT_MESSAGE,
+        ContentClass.AUTHORED,
+        aggregates=(roster,),
+    )
+
+    assert recording_gate.aggregates == [(roster,)]
+    assert recording_gate.destinations == [OutboundDestination.COMMIT_MESSAGE]
+    assert recording_gate.content_classes == [ContentClass.AUTHORED]
 
 
 # ---------------------------------------------------------------------------
