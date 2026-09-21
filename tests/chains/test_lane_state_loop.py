@@ -857,6 +857,53 @@ def recording(lane) -> list[tuple[CrossOffState, ...]]:
     return states
 
 
+def dispatches(lane) -> list[tuple[str, ...]]:
+    """Every roster handed to the lane's writer, as the criterion ids in it.
+
+    Which criteria one iteration writes for is what a carry turns on, and
+    the board's own registers cannot answer it: a second tick with identical
+    facts edits no description and moves no state, so nothing there grows
+    however many criteria the write was handed.
+    """
+    handed: list[tuple[str, ...]] = []
+    writer = lane.loop._lane_state
+    written = writer.write_cross_offs
+
+    async def observed(*, lane, dispatched, cross_offs):
+        handed.append(tuple(str(criterion.id) for criterion in dispatched))
+        await written(lane=lane, dispatched=dispatched, cross_offs=cross_offs)
+
+    writer.write_cross_offs = observed
+    return handed
+
+
+def asked_about(lane, key: str) -> list[str]:
+    """Every write of *key* the board is ASKED for, the refused ones included.
+
+    The refused ones are the point. A second tick with identical facts is
+    answered UNCHANGED by the description surface and returns early at the
+    state write, so the registers of what the board CHANGED cannot tell one
+    tick from two. What the loop ASKED for can.
+    """
+    asked: list[str] = []
+    port = lane.port
+    edit, move = port.edit_description, port.set_workflow_state
+
+    async def observed_edit(*, target, **rest):
+        if target == key:
+            asked.append(edit.__name__)
+        return await edit(target=target, **rest)
+
+    async def observed_move(*, issue_key, **rest):
+        if issue_key == key:
+            asked.append(move.__name__)
+        return await move(issue_key=issue_key, **rest)
+
+    port.edit_description = observed_edit
+    port.set_workflow_state = observed_move
+    return asked
+
+
 #: The tree the loop resolves the branch in: never the one it grades in.
 CACHE_PATH = "/tmp/fake-cache"
 
@@ -1379,6 +1426,8 @@ async def test_a_grading_that_still_stands_is_neither_dispatched_again_nor_re_ti
         ],
         max_iterations=2,
     )
+    handed = dispatches(lane)
+    asked = asked_about(lane, CARRIED)
     events = await lane.run()
 
     assert len(lane.executor.evaluation_prompts) == 2
@@ -1391,9 +1440,15 @@ async def test_a_grading_that_still_stands_is_neither_dispatched_again_nor_re_ti
     first_grading = evidence_of(lane, CARRIED)
     assert lane.port.issues[CARRIED].state_kind is WorkflowStateKind.COMPLETED
     assert first_grading.graded_sha == lane.repo.shas[0]
-    # One tick for it, in the iteration that graded it, and no second one.
-    assert [key for key, _ in lane.port.workflow_writes].count(CARRIED) == 1
-    assert [write[0] for write in lane.port.issue_writes].count(CARRIED) == 1
+    # Asserted on what the loop ASKS the board for rather than on what the
+    # board holds afterwards: a second tick with identical facts is answered
+    # UNCHANGED by the description surface and returns early at the state
+    # write, so the board looks the same either way. The carried criterion is
+    # in the first iteration's roster and in no later one, and the whole run
+    # asks for its Evidence row and its state once each.
+    assert handed[0] == tuple(OWED_KEYS)
+    assert [roster for roster in handed[1:] if CARRIED in roster] == []
+    assert sorted(asked) == ["edit_description", "set_workflow_state"]
 
     iterations = [
         event for event in events if isinstance(event, WorkflowIterationEvent)
