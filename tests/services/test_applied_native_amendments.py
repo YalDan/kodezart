@@ -12,6 +12,7 @@ from kodezart.types.domain.amendment_write import AmendmentRecord
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import DIRECT_DONE, DIRECT_OWED, tracker
 from tests.services.test_native_amendments import (
+    AMENDED_CHECK,
     Executor,
     build,
     cleanup,
@@ -21,6 +22,9 @@ from tests.services.test_native_amendments import (
 )
 
 __all__ = ["repository"]
+
+#: A criterion title carrying the AC token an amendment must not disturb.
+TITLE = "KOD-97-AC-3 the amended criterion keeps its identity"
 
 
 async def test_path_only_native_amendment_uses_real_separate_base_worktrees(repository):
@@ -104,6 +108,43 @@ async def test_done_criterion_archives_exact_evidence_then_resets_before_new_che
         assert report.verdicts[0].verdict == "amended"
         assert order[-1] == "commit_message"
         assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
+    finally:
+        await cleanup(workspace)
+
+
+async def test_an_amended_criterion_keeps_its_key_and_title_token_before_and_after(
+    repository,
+):
+    """Identity is the sub-issue key, and the AC token in the title survives with it.
+
+    Editing a description cannot re-key a sub-issue, so the key and the title are
+    read back from the independently verified prior and applied artifacts and from
+    the board, identical, while the body is asserted to have changed.
+    """
+    port = tracker()
+    port.issues[DIRECT_OWED] = port.issues[DIRECT_OWED].model_copy(
+        update={"title": TITLE}
+    )
+    keys_before = set(port.issues)
+    executor = Executor(reproduced=True)
+    service, guard, workspace, _ = await build(repository, executor, port=port)
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        amended = report.verdicts[0]
+        assert amended.verdict == "amended"
+        prior_row = json.loads(amended.prior.content)[0]
+        applied_row = json.loads(amended.applied.artifact.content)[0]
+        identity = (DIRECT_OWED, TITLE)
+        assert (prior_row["issue_key"], prior_row["title"]) == identity
+        assert (applied_row["issue_key"], applied_row["title"]) == identity
+        assert amended.prior.native_ref == amended.applied.artifact.native_ref
+        assert amended.prior.native_ref == DIRECT_OWED
+        assert prior_row["body"] != applied_row["body"]
+        assert AMENDED_CHECK in applied_row["body"]
+        settled = port.issues[DIRECT_OWED]
+        assert (settled.issue_key, settled.title) == identity
+        assert set(port.issues) == keys_before
     finally:
         await cleanup(workspace)
 

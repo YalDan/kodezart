@@ -75,7 +75,9 @@ async def test_reset_uses_actual_native_unstarted_id_and_replays_without_write()
 
 
 @pytest.mark.parametrize("action", ["reset", "description"])
-@pytest.mark.parametrize("drift", ["body", "parent", "class", "expiry", "retry"])
+@pytest.mark.parametrize(
+    "drift", ["body", "parent", "class", "title", "expiry", "retry"]
+)
 async def test_final_boundary_and_retry_refuse_changed_native_source(
     monkeypatch,
     action,
@@ -102,6 +104,8 @@ async def test_final_boundary_and_retry_refuse_changed_native_source(
                         row.parent_id = "other-parent"
                     elif drift == "class":
                         row.labels.clear()
+                    elif drift == "title":
+                        row.title = "renamed between the two reads"
                     else:
                         board.now = max(
                             c.updated_at for c in board.server.comments
