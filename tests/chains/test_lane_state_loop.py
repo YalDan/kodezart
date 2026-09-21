@@ -663,6 +663,11 @@ async def test_a_fire_killed_between_iterations_resumes_on_criteria_still_todo_a
     assert completed(port) == {DIRECT_OWED}
     assert repo.pushed == repo.head
     commits_at_kill = len(repo.shas)
+    # Where the fire died, asserted rather than described: the second
+    # iteration's session had opened and had committed nothing yet.  Move the
+    # kill inside iteration 2 instead and its own commit is on the repository,
+    # so this pair is what keeps the case "between iterations".
+    assert (commits_at_kill, len(first.executor.execution_prompts)) == (1, 2)
     evidence_at_kill = port.issues[DIRECT_OWED].body
     assert parse_criterion_evidence(evidence_at_kill).test == evaluation_observation(
         session_id=NATIVE_SESSION, iteration=1
