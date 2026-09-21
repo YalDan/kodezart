@@ -952,6 +952,9 @@ async def test_live_mandate_regrows_the_class_and_the_pass_does_not_converge(
     surviving = report.halt.surviving_findings
     assert [f.defect_class for f in surviving] == [REGROWTH_CLASS]
     assert surviving[0].mandate_text == MANDATE_SENTENCE
+    # The surface the finding names is the child, whose prose is where the
+    # instance was planted or withheld; the sentence sits on the parent.
+    assert surviving[0].issue_id == "restating-criterion"
     assert (
         board.server.issues[CLAIMED_ISSUE].description
         == f"{MANDATE_SENTENCE} {GROUNDED_BODY}"
@@ -1021,6 +1024,7 @@ async def test_the_sentence_and_not_the_instance_decides_whether_the_class_regro
     surviving = report.halt.surviving_findings
     assert [f.defect_class for f in surviving] == [REGROWTH_CLASS]
     assert surviving[0].mandate_text == MANDATE_SENTENCE
+    assert surviving[0].issue_id == "restating-criterion"
     assert board.server.issues["restating-criterion"].description == (
         RESTATING_BODY if instance else REFERENCING_BODY
     )
