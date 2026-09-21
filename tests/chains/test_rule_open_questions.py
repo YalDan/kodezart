@@ -70,11 +70,15 @@ from tests.services.test_fire_time_rulings import (
     LOSING,
     MODEL,
     PRECEDENT,
+    PREMISE_CHECK,
+    REGROUNDED,
     STANDING,
     artifact_answer,
     artifact_body,
     contradiction_answer,
     contradiction_body,
+    premise_answer,
+    premise_body,
 )
 
 #: Every criterion a finished subtree's roster carries, so a delivering
@@ -753,6 +757,13 @@ async def test_the_first_iteration_prompt_carries_the_pinned_answer(
             ARTIFACT_CHECK,
             (MODEL, CALL_SITE, PRECEDENT),
             id="pin_artifact",
+        ),
+        pytest.param(
+            premise_body,
+            premise_answer,
+            PREMISE_CHECK,
+            (REGROUNDED,),
+            id="reground_premise",
         ),
     ],
 )

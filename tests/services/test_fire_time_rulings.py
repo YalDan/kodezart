@@ -30,6 +30,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import (
     DIRECT_OWED,
     SUBJECT,
@@ -159,6 +160,36 @@ def artifact_answer(**changes) -> dict[str, object]:
         ),
         "rejectedAlternative": None,
         "repoEvidence": [PRECEDENT],
+    }
+    return one_answer(**{**fields, **changes})
+
+
+#: A premise the tree at the base contradicts: newer.py exists only in the
+#: commit after it, so the helper this Check rests on is not there to build on.
+ABSENT_MODULE = "newer.py"
+PREMISE_CHECK = (
+    f"the retry helper in {ABSENT_MODULE} bounds every failed item's attempts"
+)
+PREMISE_QUESTION = "Which helper bounds a failed item's attempts?"
+REGROUNDED = (
+    f"{PRECEDENT_FILE} holds the queue predicate; there is no {ABSENT_MODULE} at "
+    "this base, so the bound is built on that predicate."
+)
+REGROUND_EVIDENCE = f"{PRECEDENT_FILE} — the only module at this base"
+
+
+def premise_body() -> str:
+    return criterion_body(DIRECT_OWED).replace(check_of(DIRECT_OWED), PREMISE_CHECK)
+
+
+def premise_answer(**changes) -> dict[str, object]:
+    """One answer re-grounding the Check at the base, with any field overridable."""
+    fields: dict[str, object] = {
+        "question": PREMISE_QUESTION,
+        "rulingClass": "reground_premise",
+        "resolution": REGROUNDED,
+        "rejectedAlternative": None,
+        "repoEvidence": [REGROUND_EVIDENCE],
     }
     return one_answer(**{**fields, **changes})
 
@@ -772,3 +803,60 @@ async def test_an_invented_artifact_pins_its_model_call_site_and_in_repo_precede
     await run(step, spec, current, repo_path, base)
     assert board_state(port) == after_first
     assert len(executor.judged_artifacts) == 1
+
+
+async def test_a_false_premise_is_regrounded_at_the_base_neither_closed_nor_crossed_off(
+    repository,
+) -> None:
+    """The Check rests on a file the base does not have; the answer re-grounds it.
+
+    Neither negative is a comment.  Not closed: no state and no description
+    was written on any issue, and the two the answer concerns are still open
+    by kind.  Not crossed off: the criterion set read again after the pass is
+    the same set the step was handed, with DIRECT_OWED's text unchanged — so
+    the answer re-grounds the work rather than declaring it already done.
+
+    What is NOT claimed here is that the step grades any Check against the
+    base tree: it opens its trees at the base and reads them, and the
+    arithmetic over what a base already satisfies belongs elsewhere (KOD-626).
+    """
+    answer = premise_answer()
+    executor = Executor([[answer], [answer]])
+    step, spec, current, workspace, port, _, repo_path, base = await build(
+        repository, executor, port=tracker(bodies={DIRECT_OWED: premise_body()})
+    )
+    before = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    record = await pinned_record(port, answer, before=before)
+    assert record.ruling_class is RulingClass.REGROUND_PREMISE
+    assert record.resolution == REGROUNDED
+    assert record.rejected_alternative is None
+    # Both trees the pass opened stood at the base, and the premise is false
+    # there: the module the Check names is not in that tree, and the one the
+    # answer re-grounds on is.
+    assert [call["ref"] for _, call in workspace.acquired] == [base, base]
+    at_base = (await git(repo_path, "ls-tree", "--name-only", base)).splitlines()
+    assert ABSENT_MODULE not in at_base and PRECEDENT_FILE in at_base
+    # (a) Not closed.  No state moved and no description was written; the
+    # subject and the criterion are still open by kind.
+    assert port.issue_writes == []
+    assert port.workflow_writes == []
+    assert port.restored_states == []
+    for key in (SUBJECT, DIRECT_OWED):
+        assert port.issues[key].state_kind not in {
+            WorkflowStateKind.COMPLETED,
+            WorkflowStateKind.CANCELED,
+        }
+    # (b) Not crossed off.  Read again, the owed set is the set the step was
+    # handed, and the criterion still carries the text it had.
+    again = await TrackerCriteria(tracker=port).read_current(spec=spec, held=None)
+    assert again == current
+    assert {criterion.id: criterion.text for criterion in again.criteria}[
+        DIRECT_OWED
+    ] == PREMISE_CHECK
+    # A second pass over the same fixture writes nothing.
+    after_first = board_state(port)
+    await run(step, spec, current, repo_path, base)
+    assert board_state(port) == after_first
