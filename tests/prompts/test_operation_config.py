@@ -58,6 +58,12 @@ PROSE_AND_SHIPPED_FILES = [
     *sorted(DOCS.rglob("*.md")),
     *sorted(DOCS.glob("*.toml")),
 ]
+#: The floor the derivation cannot fall through: an empty or collapsed list
+#: would otherwise collect nothing and pass, and a module-level failure reddens
+#: at COLLECTION even when the parametrisation is empty.
+assert {DOCS / "configuration.md", DOCS / "operation.scope.toml"} <= set(
+    PROSE_AND_SHIPPED_FILES
+)
 SET_DIR = REPO_ROOT / "src" / "kodezart" / "prompts" / "sets" / "claude-opus"
 PASS_KEYS = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
 
@@ -716,7 +722,6 @@ def test_no_document_or_shipped_operation_file_names_a_retired_scope_key(
     load.  The keys come from the loader's own mapping and the files from the
     tree, so neither side of this is a list kept by hand.
     """
-    assert PROSE_AND_SHIPPED_FILES
     text = path.read_text(encoding="utf-8")
     named = [key for key in RETIRED_SCOPE_KEYS if key in text]
     assert named == [], f"{path.name} names {named}"
