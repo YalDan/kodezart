@@ -16,7 +16,10 @@ from kodezart.types.domain.audit_detection_removal import (
     DetectorRemovalObservation,
     DetectorRemovalReportEntry,
 )
-from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
+from kodezart.types.domain.audit_evidence import (
+    AuditEvidenceObservation,
+    AuditRestampTrace,
+)
 from kodezart.types.domain.audit_forge import AuditForgeObservation
 from kodezart.types.domain.audit_overclaim import (
     AuditOverclaimObservation,
@@ -185,6 +188,7 @@ class _AuditScopeReport(CamelCaseModel):
     )
     raw_observations: tuple[
         AuditEvidenceObservation
+        | AuditRestampTrace
         | AuditForgeObservation
         | AuditTerminalObservation
         | AuditOverclaimObservation

@@ -1,6 +1,6 @@
 """Source observations before audit correction, mandate completion or publication."""
 
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -43,4 +43,32 @@ class AuditEvidenceObservation(CamelCaseModel):
             or self.current_claim.judgment.verdict is not self.verdict
         ):
             raise ValueError("the fresh claim belongs to a different observation")
+        return self
+
+
+class AuditRestampTrace(CamelCaseModel):
+    """One Evidence row's commit against the gradings its lane's stream holds."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    criterion_key: str = Field(min_length=1, pattern=r"\S")
+    recorded_evidence: CriterionEvidence
+    history: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...]
+    verdict: AuditVerdict
+    reason: str = Field(min_length=1, pattern=r"\S")
+
+    @model_validator(mode="after")
+    def verdict_follows_the_recorded_history(self) -> Self:
+        """The wrong verdict cannot be constructed, so it cannot be published.
+
+        ``history`` has no default on purpose: an empty tuple is not a
+        trace, so the model cannot be built without saying what was read.
+        """
+        if self.verdict is AuditVerdict.UNVERIFIABLE:
+            raise ValueError("a restamp trace reads a stream, never an unsettled claim")
+        if not self.history:
+            raise ValueError("a trace without a recorded grading traces no restamp")
+        traced = self.history[-1] == self.recorded_evidence.graded_sha
+        if (self.verdict is AuditVerdict.HOLDS) is not traced:
+            raise ValueError("the restamp verdict differs from the recorded history")
         return self

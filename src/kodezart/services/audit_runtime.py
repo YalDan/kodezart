@@ -33,7 +33,10 @@ from kodezart.types.domain.audit import (
     InstructedMandateObservation,
 )
 from kodezart.types.domain.audit_detection_removal import DetectorRemovalObservation
-from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
+from kodezart.types.domain.audit_evidence import (
+    AuditEvidenceObservation,
+    AuditRestampTrace,
+)
 from kodezart.types.domain.audit_forge import AuditForgeObservation
 from kodezart.types.domain.audit_overclaim import AuditOverclaimObservation
 from kodezart.types.domain.audit_runtime import (
@@ -191,6 +194,7 @@ def _raw_observations(
     observations: Sequence[AuditReadObservation],
 ) -> tuple[
     AuditEvidenceObservation
+    | AuditRestampTrace
     | AuditForgeObservation
     | AuditTerminalObservation
     | AuditOverclaimObservation
@@ -202,6 +206,7 @@ def _raw_observations(
         for observation in observations
         for item in (
             observation.evidence,
+            observation.restamp,
             observation.forge,
             observation.terminal,
             None

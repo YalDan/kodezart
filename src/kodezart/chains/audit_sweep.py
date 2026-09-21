@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from kodezart.chains.audit_detection_removal import DetectorRemovalVerifier
-from kodezart.chains.audit_evidence import AuditEvidenceVerifier
+from kodezart.chains.audit_evidence import AuditEvidenceVerifier, AuditRestampVerifier
 from kodezart.chains.audit_forge import AuditForgeVerifier
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
@@ -32,7 +32,10 @@ from kodezart.types.domain.audit_detection_removal import (
     DetectorRemovalReport,
     DetectorRemovalReportEntry,
 )
-from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
+from kodezart.types.domain.audit_evidence import (
+    AuditEvidenceObservation,
+    AuditRestampTrace,
+)
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
 from kodezart.types.domain.audit_overclaim import (
     AuditOverclaimReport,
@@ -66,6 +69,7 @@ class AuditReadObservation:
     forge: AuditForgeObservation | None = None
     forge_report: AuditClaimReport | None = None
     forge_unavailable_reason: str | None = None
+    restamp: AuditRestampTrace | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -146,6 +150,7 @@ class AuditReadSweep:
         operation: OperationConfig,
         claims: AuditClaimVerifier,
         evidence: AuditEvidenceVerifier,
+        restamps: AuditRestampVerifier,
         mandates: AuditMandateHunt,
         terminals: AuditTerminalReader,
         git: GitService,
@@ -160,6 +165,7 @@ class AuditReadSweep:
         self._review_state = operation.workflow_states.get(LifecycleStage.IN_REVIEW)
         self._claims = claims
         self._evidence = evidence
+        self._restamps = restamps
         self._mandates = mandates
         self._terminals = terminals
         self._git = git
@@ -209,18 +215,26 @@ class AuditReadSweep:
                 target, terminal=terminal, terminal_report=terminal_report
             )
         evidence = None
+        restamp = None
         issue = target.issue
         if issue.state_kind is WorkflowStateKind.COMPLETED or (
             issue.state_kind is WorkflowStateKind.STARTED
             and issue.state_name == self._review_state
         ):
             evidence = await self._evidence.observe(request)
+            restamp = await self._restamps.observe(
+                request=request, evidence=evidence.recorded_evidence
+            )
             if evidence.is_lapse:
-                return AuditReadObservation(target, evidence=evidence)
+                # A lapse is exactly a row whose commit is behind head, so
+                # this is the case the trace is most about: it survives the
+                # lapse return rather than being dropped with it.
+                return AuditReadObservation(target, evidence=evidence, restamp=restamp)
             claim = evidence.current_claim
             if claim is None:
                 raise AuditClaimReadError("current grading has no claim observation")
         else:
+            # No Evidence row was read, so there is no restamp to trace.
             claim = await self._claims.verify(request)
         report = await self._mandates.complete(
             AuditMandateRequest(
@@ -231,7 +245,9 @@ class AuditReadSweep:
                 cache_key=request.cache_key,
             )
         )
-        return AuditReadObservation(target, claim=report, evidence=evidence)
+        return AuditReadObservation(
+            target, claim=report, evidence=evidence, restamp=restamp
+        )
 
     async def _observe_overclaims(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
@@ -458,6 +474,9 @@ class AuditReadSweep:
             forge=forge,
             forge_report=forge_report,
             forge_unavailable_reason=forge_reason,
+            # This method rebuilds the observation field by field, so a field
+            # not listed here is dropped before anything composed sees it.
+            restamp=observation.restamp,
         )
 
     async def run(self) -> AuditReadSweepResult:

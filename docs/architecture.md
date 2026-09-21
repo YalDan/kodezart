@@ -94,6 +94,7 @@ does not exist.
 | ScopeStatusUpdates | LinearScopeStatusUpdates | The container-status role whole, read and write, one class over the tracker's caller |
 | SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
 | RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: one keyed record read and rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
+| LaneEventHistory | LinearMcpTracker | A lane's posted events read for a grading's provenance; narrowed out of the port rather than added to it, and holding no write |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
 | WriteBackStep | _EscalationStep and the per-surface step bodies of the organize, amendment and audit writers | One writing step the verifier drives: the step owns its write and names the surface re-read after it |
 | WriteBackJudge | FreshWriteBackJudge | Judges the artifact that landed, in a session that wrote none of it |
@@ -1248,6 +1249,36 @@ last guard reports a loss, while retaining or replacing it keeps this arm quiet.
 There are no tracker writes, coverage marks or writer-lease bypasses here;
 scheduled publication and complete coverage of the other detectors remain
 separate consumers.
+
+
+### Restamp traceability
+
+A criterion's Evidence row names the commit its grading was read at, and
+restamping that row is a write nothing used to answer for. `AuditReadSweep`
+now traces it: `AuditRestampVerifier` reads the lane issue's own append-only
+run-event stream through the narrowed `LaneEventHistory` role, keeps the
+events keyed to this criterion that name a commit, and asks whether the row's
+commit is the one the LAST recorded grading names. It holds, otherwise it is
+refuted — never unverifiable, because the stream was read rather than left
+unsettled, and `AuditRestampTrace` refuses that verdict at construction.
+
+Membership anywhere in the history would not do. An entry followed by a later
+recorded grading is itself later than the restamp, so a row pointing behind
+the grading that actually last ran would be admitted, and order is the only
+thing an append-only stream guarantees. A criterion whose history holds no
+recorded grading was never restamped and is not traced at all: a passing
+cross-off stamps the Evidence row and posts no event, so reading an empty
+history as "no entry at this commit" would refute every criterion the board
+ever finished (KOD-506).
+
+The trace is an observation, not a publication. It rides in the scope report's
+raw observations and adds no comment, marker or coverage effect, and the
+verifier takes no claim, judgment or verdict: an implementation that graded
+whether the restamped verdicts happen to be true has no parameter to arrive
+through. A lapsed criterion is traced too — a lapse is exactly a row whose
+commit is behind head. A failed or damaged stream read raises the typed
+Evidence read failure, which the sweep's single translation point turns into
+an unavailable reason.
 
 
 ## Standing over-claim observations

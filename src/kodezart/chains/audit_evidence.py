@@ -2,7 +2,14 @@
 
 from kodezart.chains.audit_pass import AuditClaimVerifier
 from kodezart.core.owned_tasks import settle
-from kodezart.core.protocols import GitService, GitSourceReader, RepoCache, TrackerPort
+from kodezart.core.protocols import (
+    GitService,
+    GitSourceReader,
+    LaneEventHistory,
+    RepoCache,
+    TrackerPort,
+)
+from kodezart.domain.audit_claims import evidence_row_history, restamp_verdict
 from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES, parse_audit_evidence
@@ -11,7 +18,10 @@ from kodezart.services.git_observations import read_replace_refs
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import AuditClaimRequest, AuditVerdict
-from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
+from kodezart.types.domain.audit_evidence import (
+    AuditEvidenceObservation,
+    AuditRestampTrace,
+)
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
@@ -176,4 +186,64 @@ class AuditEvidenceVerifier:
             record_ref=comment.comment_key,
             verdict=verdict,
             current_claim=claim,
+        )
+
+
+class AuditRestampVerifier:
+    """Trace one Evidence row's commit to the gradings the lane recorded.
+
+    Restamping an Evidence row is a write; the gradings a lane actually ran
+    are its own append-only stream. Nothing joined the two, so a row could
+    name any commit and read as graded there. This reads the stream and
+    says whether the row's commit is the one the LAST recorded grading
+    names (KOD-506).
+
+    ``observe`` takes no claim, judgment or verdict. An implementation that
+    graded whether the restamped verdicts happen to be true is not merely
+    unwired here, it has no parameter to arrive through.
+    """
+
+    def __init__(self, *, events: LaneEventHistory) -> None:
+        self._events = events
+
+    async def observe(
+        self, *, request: AuditClaimRequest, evidence: CriterionEvidence
+    ) -> AuditRestampTrace | None:
+        """The row's trace, or ``None`` when no grading was ever recorded.
+
+        A criterion whose history holds no recorded grading was never
+        restamped and is not traced: a passing cross-off stamps the Evidence
+        row and posts no event, so reading an empty history as "no entry at
+        this commit" would refute every criterion the board ever finished.
+
+        The read is the lane issue's own stream, keyed to this criterion by
+        ``subject_key`` — that is where a grading is posted. A failed or
+        damaged read raises, so the sweep's one translation point turns it
+        into an unavailable reason rather than a silent absence.
+        """
+        try:
+            events = await self._events.lane_run_events(
+                issue_key=request.lane_issue_key, lane_key=request.lane_key
+            )
+        except AUDIT_READ_FAILURES as exc:
+            raise AuditEvidenceReadError(
+                criterion_key=request.criterion_key,
+                reason=f"the lane's recorded gradings could not be read: {exc}",
+            ) from exc
+        history = evidence_row_history(
+            events=events, criterion_key=request.criterion_key
+        )
+        if not history:
+            return None
+        verdict = restamp_verdict(history=history, graded_sha=evidence.graded_sha)
+        return AuditRestampTrace(
+            criterion_key=request.criterion_key,
+            recorded_evidence=evidence,
+            history=history,
+            verdict=verdict,
+            reason=(
+                f"{request.criterion_key}: the Evidence row names "
+                f"{evidence.graded_sha}, and the last recorded grading is at "
+                f"{history[-1]}"
+            ),
         )
