@@ -2614,6 +2614,7 @@ class FakeLinearMcpServer:
         transport_failures: Mapping[str, int] | None = None,
         tool_errors: Mapping[str, str] | None = None,
         credential_refused_after: Mapping[str, int] | None = None,
+        stamp_moves_on_read: bool = False,
     ) -> None:
         self.issues: dict[str, FakeMcpIssue] = {issue.id: issue for issue in issues}
         self.diffs: list[FakeMcpDiff] = list(diffs)
@@ -2674,6 +2675,14 @@ class FakeLinearMcpServer:
         )
         self._stamps: int = 0
         self._stamped: datetime | None = None
+        #: A read that moves ``updatedAt`` too.  Off by default and a
+        #: deliberate departure from the write-only stamp of ``_moved``
+        #: (KOD-175): the vendor moves the stamp on its own writes, and the
+        #: conformance modules compare whole revisions across repeated reads,
+        #: which only holds while a read moves nothing.  A fixture switches
+        #: it on to ask what an implementation reads the stamp FOR, where
+        #: the case under it performs no write at all and so cannot move it.
+        self.stamp_moves_on_read: bool = stamp_moves_on_read
         self._transient_failures: dict[str, int] = dict(transient_failures or {})
         self._transport_failures: dict[str, int] = dict(transport_failures or {})
         #: Tools that answer with an error RESULT, and the diagnosis each
@@ -2843,6 +2852,8 @@ class FakeLinearMcpServer:
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
         issue = self._issue(arguments, "id")
+        if self.stamp_moves_on_read:
+            self._moved(issue.id)
         wire = dict(issue.wire())
         if issue.created_by is None:
             wire["createdBy"] = self.actor
@@ -3450,6 +3461,7 @@ class FakeTrackerPort:
         writer_identities: frozenset[str] = frozenset({"kodezart"}),
         body_authorship: Mapping[str, SurfaceAuthorship] | None = None,
         approval_classifications: frozenset[str] = frozenset(),
+        stamp_moves_on_read: bool = False,
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
@@ -3546,6 +3558,11 @@ class FakeTrackerPort:
         #: admission vocabulary's approved member — empty unless a
         #: configuration actually aliases the two.
         self.approval_classifications: frozenset[str] = approval_classifications
+        #: A read that moves the issue's stamp too.  Off by default, for the
+        #: reason the server double's own flag is (KOD-175): a read is not a
+        #: write, so it neither records a self-write nor stamps the ledger,
+        #: and it stays out of the way of the repeated-read equalities.
+        self.stamp_moves_on_read: bool = stamp_moves_on_read
         self._assets: dict[str, tuple[TrackerAsset, ...]] = {
             key: tuple(value) for key, value in (assets or {}).items()
         }
@@ -3671,7 +3688,13 @@ class FakeTrackerPort:
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         await asyncio.sleep(0)
         self.issue_reads.append(issue_key)
-        return self.issues[issue_key]
+        issue = self.issues[issue_key]
+        if self.stamp_moves_on_read:
+            issue = issue.model_copy(
+                update={"updated_at": issue.updated_at + FIXTURE_WRITE_STEP}
+            )
+            self.issues[issue_key] = issue
+        return issue
 
     async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
         return await self.read_issue(issue_key=issue_key)

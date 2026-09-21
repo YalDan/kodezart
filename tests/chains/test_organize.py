@@ -1047,10 +1047,20 @@ def test_the_pre_query_refuses_an_incoherent_snapshot_instead_of_answering_rest(
 
 @pytest.fixture(params=["fake", "linear"])
 def organized_port(request):
+    # *stamp_reads* makes every further read of this port move the change
+    # stamp, whichever double is underneath. The UNCHANGED replay below writes
+    # nothing, so a stamp that only a write moves cannot tell a digest taken
+    # from the body alone from one that folds the stamp into it; a stamp that
+    # moves on the read can. It is a switch rather than a constructor value
+    # because an admission session compares the whole issue across its
+    # context read and its revision read, so no session may run under it.
     revisions = (*organized_family(), *organized_family("other/17"))
     keys = tuple(revision.issue.issue_key for revision in revisions)
     if request.param == "fake":
         source = FakeTrackerPort(issues=[revision.issue for revision in revisions])
+
+        def stamp_reads() -> None:
+            source.stamp_moves_on_read = True
     else:
         server = FakeLinearMcpServer(
             issues=[
@@ -1075,18 +1085,44 @@ def organized_port(request):
                 BODY_MARKER: "body-phase-finished",
             },
         )
-    return source, keys
+
+        def stamp_reads() -> None:
+            server.stamp_moves_on_read = True
+
+    return source, keys, stamp_reads
 
 
 async def read_gap_revisions(source, keys):
     return tuple([await source.read_issue_revision(issue_key=key) for key in keys])
 
 
+async def test_the_organized_port_moves_its_stamp_on_read_and_not_its_body_revision(
+    organized_port,
+):
+    """Under the switch a read moves the stamp and the body revision holds.
+
+    Stated on both arms and positively, so the replay case below cannot go
+    vacuous: a revision that folded the stamp into its digest would answer two
+    reads of one unwritten body with two digests, and the digest holding still
+    across those reads is the prohibition itself.
+    """
+    source, keys, stamp_reads = organized_port
+    stamp_reads()
+    first = await source.read_issue(issue_key=keys[1])
+    second = await source.read_issue(issue_key=keys[1])
+    assert second.updated_at > first.updated_at
+    assert second.body == first.body
+    one = await source.read_issue_revision(issue_key=keys[1])
+    two = await source.read_issue_revision(issue_key=keys[1])
+    assert two.issue.updated_at > one.issue.updated_at
+    assert two.body_digest == one.body_digest
+
+
 @pytest.mark.parametrize("change", ["amended_body", "unchanged_body", "state_only"])
 async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
     organized_port, change
 ):
-    source, keys = organized_port
+    source, keys, stamp_reads = organized_port
     executor = RecordingExecutor([])
     workspace = RecordingWorkspace()
     admission = consumer(source, executor, workspace)
@@ -1124,6 +1160,10 @@ async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
             issue_key=child_key, body="Check: revised runnable condition."
         )
     elif change == "unchanged_body":
+        # The replay writes nothing, so from here the port moves its stamp on
+        # every read: that is the only way this arm can tell a body digest from
+        # one that folds the stamp in. No session runs after this point.
+        stamp_reads()
         assert (
             await source.edit_description(
                 target=child_key,
