@@ -18,6 +18,7 @@ from kodezart.types.domain.surface import (
     WritableSurface,
 )
 from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import FakeMcpIssue, FakeTrackerPort, make_tracker_issue
 from tests.services.test_run_surface_lease import _Board
 from tests.tracker.test_linear_mcp_tracker import tracker_over
@@ -181,6 +182,42 @@ async def test_explicit_issue_description_authority_preserves_generic_descriptio
             ),
         )
     assert board.server.issues[KEY].description == "A generic issue description."
+    assert board.server.issues[KEY].status == "Done"
+
+
+async def test_an_authorized_edit_writes_the_description_alone_and_keeps_the_title():
+    """The one field the write sends, read off the arguments that reached the board.
+
+    The criterion's title carries the identity every consumer addresses it by,
+    so a write that sent a title alongside the description would rename the row
+    on the board even though the readback afterwards refused it. The sent
+    arguments are asserted exactly, not counted.
+    """
+    board, tracker = board_and_tracker()
+    title_before = board.server.issues[KEY].title
+    replacement = BODY.replace("old predicate", "new predicate")
+
+    async with lease(tracker):
+        result = await tracker.edit_description(
+            target=KEY,
+            expected=BODY,
+            replacement=replacement,
+            authorization=DescriptionWriteAuthority(
+                holder=HOLDER,
+                surface=WritableSurface(
+                    kind=SurfaceKind.CRITERION_SUB_ISSUE,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=KEY),
+                ),
+            ),
+        )
+
+    assert result is DescriptionEditResult.EDITED
+    assert [args for name, args in board.calls if name == "save_issue"] == [
+        {"id": KEY, "description": replacement}
+    ]
+    assert board.server.issues[KEY].title == title_before
+    assert board.server.issues[KEY].description == replacement
+    # The description write moves no state: the row stays where it was.
     assert board.server.issues[KEY].status == "Done"
 
 
