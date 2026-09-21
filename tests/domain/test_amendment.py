@@ -187,6 +187,9 @@ def test_pure_counts_separate_subject_kind_identity_and_reason():
     ]
     before = [report.model_dump_json() for report in reports]
     counted = repeated_upheld(reports)
+    # Read after the first call and before any second one: a second call
+    # undoes an in-place mutation that is its own inverse.
+    assert [report.model_dump_json() for report in reports] == before
     assert [
         (item.subject.kind, item.subject.id, item.reason, item.count)
         for item in counted
@@ -201,7 +204,6 @@ def test_pure_counts_separate_subject_kind_identity_and_reason():
         == counted
     )
     assert repeated_upheld(reports) == counted
-    assert [report.model_dump_json() for report in reports] == before
 
 
 def test_the_ground_vocabulary_gained_no_member_when_the_subject_widened():
