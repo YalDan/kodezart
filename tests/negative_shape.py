@@ -154,7 +154,14 @@ def pytest_bindings(tree: ast.Module) -> dict[str, str]:
 
     ``import pytest as pt`` binds ``pt``; ``from pytest import mark as m``
     binds ``m`` to the mark factory; a module-level ``marks = pytest.mark``
-    binds ``marks`` to the same.  Only origins under pytest are kept.
+    binds ``marks`` to the same, and an annotated ``marks: Final =
+    pytest.mark`` binds the same way.  Only origins under pytest are kept.
+
+    One pass in file order is the whole semantics: at module level a name is
+    bound before it is read, so the alias an assignment copies is already
+    bound when that assignment is reached, and a name bound again replaces
+    the binding it had.  The reading is not position-aware, so a name bound
+    twice is read everywhere as its last binding.
     """
     bindings: dict[str, str] = {}
     for statement in tree.body:
@@ -167,22 +174,20 @@ def pytest_bindings(tree: ast.Module) -> dict[str, str]:
             if origin == "pytest" or origin.startswith("pytest."):
                 for alias in statement.names:
                     bindings[alias.asname or alias.name] = f"{origin}.{alias.name}"
-
-    # An assignment alias can be written above the alias it copies, so the
-    # finite set is resolved before any chain is read.
-    changed = True
-    while changed:
-        changed = False
-        for statement in tree.body:
-            if not isinstance(statement, ast.Assign):
-                continue
-            origin = _through(dotted(statement.value), bindings)
-            if origin is None:
-                continue
-            for target in statement.targets:
-                if isinstance(target, ast.Name) and bindings.get(target.id) != origin:
-                    bindings[target.id] = origin
-                    changed = True
+        elif isinstance(statement, ast.Assign):
+            copied = _through(dotted(statement.value), bindings)
+            if copied is not None:
+                for target in statement.targets:
+                    if isinstance(target, ast.Name):
+                        bindings[target.id] = copied
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and statement.value is not None
+            and isinstance(statement.target, ast.Name)
+        ):
+            copied = _through(dotted(statement.value), bindings)
+            if copied is not None:
+                bindings[statement.target.id] = copied
     return bindings
 
 
@@ -193,7 +198,8 @@ def sites(module: Source, forms: frozenset[str]) -> tuple[str, ...]:
     own pytest bindings, so an aliased import names the same form.  A string
     constant is never a site.  Not followed, and so not seen: a form reached
     through ``getattr``, a marker added from a string at collection time, an
-    alias bound inside a function, a module reached through ``importlib``.
+    alias bound inside a function, a module reached through ``importlib``, an
+    import from the private ``_pytest`` packages.
     """
     bindings = pytest_bindings(module.tree)
     inner = {

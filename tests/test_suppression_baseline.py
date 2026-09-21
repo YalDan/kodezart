@@ -200,9 +200,9 @@ CONFIG_BASELINE: dict[str, object] = {
 }
 
 #: One hand-written source per form, each binding pytest a different way,
-#: so the import alias, the from-import and the assignment alias each have
-#: a control.  The tree aliases pytest nowhere today, so these are the only
-#: proof those arms work.
+#: so the import alias, the from-import, the assignment alias, a name bound
+#: twice and the annotated assignment each have a control.  The tree aliases
+#: pytest nowhere today, so these are the only proof those arms work.
 FORM_CONTROLS: tuple[tuple[str, str], ...] = (
     (
         "pytest.mark.skip",
@@ -224,6 +224,16 @@ FORM_CONTROLS: tuple[tuple[str, str], ...] = (
     (
         "pytest.mark.postgres",
         "from pytest import mark\nm = mark\n@m.postgres\ndef test_a(): ...\n",
+    ),
+    (
+        "pytest.mark.postgres",
+        "import pytest\nfrom pytest import mark\n"
+        "m = pytest\nm = mark\n@m.postgres\ndef test_a(): ...\n",
+    ),
+    (
+        "pytest.mark.skip",
+        "import pytest\nfrom typing import Final\n"
+        "m: Final = pytest.mark\n@m.skip\ndef test_a(): ...\n",
     ),
 )
 
