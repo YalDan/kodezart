@@ -772,7 +772,7 @@ MERGE_STATE_NAMES = frozenset(
 #: The act the terminal is, from which the rest of it is reached.
 TERMINAL_SEED = "kodezart.services.scope_terminal"
 
-#: The prefixes the scan follows out of the seed's own import nodes. The
+#: The prefixes the scan follows, transitively, out of the seed. The
 #: ``kodezart.types.domain`` package is NOT followed: the vector's module
 #: imports the v0.2 fire event's module, whose own delivery field names a
 #: merge legitimately, and that is not a fact about this lane. The one typed
@@ -782,19 +782,28 @@ TERMINAL_VECTOR = "kodezart.types.domain.scope_terminal"
 
 
 def terminal_modules() -> set[str]:
-    """The modules the terminal is made of: the act, its readings, its vector.
+    """Every module the terminal reaches: the act, its readings, its vector.
 
     Derived out of the act's own import nodes rather than listed here, so a
     module the terminal starts depending on is scanned without this test being
     edited — and a scan that had lost its surface could not report the same
     empty result as a clean one.
+
+    Followed transitively, because what the guards below say is that no module
+    of the terminal REACHES a forbidden thing: a module the act imports through
+    another module is reached just as much as one it names itself. The walk is
+    bounded by the modules already taken, so an import cycle terminates.
     """
-    tree = ast.parse(path_of(TERMINAL_SEED).read_text(encoding="utf-8"))
-    return {
-        TERMINAL_SEED,
-        TERMINAL_VECTOR,
-        *imported_modules(tree, TERMINAL_PACKAGES),
-    }
+    reached: set[str] = set()
+    pending = [TERMINAL_SEED]
+    while pending:
+        module = pending.pop()
+        if module in reached:
+            continue
+        reached.add(module)
+        tree = ast.parse(path_of(module).read_text(encoding="utf-8"))
+        pending.extend(imported_modules(tree, TERMINAL_PACKAGES))
+    return reached | {TERMINAL_VECTOR}
 
 
 def merge_state_sites(source: str, *, label: str) -> list[str]:
@@ -1003,10 +1012,9 @@ def git_port_sites(source: str, *, label: str) -> list[str]:
     its operations.
 
     Blind spots, stated rather than hidden: a reach through ``getattr`` with a
-    computed name is not seen; a name spelled inside a larger string
+    computed name is not seen, and a name spelled inside a larger string
     annotation is not seen, because the literal arm is an equality and not a
-    substring; and a read more than one import hop from the act is outside the
-    scanned surface rather than outside this detector.
+    substring.
     """
     names = git_port_names()
     sites: list[str] = []
@@ -1053,9 +1061,11 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
 
     Non-vacuous in both directions. The name set is held against an anchor per
     noun, so a derivation gone empty cannot report a clean result; the scanned
-    surface is held against the four modules this claim is about, so a surface
-    gone empty cannot either; and the modules that DO read a ref are found from
-    the tree by the two tests below, so a blind detector cannot.
+    surface is held against the five modules this claim is about, one of them
+    reached only through another, so neither a surface gone empty nor one that
+    had stopped following the imports out can either; and the modules that DO
+    read a ref are found from the tree by the two tests below, so a blind
+    detector cannot.
     """
     names = git_port_names()
     assert GIT_PORT_ANCHORS <= names, sorted(names)
@@ -1065,6 +1075,10 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
         TERMINAL_VECTOR,
         "kodezart.domain.scope_terminal",
         "kodezart.services.lane_reports",
+        # Reached through ``kodezart.services.lane_records`` and named nowhere
+        # in the act, so this is what says the walk is transitive rather than
+        # one import deep — which is what "reaches" asks for.
+        "kodezart.domain.lane_entry",
     } <= modules
     offenders = {
         module: sites
