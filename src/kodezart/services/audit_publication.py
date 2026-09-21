@@ -2,10 +2,10 @@
 
 from collections.abc import Awaitable, Callable
 
-from kodezart.chains.write_back_verifier import WriteBackStep, WriteBackVerifier
+from kodezart.chains.write_back_verifier import WriteBackVerifier
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
-from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.core.protocols import OutboundContentGate, TrackerPort, WriteBackStep
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.services.audit_failures import AUDIT_PUBLICATION_FAILURES

@@ -57,8 +57,8 @@ import pytest
 import kodezart
 from kodezart.adapters.linear.status_update import LinearScopeStatusUpdates
 from kodezart.chains import write_back_verifier as verifier_module
-from kodezart.chains.write_back_verifier import WriteBackStep, WriteBackVerifier
-from kodezart.core.protocols import TrackerPort
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort, WriteBackStep
 from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.gating import ContentClass
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
