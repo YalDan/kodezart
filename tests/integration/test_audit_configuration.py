@@ -53,10 +53,11 @@ def test_audit_roster_has_no_ambiguous_or_incomplete_binding(damage):
         del fields["organize_scopes"][0]["report_issue_key"]
         loaded = OperationConfig.model_validate(fields)
         assert loaded.organize_scopes[0].report_issue_key is None
-        with pytest.raises(OperationMemberAbsentError, match="report_issue_key"):
+        with pytest.raises(OperationMemberAbsentError) as refused:
             verify_audit_configuration(
                 config=config, operation=loaded, tracker=tracker, forge=forge
             )
+        assert refused.value.missing == "organize_scopes.report_issue_key"
         return
     with pytest.raises(ValidationError):
         OperationConfig.model_validate(fields)
