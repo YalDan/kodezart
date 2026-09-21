@@ -740,23 +740,26 @@ class AuditScheduledPass:
                 key = mandate_escalation_key(
                     issue_key=observation.target.issue.issue_key
                 )
-                if key not in escalation_refs:
-                    escalation_refs[key] = await target.escalations.raise_mandate(
-                        issue_key=observation.target.issue.issue_key,
-                        lane_key=request.lane_key,
-                        job_id=identity.title(),
-                        head_sha=_head(current),
-                        mandate=mandate.root,
-                        visibility=self._operation.board_visibility(
-                            observation.target.issue.team_key
-                        ),
-                        publisher=target.publisher,
-                        require_current=require_current,
-                        accept_classification=accept_classification,
-                        accept_comment=accept_comment,
-                        writes=writes,
-                        interrupted=interrupted,
-                    )
+                # One ref per key is the mapping's own keying, not a branch:
+                # the check before create is the tracker's upsert under the
+                # occurrence marker, and re-raising against a key already
+                # present resolves to that same escalation object.
+                escalation_refs[key] = await target.escalations.raise_mandate(
+                    issue_key=observation.target.issue.issue_key,
+                    lane_key=request.lane_key,
+                    job_id=identity.title(),
+                    head_sha=_head(current),
+                    mandate=mandate.root,
+                    visibility=self._operation.board_visibility(
+                        observation.target.issue.team_key
+                    ),
+                    publisher=target.publisher,
+                    require_current=require_current,
+                    accept_classification=accept_classification,
+                    accept_comment=accept_comment,
+                    writes=writes,
+                    interrupted=interrupted,
+                )
             return AuditPublishedArtifact(
                 publication=current, escalation_refs=tuple(escalation_refs.values())
             ).model_dump_json()
