@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from kodezart.types.domain.organize_owner import StageHaltReport
+from kodezart.types.domain.organize_owner import StageHaltCause, StageHaltReport
 
 
 def bound(loop="admission"):
@@ -63,6 +63,59 @@ def write_back():
         ]
         * 2,
     }
+
+
+ESCALATION_IDS = "unrecorded_escalation_issue_ids"
+
+MINIMAL_VALID: dict[StageHaltCause, dict] = {
+    StageHaltCause.ADMISSION_EXHAUSTED: {
+        "cause": "admission_exhausted",
+        "bound": bound(),
+    },
+    StageHaltCause.CONVERGENCE_EXHAUSTED: {
+        "cause": "convergence_exhausted",
+        "bound": bound("convergence"),
+    },
+    StageHaltCause.ESCALATION_UNRECORDED: {
+        "cause": "escalation_unrecorded",
+        ESCALATION_IDS: ["native-child"],
+    },
+    StageHaltCause.HUMAN_DECISION: {
+        "cause": "human_decision",
+        "questions": [question()],
+    },
+    StageHaltCause.STAGE_INCOMPLETE: {
+        "cause": "stage_incomplete",
+        "phase": "ticket",
+        "unlabelled_issue_ids": ["native-child"],
+    },
+}
+
+
+def test_every_cause_has_a_minimal_valid_payload():
+    assert set(MINIMAL_VALID) == set(StageHaltCause)
+    for cause, payload in MINIMAL_VALID.items():
+        report = StageHaltReport.model_validate(payload)
+        assert report.cause is cause
+        assert StageHaltReport.model_validate_json(report.model_dump_json()) == report
+
+
+@pytest.mark.parametrize("cause", list(StageHaltCause))
+def test_the_escalation_id_list_belongs_to_the_escalation_cause_alone(cause):
+    minimal = MINIMAL_VALID[cause]
+    if cause is StageHaltCause.ESCALATION_UNRECORDED:
+        omitted = {
+            key: value for key, value in minimal.items() if key != ESCALATION_IDS
+        }
+        with pytest.raises(ValidationError):
+            StageHaltReport.model_validate(omitted)
+        with pytest.raises(ValidationError):
+            StageHaltReport.model_validate(minimal | {ESCALATION_IDS: []})
+        return
+    with pytest.raises(ValidationError):
+        StageHaltReport.model_validate(minimal | {ESCALATION_IDS: ["native-child"]})
+    stated_empty = StageHaltReport.model_validate(minimal | {ESCALATION_IDS: []})
+    assert stated_empty.unrecorded_escalation_issue_ids == ()
 
 
 @pytest.mark.parametrize(
