@@ -11,9 +11,11 @@ from kodezart.config.write_back import WriteBackSettings
 from kodezart.domain.amendment import (
     NativeAmendmentRefusalError,
     NativeWriteRefusalError,
+    repeated_upheld,
 )
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.types.domain.agent import NativeAmendmentEvent, WorkflowIterationEvent
+from kodezart.types.domain.amendment import UpheldReason
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import (
@@ -25,7 +27,7 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.tracker import WorkflowStateKind
-from tests.chains.test_native_fire import SUBJECT, native_evaluation
+from tests.chains.test_native_fire import DIRECT_OWED, SUBJECT, native_evaluation
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeArtifactPersister,
@@ -166,6 +168,79 @@ async def test_native_builder_retains_reports_and_requires_the_actual_owner(
     assert state.values["pending_failures"] == []
     assert len(executor.calls) == 6
     assert all(call["session_id"] is None for call in executor.calls)
+
+
+async def test_the_loop_carries_two_reasons_on_one_subject_as_distinct_rows(repository):
+    """The arithmetic is the pure function's, and the loop carries its rows unmerged.
+
+    Four rounds end upheld on one criterion under two reasons in turn, so the
+    count the last event carries has two rows on that one subject; a loop that
+    folded the rows by subject before placing them would carry one.
+    """
+    judgments = 0
+
+    async def alternate(title, payload, kwargs):
+        nonlocal judgments
+        if title != "AmendmentJudgment":
+            return
+        judgments += 1
+        if judgments % 2:
+            return
+        # Every second judgment measures an affordable cost at base instead,
+        # which is a second reason on the same criterion rather than a second
+        # subject: cost never reproduces a ground, so the round still ends
+        # upheld and the loop still produces no evaluation.
+        payload["finding"] = {
+            "verdict": "feasible",
+            "smallest_repair": "none",
+            "cost_claim": {
+                "assertion": "The demonstration costs what it costs.",
+                "measurement": {
+                    "observed": "measured 12 minutes at base",
+                    "affordable": True,
+                },
+            },
+        }
+        payload["measured_by"] = "timed the actual base demonstration"
+
+    executor = Executor(mutate=alternate)
+    fire, spec, current, _, workspace, _ = await make_runtime(
+        repository, executor, max_iterations=4
+    )
+    loop = fire.implementation._quality_gate
+    try:
+        events = [
+            event
+            async for event in loop.run(
+                prompt="Implement the native subject",
+                repo_path=str(repository[0]),
+                repo_url=REPO_URL,
+                feature_branch="native-feature",
+                ralph_branch="native-loop",
+                base_spec=trunk_base(repository[1]),
+                work_base_ref="main",
+                permission_mode=PermissionMode.UNATTENDED,
+                allowed_tools=ToolPreset.IMPLEMENTATION,
+                acceptance_criteria=list(current.criteria),
+                tracker_spec=spec,
+                cache_key="semantic-checkpoint",
+                surface_holder="actual-parent-job",
+                repo_visibility=RepoVisibility.PUBLIC,
+            )
+        ]
+    finally:
+        await cleanup(workspace)
+    reports = [event for event in events if isinstance(event, NativeAmendmentEvent)]
+    assert len(reports) == 4
+    assert reports[3].repeated == repeated_upheld([event.report for event in reports])
+    assert [
+        (row.subject.kind, row.subject.id, row.reason, row.count)
+        for row in reports[3].repeated
+    ] == [
+        ("criterion", DIRECT_OWED, UpheldReason.COST_MEASURED_AFFORDABLE, 2),
+        ("criterion", DIRECT_OWED, UpheldReason.GROUND_NOT_REPRODUCED, 2),
+    ]
+    assert not [event for event in events if isinstance(event, WorkflowIterationEvent)]
 
 
 def consumer_graph(fire, repository, spec, current):
