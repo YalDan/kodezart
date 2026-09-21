@@ -51,11 +51,27 @@ ABSORBING_SUBJECT = "subject/supersession"
 SUPERSEDED = "condition/delta"
 SUCCESSOR = "condition/epsilon"
 
+#: A third subject whose family numbers its titles BACKWARDS against the
+#: order its keys sort in.  Every other family here numbers them the same way
+#: round, which makes an order taken from the position token and an order
+#: taken from the identity the same list — and a read that took the mutable
+#: token for the order indistinguishable from one that took the key.
+INVERTED_SUBJECT = "subject/inverted"
+INVERTED_FIRST = "condition/kappa"
+INVERTED_SECOND = "condition/lambda"
+INVERTED_THIRD = "condition/mu"
+INVERTED_FAMILY = (INVERTED_FIRST, INVERTED_SECOND, INVERTED_THIRD)
+
 EVIDENCE = "**Evidence:** sha abc123 · independent verification"
 SUBJECT_BODY = "**Outcome:** Three checks, numbered in their titles.\n\nNot a draft."
 
 #: The token a title carries and the key never does.
 TOKENS = {FIRST: "AC-1", SECOND: "AC-2", THIRD: "AC-3"}
+#: The same, running the other way round its family's keys.
+INVERTED_TOKENS = dict(zip(INVERTED_FAMILY, ("AC-3", "AC-2", "AC-1"), strict=True))
+#: Every title-carried position in this module, so one title helper serves
+#: both families and neither can be numbered by accident.
+POSITIONS = {**TOKENS, **INVERTED_TOKENS}
 
 GRADED_SHA = "a" * 40
 QUESTION = "Which of the two readings of this check applies?"
@@ -63,13 +79,13 @@ REPO_URL = "https://example.invalid/fixture-owner/fixture-repo"
 
 
 def title_for(key: str) -> str:
-    return f"{TOKENS[key]} — the check {key} states"
+    return f"{POSITIONS[key]} — the check {key} states"
 
 
 def criterion_issue(key: str, *, parent: str = SUBJECT, **changes) -> FakeMcpIssue:
     fields: dict[str, object] = {
         "id": key,
-        "title": title_for(key) if key in TOKENS else f"the check {key} states",
+        "title": title_for(key) if key in POSITIONS else f"the check {key} states",
         "parent_id": parent,
         "labels": [LABEL],
         "description": f"**Check:** the behaviour {key} names\n\n{EVIDENCE}",
@@ -108,6 +124,13 @@ def server():
             relations=[("duplicateOf", SUCCESSOR)],
         ),
         criterion_issue(SUCCESSOR, parent=ABSORBING_SUBJECT),
+        FakeMcpIssue(
+            id=INVERTED_SUBJECT,
+            labels=FIRE_ENTRY_LABELS,
+            description=SUBJECT_BODY,
+            updated_at=FIXTURE_NOW,
+        ),
+        *(criterion_issue(key, parent=INVERTED_SUBJECT) for key in INVERTED_FAMILY),
     ]
     server.issues.update({issue.id: issue for issue in issues})
     return server
@@ -183,6 +206,58 @@ async def test_a_removed_criterion_and_a_renumbered_remainder_move_no_identity(
     # The token is not free to move under an amendment either.
     with pytest.raises(CriterionReadError, match="facts changed before amendment"):
         require_criterion_source(expected=third_before, current=third_after)
+    assert tracker_writes() == before
+
+
+async def test_the_family_is_ordered_by_its_keys_and_not_by_the_position_token(
+    tracker, tracker_writes, server
+):
+    """Over a family numbered backwards, the two possible orders differ.
+
+    The relative order the case above asserts is only a reading of identity
+    while the order the keys sort in and the order the tokens count in are
+    different lists. On the three-child family they are the same list, by the
+    coincidence that fixture is built on. Here they are opposites, so the read
+    names which of the two it is — and the rewrite that follows shows the
+    order surviving a token the board moved, which is what it is for.
+    """
+    before = tracker_writes()
+
+    family = tuple(await tracker.read_criteria(issue_key=INVERTED_SUBJECT))
+
+    assert [row.issue_key for row in family] == list(INVERTED_FAMILY)
+    assert [row.title for row in family] == [title_for(key) for key in INVERTED_FAMILY]
+    # The fixture's own property, stated so it cannot be lost: sorted by
+    # title these same three rows come back in exactly the opposite order.
+    assert sorted(row.title for row in family) == [
+        title_for(key) for key in reversed(INVERTED_FAMILY)
+    ]
+    # The spec read reports the same order, from the keys and nothing else.
+    spec = await tracker.read_fire_spec(issue_key=INVERTED_SUBJECT)
+    assert spec.criteria == INVERTED_FAMILY
+    # The same removal and rewrite as the case above, over this family: the
+    # last condition leaves and the middle one takes the number it vacated.
+    retire(tracker, server, INVERTED_THIRD)
+    renumber(
+        tracker,
+        server,
+        INVERTED_SECOND,
+        title=title_for(INVERTED_SECOND).replace(
+            INVERTED_TOKENS[INVERTED_SECOND], INVERTED_TOKENS[INVERTED_THIRD]
+        ),
+    )
+    surviving = tuple(await tracker.read_criteria(issue_key=INVERTED_SUBJECT))
+
+    # The two survivors in the order their keys sort, which is still the
+    # opposite of the order their rewritten titles count in.
+    assert [row.issue_key for row in surviving] == [INVERTED_FIRST, INVERTED_SECOND]
+    assert sorted(row.title for row in surviving) == [
+        row.title for row in reversed(surviving)
+    ]
+    assert (await tracker.read_fire_spec(issue_key=INVERTED_SUBJECT)).criteria == (
+        INVERTED_FIRST,
+        INVERTED_SECOND,
+    )
     assert tracker_writes() == before
 
 
