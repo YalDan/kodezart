@@ -9,6 +9,7 @@ what THIS adapter does to get there.
 
 import json
 from collections.abc import Mapping
+from datetime import timedelta
 from http import HTTPStatus
 
 import httpx
@@ -50,6 +51,7 @@ from tests.adapters.test_http_mcp_tool_caller import client_over
 from tests.fakes import FakeLinearMcpServer, FakeMcpComment, FakeMcpIssue
 from tests.tracker.conftest import (
     APPROVER,
+    BYSTANDER,
     CLAIMED_ISSUE,
     DOCUMENT_KEY,
     FIXTURE_NOW,
@@ -1403,3 +1405,47 @@ class TestTheBodyWriteRecordThisAdapterKeeps:
         assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == standing.body
         answer = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
         assert answer.holders == (FIRST_WRITER,)
+
+    async def test_a_record_the_backend_attributes_elsewhere_names_no_holder(
+        self,
+    ) -> None:
+        """Author identity authenticates a record; the log alone does not.
+
+        Two runs sharing one tracker account cannot be told apart by the
+        account, which is why the holder travels on the record — but that
+        only holds while a record the backend attributes to somebody else
+        counts for nothing.  Both copies below carry the shape of a real
+        record and differ in nothing but the account the backend names, so
+        the account is the only thing that can be deciding.
+        """
+        imitated = "imitated-writing-job"
+        attested = "attested-writing-job"
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        assert (
+            await held_body_write(
+                tracker,
+                holder=FIRST_WRITER,
+                replacement="a body the first job put there",
+            )
+            is DescriptionEditResult.EDITED
+        )
+        (record,) = [
+            comment for comment in server.comments if FIRST_WRITER in comment.body
+        ]
+
+        for offset, (holder, author) in enumerate(
+            ((imitated, BYSTANDER), (attested, APPROVER)), start=1
+        ):
+            server.comments.append(
+                FakeMcpComment(
+                    id=f"copied-record-{offset}",
+                    issue_id=CLAIMED_ISSUE,
+                    author=author,
+                    body=record.body.replace(FIRST_WRITER, holder),
+                    created_at=record.created_at + timedelta(seconds=offset),
+                )
+            )
+
+        answer = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        assert answer.holders == (FIRST_WRITER, attested)
