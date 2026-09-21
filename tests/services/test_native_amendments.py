@@ -469,9 +469,10 @@ async def test_current_authority_after_awaited_judge_or_commit_message(
         await cleanup(workspace)
 
 
+@pytest.mark.parametrize("ground", list(AmendmentGround))
 @pytest.mark.parametrize("marker_lane", [SUBJECT, "historical-scope-lane"])
 async def test_ruling_departure_uses_exact_readback_and_stays_not_actioned(
-    repository, marker_lane
+    repository, marker_lane, ground
 ):
     port = tracker()
     ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT))
@@ -483,7 +484,9 @@ async def test_ruling_departure_uses_exact_readback_and_stays_not_actioned(
             marker_prefixes={"ruling": "fixture-pinned"},
         ),
     )
-    executor = Executor(subject={"kind": "ruling", "id": ruling.ruling_id})
+    executor = Executor(
+        subject={"kind": "ruling", "id": ruling.ruling_id}, ground=ground
+    )
     service, guard, _, _ = await build(repository, executor, port=port)
     events = await drive(service, guard, repository)
     report = next(
@@ -491,6 +494,7 @@ async def test_ruling_departure_uses_exact_readback_and_stays_not_actioned(
     )
     assert report.upheld[0].subject.kind == "ruling"
     assert report.upheld[0].subject.id == ruling.ruling_id
+    assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
     assert ruling.resolution in executor.calls[0]["prompt"]
     assert ruling.rejected_alternative in executor.calls[0]["prompt"]
     assert not any(isinstance(event, ResultEvent) for event in events)
