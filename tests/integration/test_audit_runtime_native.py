@@ -36,6 +36,7 @@ from tests.fakes import (
     FakePRStateReader,
     PassThroughGate,
 )
+from tests.integration.test_audit_scheduler import declare_organize_owner
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.tracker.conftest import APPROVED_ISSUE, FIXTURE_NOW, WORKFLOW_STATE_NAMES
 from tests.tracker.test_audit_evidence_git import repository as repository
@@ -272,14 +273,14 @@ def native_operation(repo_url):
         decision="needs-decision",
         criteria_ready="criteria-prepared",
     )
-    fields["audit_scopes"] = [
+    fields["organize_scopes"] = [
         {
             "scope": SCOPE.model_dump(),
             "repo_url": repo_url,
             "report_issue_key": APPROVED_ISSUE,
         }
     ]
-    return OperationConfig.model_validate(fields)
+    return OperationConfig.model_validate(declare_organize_owner(fields))
 
 
 async def build_native_audit(repository, server, tmp_path, *, gate):

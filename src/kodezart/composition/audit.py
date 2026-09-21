@@ -34,11 +34,22 @@ from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationConfig,
     OperationMemberAbsentError,
+    OrganizeScopeBinding,
     RunKind,
 )
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+
+
+def _report_issue_key(binding: OrganizeScopeBinding) -> str:
+    """Where this scope's verified summary is reported, or a named refusal."""
+    if binding.report_issue_key is None:
+        raise OperationMemberAbsentError(
+            missing="organize_scopes.report_issue_key",
+            stops="configured audit scheduling",
+        )
+    return binding.report_issue_key
 
 
 def verify_audit_configuration(
@@ -48,21 +59,26 @@ def verify_audit_configuration(
     tracker: TrackerPort | None,
     forge: PRStateReader | None,
 ) -> bool:
-    """Reject a partial declared runtime before the queue or recorder starts."""
+    """Reject a partial declared runtime before the queue or recorder starts.
+
+    The audit's own settings decide whether it is configured at all; the one
+    declared scope table supplies what it is configured over.  A deployment
+    that declares scopes and configures no audit is not a partial audit —
+    it is a deployment with no audit, and it boots.
+    """
     if operation is not None and RunKind.AUDIT in operation.records:
         raise OperationMemberAbsentError(
             missing="records.audit",
             stops="the declared audit record sink lacks canonical write verification",
         )
-    if config.audit is None and (operation is None or not operation.audit_scopes):
+    if config.audit is None:
         return False
     if operation is None:
         raise OperationMemberAbsentError(
             missing="operation", stops="configured audit scheduling"
         )
     for present, missing in (
-        (bool(operation.audit_scopes), "audit_scopes"),
-        (config.audit is not None, "audit"),
+        (bool(operation.organize_scopes), "organize_scopes"),
         (config.write_back is not None, "write_back"),
         (forge is not None, "audit.forge"),
         (
@@ -74,6 +90,10 @@ def verify_audit_configuration(
             raise OperationMemberAbsentError(
                 missing=missing, stops="configured audit scheduling"
             )
+    # Every row's destination, before the first backend call below: a roster
+    # whose shape cannot be audited refuses typed and refuses cheaply.
+    for binding in operation.organize_scopes:
+        _report_issue_key(binding)
     configured_marker_prefix(operation.marker_prefixes, purpose="audit")
     configured_marker_prefix(operation.marker_prefixes, purpose="escalation")
     if tracker is None:
@@ -214,7 +234,7 @@ def build_audit_pass(
         )
     targets = []
     repositories = {entry.url: entry for entry in operation.repos}
-    for binding in operation.audit_scopes:
+    for binding in operation.organize_scopes:
         sweep = build_audit_read_sweep(
             config=config,
             operation=operation,
@@ -250,6 +270,7 @@ def build_audit_pass(
         targets.append(
             AuditTarget(
                 binding=binding,
+                report_issue_key=_report_issue_key(binding),
                 repository=repositories[binding.repo_url],
                 sweep=sweep,
                 publisher=publisher,

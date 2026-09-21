@@ -875,7 +875,10 @@ async def build_dispatch_runtime(
             )
         )
     else:
-        # A declared roster without policy also refuses direct factory calls.
+        # Called for the one refusal that survives an unconfigured audit: a
+        # record sink declared for the audit kind has no verified write seam,
+        # and a direct caller of this factory must hear that rather than a
+        # schedule quietly missing the pass it declared a sink for.
         verify_audit_configuration(
             config=config,
             operation=operation,
@@ -886,23 +889,22 @@ async def build_dispatch_runtime(
     # The observation tick needs a tracker to read and a declared roster to
     # read it for; it needs nothing else, so it is gated on exactly those two
     # and the absent arm names which one was missing rather than leaving an
-    # operator to deduce it from a schedule with no supervisor in it.
-    if dialled is not None and dialled.operation.supervisor_scopes:
+    # operator to deduce it from a schedule with no supervisor in it. The
+    # roster question is the one predicate that already answers "does this
+    # deployment work scope by scope", read off the same copy every other arm
+    # here reads: a tick observing rows the organize tick never grooms would
+    # be this factory holding two opinions about one operation.
+    if dialled is not None and operation is not None and runs_scope_flow(operation):
         scheduled.append(
             build_supervisor_pass(
-                config=config, operation=dialled.operation, tracker=dialled.tracker
+                config=config, operation=operation, tracker=dialled.tracker
             )
         )
     else:
-        # The roster is read off the same copy the gate above reads: the
-        # reconciled one when a tracker was dialled, the raw one only when
-        # there is no reconciled copy to read. A log line reading the other
-        # copy would be a second opinion on the very fact it reports.
-        declaring = operation if dialled is None else dialled.operation
         await log.ainfo(
             "supervisor_pass_not_wired",
             tracker_present=dialled is not None,
-            scopes_declared=bool(declaring is not None and declaring.supervisor_scopes),
+            scopes_declared=operation is not None and runs_scope_flow(operation),
         )
     if operation is not None:
         if dialled is None and (

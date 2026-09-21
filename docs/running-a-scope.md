@@ -95,7 +95,8 @@ current name; every retired spelling is refused rather than ignored.
   and grooming session passes are withheld, for the same reason.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
   carries and that pass's interval. On a scope deployment that is the organize
-  tick, and the audit pass where one is configured.
+  tick, the standing scopes' heartbeat, the observation tick that watches each
+  lane's run shape, and the audit pass where one is configured.
 
 Both "not wired" lines are expected here, and a boot that does NOT carry them on
 a scope deployment is a boot that just scheduled the per-issue machine over your

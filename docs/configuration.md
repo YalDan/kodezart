@@ -164,8 +164,8 @@ ready lanes and finished members, and for each the lane tally arm of
 `TALLY_UNMOVED`. Per lane it reads the run-state record and the one alarm
 record at that lane's address, composes what the address should hold, and
 writes only when the two differ. It moves no state and opens no session. It
-is registered only when the operation declares `supervisor_scopes` and the
-deployment dials a tracker; either one absent registers nothing and names
+is registered only when the operation declares `[[organize_scopes]]` rows and
+the deployment dials a tracker; either one absent registers nothing and names
 which was missing in the boot log.
 
 | Variable                          | Type         | Default                  | Constraints | Description                                              |
@@ -771,12 +771,23 @@ separator). They now refuse in constructor input, environment, dotenv and file
 secrets. A file secret named `KODEZART_LOGGING` holds a JSON object with `level` and
 `pretty`. Standard settings-source precedence is unchanged.
 
+`[[organize_scopes]]` is the operation's one scope table: a deployment declares
+each scope there once, and every pass that works scope by scope is composed from
+those rows — the organize tick and the `scope_heartbeat` pass over the whole row,
+the observation tick over the row's scope where a tracker is dialled, and the
+audit over the row and its report destination where audit settings are set.
+
 The native Organize owner requires explicit `[[organize_scopes]]` rows, each with
 `scope = { kind = "issue", key = "<native key>" }` (or another supported scope
 kind) and `repo_url` matching exactly one declared repository. A scope has one
 repository binding; duplicates and ambiguous mappings refuse configuration.
 These bindings require the full configured mandate table. No team/repository
 cross-product is inferred.
+
+Each row may also carry `report_issue_key`, naming the tracker issue that
+scope's verified audit summary is reported on. It is optional because a
+deployment that configures no audit has nowhere to report; a configured audit
+refuses naming `organize_scopes.report_issue_key` on a row that omits it.
 
 Declaring `[[organize_scopes]]` also withholds the per-issue machine. Such a
 deployment is worked scope by scope, and the periodic dispatch pass and the two
@@ -830,11 +841,13 @@ field has no default, and a scope run needs it.
 
 ## Native Audit scheduling
 
-Audit uses its own explicit `[[audit_scopes]]` operation rows. Each row declares
+Audit reads the operation's one `[[organize_scopes]]` table. Each row declares
 `scope` (a typed native scope), `repo_url` matching one declared repository, and
-`report_issue_key` naming the native tracker destination for the verified scope
-summary. Organize bindings do not supply this roster. Duplicate scope bindings
-and repository ambiguity refuse configuration.
+— for a configured audit — `report_issue_key` naming the native tracker
+destination for that scope's verified summary. A configured audit requires
+`report_issue_key` on every row and refuses naming
+`organize_scopes.report_issue_key` otherwise. Duplicate scope bindings and
+repository ambiguity refuse configuration.
 
 Set required positive `KODEZART_AUDIT__TIMEOUT_SECONDS` and the shared
 `KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS` (1 through 10); neither has a default.
@@ -847,8 +860,9 @@ Configured Audit also requires the actual tracker and forge reader, the
 and the configured `in_review` workflow state. The audited team must have
 exactly one unstarted workflow state, which is where a refuted criterion is
 reset to; the port refuses the reset otherwise. Partial configuration refuses
-preflight before queue startup. With both roster and settings absent, the named
-`audit_pass_not_wired` event records `audit_unconfigured`.
+preflight before queue startup. With the audit settings absent, the named
+`audit_pass_not_wired` event records `audit_unconfigured` — a deployment that
+declares scopes and configures no audit runs the rest of its passes.
 
 The additive `audit` run kind uses the existing per-kind recorder interface.
 Currently `records.audit` explicitly refuses at startup: generic record sinks

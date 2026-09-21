@@ -32,16 +32,32 @@ def test_nested_audit_environment_preserves_actual_operator_timeout(monkeypatch)
     "damage", ["duplicate", "different_repository", "missing_destination"]
 )
 def test_audit_roster_has_no_ambiguous_or_incomplete_binding(damage):
-    _config, operation, *_ = dependencies()
+    """The one scope table refuses an ambiguous row at load, an incomplete one
+    at the audit's own composition.
+
+    Where a row's shape is a fact about the table — one scope declared twice, a
+    repository nothing declares — the file does not load. A row with no report
+    destination is a legal table for a deployment with no audit, so it loads and
+    the configured audit refuses it by the member's own name, before any backend
+    call.
+    """
+    config, operation, _server, tracker, forge = dependencies()
     fields = operation.model_dump()
     if damage == "duplicate":
-        fields["audit_scopes"] *= 2
+        fields["organize_scopes"] *= 2
     elif damage == "different_repository":
-        fields["audit_scopes"][0]["repo_url"] = (
+        fields["organize_scopes"][0]["repo_url"] = (
             "https://unconfigured.invalid/repository"
         )
     else:
-        del fields["audit_scopes"][0]["report_issue_key"]
+        del fields["organize_scopes"][0]["report_issue_key"]
+        loaded = OperationConfig.model_validate(fields)
+        assert loaded.organize_scopes[0].report_issue_key is None
+        with pytest.raises(OperationMemberAbsentError, match="report_issue_key"):
+            verify_audit_configuration(
+                config=config, operation=loaded, tracker=tracker, forge=forge
+            )
+        return
     with pytest.raises(ValidationError):
         OperationConfig.model_validate(fields)
 

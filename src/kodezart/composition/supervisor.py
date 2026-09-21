@@ -47,8 +47,13 @@ def build_supervisor_pass(
     def read_ready(ref: ScopeRef) -> Awaitable[ScopeReadySet]:
         return read_scope_ready(ref=ref, tracker=tracker)
 
+    # The declared rows projected to their bare scope refs: the tick reads
+    # tracker state only, so the repository and report destination beside each
+    # scope are no part of what it observes and it is handed neither.
     observation = SupervisorPass(
-        scopes=operation.supervisor_scopes, read_ready=read_ready, tally=tally
+        scopes=tuple(row.scope for row in operation.organize_scopes),
+        read_ready=read_ready,
+        tally=tally,
     )
     return ScheduledPass(
         name=SUPERVISOR_TICK_NAME,

@@ -18,6 +18,10 @@ from kodezart.services.supervisor_pass import (
 )
 from kodezart.services.tally_supervisor import SIGNAL
 from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.operation import (
+    OperationMemberAbsentError,
+    OrganizeScopeBinding,
+)
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_alarm import LaneSubject
 from kodezart.types.domain.run_event import RunEventKind
@@ -44,6 +48,7 @@ from tests.integration.test_scope_runtime import board as walk_fixture
 from tests.integration.test_scope_runtime import lane_record as walk_record
 from tests.lane_fixture import criteria_echo
 from tests.prompts.test_operation_config import EXAMPLE
+from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.services.lane_tally_fixtures import (
     BOUND,
     PREFIXES,
@@ -53,7 +58,11 @@ from tests.services.lane_tally_fixtures import (
     subject,
 )
 from tests.services.test_prompt_pass import example_config
-from tests.services.test_prompt_passes import _runtime
+from tests.services.test_prompt_passes import (
+    HEARTBEAT_PASS,
+    STANDING_SCOPE_SETTINGS,
+    _runtime,
+)
 
 #: Bounded because an integration tick that hangs is a failure, not a wait.
 TICK_BOUND_SECONDS = 60
@@ -68,35 +77,66 @@ SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
 every_write_of_a_tick_is_inside_the_declared_set = declared_set_fixture()
 
 
-def declared(*, scopes):
-    return example_config().model_copy(
-        update={
-            "supervisor_scopes": scopes,
-            "marker_prefixes": {**example_config().marker_prefixes, **PREFIXES},
-        }
-    )
-
-
 #: The one repository the dispatch wiring below binds, named once: the pass name
 #: asserted and the roster the deployment is built with cannot then disagree.
 REPO = example_config().repos[0].url
 
+
+def roster(*scopes, repo_url=REPO):
+    """The one scope table over *scopes*, as a model update.
+
+    One helper because every fixture here declares the same table: the tick
+    reads each row's scope, and the rest of the row is what the passes beside
+    it read, so a fixture cannot declare a roster for one pass only.
+    """
+    return {
+        "organize_scopes": tuple(
+            OrganizeScopeBinding(scope=scope, repo_url=repo_url) for scope in scopes
+        )
+    }
+
+
+def declared(*, scopes):
+    """This deployment declaring *scopes*, with the alarm prefixes in place.
+
+    Built on the operation that carries the mandate table, because declaring a
+    scope requires the organize owner: the rows the tick observes are the rows
+    the organize stages groom, and one without the other is a partial
+    configuration refused before anything is scheduled.
+    """
+    base = declared_operation()
+    return base.model_copy(
+        update={
+            **roster(*scopes),
+            "marker_prefixes": {**base.marker_prefixes, **PREFIXES},
+        }
+    )
+
+
 #: Each wiring: the roster handed in raw, the roster the dialled tracker's
-#: reconciled copy carries (``None`` when no tracker is dialled at all), the two
-#: facts the absent-arm log must state — or ``None`` where a tick registers —
+#: reconciled copy carries (``None`` when no tracker is dialled at all), what
+#: the absent arm must state — ``None`` where a tick registers, the two log
+#: facts where the boot completes, or the name of the member a refusal carries —
 #: and whether a delivery probe is dialled. Two of the cases tell the copies
-#: apart: the gate and the log both read the reconciled one, so a roster
-#: reconciliation added registers a tick and a roster it removed registers none.
-#: The dispatch case is what puts a pass of another kind in the schedule BEFORE
-#: the observation arm reaches it, which is the only way the clause about the
-#: other passes is a claim about something the arm could have dropped.
+#: apart, and the fact they now pin is that every arm reads the copy handed in:
+#: a roster only the reconciled copy carries registers nothing, and a roster only
+#: the raw copy carries registers the tick. That is the one copy the organize
+#: tick and the heartbeat are built from, so a tick over the other copy would be
+#: this deployment observing rows nothing else here works.
+#: A declared roster without a tracker is now a partial organize configuration
+#: rather than a quiet absence, so that case refuses at preflight and names the
+#: member; it never reaches the arm at all.
+#: The dispatch case keeps its id and its probe, and what it demonstrates has
+#: changed: a declared roster withholds the dispatch pass, so what stands in the
+#: schedule before the observation arm is the organize tick and the heartbeat
+#: rather than a board scan.
 WIRINGS = {
     "declared_with_tracker": ((SCOPE,), (SCOPE,), None, False),
     "declared_with_tracker_and_dispatch": ((SCOPE,), (SCOPE,), None, True),
-    "declared_without_tracker": ((SCOPE,), None, (False, True), False),
+    "declared_without_tracker": ((SCOPE,), None, "tracker", False),
     "undeclared": ((), (), (True, False), False),
-    "reconciled_declares": ((), (SCOPE,), None, False),
-    "only_raw_declares": ((SCOPE,), (), (True, False), False),
+    "reconciled_declares": ((), (SCOPE,), (True, False), False),
+    "only_raw_declares": ((SCOPE,), (), None, False),
 }
 
 
@@ -125,14 +165,16 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     """The roster and the dialled tracker are the whole gate, and both are named.
 
     A deployment that declares scopes and dials a tracker registers exactly one
-    tick; either one absent registers none and says which was missing in the
+    tick; no tracker is a partial organize configuration and refuses at
+    preflight naming the member, and no roster registers none and says so in the
     boot log, so an operator reads the reason rather than deducing it from a
     schedule with no supervisor in it.
 
-    The roster read is the reconciled copy's, which is the only copy anything
-    downstream may read. Two of the cases below make the two copies disagree,
-    so the gate and the absent-arm log are each shown to read that one and not
-    the copy handed in raw.
+    The roster read is the copy handed in, which is the copy the organize tick
+    and the heartbeat are built from. Two of the cases below make the two copies
+    disagree, so the gate and the absent-arm log are each shown to read that one
+    and not the dialled tracker's reconciled copy: a tick over rows the rest of
+    this deployment never works is one factory holding two opinions.
     """
     raw_scopes, reconciled_scopes, absent, dispatching = WIRINGS[wiring]
 
@@ -150,11 +192,25 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
             operation=operation,
             reconciled=None
             if reconciled_roster is None
-            else operation.model_copy(update={"supervisor_scopes": reconciled_roster}),
+            else operation.model_copy(update=roster(*reconciled_roster)),
             github_api=FakeDeliveryProbe() if dispatching else None,
+            # A declared roster is a whole organize configuration: the owner's
+            # two bounds and the verification budget belong beside the rows, and
+            # a deployment declaring no row configures no owner — a configured
+            # owner with no row refuses by name.
+            **(STANDING_SCOPE_SETTINGS if raw else {}),
             supervisor_pass_interval_seconds=INTERVAL,
             supervisor_pass_timeout_seconds=TIMEOUT,
         )
+
+    if absent == "tracker":
+        # The roster is declared and nothing is dialled, so this deployment
+        # never reaches the arm: preflight refuses the partial organize
+        # configuration and names the member that is missing.
+        with pytest.raises(OperationMemberAbsentError) as refused:
+            await boot(tmp_path, raw=raw_scopes, reconciled_roster=reconciled_scopes)
+        assert refused.value.missing == "tracker"
+        return
 
     with structlog.testing.capture_logs() as logs:
         runtime = await boot(
@@ -181,19 +237,21 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
         assert unwired[0]["scopes_declared"] is scopes_declared
 
     # Every other pass is as it was: the arm adds one registration and edits no
-    # other, so the rest of the schedule is the same set either way. Named, so
-    # what the arm is being compared against is readable; a dispatch pass is
-    # among them wherever one was dialled, and that one is registered before the
-    # arm runs.
-    expected = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
+    # other. The two sets are named, because a declared roster and an undeclared
+    # one no longer schedule the same passes: the roster withholds the per-issue
+    # machine and puts the organize tick and the heartbeat there instead, and
+    # both of those are registered before the observation arm runs.
+    per_issue = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
     if dispatching:
-        expected |= {f"dispatch:{REPO}"}
+        per_issue |= {f"dispatch:{REPO}"}
+    scope_passes = {PromptKey.GROOMING_PASS.value, HEARTBEAT_PASS}
+    expected = scope_passes if raw_scopes else per_issue
     assert {entry.name for entry in registered} - {"supervisor"} == expected
 
-    # "As before" is the same deployment declaring no roster at all, so the
-    # comparison is against the schedule this boot would have had rather than
-    # against a set written out above: whatever the fixture wires, the arm added
-    # its own registration and removed none.
+    # "As before" is the same deployment declaring no roster at all, held to the
+    # other of the two sets above: the arm added its own registration and removed
+    # none, and what a roster does to the rest of the schedule is stated here
+    # rather than inferred from the boot being compared against itself.
     with structlog.testing.capture_logs():
         as_before = await boot(
             tmp_path / "as-before",
@@ -201,14 +259,14 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
             reconciled_roster=None if reconciled_scopes is None else (),
         )
 
-    assert {entry.name for entry in registered} - {"supervisor"} == {
-        entry.name for entry in as_before.scheduler.passes
-    }
+    assert {entry.name for entry in as_before.scheduler.passes} == per_issue
 
 
 def test_the_example_operation_declares_the_roster_the_tick_reads() -> None:
-    """The shipped example names the member, so an operator has one to edit."""
-    assert "supervisor_scopes" in EXAMPLE.read_text(encoding="utf-8")
+    """The shipped example names the one table, and no second spelling of it."""
+    text = EXAMPLE.read_text(encoding="utf-8")
+    assert "organize_scopes" in text
+    assert "supervisor_scopes" not in text
 
 
 def refuse_every_process(monkeypatch):
@@ -461,7 +519,7 @@ def walk_operation():
                 **declared.marker_prefixes,
                 MARKER_PURPOSE: ALARM_PREFIX,
             },
-            "supervisor_scopes": (WALK_SCOPE,),
+            **roster(WALK_SCOPE, repo_url=ORIGIN),
         }
     )
 
