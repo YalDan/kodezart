@@ -321,11 +321,18 @@ def test_the_engineering_standard_names_each_of_its_eight_principles(
 def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
     """The count, asserted over the text rather than described beside it.
 
-    Two halves, because either one holds while the other is broken: every
-    declared name is found, so an eighth cannot be dropped silently, and the
-    names put in front of a reading are exactly the declared labels, so a
-    ninth cannot arrive as a label. A ninth smuggled into the opening
+    Three halves, because each holds while the others are broken: every
+    declared name is found, so an eighth cannot be dropped silently; the names
+    put in front of a reading are exactly the declared labels, so a ninth
+    cannot arrive as a label; and the paragraph is CLOSED, so a ninth cannot
+    arrive as a bare sentence either. A ninth smuggled into the opening
     sentence's list instead breaks that sentence's own reading pin.
+
+    The closure half is the one that needs saying. Counting the declared names
+    found in the text detects a name going missing and never a name arriving:
+    the list it counts is this module's own. Requiring every sentence to be a
+    declared reading is the claim that actually closes the paragraph, and it
+    closes it in every placement rather than in the two anyone thought of.
     """
     paragraph = engineering_standard()
     named = [
@@ -335,6 +342,13 @@ def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
     ]
     assert len(named) == 8
     assert principle_labels(paragraph) == ENGINEERING_PRINCIPLE_LABELS
+
+    body = paragraph.removeprefix("Engineering standard: ")
+    for part in (piece.strip() for piece in body.split(". ")):
+        if not part:
+            continue
+        sentence = part if part.endswith(".") else f"{part}."
+        assert sentence.split(" — ", 1)[-1] in ENGINEERING_READINGS, sentence
 
 
 @pytest.mark.parametrize("reading", ENGINEERING_READINGS)
