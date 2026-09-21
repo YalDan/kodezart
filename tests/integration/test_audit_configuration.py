@@ -29,17 +29,24 @@ def test_nested_audit_environment_preserves_actual_operator_timeout(monkeypatch)
 
 
 @pytest.mark.parametrize(
-    "damage", ["duplicate", "different_repository", "missing_destination"]
+    "damage",
+    [
+        "duplicate",
+        "different_repository",
+        "blank_destination",
+        "whitespace_destination",
+        "missing_destination",
+    ],
 )
 def test_audit_roster_has_no_ambiguous_or_incomplete_binding(damage):
     """The one scope table refuses an ambiguous row at load, an incomplete one
     at the audit's own composition.
 
     Where a row's shape is a fact about the table — one scope declared twice, a
-    repository nothing declares — the file does not load. A row with no report
-    destination is a legal table for a deployment with no audit, so it loads and
-    the configured audit refuses it by the member's own name, before any backend
-    call.
+    repository nothing declares, a destination present but empty or blank — the
+    file does not load. Omitting the destination is different: it is a legal
+    table for a deployment with no audit, so it loads and the configured audit
+    refuses it by the member's own name, before any backend call.
     """
     config, operation, _server, tracker, forge = dependencies()
     fields = operation.model_dump()
@@ -49,6 +56,10 @@ def test_audit_roster_has_no_ambiguous_or_incomplete_binding(damage):
         fields["organize_scopes"][0]["repo_url"] = (
             "https://unconfigured.invalid/repository"
         )
+    elif damage == "blank_destination":
+        fields["organize_scopes"][0]["report_issue_key"] = ""
+    elif damage == "whitespace_destination":
+        fields["organize_scopes"][0]["report_issue_key"] = " "
     else:
         del fields["organize_scopes"][0]["report_issue_key"]
         loaded = OperationConfig.model_validate(fields)
