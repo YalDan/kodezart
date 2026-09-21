@@ -38,8 +38,10 @@ from tests.services.test_native_amendments import (
 __all__ = ["repository"]
 
 
-async def actual_fire(repository, executor, port, saver, *, held=None):
-    service, _, workspace, _ = await build(repository, executor, port=port, held=held)
+async def actual_fire(repository, executor, port, saver, *, held=None, spec=None):
+    service, _, workspace, _ = await build(
+        repository, executor, port=port, held=held, frozen_spec=spec
+    )
     source = TrackerCriteria(tracker=port)
     router = build_workflow_engine(
         config=AppConfig(
@@ -111,8 +113,7 @@ async def test_fresh_parent_resumes_original_native_phase(
         mutate=first_answers,
     )
     fire, workspace = await actual_fire(repository, executor, port, saver)
-    spec = await fire.criteria.read_spec(issue_key=SUBJECT)
-    criteria = await fire.criteria.read_current(spec=spec)
+    spec, criteria = await fire.criteria.read_entry(issue_key=SUBJECT)
     await git(repository[0], "branch", "native-feature", "main")
     state, config = fire.prepare(
         prompt="Implement exact native subject",
@@ -247,8 +248,7 @@ async def test_fresh_parent_resumes_original_native_phase(
 
 async def prepared_parent(repository, executor, port, saver):
     fire, workspace = await actual_fire(repository, executor, port, saver)
-    spec = await fire.criteria.read_spec(issue_key=SUBJECT)
-    criteria = await fire.criteria.read_current(spec=spec)
+    spec, criteria = await fire.criteria.read_entry(issue_key=SUBJECT)
     await git(repository[0], "branch", "native-feature", "main")
     state, config = fire.prepare(
         prompt="Implement exact native subject",
@@ -297,8 +297,7 @@ async def test_completed_loop_replay_uses_actual_evaluation_and_current_ref(
             Path(kwargs["cwd"], "change.py").unlink()
         if title == "AcceptanceCriteriaOutput":
             source = TrackerCriteria(tracker=port)
-            spec = await source.read_spec(issue_key=SUBJECT)
-            current = await source.read_current(spec=spec)
+            _, current = await source.read_entry(issue_key=SUBJECT)
             payload.update(
                 criteria_results=[
                     {
@@ -338,13 +337,16 @@ async def test_completed_loop_replay_uses_actual_evaluation_and_current_ref(
     monkeypatch.undo()
     resumed_executor = Executor(claim=False, mutate=answers)
     # The loop crossed its criteria off, so the replay's wiring reads this
-    # run's obligations against the roster the run itself holds.
+    # run's obligations against the roster the run itself holds — and stands
+    # on the subject this run captured rather than entering it again, which
+    # on a subtree that owes nothing is a refusal and not a reading.
     fresh, fresh_workspace = await actual_fire(
         repository,
         resumed_executor,
         port,
         saver,
         held=saved.values["criterion_set"],
+        spec=saved.values["fire_spec"],
     )
     before_remote = await git(
         repository[0], "ls-remote", "origin", "refs/heads/native-loop"

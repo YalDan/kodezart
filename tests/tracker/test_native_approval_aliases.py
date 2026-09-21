@@ -22,6 +22,11 @@ class ApprovalAliasServer(FakeLinearMcpServer):
                     parent_id="ROOT-1",
                     labels=["acceptance-condition"],
                     description="**Check:** Native membership remains current.",
+                    # Unstarted: the entry reads the captured spec and the
+                    # obligation out of one walk, so a subject owing nothing
+                    # is not a subject whose entry can be observed at all.
+                    status="Todo",
+                    status_type="unstarted",
                 ),
             ]
         )
@@ -62,7 +67,7 @@ async def test_actual_entry_preserves_reported_alias_with_one_subject_read(
     ] == [{"id": requested, "includeRelations": True}]
     assert server.tool_calls("save_issue") == []
     if entry == "spec":
-        spec = await TrackerCriteria(tracker=tracker).read_spec(issue_key=requested)
+        spec, _ = await TrackerCriteria(tracker=tracker).read_entry(issue_key=requested)
         assert spec.subject == "ROOT-1"
         assert spec.criteria == ("CHECK-1",)
         # Every listing the composition makes is addressed by a canonical

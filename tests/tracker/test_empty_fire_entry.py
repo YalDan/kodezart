@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.errors import CriterionReadError, EmptyFireCriteriaError
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_ralph_loop import _make_loop, _run_kwargs
 from tests.fakes import (
     FakeAgentExecutor,
@@ -48,7 +49,7 @@ async def test_parent_heading_shapes_all_read_empty_and_refuse_fire(
     writes = tracker_writes()
     assert tuple(await tracker.read_criteria(issue_key=PARENT)) == ()
     with pytest.raises(EmptyFireCriteriaError) as caught:
-        await TrackerCriteria(tracker=tracker).read_spec(issue_key=PARENT)
+        await TrackerCriteria(tracker=tracker).read_entry(issue_key=PARENT)
     assert caught.value.issue_key == PARENT
     assert tracker_writes() == writes
 
@@ -56,6 +57,9 @@ async def test_parent_heading_shapes_all_read_empty_and_refuse_fire(
 async def test_once_present_then_absent_criteria_have_the_same_empty_reading(
     tracker, server, tracker_writes
 ):
+    # Unstarted on either store: the entry answers the captured spec and the
+    # subject's obligation out of one reading, so the present-then-absent pair
+    # is read over a subject a fire can actually enter while the child is there.
     if isinstance(tracker, FakeTrackerPort):
         tracker.issues[CHILD] = tracker.issues[PARENT].model_copy(
             update={
@@ -63,6 +67,8 @@ async def test_once_present_then_absent_criteria_have_the_same_empty_reading(
                 "parent_key": PARENT,
                 "issue_labels": frozenset({"criterion"}),
                 "body": "**Check:** Observable behavior.",
+                "state_name": "Todo",
+                "state_kind": WorkflowStateKind.UNSTARTED,
             }
         )
     else:
@@ -71,9 +77,12 @@ async def test_once_present_then_absent_criteria_have_the_same_empty_reading(
             parent_id=PARENT,
             labels=[LABEL],
             description="**Check:** Observable behavior.",
+            status="Todo",
+            status_type="unstarted",
         )
     entry = TrackerCriteria(tracker=tracker)
-    assert (await entry.read_spec(issue_key=PARENT)).criteria == (CHILD,)
+    spec, _ = await entry.read_entry(issue_key=PARENT)
+    assert spec.criteria == (CHILD,)
     if isinstance(tracker, FakeTrackerPort):
         del tracker.issues[CHILD]
     else:
@@ -81,7 +90,7 @@ async def test_once_present_then_absent_criteria_have_the_same_empty_reading(
     writes = tracker_writes()
     assert tuple(await tracker.read_criteria(issue_key=PARENT)) == ()
     with pytest.raises(EmptyFireCriteriaError):
-        await entry.read_spec(issue_key=PARENT)
+        await entry.read_entry(issue_key=PARENT)
     assert tracker_writes() == writes
 
 
@@ -92,7 +101,7 @@ async def test_unreadable_subject_cannot_become_a_successful_empty_set(tracker, 
     assert caught.value.issue_key == "missing-subject"
 
 
-@pytest.mark.parametrize("reader", ["read_criteria", "read_spec"])
+@pytest.mark.parametrize("reader", ["read_criteria", "read_entry"])
 async def test_incomplete_successful_first_page_never_becomes_empty(reader):
     server = ChildPagesServer(
         pages={

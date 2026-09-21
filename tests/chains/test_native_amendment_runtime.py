@@ -56,8 +56,7 @@ async def make_runtime(
 ):
     service, _, workspace, port = await build(repository, executor)
     source = TrackerCriteria(tracker=port)
-    spec = await source.read_spec(issue_key=SUBJECT)
-    current = await source.read_current(spec=spec)
+    spec, current = await source.read_entry(issue_key=SUBJECT)
     saver = InMemorySaver()
     operation = OperationConfig(
         operation_name="fixture",

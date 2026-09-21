@@ -1515,8 +1515,7 @@ async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, c
 
     port = CountingTracker()
     source = TrackerCriteria(tracker=port)
-    spec = await source.read_spec(issue_key=SUBJECT)
-    snapshot = await source.read_current(spec=spec)
+    spec, snapshot = await source.read_entry(issue_key=SUBJECT)
     saver = InMemorySaver()
     original = engine(criteria=source, executor=NativeExecutor([]), real_loop=True)
     loop = original.implementation._quality_gate
@@ -1670,8 +1669,7 @@ async def test_native_consumer_without_runtime_reader_refuses(consumer):
 
 async def test_native_loop_without_frozen_spec_cannot_use_cached_criteria():
     source = TrackerCriteria(tracker=CountingTracker())
-    spec = await source.read_spec(issue_key=SUBJECT)
-    snapshot = await source.read_current(spec=spec)
+    spec, snapshot = await source.read_entry(issue_key=SUBJECT)
     executor = NativeExecutor([])
     fire = engine(criteria=source, executor=executor, real_loop=True)
     with pytest.raises(ValidationError, match="frozen subject source"):
@@ -1745,8 +1743,8 @@ def snapshot_state(spec, recorded):
 async def entry_roster(port):
     """The subject's spec and the roster a fire entering it takes on."""
     source = TrackerCriteria(tracker=port)
-    spec = await source.read_spec(issue_key=SUBJECT)
-    return source, spec, await source.read_current(spec=spec)
+    spec, roster = await source.read_entry(issue_key=SUBJECT)
+    return source, spec, roster
 
 
 async def test_a_held_criterion_the_fire_finished_stays_in_its_current_set():
@@ -1969,10 +1967,15 @@ def prepared(fire: RalphWorkflowEngine, *, entry):
 
 
 async def finished_subtree():
-    """The board of a lane whose every criterion is Done, and its spec."""
+    """The board of a lane whose every criterion is Done, and its spec.
+
+    The spec is captured while the lane still owes, which is the reading a
+    fire enters on, and the cross-offs its own work would record follow. A
+    delivering read taken afterwards is then addressed by the same subject.
+    """
     port = tracker()
     source = TrackerCriteria(tracker=port)
-    spec = await source.read_spec(issue_key=SUBJECT)
+    spec, _ = await source.read_entry(issue_key=SUBJECT)
     for key in OWED_KEYS:
         finished(port, key)
     return port, source, spec
@@ -1986,10 +1989,15 @@ async def test_the_finished_roster_is_the_whole_subtree_not_a_todo_selection():
     two that were Done before the lane arrived included: the fact the
     delivery rests on is about the subtree, not about which criteria this
     lane happened to take on.
+
+    Read at ``read_entry(delivering=True)``: that is the surface the source
+    now carries this roster on, and the one the delivering lane's own
+    revalidation invokes. The case moved off the spec-taking reading it used
+    to make, which no caller of the source makes.
     """
     _, source, spec = await finished_subtree()
 
-    roster = await source.read_finished(spec=spec)
+    _, roster = await source.read_entry(issue_key=SUBJECT, delivering=True)
 
     assert [criterion.id for criterion in roster.criteria] == sorted(ALL_CRITERIA)
     assert {criterion.id: criterion.text for criterion in roster.criteria} == {
@@ -2010,7 +2018,7 @@ async def test_the_finished_roster_carries_the_barrier_that_follows_it():
     """
     _, source, spec = await finished_subtree()
 
-    roster = await source.read_finished(spec=spec)
+    _, roster = await source.read_entry(issue_key=SUBJECT, delivering=True)
 
     await require_current_native_snapshot(snapshot_state(spec, roster), reader=source)
     assert await source.read_current(spec=spec, held=roster) == roster
@@ -2032,11 +2040,11 @@ async def test_one_criterion_that_is_not_done_refuses_and_is_named(kind, name):
     a criterion between, so the lane is not deliverable and the refusal
     names the criterion rather than leaving a reader to diff two rosters.
     """
-    port, source, spec = await finished_subtree()
+    port, source, _ = await finished_subtree()
     moved(port, NESTED_OWED, kind=kind, name=name)
 
     with pytest.raises(FireSpecEntryError) as caught:
-        await source.read_finished(spec=spec)
+        await source.read_entry(issue_key=SUBJECT, delivering=True)
 
     assert caught.value.issue_key == SUBJECT
     assert NESTED_OWED in caught.value.reason
@@ -2070,7 +2078,7 @@ async def test_a_canceled_criterion_is_non_counting_and_the_lane_still_delivers(
     port, source, spec = await finished_subtree()
     moved(port, NESTED_OWED, kind=kind, name=name)
 
-    roster = await source.read_finished(spec=spec)
+    _, roster = await source.read_entry(issue_key=SUBJECT, delivering=True)
 
     counting = sorted(key for key in ALL_CRITERIA if key != NESTED_OWED)
     assert [criterion.id for criterion in roster.criteria] == counting
@@ -2091,12 +2099,12 @@ async def test_a_subtree_whose_criteria_were_all_abandoned_has_nothing_to_delive
     It is refused where a subtree holding no criterion at all is, and for the
     same reason: there is no obligation for the delivery to discharge.
     """
-    port, source, spec = await finished_subtree()
+    port, source, _ = await finished_subtree()
     for key in ALL_CRITERIA:
         moved(port, key, kind=WorkflowStateKind.CANCELED, name="Canceled")
 
     with pytest.raises(FireSpecEntryError, match="no criteria to deliver") as caught:
-        await source.read_finished(spec=spec)
+        await source.read_entry(issue_key=SUBJECT, delivering=True)
 
     assert caught.value.issue_key == SUBJECT
 
@@ -2108,6 +2116,15 @@ async def test_a_subtree_holding_no_criterion_has_nothing_to_deliver():
     the state would hand a delivery an empty obligation to discharge. The
     readiness read refuses such a member for the same reason; this is the
     same refusal made where the fire enters.
+
+    Asserted at ``TrackerCriteria._finished``, the one place the counting
+    roster is arithmetic, because the case moved off a spec-taking reading
+    no caller of the source makes. It cannot move to ``read_entry`` instead:
+    the entry refuses an empty subtree earlier, at the capture, with
+    ``EmptyFireCriteriaError`` — so the entry never reaches this refusal and
+    reading through it would assert the capture's clause rather than this
+    one. The companion case over an all-abandoned subtree does go through
+    ``read_entry(delivering=True)``, so the refusal is reached publicly too.
     """
     port = board([make_tracker_issue(SUBJECT, issue_labels=frozenset({STAGE_KEY}))])
     spec = TrackerSpec(
@@ -2118,7 +2135,7 @@ async def test_a_subtree_holding_no_criterion_has_nothing_to_deliver():
     )
 
     with pytest.raises(FireSpecEntryError, match="no criteria to deliver"):
-        await TrackerCriteria(tracker=port).read_finished(spec=spec)
+        TrackerCriteria(tracker=port)._finished(spec, {})
 
 
 @pytest.mark.parametrize("kind", ["new", "resumed", "deliver_only"])
@@ -2224,7 +2241,7 @@ async def test_a_delivering_lane_reads_its_finished_roster_once_and_then_holds_i
     answer a question about the subtree instead of about this run.
     """
     port, source, spec = await finished_subtree()
-    roster = await source.read_finished(spec=spec)
+    _, roster = await source.read_entry(issue_key=SUBJECT, delivering=True)
     counting = CountingSource(source)
     state = {
         "issue_key": SUBJECT,

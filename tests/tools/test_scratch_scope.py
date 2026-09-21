@@ -646,7 +646,9 @@ async def test_the_shipped_scope_config_answers_each_adapter_point_of_need():
     server.issues[built.lanes["A"]].labels.append(
         loaded.issue_labels[criteria_stage_label_key(loaded)]
     )
-    spec = await TrackerCriteria(tracker=tracker).read_spec(issue_key=built.lanes["A"])
+    spec, _ = await TrackerCriteria(tracker=tracker).read_entry(
+        issue_key=built.lanes["A"]
+    )
     assert list(spec.criteria) == list(built.criteria["A"])
 
     await tracker.set_workflow_state(

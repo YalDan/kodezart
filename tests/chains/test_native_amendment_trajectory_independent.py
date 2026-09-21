@@ -49,8 +49,7 @@ async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
     executor = Executor()
     service, _, workspace, port = await build(repository, executor)
     criteria = TrackerCriteria(tracker=port)
-    spec = await criteria.read_spec(issue_key=SUBJECT)
-    current = await criteria.read_current(spec=spec)
+    spec, current = await criteria.read_entry(issue_key=SUBJECT)
     observed = native_evaluation()
     observed["criteriaResults"][0]["passed"] = False
     previous_grade = grade_iteration(

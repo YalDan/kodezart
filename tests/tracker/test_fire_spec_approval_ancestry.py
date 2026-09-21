@@ -5,6 +5,7 @@ import pytest
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.errors import FireSpecEntryError
 from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.tracker.conftest import FIRE_STAGE_KEY, FIRE_STAGE_LABEL
 from tests.tracker.test_scope_approval import CHILD, INITIATIVE, OTHER
 from tests.tracker.test_scope_approval import approval as approval
@@ -22,6 +23,11 @@ async def test_container_approval_and_revocation_reach_actual_spec_reader(
         parent_id=CHILD.key,
         labels=["acceptance-condition"],
         description="**Check:** Native container approval is observable.",
+        # Unstarted on both stores below: the entry answers the captured spec
+        # and the obligation out of one reading, so a subject whose criteria
+        # owe nothing is one no fire enters and no approval fact reaches.
+        status="Todo",
+        status_type="unstarted",
     )
     child = approval.fake.issues[CHILD.key]
     approval.fake.criteria_stage_label_key = FIRE_STAGE_KEY
@@ -34,16 +40,18 @@ async def test_container_approval_and_revocation_reach_actual_spec_reader(
             "parent_key": CHILD.key,
             "issue_labels": frozenset({"criterion"}),
             "body": "**Check:** Native container approval is observable.",
+            "state_name": "Todo",
+            "state_kind": WorkflowStateKind.UNSTARTED,
         }
     )
     approval.labels(ancestor, ScopeLabel.APPROVED)
     entry = TrackerCriteria(tracker=approval.tracker)
-    spec = await entry.read_spec(issue_key=CHILD.key)
+    spec, _ = await entry.read_entry(issue_key=CHILD.key)
     assert spec.subject == CHILD.key
     assert spec.criteria == (criterion,)
     approval.labels(ancestor)
     with pytest.raises(FireSpecEntryError, match="approval"):
-        await entry.read_spec(issue_key=CHILD.key)
+        await entry.read_entry(issue_key=CHILD.key)
     assert not approval.fake.issue_writes
     assert not approval.fake.comment_writes
     assert not approval.fake.claim_writes

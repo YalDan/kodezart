@@ -76,7 +76,7 @@ async def test_reordered_children_and_reflowed_prose_read_back_identically(
     subject = await tracker.read_issue(issue_key=SUBJECT)
     before = tuple(await tracker.read_criteria(issue_key=SUBJECT))
     entry = TrackerCriteria(tracker=tracker)
-    spec = await entry.read_spec(issue_key=SUBJECT)
+    spec, _ = await entry.read_entry(issue_key=SUBJECT)
     assert {row.issue_key: row.state_name for row in before} == SATISFACTION
     assert spec.criteria == tuple(row.issue_key for row in before)
     laid_out = _layout(tracker, server)
@@ -94,7 +94,8 @@ async def test_reordered_children_and_reflowed_prose_read_back_identically(
     assert [row.model_dump_json() for row in after] == [
         row.model_dump_json() for row in before
     ]
-    assert (await entry.read_spec(issue_key=SUBJECT)).criteria == spec.criteria
+    again, _ = await entry.read_entry(issue_key=SUBJECT)
+    assert again.criteria == spec.criteria
     assert tracker_writes() == written
 
 
