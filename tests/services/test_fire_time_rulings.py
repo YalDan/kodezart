@@ -573,6 +573,7 @@ JOURNALS = (
     "restored_states",
     "queue_writes",
     "classification_writes",
+    "claim_writes",
     "lease_writes",
     "renewals",
 )
@@ -590,9 +591,11 @@ def subject_answer(**changes) -> dict[str, object]:
 
 #: The only keys of board_state() a record's own write moves: the comment,
 #: the write journal it lands in, and the lease taken to write it.  Every
-#: other key — the renewal journal and the live lease table included — must
-#: be equal on both sides, because a pass acquires no per-issue claim and
-#: releases the lease it took before it returns.
+#: other key — the claim journal, the renewal journal and the live lease
+#: table included — must be equal on both sides, because a pass acquires no
+#: per-issue claim and releases the lease it took before it returns.  The
+#: claim journal, not the live claim table: it outlives the release, so a
+#: claim taken and given back inside one pass is still visible there.
 RECORD_WRITE = frozenset({"comments", "comment_writes", "lease_writes"})
 
 
