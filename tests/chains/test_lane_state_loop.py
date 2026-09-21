@@ -1380,9 +1380,15 @@ async def test_a_refutation_the_loop_died_inside_certifies_no_failing_grading(dr
 # ---------------------------------------------------------------------------
 
 CARRIED = OWED_KEYS[0]
-#: A prefix the lane's own commits never touch, and one every commit does.
+#: A prefix the lane's own commits never touch, and one the commit made AFTER
+#: the first grading does.
+#:
+#: The interval a standing grading is read against is that grading's own sha
+#: to the new head, so the commit that produced the graded sha is not in it
+#: and the commit the next iteration makes is. The double names each commit's
+#: file after the commit's own index, so the second commit's is this one.
 UNTOUCHED_PREFIX = "docs/"
-TOUCHED_PREFIX = "lane-0.py"
+TOUCHED_PREFIX = "lane-1.py"
 
 
 def declaring(prefix: str) -> dict:
@@ -1463,6 +1469,62 @@ async def test_a_grading_that_still_stands_is_neither_dispatched_again_nor_re_ti
     assert rows[CARRIED].reasoning == CARRIED_REASON
     assert rows[CARRIED].rederivation_class is RederivationClass.expensive
     assert rows[CARRIED].exercised_paths == (UNTOUCHED_PREFIX,)
+
+
+#: Two criteria one grading finishes together, and so at one sha.
+CARRIED_PAIR = OWED_KEYS[:2]
+
+
+async def test_the_standing_digest_is_read_once_per_graded_sha_over_that_sha_to_head():
+    """Two standing gradings, one sha behind them, and one read of the record.
+
+    Both criteria pass at the first iteration and declare themselves
+    expensive over a prefix the lane's commits never touch, so at the second
+    iteration both are asked the same question about the same interval: what
+    moved between the sha they were graded at and the new head. That is one
+    read per distinct standing sha, not one per criterion — a second read of
+    one interval is a second place for the same answer to differ.
+
+    The interval is that sha to the head, and not the lane's own base to the
+    head. The lane's base-to-head digest contains the very commit the grading
+    was taken at, so reading it would call every path-bound grading's
+    prefixes moved because of the commit that graded them, and no such
+    grading would ever carry.
+    """
+    lane = Lane(
+        evaluations=[
+            criteria_echo(
+                keys=OWED_KEYS,
+                passed=set(CARRIED_PAIR),
+                declared={
+                    key: {
+                        "rederivationClass": "expensive",
+                        "exercisedPaths": [UNTOUCHED_PREFIX],
+                    }
+                    for key in CARRIED_PAIR
+                },
+            ),
+            criteria_echo(keys=OWED_KEYS[2:], passed=()),
+        ],
+        max_iterations=2,
+    )
+    await lane.run()
+
+    graded_sha, head_sha = lane.repo.shas[0], lane.repo.shas[1]
+    reads = [call for call in lane.git.calls if call[0] == "diff_summary"]
+    standing = [call for call in reads if call[2] == graded_sha]
+    assert standing == [("diff_summary", CACHE_PATH, graded_sha, head_sha)]
+
+    # Not vacuous: the pair carried, so the reading the one digest produced is
+    # the reading the second iteration acted on.
+    assert all(
+        check_of(key) not in lane.executor.evaluation_prompts[1] for key in CARRIED_PAIR
+    )
+    assert all(
+        lane.port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+        for key in CARRIED_PAIR
+    )
+    assert all(evidence_of(lane, key).graded_sha == graded_sha for key in CARRIED_PAIR)
 
 
 async def test_an_expensive_grading_whose_paths_moved_is_dispatched_again():
