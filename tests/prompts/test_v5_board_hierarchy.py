@@ -63,9 +63,16 @@ def test_the_board_hierarchy_is_declared_exactly_once() -> None:
     Counted over the files rather than the resolved bodies, because
     resolution is what puts the text into a body — a member carrying it
     verbatim would be the second copy the fragment exists to prevent.
+
+    Every sentence is looked for, not the first line alone: a member that
+    restated the last three sentences without the first would be a second,
+    drifting copy that a first-line scan reports as nothing.
     """
-    first_line = fragment(FRAGMENT_NAME).splitlines()[0]
-    carriers = [body for body in member_files(V5_SET) if first_line in body]
+    carriers = [
+        body
+        for body in member_files(V5_SET)
+        if any(sentence in body for sentence in SENTENCES)
+    ]
     assert carriers == []
 
 
@@ -114,11 +121,27 @@ def test_the_board_hierarchy_binds_no_operation_namespace() -> None:
 
 
 def test_the_legacy_set_declares_no_board_hierarchy() -> None:
-    """The set no deployment dispatches stays exactly as it was (KOD-306)."""
+    """The set no deployment dispatches stays exactly as it was (KOD-306).
+
+    Both halves are about the legacy corpus: the key is absent from its
+    metadata, and no sentence of the standard appears anywhere under its
+    directory — members and metadata alike. The second half is stated over
+    the whole directory on purpose. Over the member files alone it would
+    hold of the new set as well, where the text lives in set.toml and in no
+    member file either, and an assertion true of both sets tells them
+    apart not at all; over the directory it is true here and false there.
+    """
+    legacy_root = default_sets_root() / OPUS_SET
     metadata = tomllib.loads(
-        (default_sets_root() / OPUS_SET / "set.toml").read_text(encoding="utf-8"),
+        (legacy_root / "set.toml").read_text(encoding="utf-8"),
     )
     fragments = metadata["fragments"]
     assert isinstance(fragments, dict)
     assert FRAGMENT_NAME not in fragments
-    assert [body for body in member_files(OPUS_SET) if SENTENCES[0] in body] == []
+
+    legacy_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(legacy_root.iterdir())
+        if path.is_file()
+    )
+    assert [sentence for sentence in SENTENCES if sentence in legacy_text] == []
