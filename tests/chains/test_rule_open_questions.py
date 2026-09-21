@@ -977,8 +977,7 @@ async def test_the_question_step_mints_a_pinned_answer_identity_and_no_criterion
         workspace=workspace,
     )
     source = TrackerCriteria(tracker=port)
-    spec = await source.read_spec(issue_key=SUBJECT)
-    current = await source.read_current(spec=spec, held=None)
+    spec, current = await source.read_entry(issue_key=SUBJECT)
     _, config = prepare(fire)
 
     def _reached(key: str) -> None:
@@ -1010,7 +1009,7 @@ async def test_the_question_step_mints_a_pinned_answer_identity_and_no_criterion
     # The sentinel is live, not inert: the reader that does mint one still
     # reaches it under exactly the same patch.
     with pytest.raises(AssertionError, match="criterion identity"):
-        await source.read_spec(issue_key=SUBJECT)
+        await source.read_entry(issue_key=SUBJECT)
 
 
 #: The mint the ruling path must never reach, and the tree it is scanned over.

@@ -2356,7 +2356,7 @@ async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier()
     """
     port = tracker()
     source = TrackerCriteria(tracker=port)
-    spec = await source.read_spec(issue_key=SUBJECT)
+    spec, _ = await source.read_entry(issue_key=SUBJECT)
     counting = CountingSource(source)
     state = {
         "issue_key": SUBJECT,
