@@ -10,11 +10,15 @@ from kodezart.adapters.git.service import SubprocessGitService
 from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
 from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import FireSpecEntryError
-from kodezart.domain.rulings import render_ruling
+from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry, render_ruling
 from kodezart.services.agent_service import AgentService
-from kodezart.services.native_amendments import NativeAmendments
+from kodezart.services.native_amendments import (
+    NATIVE_WRITING_STAGES,
+    NativeAmendments,
+)
 from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent, Ruling
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
@@ -372,7 +376,7 @@ async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
     assert write_back["output_format"]["schema"]["title"] == "WriteBackFinding"
     assert write_back["cwd"] != writer["cwd"]
     assert "Pinned rulings registry" in writer["prompt"]
-    assert "Confirmed empty" in writer["prompt"]
+    assert f"<pinned_rulings>\n{EMPTY_REGISTRY}\n</pinned_rulings>" in writer["prompt"]
     assert judge["cwd"] != writer["cwd"]
     assert judge["session_id"] is None
     assert judge["agents"] == ()
@@ -544,6 +548,107 @@ async def test_ruling_departure_uses_exact_readback_and_stays_not_actioned(
         in executor.calls[1]["prompt"]
     )
     assert not any(isinstance(event, ResultEvent) for event in events)
+
+
+@pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])
+async def test_the_writer_contract_renders_every_pinned_answer_inside_the_delimiters(
+    repository, prompt_set
+):
+    """Records present render per record, in the one registry the gate composed.
+
+    Two members carry one record each, so the read-every-member path is what the
+    assertion covers, and the two identities sort against member order, so a
+    dropped sort is visible here.
+    """
+    port = tracker()
+    first = Ruling.model_validate(ruling_data(issue_ref=SUBJECT))
+    second = Ruling.model_validate(
+        ruling_data(
+            issue_ref=DIRECT_OWED, question="Which base does this sub-issue read?"
+        )
+    )
+    for issue_key, pinned in [(SUBJECT, first), (DIRECT_OWED, second)]:
+        await port.post_comment(
+            issue_key=issue_key,
+            body=render_ruling(
+                ruling=pinned,
+                lane_key=SUBJECT,
+                marker_prefixes={"ruling": "fixture-pinned"},
+            ),
+        )
+    executor = Executor(claim=False)
+    service, guard, workspace, _ = await build(
+        repository, executor, prompt_set=prompt_set, port=port
+    )
+    try:
+        await drive(service, guard, repository)
+        expected = pinned_registry(
+            sorted([first, second], key=lambda pinned: pinned.ruling_id)
+        )
+        writer = executor.calls[0]
+        assert f"<pinned_rulings>\n{expected}\n</pinned_rulings>" in writer["prompt"]
+        assert writer["prompt"].count("<pinned_rulings>") == 1
+        # One line per record, two records.
+        assert expected.count("\n") == 1
+        assert first.ruling_id in expected and second.ruling_id in expected
+        assert first.resolution in expected and second.resolution in expected
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_stage_with_no_registration_is_refused_before_any_session(repository):
+    """The roster of unregistered stages is derived from the key enum, not listed."""
+    executor = Executor()
+    _, guard, workspace, _ = await build(repository, executor)
+    owner = guard._owner
+    unregistered = [key for key in PromptKey if key not in NATIVE_WRITING_STAGES]
+    assert unregistered
+    try:
+        for stage in unregistered:
+            with pytest.raises(
+                NativeWriteRefusalError, match="no amendment gate registration"
+            ):
+                owner.for_writer(
+                    spec=guard._spec,
+                    criteria=guard._criteria,
+                    base_ref=repository[1],
+                    repo_url=REPO_URL,
+                    holder="actual-parent-job",
+                    visibility=RepoVisibility.PUBLIC,
+                    stage=stage,
+                )
+        assert executor.calls == []
+    finally:
+        await cleanup(workspace)
+
+
+async def test_an_unreadable_registry_is_refused_before_the_writer_session(
+    repository, monkeypatch
+):
+    """Not retrieved is a different value from none: it produces no session at all.
+
+    The empty case renders a stated-empty registry into a prompt a session
+    receives; this case renders no prompt, because the whole authority is read
+    before the writer starts.
+    """
+    port = tracker()
+    executor = Executor()
+    service, guard, workspace, _ = await build(repository, executor, port=port)
+
+    async def unavailable(**kwargs):
+        raise TrackerUnavailableError("comment listing failed")
+
+    monkeypatch.setattr(port, "list_comments", unavailable)
+    try:
+        with pytest.raises(NativeWriteRefusalError, match="registry is unreadable"):
+            await drive(service, guard, repository)
+        assert executor.calls == []
+        assert (
+            await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
+            == ""
+        )
+    finally:
+        await cleanup(workspace)
 
 
 async def test_ruling_change_during_commit_content_gate_refuses_before_commit(

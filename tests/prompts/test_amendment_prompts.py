@@ -1,4 +1,6 @@
-"""The amendment judge is a data file bound by name (KOD-660).
+"""The amendment judge and the writer contract are data files bound by name.
+
+KOD-660 and KOD-668.
 
 Each role is a key resolved through the provider; the member that serves it is a
 file in a set directory and never a Python module. Both halves are asserted here:
@@ -14,6 +16,7 @@ import pytest
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.core.prompt_rendering import free_binding_names
+from kodezart.domain.rulings import EMPTY_REGISTRY
 from kodezart.types.domain.agent import Ruling
 from kodezart.types.domain.amendment import AmendmentClaim
 from kodezart.types.domain.prompts import PromptKey
@@ -55,6 +58,11 @@ ROLES: dict[PromptKey, tuple[str, tuple[tuple[str, str], ...], dict[str, str]]] 
             ("base_sha", "base_sha"),
         ),
         CASE_JUDGE,
+    ),
+    PromptKey.NATIVE_WRITER_CONTRACT: (
+        "<{tag}>\n{value}\n</{tag}>",
+        (("pinned_rulings", "pinned_rulings"),),
+        {"pinned_rulings": EMPTY_REGISTRY},
     ),
 }
 
