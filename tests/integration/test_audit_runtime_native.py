@@ -581,9 +581,15 @@ async def test_two_unchanged_sweeps_hold_one_escalation_for_a_reworded_mandate(
 
     The window is genuinely unchanged, which is the whole point: the
     criterion is still ``Done`` at the second tick, so the second tick
-    audits it again instead of deferring it, and ``deferred == ()`` is what
-    says so. A sweep that deferred the criterion would leave one escalation
-    for a reason that has nothing to do with its identity.
+    audits it again instead of deferring it. The assertion that shows that
+    is the per-tick session count, ``len(executor.calls) == spent``,
+    fourteen then twenty-eight: a tick that deferred its criterion
+    dispatches no session for it, so the running total would not move.
+    ``scope.deferred == ()`` is a guard that the tick was not deferred and
+    is not the proof of it — a changed window reds an earlier assertion
+    every time and never reaches that line. A sweep that deferred the
+    criterion would leave one escalation for a reason that has nothing to
+    do with its identity.
 
     The refutation is the over-claim arm, because only a refuted
     current-Check claim takes a criterion back: an over-claim refutation
@@ -591,6 +597,15 @@ async def test_two_unchanged_sweeps_hold_one_escalation_for_a_reworded_mandate(
     no state, so the window at the second tick is byte-identical to the
     first. Its own unresolved workflow-state authority ends each tick
     incomplete, which is the refusal that arm has always had.
+
+    The limitation that leaves, stated rather than resolved here: both
+    ticks end in ``AuditRunIncompleteError``, so this fixture shows two
+    sweeps over an unchanged window holding one escalation object, while
+    ``test_instructed_refutation_records_verified_escalation_before_claim``
+    shows a run that completes — over a window that moved. "Unchanged
+    window" and "the run completes" are demonstrated by two fixtures and by
+    no single one, and stay that way while the over-claim arm's
+    workflow-state authority is unresolved.
     """
     audit, executor, server, _tracker, _git, workspace, _repository = native_audit
     assert EARLIER_WORDING != LATER_WORDING
@@ -601,7 +616,8 @@ async def test_two_unchanged_sweeps_hold_one_escalation_for_a_reworded_mandate(
     assert server.issues[CHILD].status == "Done"
 
     # Two ticks, and only two: each spends the same fourteen sessions, so a
-    # tick that quietly deferred its criterion would spend fewer.
+    # tick that quietly deferred its criterion would spend fewer. This
+    # running total is the fixture's evidence that the second tick swept.
     ticks = (
         (FIXTURE_NOW, EARLIER_WORDING, 14),
         (FIXTURE_NOW + timedelta(seconds=60), LATER_WORDING, 28),
@@ -616,8 +632,11 @@ async def test_two_unchanged_sweeps_hold_one_escalation_for_a_reworded_mandate(
             "AuditClaimReadError: the refutation is published; its "
             "workflow-state authority remains unresolved"
         ]
-        # Nothing was deferred, so the criterion really was swept again.
+        # A guard that the tick was not deferred, kept for what it rules
+        # out rather than as the proof: nothing reaches it first.
         assert scope.deferred == ()
+        # The proof the criterion really was swept again: the sessions were
+        # spent a second time, on the same count as the first tick.
         assert len(executor.calls) == spent
         # The window did not move: state, Evidence row and body all stand.
         assert server.issues[CHILD].status == "Done"
