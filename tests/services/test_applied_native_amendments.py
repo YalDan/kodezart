@@ -469,6 +469,7 @@ async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalat
 async def test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes(
     repository, ground
 ):
+    from kodezart.domain.agent import mint_ruling_id
     from kodezart.domain.rulings import render_ruling
     from kodezart.services.ruling_records import RulingRecordReader
     from kodezart.types.domain.agent import Ruling
@@ -477,9 +478,17 @@ async def test_ruling_amendment_preserves_native_occurrence_question_and_prior_b
     from tests.domain.test_rulings import ruling_data
 
     port = tracker()
-    ruling = Ruling.model_validate(
-        ruling_data(issue_ref=SUBJECT, authored_by="principal")
+    # The record amended here replaces an earlier one, so the amendment has a
+    # pointer to lose: rebuilding the record from its own dump has to carry
+    # ``supersedes`` across, or the replaced record stops being reachable
+    # from the record that replaced it (KOD-635).
+    superseded = mint_ruling_id(
+        issue_ref=SUBJECT, question="Which interpretation applied before?"
     )
+    ruling = Ruling.model_validate(
+        ruling_data(issue_ref=SUBJECT, authored_by="principal", supersedes=superseded)
+    )
+    assert ruling.supersedes == superseded
     body = render_ruling(
         ruling=ruling,
         lane_key="historical:café/lane",
@@ -532,6 +541,9 @@ async def test_ruling_amendment_preserves_native_occurrence_question_and_prior_b
         assert observed_ruling.ruling_class is ruling.ruling_class
         assert observed_ruling.resolution != ruling.resolution
         assert observed_ruling.authored_by.value == "machine"
+        # The amended record keeps the identity it replaces, so the record it
+        # replaced is still reachable from it afterwards.
+        assert observed_ruling.supersedes == superseded
         assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
     finally:
         await cleanup(workspace)
