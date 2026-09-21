@@ -12,13 +12,14 @@ from claude_agent_sdk import (
 
 from kodezart.adapters.claude.agents_mapping import (
     map_agents,
+    map_allowed_tools,
     map_effort,
     map_model,
     map_settings,
     map_system_prompt,
     map_workflow_env,
 )
-from kodezart.adapters.claude.permission_modes import _validate_permission_mode
+from kodezart.adapters.claude.permission_modes import map_permission_mode
 from kodezart.adapters.claude.sdk_mapping import map_message
 from kodezart.adapters.claude.skills_mapping import map_setting_sources, map_skills
 from kodezart.adapters.mcp.mapping import (
@@ -27,9 +28,16 @@ from kodezart.adapters.mcp.mapping import (
 )
 from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
-from kodezart.types.domain.session import KnowledgeGrant, SessionType
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import (
+    AllowedTools,
+    KnowledgeGrant,
+    PermissionMode,
+    SessionType,
+)
 from kodezart.types.domain.skills import SettingSource, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -52,9 +60,11 @@ class ClaudeAgentExecutor:
         *,
         setting_sources: list[SettingSource],
         knowledge_grant: KnowledgeGrant,
+        fire_record: PromptTemplate | None = None,
     ) -> None:
         self._setting_sources = setting_sources
         self._knowledge_grant = knowledge_grant
+        self._fire_record = fire_record
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream(
@@ -62,10 +72,11 @@ class ClaudeAgentExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -85,8 +96,8 @@ class ClaudeAgentExecutor:
         knowledge = map_knowledge_mcp(self._knowledge_grant, session_type)
         options = ClaudeAgentOptions(
             cwd=cwd,
-            permission_mode=_validate_permission_mode(permission_mode),
-            allowed_tools=allowed_tools,
+            permission_mode=map_permission_mode(permission_mode),
+            allowed_tools=map_allowed_tools(allowed_tools),
             resume=session_id,
             output_format=output_format,
             skills=map_skills(skills),
@@ -104,6 +115,10 @@ class ClaudeAgentExecutor:
             prompt,
             grant=self._knowledge_grant,
             attached=knowledge,
+            fire_record=(
+                self._fire_record if session_type is SessionType.TICKET_FIRE else None
+            ),
+            run_identity=run_identity,
         )
         # TODO: symmetric ProcessError/CLIConnectionError/ClaudeSDKError
         # detail preservation (exit_code, stderr_tail) matching

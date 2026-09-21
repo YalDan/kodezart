@@ -1,9 +1,7 @@
 """Linear MCP wire shapes — Pydantic validation at the adapter boundary.
 
-Vendor vocabulary lives here and nowhere else, exactly as
-``types/domain/github.py`` holds the forge's.  Nothing in this module may
-be imported by a consumer: the tracker port speaks
-``types/domain/tracker.py`` only.
+Vendor vocabulary stays beside its adapter. Application consumers use
+the neutral tracker port and its domain values, never these wire models.
 
 ``extra="ignore"``: the vendor adds fields to its own payloads and that is
 not this process's business.  Every field the adapter reads is declared
@@ -12,7 +10,7 @@ substituted default.  Vendor camelCase arrives through aliases so the
 Python surface stays snake_case.
 
 Every shape here is MEASURED against the live server, not reasoned from
-the vendor's documentation (KOD-143).  It has to be: no tool on that
+the vendor's documentation.  It has to be: no tool on that
 server declares an ``outputSchema``, so a payload's shape is knowable
 only by probing it, and the first version of this module — authored
 blind — got five of them structurally wrong.  A shape changed here
@@ -21,8 +19,9 @@ without a fresh capture behind it is a guess wearing a type.
 
 from collections.abc import Sequence
 from datetime import datetime
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 
 
@@ -51,7 +50,7 @@ class LinearPriorityWire(LinearWireModel):
 class LinearRelatedIssueWire(LinearWireModel):
     """One issue on the far end of a relation edge.
 
-    ``id`` is the human identifier (``KOD-56``), the same spelling every
+    ``id`` is the human-readable issue identifier, the same spelling every
     other payload addresses an issue by, so a relation reads back through
     the same door it points at.
     """
@@ -97,8 +96,11 @@ class LinearIssueRelationsWire(LinearWireModel):
         )
 
 
-class LinearAssetWire(LinearWireModel):
-    """One attachment or document reference on an issue.
+class LinearDocumentReferenceWire(LinearWireModel):
+    """A document relation may contain only its native id and title.
+
+    Measured 2026-09-08: get_issue omits its URL; get_document supplies it.
+    Full issue reads retain this relation without inventing attachment facts.
 
     ``content_type`` and ``size`` are absent from every measured payload;
     they stay declared and optional because the port's asset carries them
@@ -108,9 +110,21 @@ class LinearAssetWire(LinearWireModel):
 
     id: str
     title: str
-    url: str
+    url: str | None = None
     content_type: str | None = None
     size: int | None = None
+
+
+class LinearAssetWire(LinearDocumentReferenceWire):
+    """An attachment or hydrated document reports its required URL."""
+
+    url: str
+
+
+class LinearProjectMilestoneWire(LinearWireModel):
+    """The milestone identity on a full issue or unfiltered listing entry."""
+
+    id: str
 
 
 class LinearIssueWire(LinearWireModel):
@@ -136,10 +150,13 @@ class LinearIssueWire(LinearWireModel):
     team: str
     #: The project the issue belongs to, by display name and by id — both
     #: on every measured listing entry for an issue in a project, both
-    #: absent for an issue in none (KOD-169).  Free off the scan: scope
+    #: absent for an issue in none.  Free off the scan: scope
     #: membership is answered from these, never by a per-issue read.
     project: str | None = None
     project_id: str | None = None
+    #: Present for a milestone member, omitted or null for no milestone
+    #: in the connected tool's full get_issue/list_issues payloads.
+    project_milestone: LinearProjectMilestoneWire | None = None
     labels: list[str] = Field(default_factory=list)
     #: ``None`` means the payload did not REPORT relations — which is what
     #: every ``list_issues`` entry does, and what a ``get_issue`` read that
@@ -162,10 +179,80 @@ class LinearIssueDetailWire(LinearIssueWire):
     rather than defaulted for exactly that reason: "the vendor stopped
     sending the key" and "this issue has nothing attached" are different
     facts, and only the second one is an empty list.
+
+    ``createdBy`` is the workspace member the vendor attributes the issue
+    to, by display name, measured on this read beside a ``createdById``
+    the adapter does not read.  Required and nullable for the reason the
+    comment author is: a payload that dropped the key would be saying
+    nothing about authorship rather than saying there is none, and those
+    are different facts about who wrote the body standing there.
     """
 
     attachments: list[LinearAssetWire]
-    documents: list[LinearAssetWire]
+    documents: list[LinearDocumentReferenceWire]
+    created_by: str | None
+
+
+class LinearPlanningIssueWire(LinearIssueDetailWire):
+    """Planning cannot interpret unreported labels or relations as empty."""
+
+    labels: list[str]
+    relations: LinearIssueRelationsWire
+
+
+class LinearHistoryStateWire(LinearWireModel):
+    """State identity reported by get_issue's native stateHistory entries."""
+
+    id: str
+    name: str
+    type: str
+
+
+class LinearStateHistoryEntryWire(LinearWireModel):
+    """A measured state interval; omission is not an open endedAt."""
+
+    state: LinearHistoryStateWire
+    started_at: AwareDatetime
+    ended_at: AwareDatetime | None
+
+
+class LinearIssueStateHistoryWire(LinearIssueDetailWire):
+    """Full issue plus the native stateHistory intervals."""
+
+    state_history: list[LinearStateHistoryEntryWire] = Field(min_length=1)
+
+
+class LinearCriterionIssueWire(LinearIssueDetailWire):
+    """A child's reported membership cannot be omitted.
+
+    Description absence retains the ordinary issue read's normalization;
+    a criterion can have an empty body without disappearing from the set.
+    """
+
+    labels: list[str]
+    parent_id: str | None
+
+
+class LinearAddressedIssueWire(LinearIssueDetailWire):
+    """One addressed read, retaining the native UUID reported by ``get_issue``.
+
+    A display-key request needs no UUID. An opaque UUID request is accepted
+    only when that same native UUID is present in the returned payload.
+    """
+
+    uuid: UUID | None = None
+
+    def matches_requested(self, issue_key: str) -> bool:
+        """Accept the canonical key or the backend's attested UUID alias."""
+        if issue_key == self.id:
+            return True
+        if self.uuid is None:
+            return False
+        try:
+            requested_uuid = UUID(issue_key)
+        except ValueError:
+            return False
+        return requested_uuid == self.uuid
 
 
 class LinearIssueListWire(LinearWireModel):
@@ -185,7 +272,7 @@ class LinearProjectWire(LinearWireModel):
     """The ``get_project`` payload, in the fields the adapter reads.
 
     ``initiatives`` is required, measured populated on the live server
-    (2026-09-01, KOD-169); the no-initiative arm is unprobed, so a payload
+    (2026-09-01); the no-initiative arm is unprobed, so a payload
     omitting the key fails validation loudly here rather than being read
     as a project in no initiative — those are different facts and only a
     fresh capture may conflate them.
@@ -228,24 +315,45 @@ class LinearCommentWire(LinearWireModel):
     author arrives as an object, and which issue a comment belongs to is
     known by the caller that asked for it, never read back off the entry.
 
-    That object can be ``null``, measured 2026-09-01 (KOD-172): a removed
+    That object can be ``null``, measured 2026-09-01: a removed
     user or an integration leaves the key in place carrying nothing, and
     the log a dispatch tick was reading held one at index 8.  The key
     itself stays REQUIRED — a payload that dropped it would be saying
     nothing about authorship rather than saying there is none — and an
     author that is present but malformed still refuses.
+
+    The native reply link is also required, including explicit null for a
+    top-level comment. A missing link cannot establish thread provenance.
     """
 
     id: str
     author: LinearCommentAuthorWire | None
     body: str
     created_at: datetime
+    parent_id: str | None
+
+
+class LinearCommentEntryWire(LinearCommentWire):
+    """A comment as a LISTING reports it, carrying the stamp an edit moves.
+
+    Measured: every entry a comment listing answers with carries
+    ``updatedAt`` beside ``createdAt``, and an update by comment id
+    replaces the body and moves ``updatedAt`` while leaving ``createdAt``
+    where it was.  That pair is the backend's own record of WHEN a body
+    changed, which is what decides whether a grant's extension was
+    published while the grant it extends was still live.  The write echo
+    is read for its identity alone and keeps the less demanding contract.
+    """
+
+    updated_at: datetime
 
 
 class LinearCommentListWire(LinearWireModel):
-    """The ``list_comments`` envelope."""
+    """Comment pages, including the connected-app cursor measured 2026-09-07."""
 
-    comments: list[LinearCommentWire]
+    comments: list[LinearCommentEntryWire]
+    has_next_page: bool
+    cursor: str | None = None
 
 
 class LinearNamedWire(LinearWireModel):
@@ -256,14 +364,24 @@ class LinearNamedWire(LinearWireModel):
     measured listing carries the field at all, so a reader of it would see
     every team-scoped label as workspace-level; the adapter takes the
     container from WHICH listing answered instead, that being the only
-    statement about scope these payloads actually make (KOD-143, the label
-    addendum of 2026-08-25).  The declaration stays because the field is
+    statement about scope these payloads actually make.  The declaration
+    stays because the field is
     the vendor's own and optional, as the asset wire's unmeasured fields
     are.
     """
 
     name: str
     team_id: str | None = None
+
+
+class LinearWorkflowStateWire(LinearNamedWire):
+    """Native status identity and category for exact team-state selection."""
+
+    id: str = Field(min_length=1, pattern=r"\S")
+    type: str
+
+
+LINEAR_WORKFLOW_STATES = TypeAdapter(list[LinearWorkflowStateWire])
 
 
 class LinearLabelWire(LinearNamedWire):
@@ -277,21 +395,24 @@ class LinearLabelWire(LinearNamedWire):
     id is the only thing that separates those — measured 2026-09-01 on a
     two-board workspace, where one member came back from both boards under
     ONE id and from the unscoped listing too, while another came back
-    under TWO distinct ids and from no unscoped listing at all (KOD-167).
+    under TWO distinct ids and from no unscoped listing at all.
     """
 
     id: str
 
 
 class LinearLabelListWire(LinearWireModel):
-    """The ``list_issue_labels`` envelope — the array is keyed ``labels``.
+    """The issue, project and initiative label-definition list envelope.
 
-    Each list tool names its array after ITSELF; there is no shared
-    envelope key across them, so there is one model per tool here and no
-    invented common one.
+    All three connected-app reads returned ``labels`` and ``hasNextPage``
+    on 2026-09-07. The project read was empty; populated project entries
+    and service-credential availability still need deployment verification.
+    A continued page must carry a cursor; the reader refuses its absence.
     """
 
     labels: list[LinearLabelWire]
+    has_next_page: bool
+    cursor: str | None = None
 
 
 class LinearTeamWire(LinearNamedWire):
@@ -322,7 +443,7 @@ class LinearUserWire(LinearNamedWire):
     account name: every measured entry carries both and no measured entry
     has them equal.  It is declared because it is now READ — a configured
     identity may legitimately be either spelling, so user resolution
-    matches the union of the two (KOD-143 addendum 3).  Declaring it
+    matches the union of the two.  Declaring it
     before anything read it would have been the module's own rule broken.
     """
 

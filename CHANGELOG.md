@@ -9,6 +9,49 @@ concerns.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/running-a-scope.md`, one page for running a scope: what the run is and
+  is not, what the first boot writes to the team, the environment it needs, what
+  boot logs, how to start and re-enter a run, and which member refuses where.
+  `docs/operation.scope.toml` is the config it points at.
+
+### Changed
+
+- Every document that said scoped execution was unimplemented now says what is
+  true: a scoped request runs when a tracker is dialled, and
+  `ScopedExecutionUnavailableError` names the absence of a scoped arm or of a
+  delivery reader for the origin. The README's stale paragraph about claim
+  acquisition being refused is deleted; claim acquisition is implemented.
+- An operation that declares `[[organize_scopes]]` schedules the organize tick
+  and the audit pass only. The periodic dispatch pass, the fire-prep and
+  grooming prompt passes and the lifecycle watcher are withheld, and the
+  existing `scheduled_passes_not_wired` and `prompt_passes_not_wired` events
+  each carry a new `organize_scopes_declared` boolean saying so. Boot probes no
+  gate signal and renders no template for a withheld pass.
+- `[run_event_states]` is optional in an operation file, and dialling the
+  tracker no longer requires it. A declared table is still total at load time.
+  Nothing on the scope path reads the table: a run event's comment is rendered
+  from `[marker_prefixes]` alone.
+
+### Removed
+
+- The criterion class. `criterionClass` is gone from every criterion on the
+  wire — `workflow_criteria.criteria[]` now carries `id` and `text`, while
+  `.kodezart/criteria.json` entries also retain their `feasibility` evidence.
+  The acceptance-criteria prompt no longer asks a generator to classify what it
+  emits. Nothing reads the old key: a payload carrying it is refused, and a
+  persisted artifact carrying it is not this version's input.
+
+### Changed
+
+- The accept gate grades every criterion alike: any graded criterion that does
+  not pass rejects the run, where a failed `soft_signal` used to ship it with a
+  flag. `workflow_iteration.verdict` keeps its three states — `ship_with_flags`
+  is now reached by a criterion the feasibility sweep could not grade, and the
+  `## Shipped with flags` section of a pull-request body carries those ungraded
+  criteria and the evaluator's `sherlockFlags`, never a failed criterion.
+
 ## [0.2.0] - 2026-09-07
 
 v0.2 turns kodezart from a request-driven service into one that runs on its

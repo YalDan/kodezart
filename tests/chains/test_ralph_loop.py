@@ -8,10 +8,9 @@ from collections.abc import AsyncGenerator, Sequence
 from itertools import pairwise
 from pathlib import Path
 from typing import TypedDict
-
 import pytest
 from pydantic import ValidationError
-
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
@@ -43,7 +42,8 @@ from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -72,6 +72,9 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+
+
+
 
 
 def _make_loop(
@@ -140,7 +143,7 @@ def _run_kwargs(
         # A first round cuts its branch from the base it is scoped
         # against; only a remediation round is handed a different ref.
         work_base_ref=work_base_ref if work_base_ref is not None else spec.base_branch,
-        permission_mode="bypassPermissions",
+        permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
         acceptance_criteria=acceptance_criteria or make_criteria("Tests pass"),
         cache_key="test-cache-key",
