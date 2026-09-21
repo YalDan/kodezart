@@ -366,7 +366,7 @@ async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
     ground,
 ):
     executor = Executor(ground=ground)
-    service, guard, workspace, _ = await build(
+    service, guard, workspace, port = await build(
         repository, executor, prompt_set=prompt_set
     )
     events = await drive(service, guard, repository)
@@ -385,7 +385,25 @@ async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
     assert judge["session_id"] is None
     assert judge["agents"] == ()
     assert judge["allowed_tools"] is ToolPreset.EVALUATION
-    assert "Author rationale must never be forwarded" not in judge["prompt"]
+    # The judge's rendered input, field by field: the typed claim, the criterion
+    # sub-issues as the gate read them through the port, the pinned-answer
+    # section and the base sha, and nothing from the writer's own session.
+    claim = report.upheld[0].claim
+    criteria_json = "\n".join(
+        issue.model_dump_json()
+        for issue in sorted(
+            (i for i in port.issues.values() if "criterion" in i.issue_labels),
+            key=lambda issue: issue.issue_key,
+        )
+    )
+    assert f"<claim>{claim.model_dump_json()}</claim>" in judge["prompt"]
+    assert f"<current_criteria>{criteria_json}</current_criteria>" in judge["prompt"]
+    assert "<pinned_rulings>" in judge["prompt"]
+    assert "</pinned_rulings>" in judge["prompt"]
+    assert f"<base_sha>{repository[1]}</base_sha>" in judge["prompt"]
+    assert report.upheld[0].judgment.base_sha == repository[1]
+    assert "Native precommit contract" not in judge["prompt"]
+    assert "Implement the exact current Checks." not in judge["prompt"]
     assert (
         await git(repository[0], "ls-remote", "origin", "refs/heads/native-test") == ""
     )
@@ -527,6 +545,12 @@ async def test_ruling_departure_uses_exact_readback_and_stays_not_actioned(
     assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
     assert ruling.resolution in executor.calls[0]["prompt"]
     assert ruling.rejected_alternative in executor.calls[0]["prompt"]
+    # The record-present arm of the judge's pinned-answer section: the record as
+    # the gate read it back, inside the delimiters.
+    assert (
+        f"<pinned_rulings>{ruling.model_dump_json()}</pinned_rulings>"
+        in executor.calls[1]["prompt"]
+    )
     assert not any(isinstance(event, ResultEvent) for event in events)
 
 
