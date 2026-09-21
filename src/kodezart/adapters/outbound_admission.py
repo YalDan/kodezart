@@ -1,4 +1,5 @@
-"""Fixed outbound admission: credentials, native references, authored judgment."""
+"""Fixed outbound admission: credentials, typed tracker aggregates, native
+references, authored judgment."""
 
 import re
 from collections.abc import Sequence
@@ -18,7 +19,9 @@ from kodezart.types.domain.gating import (
     ScanHit,
     ScanResult,
     SurfaceDurability,
+    TrackerAggregate,
     WriterShape,
+    aggregate_hits,
     content_digest,
     durability_of,
     max_verdict,
@@ -27,9 +30,18 @@ from kodezart.types.domain.gating import (
 
 _PLACEHOLDER = "[REDACTED:{category}]"
 
-#: A decision depends on the exact text, source facts, destination, provenance
-#: and writer shape. Prose redaction must never authorize an identifier.
-type _MemoKey = tuple[str, OutboundDestination, str, ContentClass, WriterShape]
+#: A decision depends on the exact text, source facts, destination, provenance,
+#: writer shape and the structured values the writer declared. Prose redaction
+#: must never authorize an identifier, and a verdict reached over no declared
+#: values must never answer a call that declares some.
+type _MemoKey = tuple[
+    str,
+    OutboundDestination,
+    str,
+    ContentClass,
+    WriterShape,
+    tuple[TrackerAggregate, ...],
+]
 
 
 _CREDENTIAL_PATTERNS = tuple(re.compile(shape.pattern) for shape in CREDENTIAL_SHAPES)
@@ -70,6 +82,7 @@ class OutboundAdmission:
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         """Decide what may be written for *content* under *visibility*."""
         if visibility is RepoVisibility.PRIVATE:
@@ -81,6 +94,7 @@ class OutboundAdmission:
             self._fragment_digest,
             content_class,
             shape,
+            tuple(aggregates),
         )
         memoized = self._memo.get(key)
         if memoized is not None:
@@ -91,6 +105,7 @@ class OutboundAdmission:
             shape=shape,
             destination=destination,
             content_class=content_class,
+            aggregates=aggregates,
         )
         self._memo[key] = decision
         return decision
@@ -102,9 +117,18 @@ class OutboundAdmission:
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
-        """Credentials block locally before references or any model call."""
-        hits = list(credential_hits(content))
+        """Credentials and declared aggregates block before any model call.
+
+        Both are deterministic, cost nothing and are not about the model, so
+        both always run and both are reported.  A hit from either skips the
+        reference scan and the judgment exactly as a credential hit does.
+        """
+        hits = [
+            *credential_hits(content),
+            *aggregate_hits(aggregates, destination=destination),
+        ]
         if not hits:
             references = await self._references.scan(
                 content=content, destination=destination

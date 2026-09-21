@@ -110,7 +110,7 @@ does not exist.
 | SkillInventory    | HostSkillInventory       | What the host provisions; kodezart installs nothing  |
 | RepoVisibilityResolver | GitHubAPIClient     | Resolves PRIVATE / PUBLIC / UNKNOWN once per run     |
 | ContentJudgment | AgentContentScanner | Fresh semantic judgment after fixed local checks |
-| OutboundContentGate | OutboundAdmission | Fixed credentials, references and authored admission |
+| OutboundContentGate | OutboundAdmission | Fixed credentials, typed tracker aggregates, references and authored admission |
 | RefPublisher      | GitRefPublisher          | Points a named ref at an existing commit on the remote |
 | CheckChainRunner | SubprocessCheckChainRunner | Runs the ordered declared check steps in a scratch directory and captures every result |
 | Remediator        | RemediationChain         | One remediation round: failure evidence in, one targeted ticket out |

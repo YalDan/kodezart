@@ -148,6 +148,7 @@ class _PinStep:
             visibility=self.visibility,
             destination=OutboundDestination.TRACKER_COMMENT,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
             refusal=lambda: RulingUnrecordedError(
                 issue_key=self.lane_key,
                 reason=(

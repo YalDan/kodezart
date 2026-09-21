@@ -14,11 +14,19 @@ from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import FireSpecEntryError
 from kodezart.domain.rulings import render_ruling
 from kodezart.services.agent_service import AgentService
+from kodezart.services.amendment_writeback import _ExactEvidenceGate
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent, Ruling
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
-from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.gating import (
+    ContentClass,
+    GateVerdict,
+    IdentifierRoster,
+    OutboundDestination,
+    RepoVisibility,
+    WriterShape,
+)
 from kodezart.types.domain.operation import OperationConfig, RepoEntry
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
@@ -668,3 +676,26 @@ async def test_an_observed_amendment_keeps_the_roster_criterion_the_fire_finishe
         assert port.issues[DIRECT_OWED_TOO].state_kind is WorkflowStateKind.COMPLETED
     finally:
         await cleanup(workspace)
+
+
+async def test_the_exact_evidence_wrapper_forwards_the_declared_aggregates() -> None:
+    """The amendment path's gate decorator forwards the declaration untouched.
+
+    The wrapper stands between a writer and the one gate, so a wrapper that
+    dropped the declaration would hand the gate a question the writer did
+    not ask, silently.
+    """
+    inner = PassThroughGate()
+    roster = IdentifierRoster(field="lanes.issue", identities=("A", "B", "C"))
+
+    decision = await _ExactEvidenceGate(inner).gate(
+        content="the exact recorded evidence",
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_COMMENT,
+        content_class=ContentClass.AUTHORED,
+        aggregates=(roster,),
+    )
+
+    assert decision.verdict is GateVerdict.CLEAN
+    assert inner.aggregates == [(roster,)]

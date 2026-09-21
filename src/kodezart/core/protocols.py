@@ -34,6 +34,7 @@ from kodezart.types.domain.gating import (
     OutboundDestination,
     RepoVisibility,
     ScanResult,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.issue_identity import IssueIdentity
@@ -2229,6 +2230,7 @@ class OutboundContentGate(Protocol):
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         """CLEAN / REDACTED / BLOCKED — never silently dropped or posted.
 
@@ -2236,6 +2238,13 @@ class OutboundContentGate(Protocol):
         writer is the only party that knows where its bytes came from, and a
         default would let a payload take the cheap path without anyone
         saying so.
+
+        ``aggregates`` are the tracker counts and rosters the caller is
+        about to render, declared from the typed values it rendered them
+        from.  It has no default for the same reason: a writer that renders
+        a tracker roster and says nothing about it would take the cheap path
+        without anyone saying so.  A writer holding no tracker count and no
+        tracker identity list states ``()``, the one spelling of nothing.
         """
         ...
 

@@ -23,6 +23,7 @@ from kodezart.types.domain.gating import (
     OutboundDestination,
     RedactionCategory,
     RepoVisibility,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.operation import CheckStep, RepoEntry
@@ -85,6 +86,7 @@ class RecordingGate:
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         if destination is OutboundDestination.PR_BODY:
             self.bodies.append(content)
@@ -94,6 +96,7 @@ class RecordingGate:
             shape=shape,
             destination=destination,
             content_class=content_class,
+            aggregates=aggregates,
         )
 
 

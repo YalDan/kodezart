@@ -27,6 +27,7 @@ from kodezart.types.domain.gating import (
     GateVerdict,
     OutboundDestination,
     RepoVisibility,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.prompts import PromptKey
@@ -407,6 +408,7 @@ async def test_a_gate_that_alters_the_answer_refuses_the_pin_as_the_fires_own(
             shape: WriterShape,
             destination: OutboundDestination,
             content_class: ContentClass,
+            aggregates: tuple[TrackerAggregate, ...],
         ) -> GateDecision:
             await super().gate(
                 content=content,
@@ -414,6 +416,7 @@ async def test_a_gate_that_alters_the_answer_refuses_the_pin_as_the_fires_own(
                 shape=shape,
                 destination=destination,
                 content_class=content_class,
+                aggregates=aggregates,
             )
             return GateDecision(
                 verdict=GateVerdict.REDACTED, content=content.replace('"', "*", 1)

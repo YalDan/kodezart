@@ -112,6 +112,7 @@ class AuthoredPublication:
                 shape=WriterShape.PROSE,
                 destination=OutboundDestination.PR_TITLE,
                 content_class=ContentClass.AUTHORED,
+                aggregates=(),
             ),
             body=require_tracker_issue(
                 await gated_write(
@@ -129,6 +130,7 @@ class AuthoredPublication:
                     shape=WriterShape.PROSE,
                     destination=OutboundDestination.PR_BODY,
                     content_class=ContentClass.AUTHORED,
+                    aggregates=(),
                 ),
                 state["issue_key"],
             ),
@@ -242,6 +244,7 @@ class AuthoredPublication:
                 shape=WriterShape.PROSE,
                 destination=OutboundDestination.PR_TITLE,
                 content_class=ContentClass.AUTHORED,
+                aggregates=(),
             ),
             body=require_tracker_issue(
                 await gated_write(
@@ -252,6 +255,7 @@ class AuthoredPublication:
                     shape=WriterShape.PROSE,
                     destination=OutboundDestination.PR_BODY,
                     content_class=ContentClass.AUTHORED,
+                    aggregates=(),
                 ),
                 state["issue_key"],
             ),
@@ -329,6 +333,7 @@ class AuthoredPublication:
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_COMMENT,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
 
         try:

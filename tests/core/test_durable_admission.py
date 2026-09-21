@@ -1,5 +1,6 @@
 """Shared destination durability and non-redaction admission rules."""
 
+import inspect
 import re
 
 import pytest
@@ -18,6 +19,8 @@ from kodezart.types.domain.gating import (
     DurabilityCategory,
     GateDecision,
     GateVerdict,
+    IdentifierRoster,
+    ObjectCount,
     OutboundDestination,
     OutboundSurface,
     RedactionCategory,
@@ -26,6 +29,7 @@ from kodezart.types.domain.gating import (
     ScanHit,
     SurfaceDurability,
     WriterShape,
+    aggregate_hits,
     durability_of,
     surface_of,
 )
@@ -61,6 +65,7 @@ async def test_unconfigured_native_urls_carry_no_implicit_private_workspace(url)
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.DERIVED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.categories == ()
@@ -89,6 +94,7 @@ async def test_url_defaults_do_not_supply_workspace_name_patterns(content):
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.DERIVED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == content
@@ -223,6 +229,7 @@ async def test_aggregate_categories_block_without_a_redaction_option(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.content == ""
@@ -230,11 +237,16 @@ async def test_aggregate_categories_block_without_a_redaction_option(
     assert GateDecision.model_validate_json(decision.model_dump_json()) == decision
 
 
-async def configured_gate(config: AppConfig | None = None) -> OutboundAdmission:
+async def configured_gate(
+    config: AppConfig | None = None,
+    *,
+    executor: ScriptedAuditExecutor | None = None,
+) -> OutboundAdmission:
+    """The shipped composition. Pass *executor* to count judgment sessions."""
     return await build_outbound_gate(
         config=config or AppConfig(agentic_content_scanner_enabled=False),
         operation=None,
-        executor=ScriptedAuditExecutor([audit_result([])]),
+        executor=executor or ScriptedAuditExecutor([audit_result([])]),
         prompts=load_registry(),
         skills=SkillsSelection(mode=SkillsMode.NONE),
         log=get_logger(__name__),
@@ -262,6 +274,7 @@ async def test_aggregate_block_wins_over_an_earlier_redaction() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert set(decision.categories) == {
@@ -281,6 +294,7 @@ async def test_single_identifier_is_a_reference_on_every_surface(
         shape=WriterShape.PROSE,
         destination=destination,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
 
@@ -296,6 +310,125 @@ async def test_privacy_match_text_is_not_copied_into_the_blocked_error() -> None
             shape=WriterShape.PROSE,
             destination=OutboundDestination.PR_BODY,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
     assert secret not in str(excinfo.value)
     assert all(hit.matched_text is None for hit in excinfo.value.hits)
+
+
+# ---------------------------------------------------------------------------
+# Declared tracker aggregates: the values decide, the bytes do not (KOD-485)
+# ---------------------------------------------------------------------------
+
+LANE_COUNT = ObjectCount(field="lanes", value=3)
+LANE_ROSTER = IdentifierRoster(field="lanes.issue", identities=("A", "B", "C"))
+
+
+async def test_the_structured_values_decide_the_aggregate_verdict_not_the_bytes() -> (
+    None
+):
+    """One payload, two declarations, two verdicts, and no judgment session.
+
+    The bytes are identical on both calls, so nothing read out of them can
+    account for the difference: what the writer declared is what is
+    classified.
+    """
+    executor = ScriptedAuditExecutor([audit_result([])])
+    gate = await configured_gate(executor=executor)
+    content = "3 lanes"
+
+    undeclared = await gate.gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_DESCRIPTION,
+        content_class=ContentClass.DERIVED,
+        aggregates=(),
+    )
+    declared = await gate.gate(
+        content=content,
+        visibility=RepoVisibility.PUBLIC,
+        shape=WriterShape.PROSE,
+        destination=OutboundDestination.TRACKER_DESCRIPTION,
+        content_class=ContentClass.DERIVED,
+        aggregates=(LANE_COUNT,),
+    )
+
+    assert undeclared.verdict is GateVerdict.CLEAN
+    assert undeclared.content == content
+    assert declared.verdict is GateVerdict.BLOCKED
+    assert declared.categories == (DurabilityCategory.OBJECT_COUNT,)
+    assert declared.hits[0].source is not None
+    assert declared.hits[0].source.field == "lanes"
+    assert executor.calls == []
+
+
+def test_the_aggregate_rule_reads_no_payload_bytes() -> None:
+    """The rule has no content parameter, so it cannot decide from the text."""
+    assert set(inspect.signature(aggregate_hits).parameters) == {
+        "aggregates",
+        "destination",
+    }
+    (hit,) = aggregate_hits(
+        (LANE_ROSTER,), destination=OutboundDestination.TRACKER_DESCRIPTION
+    )
+    assert hit.start is None
+    assert hit.end is None
+    assert hit.matched_text is None
+
+
+async def test_a_structured_refusal_and_a_credential_are_both_reported() -> None:
+    """Two deterministic rules, one payload, both categories on the refusal."""
+    secret = "ghp_" + "B" * 40
+    with pytest.raises(OutboundContentBlockedError) as excinfo:
+        await gated_write(
+            gate=await configured_gate(),
+            log=get_logger(__name__),
+            content=f"3 lanes, credential={secret}",
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.DERIVED,
+            aggregates=(LANE_COUNT,),
+        )
+    assert set(excinfo.value.categories) == {
+        RedactionCategory.CREDENTIALS.value,
+        DurabilityCategory.OBJECT_COUNT.value,
+    }
+    assert secret not in str(excinfo.value)
+
+
+def test_a_structured_finding_cannot_carry_string_offsets() -> None:
+    """A source and an offset on one hit is refused at construction.
+
+    The rule that a structured value is never given invented offsets is a
+    property of the finding type rather than a discipline the rule keeps.
+    """
+    with pytest.raises(ValidationError):
+        ScanHit(
+            category=DurabilityCategory.OBJECT_COUNT,
+            source=LANE_COUNT,
+            start=0,
+            end=3,
+        )
+    with pytest.raises(ValidationError):
+        ScanHit(
+            category=DurabilityCategory.OBJECT_COUNT,
+            source=LANE_COUNT,
+            matched_text="3 lanes",
+        )
+
+    hit = ScanHit(category=DurabilityCategory.OBJECT_COUNT, source=LANE_COUNT)
+    assert hit.has_span is False
+    assert hit.sort_key() == (-1, -1)
+
+    decision = GateDecision(
+        verdict=GateVerdict.BLOCKED,
+        content="",
+        categories=tuple(DurabilityCategory),
+        hits=aggregate_hits(
+            (LANE_COUNT, LANE_ROSTER),
+            destination=OutboundDestination.TRACKER_DESCRIPTION,
+        ),
+    )
+    assert GateDecision.model_validate_json(decision.model_dump_json()) == decision

@@ -39,6 +39,7 @@ from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
     RepoVisibility,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
@@ -189,6 +190,7 @@ class GitChangePersister:
             visibility,
             OutboundDestination.COMMIT_MESSAGE,
             ContentClass.AUTHORED,
+            aggregates=(),
         )
         if before_commit is not None:
             await before_commit()
@@ -255,6 +257,7 @@ class GitChangePersister:
             visibility,
             OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY,
             ContentClass.AUTHORED,
+            aggregates=(),
         )
         head_tree = await self._git.tree_of(workspace_path, head_sha)
 
@@ -310,6 +313,8 @@ class GitChangePersister:
         visibility: RepoVisibility,
         destination: OutboundDestination,
         content_class: ContentClass,
+        *,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> str:
         """Route a commit message through the one gated-write path."""
         return await gated_write(
@@ -320,6 +325,7 @@ class GitChangePersister:
             shape=WriterShape.PROSE,
             destination=destination,
             content_class=content_class,
+            aggregates=aggregates,
         )
 
     async def _generate_commit_message(

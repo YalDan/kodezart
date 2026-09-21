@@ -561,6 +561,7 @@ async def test_ported_templates_contain_no_resolved_org_values(key: PromptKey) -
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN, decision.categories
 

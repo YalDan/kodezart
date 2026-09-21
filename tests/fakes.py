@@ -134,6 +134,7 @@ from kodezart.types.domain.gating import (
     ScanFailureKind,
     ScanHit,
     ScanResult,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.issue_identity import IssueIdentity
@@ -2223,6 +2224,7 @@ class PassThroughGate:
         self.calls: list[tuple[str, RepoVisibility, WriterShape]] = []
         self.destinations: list[OutboundDestination] = []
         self.content_classes: list[ContentClass] = []
+        self.aggregates: list[tuple[TrackerAggregate, ...]] = []
 
     async def gate(
         self,
@@ -2232,10 +2234,12 @@ class PassThroughGate:
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         self.calls.append((content, visibility, shape))
         self.destinations.append(destination)
         self.content_classes.append(content_class)
+        self.aggregates.append(tuple(aggregates))
         return GateDecision(verdict=GateVerdict.CLEAN, content=content)
 
 

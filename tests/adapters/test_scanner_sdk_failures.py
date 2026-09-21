@@ -332,6 +332,7 @@ async def test_local_credentials_block_before_a_native_session(monkeypatch, entr
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert observed.verdict is GateVerdict.BLOCKED
     assert observed.failure is None

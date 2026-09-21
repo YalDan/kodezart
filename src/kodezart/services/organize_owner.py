@@ -542,6 +542,7 @@ class OrganizeOwner:
                             shape=WriterShape.PROSE,
                             destination=destination,
                             content_class=ContentClass.AUTHORED,
+                            aggregates=(),
                         )
                         if gated != content:
                             raise OrganizeWriteRefusalError(
@@ -598,6 +599,7 @@ class OrganizeOwner:
                     shape=WriterShape.PROSE,
                     destination=OutboundDestination.TRACKER_DESCRIPTION,
                     content_class=ContentClass.AUTHORED,
+                    aggregates=(),
                 )
                 if content == proposal.revision.issue.body:
                     return
@@ -656,6 +658,7 @@ class OrganizeOwner:
                         shape=WriterShape.PROSE,
                         destination=OutboundDestination.TRACKER_DESCRIPTION,
                         content_class=ContentClass.AUTHORED,
+                        aggregates=(),
                     )
                     gated_title = await gated_write(
                         gate=self._gate,
@@ -665,6 +668,7 @@ class OrganizeOwner:
                         shape=WriterShape.PROSE,
                         destination=OutboundDestination.TRACKER_TITLE,
                         content_class=ContentClass.AUTHORED,
+                        aggregates=(),
                     )
                     if gated != body or gated_title != item.title:
                         raise OrganizeWriteRefusalError(
@@ -785,6 +789,7 @@ class OrganizeOwner:
                 shape=WriterShape.IDENTIFIER,
                 destination=OutboundDestination.TRACKER_CLASSIFICATION,
                 content_class=ContentClass.DERIVED,
+                aggregates=(),
             )
             if classification != marker:
                 raise OrganizeWriteRefusalError(

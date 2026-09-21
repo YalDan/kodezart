@@ -12,6 +12,7 @@ from kodezart.types.domain.gating import (
     GateVerdict,
     OutboundDestination,
     RepoVisibility,
+    TrackerAggregate,
     WriterShape,
 )
 from kodezart.types.domain.operation import LifecycleStage, QueueState
@@ -83,6 +84,7 @@ class BlockingGate:
         shape: WriterShape,
         destination: OutboundDestination,
         content_class: ContentClass,
+        aggregates: tuple[TrackerAggregate, ...],
     ) -> GateDecision:
         return GateDecision(verdict=GateVerdict.BLOCKED, content="")
 

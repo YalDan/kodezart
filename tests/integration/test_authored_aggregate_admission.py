@@ -192,6 +192,7 @@ async def test_same_authored_claim_is_allowed_at_the_point_in_time_boundary(
             shape=WriterShape.PROSE,
             destination=destination,
             content_class=ContentClass.AUTHORED,
+            aggregates=(),
         )
         assert decision.verdict is expected
         if expected is GateVerdict.CLEAN:
@@ -310,6 +311,7 @@ async def test_point_in_time_aggregate_permission_does_not_skip_private_prose(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.TRACKER_COMMENT,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is expected
     assert len(judge.calls) == 1
@@ -330,6 +332,7 @@ async def test_shipped_credential_check_blocks_before_the_new_mandatory_session(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert judge.calls == []
@@ -362,6 +365,7 @@ async def test_derived_technical_values_keep_the_existing_no_session_route(tmp_p
         shape=WriterShape.PROSE,
         destination=OutboundDestination.ARTIFACT_CRITERIA_JSON,
         content_class=ContentClass.DERIVED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == "3 tests"
@@ -379,6 +383,7 @@ async def test_private_prose_opt_in_keeps_point_in_time_repository_cost_routing(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.COMMIT_MESSAGE,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == COUNT_CLAIM

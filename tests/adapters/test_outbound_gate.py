@@ -41,6 +41,7 @@ async def test_no_hits_is_clean() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
     assert decision.content == "nothing to see"
@@ -55,6 +56,7 @@ async def test_redact_category_hit_alone_yields_redacted() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.REDACTED
     assert decision.categories == (RedactionCategory.TRACKER_URLS,)
@@ -68,6 +70,7 @@ async def test_block_category_hit_alone_yields_blocked() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.content == ""
@@ -82,6 +85,7 @@ async def test_both_categories_yield_blocked() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert set(decision.categories) == {
@@ -105,6 +109,7 @@ async def test_identifier_writer_blocks_on_a_redact_category_hit() -> None:
         shape=WriterShape.IDENTIFIER,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert "[REDACTED:" not in decision.content
@@ -123,6 +128,7 @@ async def test_redacted_form_is_a_category_labelled_placeholder_per_span() -> No
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.content == ("a [REDACTED:tracker_urls] b [REDACTED:tracker_urls] c")
 
@@ -151,6 +157,7 @@ async def test_gate_engages_on_public_and_unknown_only(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is expected
 
@@ -167,6 +174,7 @@ async def test_unconfigured_deployment_is_clean_on_every_visibility(
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.CLEAN
 
@@ -181,6 +189,7 @@ async def test_shipped_credential_category_still_blocks() -> None:
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.categories == (RedactionCategory.CREDENTIALS,)
@@ -200,6 +209,7 @@ async def test_the_shipped_credential_category_blocks_the_knowledge_token() -> N
         shape=WriterShape.PROSE,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     assert decision.verdict is GateVerdict.BLOCKED
     assert decision.categories == (RedactionCategory.CREDENTIALS,)
@@ -237,6 +247,7 @@ async def test_all_fixed_privacy_rows_are_applied(category, shape):
         shape=shape,
         destination=OutboundDestination.PR_BODY,
         content_class=ContentClass.AUTHORED,
+        aggregates=(),
     )
     expected = (
         GateVerdict.BLOCKED
@@ -266,6 +277,7 @@ async def test_memo_keeps_identifier_admission_distinct_from_prose():
                 shape=shape,
                 destination=OutboundDestination.PR_BODY,
                 content_class=ContentClass.AUTHORED,
+                aggregates=(),
             )
         )
     assert [result.verdict for result in results] == [
