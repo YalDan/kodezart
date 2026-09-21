@@ -99,6 +99,40 @@ def test_an_answer_addressed_outside_the_fire_is_refused() -> None:
     assert "EXT/999" in caught.value.reason
 
 
+def test_an_answer_addressed_outside_the_fire_is_refused_before_anything_else() -> None:
+    """The membership refusal is ahead of both ways an answer stops short.
+
+    Placement is the behaviour here, so it is asserted over the two answers
+    that would otherwise never reach it: one whose minted identity the
+    tracker already carries, which is dropped without a word, and one no
+    valid record can be built from, which is refused for its own reason.
+    Under either ordering an answer whose reference does not resolve would be
+    accepted, or refused for the wrong fact, on its way past.
+    """
+    outside = "EXT/999"
+    already = mint_ruling_id(issue_ref=outside, question=QUESTION)
+
+    with pytest.raises(RulingUnrecordedError) as recorded:
+        owed(answer(issue_ref=outside), recorded=(already,))
+
+    assert recorded.value.issue_key == SUBJECT
+    assert outside in recorded.value.reason
+    assert "not a member of this fire" in recorded.value.reason
+    # Non-vacuous: an identity the tracker carries whose reference DOES
+    # resolve is the silent drop this answer was kept away from.
+    inside = mint_ruling_id(issue_ref=CHECK, question=QUESTION)
+    assert owed(answer(), recorded=(inside,)) == ()
+
+    with pytest.raises(RulingUnrecordedError) as malformed:
+        owed(answer(issue_ref=outside, rejected_alternative=None))
+
+    assert outside in malformed.value.reason
+    assert "not a member of this fire" in malformed.value.reason
+    # And it is refused for membership, not for the record that could not
+    # have been built from it either way.
+    assert "not a valid record" not in malformed.value.reason
+
+
 def test_two_answers_to_one_question_are_refused() -> None:
     """One question has one answer; two would share an identity."""
     with pytest.raises(RulingUnrecordedError):
