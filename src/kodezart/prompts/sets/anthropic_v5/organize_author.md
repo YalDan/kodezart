@@ -19,6 +19,8 @@ edits remain unavailable. Milestone clearing may be refused by the backend;
 that capability limitation is not a human decision. Reserve unresolved proposals
 for actual unruled choices. Never claim body prose changed the native graph.
 
+{{board_hierarchy}}
+
 Use the supplied mandate rubric to judge the issue. Read repository evidence
 at the supplied base ref before making repository claims.
 

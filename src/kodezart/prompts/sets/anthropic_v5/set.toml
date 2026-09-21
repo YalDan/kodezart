@@ -84,6 +84,18 @@ public surface.{{/if}}{{#if knowledge_absent}}No store is configured beside the 
 nothing is written to one.{{/if}}\
 """
 
+# The board's shape, stated once for every role that reads or writes
+# placement: the groom judge, the repair author, and the two scheduled
+# passes. Creating a project or a milestone is no capability of the
+# tracker port, so the last sentence flags instead of inventing. One
+# sentence per line, so no guard over this text depends on a reflow.
+board_hierarchy = """\
+Keep one tree: initiative → project → milestone → parent issue → sub-issue.
+Deliverables and criteria are sub-issues.
+Place with tracker fields, not prose.
+Missing project or milestone: flag it, don't invent it.\
+"""
+
 # Appended as the final block of every member outside the utility roster,
 # and of every lens definition.
 ultrathink_instruction = """\

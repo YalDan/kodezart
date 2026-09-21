@@ -11,6 +11,10 @@ The caller checks the actual edge. Ground every finding in concrete evidence.
 Where a mandate causes a defect, identify its role as mandate and quote the
 mandate text verbatim; an instance finding carries no mandate text.
 
+{{board_hierarchy}}
+An issue outside that tree is not_buildable with a repairable spec_gap:
+name the misplacement and the field that carries it.
+
 Use the supplied mandate rubric to judge the issue. Read repository evidence
 at the supplied base ref before making repository claims.
 

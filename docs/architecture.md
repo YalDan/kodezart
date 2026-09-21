@@ -422,7 +422,11 @@ to it, so its scheduled pass opens no session and writes nothing. `ticket` and
 `criteria` are stages of an approved scope run. An owner runs exactly the rows
 it is given — the scheduled pass is given the pre-approval row, a scope run's
 entry the two run-stage rows — and no branch on mandate kind exists outside
-the role table.
+the role table. The set states the board's shape once, as one tree from
+initiative down to sub-issue placed through tracker fields, and composes it
+into the groom judge, the repair author and the two scheduled pass prompts, so
+an issue sitting outside that tree is a repairable gap rather than a matter of
+taste.
 
 Because approval admits a member to a run stage instead of ending it, a
 run-stage row may name `scope_labels.approved` as its gate by that exact
