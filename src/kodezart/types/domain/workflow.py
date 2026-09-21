@@ -280,10 +280,8 @@ class WorkflowState(TypedDict):
     feature_branch: str
     ralph_branch: str
     work_base_ref: str
-    ticket: TicketDraftOutput | None
     fire_spec: FireSpec | None
     acceptance_criteria: list[GeneratedCriterion]
-    criteria_artifact: CriteriaArtifact | None
     criterion_set: CriteriaArtifact | TrackerCriterionSet | None
     criteria_validation: CriteriaValidation | None
     criteria_regeneration_rounds: int
@@ -302,10 +300,6 @@ class WorkflowState(TypedDict):
     remediation_ticket: TicketDraftOutput | RemediationPlan | None
     remediation_entry: RemediationEntry | None
     best_iteration_sha: str | None
-    pr_url: str | None
-    pr_number: int | None
-    ci_status: CIStatus
-    ci_summary: str | None
     repo_url: str | None
     repo_visibility: RepoVisibility
     trajectory: LoopTrajectory | None
@@ -313,3 +307,14 @@ class WorkflowState(TypedDict):
     #: question it raised carries no confirmed answer on the tracker. Absent
     #: on every other path, so every existing state literal stays valid.
     ruling_unrecorded: NotRequired[bool]
+
+
+class AuthoredWorkflowState(WorkflowState):
+    """Outer authored delivery state, never passed into the fire graph."""
+
+    pr_url: str | None
+    pr_number: int | None
+    ci_status: CIStatus
+    ci_summary: str | None
+    ci_red_class: NotRequired[CheckRedClass | None]
+    ci_run_absent: NotRequired[bool]

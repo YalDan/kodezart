@@ -329,6 +329,18 @@ class AppConfig(BaseSettings):
         le=86400.0,
         description="Maximum seconds between full audit coverage attempts.",
     )
+    union_check_step_timeout_seconds: float = Field(
+        default=1800,
+        gt=0,
+        description="Wall-clock bound for one check step of a union composition.",
+    )
+    union_stale_max_attempts: int = Field(
+        default=3,
+        ge=1,
+        description=(
+            "Maximum union attempts before continuously moving lane heads refuse."
+        ),
+    )
     delivery_max_concurrent_watches: int = Field(
         default=4,
         ge=1,
@@ -671,37 +683,6 @@ class AppConfig(BaseSettings):
         description=(
             "JSON object mapping a prompt function key to a filesystem path of "
             "a template file. Highest precedence layer."
-        ),
-    )
-    deny_patterns: dict[RedactionCategory, list[str]] = Field(
-        default_factory=lambda: {
-            RedactionCategory.CROSS_REPO_NAMES: [],
-            RedactionCategory.TRACKER_URLS: [],
-            RedactionCategory.EMAIL_HANDLES: [],
-            RedactionCategory.INFRA_ENDPOINTS: [],
-            RedactionCategory.CREDENTIALS: [
-                shape.pattern for shape in CREDENTIAL_SHAPES
-            ],
-        },
-        description=(
-            "JSON object mapping a redaction category to its regex pattern "
-            "list. Ships empty except the credential category. The "
-            "org_private category is REJECTED as a key: a pattern naming an "
-            "organisation contains the string it names."
-        ),
-    )
-    deny_pattern_verdicts: dict[RedactionCategory, GateVerdict] = Field(
-        default_factory=lambda: {
-            RedactionCategory.CROSS_REPO_NAMES: GateVerdict.REDACTED,
-            RedactionCategory.TRACKER_URLS: GateVerdict.REDACTED,
-            RedactionCategory.EMAIL_HANDLES: GateVerdict.REDACTED,
-            RedactionCategory.INFRA_ENDPOINTS: GateVerdict.BLOCKED,
-            RedactionCategory.CREDENTIALS: GateVerdict.BLOCKED,
-            RedactionCategory.ORG_PRIVATE: GateVerdict.REDACTED,
-        },
-        description=(
-            "JSON object mapping a redaction category to the verdict a hit "
-            "in that category yields. A payload takes the max severity."
         ),
     )
 

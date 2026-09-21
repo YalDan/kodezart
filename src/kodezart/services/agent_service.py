@@ -186,10 +186,11 @@ class AgentService:
         ref: str,
         branch_name: str | None = None,
         create_branch: bool = True,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
@@ -197,9 +198,53 @@ class AgentService:
         output_format: dict[str, object] | None = None,
         persist_branch: str | None = None,
         cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
+        after_publish: AfterPublish | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         if repo_url is not None:
             repo_url = resolve_repo_url(repo_url, self._git_base_url)
+
+        if native_guard is not None:
+            if (
+                self._persister is None
+                or not persist_branch
+                or branch_name != persist_branch
+            ):
+                raise NativeWriteRefusalError(
+                    "Native persistence is not configured for this branch"
+                )
+            if after_publish is None:
+                raise NativeWriteRefusalError(
+                    "Native persistence requires its lane record write"
+                )
+            execution = NativeExecution(
+                executor=self._executor,
+                workspace=self._workspace,
+                persister=self._persister,
+                guard=native_guard,
+                after_publish=after_publish,
+                request=NativeExecutionRequest(
+                    prompt=prompt,
+                    repo_path=repo_path,
+                    repo_url=repo_url,
+                    ref=ref,
+                    branch=persist_branch,
+                    create_branch=create_branch,
+                    permission_mode=permission_mode,
+                    allowed_tools=allowed_tools,
+                    skills=skills,
+                    session_type=session_type,
+                    run_identity=run_identity,
+                    agents=agents,
+                    session_policy=session_policy,
+                    session_id=session_id,
+                    visibility=visibility,
+                    cache_key=cache_key,
+                ),
+            )
+            async for event in execution.stream():
+                yield event
+            return
 
         try:
             workspace_path = await self._workspace.acquire(
@@ -236,6 +281,7 @@ class AgentService:
                 allowed_tools=allowed_tools,
                 skills=skills,
                 session_type=session_type,
+                run_identity=run_identity,
                 agents=agents,
                 session_policy=session_policy,
                 session_id=session_id,
@@ -263,7 +309,6 @@ class AgentService:
                             "branch": persist_branch,
                         },
                     )
-
             if buffered_result:
                 yield buffered_result
         finally:
