@@ -55,6 +55,7 @@ from tests.tracker.conftest import (
     CLAIMED_ISSUE,
     DOCUMENT_KEY,
     FIXTURE_NOW,
+    ISSUE_LABELS,
     QUEUE_STATE_LABELS,
     STATE_TYPES,
     TEAM_IDENTIFIERS,
@@ -1301,6 +1302,14 @@ CLAIMED_BODY = WritableSurface(
     ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
 )
 
+#: The same issue's criterion body: the sibling answerable kind, on the
+#: very key CLAIMED_BODY names, so the two records land on one comment
+#: target and only their own addresses tell them apart.
+CLAIMED_CRITERION_BODY = WritableSurface(
+    kind=SurfaceKind.CRITERION_SUB_ISSUE,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+)
+
 #: The two holders the record cases write as.
 FIRST_WRITER = "first-writing-job"
 SECOND_WRITER = "second-writing-job"
@@ -1449,3 +1458,32 @@ class TestTheBodyWriteRecordThisAdapterKeeps:
 
         answer = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
         assert answer.holders == (FIRST_WRITER, attested)
+
+    async def test_a_sibling_bodys_record_names_no_holder(self) -> None:
+        """A record answers for the body it moved, not for its neighbour.
+
+        Both answerable body kinds on one issue are commented on that one
+        issue, so the two kinds' records sit on a single target and the
+        record's own address is all that keeps the description's holder
+        out of the criterion body's answer.  The description's holder is
+        asserted on its own body in the same case, so the empty answer is
+        that address's doing and not a read answering nobody either way.
+        """
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        assert (
+            await held_body_write(
+                tracker,
+                holder=FIRST_WRITER,
+                replacement="a body the first job put there",
+            )
+            is DescriptionEditResult.EDITED
+        )
+        written = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        assert written.holders == (FIRST_WRITER,)
+
+        # The board move that gives this very issue a criterion body.
+        server.issues[CLAIMED_ISSUE].labels.append(ISSUE_LABELS["criterion"])
+
+        sibling = await tracker.read_surface_authorship(surface=CLAIMED_CRITERION_BODY)
+        assert sibling.holders == ()
