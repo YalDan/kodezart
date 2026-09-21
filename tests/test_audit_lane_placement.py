@@ -21,6 +21,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
+from typing import Protocol
 
 import pytest
 
@@ -37,7 +38,14 @@ from tests.chains.test_write_back_adoption import step_members
 SOURCE = Path(__file__).resolve().parents[1] / "src" / "kodezart"
 
 
-def declared_in(obj: object) -> str:
+class Declared(Protocol):
+    """Anything that carries its own declaring module: a class or a function."""
+
+    __module__: str
+    __name__: str
+
+
+def declared_in(obj: Declared) -> str:
     """Where *obj* is actually declared, inside the package.
 
     Read off the object's own module, so a symbol that moves answers
@@ -45,7 +53,7 @@ def declared_in(obj: object) -> str:
     needs and what a path spelled out beside the symbol cannot give.
     """
     return (
-        Path(sys.modules[obj.__module__].__file__ or "")  # type: ignore[attr-defined]
+        Path(sys.modules[obj.__module__].__file__ or "")
         .resolve()
         .relative_to(SOURCE)
         .as_posix()
@@ -53,7 +61,7 @@ def declared_in(obj: object) -> str:
 
 
 #: Each symbol a placement clause names, against the module it names.
-PLACEMENTS: tuple[tuple[object, str], ...] = (
+PLACEMENTS: tuple[tuple[Declared, str], ...] = (
     (WriteBackStep, "core/protocols.py"),
     (WriteBackJudge, "core/protocols.py"),
     (WriteBackVerifier, "chains/write_back_verifier.py"),
@@ -67,7 +75,7 @@ PLACEMENTS: tuple[tuple[object, str], ...] = (
 )
 
 #: The symbols another lane owns and this one may only import by name.
-GUARDED_SYMBOLS: tuple[object, ...] = (
+GUARDED_SYMBOLS: tuple[Declared, ...] = (
     SpecFinding,
     DefectRole,
     CheckRedClass,
@@ -77,8 +85,7 @@ GUARDED_SYMBOLS: tuple[object, ...] = (
 
 #: Each guarded symbol's owning module, derived once from the symbol.
 OWNERS: Mapping[str, str] = {
-    symbol.__name__: declared_in(symbol)  # type: ignore[attr-defined]
-    for symbol in GUARDED_SYMBOLS
+    symbol.__name__: declared_in(symbol) for symbol in GUARDED_SYMBOLS
 }
 
 #: What a class must define to be one of the two write-back roles, read
