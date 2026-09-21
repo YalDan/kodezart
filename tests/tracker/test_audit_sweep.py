@@ -19,6 +19,7 @@ from kodezart.config.app import AppConfig
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.services.audit_sources import AuditSourceReader
@@ -33,6 +34,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import ToolPreset
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -62,6 +64,10 @@ from tests.tracker.test_audit_requests import server as server
 
 HEAD = "a" * 40
 PRIOR = "b" * 40
+#: The lane this module's own record is written under, named once so a
+#: grading seeded into the stream and the record the sweep reads cannot
+#: disagree.  The value is ``lane_record``'s own default.
+LANE = "opaque:lane λ"
 CHECK = "The repository check reads the current committed contents."
 BODY = f"**Check:** {CHECK}\n**Do:** AUTHOR_REASONING\n" + render_evidence_field(
     CriterionEvidence(graded_sha=HEAD, test="OLD_RECORDED_TEST")
@@ -126,7 +132,9 @@ async def setup(tracker, server):
     await tracker.update_issue(issue_key=ROOT, body="Explicit parent instructions.")
     await state(tracker, server, CHILD, "Todo", WorkflowStateKind.UNSTARTED)
     stored = await lane_record(
-        tracker, data={"pr": {"number": 7, "url": f"{REPO}/pull/7", "state": "old"}}
+        tracker,
+        lane=LANE,
+        data={"pr": {"number": 7, "url": f"{REPO}/pull/7", "state": "old"}},
     )
     config = AppConfig(git={"remote": "configured-remote"})
     op = operation().model_copy(update={"workflow_states": WORKFLOW_STATE_NAMES})
@@ -328,6 +336,13 @@ async def test_every_state_reaches_actual_fresh_claim_dispatch(
 async def test_recorded_grading_uses_existing_lapse_and_review_arms(
     setup, tracker, server, mode
 ):
+    """The lapse arm carries the restamp trace; the review arm reaches a claim.
+
+    A lapse is a row whose commit is behind head, which is the case the
+    trace is most about, so the lapse arm seeds one grading of this
+    criterion through the port's own append and reads the trace back off
+    the observation the lapse return built.
+    """
     build, executor, *_ = setup
     await tracker.update_issue(issue_key=CHILD, body=BODY.replace(HEAD, PRIOR))
     await state(
@@ -337,6 +352,16 @@ async def test_recorded_grading_uses_existing_lapse_and_review_arms(
         "Done" if mode == "lapse" else "In Review",
         WorkflowStateKind.COMPLETED if mode == "lapse" else WorkflowStateKind.STARTED,
     )
+    if mode == "lapse":
+        await tracker.post_run_event(
+            issue_key=ROOT,
+            event=LaneRunEvent(
+                kind=RunEventKind.CRITERION_REFUTED,
+                lane_key=LANE,
+                subject_key=CHILD,
+                graded_sha=PRIOR,
+            ),
+        )
     observation = (await build().run()).observations[0]
     assert observation.evidence.recorded_evidence.graded_sha == PRIOR
     assert observation.evidence.is_lapse is (mode == "lapse")
@@ -344,6 +369,11 @@ async def test_recorded_grading_uses_existing_lapse_and_review_arms(
     if mode == "lapse":
         assert observation.claim is None
         assert observation.evidence.verdict is AuditVerdict.UNVERIFIABLE
+        # The lapse return keeps the trace rather than dropping it with the
+        # claim: the row names the commit the one recorded grading names.
+        assert observation.restamp is not None
+        assert observation.restamp.history == (PRIOR,)
+        assert observation.restamp.verdict is AuditVerdict.HOLDS
     else:
         assert observation.claim.claim == observation.evidence.current_claim
 
