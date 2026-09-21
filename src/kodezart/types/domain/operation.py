@@ -576,6 +576,7 @@ class OperationConfig(OperationModel):
     organize_mandates: tuple[MandateSpec, ...] = ()
     organize_scopes: tuple[OrganizeScopeBinding, ...] = ()
     audit_scopes: tuple[AuditScopeBinding, ...] = ()
+    supervisor_scopes: tuple[ScopeRef, ...] = ()
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
     run_event_states: dict[str, LifecycleStage | RunEventEffect] = Field(
         default_factory=dict
