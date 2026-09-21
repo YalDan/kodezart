@@ -627,10 +627,7 @@ async def test_a_refused_count_and_roster_name_their_values_without_offsets() ->
         )
 
     error = excinfo.value
-    assert {hit.source.field for hit in error.hits if hit.source is not None} == {
-        "lanes",
-        "lanes.issue",
-    }
+    assert {hit.source for hit in error.hits} == {LANE_COUNT, LANE_ROSTER}
     assert {hit.category for hit in error.hits} == set(DurabilityCategory)
     assert all(
         hit.start is None and hit.end is None and hit.matched_text is None
@@ -639,6 +636,48 @@ async def test_a_refused_count_and_roster_name_their_values_without_offsets() ->
     assert "source: lanes; value: 3" in str(error)
     assert "source: lanes.issue; identities: A, B, C" in str(error)
     assert "start:" not in str(error)
+
+
+async def test_a_refused_prose_finding_names_its_span_and_no_source() -> None:
+    """The other arm of the refusal: an inspected-prose finding is located by
+    its span in the rendered text and names no declared source — the two forms
+    never share a hit.
+    """
+    claim = "The tracker holds a dozen unfinished issues."
+    executor = ScriptedAuditExecutor(
+        [
+            audit_result(
+                [
+                    {
+                        "category": DurabilityCategory.OBJECT_COUNT.value,
+                        "rationale": "a tracker-object count claimed in prose",
+                        "start": 0,
+                        "end": len(claim),
+                    }
+                ]
+            )
+        ]
+    )
+
+    with pytest.raises(OutboundContentBlockedError) as excinfo:
+        await gated_write(
+            gate=await configured_gate(executor=executor),
+            log=get_logger(__name__),
+            content=claim,
+            visibility=RepoVisibility.PUBLIC,
+            shape=WriterShape.PROSE,
+            destination=OutboundDestination.PR_BODY,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+        )
+
+    error = excinfo.value
+    (hit,) = error.hits
+    assert hit.source is None
+    assert hit.matched_text == claim
+    assert f"(start: 0; end: {len(claim)}; matched text: {claim!r})" in str(error)
+    assert "source:" not in str(error)
+    assert len(executor.calls) == 1
 
 
 async def test_the_gated_event_names_a_structured_hits_source() -> None:
