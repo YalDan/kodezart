@@ -205,12 +205,28 @@ class LaneGit(FakeGitService):
     async def diff_summary(
         self, cwd: str, base_ref: str, head_ref: str
     ) -> ChangesetDigest:
+        """The commits of ``base_ref..head_ref``, as this repository made them.
+
+        Both ends are read, because the interval is the answer: a double that
+        reported the whole branch whatever base it was handed would answer a
+        read of one grading's own sha to the head with the digest of the
+        lane's entire history, and every caller that asked the wrong interval
+        would read the same.
+
+        A ref this repository does not hold — the lane's trunk base among
+        them — is before its first commit, which is what leaves a
+        base-to-head read the whole branch.
+        """
         self.calls.append(("diff_summary", cwd, base_ref, head_ref))
-        made = self.repo.shas.index(head_ref) + 1 if head_ref in self.repo.shas else 0
+        shas = self.repo.shas
+        start = shas.index(base_ref) + 1 if base_ref in shas else 0
+        end = shas.index(head_ref) + 1 if head_ref in shas else 0
         return ChangesetDigest(
-            file_paths=[f"lane-{index}.py" for index in range(made)],
-            commit_subjects=[f"feat: commit {index + 1}" for index in range(made)],
-            commit_count=made,
+            file_paths=[f"lane-{index}.py" for index in range(start, end)],
+            commit_subjects=[
+                f"feat: commit {index + 1}" for index in range(start, end)
+            ],
+            commit_count=max(end - start, 0),
         )
 
     async def is_ancestor(

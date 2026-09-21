@@ -1555,13 +1555,23 @@ class WalkGit(FakeGitService):
         )
 
     async def diff_summary(self, cwd, base_ref, head_ref):
+        """The commits of ``base_ref..head_ref``, as this repository made them.
+
+        Interval-sensitive for the reason the lane fixture's own double is: a
+        read of one grading's sha to the head is a different question from a
+        read of the lane's base to the head, and a double that answered both
+        with the whole branch could not tell a caller asking the wrong one.
+        """
         self.calls.append(("diff_summary", cwd, base_ref, head_ref))
-        repo = self.repos.current
-        made = repo.shas.index(head_ref) + 1 if head_ref in repo.shas else 0
+        shas = self.repos.current.shas
+        start = shas.index(base_ref) + 1 if base_ref in shas else 0
+        end = shas.index(head_ref) + 1 if head_ref in shas else 0
         return ChangesetDigest(
-            file_paths=[f"lane-{index}.py" for index in range(made)],
-            commit_subjects=[f"feat: commit {index + 1}" for index in range(made)],
-            commit_count=made,
+            file_paths=[f"lane-{index}.py" for index in range(start, end)],
+            commit_subjects=[
+                f"feat: commit {index + 1}" for index in range(start, end)
+            ],
+            commit_count=max(end - start, 0),
         )
 
 
