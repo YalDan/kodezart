@@ -1,6 +1,6 @@
 {
-  "source_commit": "aa4d04ff",
-  "provenance": "SHA256 of the prompt each authored consumer renders, captured from the consumers themselves at source_commit. Base 51d83d5; re-baselined once at aa4d04ff under the founder's ruling KOD-753, which deleted the criterion class from the acceptance-criteria prompt; no other re-baseline. Entries are otherwise extended, never re-baselined.",
+  "source_commit": "9d425ec4b2697fa8032e1f92287fb03b82d8603a",
+  "provenance": "SHA256 of the prompt each authored consumer renders, captured from the consumers themselves at source_commit. source_commit is the base of record: a commit reachable from the head under test, whose copy of this file holds the entries no later change may move. These digests were re-derived once at that commit under KOD-876, and that re-derivation is the one re-baseline; an earlier re-baseline under KOD-753 predates the named base. Entries are extended, never re-baselined after the named base.",
   "prompts": {
     "anthropic_v5": {
       "0": {
