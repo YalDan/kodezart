@@ -1140,6 +1140,47 @@ async def test_a_phase_that_leaves_a_member_unlabelled_does_not_reach_the_next(
     ]
 
 
+async def test_the_criteria_barrier_names_a_member_left_unlabelled(monkeypatch):
+    """The barrier stands after the second run stage too, not the first alone.
+
+    The first stage runs through and lands its marker; admission then shuts
+    during the second stage's dry round, so the criteria marker never lands.
+    The run halts at that stage by name, with the first stage — and only the
+    first — recorded as completed, so nothing downstream of the owner is
+    reached while a member still owes the criteria marker.
+    """
+    owner, board, executor = factory(under_approval=True, body=PREPARED_BODY)
+    original = executor.stream
+    withdrawn_at = []
+
+    async def withdrawn(**kwargs):
+        # The ticket marker on the board is what dates a verify prompt to the
+        # second stage: withdrawing on the first one would halt at the first.
+        if (
+            "Adversarially verify the current issue" in kwargs["prompt"]
+            and "body complete" in board.server.issues[CLAIMED_ISSUE].labels
+        ):
+            labels = board.server.issues[CLAIMED_ISSUE].labels
+            if "approved scope" in labels:
+                labels.remove("approved scope")
+                withdrawn_at.append(len(executor.calls))
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", withdrawn)
+    report = await run_owner(owner)
+
+    assert withdrawn_at, "the run never reached the criteria stage's dry round"
+    assert report.halt is not None
+    assert report.halt.cause is StageHaltCause.STAGE_INCOMPLETE
+    assert report.halt.phase is MandateKind.CRITERIA
+    assert report.halt.unlabelled_issue_ids == (CLAIMED_ISSUE,)
+    assert report.completed_phases == (MandateKind.TICKET,)
+    labels = set(board.server.issues[CLAIMED_ISSUE].labels)
+    assert "body complete" in labels
+    assert "criteria complete" not in labels
+
+
 async def test_the_criteria_stage_opens_no_session_without_the_ticket_label():
     """The second run stage is gated on the first's marker, per member.
 
