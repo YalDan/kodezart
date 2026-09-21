@@ -12,7 +12,10 @@ from kodezart.config.app import AppConfig
 from kodezart.domain.errors import LaneRecordReadError
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.tally_record import is_raised
-from kodezart.services.supervisor_pass import supervisor_holder
+from kodezart.services.supervisor_pass import (
+    SUPERVISOR_TICK_NAME,
+    supervisor_holder,
+)
 from kodezart.services.tally_supervisor import SIGNAL
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.prompts import PromptKey
@@ -360,6 +363,10 @@ async def test_the_composed_tick_leases_under_its_pass_identity_not_dispatch_hol
     """
     operation = declared(scopes=(SCOPE,))
     expected = supervisor_holder(operation_name=operation.operation_name)
+    # Stated rather than derived: every assertion below compares to *expected*,
+    # so an identity composed from something else entirely would move both
+    # sides together and read as agreement.
+    assert expected == f"{operation.operation_name}/{SUPERVISOR_TICK_NAME}"
     assert FOREIGN_PROCESS not in expected
     port = await board(lanes=LANES, scope=SCOPE, holder=expected)
 
