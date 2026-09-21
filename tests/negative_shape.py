@@ -33,16 +33,25 @@ SCANNED: Final[tuple[str, ...]] = ("src/kodezart", "tests")
 #: family below was verified against the binary the gate itself runs.  The
 #: linter honours its own whole-file exemption, the one it inherited from
 #: the linter it replaced, and the import-sorter exemptions, so all three
-#: are read.  Any inline setting of the type checker is a per-module
+#: are read.  The formatter the gate runs beside it honours its own
+#: whole-region pair and its per-statement form, so they are a family here
+#: too.  Any inline setting of the type checker is a per-module
 #: configuration change, the same class its own table in the project file
 #: pins, so the prefix alone is what is read: a match on prose would cost
 #: one row of the allowed map, which is the safe direction.  No form for a
 #: checker the gate does not run.
+#:
+#: The tools match these words without regard to case, so the pattern does
+#: too.  A spelling read here that no tool honours costs one row of that
+#: map; a spelling a tool honours and the pattern does not read is a hole,
+#: so the whole pattern is case-blind rather than one family of it.
 SUPPRESSION: Final[re.Pattern[str]] = re.compile(
     r"#\s*(?:type:\s*ignore"
     r"|(?:ruff:\s*|flake8:\s*)?noqa"
     r"|mypy:"
-    r"|isort:\s*(?:skip_file|skip|off))"
+    r"|isort:\s*(?:skip_file|skip|off)"
+    r"|fmt:\s*(?:off|on|skip))",
+    re.IGNORECASE,
 )
 
 #: The pytest forms that keep a collected test from running.
@@ -364,6 +373,35 @@ def config_tables(pyproject: Path, keys: Sequence[str]) -> dict[str, object]:
             table = table[step]
         tables[key] = frozen(table)
     return tables
+
+
+def foreign_configuration(
+    project: Path, walked: Iterable[str], names: Sequence[str]
+) -> list[str]:
+    """Every tool configuration file the tree carries besides *project*, by path.
+
+    The linter reads the configuration file closest to each file it checks
+    and inherits nothing from the one above, so a file with one of these
+    names below a walked directory turns that subtree loose while the pinned
+    table goes on reading exactly as it did.  The directories searched are
+    derived from the walk -- every ancestor of every walked module, up to and
+    including the root the project file sits in -- rather than listed, so a
+    tree added to the walk is searched with it.  Bounded by the walk: each
+    walked path has finitely many ancestors and each directory is read once.
+    *project* itself is the pinned file and is never a hit; a second copy of
+    it under a walked tree is one.
+    """
+    root = project.parent
+    directories = {root}
+    for path in walked:
+        directories.update(root / parent for parent in Path(path).parents)
+    found: list[str] = []
+    for directory in sorted(directories):
+        for name in names:
+            candidate = directory / name
+            if candidate != project and candidate.is_file():
+                found.append(candidate.relative_to(root).as_posix())
+    return sorted(found)
 
 
 def declared_markers(pyproject: Path) -> frozenset[str]:

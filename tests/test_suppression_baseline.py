@@ -33,8 +33,9 @@ One class of the shipped proxy is out of this census: a model configuration
 whose `extra` setting is loosened from forbidding unknown fields to
 allowing them.  The tree carries none today and nothing here would see one.
 A second class is out of it too: `addopts` (with `-k` or `--deselect`),
-`testpaths`, and `collect_ignore` in a conftest can each stop a test being
-collected at all, and nothing here reads them; they are a later slice.
+`testpaths`, `collect_ignore` in a conftest, and a module-level `__test__`
+set false can each stop a test being collected at all, and nothing here
+reads them; they are a later slice.
 
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
@@ -273,17 +274,32 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
     "# mypy: ignore-errors",
     "# mypy: disable-error-code=attr-defined",
     "# mypy: allow-untyped-defs",
+    # The linter matches its exemptions without regard to case, so an
+    # upper-case and a mixed-case spelling each have a control.  The tree
+    # carries neither today, so ALLOWED does not gain a row for them.
+    "# NOQA",
+    "# flake8: NoQA",
+    # The formatter the gate runs honours this one and its partner, and a
+    # per-statement form beside them.  The tree carries none today.
+    "# fmt: off",
 )
 
-#: The files the three tools discover instead of the project file.  A
-#: `ruff.toml` beside it would make the pinned table above meaningless.
+#: The files a tool discovers instead of, or ahead of, the project file.
+#: The linter reads the one closest to each file it checks and inherits
+#: nothing from the one above, so a file with any of these names beside the
+#: project file, or anywhere under a walked tree, makes the pinned table
+#: above meaningless for everything below it.  The project file's own name
+#: is a row here because a second copy of it under a walked tree is read the
+#: same way; the pinned one at the root is not a hit.
 FOREIGN_TOOL_FILES: tuple[str, ...] = (
-    "ruff.toml",
+    ".flake8",
+    ".mypy.ini",
     ".ruff.toml",
     "mypy.ini",
-    ".mypy.ini",
-    "setup.cfg",
+    "pyproject.toml",
     "pytest.ini",
+    "ruff.toml",
+    "setup.cfg",
     "tox.ini",
 )
 
@@ -327,6 +343,17 @@ def test_each_directive_form_is_read_from_a_comment(directive: str) -> None:
     control = Source.of("control.py", f"x = 1  {directive}\n")
 
     assert negative_shape.comment_directives(control) == (directive,)
+
+
+def test_a_comment_that_only_mentions_a_directive_is_not_one() -> None:
+    """The pattern reads the marker and the family, not the word in prose.
+
+    Reading every family without regard to case widens what a comment may
+    say and still be a directive, so the other direction has a control too.
+    """
+    prose = Source.of("control.py", "x = 1  # never write a noqa on a shipped line\n")
+
+    assert negative_shape.comment_directives(prose) == ()
 
 
 def test_the_tree_carries_exactly_the_skip_forms_the_baseline_names() -> None:
@@ -513,5 +540,45 @@ def test_the_configuration_scan_sees_a_new_per_file_row(tmp_path: Path) -> None:
 
 
 def test_the_project_file_is_the_only_tool_configuration() -> None:
-    """A second configuration file would make the pinned tables meaningless."""
-    assert [name for name in FOREIGN_TOOL_FILES if (REPO_ROOT / name).exists()] == []
+    """A second configuration file would make the pinned tables meaningless.
+
+    Searched wherever the walk reaches, not at the root alone: the linter
+    reads the configuration closest to each file it checks, so a file under
+    a walked package exempts that package and leaves the pinned table above
+    reading exactly as it does now.
+    """
+    walked = [module.path for module in negative_shape.sources()]
+
+    assert (
+        negative_shape.foreign_configuration(
+            REPO_ROOT / "pyproject.toml", walked, FOREIGN_TOOL_FILES
+        )
+        == []
+    )
+
+
+def test_the_configuration_scan_reads_every_directory_the_walk_reaches(
+    tmp_path: Path,
+) -> None:
+    """A file nested under a walked tree is the same hole as one beside the root.
+
+    Two hits over a fake tree, one under a package and one a second copy of
+    the project file; the pinned file at the root is not a hit, and the same
+    tree without them is clean.
+    """
+    walked = ("src/kodezart/services/agent_service.py", "tests/domain/test_a.py")
+    project = tmp_path / "pyproject.toml"
+    project.write_text("", encoding="utf-8")
+    nested = tmp_path / "src" / "kodezart" / "services"
+    nested.mkdir(parents=True)
+
+    assert (
+        negative_shape.foreign_configuration(project, walked, FOREIGN_TOOL_FILES) == []
+    )
+
+    (nested / "ruff.toml").write_text("", encoding="utf-8")
+    (tmp_path / "src" / "pyproject.toml").write_text("", encoding="utf-8")
+
+    assert negative_shape.foreign_configuration(
+        project, walked, FOREIGN_TOOL_FILES
+    ) == ["src/kodezart/services/ruff.toml", "src/pyproject.toml"]
