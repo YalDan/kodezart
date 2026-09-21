@@ -537,10 +537,11 @@ async def test_one_refused_binding_does_not_starve_the_next_scope():
 
     config, operation, server, tracker, forge = dependencies()
     fields = operation.model_dump()
-    # The second scope is a whole row of the one table, carrying its own
-    # repository and its own report destination: a roster where one scope's
-    # audit destination stood in for another's would make the next scope's
-    # completion an accident of ordering.
+    # The second scope is a whole row of the one table, spread from the first
+    # so that only the scope differs: what this case needs is a second lane,
+    # and its repository and report destination are deliberately row 0's. A
+    # roster where one scope's destination stood in for another's is pinned in
+    # tests/integration/test_one_scope_roster.py instead.
     fields["organize_scopes"] = (
         *fields["organize_scopes"],
         {**fields["organize_scopes"][0], "scope": EMPTY_INITIATIVE.model_dump()},
