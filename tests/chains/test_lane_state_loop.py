@@ -2036,3 +2036,65 @@ async def test_a_lapse_is_a_state_move_back_while_a_standing_grading_stays_count
     owed = {criterion.id for criterion in current.criteria}
     assert LAPSED in owed
     assert STANDING not in owed
+
+
+# ---------------------------------------------------------------------------
+# An iteration whose whole roster is withheld refuses before the session
+# (KOD-695).
+# ---------------------------------------------------------------------------
+
+
+async def test_a_lane_with_every_criterion_withheld_refuses_before_it_opens_a_session():
+    """Three iterations, and a third with nothing left that may be graded.
+
+    The first grading passes one criterion resting on a performed observation,
+    over a prefix the lane's own next commit touches. The second passes the
+    other two, expensive over a prefix nothing in this lane touches, and the
+    first one lapses there — so the gate does not clear and a third iteration
+    runs. By that third iteration the two expensive gradings still stand, and
+    the lapsed one may not be re-derived, so the set the session would be
+    asked about is empty.
+
+    That is the one arrangement in which the loop's own guard fires: only a
+    STANDING grading is withheld, so an iteration that ran at all should have
+    something failing or owed. The loop says so before it opens a session
+    rather than grading an empty roster and writing a partial verdict — the
+    backend is asked twice in a three-iteration run, and the third iteration
+    writes no cross-off at all. The echo list holds two answers, so a third
+    session would also trip the double's own refusal to answer one.
+    """
+    lane = Lane(
+        evaluations=[
+            declaring(TOUCHED_PREFIX, rederivation_class="observed"),
+            criteria_echo(
+                keys=OWED_KEYS[1:],
+                passed=set(OWED_KEYS[1:]),
+                declared={
+                    key: {
+                        "rederivationClass": "expensive",
+                        "exercisedPaths": [UNTOUCHED_PREFIX],
+                    }
+                    for key in OWED_KEYS[1:]
+                },
+            ),
+        ],
+        max_iterations=3,
+    )
+    handed = dispatches(lane)
+
+    with pytest.raises(NativeWriteRefusalError, match="no criterion left to grade"):
+        await lane.run()
+
+    assert len(lane.executor.evaluation_prompts) == 2
+    assert len(handed) == 2
+    assert lane.executor.evaluations == []
+    # Not vacuous: the third iteration is the one that refused, and the two
+    # readings that withheld the whole roster are the loop's own — the pair
+    # carried over the record for their own sha to the third head, and the
+    # observed grading was taken back at the second.
+    assert len(lane.repo.shas) == 3
+    assert lane.port.issues[LAPSED].state_kind is WorkflowStateKind.UNSTARTED
+    assert completed(lane.port) == set(OWED_KEYS[1:])
+    assert all(
+        evidence_of(lane, key).graded_sha == lane.repo.shas[1] for key in OWED_KEYS[1:]
+    )
