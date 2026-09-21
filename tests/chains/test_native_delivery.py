@@ -10,6 +10,7 @@ from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.config.app import AppConfig
+from kodezart.domain.agent import best_iteration_ref
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     FireSpecEntryError,
@@ -17,7 +18,11 @@ from kodezart.domain.errors import (
     PRStateReadError,
     TransientAPIError,
 )
-from kodezart.types.domain.agent import WorkflowCompleteEvent
+from kodezart.domain.stall_report import DO_NOT_MERGE_PREFIX
+from kodezart.types.domain.agent import (
+    AcceptanceCriteriaOutput,
+    WorkflowCompleteEvent,
+)
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
@@ -49,6 +54,8 @@ from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeBranchMerger,
     FakeGitService,
+    FakeQualityGate,
+    FakeRefPublisher,
     PassThroughGate,
     make_prompt_provider,
 )
@@ -185,7 +192,32 @@ class PrivateRepository:
         return RepoVisibility.PRIVATE
 
 
-def composed(*, red=False, rounds=0, saver=None, evaluations=None, forge_present=True):
+def stalled_loop(*, committed: bool = True) -> FakeQualityGate:
+    """A loop that graded every owed Check as failed, with or without a commit.
+
+    The scripted counterpart of the engine's default passing loop: the same
+    reconciled Check texts, so every roster barrier after it holds; one
+    commit at SHA, so the stall exit has a best iteration to land — or none,
+    so it has nothing to land and no pull request follows.
+    """
+    return FakeQualityGate(
+        events=[],
+        evaluation=AcceptanceCriteriaOutput.model_validate(
+            native_evaluation(failed=True, reconciled=True)
+        ),
+        last_commit_sha=SHA if committed else None,
+    )
+
+
+def composed(
+    *,
+    red=False,
+    rounds=0,
+    saver=None,
+    evaluations=None,
+    forge_present=True,
+    loop=None,
+):
     tracker = CountingTracker()
     executor = NativeExecutor(
         evaluations or [native_evaluation(), native_evaluation()] * (rounds + 1)
@@ -193,11 +225,17 @@ def composed(*, red=False, rounds=0, saver=None, evaluations=None, forge_present
     fire = engine(
         criteria=TrackerCriteria(tracker=tracker),
         executor=executor,
-        real_loop=True,
+        real_loop=loop is None,
+        quality_gate=loop,
         remediation_rounds=rounds,
         checkpointer=saver,
     )
     fire.specification._visibility_resolver = PrivateRepository()
+    if forge_present:
+        # The consolidation is handed a ref publisher exactly when the origin
+        # has a forge, as composition/engine.py:382 does; the stall exit lands
+        # its best iteration through it and an accepted fire never reaches it.
+        fire.consolidation._ref_publisher = FakeRefPublisher()
     merger = FakeBranchMerger(
         consolidation_outcomes=[
             ConsolidationOutcome(
@@ -312,6 +350,75 @@ async def test_actual_native_graph_delivers_and_only_work_defect_reenters_fire(
             json.loads(config["metadata"]["scope_lane_request"])["job"]
             == "actual-parent-job"
         )
+    finally:
+        await forge.close()
+
+
+async def test_a_stalled_lane_opens_and_watches_its_pull_request_like_any_other():
+    """A stalled fire reaches delivery through the graph, on the one route.
+
+    The fire itself did not hand off — its terminal is a loop exit — so what
+    admitted this lane to delivery is the stalled predicate and nothing else.
+    From there the lane opens one pull request and watches its checks exactly
+    as an accepted lane does: one create, one watch, one record, and nothing
+    the forge saw carries the authored arm's marker (KOD-327).
+    """
+    lane, state, config, wire, forge, executor, _, lane_state = composed(
+        loop=stalled_loop()
+    )
+    try:
+        reports, events, final = await run(lane, state, config)
+        terminal = next(
+            event for event in events if isinstance(event, WorkflowCompleteEvent)
+        )
+        assert terminal.accepted is False
+        assert terminal.outcome is WorkflowOutcome.loop_not_accepted
+        assert len(reports) == 1
+        assert isinstance(final["delivery"], CompletedLaneDelivery)
+        result = reports[0].delivery.result
+        assert result.outcome is WorkflowOutcome.stalled_pr_opened
+        assert result.stalled is True
+        assert result.remediation_pending is False
+        assert len(wire.creates) == 1
+        assert wire.creates[0]["head"] == result.head_branch == final["feature_branch"]
+        assert wire.creates[0]["base"] == "main"
+        assert result.pr.number == 17 and result.pr.state == "open"
+        assert len(wire.watches) == 1
+        assert wire.comments == []
+        # The head delivered is the landed best iteration, read off the code's
+        # own publication rather than spelled a second time here.
+        publisher = lane.fire.consolidation._ref_publisher
+        assert result.final_commit_sha == SHA == publisher.calls[0]["commit_sha"]
+        assert publisher.calls[0]["ref"] == best_iteration_ref(final["feature_branch"])
+        assert lane_state.pull_requests == [
+            (result.lane_key, result.pr, RepoVisibility.PRIVATE)
+        ]
+        assert executor.remediation_prompts == []
+        assert all(
+            DO_NOT_MERGE_PREFIX not in wire.creates[0][key]
+            for key in ("title", "body", "head", "base")
+        )
+    finally:
+        await forge.close()
+
+
+async def test_a_loop_exit_with_nothing_to_land_opens_no_pull_request():
+    """The other half of the partition: a loop exit that committed nothing.
+
+    Without a best iteration there is nothing to land, so the stall exit
+    publishes no ref, the lane is not stalled by the predicate's own reading,
+    and the step skips instead of opening a pull request for an empty head.
+    """
+    lane, state, config, wire, forge, _, _, lane_state = composed(
+        loop=stalled_loop(committed=False)
+    )
+    try:
+        _, _, final = await run(lane, state, config)
+        assert isinstance(final["delivery"], SkippedLaneDelivery)
+        assert final["delivery"].outcome is WorkflowOutcome.zero_commit_no_pr
+        assert wire.requests == []
+        assert lane_state.pull_requests == []
+        assert lane.fire.consolidation._ref_publisher.calls == []
     finally:
         await forge.close()
 

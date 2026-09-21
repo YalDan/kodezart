@@ -1,5 +1,6 @@
 """Native lane delivery uses real coordinator logic and boundary doubles."""
 
+import ast
 import asyncio
 import inspect
 
@@ -8,12 +9,14 @@ from pydantic import ValidationError
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.lane_delivery import LaneDeliveryCoordinator
+from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.core.protocols import (
     FireCriteriaReader,
     LaneStateWriter,
     PRCreator,
     TrackerPort,
 )
+from kodezart.domain import stall_report
 from kodezart.domain.errors import (
     BaseResolutionError,
     CheckObservationError,
@@ -55,6 +58,23 @@ SHA = "a" * 40
 REPO = "https://github.com/owner/repo.git"
 HEAD = "lane-head"
 BASE = "blocker-branch"
+
+
+def _branch_tests(tree):
+    """Every expression a control-flow branch in *tree* is taken on."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If | ast.IfExp | ast.While):
+            yield node.test
+        elif isinstance(node, ast.Match):
+            yield node.subject
+        elif isinstance(node, ast.match_case) and node.guard is not None:
+            yield node.guard
+
+
+def _names(node) -> set[str]:
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)} | {
+        n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)
+    }
 
 
 def pr_identity(*, head=HEAD, number=1, base=BASE):
@@ -417,6 +437,82 @@ async def test_the_coordinator_holds_no_tracker_port_and_no_lane_state_writer():
 
     assert isinstance(tracker, TrackerPort)
     assert not any(isinstance(held, TrackerPort) for held in vars(owner).values())
+
+
+def test_the_coordinator_branches_on_no_stalled_fact_and_names_no_do_not_merge_symbol():
+    """Nothing in the lane's delivery is conditioned on a stalled lane.
+
+    The two modules are derived from the classes that make up the lane's
+    delivery, and the forbidden names are derived from the stall report's own
+    public surface, so neither surface is a hand-kept list. The coordinator
+    takes the fact and carries it into the frozen result and the classifier
+    call — it is read, so the scan is not vacuous — but no branch is taken on
+    it. Its one use as a conjunct is not a branch test, and what that conjunct
+    withholds is pinned by the stalled open-watch fixture above. The lane step
+    does branch on the fact, which is where the fact is established, so the
+    branch half is asked of the coordinator alone; the import, name and
+    literal half is asked of both (KOD-327).
+    """
+    coordinator = inspect.getmodule(LaneDeliveryCoordinator)
+    step = inspect.getmodule(NativeLaneWorkflow)
+    forbidden = {
+        name
+        for name, value in vars(stall_report).items()
+        if not name.startswith("_")
+        and (
+            isinstance(value, str)
+            or getattr(value, "__module__", None) == stall_report.__name__
+        )
+    }
+    assert {"DO_NOT_MERGE_PREFIX", "stall_pr_title"} <= forbidden
+
+    own = ast.parse(inspect.getsource(coordinator))
+    assert "stalled" in _names(own)
+    assert all("stalled" not in _names(test) for test in _branch_tests(own))
+
+    for module in (coordinator, step):
+        source = inspect.getsource(module)
+        tree = ast.parse(source)
+        assert not [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == stall_report.__name__
+        ]
+        assert not [
+            alias
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+            if alias.name == stall_report.__name__
+        ]
+        assert _names(tree) & forbidden == set()
+        assert not [
+            spelling
+            for spelling in ("do-not-merge", "do_not_merge", "DO_NOT_MERGE")
+            if spelling in source
+        ]
+
+    # Each detector sees the shape it is asked to forbid, on a parsed string
+    # rather than on the authored module, so no clause here depends on the
+    # authored arm's own use of the stall report surviving.
+    assert any(
+        "stalled" in _names(test)
+        for test in _branch_tests(ast.parse("if stalled:\n    pass\n"))
+    )
+    assert any(
+        "stalled" in _names(test)
+        for test in _branch_tests(ast.parse("x = 1 if stalled else 2\n"))
+    )
+    # A name is seen where it is USED: an import binds through an alias node,
+    # which is what the import clause above reads instead.
+    assert _names(ast.parse("title = stall_pr_title(ticket)\n")) & forbidden
+    assert [
+        node
+        for node in ast.walk(
+            ast.parse("from kodezart.domain.stall_report import stall_pr_title\n")
+        )
+        if isinstance(node, ast.ImportFrom) and node.module == stall_report.__name__
+    ]
 
 
 async def test_delivery_refuses_incoherent_wire_outcome():
