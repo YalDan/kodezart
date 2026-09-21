@@ -24,10 +24,16 @@ from kodezart.core.errors import (
     TrackerProtocolError,
     TrackerUnavailableError,
 )
-from kodezart.core.protocols import McpToolResult
+from kodezart.core.protocols import McpToolResult, TrackerPort
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceKind,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import (
     EnsureAction,
     IssuePriority,
@@ -39,6 +45,7 @@ from kodezart.types.domain.tracker import (
     is_open,
     priority_rank,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.adapters.test_http_mcp_tool_caller import client_over
 from tests.fakes import FakeLinearMcpServer, FakeMcpComment, FakeMcpIssue
 from tests.tracker.conftest import (
@@ -1282,3 +1289,83 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
         assert endpoint.dropped, "the death was never met"
         assert workspace.tool_calls("save_issue") == []
         assert "tracker_mcp_retry" not in [entry["event"] for entry in logs]
+
+
+#: The claimable issue's own body: the description surface in the fixture
+#: workspace a held write may take, addressed once so every case below
+#: asks about the same body.
+CLAIMED_BODY = WritableSurface(
+    kind=SurfaceKind.ISSUE_DESCRIPTION,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+)
+
+#: The two holders the record cases write as.
+FIRST_WRITER = "first-writing-job"
+SECOND_WRITER = "second-writing-job"
+RECORD_LEASE_SECONDS = 600.0
+
+
+async def held_body_write(
+    tracker: TrackerPort, *, holder: str, replacement: str
+) -> DescriptionEditResult:
+    """One holder taking the claimable body, writing it, and standing down.
+
+    The grant is released whatever the write did, so what the provenance
+    read answers afterwards cannot have come from a lease still standing.
+    """
+    surfaces = frozenset({CLAIMED_BODY})
+    await tracker.acquire_surfaces(
+        surfaces=surfaces, holder=holder, lease_seconds=RECORD_LEASE_SECONDS
+    )
+    try:
+        current = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        return await tracker.edit_description(
+            target=CLAIMED_ISSUE,
+            expected=current.body,
+            replacement=replacement,
+            authorization=DescriptionWriteAuthority(
+                holder=holder, surface=CLAIMED_BODY
+            ),
+        )
+    finally:
+        await tracker.release_surfaces(surfaces=surfaces, holder=holder)
+
+
+class TestTheBodyWriteRecordThisAdapterKeeps:
+    """What a body-write record stands for, which only this adapter decides.
+
+    No vendor fact orders two body writes, so the holders the provenance
+    read answers with are read off records this port writes itself.  What
+    each record stands for is therefore adapter-owned: a body that moved,
+    a save the backend took, and a comment the backend attributes to the
+    account this credential writes as.
+    """
+
+    async def test_a_held_write_that_moves_no_body_records_no_holder(self) -> None:
+        """A replay that replaced nothing leaves its holder unnamed.
+
+        The holder is known and the grant is live at the point the replay
+        is settled — the write is refused nothing, it simply has no body to
+        move — so nothing but the record's own placement keeps that holder
+        out of the answer.
+        """
+        tracker = linear_over_fake_mcp(fixture_server())
+        assert (
+            await held_body_write(
+                tracker,
+                holder=FIRST_WRITER,
+                replacement="a body the first job put there",
+            )
+            is DescriptionEditResult.EDITED
+        )
+        written = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        standing = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+        replay = await held_body_write(
+            tracker, holder=SECOND_WRITER, replacement=standing.body
+        )
+
+        assert replay is DescriptionEditResult.UNCHANGED
+        assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == standing.body
+        answer = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        assert answer.holders == written.holders == (FIRST_WRITER,)
