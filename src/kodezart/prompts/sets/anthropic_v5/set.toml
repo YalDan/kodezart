@@ -71,6 +71,19 @@ deterministic proxy for the policy; claims of the form "the tool exits 0" requir
 and are not a substitute for it.\
 """
 
+# One source, composed into the two members that grade a changeset. The
+# standard it refutes against is the house_rules append the same session
+# already carries, so the principles are never restated here.
+design_review = """\
+Design refutation. For every changed file, try to refute that the change meets the
+engineering standard in your house rules (SOLID, DRY, hexagonal, KISS): name the simpler
+shape that would have satisfied the criterion; that simpler shape is the refutation. When
+you can name a violation with file:line and the principle breached, fail every criterion
+whose evidence rests on that file: passed=false, with the principle and the file:line in
+reasoning. A violation in a file no criterion rests on is a concern raised in your own
+name rather than against one criterion's verdict.\
+"""
+
 # The store mechanism every scheduled pass owes. Window and Record ride in
 # each member beside its own kind's declared destination instead (KOD-170,
 # amended per the founder's one-surface ruling): the record row a pass
