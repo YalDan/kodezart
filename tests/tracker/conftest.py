@@ -13,7 +13,12 @@ from inspect import isawaitable
 
 import pytest
 
-from kodezart.adapters.linear.tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import (
+    _TOOL_DELETE_COMMENT,
+    _TOOL_SAVE_COMMENT,
+    _TOOL_SAVE_ISSUE,
+    LinearMcpTracker,
+)
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
@@ -607,6 +612,17 @@ def tracker_writes(
     return observed_writes(tracker, server)
 
 
+#: The adapter's mutation tools, read off the adapter's OWN names rather
+#: than spelled here.  Three, not two: the comment delete is a write like
+#: the save is, and an observation that counted the saves alone reported a
+#: released lease or a withdrawn comment as no write at all.  Derived from
+#: the constants so a tool renamed in the adapter and left behind here
+#: cannot quietly narrow what a case is allowed to call untouched.
+ADAPTER_WRITE_TOOLS: frozenset[str] = frozenset(
+    {_TOOL_SAVE_ISSUE, _TOOL_SAVE_COMMENT, _TOOL_DELETE_COMMENT}
+)
+
+
 def observed_writes(
     tracker: TrackerPort, server: FakeLinearMcpServer
 ) -> Callable[[], tuple[object, ...]]:
@@ -627,5 +643,5 @@ def observed_writes(
             *tracker.classification_writes,
         )
     return lambda: tuple(
-        call for call in server.calls if call[0] in {"save_comment", "save_issue"}
+        call for call in server.calls if call[0] in ADAPTER_WRITE_TOOLS
     )
