@@ -36,6 +36,7 @@ from kodezart.domain.errors import (
     InvalidFireCriterionError,
     LaneEntryError,
     ScopedExecutionUnavailableError,
+    ScopeReadError,
 )
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.workflow_state import validated_criteria
@@ -67,7 +68,7 @@ from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
-from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
@@ -806,10 +807,13 @@ async def test_a_zero_criterion_subtree_is_one_successful_empty_reading(history:
     over both registered tracker implementations
     (``tests/tracker/test_criterion_reader.py``,
     ``test_successful_empty_is_distinct_from_a_failed_parent_read``), and
-    the typed errors an unreadable or incomplete query keeps
-    (``tests/tracker/test_criterion_reader_boundary.py``, and
-    ``test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads``
-    above).
+    the typed errors a failing subtree read keeps rather than answering
+    empty — a transport failure inside it becomes the entry error with its
+    cause kept (``tests/chains/test_native_port_failures.py``,
+    ``test_native_entry_preserves_tracker_port_failure``), and a scope read
+    that refuses keeps its own type
+    (``test_a_refused_scope_read_inside_the_subtree_read_stays_a_typed_error``
+    below).
     """
     port = nested_only_board(nested=history == "minted then removed")
     if history == "minted then removed":
@@ -824,6 +828,47 @@ async def test_a_zero_criterion_subtree_is_one_successful_empty_reading(history:
     # A reading spends no writes: neither history leaves a mark behind.
     assert port.issue_writes == []
     assert port.comment_writes == []
+    assert port.issue_creations == []
+
+
+@pytest.mark.parametrize(
+    "reason", ["issue parent cycle", "scope criterion membership changed"]
+)
+async def test_a_refused_scope_read_inside_the_subtree_read_stays_a_typed_error(
+    monkeypatch: pytest.MonkeyPatch, reason: str
+) -> None:
+    """A refused subtree read keeps its own type, never an empty reading.
+
+    The case above reads a subtree that holds no criterion and answers
+    ``{}``.  Here the read itself refuses: the subject's parent chain
+    closes on itself, or a criterion's parent moved between the family read
+    and the membership check.  ``ScopeReadError`` is none of the transport
+    failures ``read_current`` converts, so it leaves the stage with its own
+    type and its own reason rather than emptying the roster and arriving as
+    the "no Todo criteria to execute" refusal an honestly empty subtree
+    earns.  Nothing is written on the way out.
+    """
+    port = nested_only_board()
+    if reason == "issue parent cycle":
+        port.issues[SUBJECT] = port.issues[SUBJECT].model_copy(
+            update={"parent_key": DELIVERABLE_CHILD}
+        )
+    else:
+        family = port.read_criteria
+
+        async def moved(*, issue_key: str) -> tuple[TrackerIssue, ...]:
+            """Every criterion answers with the subject as its parent."""
+            return tuple(
+                criterion.model_copy(update={"parent_key": SUBJECT})
+                for criterion in await family(issue_key=issue_key)
+            )
+
+        monkeypatch.setattr(port, "read_criteria", moved)
+
+    with pytest.raises(ScopeReadError, match=reason):
+        await TrackerCriteria(tracker=port).read_current(spec=unlisted_spec())
+
+    assert port.issue_writes == []
     assert port.issue_creations == []
 
 
