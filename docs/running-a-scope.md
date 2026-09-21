@@ -120,6 +120,33 @@ dispatched and which are resting. A `scope_lane` row wraps one lane's own fire
 events. A lane's failure appears on the observation rather than ending the
 stream.
 
+## Whether the scope's lanes compose
+
+Once a tick, the walk asks whether the branches its lanes have published still
+compose together and still pass the repository's declared checks. It is one
+question about the whole scope, not one per lane, and nothing is gated on the
+answer: a red one skips no lane, writes nothing and stops no run.
+
+The answer is in the log, as `scope_union_observed`: which lanes were measured,
+the head each stood at, and whether the composition came out green or red with
+the repair a red one needs. A tick whose lane heads have not moved restates the
+measurement it already made rather than running the checks again, so on a quiet
+scope you will see one execution of the chain and a line per tick.
+
+Two things make it silent. A repository that declares no `[[repos.checks]]`
+chain is never composed, and the run says so once as `scope_union_unarmed`.
+And a measurement that cannot be taken is logged with its traceback and ends
+nothing — expect that on a young scope, where a lane which has pushed nothing
+yet has no branch to compose, and mid-walk, where a lane's deliverable branch
+reaches the remote only when its work is consolidated. Both read as
+`UnionHeadReadError`; heads that keep moving across a measurement read as
+`UnionUnstableError` instead.
+
+Two settings bound it, both with shipped defaults:
+`KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS` is the wall clock one check step
+gets, and `KODEZART_UNION_STALE_MAX_ATTEMPTS` is how many times a measurement
+is retried while the heads keep moving under it.
+
 ## Stopping and re-entering
 
 Kill it. Post the same request again. Nothing was persisted, and nothing has to

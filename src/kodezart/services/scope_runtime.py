@@ -1,6 +1,6 @@
 """Run a live scope inside its existing queue job, one freshly read lane per tick."""
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -10,6 +10,7 @@ from pathlib import Path
 from langchain_core.runnables import RunnableConfig
 from pydantic import TypeAdapter
 
+from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.error_egress import build_error_event
@@ -22,6 +23,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.fire_plateau import fire_plateaued, observe_tick
 from kodezart.domain.git_url import resolve_repo_url
+from kodezart.domain.union_facts import union_facts
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.scope_entry import ScopeEntry
@@ -47,6 +49,7 @@ from kodezart.types.domain.scope_runtime import (
 )
 from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+from kodezart.types.domain.union_tick import ScopeUnionRequest
 
 _NATIVE_STATE = TypeAdapter(NativeDeliveryState)
 _NATIVE_PROGRESS: TypeAdapter[ScopeLaneProgress] = TypeAdapter(ScopeLaneProgress)
@@ -60,6 +63,16 @@ _NATIVE_PROGRESS: TypeAdapter[ScopeLaneProgress] = TypeAdapter(ScopeLaneProgress
 #: quantity the bound counts is a set difference over criterion identities, so
 #: a fire that closed one while surfacing three still cleared it.
 PLATEAU_BOUND = 1
+
+#: How a walk gets the union of the scope it was asked to walk, or nothing.
+#:
+#: A factory and not an instance, because what a union measures is pinned when
+#: it is built — the scope it addresses, the path it reads and the base it
+#: composes onto — and none of those is known until a walk is asked to run.
+#: Nothing, where the repository declares no chain to run.
+type ScopeUnionFor = Callable[
+    [ScopeUnionRequest], Awaitable[ScopeUnionCoordinator | None]
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +136,7 @@ class ScopeWorkflowEngine:
         tracker: TrackerPort,
         lane_for: Callable[[str], NativeLaneWorkflow],
         probe_for: Callable[[str], DeliveryProbe | None],
+        union_for: ScopeUnionFor,
         resolver: BaseResolver,
         entries: LaneEntryReader,
         entry: ScopeEntry,
@@ -136,6 +150,7 @@ class ScopeWorkflowEngine:
         self._entry = entry
         self._lane_for = lane_for
         self._probe_for = probe_for
+        self._union_for = union_for
         self._resolver = resolver
         self._entries = entries
         self._terminal = terminal
@@ -181,6 +196,44 @@ class ScopeWorkflowEngine:
             rested.append(key)
             await self._log.aexception("scope_lane_failed", lane=key)
             failures.append(LaneFailure(issue_key=key, error=build_error_event(exc)))
+
+    @asynccontextmanager
+    async def _union_boundary(self, scope: ScopeRef) -> AsyncIterator[None]:
+        """The scope's own measurement, which is nobody's turn.
+
+        Catches ``Exception`` and not ``BaseException``, for the reason the
+        lane boundary above states: cancellation and generator close still end
+        the run. It appends to no list, rests no lane and reports no lane
+        failure, because the union is not a lane: what it says is a fact about
+        the whole scope, and a scope that cannot be measured right now is a
+        fact about this tick rather than the end of the walk.
+
+        The refusals it contains are ordinary. A lane that has published
+        nothing records no branch to compose, which is every lane of a fresh
+        scope; a lane mid-loop has published its loop branch and not the
+        deliverable its record names, which reaches the remote at
+        consolidation; and heads that keep moving across a measurement refuse
+        by design. None of those may end a scope run.
+        """
+        try:
+            yield
+        except Exception:
+            await self._log.aexception("scope_union_unmeasured", scope=scope.key)
+
+    async def _observe_union(
+        self, union: ScopeUnionCoordinator, *, scope: ScopeRef
+    ) -> None:
+        """State one scope-grain composition, measured at most once per head set.
+
+        Asked on every tick and composing only where the heads moved: what a
+        set of unchanged heads composes to was answered by the measurement
+        that is reused, and the union keeps that memo itself rather than the
+        walk keeping a second copy of the comparison.
+        """
+        observed = await union.verify()
+        await self._log.ainfo(
+            "scope_union_observed", scope=scope.key, **union_facts(observed)
+        )
 
     async def _gate_unrecorded_blockers(
         self, key: str, *, url: str, probe: DeliveryProbe
@@ -499,6 +552,21 @@ class ScopeWorkflowEngine:
         # The request's base describes the scope input, never an independently
         # trusted lane base. Each lane's graph gets the current resolver answer.
         _ = prompt, run_identity, base_spec, implied_base
+        # One union per invocation, in a local: what it may reuse is pinned to
+        # one repository path and one selected base, and both are facts about
+        # this invocation. Nothing about it is kept on this owner, so a killed
+        # run's next invocation composes again from tracker and remote facts.
+        union: ScopeUnionCoordinator | None = None
+        async with self._union_boundary(scope):
+            union = await self._union_for(
+                ScopeUnionRequest(
+                    scope=scope,
+                    repo=repo,
+                    repo_url=url,
+                    repo_path=repo_path,
+                    job_id=cache_key,
+                )
+            )
         dispatched: list[str] = []
         skipped: list[str] = []
         rested: list[str] = []
@@ -513,6 +581,13 @@ class ScopeWorkflowEngine:
             # whether the lane it fired is a candidate again.
             await self._settle(last=last, ready=ready, rested=rested, failures=failures)
             last = None
+            # Once per tick, at the scope's own grain, outside every lane
+            # boundary: nothing a lane's turn does can reach this, which is
+            # what "never per lane" is in code. A tick that ends the walk
+            # measures the scope before it reports.
+            if union is not None:
+                async with self._union_boundary(scope):
+                    await self._observe_union(union, scope=scope)
             exclusions = [
                 IssueExclusion(
                     issue_key=blocked.issue_key,

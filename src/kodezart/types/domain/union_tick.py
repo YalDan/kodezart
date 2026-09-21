@@ -6,6 +6,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.operation import RepoEntry
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.union import CommitSha
 
 
@@ -43,3 +44,22 @@ class UnionTickContext(CamelCaseModel):
     repo: RepoEntry
     base_sha: CommitSha
     git_remote: str = Field(min_length=1, pattern=r"\S")
+
+
+class ScopeUnionRequest(CamelCaseModel):
+    """The facts about one walk invocation a union is composed for.
+
+    Five values a caller cannot hand over as a single positional argument
+    without the reader of the call site guessing which is which, beside the
+    context they are turned into: the addressed scope, the repository it
+    declared, the resolved origin of that repository, the path a caller
+    already pinned for it, and the job the walk runs inside.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scope: ScopeRef
+    repo: RepoEntry
+    repo_url: str = Field(min_length=1, pattern=r"\S")
+    repo_path: str | None = None
+    job_id: str = Field(min_length=1, pattern=r"\S")
