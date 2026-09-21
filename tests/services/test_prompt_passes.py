@@ -37,13 +37,14 @@ from kodezart.services import pass_scheduler as pass_scheduler_module
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import pass_render_bindings
 from kodezart.services.run_recorder import RunRecorder
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import PassRun, PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
     QueueState,
     RecordDestination,
     RunKind,
+    ScopeLabel,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import (
@@ -52,6 +53,7 @@ from kodezart.types.domain.run_records import (
     RunRecord,
     RunRecordResult,
 )
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from tests.fakes import (
     FIXTURE_EPOCH,
@@ -220,13 +222,21 @@ STANDING_SCOPE_SETTINGS: dict[str, object] = {
 }
 
 
+#: The one standing scope this module declares, and the board the pass
+#: reads it off. Stated once as a ref so the row the operation declares and
+#: the container the label sits on cannot drift apart: a pass submitting
+#: some other scope's run would then be submitting a scope no board here
+#: has.
+STANDING_SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="standing-project")
+
+
 def standing_scope_operation(*, scopes: bool = True) -> OperationConfig:
     """The declared organize table, with or without one standing-scope row."""
     fields = declared_operation().model_dump()
     fields["organize_scopes"] = (
         [
             {
-                "scope": {"kind": "project", "key": "standing-project"},
+                "scope": STANDING_SCOPE.model_dump(mode="json"),
                 "repo_url": fields["repos"][0]["url"],
             }
         ]
@@ -234,6 +244,26 @@ def standing_scope_operation(*, scopes: bool = True) -> OperationConfig:
         else []
     )
     return OperationConfig.model_validate(fields)
+
+
+def approving_board() -> FakeTrackerPort:
+    """The standing project, carrying the label that admits its run.
+
+    The container as well as the label, because the approval question reads
+    a node's labels AND its parent edge: a board holding the label and no
+    container answers a question no workspace answers.
+    """
+    return FakeTrackerPort(
+        scope_containers=[
+            ScopeContainer(
+                ref=STANDING_SCOPE,
+                name="the standing project",
+                description="",
+                url=f"https://tracker.invalid/project/{STANDING_SCOPE.key}",
+            )
+        ],
+        scope_label_members={STANDING_SCOPE: frozenset({ScopeLabel.APPROVED})},
+    )
 
 
 async def _runtime(
@@ -245,6 +275,7 @@ async def _runtime(
     reconciled: OperationConfig | None = None,
     github_api: FakeDeliveryProbe | None = None,
     prompt_set: str = DEFAULT_SET,
+    queue: FakeJobQueue | None = None,
     **overrides: object,
 ) -> DispatchRuntime:
     """Boot the scheduled-pass runtime exactly as the composition root does.
@@ -263,6 +294,11 @@ async def _runtime(
     caller that needs a schedule with something registered BEFORE the arms this
     module asks about can have one. Left out, no dispatch pass is built, which
     is what every caller here but the registration rows wants.
+
+    *queue* is the caller's when it means to read what a registered pass
+    submitted: the queue this boot wires is the one the pass holds, and a
+    case that could not see it could only assert the registration rather
+    than the pass.
     """
     declared = example_config() if operation is None else operation
     config = _config(tmp_path, **overrides)
@@ -270,7 +306,7 @@ async def _runtime(
         default_set=prompt_set,
         bindings=dict(bindings_for(declared)),
     )
-    queue = FakeJobQueue()
+    queue = FakeJobQueue() if queue is None else queue
     await verify_pass_preflight(
         config=config,
         operation=declared,
@@ -469,11 +505,14 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
     spelled here.
     """
     config = _config(tmp_path, **STANDING_SCOPE_SETTINGS)
+    operation = standing_scope_operation()
+    queue = FakeJobQueue()
     runtime = await _runtime(
         tmp_path,
-        tracker=FakeTrackerPort(),
+        tracker=approving_board(),
         runner=FakeAgentRunner(events=[]),
-        operation=standing_scope_operation(),
+        operation=operation,
+        queue=queue,
         **STANDING_SCOPE_SETTINGS,
     )
 
@@ -486,6 +525,24 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
     assert heartbeat.report is None
     assert registered.count(HEARTBEAT_PASS) == 1
     assert registered.count(PromptKey.GROOMING_PASS.value) == 1
+
+    # The REGISTERED callable, ticked: what the scheduler would reach is the
+    # heartbeat's own scheduled run, answering in the vocabulary a scheduled
+    # pass answers in and submitting the declared row onto the queue this
+    # boot wired. A registration carrying some other callable — an idle one,
+    # or the tick, whose answer is a report rather than a run — passes every
+    # assertion above and fails here.
+    (row,) = operation.organize_scopes
+    assert await heartbeat.run(FIXTURE_EPOCH) is PassRun.RAN
+    ((lane, request),) = queue.submissions
+    assert lane == config.dispatch_lane
+    assert request.scope == row.scope == STANDING_SCOPE
+    assert request.repo_url == row.repo_url
+    # And the pass is the same instance across ticks: its own memory of the
+    # job it submitted is what keeps the second tick from starting a second
+    # run of one scope.
+    assert await heartbeat.run(FIXTURE_EPOCH) is PassRun.SKIPPED
+    assert len(queue.submissions) == 1
 
 
 async def test_an_operation_with_no_standing_scope_registers_no_heartbeat(

@@ -38,7 +38,7 @@ from tests.chains.test_native_fire import (
     native_operation,
 )
 from tests.chains.test_organize import result as organize_result
-from tests.fakes import FIXTURE_EPOCH, FakeGitService
+from tests.fakes import FIXTURE_EPOCH, FakeGitService, handed_over
 from tests.integration.test_scope_runtime import (
     ORIGIN,
     SCOPE,
@@ -119,6 +119,13 @@ class OrganizingExecutor(ObservedNativeExecutor):
         super().__init__(evaluations)
         self.port = port
         self.organize_calls = []
+        #: One row per admission session: the lane it named, how long the
+        #: board's ordered classification journal was at the time, and the
+        #: stage markers that lane carried then. The length is what makes
+        #: "this marker write follows that session" a comparison rather than
+        #: a story, and the markers are what says which stage the session
+        #: belonged to — the same lane is assessed once per stage.
+        self.admissions = []
 
     def _checks(self, issue_key):
         return [
@@ -150,6 +157,14 @@ class OrganizingExecutor(ObservedNativeExecutor):
             key = re.findall(r"<issue_key>(.*?)</issue_key>", prompt)[-1]
             if title == "AdmissionJudgment":
                 body = self.port.issues[key].body
+                self.admissions.append(
+                    (
+                        key,
+                        len(self.port.classification_writes),
+                        self.port.issues[key].issue_labels
+                        & frozenset({TICKET_MARKER, STAGED}),
+                    )
+                )
                 payload = {
                     "issue_id": key,
                     "verdict": "buildable",
@@ -315,13 +330,72 @@ def staging_runtime(port, lanes, *, monkeypatch, builds, operation=None, executo
     )
 
 
-def marker_writes(port, marker):
-    """The indices in the fake's write journal at which *marker* was written."""
+def marker_writes(port, marker, *, on=None):
+    """The indices in the fake's write journal at which *marker* was written.
+
+    *on* narrows the answer to one lane, which is what a per-lane order
+    claim needs: the journal is ordered across every member, so a claim
+    about one member's marker has to select that member's own writes.
+    """
     return [
         index
-        for index, (_, classification) in enumerate(port.classification_writes)
-        if classification == marker
+        for index, (issue_key, classification) in enumerate(port.classification_writes)
+        if classification == marker and on in (None, issue_key)
     ]
+
+
+def recording_stage_writes(port):
+    """Record the two writes no stage of this table makes, as they are made.
+
+    Returns the lists the cases read: the parents a criterion was authored
+    under, and the surfaces whose description was rewritten. Both wrap the
+    port rather than replace it, so what is recorded is what the composed
+    run actually asked the board for. Shared by both acceptance cases
+    because it is the same clause about the same stages, and a second copy
+    of a wrapper is a second thing to keep true.
+    """
+    authored = []
+    edited = []
+    original_criterion = port.create_criterion_if_absent
+    original_description = port.edit_description
+
+    async def recorded_criterion(**kwargs):
+        authored.append(kwargs["parent_key"])
+        return await original_criterion(**kwargs)
+
+    async def recorded_description(**kwargs):
+        edited.append(kwargs["target"])
+        return await original_description(**kwargs)
+
+    port.create_criterion_if_absent = recorded_criterion
+    port.edit_description = recorded_description
+    return authored, edited
+
+
+def markers_ahead_of_their_admission(port, executor, *, marker, lanes):
+    """The lanes whose *marker* write does not follow the sessions that owed it.
+
+    A stage's marker is the durable record of the admission test that set
+    it, so on the board's ORDERED write journal every write of it has to sit
+    after the last session that assessed that lane while the lane still
+    owed the marker. Sessions from the other stage are excluded by that same
+    reading: a lane being assessed for the criteria stage already carries the
+    ticket stage's marker.
+
+    A lane marked with no such session ahead of it is reported too: a label
+    nothing tested is exactly what this clause exists to refuse.
+    """
+    faults = []
+    for key in lanes:
+        owed = [
+            at
+            for named, at, carried in executor.admissions
+            if named == key and marker not in carried
+        ]
+        written = marker_writes(port, marker, on=key)
+        if not owed or not written or min(written) < max(owed):
+            faults.append(key)
+    return faults
 
 
 async def test_a_scope_run_stages_every_member_before_its_first_ready_read(monkeypatch):
@@ -338,21 +412,7 @@ async def test_a_scope_run_stages_every_member_before_its_first_ready_read(monke
     port = board(lanes=lanes, blocked={"B": ("A",)}, staged=False)
     builds = []
     harness = staging_runtime(port, lanes, monkeypatch=monkeypatch, builds=builds)
-    authored = []
-    edited = []
-    original_criterion = port.create_criterion_if_absent
-    original_description = port.edit_description
-
-    async def recorded_criterion(**kwargs):
-        authored.append(kwargs["parent_key"])
-        return await original_criterion(**kwargs)
-
-    async def recorded_description(**kwargs):
-        edited.append(kwargs["target"])
-        return await original_description(**kwargs)
-
-    port.create_criterion_if_absent = recorded_criterion
-    port.edit_description = recorded_description
+    authored, edited = recording_stage_writes(port)
 
     events = []
     at_first_walk = None
@@ -374,6 +434,16 @@ async def test_a_scope_run_stages_every_member_before_its_first_ready_read(monke
     # already carried the Checks the criteria proposal quotes.
     assert authored == []
     assert [target for target in edited if target in lanes] == []
+    # And each marker sits after the session that admitted that lane for its
+    # own stage: a marker written ahead of its admission is a label nothing
+    # tested.
+    for marker in (TICKET_MARKER, STAGED):
+        assert (
+            markers_ahead_of_their_admission(
+                port, harness.executor, marker=marker, lanes=lanes
+            )
+            == []
+        )
 
     # The stages left a board the walk reads the ordinary way: the two lanes
     # nothing waits on are the tick's ready set, and the one waiting on a
@@ -501,13 +571,17 @@ async def test_setting_the_label_starts_a_run_that_stages_every_issue_then_walks
     harness = staging_runtime(
         port, lanes, monkeypatch=monkeypatch, builds=[], operation=operation
     )
+    authored, edited = recording_stage_writes(port)
     queue = build_job_queue(settings=JobQueueSettings(), workflow_engine=harness.engine)
     await queue.start()
     try:
         beat = standing_heartbeat(port, queue, operation)
+        untouched = handed_over(port)
 
         # (1) Nobody has approved the project, so nothing runs and nothing is
-        # spent: no submission, no session, no write of any kind.
+        # spent: no submission, no session, and the board is byte for byte
+        # what it was handed over — every journal of it, rather than the one
+        # a case naming journals would have thought to look at.
         assert await beat.run(FIXTURE_EPOCH) is PassRun.SKIPPED
         unapproved = await beat.tick()
         assert [(entry.scope, entry.outcome) for entry in unapproved.entries] == [
@@ -515,7 +589,7 @@ async def test_setting_the_label_starts_a_run_that_stages_every_issue_then_walks
         ]
         assert list(queue._records) == []
         assert harness.executor.organize_calls == []
-        assert port.classification_writes == []
+        assert untouched()
 
         # (2) The label lands, and the next tick submits exactly one run.
         approve(port)
@@ -546,6 +620,19 @@ async def test_setting_the_label_starts_a_run_that_stages_every_issue_then_walks
         assert len(ticket_writes) == len(criteria_writes) == len(lanes)
         assert max(ticket_writes) < min(criteria_writes)
         assert at_first_walk == len(port.classification_writes)
+        # The stages authored no criterion and rewrote no member body: the
+        # board already carried the Checks the criteria proposal quotes.
+        assert authored == []
+        assert [target for target in edited if target in lanes] == []
+        # And every marker write follows the session that admitted that lane
+        # for the stage the marker belongs to.
+        for marker in (TICKET_MARKER, STAGED):
+            assert (
+                markers_ahead_of_their_admission(
+                    port, harness.executor, marker=marker, lanes=lanes
+                )
+                == []
+            )
         walks = [event for event in events if isinstance(event, ScopeWalkEvent)]
         first = walks[0].observation
         assert first.ready == ("A", "C")
