@@ -10,7 +10,7 @@ from kodezart.core.protocols import (
     GitService,
     OutboundContentGate,
     RepoCache,
-    ScopeStatusWriter,
+    ScopeStatusUpdates,
     TrackerPort,
 )
 from kodezart.domain.git_url import is_forge_less_origin
@@ -34,7 +34,7 @@ def build_scope_runtime(
     repositories: Sequence[RepoEntry],
     config: AppConfig,
     operation: OperationConfig,
-    status: ScopeStatusWriter,
+    status: ScopeStatusUpdates,
     gate: OutboundContentGate,
     entry: ScopeEntry,
 ) -> ScopeWorkflowEngine:

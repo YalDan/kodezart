@@ -14,13 +14,15 @@ from collections.abc import Callable
 import pytest
 import structlog.testing
 
-from kodezart.core.errors import LaneRosterArityError
+from kodezart.core.errors import LaneRosterArityError, TrackerUnavailableError
 from kodezart.domain.errors import (
     LaneRecordReadError,
     OutboundContentBlockedError,
     ScopeStatusError,
 )
 from kodezart.domain.scope_terminal import (
+    SCOPE_STATUS_HEADING,
+    latest_scope_report,
     render_scope_status,
     scope_status_aggregates,
 )
@@ -679,3 +681,133 @@ async def test_a_lane_owing_nothing_is_done_whatever_its_pull_request_says(
         f"- [x] A — branch {LANE_BRANCH} — pull request #12",
         "- [x] B — no branch recorded — no pull request recorded",
     ]
+
+
+# ---------------------------------------------------------------------------
+# KOD-879 — the container is read before it is written, and a report equal to
+# the newest one this operation left there is not posted a second time.
+# ---------------------------------------------------------------------------
+
+OTHER = ScopeRef(kind=ScopeKind.PROJECT, key="another-project")
+#: A status update nobody derived: what a person writes on the same surface.
+BY_HAND = "Slipping a week; the third lane needs a decision first."
+
+
+def seeded(*updates: tuple[ScopeRef, str]) -> FakeScopeStatusWriter:
+    """A container already carrying *updates*, oldest first."""
+    status = FakeScopeStatusWriter()
+    status.posts.extend(updates)
+    return status
+
+
+def rendered(*, ready: tuple[str, ...] = (), closed: tuple[str, ...] = ()) -> str:
+    """The body the terminal renders for this reading, derived the one way."""
+    return render_scope_status(
+        ScopeTerminalEvent(
+            scope=PROJECT,
+            lanes=tuple(
+                ScopeLaneEntry(issue=key, done=key in closed, branch=None, pr=None)
+                for key in (*ready, *closed)
+            ),
+            outcome=(
+                WorkflowOutcome.scope_converged
+                if closed and not ready
+                else WorkflowOutcome.scope_stopped_short
+            ),
+        )
+    )
+
+
+async def test_a_report_already_on_the_container_is_not_posted_again() -> None:
+    """The read is what makes exactly-one survive a restart, and it is a read.
+
+    The outcome is unchanged and the event is handed back as it always was:
+    what the comparison suppresses is the second identical update, not the
+    report. Nothing is remembered between invocations and no mark is held —
+    the container's own contents are the whole of the state consulted.
+    """
+    body = rendered(closed=("A",))
+    status = seeded((PROJECT, body))
+
+    with structlog.testing.capture_logs() as logs:
+        event = await terminal(status=status).report(ready=reading(closed=("A",)))
+
+    assert status.posts == [(PROJECT, body)]
+    assert status.reads == [PROJECT]
+    assert event.outcome is WorkflowOutcome.scope_converged
+    assert render_scope_status(event) == body
+    assert [entry for entry in logs if entry["event"] == "scope_status_update_carried"]
+
+
+async def test_a_report_that_differs_from_the_newest_one_is_posted() -> None:
+    """A moved board renders a different vector, and that one is new."""
+    status = seeded((PROJECT, rendered(ready=("A",), closed=("B",))))
+
+    event = await terminal(status=status).report(ready=reading(closed=("A", "B")))
+
+    assert len(status.posts) == 2
+    assert status.posts[1] == (PROJECT, render_scope_status(event))
+    assert status.reads == [PROJECT]
+
+
+async def test_only_this_terminals_reports_are_compared() -> None:
+    """A person's note on the surface is passed over, not compared.
+
+    Compared as "the newest update, whatever it is", the note would read as a
+    report that differs and the same vector would be posted again under it.
+    """
+    body = rendered(closed=("A",))
+    status = seeded((PROJECT, body), (PROJECT, BY_HAND))
+
+    await terminal(status=status).report(ready=reading(closed=("A",)))
+
+    assert status.posts == [(PROJECT, body), (PROJECT, BY_HAND)]
+
+
+async def test_a_report_on_another_container_is_not_this_ones() -> None:
+    """The read is addressed, so one project's report does not answer another's."""
+    body = rendered(closed=("A",))
+    status = seeded((OTHER, body))
+
+    await terminal(status=status).report(ready=reading(closed=("A",)))
+
+    assert status.posts == [(OTHER, body), (PROJECT, body)]
+
+
+class UnreadableStatusSurface(FakeScopeStatusWriter):
+    """A container whose listing refuses, recording that it was asked."""
+
+    async def status_update_bodies(self, *, ref: ScopeRef):
+        self.reads.append(ref)
+        raise TrackerUnavailableError("the status listing failed")
+
+
+async def test_an_unreadable_status_surface_leaves_no_event() -> None:
+    """A read that refuses ends the invocation where a refused post does.
+
+    Suppressing on a failed read would post nothing and hand back a report
+    the container never carried; posting anyway would defeat the comparison.
+    Neither: the invocation ends, and the next one reports again.
+    """
+    status = UnreadableStatusSurface()
+
+    with pytest.raises(TrackerUnavailableError, match="listing failed"):
+        await terminal(status=status).report(ready=reading(closed=("A",)))
+
+    assert status.reads == [PROJECT]
+    assert status.posts == []
+
+
+async def test_the_heading_the_filter_reads_is_the_one_the_rendering_writes() -> None:
+    """One constant, two consumers: the renderer's first line and the filter.
+
+    Spelled twice, a reworded heading would leave the filter matching nothing
+    and every walk would post again — silently, because a suppression that
+    never fires looks exactly like a first post.
+    """
+    event = await terminal().report(ready=reading(closed=("A",)))
+    body = render_scope_status(event)
+
+    assert body.startswith(SCOPE_STATUS_HEADING)
+    assert latest_scope_report([body]) == body
+    assert latest_scope_report([BY_HAND]) is None

@@ -2,10 +2,11 @@
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_exact
-from kodezart.core.protocols import OutboundContentGate, ScopeStatusWriter
+from kodezart.core.protocols import OutboundContentGate, ScopeStatusUpdates
 from kodezart.domain.errors import LaneRecordReadError, ScopeStatusError
 from kodezart.domain.scope_terminal import (
     lane_roster,
+    latest_scope_report,
     render_scope_status,
     scope_status_aggregates,
 )
@@ -41,14 +42,16 @@ class ScopeTerminal:
     status surface and nowhere else: no lane issue is written, no container
     description is written, and no lease, claim or in-progress mark is taken
     (KOD-788).  Exactly-one is a property of this running once, at the walk's
-    one clean exit, and not of a mark it holds while it runs.
+    one clean exit, and not of a mark it holds while it runs — and, across
+    processes, of the report being compared with the one the container
+    already carries before it is posted again: a read, never a mark.
     """
 
     def __init__(
         self,
         *,
         records: LaneRecordReader,
-        status: ScopeStatusWriter,
+        status: ScopeStatusUpdates,
         gate: OutboundContentGate,
     ) -> None:
         self._records = records
@@ -136,6 +139,15 @@ class ScopeTerminal:
         derivation did not make.  Hence the exact form: an altered result is
         refused with this writer's own error rather than written.
 
+        The container is READ before it is written, and the report is posted
+        only when it differs from the newest report this operation already
+        left there.  The comparison is on the rendered bytes of both sides,
+        so nothing here parses a body; the read is the whole of what makes
+        exactly-one survive a restart, and it remembers nothing and marks
+        nothing to do it (KOD-879).  A read that refuses propagates before
+        any write, and the job then ends with no terminal event exactly as a
+        refused post does.
+
         The visibility stated is the tracker's own, which mirrors publicly;
         ``UNKNOWN`` would say a resolution failed, and none did.
 
@@ -156,6 +168,14 @@ class ScopeTerminal:
                 reason="the outbound gate changed the derived report",
             ),
         )
+        bodies = await self._status.status_update_bodies(ref=event.scope)
+        if latest_scope_report(bodies) == body:
+            await self._log.ainfo(
+                "scope_status_update_carried",
+                scope=event.scope.key,
+                outcome=event.outcome.value,
+            )
+            return
         await self._status.post_status_update(ref=event.scope, body=body)
         await self._log.ainfo(
             "scope_status_update_posted",

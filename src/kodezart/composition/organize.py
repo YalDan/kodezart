@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.chains.organize_author import OrganizeAuthor
+from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.chains.write_back_verifier import FreshWriteBackJudge
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
@@ -25,6 +26,8 @@ from kodezart.services.scope_heartbeat import ScopeHeartbeat
 from kodezart.services.scope_organizer import ScopeOrganizer
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.organize import ResolvedMandateSpec
+from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 
@@ -211,7 +214,13 @@ def build_scope_heartbeat(
     The same predicate the scheduled organize tick is built on, so a
     deployment gets both passes over the declared rows or neither. The
     heartbeat itself needs nothing an owner needs: the three reads an
-    approval question takes, and the queue this process submits onto.
+    approval question takes, one readiness reading, and the queue this
+    process submits onto.
+
+    The readiness reading is passed as the one CALL the pass makes rather
+    than as the port it is made over, the way the walk's lane and probe
+    selections are: the pass asks "what does this scope read as now" and
+    depends on nothing else about the tracker.
     """
     if not verify_organize_configuration(
         config=config, operation=operation, tracker=tracker
@@ -221,8 +230,14 @@ def build_scope_heartbeat(
         raise OperationMemberAbsentError(
             missing="tracker", stops="configured Organize scheduling"
         )
+    reader: TrackerPort = tracker
+
+    async def ready_for(ref: ScopeRef) -> ScopeReadySet:
+        return await read_scope_ready(ref=ref, tracker=reader)
+
     return ScopeHeartbeat(
         approvals=tracker,
+        ready_for=ready_for,
         queue=queue,
         registry=registry,
         bindings=operation.organize_scopes,

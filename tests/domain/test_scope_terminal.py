@@ -9,7 +9,11 @@ dropped a lane from a scope that never held it (KOD-471).
 
 import pytest
 
-from kodezart.domain.scope_terminal import lane_roster, scope_status_aggregates
+from kodezart.domain.scope_terminal import (
+    lane_roster,
+    roster_at_rest,
+    scope_status_aggregates,
+)
 from kodezart.types.domain.gating import IdentifierRoster
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ResolvedScope, ScopeKind, ScopeRef
@@ -189,3 +193,24 @@ def test_the_status_aggregates_are_one_roster_of_the_lane_keys_in_order() -> Non
     )
     (roster,) = scope_status_aggregates(empty)
     assert roster.identities == ()
+
+
+@pytest.mark.parametrize(
+    ("roster", "expected"),
+    [
+        ((), False),
+        ((("A", True),), True),
+        ((("A", True), ("B", True)), True),
+        ((("A", False),), False),
+        ((("A", True), ("B", False)), False),
+    ],
+    ids=["empty", "one done", "all done", "one open", "one of two open"],
+)
+def test_roster_at_rest_each_row(roster, expected: bool) -> None:
+    """The derivation's two readings, asked of the roster before any record.
+
+    An EMPTY roster is not rest, for the reason an empty vector is not a
+    finished scope: read as rest, a scope whose members vanished after a
+    converged ending would never be walked again.
+    """
+    assert roster_at_rest(roster) is expected

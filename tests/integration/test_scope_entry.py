@@ -665,6 +665,10 @@ async def test_setting_the_label_starts_a_run_that_stages_every_issue_then_walks
         assert third.job_id not in {submitted.job_id, resubmitted.job_id}
         await drain(queue, third.job_id)
         assert len(port.classification_writes) == staged_writes
+        # Three walks over one board, one status update: runs two and three
+        # render run one's vector, which the terminal finds already on the
+        # container (KOD-879).
+        assert len(harness.status.posts) == 1
     finally:
         await queue.stop()
 

@@ -1,11 +1,30 @@
 """Pure readings of one scope reading, and the body its report renders to."""
 
+from collections.abc import Sequence
+from typing import Final
+
 from kodezart.types.domain.gating import IdentifierRoster, TrackerAggregate
 from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 
+type LaneRoster = tuple[tuple[str, bool], ...]
+"""Every lane of one reading with whether it owes nothing, in scope order.
 
-def lane_roster(ready: ScopeReadySet) -> tuple[tuple[str, bool], ...]:
+Named because two consumers now compare two of them: the terminal renders
+one, and the pass that submits standing scopes asks whether the one it
+latched is still the reading's.
+"""
+
+#: The first line of a report this operation rendered, and therefore the one
+#: token by which one of its reports is told apart from a person's status
+#: update on the same container.  It is a CONSTANT rather than a literal in
+#: two places: the renderer writes it and the filter reads it, and a heading
+#: spelled twice is a filter that stops matching the moment the rendering is
+#: reworded.
+SCOPE_STATUS_HEADING: Final = "Scope outcome: "
+
+
+def lane_roster(ready: ScopeReadySet) -> LaneRoster:
     """Every lane of one reading, in scope order, with whether it owes nothing.
 
     The lanes are the four groups the reading partitions the scope's own
@@ -41,6 +60,32 @@ def lane_roster(ready: ScopeReadySet) -> tuple[tuple[str, bool], ...]:
     return tuple((key, key in done) for key in order if key in lanes)
 
 
+def roster_at_rest(roster: LaneRoster) -> bool:
+    """Whether *roster* is a reading in which every lane owes nothing.
+
+    The two readings :func:`derive_scope_outcome` makes, asked of the roster
+    alone and before any lane's record is read.  An EMPTY roster is not rest,
+    for the reason an empty vector is not a finished scope: a reading that
+    offered no lane at all has not been shown to be finished, it has been
+    shown to be unreadable as finished — so a scope whose members vanished
+    after a converged ending is walked again rather than left resting.
+    """
+    return bool(roster) and all(done for _, done in roster)
+
+
+def latest_scope_report(bodies: Sequence[str]) -> str | None:
+    """The newest of *bodies* this operation rendered, or ``None`` for none.
+
+    *bodies* arrives newest first.  A body that does not open with
+    :data:`SCOPE_STATUS_HEADING` is passed over rather than compared: the
+    container's status surface is a place people write too, and a person's
+    note on top of a report would otherwise read as a report that differs.
+    """
+    return next(
+        (body for body in bodies if body.startswith(SCOPE_STATUS_HEADING)), None
+    )
+
+
 def render_scope_status(event: ScopeTerminalEvent) -> str:
     """The status update's body: one line for the outcome, one line per lane.
 
@@ -52,7 +97,7 @@ def render_scope_status(event: ScopeTerminalEvent) -> str:
     is remains on the wire event and on the lane's own record, which is
     where a reader already looks it up.
     """
-    lines = [f"Scope outcome: {event.outcome.value}", ""]
+    lines = [f"{SCOPE_STATUS_HEADING}{event.outcome.value}", ""]
     for lane in event.lanes:
         mark = "x" if lane.done else " "
         branch = (

@@ -55,7 +55,7 @@ from typing import Protocol
 import pytest
 
 import kodezart
-from kodezart.adapters.linear.status_update import LinearScopeStatusWriter
+from kodezart.adapters.linear.status_update import LinearScopeStatusUpdates
 from kodezart.chains import write_back_verifier as verifier_module
 from kodezart.chains.write_back_verifier import WriteBackStep, WriteBackVerifier
 from kodezart.core.protocols import TrackerPort
@@ -229,7 +229,7 @@ def test_the_write_surface_covers_the_roles_dialled_beside_the_port():
     A widening that found nothing here would be indistinguishable from the
     old port-only read.
     """
-    assert LinearScopeStatusWriter in tracker_dialling_classes()
+    assert LinearScopeStatusUpdates in tracker_dialling_classes()
     assert write_methods() - write_methods(TrackerPort) == {"post_status_update"}
     assert "post_status_update" in artifact_writes()
 

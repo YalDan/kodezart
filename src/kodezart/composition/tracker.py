@@ -8,7 +8,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Final, assert_never
 
-from kodezart.adapters.linear.status_update import LinearScopeStatusWriter
+from kodezart.adapters.linear.status_update import LinearScopeStatusUpdates
 from kodezart.adapters.linear.tracker import (
     ACCEPTED_CREDENTIAL_SHAPE,
     LinearMcpTracker,
@@ -26,7 +26,7 @@ from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
     McpToolCaller,
-    ScopeStatusWriter,
+    ScopeStatusUpdates,
     TrackerPort,
 )
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
@@ -192,18 +192,18 @@ def build_tracker(
 
 def build_scope_status_writer(
     *, backend: TrackerBackend, caller: McpToolCaller
-) -> ScopeStatusWriter:
-    """The ``ScopeStatusWriter`` implementation *backend* selects.
+) -> ScopeStatusUpdates:
+    """The ``ScopeStatusUpdates`` implementation *backend* selects.
 
     One class for one role over the same session the port dials, beside the
     port rather than on it: the scope terminal states the single write it
-    makes, and every other tracker consumer is unchanged by its existence
-    (KOD-829).  The match is TOTAL, so a second backend added without this
-    role stops the type check here.
+    makes and the one read that keeps it single, and every other tracker
+    consumer is unchanged by its existence (KOD-829).  The match is TOTAL, so
+    a second backend added without this role stops the type check here.
     """
     match backend:
         case TrackerBackend.LINEAR:
-            return LinearScopeStatusWriter(caller=caller)
+            return LinearScopeStatusUpdates(caller=caller)
 
 
 @dataclass(frozen=True)
@@ -219,11 +219,11 @@ class DialledTracker:
     tracker: TrackerPort
     caller: ManagedMcpToolCaller
     operation: OperationConfig
-    status: ScopeStatusWriter
-    """The scope terminal's one write, over the same session and BESIDE the
-    port the way the ledger is: it belongs to one consumer's role, and a
-    member for it on the port would put that role into every tracker
-    implementation (KOD-829)."""
+    status: ScopeStatusUpdates
+    """The scope terminal's one write and the read that keeps it one, over
+    the same session and BESIDE the port the way the ledger is: they belong
+    to one consumer's role, and members for them on the port would put that
+    role into every tracker implementation (KOD-829)."""
     ledger: SelfWriteLedger
     """Where this tracker's own writes leave their stamp, for the pass gates
     that must not wake on them.  It travels WITH the tracker because the two
