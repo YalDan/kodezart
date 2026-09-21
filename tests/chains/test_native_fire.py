@@ -738,6 +738,30 @@ async def test_a_criterion_the_fire_does_not_owe_is_not_revalidated() -> None:
     }
 
 
+async def test_a_finished_nested_criterion_with_no_legible_check_refuses():
+    """A finished criterion is still parsed, because the entry reads the roster.
+
+    What the entry captures is the subtree's roster entire and not the part of
+    it the fire owes, so every criterion under the subject has its Check read
+    there — one already Done under a deliverable child included. A board whose
+    finished nested criterion carries no template row therefore refuses at the
+    entry, where the same subject with a malformed OWED criterion already
+    refused, and the refusal names the criterion rather than the subject alone.
+
+    The case above makes the opposite reading, at a barrier, where state is
+    what decides: this one is about the entry, which has no roster to go on yet.
+    """
+    source = TrackerCriteria(
+        tracker=tracker(bodies={NESTED_DONE: "no template rows at all"})
+    )
+
+    with pytest.raises(InvalidFireCriterionError) as caught:
+        await source.read_entry(issue_key=SUBJECT)
+
+    assert caught.value.issue_key == SUBJECT
+    assert caught.value.criterion_key == NESTED_DONE
+
+
 def nested_only_board(*, nested: bool = True) -> FakeTrackerPort:
     """The subject with no criterion of its own and one deliverable child.
 
