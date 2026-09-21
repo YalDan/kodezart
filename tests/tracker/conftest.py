@@ -22,7 +22,12 @@ from kodezart.adapters.linear.tracker import (
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
-from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    QueueState,
+    ScopeLabel,
+    aliases_approval_member,
+)
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.surface import (
     SurfaceKind,
@@ -443,6 +448,24 @@ def approval_classifications(
     )
 
 
+def approval_queue_states(
+    scope_labels: Mapping[str, str] | None,
+) -> frozenset[QueueState]:
+    """The queue members this workspace resolves to the approved member.
+
+    Empty for the ordinary vocabulary. The queue mapping is this module's
+    constant, so only the admission vocabulary can move the two onto one
+    label, which is what a colliding workspace dials.
+    """
+    return frozenset(
+        QueueState(name)
+        for name, label in QUEUE_STATE_LABELS.items()
+        if aliases_approval_member(
+            label=label, scope_labels=scope_labels or SCOPE_LABELS
+        )
+    )
+
+
 async def fake_port_over_fixture(
     server: FakeLinearMcpServer,
     *,
@@ -476,6 +499,7 @@ async def fake_port_over_fixture(
     port.approval_classifications = approval_classifications(
         scope_labels, issue_labels=issue_labels
     )
+    port.approval_queue_states = approval_queue_states(scope_labels)
     approved_label = (scope_labels or SCOPE_LABELS).get(ScopeLabel.APPROVED.value)
     port.scope_label_members = {
         ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})

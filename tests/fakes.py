@@ -3461,6 +3461,7 @@ class FakeTrackerPort:
         writer_identities: frozenset[str] = frozenset({"kodezart"}),
         body_authorship: Mapping[str, SurfaceAuthorship] | None = None,
         approval_classifications: frozenset[str] = frozenset(),
+        approval_queue_states: frozenset[QueueState] = frozenset(),
         stamp_moves_on_read: bool = False,
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
@@ -3558,6 +3559,10 @@ class FakeTrackerPort:
         #: admission vocabulary's approved member — empty unless a
         #: configuration actually aliases the two.
         self.approval_classifications: frozenset[str] = approval_classifications
+        #: The queue members this workspace resolves to the scope admission
+        #: vocabulary's approved member — empty unless a configuration
+        #: actually aliases the two.
+        self.approval_queue_states: frozenset[QueueState] = approval_queue_states
         #: A read that moves the issue's stamp too.  Off by default, for the
         #: reason the server double's own flag is (KOD-175): a read is not a
         #: write, so it neither records a self-write nor stamps the ledger,
@@ -4369,6 +4374,10 @@ class FakeTrackerPort:
         issue_key: str,
         state: QueueState,
     ) -> TrackerIssue:
+        if state in self.approval_queue_states:
+            raise ApprovalLabelWriteError(
+                issue_key=issue_key, classification=state.value
+            )
         issue = await self.read_issue(issue_key=issue_key)
         if issue.queue_states == frozenset({state}):
             return issue

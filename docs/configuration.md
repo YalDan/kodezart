@@ -327,6 +327,12 @@ that aliases the same label — approval is never machine-written. Each phase
 completes with an issue marker. The table validates phase configuration; it
 does not schedule an organize pass.
 
+The same rule holds for the issue queue. Loading refuses an operation whose
+`queue_states` maps any member to the label `scope_labels.approved` names,
+reporting both keys in the failure, and `set_queue_state` refuses that write at
+the port before any tracker request even where a configuration escaped the
+loader. The queue vocabulary cannot express an approval.
+
 ## Organize prompt roles
 
 Every prompt set supplies a separate data file for each organize role:

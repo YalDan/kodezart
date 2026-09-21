@@ -172,13 +172,17 @@ class ApprovalLabelWriteError(Exception):
     member would let an ordinary label write hand a run its own
     authorization, so the write is refused at the port rather than
     relied on not to be attempted.
+
+    ``classification`` is the configured member the write named — an
+    ``issue_labels`` key for a classification write, a ``QueueState`` value
+    for a queue-state write.
     """
 
     def __init__(self, *, issue_key: str, classification: str) -> None:
         self.issue_key = issue_key
         self.classification = classification
         super().__init__(
-            f"classification {classification!r} on {issue_key!r} names the "
+            f"label write {classification!r} on {issue_key!r} names the "
             "approval member and cannot be written"
         )
 

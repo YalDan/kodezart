@@ -135,6 +135,7 @@ from kodezart.types.domain.operation import (
     OperationMemberAbsentError,
     QueueState,
     ScopeLabel,
+    aliases_approval_member,
 )
 from kodezart.types.domain.organize_graph import (
     BlockedByChange,
@@ -1825,7 +1826,7 @@ class LinearMcpTracker:
                 raise OperationMemberAbsentError(
                     missing="issue_labels.criterion", stops="criterion creation"
                 )
-            if label == self._scope_labels.get("approved"):
+            if aliases_approval_member(label=label, scope_labels=self._scope_labels):
                 raise CriterionReadError(
                     issue_key=parent_key,
                     reason="criterion classification aliases human approval",
@@ -2384,21 +2385,27 @@ class LinearMcpTracker:
         issue_key: str,
         state: QueueState,
     ) -> TrackerIssue:
-        """Set the semantic queue state, replacing any other member."""
+        """Set the semantic queue state, replacing any other member.
+
+        Refused before any request when the state's label is the admission
+        vocabulary's approved member: a queue write cannot grant approval.
+        """
+        label = self._label_for(state)
+        if aliases_approval_member(label=label, scope_labels=self._scope_labels):
+            raise ApprovalLabelWriteError(
+                issue_key=issue_key, classification=state.value
+            )
         current = await self._read_issue_wire(issue_key)
         issue = self._to_issue(current)
         if issue.queue_states == frozenset({state}):
             return issue
         preserved = [
-            label for label in current.labels if label not in self._queue_state_by_label
+            name for name in current.labels if name not in self._queue_state_by_label
         ]
         payload = await self._call(
-            _TOOL_SAVE_ISSUE,
-            {"id": issue_key, "labels": [*preserved, self._label_for(state)]},
+            _TOOL_SAVE_ISSUE, {"id": issue_key, "labels": [*preserved, label]}
         )
-        return self._saved_issue(
-            payload, written={"labels": [*preserved, self._label_for(state)]}
-        )
+        return self._saved_issue(payload, written={"labels": [*preserved, label]})
 
     async def set_issue_classification(
         self, *, issue_key: str, classification: str, holder: str | None = None
@@ -2406,7 +2413,7 @@ class LinearMcpTracker:
         label = self._classification_label(
             classification, stops="this issue classification cannot be written"
         )
-        if label == self._scope_labels.get(ScopeLabel.APPROVED.value):
+        if aliases_approval_member(label=label, scope_labels=self._scope_labels):
             raise ApprovalLabelWriteError(
                 issue_key=issue_key, classification=classification
             )
