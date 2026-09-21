@@ -19,6 +19,8 @@ from kodezart.core.errors import (
     TrackerProtocolError,
     TrackerUnavailableError,
 )
+from kodezart.domain import fire_spec
+from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import (
     FireSpecEntryError,
@@ -896,6 +898,66 @@ async def test_the_step_returns_no_update_into_graph_state() -> None:
     assert update == {}
     # Non-vacuous: the pass did answer, and the answer is on the tracker.
     assert [comment for comment in port.comments if is_record(comment)]
+
+
+async def test_the_question_step_mints_a_pinned_answer_identity_and_no_criterion_mint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The step addresses questions, never criteria (KOD-639).
+
+    The subject and its roster are captured first, through the reader that
+    legitimately mints criterion identities.  Only then is
+    ``fire_spec.criterion_ref`` replaced by a sentinel, so anything the step
+    itself reaches there raises.  ``AssertionError`` is deliberate: it is not
+    one of the failures the step converts into an unrecorded-answer outcome,
+    so a reached mint cannot be swallowed into a returned state key.
+    """
+    port = variant(FakeTrackerPort)
+    executor = NativeExecutor([])
+    executor.question_answers = [{"rulings": [ANSWER]}]
+    git = FakeGitService(remote_branch_shas={"main": "b" * 40})
+    workspace = FakeWorkspaceProvider(git=git)
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port),
+        executor=executor,
+        git=git,
+        workspace=workspace,
+    )
+    source = TrackerCriteria(tracker=port)
+    spec = await source.read_spec(issue_key=SUBJECT)
+    current = await source.read_current(spec=spec, held=None)
+    _, config = prepare(fire)
+
+    def _reached(key: str) -> None:
+        raise AssertionError(f"a criterion identity was minted for {key!r}")
+
+    monkeypatch.setattr(fire_spec, "criterion_ref", _reached)
+
+    update = await rule_open_questions(
+        {
+            "fire_spec": spec,
+            "criterion_set": current,
+            "work_base_ref": "main",
+            "repo_visibility": RepoVisibility.PUBLIC,
+        },
+        config,
+        rulings=fire.rulings,
+    )
+
+    assert update == {}
+    # Non-vacuous: the pass answered, the answer is on the tracker, and the
+    # identity it is addressed by is the one the question mints.
+    assert [comment for comment in port.comments if is_record(comment)]
+    ((_, record),) = await RulingRecordReader(
+        tracker=port, operation=native_operation()
+    ).read_issue(issue_key=DIRECT_OWED)
+    assert record.ruling_id == mint_ruling_id(
+        issue_ref=DIRECT_OWED, question=str(ANSWER["question"])
+    )
+    # The sentinel is live, not inert: the reader that does mint one still
+    # reaches it under exactly the same patch.
+    with pytest.raises(AssertionError, match="criterion identity"):
+        await source.read_spec(issue_key=SUBJECT)
 
 
 # ---------------------------------------------------------------------------
