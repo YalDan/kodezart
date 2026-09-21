@@ -12,7 +12,9 @@ and the absence of a boolean verdict anywhere in the graded-sha partition.
 """
 
 import ast
+import dataclasses
 import importlib
+import inspect
 import pkgutil
 import re
 import tomllib
@@ -45,6 +47,7 @@ from kodezart.types.domain.run_event import (
 )
 from kodezart.types.domain.tracker import TrackerBackend
 from tests.identity_guards import construction_sites, invalid_ruling_fields
+from tests.model_members import ModelWorkspace
 
 REPO_ROOT = Path(__file__).parents[2]
 SOURCE_ROOT = REPO_ROOT / "src" / "kodezart"
@@ -185,6 +188,20 @@ def port_surface() -> frozenset[str]:
     return frozenset(name for name in dir(TrackerPort) if not name.startswith("_"))
 
 
+def workspace_handles() -> frozenset[str]:
+    """What the workspace holds: its declared fields, each a value past the port."""
+    return frozenset(field.name for field in dataclasses.fields(ModelWorkspace))
+
+
+def workspace_actions() -> frozenset[str]:
+    """What the workspace does: the methods it declares."""
+    return frozenset(
+        name
+        for name, value in vars(ModelWorkspace).items()
+        if inspect.isfunction(value) and not name.startswith("_")
+    )
+
+
 def _is_fixture(decorator) -> bool:
     target = decorator.func if isinstance(decorator, ast.Call) else decorator
     return (isinstance(target, ast.Attribute) and target.attr == "fixture") or (
@@ -223,8 +240,10 @@ def _port_analysis(source: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     The receiver's spelling is never consulted: a value is the port because a
     port-returning fixture or a port-annotated parameter handed it over, and
     it is a workspace because a fixture of this module did.  A workspace is
-    read by calling the actions it declares; the one fixture that returns the
-    port is the only place a handle is taken off it.
+    read by calling the actions it declares, its methods.  Its fields are
+    handles on what lies past the port: the one fixture that returns the port
+    is the only place a handle is taken, and it takes exactly one.  An
+    attribute the workspace declares neither way is named, never ignored.
     """
     tree = ast.parse(source)
     parents = {
@@ -329,6 +348,9 @@ def _port_analysis(source: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
         changed = origins != previous
 
     surface = port_surface()
+    handles_declared = workspace_handles()
+    actions_declared = workspace_actions()
+    workspace_type = ModelWorkspace.__name__
     attributes: set[str] = set()
     failures: list[str] = []
     handles: Counter[str] = Counter()
@@ -343,13 +365,17 @@ def _port_analysis(source: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
                 failures.append(f"{ast.unparse(node)}: not on the {PORT_TYPE} surface")
         elif origin == WORKSPACE_ORIGIN:
             enclosing = scope[-1] if scope else ""
-            if enclosing in port_fixtures:
-                handles[enclosing] += 1
-            elif not (
-                isinstance(parents.get(id(node)), ast.Call)
-                and parents[id(node)].func is node
-            ):
-                failures.append(f"{ast.unparse(node)}: reaches past the {PORT_TYPE}")
+            if node.attr in handles_declared:
+                if enclosing in port_fixtures:
+                    handles[enclosing] += 1
+                else:
+                    failures.append(
+                        f"{ast.unparse(node)}: reaches past the {PORT_TYPE}"
+                    )
+            elif node.attr not in actions_declared:
+                failures.append(
+                    f"{ast.unparse(node)}: not a member {workspace_type} declares"
+                )
     for name in sorted(port_fixtures):
         if handles[name] != 1:
             failures.append(
@@ -690,10 +716,19 @@ def test_the_spec_backend_reads_member_bodies_through_the_tracker_port_alone():
         "await handle.caller.call_tool('x')",
         "await workspace.server.list_issues()",
         "async def editing():\n    return workspace.native",
+        "await workspace.native().read_planning_issue(issue_key='k')",
+        "workspace.server()",
+        "await workspace.seed([]).native",
     ],
 )
 def test_a_reach_past_the_port_is_named_however_the_handle_is_spelled(reach):
     assert port_reaches(spec_shaped_module(reach)) != ()
+
+
+def test_an_attribute_the_workspace_does_not_declare_is_named_not_ignored():
+    assert port_reaches(spec_shaped_module("workspace.client")) == (
+        "workspace.client: not a member ModelWorkspace declares",
+    )
 
 
 @pytest.mark.parametrize(
@@ -725,6 +760,37 @@ def test_a_port_fixture_taking_a_second_handle_off_the_workspace_is_named():
         )
         != ()
     )
+
+
+def test_an_action_called_inside_the_port_fixture_is_not_a_second_handle():
+    """A handle is a field taken off the workspace; calling an action takes none."""
+    source = spec_shaped_module("await handle.read_criteria(issue_key='k')")
+    assert (
+        port_reaches(
+            source.replace(
+                "    return workspace.tracker",
+                "    workspace.read_only()\n    return workspace.tracker",
+            )
+        )
+        == ()
+    )
+
+
+def test_a_port_fixture_taking_no_handle_off_the_workspace_is_named():
+    source = spec_shaped_module("await handle.read_criteria(issue_key='k')")
+    assert port_reaches(
+        source.replace("    return workspace.tracker", "    return None")
+    ) == ("handle: takes 0 handles off the workspace, not one",)
+
+
+def test_the_workspace_declares_the_port_as_a_field_and_its_reads_as_methods():
+    """The classifier reads the workspace's own declaration, not a transcript."""
+    handles = workspace_handles()
+    actions = workspace_actions()
+    assert "tracker" in handles
+    assert actions
+    assert actions.isdisjoint(handles)
+    assert not any(name.startswith("_") for name in actions)
 
 
 @pytest.mark.parametrize("spelling", ["tracker", "anything", "vendor"])
