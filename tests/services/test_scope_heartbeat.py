@@ -275,7 +275,11 @@ async def test_a_run_that_stopped_short_frees_the_scope_for_the_next_tick(
     """
     port = board(first=APPROVED)
     queue = FakeJobQueue()
-    beat = heartbeat(port, queue)
+    # The roster this reading answers with IS at rest, so the empty-roster
+    # rule cannot explain the submission and only the ending's own outcome
+    # can: latching on any ending at all would rest a scope whose walk died
+    # over an all-done board, and nothing would ever retry it.
+    beat = heartbeat(port, queue, readings=Readings(**{FIRST.key: ("A",)}))
 
     (submitted,) = (await beat.tick()).entries
     queue.mark(submitted.job_id, JobState.TERMINAL, outcome=outcome)
@@ -574,10 +578,18 @@ async def test_a_restarted_process_submits_on_its_first_tick() -> None:
     """
     port = board(first=APPROVED)
     queue = FakeJobQueue()
+    # Both instances read a roster at rest and the first job ends converged,
+    # so a memory shared between them would latch that ending and answer
+    # CONVERGED: what makes the restart submit is that it remembers nothing.
+    readings = Readings(**{FIRST.key: ("A",)})
 
-    (submitted,) = (await heartbeat(port, queue).tick()).entries
-    queue.mark(submitted.job_id, JobState.TERMINAL)
-    restarted = await heartbeat(port, queue).tick()
+    (submitted,) = (await heartbeat(port, queue, readings=readings).tick()).entries
+    queue.mark(
+        submitted.job_id,
+        JobState.TERMINAL,
+        outcome=WorkflowOutcome.scope_converged,
+    )
+    restarted = await heartbeat(port, queue, readings=readings).tick()
 
     assert outcomes(restarted) == [(FIRST, HeartbeatOutcome.SUBMITTED)]
     assert restarted.entries[0].job_id != submitted.job_id
