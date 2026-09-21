@@ -210,6 +210,23 @@ def _rooted(origin: str) -> bool:
     return any(origin == root or origin.startswith(f"{root}.") for root in FORM_ROOTS)
 
 
+def _in_source_order(tree: ast.Module) -> list[ast.stmt]:
+    """Every statement of the module, nested ones included, in source order.
+
+    The walk the parser's own helper does is breadth-first: it yields every
+    module-body statement before any statement nested in a ``try``, an
+    ``if`` or a function.  Reading bindings in that order reads an alias
+    assignment before the wrapped import it copies from, which is the one
+    shape the alias arms exist for, so the statements are sorted by where
+    they are written instead.  Bounded by the parse: the module has finitely
+    many statements and each is visited once.
+    """
+    return sorted(
+        (node for node in ast.walk(tree) if isinstance(node, ast.stmt)),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+
+
 def form_bindings(tree: ast.Module) -> dict[str, str]:
     """Local name -> the dotted origin the module bound it to.
 
@@ -223,19 +240,23 @@ def form_bindings(tree: ast.Module) -> dict[str, str]:
     An import is read wherever it sits.  One written inside the function
     that calls the form binds the name for that call, and one wrapped in a
     ``try`` or an ``if`` at module level binds it too; a module that imports
-    pytest nowhere else would otherwise resolve none of its own calls.  An
+    the root nowhere else would otherwise resolve none of its own calls.  An
     alias assignment is read at module level only, which is the blind spot
     the resolver states.
 
-    One forward pass is the whole semantics: a name is bound before it is
-    read, so the alias an assignment copies is already bound when that
-    assignment is reached, and a name bound again replaces the binding it
-    had.  The reading is not position-aware, so a name bound twice is read
-    everywhere as its last binding.
+    One forward pass in source order is the whole semantics: a binding is
+    read before anything written below it, so the alias an assignment copies
+    is already bound when that assignment is reached however the import it
+    came from was wrapped, and a name bound again replaces the binding it
+    had.  Source order, not scope: a name bound at module level and bound
+    again lower down inside a function is read everywhere as the lower
+    binding, so a module that spells one form at the top and rebinds the
+    same name to another below reports only the second.  A star import
+    binds nothing, and the roster states that.
     """
     bindings: dict[str, str] = {}
     outer = {id(statement) for statement in tree.body}
-    for statement in ast.walk(tree):
+    for statement in _in_source_order(tree):
         if isinstance(statement, ast.Import):
             for alias in statement.names:
                 if _rooted(alias.name):
@@ -244,6 +265,8 @@ def form_bindings(tree: ast.Module) -> dict[str, str]:
             origin = statement.module or ""
             if _rooted(origin):
                 for alias in statement.names:
+                    if alias.name == "*":
+                        continue
                     bindings[alias.asname or alias.name] = f"{origin}.{alias.name}"
         elif isinstance(statement, ast.Assign) and id(statement) in outer:
             copied = _through(dotted(statement.value), bindings)
