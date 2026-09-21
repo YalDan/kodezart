@@ -63,6 +63,7 @@ class Fixture:
         return ScopeUnionCoordinator(
             scope_kind=PROJECT.kind,
             tracker=self.tracker,
+            refs=self.tracker,
             git=self.git,
             runner=runner
             or SubprocessCheckChainRunner(

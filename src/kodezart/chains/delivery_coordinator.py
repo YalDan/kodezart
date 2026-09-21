@@ -3,12 +3,18 @@
 Membership comes from the coherent scope facts. The existing topology policy
 orders those participants; approval, criterion gaps and live blockers decide
 future dispatch, not whether a retained branch belongs in this measurement.
-The consumer holds tracker, Git and check-runner ports without forge or
+The consumer holds the scope's facts, the narrow ref-reading role that answers
+which branch a lane delivers, Git and the check-chain runner, without forge or
 lane-delivery authority. Composition changes only a disposable scratch tree.
 """
 
 from kodezart.config.app import AppConfig
-from kodezart.core.protocols import CheckChainRunner, GitService, TrackerPort
+from kodezart.core.protocols import (
+    CheckChainRunner,
+    GitService,
+    TrackerPort,
+    WorkRefReader,
+)
 from kodezart.domain.errors import UnionHeadReadError
 from kodezart.domain.issue_tree import RECORD_KINDS
 from kodezart.domain.topology import plan_topology
@@ -34,6 +40,7 @@ class ScopeUnionCoordinator:
         *,
         scope_kind: ScopeKind,
         tracker: TrackerPort,
+        refs: WorkRefReader,
         git: GitService,
         runner: CheckChainRunner,
         context: UnionTickContext,
@@ -42,6 +49,10 @@ class ScopeUnionCoordinator:
         committer_email: str,
     ) -> None:
         self._tracker = tracker
+        # Required and undefaulted: the port satisfies the role structurally,
+        # so a default would hand a caller the carrier that answers nothing
+        # about a scope lane without anybody choosing it.
+        self._refs: WorkRefReader = refs
         self._scope = ScopeRef(kind=scope_kind, key=context.scope_key)
         self._tick = UnionTick(
             composition=UnionComposition(
@@ -103,10 +114,15 @@ class ScopeUnionCoordinator:
         return tuple(roster)
 
     async def _lane_branch(self, *, issue_key: str) -> UnionLaneBranch:
-        """The one deliverable ref the lane recorded, or a typed refusal."""
+        """The one deliverable ref the lane recorded, or a typed refusal.
+
+        Asked of the narrow ref-reading role and not of the wider carrier: on
+        the scope path the branch a lane delivers is written on that lane's own
+        run-state record, and the role is what reads it there (KOD-842).
+        """
         deliverables = [
             ref
-            for ref in await self._tracker.work_refs(issue_key=issue_key)
+            for ref in await self._refs.work_refs(issue_key=issue_key)
             if ref.role is WorkRefRole.DELIVERABLE
         ]
         match deliverables:
