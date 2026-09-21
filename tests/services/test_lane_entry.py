@@ -182,11 +182,17 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
     # branch the LOOP role resolves, so the deliverable branch is left where
     # its base is by the reader never asking about it.
     assert git.calls == [("remote_branch_sha", "/clone", REMOTE, LOOP)]
-    resolved = recorded_commit(record=stored, branches=recorded_branches(record=stored))
-    assert resolved.sha == BEST_COMMIT
-    assert resolved.sha not in (stored.head_sha, REMOTE_HEAD)
+    # The domain function is called once, for the expected value only: the
+    # record it answers over is the one this test built, while the reader
+    # answered over the one it parsed back out of the comment, so every
+    # assertion below is on the reader's output and none restates the
+    # function beside itself.
+    expected = recorded_commit(
+        record=stored, branches=recorded_branches(record=stored)
+    ).sha
     differs = [item for item in logs if item["event"] == "lane_record_head_differs"]
     assert len(differs) == 1
+    assert differs[0]["recorded_head"] == expected
     assert differs[0]["recorded_head"] == BEST_COMMIT
     assert differs[0]["remote_head"] == REMOTE_HEAD
     # And the commit the reader reports is neither the base tip the
