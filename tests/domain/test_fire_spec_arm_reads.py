@@ -20,9 +20,12 @@ renders nothing.  Those positions are counted apart and pinned exactly.
 
 Stated blind spots: scopes are module-wide, so a word bound to a spec
 anywhere in a module is a spec wherever that module reads it; a tuple-unpack
-target and a starred argument bind nothing; and a call reached through a
-receiver that spells no module is resolved to every method of that name, which
-over-includes on the red side.
+target and a starred argument bind nothing; a spec handed to a lambda's
+parameter — inline, bound by an assignment, or handed as a sort key — or bound
+into a ``functools.partial`` lands on no parameter, because only a ``def`` is
+a definition to the walk that follows a handed value; and a call reached
+through a receiver that spells no module is resolved to every method of that
+name, which over-includes on the red side.
 
 A reflective read is not a text read to this walk: ``getattr(spec, "body")``,
 ``spec.model_dump()["body"]`` and ``repr(spec)`` report nothing, because the
