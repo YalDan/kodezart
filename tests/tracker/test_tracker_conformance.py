@@ -155,38 +155,47 @@ def aliasing_writes(
     return observed_writes(aliasing_tracker, server)
 
 
+async def queue_aliasing_port(
+    implementation: str,
+    server: FakeLinearMcpServer,
+    clock: FixtureClock,
+    *,
+    member: str,
+) -> TrackerPort:
+    """One implementation, over a workspace whose queue *member* spells approval.
+
+    The admission vocabulary's approved member and the named issue-queue
+    member resolve to the SAME tracker label, which is the only shape in which
+    a queue-state write can name the approver's member at all. The admission
+    mapping is what moves, because the queue mapping is the fixture's constant
+    and a workspace that changed both would not say which of the two the rule
+    is about.
+
+    Stated as a function because *member* is what a case varies: whichever
+    queue member a workspace dials the approval label onto is the member whose
+    write is refused, and a case that could only ever dial ``approved`` could
+    not tell a port refusing by configured label from one refusing by the
+    enum member's own name.
+    """
+    factory = TRACKER_IMPLEMENTATIONS[implementation]
+    port = factory(
+        TrackerWorkspace(
+            server=server,
+            clock=clock,
+            scope_labels={ScopeLabel.APPROVED.value: QUEUE_STATE_LABELS[member]},
+        ),
+    )
+    return await port if isawaitable(port) else port
+
+
 @pytest.fixture(params=sorted(TRACKER_IMPLEMENTATIONS))
 async def queue_aliasing_tracker(
     request: pytest.FixtureRequest,
     server: FakeLinearMcpServer,
     clock: FixtureClock,
 ) -> TrackerPort:
-    """Every implementation, over a workspace whose queue spells approval.
-
-    The admission vocabulary's approved member and the issue queue's own
-    approved member resolve to the SAME tracker label here, which is the only
-    shape in which a queue-state write can name the approver's member at all.
-    The admission mapping is what moves, because the queue mapping is the
-    fixture's constant and a workspace that changed both would not say which
-    of the two the rule is about.
-    """
-    factory = TRACKER_IMPLEMENTATIONS[request.param]
-    port = factory(
-        TrackerWorkspace(
-            server=server,
-            clock=clock,
-            scope_labels={ScopeLabel.APPROVED.value: QUEUE_STATE_LABELS["approved"]},
-        ),
-    )
-    return await port if isawaitable(port) else port
-
-
-@pytest.fixture
-def queue_aliasing_writes(
-    queue_aliasing_tracker: TrackerPort, server: FakeLinearMcpServer
-) -> Callable[[], tuple[object, ...]]:
-    """Mutations made against the queue-aliased workspace, by either arm."""
-    return observed_writes(queue_aliasing_tracker, server)
+    """Every implementation, over a workspace whose queue spells approval."""
+    return await queue_aliasing_port(request.param, server, clock, member="approved")
 
 
 #: Holders are shaped as the identities the contract names: a lease is held
@@ -2570,39 +2579,70 @@ class TestApprovalLabelWrites:
 
         assert "criterion" in updated.issue_labels
 
+    @pytest.mark.parametrize(
+        ("dialled_member", "written_state", "subject", "resting"),
+        [
+            (
+                "approved",
+                QueueState.APPROVED,
+                ASSET_ISSUE,
+                frozenset({QueueState.DONE}),
+            ),
+            (
+                "done",
+                QueueState.DONE,
+                CLAIMED_ISSUE,
+                frozenset({QueueState.APPROVED}),
+            ),
+        ],
+        ids=["approved", "done"],
+    )
+    @pytest.mark.parametrize("implementation", sorted(TRACKER_IMPLEMENTATIONS))
     async def test_a_queue_state_write_naming_approval_is_refused_before_any_request(
         self,
-        queue_aliasing_tracker: TrackerPort,
-        queue_aliasing_writes: Callable[[], tuple[object, ...]],
+        implementation: str,
+        dialled_member: str,
+        written_state: QueueState,
+        subject: str,
+        resting: frozenset[QueueState],
         server: FakeLinearMcpServer,
+        clock: FixtureClock,
     ) -> None:
         """The queue vocabulary cannot express an approval either.
+
+        Which write is refused follows the label the operation loaded, not the
+        name of the queue member: the second arm dials the approval label onto
+        ``done``, and there it is the DONE write that is refused while an
+        APPROVED write is an ordinary move. A port that read the member's own
+        name instead would refuse the wrong one of the two.
 
         The subject is an issue in another queue member, so the write is a real
         move: a subject already carrying the approved label would return
         unchanged before any refusal could be asked for, and moving it out of
         that member first would itself revoke the approval under this mapping.
         """
-        before = await queue_aliasing_tracker.read_issue(issue_key=ASSET_ISSUE)
-        labels = list(server.issues[ASSET_ISSUE].labels)
-        written = queue_aliasing_writes()
+        port = await queue_aliasing_port(
+            implementation, server, clock, member=dialled_member
+        )
+        writes = observed_writes(port, server)
+        before = await port.read_issue(issue_key=subject)
+        labels = list(server.issues[subject].labels)
+        written = writes()
         asked = len(server.calls)
 
         with pytest.raises(ApprovalLabelWriteError) as refused:
-            await queue_aliasing_tracker.set_queue_state(
-                issue_key=ASSET_ISSUE, state=QueueState.APPROVED
-            )
+            await port.set_queue_state(issue_key=subject, state=written_state)
 
         assert len(server.calls) == asked
         assert (refused.value.issue_key, refused.value.classification) == (
-            ASSET_ISSUE,
-            QueueState.APPROVED.value,
+            subject,
+            written_state.value,
         )
-        after = await queue_aliasing_tracker.read_issue(issue_key=ASSET_ISSUE)
+        after = await port.read_issue(issue_key=subject)
         assert after.issue_labels == before.issue_labels
-        assert after.queue_states == before.queue_states == frozenset({QueueState.DONE})
-        assert queue_aliasing_writes() == written
-        assert server.issues[ASSET_ISSUE].labels == labels
+        assert after.queue_states == before.queue_states == resting
+        assert writes() == written
+        assert server.issues[subject].labels == labels
 
     async def test_a_queue_state_that_is_not_the_approval_member_still_writes(
         self,
