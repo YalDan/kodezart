@@ -9,6 +9,7 @@ for it.
 
 import inspect
 import re
+from unittest.mock import Mock
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
@@ -31,6 +32,7 @@ from kodezart.chains.remediation import RemediationChain
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.protocols import QualityGate
 from kodezart.domain.errors import (
+    EmptyFireCriteriaError,
     FireSpecEntryError,
     InvalidFireCriterionError,
     LaneEntryError,
@@ -42,6 +44,7 @@ from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
+from kodezart.services.scope_membership import read_scope_members
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     BRANCH_NAME_SCHEMA,
@@ -717,6 +720,174 @@ async def test_a_criterion_the_fire_does_not_owe_is_not_revalidated() -> None:
     owed = await stage.read_owed_criteria(issue_key=SUBJECT)
 
     assert set(owed) == {DIRECT_OWED, NESTED_OWED, DIRECT_OWED_TOO}
+
+
+def nested_only_board(*, nested: bool = True) -> FakeTrackerPort:
+    """The subject with no criterion of its own and one deliverable child.
+
+    With *nested*, one criterion sits under that child and nowhere else —
+    the shape the subtree extent is about, which this module's main board
+    does not isolate because it also carries direct criterion children.
+    Without it, the subtree holds no criterion at all.
+    """
+    issues = [
+        make_tracker_issue(
+            SUBJECT, issue_labels=frozenset({STAGE_KEY}), body="the subject's own text"
+        ),
+        make_tracker_issue(DELIVERABLE_CHILD, parent_key=SUBJECT),
+    ]
+    if nested:
+        issues.append(
+            make_tracker_issue(
+                NESTED_OWED,
+                parent_key=DELIVERABLE_CHILD,
+                issue_labels=frozenset({"criterion"}),
+                body=criterion_body(NESTED_OWED),
+            )
+        )
+    return board(issues)
+
+
+def unlisted_spec() -> TrackerSpec:
+    """A captured subject whose admission read named no direct criterion.
+
+    Built by hand, the way ``test_a_subtree_holding_no_criterion_has_nothing
+    _to_deliver`` builds one: the admission read lists the subject's direct
+    family and refuses an empty one, so a subtree reading is reached with
+    the spec that read would have captured had it admitted the subject.
+    """
+    return TrackerSpec(
+        subject=SUBJECT,
+        body="the subject's own text",
+        criteria=(),
+        read_at_version="1",
+    )
+
+
+async def test_a_nested_only_owner_reads_non_empty_and_is_not_refused():
+    """One criterion under a deliverable child is the owner's obligation.
+
+    The admission read — ``read_fire_spec`` through
+    ``tracker_spec_from_issues`` — lists the DIRECT family and refuses this
+    board at this head; that read is unchanged and is not this case's
+    subject.  What is asserted here is the subtree reading, the extent
+    emptiness is measured over: it answers the nested criterion and refuses
+    nothing.  Admitting such an owner at the fire entry is a production
+    decision no test here takes.
+    """
+    port = nested_only_board()
+
+    members = await read_scope_members(
+        tracker=port, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
+    )
+    current = await TrackerCriteria(tracker=port).read_current(spec=unlisted_spec())
+
+    assert {
+        key for key, issue in members.items() if "criterion" in issue.issue_labels
+    } == {NESTED_OWED}
+    assert [(criterion.id, criterion.text) for criterion in current.criteria] == [
+        (NESTED_OWED, check_of(NESTED_OWED))
+    ]
+    # The direct family is empty while the subtree is not, which is the
+    # whole of the difference the subtree extent turns on.
+    assert tuple(await port.read_criteria(issue_key=SUBJECT)) == ()
+
+
+@pytest.mark.parametrize("history", ["never minted", "minted then removed"])
+async def test_a_zero_criterion_subtree_is_one_successful_empty_reading(history: str):
+    """An empty subtree is an answer, and the two histories answer alike.
+
+    Asserted at ``TrackerCriteria._read_subtree_criteria``, the one surface
+    in the module that answers an empty set rather than refusing, and at
+    ``TrackerPort.read_criteria`` for each member.  Reading it through
+    ``read_scope_members`` plus a label filter would re-apply in the test
+    the production line under test, so the subtree read itself is where
+    this is asserted.  Cited and not repeated: the port-level empty read
+    over both registered tracker implementations
+    (``tests/tracker/test_criterion_reader.py``,
+    ``test_successful_empty_is_distinct_from_a_failed_parent_read``), and
+    the typed errors an unreadable or incomplete query keeps
+    (``tests/tracker/test_criterion_reader_boundary.py``, and
+    ``test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads``
+    above).
+    """
+    port = nested_only_board(nested=history == "minted then removed")
+    if history == "minted then removed":
+        del port.issues[NESTED_OWED]
+
+    source = TrackerCriteria(tracker=port)
+    subtree = await source._read_subtree_criteria(unlisted_spec())
+
+    assert subtree == {}
+    assert tuple(await port.read_criteria(issue_key=SUBJECT)) == ()
+    assert tuple(await port.read_criteria(issue_key=DELIVERABLE_CHILD)) == ()
+    # A reading spends no writes: neither history leaves a mark behind.
+    assert port.issue_writes == []
+    assert port.comment_writes == []
+    assert port.issue_creations == []
+
+
+async def test_the_actual_native_entry_refuses_a_zero_criterion_subtree_before_the_loop(
+    monkeypatch,
+):
+    """The real entry refuses an empty subtree before the loop's graph runs.
+
+    The wall the entry meets is the admission read inside ``read_fire_spec``,
+    reached from ``revalidate_criteria`` through ``read_spec``, which does
+    not convert it because ``EmptyFireCriteriaError`` is not one of the
+    transport failures that step turns into an entry error.  The loop is
+    the real one the engine composes, and its compiled graph is shown never
+    to be streamed rather than assumed so; that nothing reaches the loop
+    except through the pre-loop step is pinned by
+    ``test_the_loop_is_unreachable_without_the_pre_loop_step``.
+    """
+    port = nested_only_board(nested=False)
+    executor = FakeAgentExecutor(events=[])
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+    )
+    loop = fire.implementation._quality_gate
+    assert isinstance(loop, RalphLoop)
+    dispatch = Mock(side_effect=AssertionError("the loop must not start"))
+    monkeypatch.setattr(loop._compiled, "astream", dispatch)
+
+    with pytest.raises(EmptyFireCriteriaError) as caught:
+        await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+    assert caught.value.issue_key == SUBJECT
+    assert executor.calls == []
+    dispatch.assert_not_called()
+
+
+async def test_the_pre_loop_step_refuses_an_empty_owed_reading_by_name():
+    """The owed reading is the wall standing behind the admission read.
+
+    The three walls the real entry meets, in the order it meets them: the
+    admission read over the direct family, pinned by the case above; the
+    owed reading in ``TrackerCriteria.read_current``, pinned here by
+    calling the step with a spec already captured, and whose deliver-only
+    twin is pinned by
+    ``test_a_subtree_holding_no_criterion_has_nothing_to_deliver``; and the
+    loop's own arity floor on ``acceptance_criteria``, pinned by
+    ``tests/tracker/test_empty_fire_entry.py``'s
+    ``test_successful_empty_membership_cannot_dispatch_the_actual_loop``,
+    with the floor on ``TrackerCriterionSet.criteria`` beneath it.
+    """
+    state = {
+        "issue_key": SUBJECT,
+        "fire_spec": unlisted_spec(),
+        "lane_entry": NewLane(),
+        "criterion_set": None,
+    }
+
+    source = TrackerCriteria(tracker=nested_only_board(nested=False))
+
+    with pytest.raises(
+        FireSpecEntryError, match="no Todo criteria to execute"
+    ) as caught:
+        await revalidate_criteria(state, {}, source=source)
+
+    assert caught.value.issue_key == SUBJECT
 
 
 OWED_KEYS = (DIRECT_OWED, DIRECT_OWED_TOO, NESTED_OWED)
