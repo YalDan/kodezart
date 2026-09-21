@@ -204,27 +204,42 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
     assert entry.deliverable_branch != entry.loop_branch
 
 
-async def test_associations_that_settle_nothing_refuse_before_the_remote_read():
+@pytest.mark.parametrize(
+    "settles_nothing,reason",
+    [
+        pytest.param(
+            {
+                "extra": (
+                    BranchAssociation(
+                        branch=LOOP,
+                        role=BranchRole.LOOP,
+                        derived_from="another-deliverable",
+                        run_id="second-job",
+                    ),
+                )
+            },
+            "deliverable branches, not one",
+            id="two-deliverables-for-one-branch",
+        ),
+        pytest.param({"rows": ()}, "names no commit act", id="no-commit-act"),
+    ],
+)
+async def test_associations_that_settle_nothing_refuse_before_the_remote_read(
+    settles_nothing, reason
+):
     """A fact of the record alone is asked before the git call it precedes.
 
     A record naming two deliverables for its branch cannot be entered however
-    the remote answers, so the reader refuses without asking it: the git
-    double records no call at all.
+    the remote answers, and neither can one naming no commit act: both are
+    settled from the record alone, so the reader refuses without asking the
+    remote anything, and the git double records no call at all. Asserting the
+    empty call list rather than the refusal alone is what pins the order.
     """
-    damaged = record(
-        extra=(
-            BranchAssociation(
-                branch=LOOP,
-                role=BranchRole.LOOP,
-                derived_from="another-deliverable",
-                run_id="second-job",
-            ),
-        )
-    )
+    damaged = record(**settles_nothing)
     port = await board(damaged)
     git = FakeGitService(remote_branch_shas={LOOP: REMOTE_HEAD})
 
-    with pytest.raises(LaneEntryError, match="deliverable branches, not one"):
+    with pytest.raises(LaneEntryError, match=reason):
         await reader(port, git).read(
             issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
         )
