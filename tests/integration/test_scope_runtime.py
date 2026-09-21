@@ -1541,7 +1541,10 @@ class WalkGit(FakeGitService):
 
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
-        return self.repos.current.head
+        # The commit a tree was cut at, where one was recorded for that path:
+        # a tree standing at a base is not standing at the branch the lane
+        # last committed on.
+        return self.checkouts.get(cwd, self.repos.current.head)
 
     async def remote_branch_sha(self, cwd, remote, branch):
         self.calls.append(("remote_branch_sha", cwd, remote, branch))

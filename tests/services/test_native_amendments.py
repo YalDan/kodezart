@@ -50,7 +50,12 @@ from tests.chains.test_native_fire import (
 )
 from tests.chains.test_organize import result
 from tests.domain.test_rulings import ruling_data
-from tests.fakes import SUPPRESS_ALL_SKILLS, FakeRepoCache, PassThroughGate
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    FakeRepoCache,
+    PassThroughGate,
+    unsatisfied_base_answer,
+)
 from tests.lane_fixture import RecordingAfterPublish
 from tests.prompts.test_prompt_wiring import load_registry
 
@@ -171,6 +176,11 @@ class Executor:
             }
         elif title == "AcceptanceCriteriaOutput":
             payload = {}
+        elif title == "BaseCheckOutput":
+            # The base reading is its own session with its own contract, so it
+            # gets its own branch: routed to the writer's default below it
+            # would both answer the wrong shape and write into the base tree.
+            payload = unsatisfied_base_answer(kwargs["prompt"])
         elif title == "WriteBackFinding":
             payload = {
                 "verdict": "holds",

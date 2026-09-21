@@ -423,6 +423,19 @@ not passed with one fixed reason and each cross-off carries
 `CrossOffState.undemonstrated` instead of a pass or a fail. Nothing reaches the
 tracker for such an attempt.
 
+A native evaluation whose grading did stand then runs each criterion it passed
+through that criterion's own check again, in a further tree the loop owns at the
+commit the recorded base resolves to. A check that already passes there passes
+without any of the work, so the head's pass is a reading of the base rather than
+of the branch, and that criterion carries `CrossOffState.undemonstrated` as well.
+A reading that cannot be taken at all — a base ref that names no commit, a tree
+that is refused or is not that commit, an answer nothing can be read from — claims
+no pass either, and the attempt continues with a row in the run's log naming the
+base ref and which criteria went unread. A criterion the attempt failed is never
+read at the base: a fail is unproven already. Nothing reaches the tracker for such
+a criterion, so it is not moved to the `done` stage, and the owning issue's
+finished state is the rollup over its criterion sub-issues as it always was.
+
 `render_lane_record` places one readable JSON value under that marker, followed
 by fixed re-entry guidance. The record preserves three-state remote head facts,
 ordered `LaneCommit` rows — one row per commit act, not one per loop iteration:
@@ -1607,7 +1620,9 @@ does not state is not pinned at all: it is raised on the issue whose text raised
 the question, inside the same leased and verified window a pinned answer is
 written in, and the fire then ends `ruling_unrecorded`. Unlike the retired stack
 this one has a consumer: the loop's own
-writer contract renders the pinned answers it reads back.
+writer contract renders the pinned answers it reads back. The evaluation step
+reads the same criteria at the lane's base under the `base_check` role, in the
+tree it owns there.
 
 The scheduled pass gate keeps its vendor timestamp window for reply and
 mention scanning. Atomic issue-write responses can identify their own

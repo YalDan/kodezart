@@ -14,7 +14,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from kodezart.chains.criteria import current_native_criteria, held_roster
 from kodezart.core.constants import EVAL_PERMISSION_MODE
-from kodezart.core.errors import soft_failure
+from kodezart.core.errors import NoStructuredOutputError, soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.node_sessions import NodeSessionObserver
 from kodezart.core.protocols import (
@@ -36,12 +36,19 @@ from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.amendment import NativeWriteRefusalError, repeated_upheld
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criterion_cross_off import (
+    base_answers,
     cross_offs_for,
+    demonstrated_criteria,
     evaluation_observation,
     iteration_output,
+    passed_ids,
     undemonstrated_output,
 )
-from kodezart.domain.errors import GitSourceReadError
+from kodezart.domain.errors import (
+    BaseReadingUnavailableError,
+    GitSourceReadError,
+    WorkspaceError,
+)
 from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.fire_spec import body_digest
 from kodezart.domain.lapse import GradedState, HeldStanding, held_standing
@@ -52,14 +59,17 @@ from kodezart.domain.prompt_variables import (
 )
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
+from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.git_observations import read_workspace_head
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
+    BASE_CHECK_SCHEMA,
     AcceptanceCriteriaOutput,
     AgentEvent,
+    BaseCheckOutput,
     NativeAmendmentEvent,
     ResultEvent,
     WorkflowIterationEvent,
@@ -67,6 +77,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criteria import (
+    CriterionId,
     ExecutionCriterion,
     FanInReport,
     TrackerCriterionSet,
@@ -630,7 +641,10 @@ class RalphLoop:
         graded_in: str = ""
         # Whether the tree the standing grade was read from was the one the
         # graded sha names. The authored arm has no sha to stand for, so its
-        # readings are of the ref it asked for and nothing else is claimed.
+        # readings are of the ref it asked for and nothing else is claimed —
+        # and for the same reason it takes no reading at the lane's base: it
+        # owns no tree, stamps no sha and writes no cross-off, so there is no
+        # claim about a branch for a base reading to qualify.
         demonstrated = True
 
         async def evaluate() -> IterationGrade:
@@ -851,6 +865,33 @@ class RalphLoop:
             fan_in=fan_in,
         )
         next_standing: tuple[CriterionCrossOff, ...] = ()
+        # The base reading is taken once the grade has settled, and only for
+        # the criteria this attempt read as passing: a fail claims nothing
+        # about the branch, so it needs no base reading to be unproven. Here
+        # rather than inside the dispatch above because the base tree does not
+        # move between fan-in attempts and the passing set is only known once
+        # the grade stands — one base session per iteration at most, which
+        # ``max_iterations`` already bounds. A criterion the reading carried
+        # or found lapsed was not graded by this attempt, so it is not read
+        # at the base either: it is withheld from every session of this
+        # iteration, and its cross-off is decided by the reading alone.
+        at_base: Mapping[CriterionId, bool] = {}
+        if native_ref is not None and demonstrated:
+            passing = passed_ids(grade.results) - {
+                CriterionId(str(criterion)) for criterion in reading
+            }
+            if passing:
+                at_base = await self._base_reading(
+                    ctx=ctx,
+                    cwd=cwd,
+                    criteria=[
+                        criterion
+                        for criterion in dispatched
+                        if criterion.id in passing
+                    ],
+                    graded_sha=native_ref,
+                    iteration=state["iteration"],
+                )
         if native_ref is not None:
             # Before the event, so a consumer that sees iteration n can read
             # the board and find iteration n's cross-offs already on it. The
@@ -863,6 +904,7 @@ class RalphLoop:
                 graded_sha=native_ref,
                 graded_in=graded_in,
                 demonstrated=demonstrated,
+                at_base=at_base,
                 iteration=state["iteration"],
                 standing=prior,
                 reading=reading,
@@ -930,6 +972,7 @@ class RalphLoop:
         graded_sha: str,
         graded_in: str,
         demonstrated: bool,
+        at_base: Mapping[CriterionId, bool],
         iteration: int,
         standing: Sequence[CriterionCrossOff],
         reading: Mapping[CriterionRef, GradedState],
@@ -969,7 +1012,11 @@ class RalphLoop:
             observation=evaluation_observation(
                 session_id=graded_in, iteration=iteration
             ),
-            demonstrated=demonstrated,
+            demonstrated=demonstrated_criteria(
+                results=grade.results,
+                graded_tree_stood=demonstrated,
+                at_base=at_base,
+            ),
             standing=standing,
             reading=reading,
         )
@@ -1015,6 +1062,136 @@ class RalphLoop:
                 }
             )
         }
+
+    async def _base_reading(
+        self,
+        *,
+        ctx: RalphLoopContext,
+        cwd: str,
+        criteria: Sequence[ExecutionCriterion],
+        graded_sha: str,
+        iteration: int,
+    ) -> Mapping[CriterionId, bool]:
+        """What the lane's base already satisfies of *criteria*, if anything.
+
+        Resolves rather than raises: a reading that could not be taken is the
+        empty mapping, which the fold reads as no reading of any of these
+        criteria and therefore as no pass of the branch. An absent id and an
+        id answered ``False`` are two different facts to the fold, so this
+        returns a mapping and never a verdict of its own.
+
+        Every row here goes to the run's log and nowhere else: the session's
+        ``command`` is its own text, and no surface of this run carries it.
+        """
+        try:
+            base_sha, output = await self._checks_at_base(
+                ctx=ctx, cwd=cwd, criteria=criteria
+            )
+        except BaseReadingUnavailableError as refusal:
+            await self._log.awarning(
+                "base_reading_unavailable",
+                site="ralph_evaluator",
+                iteration=iteration,
+                base_ref=refusal.base_ref,
+                reason=refusal.reason,
+                criterion_ids=[criterion.id for criterion in criteria],
+            )
+            return {}
+        answers = base_answers(output)
+        for result in output.base_check_results:
+            # Keyed to the criterion, because the fact is the criterion's: a
+            # row of sorted ids would have to be taken apart again by anything
+            # that wanted to say which criterion this happened to.
+            if answers.get(result.criterion_id) is True:
+                await self._log.awarning(
+                    "criterion_satisfied_at_base",
+                    criterion=result.criterion_id,
+                    graded_sha=graded_sha,
+                    base_sha=base_sha,
+                    command=result.command,
+                )
+        return answers
+
+    async def _checks_at_base(
+        self,
+        *,
+        ctx: RalphLoopContext,
+        cwd: str,
+        criteria: Sequence[ExecutionCriterion],
+    ) -> tuple[str, BaseCheckOutput]:
+        """Run *criteria*'s own checks in a tree this loop owns at the base.
+
+        The recorded base's ref resolved to a commit, never the name: a tree
+        acquired at a name follows the name, and what this reads has to be the
+        commit the base resolved to. Acquired off the clone rather than off the
+        grading tree, so the base tree's lifetime does not nest inside another
+        worktree's, and only after the grading tree was released, so the lane
+        owns one tree at a time.
+
+        The tree is asked what the grading tree is asked — its head and whether
+        it holds changes — before the session and again after it, because a
+        tree that moved under the session answers for no commit.
+        """
+        try:
+            base_sha = await self._resolve(cwd=cwd, ref=ctx.base_branch)
+        except NativeWriteRefusalError as unreadable:
+            raise BaseReadingUnavailableError(
+                base_ref=ctx.base_branch,
+                reason="the lane's base ref cannot be read",
+            ) from unreadable
+        prompt = self._prompts.template_for(PromptKey.BASE_CHECK).render(
+            {
+                **execution_criteria_variables(criteria),
+                "base_sha": base_sha,
+            },
+        )
+        try:
+            async with owned_workspace(
+                self._evaluation_workspace(),
+                ref=base_sha,
+                repo_path=cwd,
+                cache_key=ctx.cache_key,
+            ) as base_path:
+
+                async def require_base() -> None:
+                    if await read_workspace_head(
+                        git=self._git, workspace=base_path
+                    ) != (base_sha, False):
+                        raise BaseReadingUnavailableError(
+                            base_ref=ctx.base_branch,
+                            reason="the tree is not the base commit",
+                        )
+
+                await require_base()
+                try:
+                    output = BaseCheckOutput.model_validate(
+                        await judge_in_workspace(
+                            runner=self._service,
+                            prompts=self._prompts,
+                            skills=self._skills,
+                            workspace=base_path,
+                            key=PromptKey.BASE_CHECK,
+                            prompt=prompt,
+                            output_schema=BASE_CHECK_SCHEMA,
+                            site="ralph_evaluator",
+                            session_type=SessionType.TICKET_FIRE,
+                            failure_message=(
+                                "The checks at the base produced no structured answer."
+                            ),
+                        )
+                    )
+                except (NoStructuredOutputError, ValidationError) as unreadable:
+                    raise BaseReadingUnavailableError(
+                        base_ref=ctx.base_branch,
+                        reason="the checks at the base returned no usable answer",
+                    ) from unreadable
+                await require_base()
+        except WorkspaceError as refused:
+            raise BaseReadingUnavailableError(
+                base_ref=ctx.base_branch,
+                reason="a tree at the base was refused",
+            ) from refused
+        return base_sha, output
 
     async def _resolve(self, *, cwd: str, ref: str) -> str:
         """The complete sha *ref* names in *cwd*, or this loop's own refusal.

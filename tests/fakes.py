@@ -1,6 +1,7 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
 import asyncio
+import re
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -206,6 +207,42 @@ from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
 from tests.prompt_census import configured_investigation_cap
+
+#: A ref that is already a commit rather than a name a commit is resolved from.
+_COMPLETE_SHA = re.compile(r"[0-9a-f]{40}")
+
+#: How the base-check template lists one criterion it was dispatched with.
+_DISPATCHED_ID = re.compile(r"^### (\S+)$", re.MULTILINE)
+
+
+def dispatched_ids(prompt: str) -> list[str]:
+    """Every criterion id a rendered base-check prompt lists, in order.
+
+    Read off the prompt rather than handed to a double, so an answer covers
+    exactly the roster the node dispatched: a double answering a roster it was
+    told separately could agree with nothing the node asked about.
+    """
+    return _DISPATCHED_ID.findall(prompt)
+
+
+def unsatisfied_base_answer(prompt: str) -> dict[str, object]:
+    """The base reading a double gives where a test scripted none.
+
+    Every criterion the prompt lists, reported as not satisfied at the base:
+    the answer that leaves a head pass standing, so a test about something
+    else does not silently become a test about a base reading.
+    """
+    return {
+        "baseCheckResults": [
+            {
+                "criterionId": key,
+                "command": "ran the check this criterion names, at the base",
+                "satisfiedAtBase": False,
+            }
+            for key in dispatched_ids(prompt)
+        ]
+    }
+
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
 #: The kind a fake session reports when a test does not care which kind it
@@ -492,6 +529,13 @@ class FakeGitService:
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
         self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
+        #: The commit each detached tree was checked out at, by its path.
+        #:
+        #: ``git worktree add <path> <sha>`` produces a tree standing at that
+        #: sha, so a double that answered a branch head for a detached tree
+        #: would let an arm that never reads the tree pass a test claiming it
+        #: does.  Written by the workspace double that cut the tree.
+        self.checkouts: dict[str, str] = {}
         self.has_changes_result: bool = has_changes_result
         self.has_replace_refs_result = has_replace_refs_result
         self._is_path_ignored_result: bool = is_path_ignored_result
@@ -621,7 +665,7 @@ class FakeGitService:
 
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
-        return "a" * 40
+        return self.checkouts.get(cwd, "a" * 40)
 
     async def head_commit_message(self, cwd: str) -> str:
         self.calls.append(("head_commit_message", cwd))
@@ -1011,6 +1055,16 @@ class FakeRepoCache:
 
 
 class FakeWorkspaceProvider:
+    """Hands one path back for every acquisition, one tree at a time.
+
+    ``_branches``, ``_repositories`` and the Git double's ``checkouts`` are
+    all keyed by that one path, so they hold the facts of whichever tree is
+    currently owned.  Every consumer that owns its trees sequentially reads
+    the tree it holds; a consumer that held two at once could not tell them
+    apart here, and a test about such a consumer would be asserting about
+    the wrong tree.
+    """
+
     def __init__(
         self,
         *,
@@ -1061,10 +1115,18 @@ class FakeWorkspaceProvider:
             raise WorkspaceError(self._fail_acquire)
         self._branches[self._workspace_path] = branch_name
         self._repositories[self._workspace_path] = repo_path or repo_url or ""
+        if not create_branch and _COMPLETE_SHA.fullmatch(ref) is not None:
+            # A tree cut at a commit stands at that commit, and the Git double
+            # is where every consumer reads a tree's head from.
+            self._git.checkouts[self._workspace_path] = ref
         return self._workspace_path
 
     async def release(self, workspace_path: str) -> None:
         self.calls.append(("release", workspace_path))
+        # A released tree stands at nothing: the path is handed out again, and
+        # a checkout record that outlived its tree would answer the next
+        # owner's reads with the previous one's commit.
+        self._git.checkouts.pop(workspace_path, None)
 
     async def capture(self, *, workspace_path: str, holder: str) -> WorkspaceSnapshot:
         self.calls.append(("capture", workspace_path, holder))

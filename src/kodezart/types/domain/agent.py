@@ -669,6 +669,51 @@ class AcceptanceCriteriaOutput(CamelCaseModel):
     )
 
 
+class BaseCheckResult(CamelCaseModel):
+    """One criterion's own check, run at the lane's base rather than its head.
+
+    A reading of the base, taken so a pass at the head can be told apart from
+    a check that already passed before the branch existed. ``command`` is what
+    was actually run, reported so a reader of the run's log can repeat it; it
+    is the session's own text and reaches no durable surface.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    criterion_id: CriterionId = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "The dispatched criterion's id, echoed exactly. Return one result "
+            "per dispatched id and invent none."
+        ),
+    )
+    command: str = Field(
+        min_length=1,
+        description=(
+            "The exact command you ran in this tree for this criterion's "
+            "check, or what you did in its place when it names no command."
+        ),
+    )
+    satisfied_at_base: bool = Field(
+        description=(
+            "Whether that check already passes here, where none of the work "
+            "exists. A check you could not run is not satisfied."
+        ),
+    )
+
+
+class BaseCheckOutput(CamelCaseModel):
+    """Every answer one base reading settled, for the ids it was given."""
+
+    base_check_results: list[BaseCheckResult] = Field(
+        description=(
+            "Exactly one result per dispatched criterion id, covering every "
+            "id and no others."
+        ),
+    )
+
+
 class BranchNameOutput(CamelCaseModel):
     """Agent-generated branch name slug."""
 
@@ -1222,6 +1267,8 @@ COMMIT_MESSAGE_SCHEMA: dict[str, object] = CommitMessageOutput.model_json_schema
 ACCEPTANCE_CRITERIA_SCHEMA: dict[str, object] = (
     AcceptanceCriteriaOutput.model_json_schema()
 )
+# Schema for one reading of the dispatched checks at the lane's base
+BASE_CHECK_SCHEMA: dict[str, object] = BaseCheckOutput.model_json_schema()
 # Schema for agent-generated branch name slugs
 BRANCH_NAME_SCHEMA: dict[str, object] = BranchNameOutput.model_json_schema()
 # Schema for agent-generated acceptance criteria from ticket analysis
@@ -1267,6 +1314,7 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "AMENDMENT_TEXT_SCHEMA": AMENDMENT_TEXT_SCHEMA,
     "COMMIT_MESSAGE_SCHEMA": COMMIT_MESSAGE_SCHEMA,
     "ACCEPTANCE_CRITERIA_SCHEMA": ACCEPTANCE_CRITERIA_SCHEMA,
+    "BASE_CHECK_SCHEMA": BASE_CHECK_SCHEMA,
     "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,
     "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
     "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,

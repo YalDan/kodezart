@@ -23,6 +23,7 @@ from pydantic import BaseModel, ValidationError
 from kodezart.types.domain.agent import (
     WIRE_SCHEMAS,
     AcceptanceCriteriaOutput,
+    BaseCheckOutput,
     BranchNameOutput,
     CommitMessageOutput,
     ContentAuditFinding,
@@ -80,6 +81,7 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "AMENDMENT_TEXT_SCHEMA": AmendmentTextOutput,
     "COMMIT_MESSAGE_SCHEMA": CommitMessageOutput,
     "ACCEPTANCE_CRITERIA_SCHEMA": AcceptanceCriteriaOutput,
+    "BASE_CHECK_SCHEMA": BaseCheckOutput,
     "BRANCH_NAME_SCHEMA": BranchNameOutput,
     "GENERATED_CRITERIA_SCHEMA": GeneratedCriteriaOutput,
     "CRITERIA_VALIDATION_SCHEMA": CriteriaValidationOutput,
@@ -200,6 +202,12 @@ def audit_schema_bindings(source: str, *, relative_path: str):
 
 
 AUDIT_SCHEMA_BINDINGS = [
+    (
+        "chains/ralph_loop.py",
+        ("RalphLoop", "_checks_at_base"),
+        "judge_in_workspace",
+        "BASE_CHECK_SCHEMA",
+    ),
     (
         "services/amendment_writeback.py",
         ("AmendmentWriteBack", "_author"),

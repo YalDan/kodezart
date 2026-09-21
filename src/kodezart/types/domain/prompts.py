@@ -32,6 +32,9 @@ class PromptKey(StrEnum):
     AMENDMENT_JUDGE = "amendment_judge"
     AMENDMENT_AUTHOR = "amendment_author"
     EVALUATION = "evaluation"
+    #: The same criteria' own checks, read at the lane's base instead of its
+    #: head, so a pass that predates the branch is not read as the branch's.
+    BASE_CHECK = "base_check"
     ITERATION_FEEDBACK = "iteration_feedback"
     POST_MERGE_REVIEW = "post_merge_review"
     FIX = "fix"

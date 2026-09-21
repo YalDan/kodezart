@@ -94,6 +94,7 @@ from tests.fakes import (
     make_prompt_provider,
     make_tracker_issue,
     no_delay_floor,
+    unsatisfied_base_answer,
 )
 
 #: The operation's own key for "the criteria stage finished on this issue".
@@ -1195,6 +1196,13 @@ class NativeExecutor(FakeAgentExecutor):
         #: an evaluator leaves behind, it leaves in the tree it ran in.
         self.evaluation_workspaces = []
         self.remediation_prompts = []
+        #: One scripted base reading per pass through the base-check step, and
+        #: the prompt plus the tree of each pass it opened. A pass nothing was
+        #: scripted for answers that the base satisfies none of the criteria it
+        #: was given, which is the answer that leaves a head pass standing.
+        self.base_readings = []
+        self.base_prompts = []
+        self.base_workspaces = []
         self.on_evaluation = None
         #: Called with the count of execution sessions opened so far, at the
         #: moment each one opens — the first thing an iteration does, before
@@ -1238,6 +1246,14 @@ class NativeExecutor(FakeAgentExecutor):
                 answered = self.on_evaluation(len(self.evaluation_prompts))
                 if inspect.isawaitable(answered):
                     await answered
+        elif "baseCheckResults" in properties:
+            self.base_prompts.append(kwargs["prompt"])
+            self.base_workspaces.append(kwargs.get("cwd"))
+            output = (
+                self.base_readings.pop(0)
+                if self.base_readings
+                else unsatisfied_base_answer(kwargs["prompt"])
+            )
         elif "rulings" in properties:
             self.question_prompts.append(kwargs["prompt"])
             self.question_sessions.append(kwargs)
