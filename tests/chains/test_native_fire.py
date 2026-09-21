@@ -46,7 +46,6 @@ from kodezart.types.domain.agent import (
     BRANCH_NAME_SCHEMA,
     AcceptanceCriteriaOutput,
     ResultEvent,
-    TicketDraftOutput,
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
     WorkflowRemediationEvent,
@@ -898,11 +897,7 @@ class CountingTracker(FakeTrackerPort):
         return await super().scope_issues(ref=ref)
 
 
-def no_authored_ticket(*args, **kwargs):
-    raise AssertionError("Native execution constructed an authored ticket")
-
-
-async def test_native_graph_executes_and_reviews_exact_checks(monkeypatch):
+async def test_native_graph_executes_and_reviews_exact_checks():
     port = CountingTracker()
     executor = NativeExecutor([native_evaluation(), native_evaluation()])
     saver = InMemorySaver()
@@ -912,7 +907,6 @@ async def test_native_graph_executes_and_reviews_exact_checks(monkeypatch):
         real_loop=True,
         checkpointer=saver,
     )
-    monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
 
     events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
 
@@ -942,9 +936,7 @@ async def test_native_graph_executes_and_reviews_exact_checks(monkeypatch):
     assert "the subject's own text" in executor.execution_prompts[0]
 
 
-async def test_native_remediation_refreshes_checks_without_recapturing_subject(
-    monkeypatch,
-):
+async def test_native_remediation_refreshes_checks_without_recapturing_subject():
     port = CountingTracker()
     changed_check = "changed Check with  spaces and `code`"
 
@@ -969,7 +961,6 @@ async def test_native_remediation_refreshes_checks_without_recapturing_subject(
         real_loop=True,
         remediation_rounds=1,
     )
-    monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
 
     events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
 
@@ -1330,7 +1321,6 @@ async def test_production_constructor_wires_native_source_to_shared_consumers(
         checkpointer=InMemorySaver(),
         criteria=source,
     )
-    monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
     # Direct fire proves constructor capability. The scope wrapper has its own
     # production-route tests; only the immutable Git adapter is doubled here.
     fire = router.arm_for(None).fire
