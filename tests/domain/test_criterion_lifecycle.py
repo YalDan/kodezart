@@ -1758,6 +1758,24 @@ def test_a_stale_recorded_base_lapses_the_gradings_a_live_base_leaves_counted():
     assert lapse_readings(graded=graded, implied_base=live) == {GradedState.counted}
     assert lapse_readings(graded=graded, implied_base=stale) == {GradedState.lapsed}
 
+    # EVERY criterion graded on the old base, not only the ones behind head.
+    # A moved base is the blockers moving, which says nothing about this lane's
+    # own head, so a grading taken AT head is the case this clause is most
+    # about: read the other way round, the same-sha arm answers first and such a
+    # grading stays counted on a base that has gone.
+    at_head = graded[0].evidence.graded_sha
+    assert (
+        graded_state(
+            graded_sha=at_head,
+            head_sha=at_head,
+            rederivation_class=RederivationClass.expensive,
+            exercised_paths=(EXERCISED,),
+            changeset=moved("docs/architecture.md"),
+            base_stale=True,
+        )
+        is GradedState.lapsed
+    )
+
     assert scope_base(RECORDED_BASE, live) == RECORDED_BASE.base_branch
     with pytest.raises(StaleBaseError) as caught:
         scope_base(RECORDED_BASE, stale)

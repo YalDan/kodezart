@@ -872,6 +872,15 @@ class RalphLoop:
                 # the board still shows as satisfied. The field IS the
                 # transition: a grading that lapsed in an earlier iteration is
                 # in `lapsed` and not here, so nothing is asked twice.
+                #
+                # On every reachable path the two fields hold the same thing,
+                # and handing over the whole set instead changes no outcome:
+                # a criterion whose grading lapsed leaves the roster for good,
+                # so it is never graded again and never earns a second
+                # standing. What actually keeps one question to one transition
+                # is that departure, and the occurrence marker the raise is
+                # written under. The transition field is the honest name for
+                # what this call wants, not the guard.
                 await escalator.raise_lapses(
                     lane=self._lane_binding(ctx),
                     lapsed=standing.newly_lapsed,
