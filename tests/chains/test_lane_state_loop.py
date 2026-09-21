@@ -49,6 +49,7 @@ from tests.chains.test_native_fire import (
     DIRECT_OWED,
     NATIVE_SESSION,
     OWED_KEYS,
+    RATE_LIMITED_BASE_READING,
     STAGE_KEY,
     SUBJECT,
     TRUNK_BRANCHES,
@@ -1286,6 +1287,7 @@ UNAVAILABLE_BASE = {
     "tree-not-at-base": "the tree is not the base commit",
     "no-structured-output": "the checks at the base returned no usable answer",
     "invalid-shape": "the checks at the base returned no usable answer",
+    "rate-limited": "the checks at the base returned no usable answer",
 }
 
 
@@ -1299,6 +1301,8 @@ def arm_unavailable(lane, how: str) -> None:
         move_the_base_tree(lane)
     elif how == "no-structured-output":
         lane.executor.base_readings = [None]
+    elif how == "rate-limited":
+        lane.executor.base_readings = [RATE_LIMITED_BASE_READING]
     else:
         lane.executor.base_readings = [{"notTheAgreedContract": []}]
 

@@ -46,6 +46,7 @@ from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     BRANCH_NAME_SCHEMA,
     AcceptanceCriteriaOutput,
+    RateLimitWarningEvent,
     ResultEvent,
     TicketDraftOutput,
     WorkflowCompleteEvent,
@@ -789,6 +790,11 @@ class NativeSourceReader:
 #: reader of that row can be asserted against the session the double named.
 NATIVE_SESSION = "native-session"
 
+#: Scripted into ``base_readings`` to make one base-check stream carry the
+#: provider's rate-limit rejection beside an otherwise complete answer: the
+#: session did answer, and the drain refuses the answer anyway.
+RATE_LIMITED_BASE_READING = "rate-limited-base-reading"
+
 
 class NativeExecutor(FakeAgentExecutor):
     """Only the agent boundary is scripted; all execution consumers are real."""
@@ -846,6 +852,12 @@ class NativeExecutor(FakeAgentExecutor):
                 if self.base_readings
                 else unsatisfied_base_answer(kwargs["prompt"])
             )
+            if output is RATE_LIMITED_BASE_READING:
+                # The answer the pass would otherwise have given, with the
+                # rejection in front of it in the same stream: what the drain
+                # sees is a complete structured output the provider refused.
+                output = unsatisfied_base_answer(kwargs["prompt"])
+                yield RateLimitWarningEvent(status="rejected")
         elif "rulings" in properties:
             self.question_prompts.append(kwargs["prompt"])
             self.question_sessions.append(kwargs)
