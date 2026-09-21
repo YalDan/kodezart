@@ -30,7 +30,9 @@ import pytest
 from pydantic import BaseModel, ValidationError, create_model
 
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.lapse import GradedState, graded_state
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import (
     PATH_BOUND_CLASSES,
@@ -91,6 +93,7 @@ MODEL_INVARIANTS = {
     "run event vocabulary": "kodezart.types.domain.run_event",
     "run event state table": "kodezart.types.domain.operation",
     "vendor freedom": "kodezart.types.domain.tracker",
+    "graded sha lapse reading": "kodezart.domain.lapse",
     "cross-lane pointer resolution": None,
     "model value naming": None,
 }
@@ -110,6 +113,9 @@ INVARIANTS = {
     "run event vocabulary": "test_run_event_invariant_uses_the_actual_code_backend",
     "run event state table": "test_run_event_invariant_uses_the_actual_code_backend",
     "vendor freedom": "test_the_invariant_modules_and_their_values_name_no_vendor",
+    "graded sha lapse reading": (
+        "test_a_grading_behind_head_counts_or_lapses_by_what_its_own_paths_did"
+    ),
 }
 
 
@@ -1558,3 +1564,62 @@ def test_a_second_record_carrying_a_criterion_and_its_state_is_a_second_carrier(
         )
         == carriers
     )
+
+
+# ---------------------------------------------------------------------------
+# The one lapse expression, discriminated by a two-armed fixture (KOD-596).
+# ---------------------------------------------------------------------------
+
+#: A head the graded sha of the cross-offs above sits behind.
+LATER_HEAD = "b" * 40
+EXERCISED = "src/kodezart/domain/"
+
+
+def moved(*paths: str) -> ChangesetDigest:
+    """The commit record's changed-path reading, as the rule takes it."""
+    return ChangesetDigest(
+        file_paths=list(paths),
+        commit_subjects=["a commit after the grading"],
+        commit_count=1,
+    )
+
+
+def standing_at(
+    *, graded: CriterionCrossOff, changeset: ChangesetDigest
+) -> GradedState:
+    """What *graded* is worth at ``LATER_HEAD``, asked of the one expression."""
+    return graded_state(
+        graded_sha=graded.evidence.graded_sha,
+        head_sha=LATER_HEAD,
+        rederivation_class=graded.rederivation_class,
+        exercised_paths=graded.exercised_paths,
+        changeset=changeset,
+    )
+
+
+def test_a_grading_behind_head_counts_or_lapses_by_what_its_own_paths_did():
+    """Both arms over one graded criterion, in one fixture.
+
+    The criterion passed at a sha the head has since left behind. In the
+    first arm nothing it exercised moved, so its grading still stands and it
+    counts; in the second one of its own prefixes moved, so it does not. An
+    implementation keyed on the graded sha equalling the head answers the
+    same thing to both and the first arm reds; one that never lapses answers
+    the same thing to both and the second arm reds.
+
+    The changed paths come from the commit record between the two shas.
+    Nothing here runs a command or reads a tree: the rule is arithmetic over
+    values the caller already holds, which is what lets one expression serve
+    every record that carries a graded sha.
+    """
+    graded = cross_off(
+        rederivation_class=RederivationClass.expensive, exercised_paths=(EXERCISED,)
+    )
+    assert graded.evidence.graded_sha != LATER_HEAD
+
+    untouched = standing_at(graded=graded, changeset=moved("docs/architecture.md"))
+    touched = standing_at(graded=graded, changeset=moved(f"{EXERCISED}lapse.py"))
+
+    assert untouched is GradedState.counted
+    assert touched is GradedState.lapsed
+    assert untouched is not touched
