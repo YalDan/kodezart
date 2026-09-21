@@ -1074,6 +1074,10 @@ by the ruling mint. Its shared static guard covers direct, qualified, imported
 and assigned constructor aliases, including calls in function headers. Ruling
 address fields retain the minted type through containers and forward references;
 text, other untyped values and rebinding the identity name fail the guard.
+The static guards under `tests/` resolve names through one shared resolver
+(`tests/name_resolution.py`), so an import alias, a module route or an
+assignment alias is the same site under another spelling, and a parameter
+handed a value at a call is scanned as its holder.
 Native and fake tracker fixtures show that duplicate or amended criterion text
 does not change the addressed keys. Evaluator state/body writer adoption
 remains unfinished.
