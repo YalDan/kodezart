@@ -605,7 +605,12 @@ The engineering standard — SOLID, DRY, hexagonal, and KISS as the way to get
 there, each with this repository's reading — is stated once, in the
 `house_rules` fragment of the `anthropic_v5` prompt set, and reaches every
 session of every prompt key as the system-prompt append rather than inside any
-template body.
+template body. The evaluation and the post-merge review are composed with the
+set's `design_review` fragment, which has the session try to refute each
+changed file's compliance with that standard: a violation named with file:line
+and the principle breached fails every criterion whose evidence rests on that
+file, and a violation in a file no criterion rests on is raised as a flag in
+the session's own name, which the accept gate carries to the pull request.
 
 The default maximum is 5 iterations (configurable via
 `KODEZART_MAX_ITERATIONS`).

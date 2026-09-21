@@ -91,6 +91,11 @@ class PromptSetFragments(BaseModel):
     skills_reference_header: str
     house_rules: str | None = None
     suppression_proxy: str | None = None
+    #: The refutation the two changeset graders are composed with: refute the
+    #: engineering standard per changed file, fail what rests on a named
+    #: violation. Nullable like the proxy, so a set declaring none composes
+    #: unchanged.
+    design_review: str | None = None
     ultrathink_instruction: str | None = None
     ultracode_instruction: str | None = None
     #: The shared fan-out spec both orchestration fragments carry, and the

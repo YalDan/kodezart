@@ -15,6 +15,7 @@ from kodezart.adapters.claude.agents_mapping import map_system_prompt
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.sets import V5_SET, v5_registry
+from tests.prompts.style_detectors import data_boundary_sentences
 from tests.prompts.test_prompt_wiring import DEFAULT_SET, load_registry
 
 SET_TOML = default_sets_root() / V5_SET / "set.toml"
@@ -133,6 +134,53 @@ def test_the_validator_does_not_carry_the_diff_grep() -> None:
     """It runs at the base ref, where the changed lines it names do not exist."""
     bodies = v5_bodies()
     assert fragment("suppression_proxy") not in bodies[PromptKey.CRITERIA_VALIDATION]
+
+
+# ---------------------------------------------------------------------------
+# design_review — one source, two consumers (KOD-883)
+# ---------------------------------------------------------------------------
+
+#: The two roles that grade a changeset. Nothing else has changed files to
+#: refute a design decision against.
+DESIGN_REVIEW_CONSUMERS = frozenset(
+    {PromptKey.EVALUATION.value, PromptKey.POST_MERGE_REVIEW.value},
+)
+
+#: Each clause the refutation would stop asking for if it were dropped.
+DESIGN_REVIEW_CLAUSES: tuple[str, ...] = (
+    "try to refute that the change meets the engineering standard in your house rules",
+    "that simpler shape is the refutation",
+    "fail every criterion whose evidence rests on that file",
+    "passed=false, with the principle and the file:line in reasoning",
+    "a concern raised in your own name rather than against one criterion's verdict",
+)
+
+
+def test_the_design_review_is_declared_exactly_once() -> None:
+    """Same one-source rule as the proxy: the members ask, the set supplies."""
+    assert member_files_carrying(fragment("design_review").splitlines()[0]) == []
+
+
+def test_the_design_review_resolves_into_exactly_the_two_changeset_graders() -> None:
+    """Countable consumers, and the instruction precedes the data boundary.
+
+    Equality is both halves of the claim: composed into those two, absent
+    from every other member. The order matters because an instruction placed
+    after the boundary sentence reads as part of the data that follows it.
+    """
+    refutation = fragment("design_review")
+    bodies = v5_bodies()
+    consumers = {key for key, body in bodies.items() if refutation in body}
+    assert consumers == DESIGN_REVIEW_CONSUMERS
+    for key in sorted(consumers):
+        body = bodies[key]
+        assert body.index(refutation) < body.index(data_boundary_sentences(body)[0])
+
+
+@pytest.mark.parametrize("clause", DESIGN_REVIEW_CLAUSES)
+def test_the_design_review_keeps_each_load_bearing_clause(clause: str) -> None:
+    """Named one by one, so removing any one of them reds its own case."""
+    assert clause in prose(fragment("design_review"))
 
 
 # ---------------------------------------------------------------------------
