@@ -789,9 +789,12 @@ class RalphLoop:
         # rather than inside the dispatch above because the base tree does not
         # move between fan-in attempts and the passing set is only known once
         # the grade stands — one base session per iteration at most, which
-        # ``max_iterations`` already bounds.
+        # ``max_iterations`` already bounds. A grading that did not stand needs
+        # no guard of its own here: ``undemonstrated_output`` above has already
+        # turned every result into a fail, so it presents no passing id and the
+        # empty ``standing`` skips the reading.
         at_base: Mapping[CriterionId, bool] = {}
-        if native_ref is not None and demonstrated:
+        if native_ref is not None:
             standing = passed_ids(grade.results)
             if standing:
                 at_base = await self._base_reading(
