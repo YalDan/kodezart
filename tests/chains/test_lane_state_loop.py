@@ -75,7 +75,7 @@ from tests.chains.test_native_fire import (
     tracker,
 )
 from tests.domain.test_criterion_cross_off import callers_of
-from tests.fakes import dispatched_ids, make_tracker_issue
+from tests.fakes import dispatched_checks, dispatched_ids, make_tracker_issue
 from tests.lane_fixture import (
     ADDED_OWED,
     LaneGit,
@@ -1308,7 +1308,10 @@ async def test_the_base_checks_run_in_a_second_owned_tree_at_the_resolved_base_s
     it, so a tree that moved under the session answers for nothing.
 
     Only the criteria this attempt passed are sent: a fail claims nothing about
-    the branch, so no base reading could make it less proven.
+    the branch, so no base reading could make it less proven. Each is sent with
+    its own Check under its own id, because what is run at the base is that
+    criterion's named check: an id with no check, or with another criterion's,
+    names nothing the session could run.
     """
     first, second, third = OWED_KEYS
     lane = Lane(evaluations=[graded({first, second})])
@@ -1331,6 +1334,10 @@ async def test_the_base_checks_run_in_a_second_owned_tree_at_the_resolved_base_s
     assert base_tree == lane.graded_in()
     assert base_tree != CACHE_PATH
     assert dispatched_ids(lane.executor.base_prompts[0]) == [first, second]
+    assert dispatched_checks(lane.executor.base_prompts[0]) == {
+        first: check_of(first),
+        second: check_of(second),
+    }
     assert check_of(third) not in lane.executor.base_prompts[0]
     # Both facts, twice: once before the session opened and once after it ended.
     assert [moment for moment, _ in moments[-2:]] == ["acquire", "release"]

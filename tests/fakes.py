@@ -214,6 +214,12 @@ _COMPLETE_SHA = re.compile(r"[0-9a-f]{40}")
 #: How the base-check template lists one criterion it was dispatched with.
 _DISPATCHED_ID = re.compile(r"^### (\S+)$", re.MULTILINE)
 
+#: The same listing read as a pair: the id, and everything under it up to the
+#: next id or the end of the prompt.
+_DISPATCHED_CHECK = re.compile(
+    r"^### (\S+)$\n(.*?)(?=\n### |\Z)", re.MULTILINE | re.DOTALL
+)
+
 
 def dispatched_ids(prompt: str) -> list[str]:
     """Every criterion id a rendered base-check prompt lists, in order.
@@ -223,6 +229,17 @@ def dispatched_ids(prompt: str) -> list[str]:
     told separately could agree with nothing the node asked about.
     """
     return _DISPATCHED_ID.findall(prompt)
+
+
+def dispatched_checks(prompt: str) -> dict[str, str]:
+    """What each criterion id a base-check prompt lists is listed WITH.
+
+    The text under the id, which is the criterion's own Check: what the session
+    is asked to run at the base is that criterion's named check, so a prompt
+    carrying the ids alone, or one id's text under another's heading, asks for
+    something else. Read off the prompt for the same reason the ids are.
+    """
+    return {key: text.strip() for key, text in _DISPATCHED_CHECK.findall(prompt)}
 
 
 def unsatisfied_base_answer(prompt: str) -> dict[str, object]:
