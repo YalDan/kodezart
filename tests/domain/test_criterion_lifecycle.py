@@ -17,7 +17,9 @@ import pkgutil
 import re
 import tomllib
 from collections import Counter
+from collections.abc import Mapping
 from enum import StrEnum
+from functools import cache
 from pathlib import Path
 from typing import get_args
 
@@ -44,7 +46,11 @@ from kodezart.types.domain.run_event import (
     RunEventTableError,
 )
 from kodezart.types.domain.tracker import TrackerBackend
-from tests.identity_guards import construction_sites, invalid_ruling_fields
+from tests.identity_guards import (
+    construction_sites,
+    invalid_ruling_fields,
+    value_holders,
+)
 
 REPO_ROOT = Path(__file__).parents[2]
 SOURCE_ROOT = REPO_ROOT / "src" / "kodezart"
@@ -56,6 +62,8 @@ INVARIANT_MODULES = {
 }
 VENDOR_ROSTER = SOURCE_ROOT / "types" / "domain" / "tracker.py"
 VENDOR_TERMS = tuple(sorted(backend.value for backend in TrackerBackend))
+#: The value whose holders the lane record's own vendor scan is derived from.
+RECORD_IDENTITY = "LaneRunState"
 _WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+")
 IDENTITY_OWNERS = {
     "CriterionRef": "domain/fire_spec.py",
@@ -178,6 +186,30 @@ def invariant_sources() -> dict[str, str]:
         for path in sorted(paths)
         if path != VENDOR_ROSTER
     }
+
+
+@cache
+def record_sources() -> Mapping[str, str]:
+    """Every packaged module that can hold the lane record, derived, not listed.
+
+    The lane record's own domain modules are outside the invariant closure —
+    that closure is what the invariant test modules import, and a lane's
+    domain module is imported by neither — so a vendor spelling in one of
+    them reds nothing there. The holder walk answers the question the Check
+    asks instead: which modules can hold this value at all. It reaches the
+    port file and this lane's domain modules in one derived set, and it is
+    grown as a fixed point over the tree, so nothing is transcribed here.
+
+    Cached because one call parses the whole packaged tree, and the injected
+    case below is parametrized over every member of the answer. The mapping
+    is read-only: a caller that injects a spelling copies it first.
+    """
+    sources = {
+        path.relative_to(REPO_ROOT).as_posix(): path.read_text()
+        for path in sorted(SOURCE_ROOT.rglob("*.py"))
+    }
+    holders = value_holders(sources, identity=RECORD_IDENTITY)
+    return {name: sources[name] for name in sorted(holders)}
 
 
 def port_surface() -> frozenset[str]:
@@ -630,9 +662,40 @@ def test_a_longer_word_is_not_a_vendor_name(innocent):
     assert vendor_terms(innocent) == ()
 
 
+def test_every_module_holding_the_lane_record_names_no_vendor():
+    """The lane record's own holders carry no vendor spelling either (KOD-701)."""
+    assert vendor_violations(dict(record_sources())) == {}
+
+
+def test_the_holder_scan_reaches_the_port_file_and_this_lane_domain_modules():
+    """Both halves the Check names are in the one derived set.
+
+    The port file is where the record's tracker vocabulary is declared, and
+    the lane's domain modules are where the value is composed and read back.
+    Naming them here, rather than listing the scan, is what reds a derivation
+    that stopped reaching either half.
+    """
+    assert {
+        "src/kodezart/core/protocols.py",
+        "src/kodezart/domain/lane_record.py",
+        "src/kodezart/domain/lane_entry.py",
+    } <= set(record_sources())
+
+
+@pytest.mark.parametrize("scanned", sorted(record_sources()))
+def test_a_vendor_term_injected_into_a_holder_of_the_record_is_reported(scanned):
+    sources = dict(record_sources())
+    sources[scanned] += f"\n{VENDOR_TERMS[0].capitalize()}Client\n"
+    assert vendor_violations(sources) == {scanned: VENDOR_TERMS}
+
+
 def test_only_the_selectable_backend_roster_may_name_a_vendor():
     assert vendor_terms(VENDOR_ROSTER.read_text()) == VENDOR_TERMS
     assert VENDOR_ROSTER.relative_to(REPO_ROOT).as_posix() not in invariant_sources()
+    # The record's own scan is a second scan, never a second exemption: the
+    # roster stays the one place a vendor may be named, so it must be absent
+    # from this set rather than filtered out of it.
+    assert VENDOR_ROSTER.relative_to(REPO_ROOT).as_posix() not in record_sources()
 
 
 @pytest.mark.parametrize(
