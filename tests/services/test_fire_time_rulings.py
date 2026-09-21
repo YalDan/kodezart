@@ -25,7 +25,7 @@ from kodezart.domain.rulings import (
 )
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.services.agent_service import AgentService
-from kodezart.services.criterion_sources import resolve_criterion
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import (
@@ -1532,8 +1532,8 @@ async def test_an_identity_a_successor_absorbed_is_still_addressable_at_the_writ
         state=CrossOffState.passed,
         evidence=CriterionEvidence(graded_sha=GRADED_SHA, test="the case above"),
     )
-    superseded = await resolve_criterion(
-        tracker=port, issue_key=SUBJECT, criterion_key=cross_off.criterion
+    superseded = await NativeCriterionResolver(tracker=port).resolve_criterion(
+        issue_key=SUBJECT, criterion_key=cross_off.criterion
     )
     assert superseded.issue_key == DIRECT_OWED
     assert superseded.state_kind is WorkflowStateKind.DUPLICATE
@@ -1547,8 +1547,7 @@ async def test_an_identity_a_successor_absorbed_is_still_addressable_at_the_writ
         criterion_key=DIRECT_OWED, lane_issue_key=SUBJECT, repo_url=REPO_URL
     )
     assert (
-        await resolve_criterion(
-            tracker=port,
+        await NativeCriterionResolver(tracker=port).resolve_criterion(
             issue_key=request.lane_issue_key,
             criterion_key=request.criterion_key,
         )
@@ -1556,8 +1555,8 @@ async def test_an_identity_a_successor_absorbed_is_still_addressable_at_the_writ
     )
     # Non-vacuous, and nothing rebinds: the successor is its own row and is
     # not what either of the two answered with.
-    successor = await resolve_criterion(
-        tracker=port, issue_key=SUBJECT, criterion_key=DIRECT_OWED_TOO
+    successor = await NativeCriterionResolver(tracker=port).resolve_criterion(
+        issue_key=SUBJECT, criterion_key=DIRECT_OWED_TOO
     )
     assert successor.issue_key == DIRECT_OWED_TOO and successor != superseded
 

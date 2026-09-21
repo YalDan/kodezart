@@ -23,8 +23,9 @@ from kodezart.domain.errors import (
     CriterionResolutionError,
     StaleWriteError,
 )
+from kodezart.domain.fire_spec import tracker_spec_from_issues
 from kodezart.domain.rulings import addressable_issues
-from kodezart.services.criterion_sources import resolve_criterion
+from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import RulingProtectedTestRef
 from kodezart.types.domain.audit_forge import AuditForgeRequest
@@ -243,21 +244,25 @@ async def test_a_removed_criterion_and_a_renumbered_remainder_move_no_identity(
     surviving = tuple(await tracker.read_criteria(issue_key=SUBJECT))
     assert [row.issue_key for row in surviving] == [FIRST, THIRD]
     assert SECOND not in {row.issue_key for row in surviving}
-    # The spec read mints identity from the key and from nothing else.
-    spec = await tracker.read_fire_spec(issue_key=SUBJECT)
+    # The composed specification mints identity from the key and from nothing
+    # else.  The composition moved to the stage that is its one caller, so it is
+    # reached here through the domain composer over the family read above.
+    spec = tracker_spec_from_issues(
+        subject=await tracker.read_issue(issue_key=SUBJECT), criteria=surviving
+    )
     assert spec.criteria == (FIRST, THIRD)
     # The retired identity resolves to nothing, naming both identities — the
     # neighbour that took its token never answers for it.
     with pytest.raises(CriterionResolutionError, match="0 current") as raised:
-        await resolve_criterion(
-            tracker=tracker, issue_key=SUBJECT, criterion_key=SECOND
+        await NativeCriterionResolver(tracker=tracker).resolve_criterion(
+            issue_key=SUBJECT, criterion_key=SECOND
         )
     assert raised.value.issue_key == SUBJECT and raised.value.criterion_key == SECOND
     assert SUBJECT in str(raised.value) and SECOND in str(raised.value)
     # And the renumbered neighbour resolves to its own row, under its own
     # unchanged key, with the new title and its full source.
-    third_after = await resolve_criterion(
-        tracker=tracker, issue_key=SUBJECT, criterion_key=THIRD
+    third_after = await NativeCriterionResolver(tracker=tracker).resolve_criterion(
+        issue_key=SUBJECT, criterion_key=THIRD
     )
     assert third_after.issue_key == THIRD == third_before.issue_key
     assert third_after.title == title_for(THIRD).replace(TOKENS[THIRD], TOKENS[SECOND])
@@ -292,8 +297,11 @@ async def test_the_family_is_ordered_by_its_keys_and_not_by_the_position_token(
     assert sorted(row.title for row in family) == [
         title_for(key) for key in reversed(INVERTED_FAMILY)
     ]
-    # The spec read reports the same order, from the keys and nothing else.
-    spec = await tracker.read_fire_spec(issue_key=INVERTED_SUBJECT)
+    # The composed specification reports the same order, from the keys and
+    # nothing else.
+    spec = tracker_spec_from_issues(
+        subject=await tracker.read_issue(issue_key=INVERTED_SUBJECT), criteria=family
+    )
     assert spec.criteria == INVERTED_FAMILY
     # The same removal and rewrite as the case above, over this family: the
     # last condition leaves and the middle one takes the number it vacated.
@@ -314,10 +322,10 @@ async def test_the_family_is_ordered_by_its_keys_and_not_by_the_position_token(
     assert sorted(row.title for row in surviving) == [
         row.title for row in reversed(surviving)
     ]
-    assert (await tracker.read_fire_spec(issue_key=INVERTED_SUBJECT)).criteria == (
-        INVERTED_FIRST,
-        INVERTED_SECOND,
-    )
+    assert tracker_spec_from_issues(
+        subject=await tracker.read_issue(issue_key=INVERTED_SUBJECT),
+        criteria=surviving,
+    ).criteria == (INVERTED_FIRST, INVERTED_SECOND)
     assert tracker_writes() == before
 
 
@@ -340,8 +348,8 @@ async def test_a_verdict_a_designation_and_an_audit_request_resolve_through_the_
         THIRD,
         title=title_for(THIRD).replace(TOKENS[THIRD], TOKENS[SECOND]),
     )
-    survivor = await resolve_criterion(
-        tracker=tracker, issue_key=SUBJECT, criterion_key=THIRD
+    survivor = await NativeCriterionResolver(tracker=tracker).resolve_criterion(
+        issue_key=SUBJECT, criterion_key=THIRD
     )
 
     # A recorded verdict, resolved the way the lane's state writer resolves
@@ -367,8 +375,7 @@ async def test_a_verdict_a_designation_and_an_audit_request_resolve_through_the_
         criterion_key=THIRD, lane_issue_key=SUBJECT, repo_url=REPO_URL
     )
     assert (
-        await resolve_criterion(
-            tracker=tracker,
+        await NativeCriterionResolver(tracker=tracker).resolve_criterion(
             issue_key=request.lane_issue_key,
             criterion_key=request.criterion_key,
         )
@@ -385,8 +392,7 @@ async def test_a_verdict_a_designation_and_an_audit_request_resolve_through_the_
     )
     retired_request = request.model_copy(update={"criterion_key": SECOND})
     with pytest.raises(CriterionResolutionError, match="0 current"):
-        await resolve_criterion(
-            tracker=tracker,
+        await NativeCriterionResolver(tracker=tracker).resolve_criterion(
             issue_key=retired_request.lane_issue_key,
             criterion_key=retired_request.criterion_key,
         )
@@ -460,8 +466,7 @@ async def test_a_superseded_identity_stays_resolvable_and_names_what_absorbed_it
     assert SUPERSEDED in addressable_issues(
         subject=ABSORBING_SUBJECT, criteria=(row.issue_key for row in family)
     )
-    superseded = await resolve_criterion(
-        tracker=tracker,
+    superseded = await NativeCriterionResolver(tracker=tracker).resolve_criterion(
         issue_key=ABSORBING_SUBJECT,
         criterion_key=SUPERSEDED,
     )
@@ -476,8 +481,7 @@ async def test_a_superseded_identity_stays_resolvable_and_names_what_absorbed_it
         if relation.kind is IssueRelationKind.DUPLICATE
     ] == [SUCCESSOR]
     # And nothing rebinds: the identity is not the successor's row.
-    successor = await resolve_criterion(
-        tracker=tracker,
+    successor = await NativeCriterionResolver(tracker=tracker).resolve_criterion(
         issue_key=ABSORBING_SUBJECT,
         criterion_key=SUCCESSOR,
     )
