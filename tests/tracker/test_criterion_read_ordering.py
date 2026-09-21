@@ -6,7 +6,9 @@ the paragraph around it, moved the satisfaction with it.  The native read
 is anchored on each sub-issue's own key instead, and the two mutations
 that would have broken the old reader are applied here together: the
 children are laid out in the opposite order in the backing store, and the
-owning issue's prose is reflowed underneath them.
+owning issue's prose is reflowed underneath them.  The four children are
+given identical titles as well, so a read keyed on a child's text rather
+than on its key — a dedupe by title, say — cannot answer either case.
 """
 
 import pytest
