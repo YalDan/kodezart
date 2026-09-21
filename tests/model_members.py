@@ -1,12 +1,20 @@
 """A complete native workspace and its domain double for model conformance."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION
 from kodezart.types.domain.dispatch import SelfWriteLedger
-from tests.fakes import FakeLinearMcpServer, FakeMcpIssue, FakeTrackerPort
+from tests.fakes import (
+    FIXTURE_EPOCH,
+    FakeLinearMcpServer,
+    FakeMcpIssue,
+    FakeTrackerPort,
+)
 from tests.tracker.conftest import (
     MARKER_PREFIXES,
     QUEUE_STATE_LABELS,
@@ -15,7 +23,10 @@ from tests.tracker.conftest import (
     WORKFLOW_STATE_NAMES,
 )
 
-CLASSIFICATION = "criterion_lifecycle"
+#: One name for the model, taken from the layer that owns it: the
+#: workspace a case builds and the job that resolves a lease have to
+#: name the same model or a case proves nothing about it.
+CLASSIFICATION = MODEL_CLASSIFICATION
 NATIVE_MARKER = "model:criterion-lifecycle"
 CRITERION_MARKER = "acceptance-condition"
 
@@ -78,9 +89,22 @@ class ModelWorkspace:
         assert {name for name, _ in self.server.calls} <= {"get_issue", "list_issues"}
 
 
-async def model_workspace(adapter: str) -> ModelWorkspace:
+def _fixture_now() -> datetime:
+    """The one instant both arms read.
+
+    Stated rather than left to a wall clock: the fake workspace stamps its
+    comment log at the fixture epoch, and an arm reading real time beside
+    it would find every marker it had just written already expired.
+    """
+    return FIXTURE_EPOCH
+
+
+async def model_workspace(
+    adapter: str, *, clock: Callable[[], datetime] = _fixture_now
+) -> ModelWorkspace:
     server = ModelServer(state_types=STATE_TYPES)
     native = LinearMcpTracker(
+        clock=clock,
         caller=server,
         marker_prefixes=MARKER_PREFIXES,
         issue_labels={CLASSIFICATION: NATIVE_MARKER, "criterion": CRITERION_MARKER},
@@ -92,5 +116,5 @@ async def model_workspace(adapter: str) -> ModelWorkspace:
         team_identifiers=TEAM_IDENTIFIERS,
         retry=RetryPolicy(attempts=1, initial_delay=1),
     )
-    fake = FakeTrackerPort()
+    fake = FakeTrackerPort(clock=clock)
     return ModelWorkspace(native if adapter == "native" else fake, native, fake, server)

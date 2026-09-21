@@ -84,6 +84,7 @@ does not exist.
 | TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |
 | TrackerCriteriaReader | LinearMcpTracker | Full current criterion families for resolution and audit consumers |
 | CriterionResolver | NativeCriterionResolver | Resolves one criterion identity to its own sub-issue, or refuses; the narrow role a consumer that needs a single criterion depends on, carrying no family read of its own |
+| ModelMemberReader | LinearMcpTracker | The two reads a model's surface set is resolved from — its marked membership and each member's criteria — narrowed out of the port rather than added to it |
 | WorkRefReader | LinearMcpTracker | The one read base resolution makes to find a blocker's branch, narrowed out of the port rather than added to it; on the per-issue pass it is the refs recorded against the issue |
 | WorkRefReader | RecordedDeliverableRefs | The same read on the scope path, answered from the blocker's own lane run-state record, which is where a lane's deliverable branch is written. A peer, selected at the composition root — not a fallback |
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers |

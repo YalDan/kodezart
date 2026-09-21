@@ -778,6 +778,21 @@ class CriterionResolver(Protocol):
         one, or against an unreadable or ambiguous family raises
         ``CriterionResolutionError``; it never becomes a null answer.
         """
+
+
+class ModelMemberReader(TrackerCriteriaReader, Protocol):
+    """The marked model's membership: its members, and each member's criteria.
+
+    Composed from the criteria role rather than stated beside it, because a
+    model's extent is exactly those two reads: which issues carry the mark,
+    and which criterion sub-issues each of them owns. Narrowed out of the
+    port so a consumer resolving a model depends on no writer at all.
+    """
+
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        """Read every issue carrying the configured classification."""
         ...
 
 
