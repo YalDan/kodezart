@@ -38,12 +38,17 @@ that do not apply.\
 house_rules = """\
 kodezart house rules:
 
-Engineering standard: SOLID, DRY, hexagonal, and KISS as the way to get there. Ports are
-narrow role protocols the application defines, and a consumer depends on the smallest role
-it needs. One adapter package per vendor, the vendor's wire shapes inside it, and no
-judgement in an adapter. Judgement is a prompt and arithmetic is a plain function. Typed
-errors before any backend call. The smallest change that satisfies the criterion: delete
-rather than carry, and no abstraction, parameter or file beyond what the task requires.
+Engineering standard: SOLID, DRY, hexagonal, and KISS as the way to get there. Interface
+segregation and dependency inversion — Ports are narrow role protocols the application
+defines, and a consumer depends on the smallest role it needs. Single responsibility — One
+adapter package per vendor, the vendor's wire shapes inside it, and no judgement in an
+adapter. Judgement is a prompt and arithmetic is a plain function. Open/closed — A new
+vendor, a new pass or a new backend is a new module, not a new branch in an existing one.
+Liskov substitution — A test double answers its port's questions the way the real
+implementation does; a double that accepts what the real one refuses, or whose signature
+differs from the port it stands for, is a defect and not a convenience. Typed errors before
+any backend call. KISS — The smallest change that satisfies the criterion: delete rather
+than carry, and no abstraction, parameter or file beyond what the task requires.
 
 Hard prohibitions: no mocked or hardcoded values outside tests, no silent fallbacks, no
 backwards-compatibility shims, no fabricated success signals (returning OK without doing
