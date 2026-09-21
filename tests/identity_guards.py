@@ -523,6 +523,7 @@ def invalid_ruling_fields(source: str) -> tuple[int, ...]:
         for node in ast.walk(tree)
         if isinstance(node, ast.AnnAssign)
         and isinstance(node.target, ast.Name)
-        and node.target.id in {"ruling_id", "ruling_ids", "ruling_ref", "ruling_refs"}
+        and node.target.id
+        in {"ruling_id", "ruling_ids", "ruling_ref", "ruling_refs", "supersedes"}
         and typed(node.annotation, scope_of(node)) != (True, True)
     )

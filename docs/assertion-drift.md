@@ -44,7 +44,10 @@ The existing marker, question identity,
 required authorship, complete comment reader, and strict JSON parser remain the
 record boundary; there is no second protection marker or inferred file owner.
 
-An omitted or null designation remains unknown and the comparison refuses it.
+An omitted or null designation lapses: the comparison records the lapse against
+that record's comment key and its owning identity, drops that record's
+protection, and goes on. Refusing the whole comparison over one record's absent
+designation is what it no longer does.
 An explicit empty list means that ruling designates no protected tests. A
 successfully read empty configured ruling set also yields no comparisons;
 unmarked historical prose is outside that record set and is not silently

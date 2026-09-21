@@ -1,5 +1,6 @@
 """Compare explicitly protected assertions from current native ruling records."""
 
+from kodezart.core.logging import get_logger
 from kodezart.core.protocols import TrackerCriteriaReader
 from kodezart.domain.errors import AssertionComparisonError
 from kodezart.services.assertion_drift import AssertionDriftDetector
@@ -11,6 +12,11 @@ from kodezart.types.domain.assertion_drift import (
 )
 from kodezart.types.domain.audit import AuditClaimRequest
 from kodezart.types.domain.tracker import TrackerIssue
+
+#: The disposition an absent protected-test designation takes: that record's
+#: protection lapses and the comparison goes on, rather than refusing the
+#: whole comparison over a fact about one record.
+PROTECTION_LAPSED = "ruling_protection_lapsed"
 
 
 class RecordedAssertionDriftDetector:
@@ -33,6 +39,7 @@ class RecordedAssertionDriftDetector:
         self._sources = sources
         self._rulings = rulings
         self._detector = detector
+        self._log = get_logger(__name__)
 
     async def _family(self, issue_key: str) -> tuple[TrackerIssue, ...]:
         criteria = tuple(await self._tracker.read_criteria(issue_key=issue_key))
@@ -79,10 +86,16 @@ class RecordedAssertionDriftDetector:
                     )
                 native_keys.add(comment.comment_key)
                 if ruling.protected_tests is None:
-                    raise AssertionComparisonError(
+                    # One record's absent designation is a fact about that
+                    # record, not about the comparison: its protection
+                    # lapses, the lapse is recorded against the comment key
+                    # and the identity that owns it, and the rest go on.
+                    await self._log.ainfo(
+                        PROTECTION_LAPSED,
                         source_ref=comment.comment_key,
-                        reason="the ruling has no recorded protected-test designation",
+                        ruling_id=ruling.ruling_id,
                     )
+                    continue
                 protected.extend(
                     ProtectedTestRef(
                         source_ref=comment.comment_key,

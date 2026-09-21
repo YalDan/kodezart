@@ -109,6 +109,10 @@ STANDING = "a failed item stays queued for a retry"
 LOSING = "a failed item is dropped from the queue on failure"
 CONTRADICTION_CHECK = f"{STANDING}, and {LOSING}"
 CONTRADICTION_QUESTION = "Is a failed item kept for a retry or dropped?"
+#: The same question in different words: a new address, and the one it names.
+RESTATED_CONTRADICTION_QUESTION = (
+    "Does a failed item stay in the queue for a retry, or leave it?"
+)
 
 
 def contradiction_body() -> str:
@@ -646,10 +650,18 @@ async def pinned_record(port, answer, *, before):
     ((_, record),) = await cold_records(port, answer["issueRef"])
     assert record.ruling_id == identity
     assert record.authored_by is RulingAuthor.MACHINE
-    # Every field the session answered survives render and read-back.
-    assert (
-        record.model_dump(exclude={"ruling_id", "authored_by", "protected_tests"})
-        == RulingAnswer.model_validate(answer).model_dump()
+    # Every field the session answered survives render and read-back. The
+    # answer's own supersession field is held out on both sides because the
+    # record carries the minted identity rather than the words: the pointer
+    # is asserted next, from the same pair.
+    assert record.model_dump(
+        exclude={"ruling_id", "authored_by", "protected_tests", "supersedes"}
+    ) == RulingAnswer.model_validate(answer).model_dump(exclude={"supersedes_question"})
+    replaced = answer.get("supersedesQuestion")
+    assert record.supersedes == (
+        None
+        if replaced is None
+        else mint_ruling_id(issue_ref=answer["issueRef"], question=replaced)
     )
     # And what the reader parsed renders back to the bytes on the board.
     assert (
@@ -749,6 +761,62 @@ async def test_a_self_contradiction_is_answered_naming_which_side_stands_and_los
     assert len(executor.judged_artifacts) == 1
     assert len(executor.question_prompts) == 2
     assert STANDING in executor.question_prompts[1]
+
+
+async def test_a_restated_question_leaves_the_earlier_record_readable_and_unedited(
+    repository,
+) -> None:
+    """The restatement is a second record that addresses the first (KOD-635).
+
+    Driven through the step twice over one board, so the second pass reads the
+    first pass's own record off the tracker: what makes the pointer followable
+    is that the identity it names is the one the earlier record is addressed
+    by, and what makes the earlier answer readable is that its comment is the
+    same comment, byte for byte, afterwards.
+    """
+    earlier_answer = contradiction_answer()
+    later_answer = contradiction_answer(
+        question=RESTATED_CONTRADICTION_QUESTION,
+        supersedesQuestion=CONTRADICTION_QUESTION,
+    )
+    executor = Executor([[earlier_answer], [later_answer]])
+    step, spec, current, _, port, _, repo_path, base = await build(
+        repository, executor, port=tracker(bodies={DIRECT_OWED: contradiction_body()})
+    )
+
+    assert await run(step, spec, current, repo_path, base) is None
+    prefixes = native_operation().marker_prefixes
+    first_pass = [
+        (comment.issue_key, comment.comment_key, comment.body)
+        for comment in port.comments
+        if comment.body.startswith(f"[{prefixes['ruling']}")
+    ]
+    assert len(first_pass) == 1
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    records = {
+        record.ruling_id: record for _, record in await cold_records(port, DIRECT_OWED)
+    }
+    earlier = mint_ruling_id(issue_ref=DIRECT_OWED, question=CONTRADICTION_QUESTION)
+    later = mint_ruling_id(
+        issue_ref=DIRECT_OWED, question=RESTATED_CONTRADICTION_QUESTION
+    )
+    assert set(records) == {earlier, later}
+    # The new record names the one it replaces, and the earlier one names none.
+    assert records[later].supersedes == earlier
+    assert records[earlier].supersedes is None
+    # Both answers stand: the earlier comment is the same comment, unedited.
+    pinned = [
+        (comment.issue_key, comment.comment_key, comment.body)
+        for comment in port.comments
+        if comment.body.startswith(f"[{prefixes['ruling']}")
+    ]
+    assert first_pass[0] in pinned
+    assert len(pinned) == 2
+    # The second pass was shown the first answer and did write its own.
+    assert CONTRADICTION_QUESTION in executor.question_prompts[1]
+    assert len(executor.judged_artifacts) == 2
 
 
 async def test_a_contradiction_answer_with_no_losing_side_is_refused_before_any_lease(
