@@ -68,6 +68,16 @@ def observed(key: str) -> CriterionCrossOff:
     )
 
 
+def marker(key: str) -> str:
+    """The address the question about *key* is written under on this lane."""
+    return compose_comment_marker(
+        prefixes=native_operation().marker_prefixes,
+        purpose="escalation",
+        lane=SUBJECT,
+        occurrence_key=f"{key}:lapse",
+    )
+
+
 class Raiser:
     """The component over the tracker double, and the head it judges at."""
 
@@ -157,20 +167,30 @@ async def test_the_marker_the_service_addresses_is_the_marker_the_board_holds():
 
     await raiser.raise_lapses(observed(DIRECT_OWED))
 
-    assert raiser.occurrences() == [
-        compose_comment_marker(
-            prefixes=native_operation().marker_prefixes,
-            purpose="escalation",
-            lane=SUBJECT,
-            occurrence_key=f"{DIRECT_OWED}:lapse",
-        )
-    ]
+    assert raiser.occurrences() == [marker(DIRECT_OWED)]
     landed = LaneEscalation.model_validate_json(
         raiser.port.comments[-1].body.partition("\n")[2]
     )
     assert landed == lapse_question(lane_key=SUBJECT, cross_off=observed(DIRECT_OWED))
     assert raiser.port.classification_writes == [(SUBJECT, "decision")]
     assert len(raiser.executor.judge_sessions) == 1
+
+
+async def test_each_grading_that_lapsed_at_one_head_gets_its_own_question():
+    """Two gradings lapse at one head, and each is asked about under its own address.
+
+    A lapse is a take-back, so a call that asked about the first cross-off and
+    stopped would put the rest back on the board with nothing on the lane
+    saying why. The field the loop hands over holds one entry per observed
+    grading whose prefixes moved, so the plural is the ordinary shape of this
+    call and not a hypothetical one.
+    """
+    raiser = Raiser()
+
+    await raiser.raise_lapses(observed(DIRECT_OWED), observed(NESTED_OWED))
+
+    assert raiser.occurrences() == [marker(DIRECT_OWED), marker(NESTED_OWED)]
+    assert len(raiser.executor.judge_sessions) == 2
 
 
 async def test_a_refuted_question_refuses_the_act_and_raises_nothing_further():
@@ -187,14 +207,7 @@ async def test_a_refuted_question_refuses_the_act_and_raises_nothing_further():
         await raiser.raise_lapses(observed(DIRECT_OWED), observed(NESTED_OWED))
 
     assert len(raiser.executor.judge_sessions) == 1
-    assert raiser.occurrences() == [
-        compose_comment_marker(
-            prefixes=native_operation().marker_prefixes,
-            purpose="escalation",
-            lane=SUBJECT,
-            occurrence_key=f"{DIRECT_OWED}:lapse",
-        )
-    ]
+    assert raiser.occurrences() == [marker(DIRECT_OWED)]
 
 
 async def test_no_lapse_opens_no_session_and_writes_nothing():
