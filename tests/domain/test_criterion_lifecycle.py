@@ -1136,7 +1136,12 @@ def fields_reaching(record: type[BaseModel], leaf: object) -> tuple[str, ...]:
 
 
 def boolean_verdicts(records: dict[str, type[BaseModel]]) -> tuple[str, ...]:
-    """Every boolean-annotated field on a record that carries a graded sha."""
+    """Every boolean-annotated field on a record that carries a graded sha.
+
+    A boolean carried inside a sub-model field of a record is not unfolded by
+    this ban, because ``fields_reaching`` unfolds typing arguments only: a
+    stated blind spot of the ban, not a closed one (KOD-592).
+    """
     return tuple(
         f"{name}.{field}"
         for name, record in sorted(records.items())
