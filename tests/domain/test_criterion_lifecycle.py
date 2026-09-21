@@ -18,6 +18,7 @@ import re
 import tomllib
 from collections import Counter
 from enum import StrEnum
+from inspect import signature
 from pathlib import Path
 from typing import get_args
 
@@ -25,8 +26,12 @@ import pytest
 from pydantic import BaseModel, ValidationError, create_model
 
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.base_scope import scope_base
+from kodezart.domain.base_staleness import is_base_stale
+from kodezart.domain.errors import StaleBaseError
 from kodezart.domain.lapse import GradedState, graded_state
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.branch import BaseInput, BaseSpec
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import (
@@ -1284,3 +1289,102 @@ def test_a_grading_behind_head_counts_or_lapses_by_what_its_own_paths_did():
     assert untouched is GradedState.counted
     assert touched is GradedState.lapsed
     assert untouched is not touched
+
+
+#: The base a lane was dispatched on: one blocker's deliverable, at one sha.
+RECORDED_BASE = BaseSpec(
+    inputs=(
+        BaseInput(
+            blocker_issue_id="criterion/blocker",
+            branch="feature/blocker",
+            sha="c" * 40,
+        ),
+    ),
+    base_branch="integration/lane",
+)
+#: The same base as the blockers imply it now, with that one input's sha
+#: advanced under the same base branch — the move a comparison of branch
+#: names cannot see.
+ADVANCED_SHA = "d" * 40
+
+
+def implied(*, advanced: bool) -> BaseSpec:
+    """The base the blockers imply now: the recorded one, or one input on."""
+    if not advanced:
+        # Equal but distinct, so equality is what decides and not identity.
+        return RECORDED_BASE.model_copy(deep=True)
+    return RECORDED_BASE.model_copy(
+        update={
+            "inputs": tuple(
+                item.model_copy(update={"sha": ADVANCED_SHA})
+                for item in RECORDED_BASE.inputs
+            )
+        }
+    )
+
+
+def test_a_stale_recorded_base_takes_no_grading_while_a_live_base_counts_them_all():
+    """Both arms over one pair of base specs, and one pair of graded criteria.
+
+    Two criteria are graded at a sha the head has since left behind, over one
+    prefix, one path-bound class each. The base they were dispatched on is
+    recorded; the base their blockers imply is either that same base — equal
+    but a distinct value, so equality is what answers — or that base with its
+    one input's sha advanced under the same base branch. That advance is the
+    case a comparison of base BRANCH names cannot see, which is why the arms
+    are built from the landed comparison itself and not from an equality
+    restated here.
+
+    What each arm is worth is decided before any grading is read, and by a
+    different question from the one the lapse rule answers. On a live base the
+    baseline resolves and the gradings behind head still count, because
+    nothing they exercised moved. On a stale one no verdict may be computed
+    against that base at all: the refusal carries the input that moved, and no
+    grading taken on that base is carried as passing — not because each was
+    read and found lapsed, but because the reading is never taken.
+
+    So the lapse rule reads no base: its inputs are the two shas, the class,
+    the prefixes and the commit record, asserted exactly, so restoring a base
+    parameter to it reds here. A comparison answering stale to any base change
+    reds the live arm twice over; one answering stale to none reds the stale
+    arm twice over.
+    """
+    graded = (
+        cross_off(
+            criterion="criterion/alpha",
+            rederivation_class=RederivationClass.expensive,
+            exercised_paths=(EXERCISED,),
+        ),
+        cross_off(
+            criterion="criterion/beta",
+            rederivation_class=RederivationClass.observed,
+            exercised_paths=(EXERCISED,),
+        ),
+    )
+    assert all(item.evidence.graded_sha != LATER_HEAD for item in graded)
+    live, stale = implied(advanced=False), implied(advanced=True)
+
+    assert is_base_stale(RECORDED_BASE, live) is False
+    assert is_base_stale(RECORDED_BASE, stale) is True
+
+    assert scope_base(RECORDED_BASE, live) == RECORDED_BASE.base_branch
+    with pytest.raises(StaleBaseError) as caught:
+        scope_base(RECORDED_BASE, stale)
+    assert caught.value.recorded_ref == RECORDED_BASE.base_branch
+    assert caught.value.implied_ref == stale.base_branch
+    assert caught.value.changed_inputs == [
+        f"criterion/blocker@feature/blocker:{'c' * 40}",
+        f"criterion/blocker@feature/blocker:{ADVANCED_SHA}",
+    ]
+
+    assert {
+        standing_at(graded=item, changeset=moved("docs/architecture.md"))
+        for item in graded
+    } == {GradedState.counted}
+    assert set(signature(graded_state).parameters) == {
+        "graded_sha",
+        "head_sha",
+        "rederivation_class",
+        "exercised_paths",
+        "changeset",
+    }
