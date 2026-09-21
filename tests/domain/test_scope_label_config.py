@@ -175,12 +175,18 @@ def test_the_collision_is_a_typed_load_error_beside_the_structural_ones(
     with pytest.raises(OperationConfigError) as caught:
         load_operation_config(path)
 
+    # Exactly the two the config earns, and the collision is one of them: the
+    # loader recovers the collected failures by splitting on the joiner the
+    # validator raised them under, so a message carrying that joiner itself
+    # would arrive as two entries, the second a fragment naming no failure.
+    assert len(caught.value.failures) == 2
     assert any(
         "scope_labels is missing required key 'triage'" in failure
         for failure in caught.value.failures
     )
     assert any(
-        "queue_states['approved']" in failure for failure in caught.value.failures
+        "queue_states['approved']" in failure and "may not express approval" in failure
+        for failure in caught.value.failures
     )
 
 
