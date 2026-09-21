@@ -15,6 +15,7 @@ from kodezart.types.domain.agent import (
     RulingAuthor,
     RulingId,
 )
+from kodezart.types.domain.escalation import DeliverableEscalation
 
 #: What a session is shown when the tracker carries no answer yet. Stated
 #: as an absence it can read rather than an empty string it could mistake
@@ -89,7 +90,7 @@ def owed_rulings(
         try:
             ruling = Ruling.model_validate(
                 {
-                    **answer.model_dump(exclude={"supersedes_question"}),
+                    **answer.model_dump(exclude={"supersedes_question", "deliverable"}),
                     "ruling_id": identity,
                     "authored_by": RulingAuthor.MACHINE,
                     "protected_tests": None,
@@ -103,6 +104,64 @@ def owed_rulings(
             ) from exc
         owed[identity] = ruling
     return tuple(owed[identity] for identity in sorted(owed))
+
+
+def excess_answers(
+    *, answers: Sequence[RulingAnswer], stated: Sequence[str]
+) -> tuple[RulingAnswer, ...]:
+    """The answers naming work the subject's stated deliverables do not cover.
+
+    Arithmetic: exact membership of the item the answer names in the items the
+    section states. An answer naming nothing adds nothing to build and is
+    never excess; an answer naming an item no section states is excess, which
+    is the same answer for a subject with no such section at all.
+
+    Membership, never containment: a substring test would let one stated item
+    cover every item whose words happen to occur inside it.
+    """
+    covered = {item.strip() for item in stated}
+    return tuple(
+        answer
+        for answer in answers
+        if answer.deliverable is not None and answer.deliverable.strip() not in covered
+    )
+
+
+def escalation_marker(
+    *, ruling_id: RulingId, lane_key: str, marker_prefixes: Mapping[str, str]
+) -> str:
+    """Address one refused answer under the operation's escalation prefix.
+
+    The occurrence key is the question's own identity, so a second pass over
+    the same open question addresses the same comment instead of raising the
+    question twice, and a reader can address the raise back to what caused it.
+    """
+    return compose_comment_marker(
+        prefixes=marker_prefixes,
+        purpose="escalation",
+        lane=lane_key,
+        occurrence_key=ruling_id,
+    )
+
+
+def render_deliverable_escalation(
+    *,
+    escalation: DeliverableEscalation,
+    ruling_id: RulingId,
+    lane_key: str,
+    marker_prefixes: Mapping[str, str],
+) -> str:
+    """The same marker/fenced-JSON framing a pinned answer is rendered in."""
+    return marked_comment_body(
+        marker=escalation_marker(
+            ruling_id=ruling_id,
+            lane_key=lane_key,
+            marker_prefixes=marker_prefixes,
+        ),
+        body="```json\n"
+        + escalation.model_dump_json(by_alias=True, indent=2)
+        + "\n```",
+    )
 
 
 def pinned_registry(rulings: Sequence[Ruling]) -> str:

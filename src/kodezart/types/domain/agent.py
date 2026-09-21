@@ -873,6 +873,14 @@ class RulingAnswer(CamelCaseModel):
             ),
         )
     )
+    deliverable: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = Field(
+        default=None,
+        description=(
+            "The item from the subject's Deliverables section this answer's work "
+            "falls under, quoted exactly as that section states it; null when the "
+            "answer requires building nothing beyond what that section already names."
+        ),
+    )
 
 
 class RulingOutput(CamelCaseModel):

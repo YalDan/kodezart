@@ -1034,12 +1034,18 @@ def test_a_writer_a_step_delegates_to_is_verified_with_it():
     assert delegated not in production.outside_a_write_back(artifact_writes())
 
 
-def test_the_open_question_record_write_is_a_steps_own_write():
-    """The pre-loop record grows neither register: the step owns its write."""
+@pytest.mark.parametrize("step", ["_PinStep.write", "_EscalationStep.write"])
+def test_the_open_question_record_write_is_a_steps_own_write(step):
+    """The pre-loop writes grow neither register: each step owns its own write.
+
+    The path makes two authored writes now — the pinned answer's and the
+    raise of an answer beyond what the subject's own text states — so both
+    are named here or this stops covering the second one.
+    """
     production = Production(production_sources())
     site = CallSite(
         module="services/fire_time_rulings.py",
-        function="_PinStep.write",
+        function=step,
         method="upsert_comment",
     )
     assert site in production.call_sites(artifact_writes())

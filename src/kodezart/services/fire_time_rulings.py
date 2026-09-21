@@ -11,6 +11,11 @@ authored tracker write goes through.
 The step never repairs: one judged write per record is the whole window, and
 a record whose landed text is not upheld ends the fire rather than being
 rewritten until it passes.
+
+An answer naming work the subject's own ``Deliverables`` section does not
+state is not pinned at all. It is raised on the issue whose text raised the
+question, inside the same kind of leased and verified window, and the fire
+then ends without a confirmed answer.
 """
 
 from collections.abc import Sequence
@@ -37,6 +42,7 @@ from kodezart.core.protocols import (
     TrackerPort,
     WorkspaceProvider,
 )
+from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.comment_markers import configured_marker_prefix
 from kodezart.domain.errors import (
@@ -49,10 +55,14 @@ from kodezart.domain.errors import (
     TransientAPIError,
     WriteBackReadError,
 )
+from kodezart.domain.fire_spec import deliverables_section
 from kodezart.domain.prompt_variables import tracker_checks_section
 from kodezart.domain.rulings import (
+    escalation_marker,
+    excess_answers,
     owed_rulings,
     pinned_registry,
+    render_deliverable_escalation,
     render_ruling,
     ruling_marker,
 )
@@ -65,10 +75,12 @@ from kodezart.types.domain.agent import (
     RULING_SCHEMA,
     Ruling,
     RulingAnswer,
+    RulingId,
     RulingOutput,
 )
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criteria import TrackerCriterionSet
+from kodezart.types.domain.escalation import DeliverableEscalation
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     ContentClass,
@@ -169,6 +181,77 @@ class _PinStep:
         )
 
 
+@dataclass(frozen=True)
+class _EscalationStep:
+    """One refused answer's raise, as the write-back verifier drives it.
+
+    The same shape as the pinned answer's own step, on purpose: the raise
+    lands on one marker comment, inside the same verified window, and is
+    judged against the same base commit.
+    """
+
+    surface: WritableSurface
+    escalation: DeliverableEscalation
+    ruling_id: RulingId
+    lane_key: str
+    tracker: TrackerPort
+    gate: OutboundContentGate
+    log: BoundLogger
+    lease: RunSurfaceLease
+    holder: str
+    visibility: RepoVisibility
+    marker_prefixes: dict[str, str]
+
+    async def write(self, *, finding: WriteBackFinding | None) -> None:
+        """Put this refusal's exact text on its own marker comment.
+
+        There is no repair arm, for the reason the pinned answer has none:
+        the window is one round, and a finding here would be a round this
+        step has no honest answer for.
+        """
+        if finding is not None:
+            raise RulingUnrecordedError(
+                issue_key=self.lane_key,
+                reason=(
+                    f"{self.escalation.issue_ref!r}: a raised question is written "
+                    "once and never rewritten"
+                ),
+            )
+        text = render_deliverable_escalation(
+            escalation=self.escalation,
+            ruling_id=self.ruling_id,
+            lane_key=self.lane_key,
+            marker_prefixes=self.marker_prefixes,
+        )
+        marker, content = text.split("\n", 1)
+        await gated_exact(
+            gate=self.gate,
+            log=self.log,
+            content=content,
+            visibility=self.visibility,
+            destination=OutboundDestination.TRACKER_COMMENT,
+            content_class=ContentClass.AUTHORED,
+            aggregates=(),
+            refusal=lambda: RulingUnrecordedError(
+                issue_key=self.lane_key,
+                reason=(
+                    f"{self.escalation.issue_ref!r}: the outbound gate changed the "
+                    "exact raised text"
+                ),
+            ),
+        )
+        await self.lease.renew()
+        await settle(
+            self.tracker.upsert_comment(
+                target=self.escalation.issue_ref,
+                marker=marker,
+                body=content,
+                holder=self.holder,
+                expected=None,
+            )
+        )
+
+
 class FireTimeRulings:
     """Find the open questions in a fire's tracker text and pin each answer.
 
@@ -246,9 +329,29 @@ class FireTimeRulings:
             addressable=addressable,
             recorded=tuple(record.ruling_id for record in recorded),
         )
-        if not owed:
+        # After the arithmetic above, never before it: an answer addressed
+        # outside this fire, a question answered twice, or an answer no valid
+        # record can be built from is refused as it always was, rather than
+        # having a refusal written to an issue this fire cannot address.
+        stated = deliverables_section(spec.body)
+        excess = excess_answers(answers=answers.rulings, stated=stated)
+        if not excess and not owed:
             return
         try:
+            if excess:
+                # Always raises, so nothing is pinned on a pass that produced
+                # an answer beyond what the subject's own text states.
+                await self._escalate(
+                    spec=spec,
+                    excess=excess,
+                    stated=stated,
+                    base_sha=answers.base_sha,
+                    repo_path=repo_path,
+                    repo_url=repo_url,
+                    holder=holder,
+                    visibility=visibility,
+                    prefixes=prefixes,
+                )
             await self._pin(
                 spec=spec,
                 owed=owed,
@@ -323,6 +426,107 @@ class FireTimeRulings:
             base_sha = await settle(self._git.current_sha(tree))
         return _Answers(
             rulings=RulingOutput.model_validate(structured).rulings, base_sha=base_sha
+        )
+
+    async def _escalate(
+        self,
+        *,
+        spec: TrackerSpec,
+        excess: tuple[RulingAnswer, ...],
+        stated: tuple[str, ...],
+        base_sha: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        holder: str,
+        visibility: RepoVisibility,
+        prefixes: dict[str, str],
+    ) -> None:
+        """Raise each refused answer on its own issue, then end the fire.
+
+        The write lands inside the same kind of leased, verified window a
+        pinned answer lands in, and the refusal is raised only after that
+        window closes.
+
+        The escalation prefix is resolved on this arm alone. An operation that
+        configures none raises no answer beyond what it states, so resolving
+        it at the top would refuse every fire under such an operation instead
+        of only the pass that needs it.
+        """
+        configured_marker_prefix(prefixes, purpose="escalation")
+        escalations = {
+            mint_ruling_id(issue_ref=answer.issue_ref, question=answer.question): (
+                DeliverableEscalation(
+                    issue_ref=answer.issue_ref,
+                    question=answer.question,
+                    deliverable=str(answer.deliverable),
+                    stated=tuple(stated),
+                )
+            )
+            for answer in excess
+        }
+        verifier = WriteBackVerifier(
+            tracker=self._tracker,
+            judge=FreshWriteBackJudge(
+                runner=self._runner,
+                workspace=self._workspace,
+                git=self._git,
+                prompts=self._prompts,
+                skills=self._skills,
+                repo_path=repo_path,
+                repo_url=None if repo_path is not None else repo_url,
+                session_type=SessionType.TICKET_FIRE,
+            ),
+            max_rounds=1,
+        )
+        surfaces = {
+            identity: WritableSurface(
+                kind=SurfaceKind.MARKER_COMMENT,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=escalation.issue_ref),
+                marker=escalation_marker(
+                    ruling_id=identity,
+                    lane_key=spec.subject,
+                    marker_prefixes=prefixes,
+                ),
+            )
+            for identity, escalation in escalations.items()
+        }
+        async with RunSurfaceLease(
+            tracker=self._tracker,
+            job_id=holder,
+            surfaces=frozenset(surfaces.values()),
+            lease_seconds=self._lease_seconds,
+        ) as lease:
+            for identity, escalation in escalations.items():
+                result = await verifier.write_back(
+                    step=_EscalationStep(
+                        surface=surfaces[identity],
+                        escalation=escalation,
+                        ruling_id=identity,
+                        lane_key=spec.subject,
+                        tracker=self._tracker,
+                        gate=self._gate,
+                        log=self._log,
+                        lease=lease,
+                        holder=holder,
+                        visibility=visibility,
+                        marker_prefixes=prefixes,
+                    ),
+                    ref=base_sha,
+                )
+                if result.verdict is not AuditVerdict.HOLDS:
+                    raise RulingUnrecordedError(
+                        issue_key=spec.subject,
+                        reason=(
+                            f"{escalation.issue_ref!r}: the raised question was not "
+                            "independently upheld"
+                        ),
+                    )
+        raise RulingUnrecordedError(
+            issue_key=spec.subject,
+            reason=(
+                f"{excess[0].issue_ref!r}: an answer named work the subject's stated "
+                "deliverables do not, and was raised for a decision"
+            ),
         )
 
     async def _pin(

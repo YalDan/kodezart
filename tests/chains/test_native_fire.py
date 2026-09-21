@@ -161,7 +161,11 @@ def tracker(
     overrides = bodies or {}
     labels = frozenset({STAGE_KEY}) if staged else frozenset()
     issues = [
-        make_tracker_issue(SUBJECT, issue_labels=labels, body="the subject's own text"),
+        make_tracker_issue(
+            SUBJECT,
+            issue_labels=labels,
+            body=overrides.get(SUBJECT, "the subject's own text"),
+        ),
         make_tracker_issue(
             DIRECT_OWED,
             parent_key=SUBJECT,

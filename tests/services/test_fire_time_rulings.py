@@ -14,13 +14,25 @@ from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import RulingUnrecordedError
+from kodezart.domain.fire_spec import DELIVERABLES_SECTION, deliverables_section
 from kodezart.domain.prompt_variables import tracker_checks_section
-from kodezart.domain.rulings import EMPTY_REGISTRY, render_ruling, ruling_marker
+from kodezart.domain.rulings import (
+    EMPTY_REGISTRY,
+    escalation_marker,
+    render_ruling,
+    ruling_marker,
+)
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.ruling_records import RulingRecordReader
-from kodezart.types.domain.agent import RulingAnswer, RulingAuthor, RulingClass
+from kodezart.types.domain.agent import (
+    Ruling,
+    RulingAnswer,
+    RulingAuthor,
+    RulingClass,
+)
+from kodezart.types.domain.escalation import DeliverableEscalation
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -31,6 +43,8 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import (
     DIRECT_OWED,
@@ -136,6 +150,41 @@ def contradiction_answer(**changes) -> dict[str, object]:
         ),
     }
     return one_answer(**{**fields, **changes})
+
+
+#: The one deliverable the subject's own text states, and a consequence it
+#: does not: the retry side stands, but a second queue was never in scope.
+STATED_DELIVERABLE = "bound a failed item's retries on the existing queue predicate"
+EXCESS_DELIVERABLE = "a second queue that holds failed items"
+
+
+def subject_body(*, deliverables=(STATED_DELIVERABLE,)) -> str:
+    """The subject's own text with the section the excess arm reads."""
+    items = "".join(f"- {item}\n" for item in deliverables)
+    return f"the subject's own text\n\n## {DELIVERABLES_SECTION}\n{items}"
+
+
+def deliverable_board(*, subject=None):
+    """The fixture board: the contradicting Check, and the stated section."""
+    bodies = {DIRECT_OWED: contradiction_body()}
+    if subject is not None:
+        bodies[SUBJECT] = subject
+    return tracker(bodies=bodies)
+
+
+def raised_comments(port):
+    """Every comment on the board under the operation's escalation prefix."""
+    prefix = native_operation().marker_prefixes["escalation"]
+    return [
+        comment for comment in port.comments if comment.body.startswith(f"[{prefix}")
+    ]
+
+
+def raised_body(comment):
+    """The escalation's own payload, decoded out of its fenced framing."""
+    _, separator, payload = comment.body.partition("\n```json\n")
+    assert separator and payload.endswith("\n```")
+    return DeliverableEscalation.model_validate_json(payload[: -len("\n```")])
 
 
 #: An artifact the Check names but does not identify, and the precedent in
@@ -653,10 +702,15 @@ async def pinned_record(port, answer, *, before):
     # Every field the session answered survives render and read-back. The
     # answer's own supersession field is held out on both sides because the
     # record carries the minted identity rather than the words: the pointer
-    # is asserted next, from the same pair.
+    # is asserted next, from the same pair. The deliverable the answer falls
+    # under is held out because the record carries no such field at all — it
+    # adds nothing a record needs, and an excess one is never built.
+    assert "deliverable" not in Ruling.model_fields
     assert record.model_dump(
         exclude={"ruling_id", "authored_by", "protected_tests", "supersedes"}
-    ) == RulingAnswer.model_validate(answer).model_dump(exclude={"supersedes_question"})
+    ) == RulingAnswer.model_validate(answer).model_dump(
+        exclude={"supersedes_question", "deliverable"}
+    )
     replaced = answer.get("supersedesQuestion")
     assert record.supersedes == (
         None
@@ -761,6 +815,161 @@ async def test_a_self_contradiction_is_answered_naming_which_side_stands_and_los
     assert len(executor.judged_artifacts) == 1
     assert len(executor.question_prompts) == 2
     assert STANDING in executor.question_prompts[1]
+
+
+async def test_an_answer_naming_a_deliverable_the_subject_states_is_pinned_as_usual(
+    repository,
+) -> None:
+    """The positive control: what the section already names is pinned (KOD-629).
+
+    Without this the arm below could refuse every answer that names anything
+    and still look right.
+    """
+    answer = contradiction_answer(deliverable=STATED_DELIVERABLE)
+    executor = Executor([[answer]])
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor, port=deliverable_board(subject=subject_body())
+    )
+    before = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    record = await pinned_record(port, answer, before=before)
+    assert record.ruling_class is RulingClass.RESOLVE_CONTRADICTION
+    assert raised_comments(port) == []
+    assert ContentClass.AUTHORED in gate.content_classes
+
+
+async def test_a_deliverable_the_subject_does_not_state_is_raised_and_not_pinned(
+    repository,
+) -> None:
+    """Refused as an answer, raised on the issue whose text raised it (KOD-629).
+
+    Nothing is pinned at all on such a pass, so the tracker carries the
+    question rather than half a record: exactly one comment under the
+    escalation prefix and none under the record prefix.
+    """
+    answer = contradiction_answer(deliverable=EXCESS_DELIVERABLE)
+    executor = Executor([[answer]])
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor, port=deliverable_board(subject=subject_body())
+    )
+
+    with pytest.raises(RulingUnrecordedError) as caught:
+        await run(step, spec, current, repo_path, base)
+
+    assert caught.value.issue_key == SUBJECT
+    assert DIRECT_OWED in caught.value.reason
+    (raise_comment,) = raised_comments(port)
+    assert raise_comment.issue_key == DIRECT_OWED
+    prefixes = native_operation().marker_prefixes
+    identity = mint_ruling_id(issue_ref=DIRECT_OWED, question=CONTRADICTION_QUESTION)
+    assert raise_comment.body.splitlines()[0] == escalation_marker(
+        ruling_id=identity, lane_key=SUBJECT, marker_prefixes=prefixes
+    )
+    # Nothing is pinned: zero comments under the record prefix.
+    assert [
+        comment
+        for comment in port.comments
+        if comment.body.startswith(f"[{prefixes['ruling']}")
+    ] == []
+    assert await cold_records(port, DIRECT_OWED) == ()
+    # The raise carries what a person needs in order to answer it.
+    raised = raised_body(raise_comment)
+    assert raised.issue_ref == DIRECT_OWED
+    assert raised.question == CONTRADICTION_QUESTION
+    assert raised.deliverable == EXCESS_DELIVERABLE
+    assert raised.stated == (STATED_DELIVERABLE,)
+    # The text was gated as content this run authored, and judged as written.
+    assert ContentClass.AUTHORED in gate.content_classes
+    assert len(executor.judged_artifacts) == 1
+    assert EXCESS_DELIVERABLE in executor.judged_artifacts[0]
+
+
+async def test_the_raise_lands_on_a_leased_surface_before_the_refusal(
+    repository,
+) -> None:
+    """The write is inside the window and the refusal is after it (KOD-629).
+
+    Two facts, both off the board the port kept: the marker the raise landed
+    on is one of the surfaces a lease was granted over, and no lease is live
+    afterwards — so the window closed before the refusal reached the caller.
+    """
+    answer = contradiction_answer(deliverable=EXCESS_DELIVERABLE)
+    executor = Executor([[answer]])
+    step, spec, current, _, port, _, repo_path, base = await build(
+        repository, executor, port=deliverable_board(subject=subject_body())
+    )
+
+    with pytest.raises(RulingUnrecordedError):
+        await run(step, spec, current, repo_path, base)
+
+    (raise_comment,) = raised_comments(port)
+    surface = WritableSurface(
+        kind=SurfaceKind.MARKER_COMMENT,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=DIRECT_OWED),
+        marker=raise_comment.body.splitlines()[0],
+    )
+    assert surface in {held for lease in port.lease_writes for held in lease.surfaces}
+    assert port.leases == {}
+    # Non-vacuous: the lease was taken by this pass's own holder.
+    assert [lease.holder for lease in port.lease_writes] == [HOLDER] * len(
+        port.lease_writes
+    )
+
+
+async def test_a_subject_with_no_stated_deliverables_raises_any_answer_that_names_one(
+    repository,
+) -> None:
+    """Nothing stated and nothing named are one answer, so naming one exceeds it.
+
+    The subject body is the landed bare text with no such section at all.
+    """
+    answer = contradiction_answer(deliverable=STATED_DELIVERABLE)
+    executor = Executor([[answer]])
+    step, spec, current, _, port, _, repo_path, base = await build(
+        repository, executor, port=deliverable_board()
+    )
+    assert deliverables_section(spec.body) == ()
+
+    with pytest.raises(RulingUnrecordedError):
+        await run(step, spec, current, repo_path, base)
+
+    (raise_comment,) = raised_comments(port)
+    assert raised_body(raise_comment).stated == ()
+    assert raised_body(raise_comment).deliverable == STATED_DELIVERABLE
+    # Non-vacuous: an answer naming nothing on the same board is pinned.
+    quiet = Executor([[contradiction_answer()]])
+    step, spec, current, _, quiet_port, _, repo_path, base = await build(
+        repository, quiet, port=deliverable_board()
+    )
+    assert await run(step, spec, current, repo_path, base) is None
+    assert raised_comments(quiet_port) == []
+
+
+async def test_a_second_pass_leaves_one_raised_question_not_two(
+    repository,
+) -> None:
+    """The occurrence key is the question's own identity, so the raise upserts."""
+    answer = contradiction_answer(deliverable=EXCESS_DELIVERABLE)
+    executor = Executor([[answer], [answer]])
+    step, spec, current, _, port, _, repo_path, base = await build(
+        repository, executor, port=deliverable_board(subject=subject_body())
+    )
+
+    for _ in range(2):
+        with pytest.raises(RulingUnrecordedError):
+            await run(step, spec, current, repo_path, base)
+
+    assert len(raised_comments(port)) == 1
+    identity = mint_ruling_id(issue_ref=DIRECT_OWED, question=CONTRADICTION_QUESTION)
+    assert raised_comments(port)[0].body.splitlines()[0] == escalation_marker(
+        ruling_id=identity,
+        lane_key=SUBJECT,
+        marker_prefixes=native_operation().marker_prefixes,
+    )
+    # Non-vacuous: the second pass did open its own question session.
+    assert len(executor.question_prompts) == 2
 
 
 async def test_a_restated_question_leaves_the_earlier_record_readable_and_unedited(
