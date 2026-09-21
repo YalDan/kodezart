@@ -85,9 +85,11 @@ def held_roster(criteria: Sequence[ExecutionCriterion]) -> TrackerCriterionSet |
 class TrackerCriteria:
     """A fire's criteria, read from the tracker at each execution barrier.
 
-    The spec read IS the source: ``read_fire_spec`` establishes the
-    subject's admission and lists its criterion sub-issues, and nothing a
-    caller carries alongside it can stand in for that read.
+    The subtree IS the source, and the spec read is what admits a subject
+    to it and guards it against shrinking: ``read_fire_spec`` establishes
+    the subject's admission and refuses a fire whose subtree has lost a
+    criterion the captured spec names, and nothing a caller carries
+    alongside it can stand in for that read.
 
     What the fire OWES is then its subtree's own Todo criterion
     sub-issues.  A deliverable child's criterion sits inside the exit
