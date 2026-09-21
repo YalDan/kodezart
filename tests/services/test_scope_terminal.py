@@ -30,6 +30,7 @@ from kodezart.services import lane_reports
 from kodezart.services import scope_terminal as terminal_module
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.scope_terminal import ScopeTerminal
+from kodezart.types.domain import scope_terminal as scope_terminal_types
 from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.gating import (
     ContentClass,
@@ -461,6 +462,24 @@ def test_the_arity_assertion_is_the_siblings_own_and_no_vocabulary_is_defined_he
     assert "assert_lane_roster" in source
     assert "LaneReportState" not in source
     assert terminal_module.assert_lane_roster is lane_reports.assert_lane_roster
+
+
+def test_the_retired_lane_report_vocabulary_is_gone_from_the_module_it_lived_in():
+    """The tombstone stands where the deleted type stood, not only next door.
+
+    The guard above reads this service's source, and the retired states enum
+    was never declared here: it was declared in the wire-vector module, so
+    re-adding it there passed both that guard and the rest of the suite. Read
+    the wire-vector module's own syntax tree with the same machinery, so a
+    states enum reappearing there under any name, or any class naming itself a
+    report, is what this refuses.
+    """
+    declared = defined_classes(inspect.getsource(scope_terminal_types))
+
+    assert set(declared) == {"ScopeLaneEntry", "ScopeTerminalEvent"}
+    for name, bases in declared.items():
+        assert not VOCABULARY_BASES.intersection(bases), f"{name} declares a vocabulary"
+        assert "Report" not in name
 
 
 # ---------------------------------------------------------------------------
