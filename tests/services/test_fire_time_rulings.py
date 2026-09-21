@@ -659,6 +659,13 @@ async def pinned_record(port, answer, *, before):
     assert {key: value for key, value in after.items() if key not in RECORD_WRITE} == {
         key: value for key, value in before.items() if key not in RECORD_WRITE
     }
+    # And the comment journal — held out of that comparison, because the
+    # record itself lands there — grew by exactly the record's own comment,
+    # so the pass wrote no other comment on any issue.
+    assert after["comment_writes"] == [
+        *before["comment_writes"],
+        (pinned[0].comment_key, pinned[0].body),
+    ]
     return record
 
 
@@ -843,6 +850,14 @@ async def test_a_false_premise_is_regrounded_at_the_base_neither_closed_nor_cros
     assert ABSENT_MODULE in premise_body()
     at_base = (await git(repo_path, "ls-tree", "--name-only", base)).splitlines()
     assert ABSENT_MODULE not in at_base and PRECEDENT_FILE in at_base
+    # And the answer is grounded the same way round as the tree: it builds on
+    # the module that is there, says the other one is not, and its evidence
+    # names the module that is there.  Same two constants as the two lines
+    # above, so the board text, the tree and the answer cannot drift apart.
+    assert PRECEDENT_FILE in record.resolution
+    assert f"no {ABSENT_MODULE}" in record.resolution
+    assert record.repo_evidence == (REGROUND_EVIDENCE,)
+    assert PRECEDENT_FILE in REGROUND_EVIDENCE
     # (a) Not closed.  No state moved and no description was written; the
     # subject and the criterion are still open by kind.
     assert port.issue_writes == []
