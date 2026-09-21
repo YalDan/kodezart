@@ -170,8 +170,14 @@ SEEDED_REPO_URL = "https://forge.invalid/o/r"
 #: read of the only one there is.
 SEEDED_NUMBERS: tuple[int, ...] = (17, 23)
 
-#: What both seeded requests must read as, before and after.
-ALL_OPEN: dict[int, PRLifecycle] = dict.fromkeys(SEEDED_NUMBERS, PRLifecycle.OPEN)
+#: What both seeded requests must read as, before and after.  Keyed by the
+#: whole identity, repository and number: a number alone collapses two records
+#: that differ only by repository, and a request created behind the step's back
+#: under another repository would then land on a key that already exists.
+ALL_OPEN: dict[tuple[str, int], PRLifecycle] = dict.fromkeys(
+    ((SEEDED_REPO_URL, number) for number in SEEDED_NUMBERS),
+    PRLifecycle.OPEN,
+)
 
 
 def open_pull_request(number: int) -> PRState:
@@ -211,7 +217,9 @@ class ReachableForgeGit(pinned.ObservedGit):
         )
 
 
-async def lifecycles(forge: FakePRStateReader) -> dict[int, PRLifecycle]:
+async def lifecycles(
+    forge: FakePRStateReader,
+) -> dict[tuple[str, int], PRLifecycle]:
     """Every request the forge holds, by the lifecycle the forge itself reports.
 
     The walk is over the forge's own inventory and each answer comes back
@@ -220,7 +228,7 @@ async def lifecycles(forge: FakePRStateReader) -> dict[int, PRLifecycle]:
     consulted.  Bounded by that inventory, which the seeding fixes at two.
     """
     return {
-        number: (
+        (repo_url, number): (
             await forge.read_pr_state(repo_url=repo_url, pr_number=number)
         ).lifecycle
         for repo_url, number in sorted(forge.records)
