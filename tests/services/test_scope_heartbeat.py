@@ -27,7 +27,7 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_heartbeat import HeartbeatOutcome
 from kodezart.types.domain.session import PermissionMode, ToolPreset
-from tests.fakes import FIXTURE_EPOCH, FakeJobQueue, FakeTrackerPort
+from tests.fakes import FIXTURE_EPOCH, FakeJobQueue, FakeTrackerPort, handed_over
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 
 #: The standing scopes: two projects under one initiative, both bound to the
@@ -114,30 +114,16 @@ def outcomes(report) -> list[tuple[ScopeRef, HeartbeatOutcome]]:
     return [(entry.scope, entry.outcome) for entry in report.entries]
 
 
-def untouched(port: FakeTrackerPort) -> bool:
-    """Whether the board is exactly as it was handed over.
-
-    Every write journal the double keeps, together: the pass takes no lease
-    and writes nothing at all (KOD-788), and a check of one journal would
-    pass against a write into another.
-    """
-    return not any(
-        (
-            port.issue_writes,
-            port.classification_writes,
-            port.comment_writes,
-            port.workflow_writes,
-            port.claim_writes,
-            port.lease_writes,
-            port.renewals,
-            port.issue_creations,
-        )
-    )
+#: The pass takes no lease and writes nothing at all (KOD-788), so what a
+#: case here holds it to is the shared total check: the double's whole
+#: surface, rendered at handover and compared afterwards, rather than a
+#: list of journals that a new journal drops out of silently.
 
 
 async def test_an_approved_standing_scope_becomes_one_scope_run() -> None:
     """The whole of what a declared row becomes when approval lands on it."""
     port = board(first=APPROVED)
+    untouched = handed_over(port)
     queue = FakeJobQueue()
     beat = heartbeat(port, queue)
 
@@ -160,12 +146,13 @@ async def test_an_approved_standing_scope_becomes_one_scope_run() -> None:
     assert request.issue_key is None
     assert request.permission_mode is PermissionMode.UNATTENDED
     assert request.allowed_tools is ToolPreset.IMPLEMENTATION
-    assert untouched(port)
+    assert untouched()
 
 
 async def test_an_unapproved_standing_scope_is_never_submitted() -> None:
     """The resting state of a declared row, and it is reported rather than logged."""
     port = board()
+    untouched = handed_over(port)
     queue = FakeJobQueue()
     beat = heartbeat(port, queue)
 
@@ -174,7 +161,7 @@ async def test_an_unapproved_standing_scope_is_never_submitted() -> None:
     assert outcomes(report) == [(FIRST, HeartbeatOutcome.UNAPPROVED)]
     assert report.ran is False
     assert queue.submissions == []
-    assert untouched(port)
+    assert untouched()
     # And it stays unsubmitted across ticks: nothing about having been asked
     # already turns into permission.
     assert outcomes(await beat.tick()) == [(FIRST, HeartbeatOutcome.UNAPPROVED)]
@@ -446,6 +433,7 @@ async def test_the_built_heartbeat_submits_the_declared_row_on_the_dispatch_lane
         scope_containers=containers(),
         scope_label_members={FIRST: APPROVED},
     )
+    untouched = handed_over(port)
     queue = FakeJobQueue()
     config = owner_config()
     beat = build_scope_heartbeat(
@@ -464,4 +452,4 @@ async def test_the_built_heartbeat_submits_the_declared_row_on_the_dispatch_lane
     assert lane == config.dispatch_lane
     assert request.repo_url == repo.url
     assert request.base_spec == trunk_base(repo.trunk)
-    assert untouched(port)
+    assert untouched()

@@ -4940,6 +4940,103 @@ class FakeTrackerPort:
         )
 
 
+def _comparable(value: object) -> object:
+    """*value* rendered into something a comparison can be made on.
+
+    A value that knows how to compare itself is kept as it is.  One that
+    does not — a plain object, whose default comparison is its identity and
+    is therefore blind to its own growth — is rendered as its own
+    attributes, so a ledger that recorded something reads as a different
+    value rather than as the same object.
+
+    Containers are rendered element by element under the same rule.  A
+    mapping's keys and a set's members are rendered by their ``repr``,
+    because the keys this double holds (a surface, a scope reference) are
+    hashable without being orderable and an order is what makes two
+    renderings of one state compare equal.
+    """
+    if isinstance(value, Mapping):
+        return tuple(
+            sorted(
+                ((repr(key), _comparable(item)) for key, item in value.items()),
+                key=lambda entry: entry[0],
+            )
+        )
+    if isinstance(value, frozenset | set):
+        return tuple(sorted(repr(member) for member in value))
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return tuple(_comparable(item) for item in value)
+    if type(value).__eq__ is object.__eq__ and hasattr(value, "__dict__"):
+        return _comparable(vars(value))
+    return value
+
+
+def tracker_state(port: FakeTrackerPort) -> dict[str, object]:
+    """Every attribute of *port*, rendered so a write of ANY kind shows.
+
+    The rule a caller states when it asks whether a board was touched:
+    each of the double's own attributes, rendered by the rule above.  Every
+    write this double makes lands in one of them, so two renderings that
+    compare equal are a board nothing wrote to — including nothing a check
+    enumerating journals one at a time had thought to name.
+
+    That totality is the point.  A journal added to this double later is a
+    new key here and is covered the moment it exists, which is what a check
+    that lists ``issue_writes``, ``comment_writes`` and the rest cannot be:
+    the list and the double drift apart silently, and the check keeps
+    passing over the write it no longer looks at.
+    """
+    return {name: _comparable(value) for name, value in sorted(vars(port).items())}
+
+
+#: The journals a "this board was not written to" check has to reach.  The
+#: first eight are the ones such a check named when it was written; the rest
+#: are what naming them one by one left out — the recorded base spec, the
+#: queue-state writes, the put-backs, both halves of a document write, and
+#: this process's own write ledger.  Named here so the rendering above is
+#: SHOWN to reach them rather than trusted to: a rendering that stopped
+#: reaching one of these has stopped being total, and that is the one
+#: failure a list of journals cannot report about itself.
+TRACKER_WRITE_JOURNALS = frozenset(
+    {
+        "issue_writes",
+        "classification_writes",
+        "comment_writes",
+        "workflow_writes",
+        "claim_writes",
+        "lease_writes",
+        "renewals",
+        "issue_creations",
+        "recorded_base_specs",
+        "queue_writes",
+        "restored_states",
+        "_documents",
+        "document_titles",
+        "self_writes",
+    }
+)
+
+
+def handed_over(port: FakeTrackerPort) -> Callable[[], bool]:
+    """Answer, later, whether *port* is exactly as it was handed over.
+
+    For a consumer that must write nothing, the claim is about the double's
+    WHOLE surface rather than about a list of journals: the state is
+    rendered here, rendered again when the answer is asked for, and the two
+    are compared.  A journal this double grows later is covered by that
+    comparison on the day it is added, and a board seeded with a fixture is
+    covered as it stands rather than having to be empty.
+
+    The rendering is checked against the journals it has to reach before the
+    board is handed over, so one that stopped reaching a journal fails at
+    the fixture, naming it, instead of quietly agreeing with a write.
+    """
+    before = tracker_state(port)
+    missed = TRACKER_WRITE_JOURNALS - set(before)
+    assert missed == frozenset(), f"the state rendering reaches no {sorted(missed)}"
+    return lambda: tracker_state(port) == before
+
+
 class FakeDeliveryProbe:
     """One forge double, answering both questions the native client answers.
 
