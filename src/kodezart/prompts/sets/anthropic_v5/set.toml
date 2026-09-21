@@ -213,6 +213,7 @@ effort = "high"
 skills = ["code-review", "security-review"]
 keys = [
     "evaluation",
+    "base_check",
     "criteria_validation",
     "ticket_review",
     "post_merge_review",

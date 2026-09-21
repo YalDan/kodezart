@@ -16,7 +16,11 @@ from kodezart.domain.criterion_cross_off import (
     evaluation_observation,
 )
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
-from kodezart.domain.errors import TransientAPIError
+from kodezart.domain.errors import (
+    GitSourceReadError,
+    TransientAPIError,
+    WorkspaceError,
+)
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
@@ -39,6 +43,7 @@ from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.workflow import RalphLoopState
 from tests.chains.test_native_fire import (
     DIRECT_DONE,
     DIRECT_OWED,
@@ -46,9 +51,11 @@ from tests.chains.test_native_fire import (
     OWED_KEYS,
     STAGE_KEY,
     SUBJECT,
+    TRUNK_BRANCHES,
     TRUNK_SHA,
     NativeExecutor,
     board,
+    check_of,
     criterion_body,
     engine,
     native_evaluation,
@@ -56,7 +63,7 @@ from tests.chains.test_native_fire import (
     tracker,
 )
 from tests.domain.test_criterion_cross_off import callers_of
-from tests.fakes import make_tracker_issue
+from tests.fakes import dispatched_ids, make_tracker_issue
 from tests.lane_fixture import (
     ADDED_OWED,
     LaneGit,
@@ -65,6 +72,7 @@ from tests.lane_fixture import (
     LaneSource,
     LosingBoard,
     added_criterion,
+    base_echo,
     criteria_echo,
     lane_forge,
 )
@@ -121,6 +129,7 @@ class Lane:
         writes_lane_state=True,
         owns_workspace=True,
         source=LaneSource,
+        fan_in_max_attempts=1,
     ):
         self.work_base_ref = work_base_ref
         self.resumed_head_sha = resumed_head_sha
@@ -136,6 +145,7 @@ class Lane:
             executor=self.executor,
             real_loop=True,
             max_iterations=max_iterations,
+            fan_in_max_attempts=fan_in_max_attempts,
             persister=self.persister,
             git=self.git,
             source=source(self.repo),
@@ -999,6 +1009,402 @@ async def test_the_evaluation_is_graded_in_a_workspace_the_loop_owns():
     assert lane.repo.head in acquired
     assert BRANCH not in acquired
     assert [call[0] for call in provider.calls].count("release") == len(acquired)
+
+
+# ---------------------------------------------------------------------------
+# KOD-610 — a criterion whose own check already passes at the lane's resolved
+# base is no reading of the branch.
+# ---------------------------------------------------------------------------
+
+
+def base_reading(lane, *, satisfied, keys=OWED_KEYS) -> None:
+    """Script one base reading for this lane, satisfying exactly *satisfied*."""
+    lane.executor.base_readings = [base_echo(keys=keys, satisfied=satisfied)]
+
+
+def workspace_moments(lane) -> list[tuple[str, int]]:
+    """How many git calls this lane had made at each acquire and each release.
+
+    The double hands the same path back for every acquisition, so nothing in
+    the path distinguishes a read of one owned tree from a read of the next.
+    The moment does: a read between the acquire and the release of the tree at
+    the base is a read of THAT tree.
+    """
+    provider = lane.loop._workspace
+    acquired, released = provider.acquire, provider.release
+    moments: list[tuple[str, int]] = []
+
+    async def observed_acquire(**arguments):
+        path = await acquired(**arguments)
+        moments.append(("acquire", len(lane.git.calls)))
+        return path
+
+    async def observed_release(workspace_path: str) -> None:
+        moments.append(("release", len(lane.git.calls)))
+        await released(workspace_path)
+
+    provider.acquire = observed_acquire
+    provider.release = observed_release
+    return moments
+
+
+def refuse_base_tree(lane, *, after: int = 0) -> None:
+    """Refuse a tree at this lane's base, once *after* of them were cut."""
+    provider = lane.loop._workspace
+    acquired = provider.acquire
+    cut = 0
+
+    async def observed(**arguments):
+        nonlocal cut
+        if arguments.get("ref") == TRUNK_SHA:
+            cut += 1
+            if cut > after:
+                raise WorkspaceError("no tree can be cut at the lane's base")
+        return await acquired(**arguments)
+
+    provider.acquire = observed
+
+
+def move_the_base_tree(lane) -> None:
+    """Let the tree cut at the base stand at some other commit."""
+    provider = lane.loop._workspace
+    acquired = provider.acquire
+
+    async def observed(**arguments):
+        path = await acquired(**arguments)
+        if arguments.get("ref") == TRUNK_SHA:
+            lane.git.heads[path] = "0" * 40
+        return path
+
+    provider.acquire = observed
+
+
+def unreadable_base(lane) -> None:
+    """Let this lane's base ref stop resolving to a commit."""
+    source = lane.loop._source
+    resolve = source.resolve_commit
+
+    async def observed(*, cwd, ref):
+        if ref in TRUNK_BRANCHES:
+            raise GitSourceReadError(
+                ref=ref, path=None, reason="the base ref names no commit"
+            )
+        return await resolve(cwd=cwd, ref=ref)
+
+    source.resolve_commit = observed
+
+
+async def test_a_check_the_base_already_passes_is_no_reading_of_the_branch():
+    """A head pass whose check already passed at the base is not the branch's.
+
+    Every criterion passes at the head and the base reading finds the first of
+    them already passing there, where none of the work exists. That pass is
+    therefore a reading of the base: the writer is handed the fourth state for
+    it, its sub-issue is left byte-identical to what the run found, and the
+    board holds no move and no edit for it. The other two are crossed off in
+    the same tuple, so this is a distinction and not a refusal to write.
+    """
+    first, *rest = OWED_KEYS
+    lane = Lane(evaluations=[graded(OWED_KEYS)])
+    base_reading(lane, satisfied={first})
+    before = {
+        key: (issue.state_name, issue.body) for key, issue in lane.port.issues.items()
+    }
+    states = recording(lane)
+
+    await lane.run()
+
+    assert states == [
+        (CrossOffState.undemonstrated, CrossOffState.passed, CrossOffState.passed)
+    ]
+    assert (lane.port.issues[first].state_name, lane.port.issues[first].body) == before[
+        first
+    ]
+    assert completed(lane.port) == set(rest)
+    assert first not in {key for key, _ in lane.port.workflow_writes}
+    assert first not in {key for key, _, _ in lane.port.issue_writes}
+    # Nothing on the board says why, either: the lane's own record and its one
+    # vocabulary event are every comment this run wrote.
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert [event.kind for event in posted] == [RunEventKind.FIRST_PUSH]
+    assert len(posted) + len(lane.record_comments()) == len(lane.port.comments)
+    assert {comment.issue_key for comment in lane.port.comments} == {SUBJECT}
+
+
+async def test_the_lanes_log_names_the_criterion_the_base_already_satisfied():
+    """What a person reading the run's log finds, once, per criterion.
+
+    Keyed to the criterion because the fact is the criterion's, and carrying
+    both shas so the reading can be repeated: the commit the verdict would
+    have been stamped with, and the commit the base resolved to. The criterion
+    the base does not satisfy gets no row.
+    """
+    first, *rest = OWED_KEYS
+    lane = Lane(evaluations=[graded(OWED_KEYS)])
+    base_reading(lane, satisfied={first})
+
+    with structlog.testing.capture_logs() as logs:
+        await lane.run()
+
+    rows = [
+        entry for entry in logs if entry.get("event") == "criterion_satisfied_at_base"
+    ]
+    assert [
+        (entry["criterion"], entry["graded_sha"], entry["base_sha"]) for entry in rows
+    ] == [(first, lane.repo.head, TRUNK_SHA)]
+    assert {entry["criterion"] for entry in rows}.isdisjoint(rest)
+
+
+async def test_the_base_checks_run_in_a_second_owned_tree_at_the_resolved_base_sha():
+    """The checks are run in a tree this loop owns, at the base's own commit.
+
+    The base is the ref the lane recorded, resolved to a commit: a tree
+    acquired at a name would follow the name. It is cut off the clone rather
+    than off the grading tree, and it is asked what the grading tree is asked —
+    its head and whether it holds changes — before the session and again after
+    it, so a tree that moved under the session answers for nothing.
+
+    Only the criteria this attempt passed are sent: a fail claims nothing about
+    the branch, so no base reading could make it less proven.
+    """
+    first, second, third = OWED_KEYS
+    lane = Lane(evaluations=[graded({first, second})])
+    base_reading(lane, satisfied=set(), keys=(first, second))
+    provider = lane.loop._workspace
+    moments = workspace_moments(lane)
+
+    await lane.run()
+
+    assert len(provider.acquisitions) == 3
+    assert provider.acquisitions[-1] == {
+        "repo_path": CACHE_PATH,
+        "repo_url": None,
+        "ref": TRUNK_SHA,
+        "branch_name": None,
+        "create_branch": False,
+        "cache_key": CACHE,
+    }
+    base_tree = lane.executor.base_workspaces[0]
+    assert base_tree == lane.graded_in()
+    assert base_tree != CACHE_PATH
+    assert dispatched_ids(lane.executor.base_prompts[0]) == [first, second]
+    assert check_of(third) not in lane.executor.base_prompts[0]
+    # Both facts, twice: once before the session opened and once after it ended.
+    assert [moment for moment, _ in moments[-2:]] == ["acquire", "release"]
+    held = lane.git.calls[moments[-2][1] : moments[-1][1]]
+    assert held.count(("current_sha", base_tree)) == 2
+    assert held.count(("has_changes", base_tree)) == 2
+
+
+async def test_the_base_tree_is_owned_only_after_the_graded_tree_is_released():
+    """The lane owns one tree at a time, and gives every one of them back."""
+    lane = Lane(evaluations=[graded(OWED_KEYS)])
+    base_reading(lane, satisfied=set())
+    provider = lane.loop._workspace
+
+    await lane.run()
+
+    trees = [call for call in provider.calls if call[0] in {"acquire", "release"}]
+    assert [call[0] for call in trees[-4:]] == [
+        "acquire",
+        "release",
+        "acquire",
+        "release",
+    ]
+    assert [call[2] for call in trees[-4:] if call[0] == "acquire"] == [
+        lane.repo.head,
+        TRUNK_SHA,
+    ]
+    acquired = [call for call in provider.calls if call[0] == "acquire"]
+    assert [call[0] for call in provider.calls].count("release") == len(acquired)
+
+
+async def test_a_failing_criterion_is_never_read_at_the_base():
+    """An attempt that passed nothing opens no base session at all.
+
+    A fail is already unproven, so a base reading could change nothing about
+    it, and a session that answers nothing is a session not opened.
+    """
+    lane = Lane(evaluations=[graded(set())])
+    states = recording(lane)
+
+    await lane.run()
+
+    assert lane.executor.base_prompts == []
+    assert states == [tuple(CrossOffState.failed for _ in OWED_KEYS)]
+
+
+async def test_a_grading_that_did_not_stand_reads_no_base():
+    """A verdict from a tree the sha does not name qualifies nothing.
+
+    There is no pass to tell apart from a base pass, so no tree is cut at the
+    base and the one read of the grading tree's dirtiness is still the only one.
+    """
+    lane = Lane(evaluations=[native_evaluation()])
+    lane.executor.on_evaluation = lane.leave_changes_behind
+    states = recording(lane)
+
+    await lane.run()
+
+    assert lane.executor.base_prompts == []
+    assert states == [tuple(CrossOffState.undemonstrated for _ in OWED_KEYS)]
+    graded_in = lane.executor.evaluation_workspaces[0]
+    assert (
+        len([call for call in lane.git.calls if call == ("has_changes", graded_in)])
+        == 1
+    )
+
+
+async def test_the_base_checks_run_once_whatever_the_fan_in_costs():
+    """A re-dispatched grading is still one reading of the base.
+
+    The base tree does not move between fan-in attempts and the passing set is
+    only known once a grade stands, so the reading is taken after the grade and
+    not inside the dispatch: an iteration whose first echo answered the wrong
+    roster pays for one base session, not one per attempt.
+    """
+    lane = Lane(
+        evaluations=[graded(OWED_KEYS, keys=OWED_KEYS[:2]), graded(OWED_KEYS)],
+        fan_in_max_attempts=2,
+    )
+    base_reading(lane, satisfied=set())
+    states = recording(lane)
+
+    await lane.run()
+
+    assert len(lane.executor.evaluation_prompts) == 2
+    assert len(lane.executor.base_prompts) == 1
+    assert states == [tuple(CrossOffState.passed for _ in OWED_KEYS)]
+
+
+#: Every way the checks at the base do not get run, and the fixed reason each
+#: one is recorded under. The reason is the harness's own text: no session
+#: composed it, and nothing the session said reaches this row.
+UNAVAILABLE_BASE = {
+    "unresolvable-base": "the lane's base ref cannot be read",
+    "tree-refused": "a tree at the base was refused",
+    "tree-not-at-base": "the tree is not the base commit",
+    "no-structured-output": "the checks at the base returned no usable answer",
+    "invalid-shape": "the checks at the base returned no usable answer",
+}
+
+
+def arm_unavailable(lane, how: str) -> None:
+    """Break the base reading the way *how* names, and nothing else."""
+    if how == "unresolvable-base":
+        lane.executor.on_evaluation = lambda _: unreadable_base(lane)
+    elif how == "tree-refused":
+        refuse_base_tree(lane)
+    elif how == "tree-not-at-base":
+        move_the_base_tree(lane)
+    elif how == "no-structured-output":
+        lane.executor.base_readings = [None]
+    else:
+        lane.executor.base_readings = [{"notTheAgreedContract": []}]
+
+
+@pytest.mark.parametrize("how", sorted(UNAVAILABLE_BASE))
+async def test_a_base_reading_that_cannot_be_taken_claims_no_pass(how):
+    """No reading at the base is no pass of the branch, and no raise either.
+
+    The run returns normally and the evaluator's own verdict still reaches the
+    wire — the session did read the changeset — but every criterion it passed
+    is handed to the writer as having no reading of the branch, because what
+    was not read is exactly the branch's own contribution. The board is
+    untouched, and one row names the base ref, the fixed reason and the
+    criteria the reading was going to take.
+    """
+    lane = Lane(evaluations=[native_evaluation()])
+    states = recording(lane)
+    arm_unavailable(lane, how)
+
+    with structlog.testing.capture_logs() as logs:
+        events = await lane.run()
+
+    iterations = [
+        event for event in events if isinstance(event, WorkflowIterationEvent)
+    ]
+    assert [event.verdict for event in iterations] == [AcceptVerdict.accepted]
+    assert states == [tuple(CrossOffState.undemonstrated for _ in OWED_KEYS)]
+    assert lane.port.workflow_writes == []
+    assert lane.port.issue_writes == []
+    rows = [entry for entry in logs if entry.get("event") == "base_reading_unavailable"]
+    assert [
+        (entry["base_ref"], entry["reason"], tuple(entry["criterion_ids"]))
+        for entry in rows
+    ] == [("main", UNAVAILABLE_BASE[how], OWED_KEYS)]
+
+
+async def test_a_regression_is_still_taken_back_when_no_base_reading_could_be_taken():
+    """A criterion this fire finished and has now broken is taken back anyway.
+
+    A fail stands on the graded tree alone. Iteration 1 finishes two criteria
+    with a reading at the base; iteration 2 breaks one of them and can cut no
+    tree at the base at all — and the break is still recorded, once, because a
+    missing base reading cannot turn a break into a non-break.
+    """
+    broken, kept, owed = OWED_KEYS
+    lane = Lane(
+        evaluations=[graded({broken, kept}), graded({kept})],
+        max_iterations=2,
+    )
+    lane.executor.base_readings = [
+        base_echo(keys=(broken, kept), satisfied=set()),
+    ]
+    refuse_base_tree(lane, after=1)
+
+    await lane.run()
+
+    assert lane.port.issues[broken].state_kind is WorkflowStateKind.UNSTARTED
+    assert (
+        parse_criterion_evidence(lane.port.issues[broken].body).graded_sha
+        == lane.repo.head
+    )
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert [
+        event.subject_key
+        for event in posted
+        if event.kind is RunEventKind.CRITERION_REFUTED
+    ] == [broken]
+    assert lane.port.issues[owed].state_kind is WorkflowStateKind.UNSTARTED
+
+
+async def test_no_base_tree_survives_the_iteration_that_opened_it():
+    """Every tree an iteration cut is given back inside that iteration.
+
+    Two iterations, each grading and each reading the base, and the provider's
+    releases answer its acquisitions one for one. Nothing about a tree is
+    carried on the loop's own state either: the state a killed run would have
+    to re-adopt names no workspace, which is what keeps re-entry a read of the
+    tracker rather than of a path that no longer exists.
+    """
+    _, kept, owed = OWED_KEYS
+    lane = Lane(
+        evaluations=[graded({kept}), graded({kept, owed})],
+        max_iterations=2,
+    )
+    lane.executor.base_readings = [
+        base_echo(keys=(kept,), satisfied=set()),
+        base_echo(keys=(kept, owed), satisfied=set()),
+    ]
+    provider = lane.loop._workspace
+
+    await lane.run()
+
+    assert len(lane.executor.base_prompts) == 2
+    acquired = [call[1] for call in provider.calls if call[0] == "acquire"]
+    released = [call[1] for call in provider.calls if call[0] == "release"]
+    assert len(acquired) == len(released) == 6
+    assert set(RalphLoopState.__annotations__) == {
+        "iteration",
+        "verdict",
+        "pending_failures",
+        "iteration_records",
+        "outcome",
+        "iteration_commit_sha",
+        "amendment_reports",
+        "amendment_blocked",
+    }
 
 
 def written(port) -> tuple[int, int]:

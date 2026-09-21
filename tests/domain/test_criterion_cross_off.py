@@ -7,7 +7,9 @@ import pytest
 
 from kodezart.core.protocols import LaneStateTracker
 from kodezart.domain.criterion_cross_off import (
+    base_answers,
     cross_offs_for,
+    demonstrated_criteria,
     evaluation_observation,
     require_tickable,
     tick_anchor,
@@ -15,7 +17,11 @@ from kodezart.domain.criterion_cross_off import (
 from kodezart.domain.criterion_evidence import apply_evidence, parse_criterion_evidence
 from kodezart.domain.errors import StaleWriteError
 from kodezart.domain.fire_spec import replace_criterion_fields
-from kodezart.types.domain.agent import CriterionResult
+from kodezart.types.domain.agent import (
+    BaseCheckOutput,
+    BaseCheckResult,
+    CriterionResult,
+)
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOffState
@@ -345,11 +351,13 @@ def test_applied_evidence_reads_back_and_changes_no_byte_outside_its_field():
 def test_a_cross_off_carries_the_attempts_sha_and_the_session_it_was_graded_in():
     observation = evaluation_observation(session_id="session-7", iteration=3)
 
+    results = [result(), result(passed=False)]
+
     crossed = cross_offs_for(
-        results=[result(), result(passed=False)],
+        results=results,
         graded_sha=GRADED_SHA,
         observation=observation,
-        demonstrated=True,
+        demonstrated={one.criterion_id for one in results},
     )
 
     assert [cross_off.state for cross_off in crossed] == [
@@ -364,6 +372,183 @@ def test_a_cross_off_carries_the_attempts_sha_and_the_session_it_was_graded_in()
         isinstance(cross_off, CriterionCrossOff) and cross_off.criterion == KEY
         for cross_off in crossed
     )
+
+
+#: The second criterion this module needs to tell one reading from another.
+OTHER = "lane/second"
+#: What a base reading reports as the command it ran for a criterion.
+BASE_COMMAND = "ran the check this criterion names, at the base"
+
+
+def base_result(*, key: str = KEY, satisfied: bool) -> BaseCheckResult:
+    return BaseCheckResult(
+        criterion_id=CriterionId(key), command=BASE_COMMAND, satisfied_at_base=satisfied
+    )
+
+
+def state_of(
+    *, passed: bool, at_base: dict[CriterionId, bool], graded_tree_stood: bool
+) -> CrossOffState:
+    """What one result is worth, through the fold the evaluator step uses."""
+    results = [result(passed=passed)]
+    crossed = cross_offs_for(
+        results=results,
+        graded_sha=GRADED_SHA,
+        observation=evaluation_observation(session_id="session-7", iteration=1),
+        demonstrated=demonstrated_criteria(
+            results=results, graded_tree_stood=graded_tree_stood, at_base=at_base
+        ),
+    )
+    return crossed[0].state
+
+
+@pytest.mark.parametrize(
+    "passed,at_base,graded_tree_stood,expected",
+    [
+        pytest.param(
+            True,
+            {CriterionId(KEY): False},
+            True,
+            CrossOffState.passed,
+            id="pass-failing-at-base",
+        ),
+        pytest.param(
+            True,
+            {CriterionId(KEY): True},
+            True,
+            CrossOffState.undemonstrated,
+            id="pass-passing-at-base",
+        ),
+        pytest.param(
+            True, {}, True, CrossOffState.undemonstrated, id="pass-unread-at-base"
+        ),
+        pytest.param(
+            False,
+            {CriterionId(KEY): True},
+            True,
+            CrossOffState.failed,
+            id="fail-passing-at-base",
+        ),
+        pytest.param(
+            False,
+            {CriterionId(KEY): False},
+            True,
+            CrossOffState.failed,
+            id="fail-failing-at-base",
+        ),
+        pytest.param(False, {}, True, CrossOffState.failed, id="fail-unread-at-base"),
+        pytest.param(
+            True,
+            {CriterionId(KEY): False},
+            False,
+            CrossOffState.undemonstrated,
+            id="tree-fell-over-under-a-pass",
+        ),
+        pytest.param(
+            False,
+            {CriterionId(KEY): False},
+            False,
+            CrossOffState.undemonstrated,
+            id="tree-fell-over-under-a-fail",
+        ),
+    ],
+)
+def test_a_pass_stands_only_when_the_base_reading_found_the_check_failing_there(
+    passed, at_base, graded_tree_stood, expected
+):
+    """The whole table, each expected member written out rather than derived.
+
+    A pass is this branch's only where the base reading found that same check
+    failing at the base: a check that already passed there is satisfied by
+    every implementation including the empty one, so the head's pass is a
+    reading of the base and not of the work. No reading at all fails closed
+    for the same reason — the branch's contribution is what was not read.
+
+    A fail stands on the graded tree alone, whatever the base says: a
+    criterion this fire finished and has now broken is taken back, and a base
+    reading cannot make a break into a non-break. And a grading read from a
+    tree the sha does not name stands for nothing either way.
+    """
+    assert (
+        state_of(passed=passed, at_base=at_base, graded_tree_stood=graded_tree_stood)
+        is expected
+    )
+
+
+def test_an_id_answered_twice_at_base_has_no_answer():
+    """A reading contradicting itself settled nothing about that id.
+
+    Neither answer stands, so the id has no reading and its head pass fails
+    closed. The id answered once beside it still has its answer: what is
+    dropped is the contradiction and not the whole reading.
+    """
+    answers = base_answers(
+        BaseCheckOutput(
+            base_check_results=[
+                base_result(satisfied=True),
+                base_result(satisfied=False),
+                base_result(key=OTHER, satisfied=True),
+            ]
+        )
+    )
+
+    assert answers == {CriterionId(OTHER): True}
+
+
+def test_an_id_nobody_dispatched_decides_nothing():
+    """An id the reading invented is carried and matches no result.
+
+    Carried rather than dropped: it matches no result the fold reads, so it
+    decides nothing, and reconciling it here would be a second reconciliation
+    of the dispatched set beside the one the grading already makes.
+    """
+    output = BaseCheckOutput(
+        base_check_results=[
+            base_result(satisfied=False),
+            base_result(key="lane/never-dispatched", satisfied=True),
+        ]
+    )
+
+    assert base_answers(output) == {
+        CriterionId(KEY): False,
+        CriterionId("lane/never-dispatched"): True,
+    }
+    assert (
+        state_of(passed=True, at_base=base_answers(output), graded_tree_stood=True)
+        is CrossOffState.passed
+    )
+
+
+def test_the_cross_offs_carry_what_the_fold_decided():
+    """One evidence value for the attempt, one state per criterion.
+
+    The sha and the session pointer are the attempt's, so every cross-off
+    carries the same evidence; which readings stand is per criterion, so the
+    states differ inside one call.
+    """
+    results = [
+        result(),
+        CriterionResult(
+            criterion_id=CriterionId(OTHER),
+            criterion=CHECK,
+            passed=True,
+            reasoning="Observed the selected check.",
+        ),
+    ]
+
+    crossed = cross_offs_for(
+        results=results,
+        graded_sha=GRADED_SHA,
+        observation=evaluation_observation(session_id="session-7", iteration=3),
+        demonstrated=frozenset({CriterionId(OTHER)}),
+    )
+
+    assert [cross_off.state for cross_off in crossed] == [
+        CrossOffState.undemonstrated,
+        CrossOffState.passed,
+    ]
+    assert len({cross_off.evidence for cross_off in crossed}) == 1
+    assert [cross_off.criterion for cross_off in crossed] == [KEY, OTHER]
 
 
 @pytest.mark.parametrize(

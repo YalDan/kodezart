@@ -62,6 +62,22 @@ class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
 
+class BaseReadingUnavailableError(Exception):
+    """The dispatched checks could not be run at the lane's base.
+
+    One type for every way the run does not happen — an unreadable base ref,
+    a refused tree, a tree that is not that commit, an answer nothing can be
+    read from — because the consequence is one: there is no reading at the
+    base, and a pass with no reading at the base is not this branch's pass.
+    It never leaves the step that made the run.
+    """
+
+    def __init__(self, *, base_ref: str, reason: str) -> None:
+        self.base_ref = base_ref
+        self.reason = reason
+        super().__init__(f"the checks at base {base_ref!r} were not run: {reason}")
+
+
 class CheckObservationError(Exception):
     """A completed watch cannot establish one immutable check-set identity."""
 

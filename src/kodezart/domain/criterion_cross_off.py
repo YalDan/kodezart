@@ -2,12 +2,14 @@
 
 The evaluation session is the judgement; this module is what that verdict
 becomes. It makes no judgement of its own: the state is the result's own
-pass, the sha is the commit the workspace was graded at, and the Evidence
+pass where that pass is a reading of the branch — a pass of a check that
+already passed at the lane's base is a reading of the base and not of the
+branch — the sha is the commit the workspace was graded at, and the Evidence
 pointer names the session and the iteration that produced the verdict
 rather than repeating the evaluator's prose, which nothing reads back.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Final
 
 from kodezart.domain.errors import StaleWriteError
@@ -16,8 +18,12 @@ from kodezart.domain.fire_spec import (
     criterion_ref,
     duplicated_row_labels,
 )
-from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResult
-from kodezart.types.domain.criteria import TrackerCriterion
+from kodezart.types.domain.agent import (
+    AcceptanceCriteriaOutput,
+    BaseCheckOutput,
+    CriterionResult,
+)
+from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOffState
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
@@ -121,6 +127,58 @@ def require_tickable(*, issue: TrackerIssue, criterion: TrackerCriterion) -> Non
         raise StaleWriteError(target=criterion.id, expected=tick_anchor(criterion))
 
 
+def passed_ids(results: Sequence[CriterionResult]) -> frozenset[CriterionId]:
+    """The ids this attempt read as passing."""
+    return frozenset(result.criterion_id for result in results if result.passed)
+
+
+def base_answers(output: BaseCheckOutput) -> dict[CriterionId, bool]:
+    """One answer per id the base reading settled, and none for any it did not.
+
+    An id answered twice is the reading contradicting itself, so neither
+    answer stands and that id has no reading. An id nobody dispatched is
+    carried: it matches no result below, so it decides nothing, and dropping
+    it here would be a second reconciliation of the dispatched set.
+    """
+    answers: dict[CriterionId, bool] = {}
+    answered_twice: set[CriterionId] = set()
+    for result in output.base_check_results:
+        if result.criterion_id in answers:
+            answered_twice.add(result.criterion_id)
+        answers[result.criterion_id] = result.satisfied_at_base
+    return {
+        criterion_id: answer
+        for criterion_id, answer in answers.items()
+        if criterion_id not in answered_twice
+    }
+
+
+def demonstrated_criteria(
+    *,
+    results: Sequence[CriterionResult],
+    graded_tree_stood: bool,
+    at_base: Mapping[CriterionId, bool],
+) -> frozenset[CriterionId]:
+    """The dispatched criteria whose reading stands as this branch's.
+
+    A grading read from a tree the sha does not name stands for nothing at
+    all, so no id does. Otherwise a fail stands on the graded tree alone — a
+    criterion this fire finished and has now broken is taken back whatever
+    the base says — and a pass stands only where the base reading found that
+    same check failing there. ``at_base.get(id) is False`` and never ``not
+    at_base.get(id)``: absent and false are the two answers this function
+    exists to tell apart, and absent — no reading at all, or an id the
+    reading left out — fails closed.
+    """
+    if not graded_tree_stood:
+        return frozenset()
+    return frozenset(
+        result.criterion_id
+        for result in results
+        if not result.passed or at_base.get(result.criterion_id) is False
+    )
+
+
 def cross_off_state(*, passed: bool, demonstrated: bool) -> CrossOffState:
     """What one result is worth, given whether its grading stood at all.
 
@@ -139,21 +197,29 @@ def cross_offs_for(
     results: Sequence[CriterionResult],
     graded_sha: str,
     observation: str,
-    demonstrated: bool,
+    demonstrated: Collection[CriterionId],
 ) -> tuple[CriterionCrossOff, ...]:
     """The only site in the source that builds a cross-off and its evidence.
 
     One evidence value serves the whole attempt: the sha and the session
     pointer are the attempt's, not each criterion's, so a second copy per
-    criterion would be a second place for the same sha to drift from. So is
-    *demonstrated*: the workspace either stood at that sha for the whole
-    attempt or it did not.
+    criterion would be a second place for the same sha to drift from.
+
+    *demonstrated* is per criterion, because one of the two facts behind it
+    is: the workspace either stood at that sha for the whole attempt or it
+    did not, but whether the same check already passed at the lane's base is
+    a fact about one criterion. ``demonstrated_criteria`` folds both into the
+    ids whose reading stands, and an id absent from it has no reading of the
+    branch at all.
     """
     evidence = CriterionEvidence(graded_sha=graded_sha, test=observation)
     return tuple(
         CriterionCrossOff(
             criterion=criterion_ref(result.criterion_id),
-            state=cross_off_state(passed=result.passed, demonstrated=demonstrated),
+            state=cross_off_state(
+                passed=result.passed,
+                demonstrated=result.criterion_id in demonstrated,
+            ),
             evidence=evidence,
         )
         for result in results

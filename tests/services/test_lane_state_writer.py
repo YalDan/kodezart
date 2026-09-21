@@ -962,15 +962,23 @@ async def tick(
     failed: Sequence[str] = (),
     demonstrated: bool = True,
 ) -> None:
-    """One attempt's whole verdict, written the way the evaluator writes it."""
+    """One attempt's whole verdict, written the way the evaluator writes it.
+
+    *demonstrated* stays the attempt-wide boolean the writer's tests are about:
+    which readings stand is the evaluator's fold, and a verdict that stood at
+    all stood for every criterion it graded.
+    """
+    results = graded(keys, failed=failed)
     await lane_state.write_cross_offs(
         lane=binding(),
         dispatched=dispatched(keys),
         cross_offs=cross_offs_for(
-            results=graded(keys, failed=failed),
+            results=results,
             graded_sha=sha,
             observation=evaluation_observation(session_id="eval-session", iteration=1),
-            demonstrated=demonstrated,
+            demonstrated=(
+                {result.criterion_id for result in results} if demonstrated else set()
+            ),
         ),
     )
 
@@ -1024,16 +1032,17 @@ async def test_a_full_lane_of_ticks_leaves_state_and_full_sha_on_every_sub_issue
 async def test_a_verdict_that_does_not_answer_the_dispatched_roster_writes_nothing():
     port = criteria_board()
     lane_state = writer(port, lane_repo())
+    partial = graded(CRITERIA[:2])
 
     with pytest.raises(LaneRecordWriteError, match="dispatched criteria"):
         await lane_state.write_cross_offs(
             lane=binding(),
             dispatched=dispatched(),
             cross_offs=cross_offs_for(
-                results=graded(CRITERIA[:2]),
+                results=partial,
                 graded_sha="4" * 40,
                 observation="evaluator session eval-session, iteration 1",
-                demonstrated=True,
+                demonstrated={result.criterion_id for result in partial},
             ),
         )
 

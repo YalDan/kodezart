@@ -229,7 +229,13 @@ async def test_fresh_parent_resumes_original_native_phase(
         assert "NativeWriterOutput" not in titles
         assert "AmendmentJudgment" not in titles
         if position == "before_commit":
-            assert titles == ["CommitMessageOutput", "AcceptanceCriteriaOutput"]
+            # The resumed evaluation grades the head and then reads the
+            # same criteria at the lane's base, which is its own session.
+            assert titles == [
+                "CommitMessageOutput",
+                "AcceptanceCriteriaOutput",
+                "BaseCheckOutput",
+            ]
         assert (
             len([c for c in port.comments if c.body.startswith("[fixture-amendment:")])
             == 1
@@ -617,7 +623,8 @@ async def test_saved_persist_receipt_resumes_without_writer_commit_or_push(
         final = await fresh.native_graph.aget_state(config)
         assert final.values["total_iterations"] == 1
         assert [call["output_format"]["schema"]["title"] for call in second.calls] == [
-            "AcceptanceCriteriaOutput"
+            "AcceptanceCriteriaOutput",
+            "BaseCheckOutput",
         ]
         assert (
             final.values["trajectory"].records[0].commit_sha == phase.receipt.commit_sha

@@ -110,6 +110,25 @@ def criteria_echo(*, keys: Sequence[str], passed: Container[str]) -> dict:
     }
 
 
+def base_echo(*, keys: Sequence[str], satisfied: Container[str]) -> dict:
+    """One base-check answer per criterion of *keys*, satisfying *satisfied*.
+
+    Which of the dispatched criteria the lane's base already passes is the
+    single variable of every test about the base reading, so every such test
+    builds its answer here rather than repeating the shape of one.
+    """
+    return {
+        "baseCheckResults": [
+            {
+                "criterionId": key,
+                "command": "ran the check this criterion names, at the base",
+                "satisfiedAtBase": key in satisfied,
+            }
+            for key in keys
+        ]
+    }
+
+
 class LosingBoard(FakeTrackerPort):
     """A board that loses the next write of one named call, and then behaves.
 
@@ -170,12 +189,20 @@ class LaneGit(FakeGitService):
         self.repo = repo
         #: Trees holding uncommitted changes, by the path each one is at.
         self.dirtied: set[str] = set()
-        #: Trees standing at a commit other than the branch head.
+        #: Trees standing at a commit other than the branch head, by path.
+        #:
+        #: Kept apart from the inherited acquisition record so the precedence
+        #: between them is stated rather than decided by which was written
+        #: last: this one is an explicit override and wins.
         self.heads: dict[str, str] = {}
 
     async def current_sha(self, cwd: str) -> str:
         self.calls.append(("current_sha", cwd))
-        return self.heads.get(cwd, self.repo.head)
+        # A head a test moved explicitly wins over the commit the tree was cut
+        # at, whichever happened first: the override is how a test says "this
+        # tree ended somewhere else", and an acquisition record is only where
+        # a tree started.
+        return self.heads.get(cwd) or self.checkouts.get(cwd) or self.repo.head
 
     async def has_changes(self, cwd: str) -> bool:
         self.calls.append(("has_changes", cwd))
