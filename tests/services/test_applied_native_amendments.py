@@ -334,6 +334,46 @@ async def test_undemonstrable_here_upholds_at_the_environment_reason_touching_no
         await cleanup(workspace)
 
 
+@pytest.mark.parametrize("fault", ["criterion", "environment"])
+async def test_the_fault_line_separates_a_fault_in_the_criterion_from_one_outside_it(
+    repository, fault
+):
+    """Paired walks differing only in where the judgment puts the fault.
+
+    An implementation that amends both arms fails the environment arm, and one
+    that upholds both fails the criterion arm. Cost is not one of the four
+    grounds, so the landed order still asks the fault line before any ground.
+    """
+    executor = Executor(
+        reproduced=True,
+        finding=UNVERIFIABLE_HERE if fault == "environment" else None,
+    )
+    service, guard, workspace, port = await build(repository, executor)
+    prior = port.issues[DIRECT_OWED]
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        verdict = report.verdicts[0]
+        titles = [c["output_format"]["schema"]["title"] for c in executor.calls]
+        if fault == "criterion":
+            assert verdict.verdict == "amended"
+            assert AMENDED_CHECK in port.issues[DIRECT_OWED].body
+            assert "AmendmentTextOutput" in titles
+            assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
+            assert await git(
+                repository[0], "ls-remote", "origin", "refs/heads/native-test"
+            )
+        else:
+            assert verdict.verdict == "upheld"
+            assert verdict.reason is UpheldReason.GROUND_NOT_REPRODUCED
+            assert port.issues[DIRECT_OWED].body == prior.body
+            assert port.issues[DIRECT_OWED].state_kind is prior.state_kind
+            assert "AmendmentTextOutput" not in titles
+            assert not any(isinstance(e, ResultEvent) for e in events)
+    finally:
+        await cleanup(workspace)
+
+
 @pytest.mark.parametrize("affordable", [None, True, False])
 async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalated(
     repository, affordable
