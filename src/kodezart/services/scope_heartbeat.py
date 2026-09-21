@@ -214,8 +214,8 @@ class ScopeHeartbeat:
         memory and the scope is submitted, so a run that stopped short frees
         the scope for the next tick exactly as it always did. A latched
         ending is re-checked against a fresh roster: an added member, a
-        removed one, a criterion moved out of Done or a member's own approval
-        withdrawn changes the roster and the scope is submitted again.
+        removed one, a criterion that is no longer satisfied or a member's own
+        approval withdrawn changes the roster and the scope is submitted again.
         """
         scope = binding.scope
         if isinstance(remembered, _Watching):
