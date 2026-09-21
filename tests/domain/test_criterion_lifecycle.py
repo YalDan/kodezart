@@ -1611,7 +1611,10 @@ def moved(*paths: str) -> ChangesetDigest:
 
 
 def standing_at(
-    *, graded: CriterionCrossOff, changeset: ChangesetDigest
+    *,
+    graded: CriterionCrossOff,
+    changeset: ChangesetDigest,
+    base_stale: bool = False,
 ) -> GradedState:
     """What *graded* is worth at ``LATER_HEAD``, asked of the one expression."""
     return graded_state(
@@ -1620,6 +1623,7 @@ def standing_at(
         rederivation_class=graded.rederivation_class,
         exercised_paths=graded.exercised_paths,
         changeset=changeset,
+        base_stale=base_stale,
     )
 
 
@@ -1683,31 +1687,52 @@ def implied(*, advanced: bool) -> BaseSpec:
     )
 
 
-def test_a_stale_recorded_base_takes_no_grading_while_a_live_base_counts_them_all():
+def lapse_readings(
+    *, graded: tuple[CriterionCrossOff, ...], implied_base: BaseSpec
+) -> set[GradedState]:
+    """What *graded* is worth when the blockers imply *implied_base* now.
+
+    The landed comparison is called once, here, and its answer is the only
+    base reading the rule is given — so the reading and the rule's verdict
+    are one chain and not two claims standing side by side. Substitute a
+    literal for that call and one of the fixture's two arms reds, because a
+    single literal cannot be both answers.
+    """
+    return {
+        standing_at(
+            graded=item,
+            changeset=moved("docs/architecture.md"),
+            base_stale=is_base_stale(RECORDED_BASE, implied_base),
+        )
+        for item in graded
+    }
+
+
+def test_a_stale_recorded_base_lapses_the_gradings_a_live_base_leaves_counted():
     """Both arms over one pair of base specs, and one pair of graded criteria.
 
     Two criteria are graded at a sha the head has since left behind, over one
-    prefix, one path-bound class each. The base they were dispatched on is
-    recorded; the base their blockers imply is either that same base — equal
-    but a distinct value, so equality is what answers — or that base with its
-    one input's sha advanced under the same base branch. That advance is the
-    case a comparison of base BRANCH names cannot see, which is why the arms
-    are built from the landed comparison itself and not from an equality
-    restated here.
+    prefix, one path-bound class each, and nothing they exercised has moved —
+    so what they are worth turns on the base alone. The base they were
+    dispatched on is recorded; the base their blockers imply is either that
+    same base — an equal but distinct value, so equality is what answers and
+    not identity — or that base with its one input's sha advanced under the
+    same base branch. That advance is the case a comparison of base BRANCH
+    names cannot see, which is why both arms are built from the landed
+    comparison itself and not from an equality restated here.
 
-    What each arm is worth is decided before any grading is read, and by a
-    different question from the one the lapse rule answers. On a live base the
-    baseline resolves and the gradings behind head still count, because
-    nothing they exercised moved. On a stale one no verdict may be computed
-    against that base at all: the refusal carries the input that moved, and no
-    grading taken on that base is carried as passing — not because each was
-    read and found lapsed, but because the reading is never taken.
+    The two arms share one chain: the comparison's answer is what the lapse
+    rule is asked with. On a live recorded base every grading stays counted;
+    on a stale one every grading lapses, whatever its own prefixes did. A
+    comparison answering stale to any base change reds the live arm, and one
+    answering stale to none reds the stale arm, which is the pair the
+    fixture exists to make impossible to fake.
 
-    So the lapse rule reads no base: its inputs are the two shas, the class,
-    the prefixes and the commit record, asserted exactly, so restoring a base
-    parameter to it reds here. A comparison answering stale to any base change
-    reds the live arm twice over; one answering stale to none reds the stale
-    arm twice over.
+    The same stale base is also a refusal at the scope surface, asserted
+    beside the readings: no verdict is computed against a base that has
+    moved, and the refusal carries the input that moved it. The count of
+    graded criteria is asserted too, so "every criterion" does not quietly
+    become one.
     """
     graded = (
         cross_off(
@@ -1721,11 +1746,17 @@ def test_a_stale_recorded_base_takes_no_grading_while_a_live_base_counts_them_al
             exercised_paths=(EXERCISED,),
         ),
     )
+    assert len(graded) == 2
     assert all(item.evidence.graded_sha != LATER_HEAD for item in graded)
-    live, stale = implied(advanced=False), implied(advanced=True)
 
-    assert is_base_stale(RECORDED_BASE, live) is False
-    assert is_base_stale(RECORDED_BASE, stale) is True
+    live, stale = implied(advanced=False), implied(advanced=True)
+    assert live is not RECORDED_BASE
+    assert live == RECORDED_BASE
+    assert stale != RECORDED_BASE
+    assert stale.base_branch == RECORDED_BASE.base_branch
+
+    assert lapse_readings(graded=graded, implied_base=live) == {GradedState.counted}
+    assert lapse_readings(graded=graded, implied_base=stale) == {GradedState.lapsed}
 
     assert scope_base(RECORDED_BASE, live) == RECORDED_BASE.base_branch
     with pytest.raises(StaleBaseError) as caught:
@@ -1737,14 +1768,11 @@ def test_a_stale_recorded_base_takes_no_grading_while_a_live_base_counts_them_al
         f"criterion/blocker@feature/blocker:{ADVANCED_SHA}",
     ]
 
-    assert {
-        standing_at(graded=item, changeset=moved("docs/architecture.md"))
-        for item in graded
-    } == {GradedState.counted}
     assert set(signature(graded_state).parameters) == {
         "graded_sha",
         "head_sha",
         "rederivation_class",
         "exercised_paths",
         "changeset",
+        "base_stale",
     }
