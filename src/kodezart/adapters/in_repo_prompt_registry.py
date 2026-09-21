@@ -43,6 +43,7 @@ _SKILLS_FRAGMENT = "skills_reference"
 _SUPPRESSION_FRAGMENT = "suppression_proxy"
 _DESIGN_REVIEW_FRAGMENT = "design_review"
 _MECHANISMS_FRAGMENT = "pass_mechanisms"
+_HIERARCHY_FRAGMENT = "board_hierarchy"
 _ORCHESTRATION_SLOT = "orchestration_block"
 _CRITIQUE_SLOT = "ticket_create_critique"
 _INVESTIGATION_SPEC_FRAGMENT = "investigation_spec"
@@ -313,7 +314,8 @@ def _composed(metadata: PromptSetMetadata, name: str, body: str) -> str:
     """One member, assembled from *body* plus the set's fragment content.
 
     Which fragments a member receives is a property of the SET: the
-    suppression proxy, the design refutation and the shared pass mechanisms
+    suppression proxy, the design refutation, the shared pass mechanisms and
+    the board hierarchy
     where a member asks for one by name, and the reasoning-depth block
     appended to every role outside the declared utility roster.  A set that
     declares none of them composes unchanged.
@@ -323,6 +325,7 @@ def _composed(metadata: PromptSetMetadata, name: str, body: str) -> str:
         _SUPPRESSION_FRAGMENT: fragments.suppression_proxy,
         _DESIGN_REVIEW_FRAGMENT: fragments.design_review,
         _MECHANISMS_FRAGMENT: fragments.pass_mechanisms,
+        _HIERARCHY_FRAGMENT: fragments.board_hierarchy,
     }
     substitutions = {name: text for name, text in declared.items() if text is not None}
     appendix = (

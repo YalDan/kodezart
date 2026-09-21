@@ -113,6 +113,10 @@ class PromptSetFragments(BaseModel):
     #: mechanism, because each pass owes the same three and a copy per
     #: member is a copy that can drift.
     pass_mechanisms: str | None = None
+    #: The board's shape, stated once for every role that reads or writes
+    #: placement.  One source, because a standard restated per member is a
+    #: standard that can disagree with itself.
+    board_hierarchy: str | None = None
 
 
 class SessionRole(StrEnum):
