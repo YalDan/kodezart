@@ -253,15 +253,19 @@ async def build(
     return service, guard, workspace, port
 
 
-async def drive(service, guard, repository):
+async def drive(service, guard, repository, *, resume=False):
+    """*resume* re-enters the existing `native-test` branch instead of cutting it."""
     return [
         event
         async for event in service.stream_workflow(
-            prompt="Implement the exact current Checks.",
+            prompt="Continue under the actual current native Checks."
+            if resume
+            else "Implement the exact current Checks.",
             repo_path=str(repository[0]),
-            base_branch="main",
+            base_branch="native-test" if resume else "main",
             branch_name="native-test",
             ralph_branch="native-test",
+            create_branch=not resume,
             permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=ToolPreset.IMPLEMENTATION,
             skills=SUPPRESS_ALL_SKILLS,
