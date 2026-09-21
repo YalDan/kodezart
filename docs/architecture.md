@@ -1054,8 +1054,8 @@ and assigned constructor aliases, including calls in function headers. Ruling
 address fields retain the minted type through containers and forward references;
 text, other untyped values and rebinding the identity name fail the guard.
 Native and fake tracker fixtures show that duplicate or amended criterion text
-does not change the addressed keys. Evaluator state/body writer adoption and
-the separate model-membership and spec-backend invariants remain unfinished.
+does not change the addressed keys. Evaluator state/body writer adoption
+remains unfinished.
 
 `resolve_criterion` is the shared native-key resolver in `criterion_sources`.
 It reads the complete current child family through `TrackerPort.read_criteria`

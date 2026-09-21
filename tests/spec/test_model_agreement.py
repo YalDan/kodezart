@@ -18,6 +18,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
+from tests.domain.test_criterion_lifecycle import (
+    CODE,
+    INVARIANT_MODULES,
+    MODEL_INVARIANTS,
+    declared_invariants,
+    port_attributes,
+)
 from tests.fakes import FakeMcpIssue
 from tests.model_members import CLASSIFICATION, model_workspace
 
@@ -36,6 +43,31 @@ INVARIANTS = {
     ),
     "model value naming": (
         "test_committed_fixture_resolves_each_name_to_its_one_definition"
+    ),
+}
+
+
+@dataclass(frozen=True)
+class AddedMember:
+    """A body for a member added under the marker, and what the one invariant
+    that reports its defect must name."""
+
+    body: str
+    names: tuple[str, ...]
+
+
+#: For each invariant this backend runs: a member body that plants one defect
+#: only that invariant reports. Seeded beside the committed fixture with no
+#: other body edited, the report naming the member is the observation that the
+#: invariant ran over the queried set and not over a transcribed roster.
+ADDED_MEMBER_PROBES = {
+    "cross-lane pointer resolution": AddedMember(
+        body='<issue id="member/beta">member/beta</issue> D9.',
+        names=("member/new", "member/beta D9", "expected one numbered deliverable"),
+    ),
+    "model value naming": AddedMember(
+        body="## D3 — Define the shared identity",
+        names=("member/new D3", "member/beta D2", "both define"),
     ),
 }
 FIXTURE = Path(__file__).with_name("fixtures") / "model_members.json"
@@ -645,6 +677,48 @@ async def test_new_member_without_body_edit_is_checked_by_real_pointer_invariant
     assert "member/new" in snapshot["members"]
     assert (await tracker.read_issue(issue_key="member/alpha")).body == before
     workspace.read_only()
+
+
+@pytest.mark.parametrize("invariant", sorted(INVARIANTS))
+async def test_a_member_added_with_no_body_edit_is_inside_each_invariants_input_set(
+    invariant, tracker, workspace
+):
+    """A member added under the marker, with no other body edited, is inside
+    the input set of every invariant over member bodies, and each one is seen
+    to run over it: the probe body plants one defect only that invariant
+    reports, and the report names the member.
+
+    The invariants over member bodies are exactly the ones this backend runs,
+    because this is the backend that reads the model through the tracker port.
+    The code backend's invariants read packaged source and no member, so a
+    member has no place in their input; MODEL_INVARIANTS routes them there by
+    design and the routing family on that backend pins the split.
+    """
+    probe = ADDED_MEMBER_PROBES[invariant]
+    _, before, _ = await read_model(tracker, classification=CLASSIFICATION)
+    await workspace.seed(
+        [{"key": "member/new", "body": probe.body, "labels": [CLASSIFICATION]}]
+    )
+    failures, snapshot = await model_agreement(tracker, classification=CLASSIFICATION)
+    assert "member/new" in snapshot["members"]
+    assert len(failures) == 1
+    assert all(name in failures[0] for name in probe.names)
+    assert all(
+        snapshot["documents"][key] == _document_projection(document)
+        for key, document in before.items()
+    )
+    workspace.read_only()
+
+
+def test_the_invariants_over_member_bodies_are_exactly_the_ones_this_backend_runs():
+    """Each invariant this backend runs has an added-member probe, and every
+    model invariant is either on this roster or on the code backend's, which
+    takes no port handle and so has no member input.
+    """
+    _, code_runners = declared_invariants(INVARIANT_MODULES[CODE])
+    assert sorted(ADDED_MEMBER_PROBES) == sorted(INVARIANTS)
+    assert all(name in INVARIANTS or name in code_runners for name in MODEL_INVARIANTS)
+    assert port_attributes(INVARIANT_MODULES[CODE].read_text()) == ()
 
 
 @pytest.mark.parametrize(

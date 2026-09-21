@@ -36,9 +36,11 @@ uv run pytest tests/spec/test_model_agreement.py tests/tracker/test_labeled_issu
 
 The committed synthetic workspace in `tests/spec/fixtures/model_members.json` is
 a regression fixture only. It is not the current board's specification. Adding a
-marked member without editing any existing body sends that member through the
-actual pointer checker. The full model's other invariants, including semantic
-definition uniqueness, still require their own exercised consumers.
+marked member without editing any existing body sends that member through every
+invariant this backend runs: each invariant on the roster has an added-member
+probe whose defect only that invariant reports, and the probe test reads the
+report naming the member. The invariants on the code backend read packaged
+source and no member, so a member has no place in their input.
 
 The separate live test uses the existing operation configuration, tracker
 credential and MCP transport. It performs no boot reconciliation or tracker
