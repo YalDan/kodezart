@@ -128,6 +128,10 @@ class NativeExecutor(RecordingExecutor):
         self.write_verdict = "holds"
         self.claim_key = None
         self.instruction = False
+        #: The mandate prose the hunt reports. Model-authored text, so a
+        #: fixture varies it to show the escalation identity does not move
+        #: with the wording.
+        self.mandate_text = "Explicit parent instructions."
         self.refuse_after_first_refutation = False
         #: A criterion key whose reopen every write-back round refutes, so the
         #: move exhausts its verification budget. Every other round holds.
@@ -230,7 +234,7 @@ class NativeExecutor(RecordingExecutor):
                         # the question it was given rather than a fixed one.
                         "defect_class": self.defect_class(kwargs["prompt"]),
                         "role": "mandate",
-                        "mandate_text": "Explicit parent instructions.",
+                        "mandate_text": self.mandate_text,
                         "evidence": (
                             "Read the exact parent body and measured check.txt."
                         ),
@@ -535,6 +539,95 @@ async def test_instructed_refutation_records_verified_escalation_before_claim(
         == claims
     )
     assert len(executor.calls) > sessions  # the second tick's own summary judge
+    assert not workspace._workspaces
+
+
+#: Two exact sentences of the parent body, so a sweep can quote either one.
+#: The hunt refuses a quotation that is not exact source text, so the prose
+#: a fixture varies has to be prose the audited surface actually holds.
+EARLIER_WORDING = "Explicit parent instructions."
+LATER_WORDING = "The same instruction, restated at greater length."
+
+
+def escalation_comments(server):
+    """Every escalation object on the board, newest read included."""
+    return [
+        row
+        for row in server.comments
+        if row.body.startswith("[native-audit-escalation:")
+    ]
+
+
+def escalation_record(server):
+    """The one escalation object's own decoded body."""
+    rows = escalation_comments(server)
+    assert len(rows) == 1, [row.id for row in rows]
+    return rows[0].id, json.loads(rows[0].body.partition("\n")[2])
+
+
+async def test_two_unchanged_sweeps_hold_one_escalation_for_a_reworded_mandate(
+    native_audit,
+):
+    """One criterion, one escalation object, two wordings of one instruction.
+
+    The window is genuinely unchanged, which is the whole point: the
+    criterion is still ``Done`` at the second tick, so the second tick
+    audits it again instead of deferring it, and ``deferred == ()`` is what
+    says so. A sweep that deferred the criterion would leave one escalation
+    for a reason that has nothing to do with its identity.
+
+    The refutation is the over-claim arm, because only a refuted
+    current-Check claim takes a criterion back: an over-claim refutation
+    carries the instructed mandate the escalation is raised for and moves
+    no state, so the window at the second tick is byte-identical to the
+    first. Its own unresolved workflow-state authority ends each tick
+    incomplete, which is the refusal that arm has always had.
+    """
+    audit, executor, server, _tracker, _git, workspace, _repository = native_audit
+    assert EARLIER_WORDING != LATER_WORDING
+    server.issues[ROOT].description = f"{EARLIER_WORDING} {LATER_WORDING}"
+    executor.overclaim_verdict = "refuted"
+    executor.instruction = True
+    criterion_body_before = server.issues[CHILD].description
+    assert server.issues[CHILD].status == "Done"
+
+    # Two ticks, and only two: each spends the same fourteen sessions, so a
+    # tick that quietly deferred its criterion would spend fewer.
+    ticks = (
+        (FIXTURE_NOW, EARLIER_WORDING, 14),
+        (FIXTURE_NOW + timedelta(seconds=60), LATER_WORDING, 28),
+    )
+    raised = []
+    for started_at, wording, spent in ticks:
+        executor.mandate_text = wording
+        with pytest.raises(AuditRunIncompleteError) as incomplete:
+            await audit.run(started_at)
+        scope = incomplete.value.report.scopes[0]
+        assert [row.reason for row in scope.unavailable] == [
+            "AuditClaimReadError: the refutation is published; its "
+            "workflow-state authority remains unresolved"
+        ]
+        # Nothing was deferred, so the criterion really was swept again.
+        assert scope.deferred == ()
+        assert len(executor.calls) == spent
+        # The window did not move: state, Evidence row and body all stand.
+        assert server.issues[CHILD].status == "Done"
+        assert server.issues[CHILD].description == criterion_body_before
+        assert state_writes(server) == []
+        comment_id, record = escalation_record(server)
+        raised.append((comment_id, record["question"]))
+
+    # One object across both ticks, keyed on the criterion sub-issue key and
+    # nothing else: no digest segment, no defect class, nothing appended.
+    assert [row[0] for row in raised] == [raised[0][0]] * 2
+    _, record = escalation_record(server)
+    assert record["escalationKey"] == CHILD
+    assert ":mandate:" not in record["escalationKey"]
+    # The second tick did re-raise, with the other wording, and the one
+    # object carries it — so the wording moved and the identity did not.
+    assert EARLIER_WORDING in raised[0][1]
+    assert LATER_WORDING in raised[1][1]
+    assert raised[0][1] != raised[1][1]
     assert not workspace._workspaces
 
 

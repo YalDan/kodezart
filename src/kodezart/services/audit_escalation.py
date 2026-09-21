@@ -1,10 +1,9 @@
 """Complete and verify instructed-mandate escalations before audit publication."""
 
-import hashlib
-import json
 from collections.abc import Awaitable, Callable
 
 from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.domain.audit_claims import mandate_escalation_key
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.tracker_writes import classification_surface
@@ -77,26 +76,9 @@ class AuditEscalations:
             raise AuditClaimReadError("the mandate target returned another identity")
         label_surface = classification_surface(subject)
         finding = mandate.finding
-        digest = hashlib.sha256(
-            json.dumps(
-                [
-                    issue_key,
-                    finding.defect_class,
-                    finding.mandate_text,
-                    json.dumps(
-                        [
-                            mandate.finding_surface.kind.value,
-                            mandate.finding_surface.ref.kind.value,
-                            mandate.finding_surface.ref.key,
-                            mandate.finding_surface.marker,
-                        ]
-                    ),
-                ]
-            ).encode()
-        ).hexdigest()
         escalation = LaneEscalation(
             issue_id=issue_key,
-            escalation_key=f"{issue_key}:mandate:{digest}",
+            escalation_key=mandate_escalation_key(issue_key=issue_key),
             raised_by=RunKind.AUDIT.value,
             raised_at_sha=head_sha,
             question=(
