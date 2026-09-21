@@ -1508,6 +1508,7 @@ class TestSurfaceLease:
             holder=JOB_A,
             lease_seconds=LEASE_SECONDS,
         )
+        assert renewed is not None
         assert renewed.holder == JOB_A
 
         await tracker.release_surfaces(
