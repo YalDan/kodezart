@@ -10,6 +10,7 @@ from kodezart.types.domain.agent import RulingId as ExistingRulingId
 from kodezart.types.domain.amendment import (
     AmendedAmendment,
     AmendmentClaim,
+    AmendmentGround,
     AmendmentJudgment,
     AmendmentReport,
     AmendmentSubject,
@@ -198,6 +199,29 @@ def test_pure_counts_separate_subject_kind_identity_and_reason():
     )
     assert repeated_upheld(reports) == counted
     assert [report.model_dump_json() for report in reports] == before
+
+
+def test_the_ground_vocabulary_gained_no_member_when_the_subject_widened():
+    """The subject is a discriminated union carrying a typed id, not a fifth ground.
+
+    Widening the subject to the pinned-answer kind added no member here: the same
+    four grounds are read against whichever kind the claim names.
+    """
+    assert [(member.name, member.value) for member in AmendmentGround] == [
+        ("UNSATISFIABLE_AT_BASE", "unsatisfiable_at_base"),
+        ("MUTUALLY_UNSATISFIABLE", "mutually_unsatisfiable"),
+        ("PREMISE_FALSE_AT_BASE", "premise_false_at_base"),
+        ("REQUIRES_BREAKING_HOUSE_RULE", "requires_breaking_house_rule"),
+    ]
+    value = amended()
+    with pytest.raises(ValidationError):
+        AmendmentClaim.model_validate(
+            value.claim.model_dump() | {"ground": "a_fifth_ground"}
+        )
+    with pytest.raises(ValidationError):
+        AmendmentJudgment.model_validate(
+            value.judgment.model_dump() | {"ground": "a_fifth_ground"}
+        )
 
 
 def test_the_reason_vocabulary_is_exactly_these_four():
