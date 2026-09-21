@@ -27,7 +27,7 @@ from tests.fakes import (
 )
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
-from tests.services.test_prompt_passes import _config
+from tests.services.test_prompt_passes import HEARTBEAT_PASS, _config
 from tests.services.test_run_surface_lease import _Board
 from tests.tracker.conftest import CLAIMED_ISSUE
 from tests.tracker.test_linear_mcp_tracker import tracker_over
@@ -301,16 +301,18 @@ async def test_a_scope_deployment_schedules_the_organize_tick_and_no_per_issue_p
     is dialled and a delivery probe is configured. On the state this fixture is
     in, boot used to schedule an hourly dispatch pass and both session passes
     over that team's whole board. What this deployment gets is the organize tick
-    and nothing else, with no lifecycle watcher behind it, and both existing
-    "not wired" lines carry the reason as a field rather than leaving an
-    operator to read three true premises and an empty schedule.
+    and the standing scopes' own heartbeat beside it — neither of which scans a
+    board — with no lifecycle watcher behind it, and both existing "not wired"
+    lines carry the reason as a field rather than leaving an operator to read
+    three true premises and a schedule with no per-issue pass in it.
     """
     config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
     runtime, logs = await _runtime_over(
         config, operation, board, tracker, prompts, ledger, forge=FakeDeliveryProbe()
     )
     assert [entry.name for entry in runtime.scheduler.passes] == [
-        PromptKey.GROOMING_PASS.value
+        PromptKey.GROOMING_PASS.value,
+        HEARTBEAT_PASS,
     ]
     assert runtime.lifecycle is None
     withheld = _logged(logs, "scheduled_passes_not_wired")

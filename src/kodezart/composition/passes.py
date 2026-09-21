@@ -14,6 +14,7 @@ from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.composition.audit import build_audit_pass, verify_audit_configuration
 from kodezart.composition.organize import (
     build_organize_tick,
+    build_scope_heartbeat,
     verify_organize_configuration,
 )
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
@@ -71,6 +72,12 @@ from kodezart.types.domain.skills import SkillsSelection
 #: What a dispatch pass is called: on its own where the pass CLASS is
 #: meant, and prefixing the repository where one instance is.
 _DISPATCH_NAME = "dispatch"
+
+#: What the standing-scope heartbeat is called.  One instance for the whole
+#: operation, because it iterates the declared bindings itself: the scopes
+#: are not a per-repository roster and a pass per repository would ask the
+#: same approval question once per binding that repository happens to hold.
+_HEARTBEAT_NAME = "scope_heartbeat"
 
 
 @dataclass(frozen=True)
@@ -936,6 +943,29 @@ async def build_dispatch_runtime(
                 ),
             ),
         )
+        # The standing scopes' own pass, beside the tick that grooms them:
+        # one predicate decides both, so a deployment that declares the rows
+        # gets the pre-approval tick AND the submission of what approval
+        # admits, and a deployment that declares none gets neither.  On the
+        # dispatch cadence, because what it watches for is the same kind of
+        # change a dispatch scan watches for, and with no report: it opens no
+        # session, so a tick of it is not a run that could be recorded.
+        heartbeat = build_scope_heartbeat(
+            config=config,
+            operation=operation,
+            tracker=None if dialled is None else dialled.tracker,
+            queue=queue,
+            registry=registry,
+        )
+        if heartbeat is not None:
+            scheduled.append(
+                ScheduledPass(
+                    name=_HEARTBEAT_NAME,
+                    interval_seconds=config.dispatch_pass_interval_seconds,
+                    timeout_seconds=config.dispatch_pass_timeout_seconds,
+                    run=heartbeat.run,
+                )
+            )
     else:
         # The other arm of the same event: no operation config at all, so
         # every roster is absent rather than empty. One name for one fact,

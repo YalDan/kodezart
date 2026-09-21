@@ -780,6 +780,19 @@ reason is in the log rather than inferred from an empty schedule. Boot also asks
 nothing of those passes: no gate signal they configure is probed and no template
 they would send is rendered.
 
+`[[organize_scopes]]` rows are the standing scopes: each one is groomed before
+approval by the organize tick on the grooming cadence, and submitted as a scope
+run by the `scope_heartbeat` pass once it carries `scope_labels.approved`. That
+pass takes the place of the withheld dispatch scan and reuses its knobs —
+`KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` and
+`KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` — and submits onto
+`KODEZART_DISPATCH_LANE`. It adds no configuration field of its own, opens no
+session and writes nothing to the tracker. A row that is not approved is
+reported as unapproved and never submitted; a row whose run is still live is
+not submitted again; a restarted process submits every approved row on its
+first tick, because the queue it would have re-used is gone with the process.
+Declaring no row schedules neither the organize tick nor the heartbeat.
+
 When those bindings are configured, set both
 `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
 `KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` to positive integers. Neither bound

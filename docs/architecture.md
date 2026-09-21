@@ -447,6 +447,18 @@ write. The work set itself always comes from the one gap computation, which is
 entered on every pass through a stage, including a replay with nothing left to
 do.
 
+Setting the approval label is what starts a scope run. The `scope_heartbeat`
+pass reads each `[[organize_scopes]]` row on the dispatch cadence and submits a
+scope run for every row that is approved and has no live job, onto the
+configured dispatch lane. It opens no session, takes no surface lease and makes
+no tracker write: applying the label is somebody else's act and this pass only
+observes it. Its report names every declared row as submitted, live, unapproved
+or failed, so "nobody has approved this scope yet" is an answer read off the
+tick rather than inferred from silence. The map of what it submitted is this
+process's own, keyed by the scope, and so is the queue it submits onto — which
+is why a restarted process submits again on its first tick, and why a registry
+that has forgotten a job is not read as a run still walking.
+
 One predicate answers whether a phase may act on a member now, and every gate
 read and approval read in the owner is that predicate: a run stage is admitted
 by approval and by its gate, a pre-approval phase by its gate while approval

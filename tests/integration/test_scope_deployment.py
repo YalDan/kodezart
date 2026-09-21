@@ -15,13 +15,15 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.tracker import criteria_stage_label_key
 from kodezart.config.organize import OrganizeSettings
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
+from kodezart.domain.errors import ScopeNotApprovedError, WorkspaceError
 from kodezart.main import create_app, lifespan
+from kodezart.services.scope_approval import scope_approved
 from kodezart.services.tracker_boot import owned_mappings
 from kodezart.types.domain.branch import trunk_base
-from kodezart.types.domain.dispatch import ExclusionClause
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.prompts import PromptKey
@@ -37,6 +39,7 @@ from tests.integration.test_scope_runtime import (
     lane_record,
     resumable,
 )
+from tests.services.test_prompt_passes import HEARTBEAT_PASS
 from tests.tools.scratch_board import ScratchBoardServer
 from tests.tools.scratch_scope import (
     SCRATCH_DECLARATION,
@@ -338,15 +341,19 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
 
     A deployment configured from the shipped file and the page's own environment
     block boots, reconciles its mappings into the team, schedules the organize
-    tick and nothing else, holds no checkpointer, and writes no label onto any
-    issue. Its first scoped observation reports all three lanes unapproved with
-    nothing dispatched and leaves the board untouched.
+    tick and the standing scopes' heartbeat and nothing else, holds no
+    checkpointer, and writes no label onto any issue. Its first scoped run is
+    refused by type before a member is read, because nobody has approved the
+    project yet, and it leaves the board untouched.
 
     Then the approval label is applied — by this test, standing for the person
-    whose act it is — and the next observation reports the two root lanes ready
-    with the third excluded under its live blocker. Nothing here waits for a
-    fire: the lanes carry no criteria-stage marker at this head, so a fire's
-    refusal would be a lane failure the walk survives.
+    whose act it is — and the same run is admitted: it passes the approval
+    question and reaches for the repository its organize stages author
+    against, which the file's example remote does not answer. What the
+    admitted run would take its first tick from is read here through the
+    deployment's own dialled adapter: the two root lanes ready with the third
+    held by its live blocker. Nothing here waits for a fire, and no session is
+    opened at all.
     """
     loaded = shipped()
     project = scratch_project(loaded)
@@ -385,7 +392,8 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
             ref.describe() for ref in owned_mappings(loaded)
         }
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
-            PromptKey.GROOMING_PASS.value
+            PromptKey.GROOMING_PASS.value,
+            HEARTBEAT_PASS,
         ]
         assert app.state.checkpointer is None
         for name in ("scheduled_passes_not_wired", "prompt_passes_not_wired"):
@@ -400,10 +408,13 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         assert json.dumps(project, sort_keys=True) == payload_before
 
         mark = len(server.calls)
-        unapproved = await first_observation(app, loaded)
-        assert set(unapproved.unapproved_lanes) == set(built.lanes.values())
-        assert unapproved.dispatched == ()
-        assert unapproved.ready == ()
+        # Before the label there is nothing to observe: the addressed scope
+        # carries no approval, so the run is refused at its entry rather than
+        # walked and reported empty one lane at a time.
+        scope = loaded.organize_scopes[0].scope
+        with pytest.raises(ScopeNotApprovedError) as refused:
+            _ = await first_observation(app, loaded)
+        assert refused.value.ref == scope
         assert not [
             name
             for name, _ in server.calls[mark:]
@@ -412,11 +423,24 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
 
         # The one human act, performed here because no agent may perform it.
         project["labels"].append(loaded.scope_labels["approved"])
-        approved = await first_observation(app, loaded)
-        assert approved.unapproved_lanes == ()
-        assert set(approved.ready) == {built.lanes["A"], built.lanes["C"]}
+        # The label is what admits the run. The entry's own question now says
+        # yes, so the next thing the run asks for is the repository its
+        # organize stages author against — which this deployment's example
+        # remote does not answer, and which is as far as a case substituting
+        # nothing but the transport can drive it.
+        assert await scope_approved(ref=scope, tracker=app.state.tracker)
+        with pytest.raises(WorkspaceError):
+            _ = await first_observation(app, loaded)
+
+        # The reading the admitted run takes its first tick from, read through
+        # this deployment's own dialled adapter: the two root lanes ready and
+        # the third held by its live blocker, off the board the builder built.
+        reading = await read_scope_ready(ref=scope, tracker=app.state.tracker)
+        assert reading.unapproved == ()
+        assert {lane.issue.issue_key for lane in reading.ready} == {
+            built.lanes["A"],
+            built.lanes["C"],
+        }
         assert {
-            item.issue_key: item.detail
-            for item in approved.exclusions
-            if item.clause is ExclusionClause.LIVE_BLOCKER
-        } == {built.lanes["B"]: built.lanes["A"]}
+            blocked.issue_key: blocked.blocker_keys for blocked in reading.blocked
+        } == {built.lanes["B"]: (built.lanes["A"],)}
