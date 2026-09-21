@@ -744,6 +744,9 @@ The watcher carries facts from workflow events and computes duration from the
 same submission and terminal recording timestamps used by Started and Ended.
 Unavailable PR, repository, branch, or iteration facts stay unwritten; an
 observed zero iterations is a number, while an unknown count is absent.
+The iteration count is the highest iteration the watcher saw go by, and the
+loop's own total once the run completed, so a fire that iterated and then
+failed still records how far it got.
 The runner preserves `what_happened` for the session's account of its work.
 These properties are checked against the live schema before writing.
 
