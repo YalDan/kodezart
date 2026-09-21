@@ -16,6 +16,14 @@ PARSING_METHODS = frozenset(
 #: silence about a receiver is not a statement that it is something else.
 UNSTATED = "<unstated>"
 
+#: The field names that address a ruling, and so may never be annotated as a
+#: bare string. Stated here rather than inline in the scan below because the
+#: case that proves each name is acted on parametrises over this same set: two
+#: copies would mean a sixth name silently arriving with no arm behind it.
+RULING_ADDRESS_NAMES = frozenset(
+    {"ruling_id", "ruling_ids", "ruling_ref", "ruling_refs", "supersedes"},
+)
+
 
 def _constructor_names(tree: ast.AST, identity: str) -> set[str]:
     """Every local name that resolves to *identity*, aliases included."""
@@ -523,7 +531,6 @@ def invalid_ruling_fields(source: str) -> tuple[int, ...]:
         for node in ast.walk(tree)
         if isinstance(node, ast.AnnAssign)
         and isinstance(node.target, ast.Name)
-        and node.target.id
-        in {"ruling_id", "ruling_ids", "ruling_ref", "ruling_refs", "supersedes"}
+        and node.target.id in RULING_ADDRESS_NAMES
         and typed(node.annotation, scope_of(node)) != (True, True)
     )
