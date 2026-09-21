@@ -719,8 +719,8 @@ class OperationConfig(OperationModel):
         # operation that spells them the same cannot load at all.
         failures.extend(
             f"queue_states[{name!r}] {label!r} is the label scope_labels"
-            f"[{ScopeLabel.APPROVED.value!r}] names; a queue-state write may not "
-            f"express approval"
+            f"[{ScopeLabel.APPROVED.value!r}] names, so a queue-state write may "
+            f"not express approval"
             for name, label in self.queue_states.items()
             if aliases_approval_member(label=label, scope_labels=self.scope_labels)
         )
