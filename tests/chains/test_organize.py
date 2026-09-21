@@ -4,7 +4,6 @@ import ast
 import inspect
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 import structlog.testing
@@ -54,6 +53,7 @@ from tests.fakes import (
     FakeTrackerPort,
     FakeWorkspaceProvider,
 )
+from tests.name_resolution import call_sites, parsed, reaches, source_tree
 from tests.prompts.sets import OPUS_SET, V5_SET
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
@@ -1230,7 +1230,6 @@ def test_gap_has_no_amendment_input_or_body_judgment_branch():
     }
 
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "kodezart"
 CHANGE_STAMP_FIELDS = frozenset({"updated_at", "updated_since", "updatedAt"})
 GAP_ARITHMETIC_NAMES = frozenset(
     {"compute_gap", "in_gap", "organize_gap", "SubtreeClosure"}
@@ -1267,30 +1266,18 @@ def change_stamp_reads(tree):
     return reads
 
 
-def source_tree():
-    """Every module under the source tree, by its path relative to the root."""
-    return {
-        path.relative_to(SRC).as_posix(): path.read_text(encoding="utf-8")
-        for path in sorted(SRC.rglob("*.py"))
-    }
-
-
 def gap_computation_sites(sources):
-    """Every supplied module that defines or reaches the gap arithmetic."""
+    """Every supplied module that defines or reaches the gap arithmetic.
+
+    Reached under any spelling: the imported name, an ``as`` alias, a module
+    route, an assignment alias, a declaration, a bare or attribute spelling.
+    A string constant is not a route, so the terminal vocabulary's ``in_gap``
+    label stays out and the module list above stays the upper bound.
+    """
     found = {}
     for relative, source in sources.items():
         tree = ast.parse(source)
-        named = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name):
-                named.add(node.id)
-            elif isinstance(node, ast.Attribute):
-                named.add(node.attr)
-            elif isinstance(
-                node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
-            ):
-                named.add(node.name)
-        if named & GAP_ARITHMETIC_NAMES:
+        if reaches(tree, names=GAP_ARITHMETIC_NAMES):
             found[relative] = tree
     return found
 
@@ -1343,6 +1330,47 @@ def test_the_guard_reddens_when_a_discovered_gap_site_reads_the_field(
     assert sources[relative].count(anchor) == 1
     sources[relative] = sources[relative].replace(anchor, planted)
     assert gap_sites_reading_the_change_stamp(sources) == {relative: {"updated_at"}}
+
+
+@pytest.mark.parametrize("reads", [True, False])
+@pytest.mark.parametrize(
+    ("route", "body"),
+    [
+        (
+            "aliased_import",
+            "from kodezart.domain.gap import compute_gap as gap_of\n"
+            "\n"
+            "def plan(criteria, since):\n"
+            "    return gap_of([c for c in criteria{READ}])\n",
+        ),
+        (
+            "module_attribute",
+            "import kodezart.domain.gap as gap_module\n"
+            "\n"
+            "def plan(criteria, since):\n"
+            "    return gap_module.compute_gap([c for c in criteria{READ}])\n",
+        ),
+    ],
+)
+def test_a_gap_site_reached_under_another_spelling_is_discovered_and_scanned(
+    route, body, reads
+):
+    """A module that names the arithmetic under another spelling is a gap site.
+
+    Discovery that collected bare words alone answered an aliased import and
+    a module route with silence, so a change-timestamp read behind either
+    spelling was never scanned.  Both rows are discovered here whether or not
+    they read the field: the read-free rows redden the moment discovery stops
+    resolving the spelling, because the planted module drops out of the
+    discovered set.
+    """
+    planted = body.replace("{READ}", " if c.updated_at > since" if reads else "")
+    sources = {**source_tree(), "services/planted.py": planted}
+
+    assert "services/planted.py" in gap_computation_sites(sources)
+    assert gap_sites_reading_the_change_stamp(sources) == (
+        {"services/planted.py": {"updated_at"}} if reads else {}
+    )
 
 
 @pytest.mark.parametrize("field", sorted(CHANGE_STAMP_FIELDS))
@@ -1408,26 +1436,16 @@ def gap_call_sites(sources, callees):
     binds is resolved back to the imported one, so an aliased import is the
     same site under another spelling and an import on its own is no site.
     """
-    sites = []
-    for relative, source in sorted(sources.items()):
-        if relative == GAP_HOME:
-            continue
-        tree = ast.parse(source)
-        local = {name: name for name in callees}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                for alias in node.names:
-                    if alias.name in callees:
-                        local[alias.asname or alias.name] = alias.name
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            callee = node.func
-            if isinstance(callee, ast.Name) and callee.id in local:
-                sites.append((relative, node.lineno, local[callee.id]))
-            elif isinstance(callee, ast.Attribute) and callee.attr in callees:
-                sites.append((relative, node.lineno, callee.attr))
-    return tuple(sites)
+    trees = parsed(
+        {
+            relative: source
+            for relative, source in sources.items()
+            if relative != GAP_HOME
+        }
+    )
+    return tuple(
+        (site.module, site.line, site.name) for site in call_sites(trees, names=callees)
+    )
 
 
 def test_exactly_one_production_call_site_computes_the_organize_gap():
