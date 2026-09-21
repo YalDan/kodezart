@@ -15,7 +15,7 @@ import httpx
 import pytest
 import structlog
 
-from kodezart.adapters.linear.tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import _TOOL_SAVE_ISSUE, LinearMcpTracker
 from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
@@ -1369,3 +1369,37 @@ class TestTheBodyWriteRecordThisAdapterKeeps:
         assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == standing.body
         answer = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
         assert answer.holders == written.holders == (FIRST_WRITER,)
+
+    async def test_a_save_the_backend_refuses_records_no_holder(self) -> None:
+        """A write that never landed leaves no holder behind it.
+
+        The read has no second source to contradict a record with, so a
+        record standing for a save the backend refused would be the only
+        account of that body there is.  The first holder's landed write is
+        asserted in the same case, so the empty answer is the refusal's
+        doing and not a read that answers nobody either way.
+        """
+        server = fixture_server()
+        tracker = linear_over_fake_mcp(server)
+        assert (
+            await held_body_write(
+                tracker,
+                holder=FIRST_WRITER,
+                replacement="a body the first job put there",
+            )
+            is DescriptionEditResult.EDITED
+        )
+        standing = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+
+        server._tool_errors[_TOOL_SAVE_ISSUE] = "temporarily refused"
+        with pytest.raises(TrackerUnavailableError):
+            await held_body_write(
+                tracker,
+                holder=SECOND_WRITER,
+                replacement="a body no save ever took",
+            )
+        del server._tool_errors[_TOOL_SAVE_ISSUE]
+
+        assert (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body == standing.body
+        answer = await tracker.read_surface_authorship(surface=CLAIMED_BODY)
+        assert answer.holders == (FIRST_WRITER,)
