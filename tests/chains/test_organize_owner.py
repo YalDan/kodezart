@@ -849,13 +849,22 @@ MANDATE_SENTENCE = (
 REGROWTH_CLASS = "source_version_restated_in_prose"
 DRAFT_BODY = "Hand-drafted source awaiting preparation."
 GROUNDED_BODY = "Prepared body grounded in the source."
+#: The same child with the instance of the class taken out of its prose: it
+#: states its own check and restates no source version.
+REFERENCING_BODY = "The child states its check and nothing about the source version."
+RESTATING_BODY = "The child restates the source version in its own prose."
 
 
-def regrowth(monkeypatch, *, mandate):
+def regrowth(monkeypatch, *, mandate, instance=True):
     """Script one authoring step that carries any mandating sentence forward.
 
     Over the run-stage owner, because the body this scripts is the ticket
     stage's own write.
+
+    *instance* plants or withholds the instance of the class in the child's
+    prose and changes nothing else — in particular not the scripted
+    verification, which reads the mandating sentence off the parent body. The
+    sentence is therefore the only fact either run turns on.
     """
     from tests.fakes import FakeMcpIssue
 
@@ -867,7 +876,7 @@ def regrowth(monkeypatch, *, mandate):
     board.server.issues["restating-criterion"] = FakeMcpIssue(
         id="restating-criterion",
         parent_id=CLAIMED_ISSUE,
-        description="The child restates the source version in its own prose.",
+        description=RESTATING_BODY if instance else REFERENCING_BODY,
         labels=["check"],
     )
     observed = []
@@ -973,6 +982,89 @@ async def test_removed_mandate_leaves_the_same_authoring_step_dry(monkeypatch):
         if call["output_format"]["schema"].get("title") == "OrganizeProposal"
     ]
     assert {"body complete", "criteria complete"} <= set(parent.labels)
+
+
+def board_state(board):
+    """Every native issue as the three facts either run could have changed."""
+    return {
+        key: (native.description, sorted(native.labels), native.parent_id)
+        for key, native in board.server.issues.items()
+    }
+
+
+@pytest.mark.parametrize("instance", [True, False])
+@pytest.mark.parametrize("mandate", [True, False])
+async def test_the_sentence_and_not_the_instance_decides_whether_the_class_regrows(
+    monkeypatch, mandate, instance
+):
+    """The mandating sentence decides regrowth; the instance does not.
+
+    With the sentence on the parent the class regrows and the pass does not
+    converge whether or not the child's prose carries an instance of it, and
+    nobody plants an instance where there was none. Without the sentence the
+    same board converges.
+    """
+    owner, board, _executor, observed = regrowth(
+        monkeypatch, mandate=mandate, instance=instance
+    )
+    report = await run_owner(owner)
+    assert (REGROWTH_CLASS in observed) is mandate
+    assert (report.halt is None) is (not mandate)
+    if not mandate:
+        assert [phase.value for phase in report.completed_phases] == [
+            "ticket",
+            "criteria",
+        ]
+        return
+    assert report.halt.cause == "convergence_exhausted"
+    assert report.halt.bound.value == report.halt.bound.rounds_used == 2
+    surviving = report.halt.surviving_findings
+    assert [f.defect_class for f in surviving] == [REGROWTH_CLASS]
+    assert surviving[0].mandate_text == MANDATE_SENTENCE
+    assert board.server.issues["restating-criterion"].description == (
+        RESTATING_BODY if instance else REFERENCING_BODY
+    )
+
+
+@pytest.mark.parametrize("instance", [True, False])
+async def test_the_two_mandate_runs_differ_only_by_the_sentence(monkeypatch, instance):
+    """One prefix on one body is the whole difference between the two runs.
+
+    Read off both boards before either runs, the two states are equal once the
+    sentence is taken off the parent of the live one — and the sentence is on
+    nothing else. The landed outcomes then differ.
+    """
+    live_owner, live_board, _live_executor, live_observed = regrowth(
+        monkeypatch, mandate=True, instance=instance
+    )
+    dry_owner, dry_board, _dry_executor, dry_observed = regrowth(
+        monkeypatch, mandate=False, instance=instance
+    )
+    live_state, dry_state = board_state(live_board), board_state(dry_board)
+    assert live_state != dry_state
+    assert [
+        key for key, facts in live_state.items() if MANDATE_SENTENCE in facts[0]
+    ] == [CLAIMED_ISSUE]
+    assert {
+        key: (
+            (facts[0].removeprefix(f"{MANDATE_SENTENCE} "), *facts[1:])
+            if key == CLAIMED_ISSUE
+            else facts
+        )
+        for key, facts in live_state.items()
+    } == dry_state
+
+    live_report = await run_owner(live_owner)
+    dry_report = await run_owner(dry_owner)
+    assert REGROWTH_CLASS in live_observed
+    assert REGROWTH_CLASS not in dry_observed
+    assert live_report.halt.cause == "convergence_exhausted"
+    assert live_report.completed_phases == ()
+    assert dry_report.halt is None
+    assert [phase.value for phase in dry_report.completed_phases] == [
+        "ticket",
+        "criteria",
+    ]
 
 
 ESCALATION_MARKER = "[organize-question:"
