@@ -35,8 +35,26 @@ behaviourally by the reader ordering cases over both tracker
 implementations; a caller that hands a PARENT's body to the sanctioned
 reader, because the scan reads the reader and not the argument's
 provenance — that is held behaviourally by the reader conformance cases
-that give a parent a criterion-shaped body and read nothing out of it; and
-any matcher reached by reflection.
+that give a parent a criterion-shaped body and read nothing out of it; a
+tuple of literal prefixes handed to a string matcher, because only one
+expression's own literal parts are folded and a tuple is not folded, so
+``line.startswith(("- [ ]", "- [x]"))`` shows the matcher no shaped
+argument; a matcher imported by bare name out of the pattern library
+(``from re import findall``, or ``compile as rx``), because a matcher call
+is read as an attribute of its module and not as a plain name; a matcher
+called with keyword arguments, such as ``re.search(pattern=…, string=…)``,
+because only a call's positional arguments are read; and any matcher
+reached by reflection.
+
+Under every spelling this layer does not see lies the behavioural floor,
+which is where a fallback that mints membership out of a parent's prose
+actually dies: ``test_criterion_reader.py`` at
+``test_parent_text_cannot_mint_criterion_membership`` and the
+``- [x] old-AC-9`` row of
+``test_parent_rewrite_preserves_every_criterion_key_state_and_evidence``,
+and ``test_empty_fire_entry.py`` at
+``test_parent_heading_shapes_all_read_empty_and_refuse_fire``, each over
+both tracker implementations.
 """
 
 import ast
