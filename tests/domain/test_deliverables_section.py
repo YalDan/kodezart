@@ -61,10 +61,19 @@ def test_a_list_item_inside_a_fenced_block_inside_the_section_is_no_item() -> No
 
 
 def test_a_commented_out_heading_is_no_heading() -> None:
-    """The reader's own HTML-comment rule decides what is visible."""
+    """The reader's own HTML-comment rule decides what is visible.
+
+    The opening `<!--` is on its own line, so the heading and the item sit
+    inside the comment with nothing else on their lines to hide them: only the
+    comment rule keeps them out. A heading sharing a line with its `<!--` is
+    already refused by the heading pattern, whatever the comment rule does, so
+    such a body states nothing about this rule.
+    """
     body = (
-        f"<!-- ## {DELIVERABLES_SECTION}\n"
-        f"- {SECOND} -->\n"
+        "<!--\n"
+        f"## {DELIVERABLES_SECTION}\n"
+        f"- {SECOND}\n"
+        "-->\n"
         f"### {DELIVERABLES_SECTION}\n"
         f"- {FIRST}\n"
     )
