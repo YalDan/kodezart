@@ -576,11 +576,32 @@ def test_the_coordinator_branches_on_no_stalled_fact_and_names_no_do_not_merge_s
 
 
 def test_coordinator_exposes_only_the_delivery_entry_point():
+    """One entry point, and the signature that keeps it one.
+
+    Every public name the class declares is counted, not only the callable
+    ones: ``callable()`` answers False for a property and for a classmethod,
+    so filtering on it lets a public descriptor onto the surface unreported.
+
+    The signature is the other half. What it must not contain is the point:
+    the branch and the final sha are read off the state the coordinator is
+    handed, so a parameter for either would move that reading back out to
+    every caller, and the pin above would still pass.
+    """
     assert {
-        name
-        for name, method in vars(LaneDeliveryCoordinator).items()
-        if not name.startswith("_") and callable(method)
+        name for name in vars(LaneDeliveryCoordinator) if not name.startswith("_")
     } == {"deliver"}
+
+    signature = inspect.signature(LaneDeliveryCoordinator.deliver)
+    assert [
+        (name, parameter.kind) for name, parameter in signature.parameters.items()
+    ] == [
+        ("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        ("state", inspect.Parameter.KEYWORD_ONLY),
+        ("context", inspect.Parameter.KEYWORD_ONLY),
+        ("stalled", inspect.Parameter.KEYWORD_ONLY),
+        ("remediation_available", inspect.Parameter.KEYWORD_ONLY),
+    ]
+    assert signature.return_annotation is LaneDelivery
 
 
 async def test_delivery_refuses_incoherent_wire_outcome():
