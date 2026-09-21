@@ -808,7 +808,10 @@ nothing. The record is written before its event: a record whose event was
 lost is repaired by the next tick, while an event without its record
 announces nothing. What the stream owes is read from the stream, so a
 condition firing across many ticks is announced once. The holder that takes
-the lease and the holder recorded on the alarm are the same string.
+the lease and the holder recorded on the alarm are the same string. That
+string is the pass's own identity, the operation name with the tick name on it
+(`services/supervisor_pass.py::supervisor_holder`); it is not composed from
+`dispatch_holder`, which names the process that holds fire claims.
 
 `services.scope_tally.observe_scope_tally` reads current native membership and
 strict issue classification twice before computing `tally_unmoved`. Its roster

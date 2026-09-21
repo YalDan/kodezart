@@ -26,6 +26,16 @@ from kodezart.types.domain.tracker import TrackerIssue
 SUPERVISOR_TICK_NAME = "supervisor"
 
 
+def supervisor_holder(*, operation_name: str) -> str:
+    """The identity the supervisor's writes are recorded under.
+
+    The operation name with the tick's name on it: a reader of a leased write
+    sees which pass of which operation wrote it. It is the pass's own and is
+    composed from nothing that names a process or a run.
+    """
+    return f"{operation_name}/{SUPERVISOR_TICK_NAME}"
+
+
 class SupervisorIncompleteError(Exception):
     """The tick observed what it could and cannot claim to have observed all.
 

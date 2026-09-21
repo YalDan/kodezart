@@ -1429,6 +1429,50 @@ class TestSurfaceLease:
         )
         assert lost.status is ClaimStatus.LOST
 
+    async def test_a_write_lease_alone_is_no_claim_and_a_claim_beside_it_is_no_lease(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A lease on an issue's surface grants nothing over the issue itself.
+
+        The two grants live on the same issue and are told apart by their kind
+        alone, so a lease taken by itself must leave the issue unclaimed: a
+        reader asking who may fire it gets nobody. The claim that follows is
+        granted although the lease stands, reports its own process holder, and
+        neither grant disturbs the other's lifetime.
+        """
+        lease = await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert lease.holder == JOB_A
+        assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+
+        claimed = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder=PROCESS_HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert claimed.status is ClaimStatus.GRANTED
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == PROCESS_HOLDER
+
+        renewed = await tracker.renew_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert renewed.holder == JOB_A
+
+        await tracker.release_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION}), holder=JOB_A
+        )
+        still_held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert still_held is not None
+        assert still_held.holder == PROCESS_HOLDER
+
 
 class TestAssets:
     """Attachment and document metadata, and document reads."""

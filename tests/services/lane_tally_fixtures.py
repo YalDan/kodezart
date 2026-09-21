@@ -14,6 +14,7 @@ from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.supervisor_pass import supervisor_holder
 from kodezart.services.tally_supervisor import SIGNAL, TallySupervisor
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
@@ -25,7 +26,12 @@ from tests.fakes import FakeTrackerPort, make_tracker_issue
 
 SCOPE = "scoped-project"
 HEAD = "a" * 40
-HOLDER = "kodezart/supervisor"
+OPERATION_NAME = "fixture"
+#: The identity the composed pass leases and records under, taken from the one
+#: function the composition takes it from: a board whose ticks were built
+#: through that composition leases under its operation's name, so a check keyed
+#: on a literal here would go vacuous for exactly those boards.
+HOLDER = supervisor_holder(operation_name=OPERATION_NAME)
 BOUND = 1
 LEASE_SECONDS = 60.0
 PREFIXES = {
@@ -55,10 +61,15 @@ class Board:
     address is keyed by that scope: a board carrying lanes under two scopes
     has two families of addresses, and reading both against one scope key
     would call the second family a write nobody declared.
+
+    *holder* is the identity whose leases the release check reads. A board
+    whose ticks are composed rather than built here leases under its own
+    operation's pass identity, so the board states which one it expects.
     """
 
     port: FakeTrackerPort
     lanes: tuple[str, ...]
+    holder: str = HOLDER
     scope_keys: dict[str, str] = field(default_factory=dict)
     allowed: set[tuple[str, str]] = field(default_factory=set)
     states: dict[str, tuple[str, WorkflowStateKind]] = field(default_factory=dict)
@@ -139,7 +150,13 @@ def lane_state(lane, *, commits):
 
 
 async def board(
-    *, lanes, commits=("sha-one", "sha-two"), prefixes=PREFIXES, scope=None, scopes=None
+    *,
+    lanes,
+    commits=("sha-one", "sha-two"),
+    prefixes=PREFIXES,
+    scope=None,
+    scopes=None,
+    holder=HOLDER,
 ):
     """Each lane's issue, its criterion family, and the record its loop left.
 
@@ -195,6 +212,7 @@ async def board(
     entry = Board(
         port=port,
         lanes=tuple(lanes),
+        holder=holder,
         scope_keys=dict.fromkeys(lanes, SCOPE)
         if memberships is None
         else {
@@ -261,7 +279,7 @@ def rewrite_record(port, lane, *, commits):
 
 def operation(prefixes=PREFIXES):
     return OperationConfig(
-        operation_name="fixture", workspace="fixture", marker_prefixes=prefixes
+        operation_name=OPERATION_NAME, workspace="fixture", marker_prefixes=prefixes
     )
 
 
@@ -367,7 +385,9 @@ def assert_every_write_is_inside_the_declared_set():
         assert port.queue_writes == []
         assert port.classification_writes == []
         assert port.claim_writes == []
-        assert [lease for lease in port.leases.values() if lease.holder == HOLDER] == []
+        assert [
+            lease for lease in port.leases.values() if lease.holder == entry.holder
+        ] == []
         assert {
             key: (row.state_name, row.state_kind) for key, row in port.issues.items()
         } == entry.states

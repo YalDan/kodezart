@@ -12,6 +12,7 @@ from kodezart.config.app import AppConfig
 from kodezart.domain.errors import LaneRecordReadError
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.tally_record import is_raised
+from kodezart.services.supervisor_pass import supervisor_holder
 from kodezart.services.tally_supervisor import SIGNAL
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.prompts import PromptKey
@@ -246,8 +247,12 @@ async def test_a_whole_tick_dispatches_no_agent_and_touches_no_repository(monkey
     say is that the tick does not set the walk's collaborators going through the
     tracker state the two share.
     """
-    port = await board(lanes=LANES, scope=SCOPE)
     operation = declared(scopes=(SCOPE,))
+    port = await board(
+        lanes=LANES,
+        scope=SCOPE,
+        holder=supervisor_holder(operation_name=operation.operation_name),
+    )
 
     scheduled = build_supervisor_pass(
         config=AppConfig(
@@ -294,10 +299,12 @@ async def test_a_tick_observes_a_stalled_lane_under_every_declared_scope() -> No
     read as healthy. A tick over the first scope alone therefore leaves the
     second scope's lane with no record and no event.
     """
+    operation = declared(scopes=tuple(PAIRED_LANES))
     port = await board(
         lanes=tuple(PAIRED_LANES.values()),
         commits=STALL_COMMITS,
         scopes={ref: (lane,) for ref, lane in PAIRED_LANES.items()},
+        holder=supervisor_holder(operation_name=operation.operation_name),
     )
 
     # The stall, from the board and the configured bound: a lane whose recorded
@@ -315,7 +322,7 @@ async def test_a_tick_observes_a_stalled_lane_under_every_declared_scope() -> No
             supervisor_pass_interval_seconds=INTERVAL,
             supervisor_pass_timeout_seconds=TIMEOUT,
         ),
-        operation=declared(scopes=tuple(PAIRED_LANES)),
+        operation=operation,
         tracker=port,
     )
 
@@ -336,6 +343,50 @@ async def test_a_tick_observes_a_stalled_lane_under_every_declared_scope() -> No
             if event.kind is RunEventKind.RUN_ALARM_RAISED
         ]
         assert len(raised) == 1, ref.key
+
+
+#: A dispatch holder no default would produce, so a lease holder composed from
+#: it would be visible wherever it appeared.
+FOREIGN_PROCESS = "separate-deployment"
+
+
+async def test_the_composed_tick_leases_under_its_pass_identity_not_dispatch_holder():
+    """KOD-388: the pass's lease holder is its own, never the claim identity.
+
+    The deployment is built with a dispatch holder nothing else on this board
+    uses, so a holder derived from it would show up in every lease the tick
+    takes and in the alarm record it writes. What is there instead is the pass
+    identity, on both, and the lease is released when the tick is done.
+    """
+    operation = declared(scopes=(SCOPE,))
+    expected = supervisor_holder(operation_name=operation.operation_name)
+    assert FOREIGN_PROCESS not in expected
+    port = await board(lanes=LANES, scope=SCOPE, holder=expected)
+
+    scheduled = build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            dispatch_holder=FOREIGN_PROCESS,
+            run_alarm_max_commits_without_closure=BOUND,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=operation,
+        tracker=port,
+    )
+    async with asyncio.timeout(TICK_BOUND_SECONDS):
+        assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+
+    assert port.lease_writes
+    assert {lease.holder for lease in port.lease_writes} == {expected}
+    assert [body for _, body in port.comment_writes if FOREIGN_PROCESS in body] == []
+    for lane in LANES:
+        stored = await port.read_run_alarm(
+            issue_key=lane, subject=subject(lane), signal=SIGNAL
+        )
+        assert stored is not None
+        assert stored.raised_by == expected
+    assert port.leases == {}
 
 
 # ---------------------------------------------------------------------------
