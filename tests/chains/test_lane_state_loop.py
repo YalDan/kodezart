@@ -11,10 +11,8 @@ from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import LaneStateWriter
 from kodezart.domain.amendment import NativeWriteRefusalError
-from kodezart.domain.criterion_cross_off import (
-    UNDEMONSTRATED_REASON,
-    evaluation_observation,
-)
+from kodezart.domain.criteria_grading import UNDEMONSTRATED_REASONS
+from kodezart.domain.criterion_cross_off import evaluation_observation
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import TransientAPIError
 from kodezart.domain.issue_tree import SubtreeClosure
@@ -24,7 +22,10 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import ResultEvent, WorkflowIterationEvent
 from kodezart.types.domain.branch import BranchRole, trunk_base
-from kodezart.types.domain.criterion_lifecycle import CrossOffState
+from kodezart.types.domain.criterion_lifecycle import (
+    CrossOffState,
+    UndemonstratedReason,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import (
     OperationConfig,
@@ -893,8 +894,10 @@ async def test_a_workspace_that_is_not_the_graded_sha_yields_no_cross_off(left_b
     tree it was streamed in and at the moment it ends, so both facts are read
     off THAT tree and after THAT session or they are read off nothing. Then:
     nothing is written to any sub-issue, every result carries the fixed
-    reason in place of a verdict, the iteration is rejected, and the writer is
-    handed the fourth state for each criterion.
+    reason in place of a verdict, the iteration is rejected, the writer is
+    handed the fourth state for each criterion, and the reading that failed
+    is on the lane's run-event stream, keyed to each criterion's sub-issue
+    at the sha the verdict would have been stamped with.
     """
     lane = Lane(evaluations=[native_evaluation()])
     before = {
@@ -915,13 +918,19 @@ async def test_a_workspace_that_is_not_the_graded_sha_yields_no_cross_off(left_b
     assert [event.verdict for event in iterations] == [AcceptVerdict.rejected]
     assert {
         result.reasoning for result in iterations[-1].evaluation.criteria_results
-    } == {UNDEMONSTRATED_REASON}
+    } == {UNDEMONSTRATED_REASONS[UndemonstratedReason.workspace_not_the_graded_sha]}
     assert states == [tuple(CrossOffState.undemonstrated for _ in OWED_KEYS)]
     assert {
         key: (issue.state_name, issue.body) for key, issue in lane.port.issues.items()
     } == before
     assert lane.port.workflow_writes == []
     assert lane.port.issue_writes == []
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert [
+        (event.subject_key, event.graded_sha)
+        for event in posted
+        if event.kind is RunEventKind.CRITERION_GRADING_UNVERIFIED
+    ] == [(key, lane.repo.head) for key in OWED_KEYS]
     # Both facts name the tree the evaluator was streamed in, and both are
     # read after that stream ended: read before it, or off the tree the
     # branch was resolved in, they would be facts about another tree.
@@ -952,11 +961,12 @@ async def test_a_workspace_that_is_not_the_graded_sha_yields_no_cross_off(left_b
 
 
 async def test_an_undemonstrated_grading_says_so_in_the_lanes_log():
-    """The third leg of "recorded": the harness's own reading, once.
+    """What a person reading the run's log finds beside what the record holds.
 
-    The typed value reaches the writer and the fixed reason reaches the
-    iteration event; this line is what a person reading the run's log finds,
-    and it names the sha the verdict would have been stamped with.
+    The run's record is the lane's stream; this line is the same reading in
+    the log, once per attempt rather than once per fan-in round, naming the
+    sha the verdict would have been stamped with and which reading failed
+    for each criterion it failed for.
     """
     lane = Lane(evaluations=[native_evaluation()])
     lane.executor.on_evaluation = lane.leave_changes_behind
@@ -970,6 +980,29 @@ async def test_an_undemonstrated_grading_says_so_in_the_lanes_log():
     assert [(entry["graded_sha"], entry["iteration"]) for entry in undemonstrated] == [
         (lane.repo.head, 1)
     ]
+    assert [entry["reasons"] for entry in undemonstrated] == [
+        sorted(
+            (key, UndemonstratedReason.workspace_not_the_graded_sha.value)
+            for key in OWED_KEYS
+        )
+    ]
+
+
+async def test_an_undemonstrated_criterion_has_no_evidence_row_written():
+    """No verdict reaches the sub-issue, so nothing stamps its Evidence row.
+
+    Asked of the row itself rather than of a write count: a row absent after
+    the attempt is a row the one function that applies Evidence was never
+    called for.
+    """
+    lane = Lane(evaluations=[native_evaluation()])
+    lane.executor.on_evaluation = lane.leave_changes_behind
+
+    await lane.run()
+
+    for key in OWED_KEYS:
+        with pytest.raises(ValueError, match="Evidence"):
+            parse_criterion_evidence(lane.port.issues[key].body)
 
 
 async def test_a_clean_workspace_at_the_graded_sha_is_what_a_cross_off_needs():

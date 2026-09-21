@@ -1736,8 +1736,11 @@ class LaneStateWriter(Protocol):
         is a reading of the roster it was graded against, and a partial
         one is no reading of it. A criterion this attempt passed gets its
         graded sha on its Evidence row and is then moved to
-        ``LifecycleStage.DONE``, in that order;
-        nothing else is written anywhere, least of all a parent's state.
+        ``LifecycleStage.DONE``, in that order. A criterion this attempt
+        read nothing about is recorded on the lane's run-event stream,
+        keyed to that sub-issue and naming which reading failed;
+        nothing else is written anywhere, least of all a parent's state or
+        the sub-issue of a criterion no verdict addresses.
         """
         ...
 

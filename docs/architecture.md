@@ -357,10 +357,15 @@ the refuting grading then goes on its Evidence row, and one `criterion_refuted`
 event is posted under `marker_prefixes.run_event` last. That order is what the
 act guarantees: a failure anywhere after the move back leaves the criterion
 owed, and the next fire re-grades it, instead of leaving it certified at a sha
-that failed it. Nothing else is written: no parent's
-state, and no comment per criterion. The owning issue's finished state is the
-tracker's own rollup over its criterion sub-issues, which `SubtreeClosure`
-reads, so the scope walker sees a lane close with no further write.
+that failed it. The lane's event stream is read once for the whole act, before
+any sub-issue is touched, and only when the roster holds something other than
+passes, so a refutation and an undemonstrated reading in one attempt share that
+one reading of the board; for a criterion the attempt read nothing about, its
+event is the act's only write. Nothing else is written: no parent's
+state, and no comment per criterion the attempt read. The owning issue's
+finished state is the tracker's own rollup over its criterion sub-issues, which
+`SubtreeClosure` reads, so the scope walker sees a lane close with no further
+write.
 
 A native evaluation is graded in a workspace the loop owns, acquired at the sha
 the verdict will be stamped with. Before that workspace is released the loop
@@ -368,8 +373,12 @@ reads whether it holds uncommitted changes and what its head is; a verdict from
 a workspace that held changes, or stood at another head, was read from a working
 copy rather than from the branch, so every result of the attempt is regraded as
 not passed with one fixed reason and each cross-off carries
-`CrossOffState.undemonstrated` instead of a pass or a fail. Nothing reaches the
-tracker for such an attempt.
+`CrossOffState.undemonstrated` beside the reading that failed instead of a pass
+or a fail. What reaches the tracker for such an attempt is one event per
+criterion, appended to the lane's run-event stream, naming that reading, keyed
+to the criterion's sub-issue and carrying the sha the verdict would have been
+stamped with. The sub-issue itself is untouched: there is no verdict to write on
+it, so its state does not move and its Evidence row is not stamped.
 
 `render_lane_record` places one readable JSON value under that marker, followed
 by fixed re-entry guidance. The record preserves three-state remote head facts,

@@ -1005,6 +1005,11 @@ LANE_STATE_WRITES = frozenset(
             function="TrackerLaneStateWriter._refute",
             method="post_run_event",
         ),
+        CallSite(
+            module=LANE_STATE,
+            function="TrackerLaneStateWriter._undemonstrated",
+            method="post_run_event",
+        ),
     }
 )
 

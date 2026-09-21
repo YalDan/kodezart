@@ -1,13 +1,14 @@
 """The lane's record is one comment the committing act keeps current."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import pytest
 
 from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
 from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.criteria_grading import NO_WITHDRAWALS
 from kodezart.domain.criterion_cross_off import (
     cross_offs_for,
     evaluation_observation,
@@ -37,6 +38,7 @@ from kodezart.types.domain.agent import CriterionResult
 from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -591,6 +593,16 @@ async def test_an_event_lost_after_the_record_is_posted_by_the_next_commit():
     assert await port.lane_run_events(issue_key=LANE, lane_key=LANE) == events
 
 
+async def a_commit(lane_state, repo: LaneRepo) -> None:
+    """The act that records a commit and may post the first-push event."""
+    await make_commit(lane_state, repo, 1)
+
+
+async def an_undemonstrated_tick(lane_state, repo: LaneRepo) -> None:
+    """The act that records a whole attempt whose readings all failed."""
+    await tick(lane_state, sha="9" * 40, reasons=withheld())
+
+
 @pytest.mark.parametrize(
     "damage",
     [
@@ -598,14 +610,26 @@ async def test_an_event_lost_after_the_record_is_posted_by_the_next_commit():
         lambda body: body.removesuffix("\n```"),
     ],
 )
-async def test_a_damaged_event_stream_refuses_the_write_instead_of_escaping(damage):
+@pytest.mark.parametrize(
+    "act",
+    [
+        pytest.param(a_commit, id="a-commit"),
+        pytest.param(an_undemonstrated_tick, id="an-undemonstrated-tick"),
+    ],
+)
+async def test_a_damaged_event_stream_refuses_the_write_instead_of_escaping(
+    damage, act
+):
     """The stream is read on the write path, so its faults are this write's.
 
     A parse failure here lands after the push, on every later commit of the
     lane's life; as the read error it is, it would reach the caller as a
-    fault about nothing it can name, with a pushed commit behind it.
+    fault about nothing it can name, with a pushed commit behind it. The
+    verdict act reads the same stream before it touches a sub-issue, so a
+    damaged stream refuses there while every sub-issue still reads as
+    whatever the last attempt left on it.
     """
-    port, repo = board(), lane_repo()
+    port, repo = criteria_board(), lane_repo()
     await port.post_run_event(
         issue_key=LANE,
         event=LaneRunEvent(kind=RunEventKind.LANE_DISPATCHED, lane_key=LANE),
@@ -614,11 +638,13 @@ async def test_a_damaged_event_stream_refuses_the_write_instead_of_escaping(dama
     port.comments[port.comments.index(stored)] = stored.model_copy(
         update={"body": damage(stored.body)}
     )
+    before = board_shape(port)
 
     with pytest.raises(LaneRecordWriteError, match="event stream could not be read"):
-        await make_commit(writer(port, repo), repo, 1)
+        await act(writer(port, repo), repo)
 
     assert record_comments(port) == []
+    assert board_shape(port) == before
 
 
 class CountingBoard(FakeTrackerPort):
@@ -718,9 +744,46 @@ async def test_an_event_of_another_kind_does_not_stand_in_for_the_first_push():
     ]
 
 
-async def test_the_posted_event_carries_the_marker_and_the_codec_fields_alone():
-    port, repo = board(), lane_repo()
+async def posts_a_first_push(repo: LaneRepo):
+    """The lane's first push, and the whole payload that event carries."""
+    port = board()
     await make_commit(writer(port, repo), repo, 1)
+    return port, {
+        "kind": RunEventKind.FIRST_PUSH.value,
+        "laneKey": LANE,
+        "subjectKey": None,
+        "gradedSha": None,
+    }
+
+
+async def posts_an_unverified_grading(repo: LaneRepo):
+    """One criterion whose reading failed, and the whole payload it carries."""
+    port = criteria_board()
+    withdrawn = CRITERIA[:1]
+    await tick(
+        writer(port, repo),
+        sha="9" * 40,
+        keys=withdrawn,
+        reasons=withheld(withdrawn),
+    )
+    return port, {
+        "kind": RunEventKind.CRITERION_GRADING_UNVERIFIED.value,
+        "laneKey": LANE,
+        "subjectKey": withdrawn[0],
+        "gradedSha": "9" * 40,
+    }
+
+
+@pytest.mark.parametrize(
+    "posting",
+    [
+        pytest.param(posts_a_first_push, id="first-push"),
+        pytest.param(posts_an_unverified_grading, id="grading-unverified"),
+    ],
+)
+async def test_the_posted_event_carries_the_marker_and_the_codec_fields_alone(posting):
+    repo = lane_repo()
+    port, expected = await posting(repo)
 
     prefix = lane_operation().marker_prefixes["run_event"]
     marker, _, block = event_comments(port)[0].body.partition("\n")
@@ -728,12 +791,7 @@ async def test_the_posted_event_carries_the_marker_and_the_codec_fields_alone():
     assert block.startswith("```json\n")
     assert block.endswith("\n```")
     payload = json.loads(block[len("```json\n") : -len("\n```")])
-    assert payload == {
-        "kind": RunEventKind.FIRST_PUSH.value,
-        "laneKey": LANE,
-        "subjectKey": None,
-        "gradedSha": None,
-    }
+    assert payload == expected
     assert set(payload) == {
         field.alias or name for name, field in LaneRunEvent.model_fields.items()
     }
@@ -934,6 +992,15 @@ def criteria_board(*, bodies: dict[str, str] | None = None) -> FakeTrackerPort:
     )
 
 
+def counting_criteria_board() -> CountingBoard:
+    """The tick fixture's own board, counting the listings a write takes."""
+    source = criteria_board()
+    return CountingBoard(
+        issues=list(source.issues.values()),
+        marker_prefixes=lane_operation().marker_prefixes,
+    )
+
+
 def dispatched(keys: Sequence[str] = CRITERIA) -> tuple[TrackerCriterion, ...]:
     return tuple(
         TrackerCriterion(id=CriterionId(key), text=check_of(key)) for key in keys
@@ -954,13 +1021,21 @@ def graded(
     )
 
 
+def withheld(
+    keys: Sequence[str] = CRITERIA,
+    reason: UndemonstratedReason = UndemonstratedReason.workspace_not_the_graded_sha,
+) -> dict[CriterionId, UndemonstratedReason]:
+    """The reading that failed, named for each criterion it failed for."""
+    return {CriterionId(key): reason for key in keys}
+
+
 async def tick(
     lane_state,
     *,
     sha: str,
     keys: Sequence[str] = CRITERIA,
     failed: Sequence[str] = (),
-    demonstrated: bool = True,
+    reasons: Mapping[CriterionId, UndemonstratedReason] = NO_WITHDRAWALS,
 ) -> None:
     """One attempt's whole verdict, written the way the evaluator writes it."""
     await lane_state.write_cross_offs(
@@ -970,7 +1045,7 @@ async def tick(
             results=graded(keys, failed=failed),
             graded_sha=sha,
             observation=evaluation_observation(session_id="eval-session", iteration=1),
-            demonstrated=demonstrated,
+            reasons=reasons,
         ),
     )
 
@@ -1033,7 +1108,7 @@ async def test_a_verdict_that_does_not_answer_the_dispatched_roster_writes_nothi
                 results=graded(CRITERIA[:2]),
                 graded_sha="4" * 40,
                 observation="evaluator session eval-session, iteration 1",
-                demonstrated=True,
+                reasons={},
             ),
         )
 
@@ -1416,6 +1491,19 @@ def refutations(port: FakeTrackerPort) -> list[LaneRunEvent]:
     ]
 
 
+def unverified(port: FakeTrackerPort) -> list[LaneRunEvent]:
+    """The gradings this lane's stream says proved nothing, in order."""
+    return [
+        event
+        for event in lane_run_events(
+            comments=port.comments,
+            lane_key=LANE,
+            marker_prefixes=lane_operation().marker_prefixes,
+        )
+        if event.kind is RunEventKind.CRITERION_GRADING_UNVERIFIED
+    ]
+
+
 async def test_a_criterion_this_fire_finished_and_then_broke_is_taken_back():
     """A regression is recorded, not absorbed, and recorded exactly once.
 
@@ -1681,10 +1769,93 @@ async def test_an_undemonstrated_attempt_takes_nothing_back():
     await tick(lane_state, sha="6" * 40)
     finished = board_shape(port)
 
-    await tick(lane_state, sha="7" * 40, demonstrated=False)
+    await tick(lane_state, sha="7" * 40, reasons=withheld())
 
     assert board_shape(port) == finished
     assert refutations(port) == []
+    assert [event.subject_key for event in unverified(port)] == list(CRITERIA)
+
+
+async def test_an_undemonstrated_criterion_is_recorded_on_the_stream_and_nowhere_else():
+    """The reading that failed reaches the lane's stream and no sub-issue.
+
+    One event per criterion, keyed to its own sub-issue and carrying the sha
+    the verdict would have been stamped with, on a board where nothing else
+    moved: no state, no Evidence row, and no refutation, because a grading
+    that read nothing about a criterion is no reading that it broke.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    before = board_shape(port)
+
+    await tick(lane_state, sha="8" * 40, reasons=withheld())
+
+    assert board_shape(port) == before
+    assert port.workflow_writes == []
+    assert port.issue_writes == []
+    assert refutations(port) == []
+    assert [
+        (event.subject_key, event.graded_sha, event.lane_key)
+        for event in unverified(port)
+    ] == [(key, "8" * 40, LANE) for key in CRITERIA]
+
+
+async def test_a_refutation_and_an_unverified_reading_share_one_board_read():
+    """One board reading serves whatever the act writes.
+
+    A roster holding a regression and a criterion the attempt read nothing
+    about writes two kinds of event; both are de-duplicated against the same
+    snapshot, taken once, before the first sub-issue is read.
+    """
+    broken, unread = CRITERIA[0], CRITERIA[1]
+    port = counting_criteria_board()
+    lane_state = writer(port, lane_repo())
+    await tick(lane_state, sha="1" * 40)
+
+    port.count_the_next_write()
+    await tick(
+        lane_state,
+        sha="2" * 40,
+        failed=[broken],
+        reasons=withheld([unread]),
+    )
+
+    assert port.listings == 1
+    assert [event.subject_key for event in refutations(port)] == [broken]
+    assert [event.subject_key for event in unverified(port)] == [unread]
+
+
+async def test_an_attempt_that_passed_everything_reads_no_board():
+    """Nothing to de-duplicate against, so no listing is paid for.
+
+    The stream is read for the events this act might post; an attempt with
+    no event to post would pay a round trip per iteration for an answer it
+    never looks at.
+    """
+    port = counting_criteria_board()
+    lane_state = writer(port, lane_repo())
+
+    await tick(lane_state, sha="3" * 40)
+
+    assert port.listings == 0
+
+
+async def test_a_second_undemonstrated_grading_at_a_later_head_is_its_own_event():
+    """The event names the grading, so two gradings are two events.
+
+    Repeated at the SAME head the reading is the same value and adds
+    nothing, which is what makes a graph-level retry of one iteration free.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    unread = CRITERIA[0]
+
+    await tick(lane_state, sha="1" * 40, reasons=withheld([unread]))
+    await tick(lane_state, sha="1" * 40, reasons=withheld([unread]))
+    await tick(lane_state, sha="2" * 40, reasons=withheld([unread]))
+
+    assert [event.graded_sha for event in unverified(port)] == ["1" * 40, "2" * 40]
+    assert {event.subject_key for event in unverified(port)} == {unread}
 
 
 async def test_a_second_regression_at_a_later_head_is_its_own_refutation():

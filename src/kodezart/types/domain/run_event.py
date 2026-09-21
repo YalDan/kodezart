@@ -1,6 +1,9 @@
 """The run-event vocabulary and its notification partition, owned once."""
 
+from collections.abc import Mapping
 from enum import StrEnum
+
+from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
 
 
 class RunEventKind(StrEnum):
@@ -22,6 +25,7 @@ class RunEventKind(StrEnum):
     RUN_ALARM_RAISED = "run_alarm_raised"
     RUN_ALARM_CLEARED = "run_alarm_cleared"
     NODE_SESSION_STARTED = "node_session_started"
+    CRITERION_GRADING_UNVERIFIED = "criterion_grading_unverified"
 
 
 class RunEventEffect(StrEnum):
@@ -57,6 +61,7 @@ RUN_EVENT_PUBLISHERS = {
     RunEventKind.RUN_ALARM_RAISED: RunEventPublisher.RAISER,
     RunEventKind.RUN_ALARM_CLEARED: RunEventPublisher.RAISER,
     RunEventKind.NODE_SESSION_STARTED: RunEventPublisher.RAISER,
+    RunEventKind.CRITERION_GRADING_UNVERIFIED: RunEventPublisher.LANE,
 }
 
 DERIVED_RUN_EVENTS = frozenset(
@@ -78,8 +83,22 @@ SILENT_STATE_EVENTS = frozenset(
         RunEventKind.RUN_ALARM_RAISED,
         RunEventKind.RUN_ALARM_CLEARED,
         RunEventKind.NODE_SESSION_STARTED,
+        RunEventKind.CRITERION_GRADING_UNVERIFIED,
     }
 )
+
+
+#: The event kind that records each reading a grading failed to take.
+#:
+#: The kind IS the reason, so the comment says which reading failed with
+#: no field on the event to keep in step with the cross-off's.  Total over
+#: the reason enum, and each value is its own kind: two reasons sharing a
+#: kind would be one reason.
+UNDEMONSTRATED_EVENT_KINDS: Mapping[UndemonstratedReason, RunEventKind] = {
+    UndemonstratedReason.workspace_not_the_graded_sha: (
+        RunEventKind.CRITERION_GRADING_UNVERIFIED
+    ),
+}
 
 
 class RunEventTableError(ValueError):

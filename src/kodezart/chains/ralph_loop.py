@@ -1,7 +1,7 @@
 """Ralph quality-gating loop — execute + evaluate until accepted or exhausted."""
 
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
@@ -37,7 +37,7 @@ from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criterion_cross_off import (
     cross_offs_for,
     evaluation_observation,
-    undemonstrated_output,
+    undemonstrated_reasons,
 )
 from kodezart.domain.errors import GitSourceReadError
 from kodezart.domain.fan_in import fan_in_report, require_permutation
@@ -63,10 +63,12 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.criteria import (
+    CriterionId,
     ExecutionCriterion,
     FanInReport,
     TrackerCriterionSet,
 )
+from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.grading import IterationGrade
@@ -579,13 +581,17 @@ class RalphLoop:
         # Every path out of the dispatch below either sets it or raises, so
         # nothing downstream reads this initial value.
         graded_in: str = ""
+        # The output the standing grade was reconciled from, carried out for
+        # the same reason: a withheld verdict is decided by grading that same
+        # input again, so every correspondence fact comes back identical.
+        graded_output: AcceptanceCriteriaOutput | None = None
         # Whether the tree the standing grade was read from was the one the
         # graded sha names. The authored arm has no sha to stand for, so its
         # readings are of the ref it asked for and nothing else is claimed.
-        demonstrated = True
+        workspace_stood = True
 
         async def evaluate() -> IterationGrade:
-            nonlocal dispatched, graded_in, demonstrated
+            nonlocal dispatched, graded_in, graded_output, workspace_stood
             criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
             if ctx.tracker_spec is not None:
                 snapshot = await current_native_criteria(
@@ -683,7 +689,7 @@ class RalphLoop:
                         site="ralph_evaluator",
                         observe=observe,
                     )
-                    demonstrated = await read_workspace_head(
+                    workspace_stood = await read_workspace_head(
                         git=self._git, workspace=graded_in_path
                     ) == (native_ref, False)
             if observer is not None:
@@ -702,6 +708,7 @@ class RalphLoop:
                 result_event.structured_output,
             )
             graded_in = result_event.session_id
+            graded_output = output
             if (
                 native_ref is not None
                 and await self._resolve(cwd=cwd, ref=ctx.ralph_branch) != native_ref
@@ -710,14 +717,6 @@ class RalphLoop:
                     "The native branch changed during evaluation"
                 )
             dispatched = tuple(criteria)
-            if not demonstrated:
-                await self._log.awarning(
-                    "evaluation_undemonstrated",
-                    site="ralph_evaluator",
-                    iteration=state["iteration"],
-                    graded_sha=native_ref,
-                )
-                output = undemonstrated_output(output)
             return grade_iteration(criteria, output)
 
         grade, unresolved, attempts = await until_permutation(
@@ -744,6 +743,30 @@ class RalphLoop:
                 unknown_ids=grade.unknown_ids,
                 duplicate_ids=grade.duplicate_ids,
             )
+        # One fold of every reading this attempt took, once per attempt rather
+        # than once per fan-in round, and one withholding site: the attempt's
+        # own output is graded again with the readings in hand, so a withheld
+        # criterion grades failed carrying the reading that failed while every
+        # correspondence fact of the grade is the value it already was. Grading
+        # ``grade.results`` instead would empty ``unknown_ids`` and
+        # ``duplicate_ids`` silently, because those rows are already gone.
+        reasons = undemonstrated_reasons(
+            results=grade.results, workspace_stood=workspace_stood
+        )
+        # Every path out of the dispatch that returned a grade set the output,
+        # so the narrowing is the type's and not a second condition: no
+        # reading is withheld from an attempt that never graded anything.
+        if reasons and graded_output is not None:
+            await self._log.awarning(
+                "evaluation_undemonstrated",
+                site="ralph_evaluator",
+                iteration=state["iteration"],
+                graded_sha=native_ref,
+                reasons=sorted(
+                    (str(key), reason.value) for key, reason in reasons.items()
+                ),
+            )
+            grade = grade_iteration(dispatched, graded_output, undemonstrated=reasons)
         verdict = grade.verdict
         pending_failures = grade.failures
         reconciled = AcceptanceCriteriaOutput(
@@ -780,7 +803,7 @@ class RalphLoop:
                 dispatched=dispatched,
                 graded_sha=native_ref,
                 graded_in=graded_in,
-                demonstrated=demonstrated,
+                reasons=reasons,
                 iteration=state["iteration"],
             )
         writer(event)
@@ -816,7 +839,7 @@ class RalphLoop:
         dispatched: Sequence[ExecutionCriterion],
         graded_sha: str,
         graded_in: str,
-        demonstrated: bool,
+        reasons: Mapping[CriterionId, UndemonstratedReason],
         iteration: int,
     ) -> None:
         """Put this attempt's verdict on the criteria it was graded against.
@@ -847,7 +870,7 @@ class RalphLoop:
                 observation=evaluation_observation(
                     session_id=graded_in, iteration=iteration
                 ),
-                demonstrated=demonstrated,
+                reasons=reasons,
             ),
         )
 

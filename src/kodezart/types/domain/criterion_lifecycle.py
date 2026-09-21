@@ -35,14 +35,31 @@ class CrossOffState(StrEnum):
 
     ``undemonstrated`` is not a fail: a fail is a reading of the tree the
     sha names, and this is the state of having no such reading at all —
-    the grading workspace held changes the sha does not, or its head was
-    not that sha, so what was observed was somebody's working copy.
+    no reading of the tree the sha names that says anything about this
+    criterion.  The grading workspace holding changes the sha does not,
+    or standing at another head, is one such reading; there are others,
+    and which one failed is named by :class:`UndemonstratedReason` on the
+    cross-off rather than by a member of its own here, so this enum keeps
+    saying exactly what a criterion's satisfaction is.
     """
 
     passed = "passed"
     failed = "failed"
     lapsed = "lapsed"
     undemonstrated = "undemonstrated"
+
+
+class UndemonstratedReason(StrEnum):
+    """Which reading of the tree failed, when a grading proved nothing.
+
+    One member per reading the harness takes, never per cause a session
+    might name: the member is chosen by code from a fact code read, and it
+    is what the run's record carries in place of a verdict.
+    """
+
+    #: The grading workspace held changes the sha does not, or its head was
+    #: not the sha the verdict would be stamped with.
+    workspace_not_the_graded_sha = "workspace_not_the_graded_sha"
 
 
 #: The classes whose criteria name the path prefixes their grading exercised.
@@ -88,6 +105,24 @@ class CriterionCrossOff(CamelCaseModel):
     evidence: CriterionEvidence
     rederivation_class: RederivationClass = RederivationClass.cheap
     exercised_paths: tuple[ExercisedPath, ...] = ()
+    #: Which reading failed, on the one state that has no verdict to carry.
+    #:
+    #: Named ``undemonstrated_reason`` rather than ``reason``: the question
+    #: it answers is which reading of the tree came back empty, and a bare
+    #: ``reason`` on a frozen model that forbids extras invites a second
+    #: meaning to be read into the same field later.
+    undemonstrated_reason: UndemonstratedReason | None = None
+
+    @model_validator(mode="after")
+    def _the_reason_is_the_undemonstrated_state(self) -> Self:
+        if (self.undemonstrated_reason is None) is (
+            self.state is CrossOffState.undemonstrated
+        ):
+            raise ValueError(
+                "an undemonstrated cross-off names the reading that failed, "
+                "and no other state names one"
+            )
+        return self
 
     @model_validator(mode="after")
     def _path_bound_classes_name_their_paths(self) -> Self:

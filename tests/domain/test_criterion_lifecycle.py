@@ -35,6 +35,7 @@ from kodezart.types.domain.criterion_lifecycle import (
     CrossOffState,
     RederivationClass,
     StickyClassError,
+    UndemonstratedReason,
     held_rederivation_classes,
 )
 from kodezart.types.domain.criterion_ref import CriterionRef
@@ -1223,6 +1224,37 @@ def test_the_re_derivation_class_and_cross_off_state_members_are_exactly_these()
         RederivationClass.expensive,
         RederivationClass.observed,
     }
+
+
+def test_the_undemonstrated_reason_members_are_exactly_these():
+    assert [(member.name, member.value) for member in UndemonstratedReason] == [
+        ("workspace_not_the_graded_sha", "workspace_not_the_graded_sha"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "state",
+    [CrossOffState.passed, CrossOffState.failed, CrossOffState.lapsed],
+)
+def test_a_reason_is_named_for_exactly_the_undemonstrated_state(state):
+    """Both directions: the state that has no verdict names its reading.
+
+    A reason on a state that HAS a verdict would say two things about one
+    criterion, and the undemonstrated state without one would say the
+    grading proved nothing without saying which reading came back empty.
+    """
+    with pytest.raises(ValidationError, match="names the reading that failed"):
+        cross_off(state=CrossOffState.undemonstrated)
+    with pytest.raises(ValidationError, match="names the reading that failed"):
+        cross_off(
+            state=state,
+            undemonstrated_reason=(UndemonstratedReason.workspace_not_the_graded_sha),
+        )
+    for reason in UndemonstratedReason:
+        named = cross_off(
+            state=CrossOffState.undemonstrated, undemonstrated_reason=reason
+        )
+        assert named.undemonstrated_reason is reason
 
 
 @pytest.mark.parametrize(
