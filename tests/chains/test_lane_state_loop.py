@@ -25,12 +25,14 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import ResultEvent, WorkflowIterationEvent
 from kodezart.types.domain.branch import BranchRole, trunk_base
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import (
     CrossOffState,
     RederivationClass,
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import (
+    LifecycleStage,
     OperationConfig,
     OperationMemberAbsentError,
 )
@@ -1269,6 +1271,69 @@ def test_the_evaluator_step_is_the_only_caller_of_write_cross_offs():
         )
         if found
     } == {LOOP: [f"{RalphLoop.__name__}.{node}"]}
+
+
+async def test_the_evaluator_step_writes_one_state_move_and_one_evidence_row_per_key():
+    """Two writes per graded criterion, both its own, both inside the step.
+
+    The fixtures above read the board the cross-offs left; this one reads the
+    port's own write journals, which say what the writer did rather than what
+    the board looks like afterwards: one state move and one description-only
+    edit per addressed sub-issue, in the roster's order, on the keys the
+    verdict answered and on no others.  The two halves are the same
+    sub-issue's because the Evidence row read back off each key carries THIS
+    attempt's graded sha and the session and iteration it was graded in, and
+    the row is compared as a whole value, so a third datum on it fails here
+    (KOD-712 owns the one site both halves are written from).
+
+    The cadence is the two instants around them: while the evaluation session
+    is still running the board has not been written at all, and when the
+    iteration event goes out both journals are complete and never move again.
+
+    What this does not see, and what review has to read from the code: which
+    step made the calls, covered by the caller guard above; a write by a step
+    after the loop, covered by the post-loop fixture; the pointer at a second
+    iteration, covered by the between-iterations fixture; and a second
+    identical stamp of the same row, which the description surface absorbs as
+    unchanged so no journal records it.  A ref double answering every ref
+    with this lane's head is why the graded sha is shown to be the lane's own
+    head and not the trunk base.
+    """
+    lane = Lane(evaluations=[native_evaluation()])
+    at_session: list[tuple[int, int]] = []
+    lane.executor.on_evaluation = lambda _: at_session.append(written(lane.port))
+    at_event: list[tuple[list, list]] = []
+
+    async for event in lane.loop.run(**await lane.arguments()):
+        if isinstance(event, WorkflowIterationEvent):
+            at_event.append(
+                (
+                    list(lane.port.workflow_writes),
+                    [(key, title) for key, title, _ in lane.port.issue_writes],
+                )
+            )
+
+    assert at_session == [(0, 0)]
+    assert len(at_event) == 1
+    moves, edits = at_event[-1]
+    assert moves == [(key, LifecycleStage.DONE) for key in OWED_KEYS]
+    assert edits == [(key, None) for key in OWED_KEYS]
+    graded_sha = await LaneSource(lane.repo).resolve_commit(cwd="/w", ref=BRANCH)
+    assert graded_sha == lane.repo.head != TRUNK_SHA
+    assert {
+        key: parse_criterion_evidence(lane.port.issues[key].body) for key in OWED_KEYS
+    } == {
+        key: CriterionEvidence(
+            graded_sha=graded_sha,
+            test=evaluation_observation(session_id=NATIVE_SESSION, iteration=1),
+        )
+        for key in OWED_KEYS
+    }
+    assert completed(lane.port) == set(OWED_KEYS)
+    assert (
+        list(lane.port.workflow_writes),
+        [(key, title) for key, title, _ in lane.port.issue_writes],
+    ) == at_event[-1]
 
 
 #: A criterion set long enough that a per-criterion comment would be visible
