@@ -41,6 +41,9 @@ class CheckMonitor:
         self.calls.append(("rerun", repo_url, ref))
 
 
+SUMMARIES = ["", "arbitrary prose"]
+
+
 def repo(**changes):
     return RepoEntry(
         url="https://github.com/example/project", trunk="integration", **changes
@@ -78,16 +81,24 @@ async def test_not_red_at_same_sha_establishes_flake(summary, passed):
     assert all(call[2] == "immutable-sha" for call in ci.calls)
 
 
-async def test_zero_bound_reproduces_without_rerun():
-    ci = CheckMonitor(names=[frozenset({"test"})])
-    assert (await classify(ci, bound=0)).red_class is CheckRedClass.WORK_DEFECT
+@pytest.mark.parametrize("summary", SUMMARIES)
+async def test_zero_bound_reproduces_without_rerun(summary):
+    ci = CheckMonitor(names=[frozenset({"test"})], summary=summary)
+    result = await classify(ci, bound=0)
+    assert result.red_class is CheckRedClass.WORK_DEFECT
+    assert result.observation.summary == summary
     assert [call[0] for call in ci.calls] == []
 
 
+@pytest.mark.parametrize("summary", SUMMARIES)
 @pytest.mark.parametrize("declared", [False, True, None])
 @pytest.mark.parametrize("mapped", [True, False])
-async def test_only_mapped_explicit_false_establishes_environment(declared, mapped):
-    ci = CheckMonitor(observations=[True], names=[frozenset({"history"})])
+async def test_only_mapped_explicit_false_establishes_environment(
+    declared, mapped, summary
+):
+    ci = CheckMonitor(
+        observations=[True], names=[frozenset({"history"})], summary=summary
+    )
     repository = repo(
         checks=(
             CheckStep(
@@ -108,6 +119,7 @@ async def test_only_mapped_explicit_false_establishes_environment(declared, mapp
         else CheckRedClass.RUNNER_FLAKE
     )
     assert result.red_class is expected
+    assert result.observation.summary == summary
     assert sum(call[0] == "rerun" for call in ci.calls) == (
         0 if mapped and declared is False else 1
     )
@@ -153,11 +165,14 @@ def test_check_monitor_has_exact_declared_method_set():
         "checks_declared",
         "rerun_checks",
     }
+    assert not hasattr(CheckMonitor(), "failed_check_names")
+    assert "failed_check_names" in ObservedChecks.model_fields
 
 
+@pytest.mark.parametrize("summary", SUMMARIES)
 @pytest.mark.parametrize("names", [[frozenset()], [frozenset({"test"}), frozenset()]])
-async def test_red_without_failing_evidence_refuses(names):
-    ci = CheckMonitor(observations=[False], names=names)
+async def test_red_without_failing_evidence_refuses(names, summary):
+    ci = CheckMonitor(observations=[False], names=names, summary=summary)
     with pytest.raises(ValueError, match="verdict must agree"):
         await classify(ci)
 
