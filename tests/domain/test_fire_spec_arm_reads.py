@@ -524,27 +524,52 @@ def test_the_scan_catches_a_spec_handed_to_an_unannotated_parameter_in_the_tree(
     assert report["digested"] == DIGEST_POSITIONS
 
 
+CONTROL_IMPORT = "from kodezart.control import _own_text"
+
+
 @pytest.mark.parametrize(
-    ("form", "call", "probe", "reported"),
+    ("form", "imported", "call", "probe", "reported"),
     [
-        ("positional", "_own_text(spec)", PROBE, "_own_text"),
-        ("keyword", "_own_text(value=spec)", PROBE, "_own_text"),
+        ("positional", CONTROL_IMPORT, "_own_text(spec)", PROBE, "_own_text"),
+        ("keyword", CONTROL_IMPORT, "_own_text(value=spec)", PROBE, "_own_text"),
         (
             "through_a_receiver",
+            CONTROL_IMPORT,
             "self._own_text(spec)",
             "class Reader:\n"
             "    def _own_text(self, value):\n"
             "        return value.body\n",
             "Reader._own_text",
         ),
+        (
+            "aliased_import",
+            "from kodezart.control import _own_text as h",
+            "h(spec)",
+            PROBE,
+            "_own_text",
+        ),
+        (
+            "module_alias",
+            "import kodezart.control as helpers",
+            "helpers._own_text(spec)",
+            PROBE,
+            "_own_text",
+        ),
+        (
+            "submodule_import",
+            "from kodezart import control",
+            "control._own_text(spec)",
+            PROBE,
+            "_own_text",
+        ),
     ],
 )
 def test_the_scan_catches_a_spec_handed_to_an_unannotated_parameter(
-    form, call, probe, reported
+    form, imported, call, probe, reported
 ):
     """The helper is scanned wherever it lives and however it is reached."""
     caller = (
-        "from kodezart.control import _own_text\n"
+        f"{imported}\n"
         "\n"
         "def node(state):\n"
         "    spec = current_fire_spec(state)\n"
