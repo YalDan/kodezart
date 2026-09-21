@@ -176,14 +176,22 @@ def pytest_bindings(tree: ast.Module) -> dict[str, str]:
     binds ``marks`` to the same, and an annotated ``marks: Final =
     pytest.mark`` binds the same way.  Only origins under pytest are kept.
 
-    One pass in file order is the whole semantics: at module level a name is
-    bound before it is read, so the alias an assignment copies is already
-    bound when that assignment is reached, and a name bound again replaces
-    the binding it had.  The reading is not position-aware, so a name bound
-    twice is read everywhere as its last binding.
+    An import is read wherever it sits.  One written inside the function
+    that calls the form binds the name for that call, and one wrapped in a
+    ``try`` or an ``if`` at module level binds it too; a module that imports
+    pytest nowhere else would otherwise resolve none of its own calls.  An
+    alias assignment is read at module level only, which is the blind spot
+    the resolver states.
+
+    One forward pass is the whole semantics: a name is bound before it is
+    read, so the alias an assignment copies is already bound when that
+    assignment is reached, and a name bound again replaces the binding it
+    had.  The reading is not position-aware, so a name bound twice is read
+    everywhere as its last binding.
     """
     bindings: dict[str, str] = {}
-    for statement in tree.body:
+    outer = {id(statement) for statement in tree.body}
+    for statement in ast.walk(tree):
         if isinstance(statement, ast.Import):
             for alias in statement.names:
                 if alias.name == "pytest" or alias.name.startswith("pytest."):
@@ -193,7 +201,7 @@ def pytest_bindings(tree: ast.Module) -> dict[str, str]:
             if origin == "pytest" or origin.startswith("pytest."):
                 for alias in statement.names:
                     bindings[alias.asname or alias.name] = f"{origin}.{alias.name}"
-        elif isinstance(statement, ast.Assign):
+        elif isinstance(statement, ast.Assign) and id(statement) in outer:
             copied = _through(dotted(statement.value), bindings)
             if copied is not None:
                 for target in statement.targets:
@@ -201,6 +209,7 @@ def pytest_bindings(tree: ast.Module) -> dict[str, str]:
                         bindings[target.id] = copied
         elif (
             isinstance(statement, ast.AnnAssign)
+            and id(statement) in outer
             and statement.value is not None
             and isinstance(statement.target, ast.Name)
         ):
@@ -213,22 +222,22 @@ def pytest_bindings(tree: ast.Module) -> dict[str, str]:
 def sites(module: Source, forms: frozenset[str]) -> tuple[str, ...]:
     """The forms the module names in code, in file order.
 
-    Each maximal name-or-attribute chain is resolved through the module's
-    own pytest bindings, so an aliased import names the same form.  A string
-    constant is never a site.  Not followed, and so not seen: a form reached
-    through ``getattr``, a marker added from a string at collection time, an
-    alias bound inside a function, a module reached through ``importlib``, an
-    import from the private ``_pytest`` packages.
+    Every name-or-attribute chain is resolved through the module's own pytest
+    bindings, so an aliased import names the same form.  A chain a longer one
+    is built from is read in its own right, so a form is a site whatever
+    continues it: the mark factory's own combinator takes a decorator form
+    and returns another, and the longer chain that spells it is not in the
+    roster while the form it starts with is.  No form is a prefix of another
+    form, so nothing is counted twice.  A string constant is never a site.
+    Not followed, and so not seen: a form reached through ``getattr``, a
+    marker added from a string at collection time, an alias bound inside a
+    function, a module reached through ``importlib``, a star import from
+    pytest, an import from the private ``_pytest`` packages.
     """
     bindings = pytest_bindings(module.tree)
-    inner = {
-        id(node.value)
-        for node in ast.walk(module.tree)
-        if isinstance(node, ast.Attribute)
-    }
     found: list[tuple[int, int, str]] = []
     for node in ast.walk(module.tree):
-        if not isinstance(node, ast.Name | ast.Attribute) or id(node) in inner:
+        if not isinstance(node, ast.Name | ast.Attribute):
             continue
         # The name an alias is bound to is not itself a use of the form.
         if not isinstance(node.ctx, ast.Load):

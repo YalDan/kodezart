@@ -226,8 +226,10 @@ CONFIG_BASELINE: dict[str, object] = {
 
 #: One hand-written source per form, each binding pytest a different way,
 #: so the import alias, the from-import, the assignment alias, a name bound
-#: twice and the annotated assignment each have a control.  The tree aliases
-#: pytest nowhere today, so these are the only proof those arms work.
+#: twice, the annotated assignment and an import inside the function that
+#: calls the form each have a control, and so does a form a longer chain
+#: continues.  The tree aliases pytest nowhere today, so these are the only
+#: proof those arms work.
 FORM_CONTROLS: tuple[tuple[str, str], ...] = (
     (
         "pytest.mark.skip",
@@ -259,6 +261,16 @@ FORM_CONTROLS: tuple[tuple[str, str], ...] = (
         "pytest.mark.skip",
         "import pytest\nfrom typing import Final\n"
         "m: Final = pytest.mark\n@m.skip\ndef test_a(): ...\n",
+    ),
+    # The import that binds pytest sits inside the function that calls the
+    # form; three modules of the suite import it this way today.
+    ("pytest.skip", "def test_a():\n    import pytest\n    pytest.skip('x')\n"),
+    # The mark factory's own combinator: the form is the chain the call is
+    # built on rather than the whole chain.
+    (
+        "pytest.mark.skipif",
+        "import pytest\n@pytest.mark.skipif.with_args(True, reason='x')\n"
+        "def test_a(): ...\n",
     ),
 )
 
