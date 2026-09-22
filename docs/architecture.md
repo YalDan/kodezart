@@ -366,15 +366,20 @@ consumer that sees the event for iteration n can read the tracker and find that
 iteration's cross-offs already on it. It is handed the roster the attempt was
 dispatched against and the whole grade of it, one for one and in order. For a
 criterion the attempt passed, the sha it was graded at goes on that sub-issue's
-Evidence row and the sub-issue then moves to the configured `done` stage, in
-that order — the body edit under its own compare-and-set precondition, the
-transition only after it. For a criterion the attempt failed that this fire had
-already finished, the sub-issue moves back to the team's unstarted state first,
-the refuting grading then goes on its Evidence row, and one `criterion_refuted`
-event is posted under `marker_prefixes.run_event` last. That order is what the
-act guarantees: a failure anywhere after the move back leaves the criterion
-owed, and the next fire re-grades it, instead of leaving it certified at a sha
-that failed it.
+Evidence row, the sub-issue then moves to the configured `done` stage, and one
+`criterion_passed` event naming that sha is posted on the LANE under
+`marker_prefixes.run_event` last — the body edit under its own compare-and-set
+precondition, the transition after it, the announcement after that. The event
+is what makes the lane's stream the Evidence row's own write history, which is
+what the audit's restamp trace reads; the stream is read for that entry before
+anything is written, so the same verdict written again at the same head
+restamps the same row and announces nothing twice. For a criterion the attempt
+failed that this fire had already finished, the sub-issue moves back to the
+team's unstarted state first, the refuting grading then goes on its Evidence
+row, and one `criterion_refuted` event is posted under
+`marker_prefixes.run_event` last. That order is what the act guarantees: a
+failure anywhere after the move back leaves the criterion owed, and the next
+fire re-grades it, instead of leaving it certified at a sha that failed it.
 
 A criterion whose grading no longer stands goes back the same way and announces
 nothing. The sub-issue returns to the team's unstarted state, keeping the sha it
@@ -1368,11 +1373,22 @@ unsettled, and `AuditRestampTrace` refuses that verdict at construction.
 Membership anywhere in the history would not do. An entry followed by a later
 recorded grading is itself later than the restamp, so a row pointing behind
 the grading that actually last ran would be admitted, and order is the only
-thing an append-only stream guarantees. A criterion whose history holds no
-recorded grading was never restamped and is not traced at all: a passing
-cross-off stamps the Evidence row and posts no event, so reading an empty
-history as "no entry at this commit" would refute every criterion the board
-ever finished (KOD-506).
+thing an append-only stream guarantees.
+
+The stream is the row's write history because every cross-off records its
+grading there. A passing cross-off restamps the Evidence row and posts one
+`criterion_passed` event carrying the same sha, beside the `criterion_refuted`
+a failing one posts; both address the lane issue, so a criterion sub-issue
+still carries no comment. Without the passing entry the history would hold
+only the refutations, and the ordinary lifecycle — refuted at one commit, then
+passed at the next — would read as a row pointing behind its last recorded
+grading and be refuted for having been legitimately restamped (KOD-506).
+
+A criterion whose history holds no recorded grading was never restamped by its
+lane and is not traced at all: an empty history is a row no lane write accounts
+for — one a person moved into the finished state, or one whose announcement
+never landed — and reading it as "no entry at this commit" would answer for a
+write the stream never saw.
 
 The trace is an observation, not a publication. It rides in the scope report's
 raw observations and adds no comment, marker or coverage effect, and the
