@@ -3659,6 +3659,19 @@ class FakeTrackerPort:
         #: the ensure addresses the workspace, so no issue is stamped either.
         #: The attempt is the write, as it is for a release.
         self.label_writes: list[str] = []
+        #: Every value the OTHER instatable kinds actually instated, in order.
+        #: An ensure of a queue state or an issue label that creates addresses
+        #: the workspace exactly as a scope label does — it stamps no issue —
+        #: and the two attributes it fills are state a consumer reads back
+        #: rather than a journal, so without this list the write left no trace
+        #: a write-set check could read.  An ensure that ADOPTS a value the
+        #: workspace already defines returns before touching anything, so it
+        #: leaves this list empty, which is the honest answer for it.
+        self.mapping_instatements: list[str] = []
+        #: Every issue a graph write moved: the addressed issue and each peer
+        #: the change carried with it.  The write replaces issues in place and
+        #: stamps none of them, so this list is its only trace as well.
+        self.graph_writes: list[str] = []
         #: Every container each INSTATED value is defined in, ``None`` being
         #: the workspace itself.  A SET per value, because one name is
         #: defined once per container and a two-board operation carries its
@@ -3986,8 +3999,10 @@ class FakeTrackerPort:
             self._require_graph_holder(
                 kind=SurfaceKind.ISSUE_GRAPH, issue_key=peer, holder=holder
             )
+        self.graph_writes.append(issue_key)
         self.issues[issue_key] = candidate
         for peer in changed_peers(issue_key=issue_key, changes=changes, issues=current):
+            self.graph_writes.append(peer.issue_key)
             self.issues[peer.issue_key] = peer
         return candidate
 
@@ -4989,6 +5004,7 @@ class FakeTrackerPort:
                     f"found {', '.join(held)}",
                     entry=ref.describe(),
                 )
+            self.mapping_instatements.append(identifier)
             self.known_identifiers.add(identifier)
             self.mapping_containers.setdefault(identifier, set()).add(ref.scope)
             outcomes.append(
@@ -5187,15 +5203,19 @@ def tracker_state(port: FakeTrackerPort) -> dict[str, object]:
 #: queue-state writes, the put-backs, both halves of a document write, this
 #: process's own write ledger, the refs recorded against an issue, which
 #: stamp nothing at all when the issue is one the board does not hold and are
-#: then invisible to a check that looked only for a stamp, and the
-#: scope-label ensures, which address the workspace and so stamp no issue at
-#: all.  The last two are the unlock attempts —
+#: then invisible to a check that looked only for a stamp, the scope-label
+#: ensures and the other mapping instatements, which address the workspace
+#: and so stamp no issue at all, and the graph writes, which replace issues
+#: in place and stamp none of them.  The last two are the unlock attempts —
 #: a claim release and a surface release — which move nothing on a board
 #: holding neither and would therefore be invisible to a check that read the
-#: locks back instead of the attempt.  Named here so the rendering above is
-#: SHOWN to reach them rather than trusted to: a rendering that stopped
-#: reaching one of these has stopped being total, and that is the one
-#: failure a list of journals cannot report about itself.
+#: locks back instead of the attempt.
+#:
+#: The set is not trusted to be complete either: the census beside this
+#: module derives the port's own write surface and drives EVERY write on it,
+#: so a write that lands in no journal here fails there, naming the method,
+#: and a journal nothing fills fails there too.  That is the one failure a
+#: list of journals cannot report about itself.
 TRACKER_WRITE_JOURNALS = frozenset(
     {
         "issue_writes",
@@ -5214,6 +5234,8 @@ TRACKER_WRITE_JOURNALS = frozenset(
         "self_writes",
         "recorded_work_refs",
         "label_writes",
+        "mapping_instatements",
+        "graph_writes",
         "claim_releases",
         "lease_releases",
     }
@@ -5249,22 +5271,23 @@ def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
     before every barrier — needs the narrower claim: of the journals a write
     can land in, none moved.
 
-    The surface is the declared reach list above, and it is a hand-written
-    list on purpose: the completeness test beside it forces the list to name
-    every journal this check reaches, so a journal that arrives later has to
-    arrive with the write that fills it.  A write that ADDRESSES an issue is
+    The surface is the journal list above, and NO write on the port is
+    outside it.  That is a measured claim, not an intention: the census
+    beside this module derives the write surface off the port itself and
+    drives every method on it, so a write landing in no journal here is a
+    failure there, naming the method.  A write that ADDRESSES an issue is
     reached whichever attribute it fills — the identity map under
     ``upsert_issue``, say — because it stamps the issue through ``_wrote``
     and that stamp lands in ``self_writes``.  The writes that address no
     issue carry a journal of their own so they are reached too: the two
-    unlock attempts, a work ref recorded against an issue no board holds,
-    and a scope-label ensure, which addresses the workspace.
+    unlock attempts, a work ref recorded against an issue no board holds, a
+    graph write, and each mapping ensure that instates — a scope label or one
+    of the other instatable kinds — all of which address the workspace.
 
-    One write is outside the projection and is named here rather than left
-    for a caller to find out: the ensure arm for the OTHER instatable kinds,
-    which fills ``known_identifiers`` and ``mapping_containers`` and stamps
-    nothing.  That is boot-time mapping instatement rather than a consumer's
-    write, and ``handed_over`` is the answerer that covers it.
+    An ensure that ADOPTS a value the workspace already defines is the one
+    ensure this answers True for, because it writes nothing: it returns the
+    identifier it found and touches no attribute.  That is shown beside the
+    census as an empty journal rather than asserted here.
 
     Attributes outside the set (``issue_reads``, ``scans``, a subclass's own
     counters) are outside the claim by construction, and so is a board a
