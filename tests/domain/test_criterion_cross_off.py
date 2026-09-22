@@ -179,13 +179,26 @@ def called_name(node: ast.Call) -> str | None:
 
 
 def callers_of(tree: ast.Module, *, name: str) -> list[str]:
-    """Every definition in *tree* that calls *name*, by its dotted name."""
+    """Every definition in *tree* that calls *name*, by its dotted name.
+
+    A member bound to a local name and called under that word is the same
+    call: ``mint = tracker.create_criterion_if_absent`` followed by
+    ``await mint(...)`` is an ordinary second call site, not reflection, and a
+    walk that compared the called name alone would be answered by binding the
+    member first.  So the aliases are resolved to a fixed point before the
+    calls are counted, by the same resolution the stage guard below uses.
+    """
     where = qualified_names(tree)
+    aliases = stage_names(tree, stage=name)
     return sorted(
         {
             where[id(node)]
             for node in ast.walk(tree)
-            if isinstance(node, ast.Call) and called_name(node) == name
+            if isinstance(node, ast.Call)
+            and (
+                called_name(node) == name
+                or (isinstance(node.func, ast.Name) and node.func.id in aliases)
+            )
         }
     )
 

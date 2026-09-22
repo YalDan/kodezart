@@ -31,7 +31,10 @@ binds to its value, pooled over the whole tree and resolved to each
 module's own words, and by the tool's literal, whether the tool is passed
 positionally or by keyword — so importing the constant from the module that
 binds it, importing it under another name, or spelling the tool inline are
-each still a listing.
+each still a listing.  A member bound to a local word and called under that
+word is likewise the same call: the caller walk resolves assignment aliases of
+the member to a fixed point before it counts, so binding the mint first is no
+way past the one-caller count either.
 
 What it does not see: a member reached by reflection; a selection of
 criterion rows out of issues some container read already returned, which is
@@ -500,6 +503,18 @@ PLANTED_MINTS = {
         f"        parent_key='p', title='t', check='c', do='d', holder='h'\n"
         f"    )\n",
         "callers outside the holders",
+    ),
+    # The same call with the member bound to a local word first.  An ordinary
+    # second minting site, not reflection: the caller walk resolves the alias
+    # rather than comparing the called word (KOD-621).
+    "a second caller by bound alias": (
+        "services/second_stage.py",
+        f"async def stage(tracker):\n"
+        f"    mint = tracker.{MINT}\n"
+        f"    return await mint(\n"
+        f"        parent_key='p', title='t', check='c', do='d', holder='h'\n"
+        f"    )\n",
+        "callers",
     ),
     "a second implementation": (
         "services/second_port.py",
