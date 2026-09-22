@@ -202,7 +202,16 @@ async def test_review_failure_is_a_fire_terminal_without_a_pr_comment():
 
 @pytest.mark.parametrize("field", sorted(DELIVERY_FIELDS))
 def test_fire_terminal_refuses_delivery_facts(field):
-    with pytest.raises(ValidationError):
+    """Refused because the terminal has no such field, not because of the value.
+
+    ``None`` into a field the terminal DID carry non-nullably raises a
+    ``ValidationError`` of its own, so the bare exception type cannot tell a
+    delivery fact turned away at the door from one that was let in and then
+    objected to its value. The refusal is named instead, against the field
+    this case is about, so a ``ci_passed: bool`` grown on the terminal reds
+    here rather than passing as a refusal it is not.
+    """
+    with pytest.raises(ValidationError) as caught:
         WorkflowCompleteEvent(
             feature_branch="feature",
             ralph_branch="ralph",
@@ -211,6 +220,9 @@ def test_fire_terminal_refuses_delivery_facts(field):
             outcome=WorkflowOutcome.handed_off_for_delivery,
             **{field: None},
         )
+    assert [(error["type"], error["loc"]) for error in caught.value.errors()] == [
+        ("extra_forbidden", (field,))
+    ]
 
 
 def test_fire_classifier_is_independent_of_external_delivery():
