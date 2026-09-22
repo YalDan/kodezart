@@ -1,0 +1,295 @@
+"""One organize round holds the set its row declares, over the real adapter.
+
+Every case drives the composed owner through ``factory``/``run_owner``, so the
+lease records read here are the ones the production path writes.
+"""
+
+import asyncio
+import re
+
+import pytest
+
+from kodezart.config.app import AppConfig
+from kodezart.config.organize import OrganizeSettings
+from kodezart.domain.errors import SurfaceLeaseError, SurfaceLeaseLostError
+from kodezart.services.run_surface_lease import RunSurfaceLease
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from tests.chains.test_organize import result
+from tests.chains.test_organize_owner import factory, run_owner
+from tests.fakes import FakeMcpIssue
+from tests.tracker.conftest import CLAIMED_ISSUE
+
+JOB = "actual-organize-job"
+SIBLING = "FIX-SIBLING"
+GROOM_LINES = ("issue_description", "issue_graph", "issue_label_set")
+
+
+def settings(*, bound=2, convergence_bound=2, lease_seconds=900.0):
+    return AppConfig(
+        organize=OrganizeSettings(
+            max_admission_rounds=bound, max_convergence_rounds=convergence_bound
+        ),
+        write_back={"max_verify_rounds": 2},
+        tracker={"surface_lease_seconds": lease_seconds},
+    )
+
+
+def member(
+    board, key, *, description="Prepared body grounded in the source.", labels=()
+):
+    """One more issue of the scope, in the vendor's own shape."""
+    board.server.issues[key] = FakeMcpIssue(
+        id=key,
+        description=description,
+        parent_id=CLAIMED_ISSUE,
+        labels=list(labels),
+    )
+    return board.server.issues[key]
+
+
+def held(board):
+    """Every standing lease marker, as (holder, nonce, frozenset of addresses)."""
+    return [_read(comment.body) for comment in board.grants()]
+
+
+def acquisitions(board):
+    """The nonce of each lease creation the round made, in call order."""
+    return [_read(args["body"]) for args in board.lease_creations()]
+
+
+def _read(body):
+    fields = dict(re.findall(r"^(kind|holder|nonce|state): (.*)$", body, re.M))
+    return (
+        fields["holder"],
+        fields["nonce"],
+        frozenset(re.findall(r"^- (.*)$", body, re.M)),
+    )
+
+
+def addresses(key, kinds=GROOM_LINES):
+    return frozenset(f"{kind}|issue|{key}|" for kind in kinds)
+
+
+async def test_the_round_holds_the_whole_declared_set_before_its_first_write():
+    """Every declared kind, on every member of the snapshot, before any write.
+
+    The sibling already carries the marker, so the round spends no session
+    on it and still declares it: the set is the snapshot's, not the work
+    roster's.
+    """
+    owner, board, _ = factory()
+    member(board, SIBLING, labels=["graph complete"])
+    board.pause = lambda name, args: name == "save_issue" and "description" in args
+    task = asyncio.create_task(run_owner(owner))
+    try:
+        await asyncio.wait_for(board.reached.wait(), timeout=10)
+        declared = addresses(CLAIMED_ISSUE) | addresses(SIBLING)
+        (nonce,) = {nonce for _, nonce, _ in acquisitions(board)}
+        assert held(board) == [(JOB, nonce, declared)] * 2
+        assert [args["issueId"] for args in board.lease_creations()] == [
+            CLAIMED_ISSUE,
+            SIBLING,
+        ]
+    finally:
+        board.resume.set()
+    report = await task
+    assert report.halt is None
+    assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
+
+
+async def test_a_contended_declared_set_writes_nothing_and_opens_no_session():
+    """One address of the set held elsewhere refuses the whole acquisition."""
+    owner, board, executor = factory()
+    member(board, SIBLING)
+    rival = WritableSurface(
+        kind=SurfaceKind.ISSUE_DESCRIPTION,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=SIBLING),
+    )
+    async with RunSurfaceLease(
+        tracker=board.tracker(),
+        job_id="rival-holder",
+        surfaces=frozenset({rival}),
+        lease_seconds=900.0,
+    ):
+        with pytest.raises(SurfaceLeaseError) as refusal:
+            await run_owner(owner)
+        assert (
+            refusal.value.surface_kind,
+            refusal.value.scope_key,
+            refusal.value.current_holder,
+        ) == (rival.kind.value, SIBLING, "rival-holder")
+        assert [holder for holder, _, _ in held(board)] == ["rival-holder"]
+    assert executor.calls == []
+    assert not [args for name, args in board.calls if name == "save_issue"]
+
+
+async def test_a_round_whose_lease_lapsed_in_a_session_writes_nothing_more(
+    monkeypatch,
+):
+    """A lapse inside a session is read at the next write, never re-acquired."""
+    owner, board, executor = factory(settings=settings(lease_seconds=60.0))
+    original = executor.stream
+
+    async def stream(**kwargs):
+        if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
+            # The board's clock crosses the whole lease while the session runs.
+            board.advance(120)
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+    with pytest.raises(SurfaceLeaseLostError):
+        await run_owner(owner)
+    assert not [args for name, args in board.calls if name == "save_issue"]
+    assert len({nonce for _, nonce, _ in acquisitions(board)}) == 1
+
+
+async def test_no_halt_is_written_while_the_rounds_lease_is_held():
+    """The round's set is gone before the halt's first escalation write."""
+    owner, board, _ = factory(refuse_forever=True, bound=1)
+    board.pause = lambda name, args: (
+        name == "save_comment"
+        and str(args.get("body", "")).startswith("[organize-question")
+    )
+    task = asyncio.create_task(run_owner(owner))
+    try:
+        await asyncio.wait_for(board.reached.wait(), timeout=10)
+        assert not [
+            record
+            for record in held(board)
+            if record[2] & addresses(CLAIMED_ISSUE, ("issue_description",))
+        ]
+    finally:
+        board.resume.set()
+    report = await task
+    assert report.halt.cause == "admission_exhausted"
+    assert "needs decision" in board.server.issues[CLAIMED_ISSUE].labels
+
+
+TICKET_LINES = (
+    "issue_description",
+    "issue_graph",
+    "issue_label_set",
+    "issue_split_set",
+)
+CHILDREN = ("first-deliverable", "second-deliverable")
+
+
+def splitting(board, executor, monkeypatch):
+    """An author that proposes two children once, then judges the board fresh."""
+    original = executor.stream
+
+    async def stream(**kwargs):
+        key = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        minted = any(
+            child in issue.description
+            for issue in board.server.issues.values()
+            for child in CHILDREN
+        )
+        if key and key[-1] == CLAIMED_ISSUE and not minted:
+            schema = kwargs["output_format"]["schema"]
+            executor.calls.append(kwargs)
+            if schema.get("title") == "OrganizeProposal":
+                yield result(
+                    structured_output={
+                        "kind": "split",
+                        "issue_id": CLAIMED_ISSUE,
+                        "children": [
+                            {
+                                "deliverable_key": child,
+                                "title": f"Prepared split {index}",
+                                "body": "Prepared source-grounded child specification.",
+                            }
+                            for index, child in enumerate(CHILDREN)
+                        ],
+                    }
+                )
+            else:
+                yield result(
+                    structured_output={
+                        "issue_id": CLAIMED_ISSUE,
+                        "verdict": "not_buildable",
+                        "evidence": "The mandate calls for independent children.",
+                        "refusal_kind": "spec_gap",
+                        "invented_decision": "Prepare the specified children.",
+                    }
+                )
+            return
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+
+
+def opened(board):
+    """Where in the call order each round's acquisition was first written."""
+    return {
+        _read(str(args.get("body", "")))[1]: index
+        for index, (name, args) in reversed(list(enumerate(board.calls)))
+        if name == "save_comment"
+        and "id" not in args
+        and "kind: lease\n" in str(args.get("body", ""))
+    }
+
+
+def minted_keys(board):
+    return sorted(
+        issue.id
+        for issue in board.server.issues.values()
+        if issue.parent_id == CLAIMED_ISSUE
+    )
+
+
+async def test_the_declared_set_is_acquired_once_a_round_not_once_a_write(monkeypatch):
+    """Two writes of one round sit under one acquisition, and each round takes one."""
+    owner, board, executor = factory(
+        under_approval=True,
+        convergence_bound=3,
+        bound=3,
+        phases=lambda rows: rows[:1],
+    )
+    splitting(board, executor, monkeypatch)
+    report = await run_owner(owner)
+    assert report.halt is None
+    rounds = [nonce for _, nonce, _ in acquisitions(board)]
+    first, second = dict.fromkeys(rounds)
+    assert len(dict.fromkeys(rounds)) == 2
+    created = [
+        index
+        for index, (name, args) in enumerate(board.calls)
+        if name == "save_issue" and "parentId" in args
+    ]
+    assert len(created) == 2
+    assert all(
+        opened(board)[first] < index < opened(board)[second] for index in created
+    )
+
+
+async def test_a_member_the_round_mints_is_declared_by_the_next_round(monkeypatch):
+    """A split child is outside the round that minted it and inside the next."""
+    owner, board, executor = factory(
+        under_approval=True,
+        convergence_bound=3,
+        bound=3,
+        phases=lambda rows: rows[:1],
+    )
+    splitting(board, executor, monkeypatch)
+    report = await run_owner(owner)
+    assert report.halt is None
+    children = [key for key in minted_keys(board) if key != CLAIMED_ISSUE]
+    assert len(children) == 2
+    first, second = dict.fromkeys(nonce for _, nonce, _ in acquisitions(board))
+    declared = {nonce: lines for _, nonce, lines in acquisitions(board) if True}
+    assert not declared[first] & frozenset(
+        line for child in children for line in addresses(child, TICKET_LINES)
+    )
+    assert all(addresses(child, TICKET_LINES) <= declared[second] for child in children)
+    for child in children:
+        landed = min(
+            index
+            for index, (name, args) in enumerate(board.calls)
+            if name == "save_issue" and args.get("id") == child
+        )
+        assert opened(board)[second] < landed
+        assert "body complete" in board.server.issues[child].labels

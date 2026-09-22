@@ -54,15 +54,16 @@ async def test_approval_is_current_after_last_awaited_gate_read(
     original = board.call_tool
     reads_after_grant = 0
     changed = False
+    renewed = False
 
     async def interleaved(*, name, arguments):
-        nonlocal reads_after_grant, changed
+        nonlocal reads_after_grant, changed, renewed
         response = await original(name=name, arguments=arguments)
-        if (
-            board.grants()
-            and name == "get_issue"
-            and arguments.get("id") == CLAIMED_ISSUE
-        ):
+        # The write site's own renewal of the round's lease marker, which is
+        # an in-place edit stating the deadline it renews against.
+        if name == "save_comment" and "since:" in str(arguments.get("body", "")):
+            renewed = True
+        if renewed and name == "get_issue" and arguments.get("id") == CLAIMED_ISSUE:
             reads_after_grant += 1
             # execution_approved reads first; read_scope_labels reads second.
             if reads_after_grant == 2:

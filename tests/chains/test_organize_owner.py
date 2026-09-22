@@ -279,6 +279,20 @@ def factory(
     return owner, board, executor
 
 
+def written(board):
+    """Every write the board took, apart from a round's own lease records.
+
+    A round's lease markers are written before its first session opens and
+    withdrawn when the round ends, so a case about what a refusal left on
+    the board reads the writes beside them.
+    """
+    return [
+        (name, args)
+        for name, args in board.calls
+        if name.startswith("save_") and "kind: lease\n" not in str(args.get("body", ""))
+    ]
+
+
 async def run_owner(owner):
     return await owner.run(
         scope=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
@@ -528,7 +542,8 @@ async def test_cancelled_author_never_reaches_a_tracker_mutation(monkeypatch):
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+    assert not written(board)
+    assert not board.grants()
 
 
 async def test_landed_claim_refutation_drives_a_fresh_author_repair(monkeypatch):
@@ -1336,7 +1351,7 @@ async def test_missing_criterion_edit_capability_is_not_invented_as_a_human_fork
         OrganizeWriteRefusalError, match="unavailable capability criterion_edit"
     ):
         await run_owner(owner)
-    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+    assert not written(board)
     assert "needs decision" not in board.server.issues[CLAIMED_ISSUE].labels
 
 
@@ -1355,7 +1370,7 @@ async def test_removed_phase_gate_refuses_author_write(monkeypatch):
     monkeypatch.setattr(executor, "stream", gate_removed)
     with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
         await run_owner(owner)
-    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+    assert not written(board)
 
 
 ROUND_ONE_CLASSES = ("criterion_admits_two_readings", "probe_call_site_named_nowhere")

@@ -9,6 +9,7 @@ from pydantic import ConfigDict, Field, RootModel, field_validator, model_valida
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope_address import ScopeRef
+from kodezart.types.domain.surface import SurfaceKind
 
 
 class AdmissionVerdict(StrEnum):
@@ -327,6 +328,10 @@ class MandatePhaseRole(CamelCaseModel):
     pre-approval pass). True: the phase is a stage of the approved scope
     run; approval admits every member to it and it is complete only when
     every member carries its marker.
+
+    ``write_surfaces`` is the whole of what the phase may write on a
+    member: the set a round leases, the bound every write is held to, and
+    the reservation of graph change to the row that runs before approval.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -335,6 +340,7 @@ class MandatePhaseRole(CamelCaseModel):
     marks_specification_body: bool
     marks_execution_stage: bool
     runs_under_approval: bool
+    write_surfaces: frozenset[SurfaceKind]
 
 
 #: The governed phase sequence, and the only place in the sources where a
@@ -347,18 +353,36 @@ MANDATE_PHASE_ROLES: Mapping[MandateKind, MandatePhaseRole] = {
         marks_specification_body=False,
         marks_execution_stage=False,
         runs_under_approval=False,
+        write_surfaces=frozenset(
+            {
+                SurfaceKind.ISSUE_GRAPH,
+                SurfaceKind.ISSUE_DESCRIPTION,
+                SurfaceKind.ISSUE_LABEL_SET,
+            }
+        ),
     ),
     MandateKind.TICKET: MandatePhaseRole(
         author_prompt_key=PromptKey.ORGANIZE_AUTHOR,
         marks_specification_body=True,
         marks_execution_stage=False,
         runs_under_approval=True,
+        write_surfaces=frozenset(
+            {
+                SurfaceKind.ISSUE_GRAPH,
+                SurfaceKind.ISSUE_DESCRIPTION,
+                SurfaceKind.ISSUE_SPLIT_SET,
+                SurfaceKind.ISSUE_LABEL_SET,
+            }
+        ),
     ),
     MandateKind.CRITERIA: MandatePhaseRole(
         author_prompt_key=PromptKey.ORGANIZE_CRITERIA_AUTHOR,
         marks_specification_body=False,
         marks_execution_stage=True,
         runs_under_approval=True,
+        write_surfaces=frozenset(
+            {SurfaceKind.CRITERION_CHILD_SET, SurfaceKind.ISSUE_LABEL_SET}
+        ),
     ),
 }
 

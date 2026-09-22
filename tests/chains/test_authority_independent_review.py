@@ -17,11 +17,12 @@ PARENT = "authority-parent"
 PROJECT = "authority-project"
 
 
-#: The surfaces the criteria stage owns. That stage runs inside an approved
+#: The surfaces the run stages own: the criterion children of one stage and
+#: the split children of the other. A run stage writes inside an approved
 #: scope run, so the fact that governs its write authority is approval
-#: PRESENT; every other surface here is authored by the pre-approval row,
-#: where the governing fact is approval ABSENT.
-RUN_STAGE_KINDS = ("criteria",)
+#: PRESENT; the graph is authored by the pre-approval row alone, where the
+#: governing fact is approval ABSENT.
+RUN_STAGE_KINDS = ("criteria", "split")
 
 
 def configured(monkeypatch, kind, change=None):
@@ -150,11 +151,18 @@ async def test_unsent_retry_preserves_every_owner_precondition(
                         description="An externally added scope member.",
                     )
                 elif change == "phase":
+                    # Every label a row reads as its gate, including the one
+                    # the split stage is gated on.
                     subject.labels = [
                         label
                         for label in subject.labels
                         if label
-                        not in {"candidate scope", "graph complete", "body complete"}
+                        not in {
+                            "candidate scope",
+                            "graph complete",
+                            "body complete",
+                            "approved scope",
+                        }
                     ]
                 else:
                     board.advance(10000)

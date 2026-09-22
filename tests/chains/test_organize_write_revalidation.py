@@ -8,11 +8,12 @@ from tests.chains import test_organize_owner as fixtures
 from tests.chains.test_organize import result
 from tests.tracker.conftest import CLAIMED_ISSUE
 
-#: The surfaces the criteria stage owns. That stage runs inside an approved
+#: The surfaces the run stages own: the criterion children of one stage and
+#: the split children of the other. A run stage writes inside an approved
 #: scope run, so what takes its write authority away between an unsent
-#: attempt and the retry is approval WITHDRAWN; for a surface the
-#: pre-approval row authors it is approval ARRIVING.
-RUN_STAGE_KINDS = ("criteria",)
+#: attempt and the retry is approval WITHDRAWN; for the graph, which the
+#: pre-approval row alone authors, it is approval ARRIVING.
+RUN_STAGE_KINDS = ("criteria", "split")
 
 
 @pytest.mark.parametrize("kind", ["graph", "split", "criteria"])

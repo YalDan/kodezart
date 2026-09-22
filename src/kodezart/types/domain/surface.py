@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope_address import ScopeKind, ScopeRef
 
 
 class SurfaceKind(StrEnum):

@@ -7,7 +7,9 @@ from tests.tracker.conftest import CLAIMED_ISSUE
 
 
 async def test_configured_owner_refuses_observed_final_split_source_drift(monkeypatch):
-    owner, board, executor = factory()
+    # Split children are a run stage's own surface, so the owner here is the
+    # one an approved scope run drives.
+    owner, board, executor = factory(under_approval=True)
     original_stream = executor.stream
 
     async def stream(**kwargs):

@@ -116,5 +116,11 @@ async def test_scope_approval_ends_organize_before_escalation_writes(
     except OrganizeWriteRefusalError:
         assert approve_during_assessment
     assert len(assessed) == 1
-    writes = [name for name, _ in board.calls if name.startswith("save_")]
+    # The round's lease records are written before its first session and
+    # withdrawn when it ends; what is read here is what else landed.
+    writes = [
+        name
+        for name, args in board.calls
+        if name.startswith("save_") and "kind: lease\n" not in str(args.get("body", ""))
+    ]
     assert bool(writes) is (not approve_during_assessment)

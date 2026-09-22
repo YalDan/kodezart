@@ -54,6 +54,7 @@ from kodezart.domain.organize_graph import (
     graph_snapshot,
     validate_graph_change,
 )
+from kodezart.domain.organize_surfaces import phase_surfaces
 from kodezart.domain.prompt_variables import organize_variables
 from kodezart.services.lane_escalation import LaneEscalationWriter
 from kodezart.services.organize_context import OrganizeContextReader
@@ -134,6 +135,31 @@ class _PhaseRounds:
 
     report: OrganizeReport | None = None
     active: bool = False
+
+
+class _HaltRequestError(Exception):
+    """A halt a round decided on, written by ``run`` once the round's lease is gone.
+
+    The escalation writer leases each item's label set under the same
+    holder, and releasing that would withdraw the round's hold on the item,
+    so no halt is written while the round's set is held.
+    """
+
+    def __init__(
+        self,
+        *,
+        cause: StageHaltCause,
+        results: tuple[AdmissionResult, ...] = (),
+        questions: tuple[UnresolvedProposal, ...] = (),
+        bound: OrganizeBoundEvidence | None = None,
+        write_back_results: tuple[WriteBackResult, ...] = (),
+    ) -> None:
+        super().__init__(cause.value)
+        self.cause = cause
+        self.results = results
+        self.questions = questions
+        self.bound = bound
+        self.write_back_results = write_back_results
 
 
 def _created_context(context: OrganizeContext, child: TrackerIssue) -> OrganizeContext:
@@ -429,6 +455,7 @@ class OrganizeOwner:
         job_id: str,
         evidence: str | None,
         visibility: RepoVisibility,
+        lease: RunSurfaceLease,
     ) -> WriteBackResult:
         initial = await self._author.propose(request, key=key, evidence=evidence)
         initial_value = initial.proposal.root
@@ -539,33 +566,19 @@ class OrganizeOwner:
                         issue_key=request.issue_key,
                         reason="graph repair returned another set of affected surfaces",
                     )
-                surfaces = frozenset(
-                    WritableSurface(
-                        kind=SurfaceKind.ISSUE_GRAPH,
-                        ref=ScopeRef(kind=ScopeKind.ISSUE, key=peer),
+                await lease.renew()
+                await authorize(proposal, peers)
+                await settle(
+                    self._tracker.update_issue_graph(
+                        issue_key=request.issue_key,
+                        expected=tuple(
+                            graph_snapshot(issue) for issue in proposal.context.issues
+                        ),
+                        changes=value.changes,
+                        holder=job_id,
+                        revalidate=partial(authorize, proposal, peers),
                     )
-                    for peer in peers
                 )
-                async with RunSurfaceLease(
-                    tracker=self._tracker,
-                    job_id=job_id,
-                    surfaces=surfaces,
-                    lease_seconds=self._lease_seconds,
-                ) as lease:
-                    await lease.renew()
-                    await authorize(proposal, peers)
-                    await settle(
-                        self._tracker.update_issue_graph(
-                            issue_key=request.issue_key,
-                            expected=tuple(
-                                graph_snapshot(issue)
-                                for issue in proposal.context.issues
-                            ),
-                            changes=value.changes,
-                            holder=job_id,
-                            revalidate=partial(authorize, proposal, peers),
-                        )
-                    )
                 return
             if isinstance(value, SplitProposal):
                 # Gate every proposed child before any creation; an existing identity
@@ -591,45 +604,39 @@ class OrganizeOwner:
                                 reason="outbound gate changed split specification",
                             )
                 expected_context = proposal.context
-                async with RunSurfaceLease(
-                    tracker=self._tracker,
-                    job_id=job_id,
-                    surfaces=frozenset({surface}),
-                    lease_seconds=self._lease_seconds,
-                ) as lease:
-                    for child in value.children:
-                        await lease.renew()
-                        await authorize(
-                            ProposedWrite(
-                                context=expected_context,
-                                revision=proposal.revision,
-                                proposal=proposal.proposal,
+                for child in value.children:
+                    await lease.renew()
+                    await authorize(
+                        ProposedWrite(
+                            context=expected_context,
+                            revision=proposal.revision,
+                            proposal=proposal.proposal,
+                        ),
+                        frozenset({request.issue_key}),
+                    )
+                    created = await settle(
+                        self._tracker.create_split_if_absent(
+                            source_key=request.issue_key,
+                            deliverable_key=child.deliverable_key,
+                            title=child.title,
+                            body=child.body,
+                            holder=job_id,
+                            revalidate=partial(
+                                authorize,
+                                ProposedWrite(
+                                    context=expected_context,
+                                    revision=proposal.revision,
+                                    proposal=proposal.proposal,
+                                ),
+                                frozenset({request.issue_key}),
                             ),
-                            frozenset({request.issue_key}),
+                            expected=tuple(
+                                graph_snapshot(issue)
+                                for issue in expected_context.issues
+                            ),
                         )
-                        created = await settle(
-                            self._tracker.create_split_if_absent(
-                                source_key=request.issue_key,
-                                deliverable_key=child.deliverable_key,
-                                title=child.title,
-                                body=child.body,
-                                holder=job_id,
-                                revalidate=partial(
-                                    authorize,
-                                    ProposedWrite(
-                                        context=expected_context,
-                                        revision=proposal.revision,
-                                        proposal=proposal.proposal,
-                                    ),
-                                    frozenset({request.issue_key}),
-                                ),
-                                expected=tuple(
-                                    graph_snapshot(issue)
-                                    for issue in expected_context.issues
-                                ),
-                            )
-                        )
-                        expected_context = _created_context(expected_context, created)
+                    )
+                    expected_context = _created_context(expected_context, created)
                 return
             if isinstance(value, BodyProposal):
                 content = await gated_write(
@@ -644,28 +651,22 @@ class OrganizeOwner:
                 )
                 if content == proposal.revision.issue.body:
                     return
-                async with RunSurfaceLease(
-                    tracker=self._tracker,
-                    job_id=job_id,
-                    surfaces=frozenset({surface}),
-                    lease_seconds=self._lease_seconds,
-                ) as lease:
-                    await lease.renew()
-                    await authorize(proposal, frozenset({request.issue_key}))
-                    await settle(
-                        self._tracker.edit_description(
-                            target=request.issue_key,
-                            expected=proposal.revision.issue.body,
-                            replacement=content,
-                            authorization=DescriptionWriteAuthority(
-                                holder=job_id,
-                                surface=surface,
-                                revalidate=partial(
-                                    authorize, proposal, frozenset({request.issue_key})
-                                ),
+                await lease.renew()
+                await authorize(proposal, frozenset({request.issue_key}))
+                await settle(
+                    self._tracker.edit_description(
+                        target=request.issue_key,
+                        expected=proposal.revision.issue.body,
+                        replacement=content,
+                        authorization=DescriptionWriteAuthority(
+                            holder=job_id,
+                            surface=surface,
+                            revalidate=partial(
+                                authorize, proposal, frozenset({request.issue_key})
                             ),
-                        )
+                        ),
                     )
+                )
             elif isinstance(value, CriteriaProposal):
                 children = await self._tracker.read_criteria(
                     issue_key=request.issue_key
@@ -739,41 +740,35 @@ class OrganizeOwner:
                             reason="outbound gate changed criterion specification",
                         )
                 expected_context = proposal.context
-                async with RunSurfaceLease(
-                    tracker=self._tracker,
-                    job_id=job_id,
-                    surfaces=frozenset({surface}),
-                    lease_seconds=self._lease_seconds,
-                ) as lease:
-                    for item in missing:
-                        await lease.renew()
-                        await authorize(
-                            ProposedWrite(
-                                context=expected_context,
-                                revision=proposal.revision,
-                                proposal=proposal.proposal,
-                            ),
-                            frozenset({request.issue_key}),
-                        )
-                        created = await settle(
-                            self._tracker.create_criterion_if_absent(
-                                parent_key=request.issue_key,
-                                title=item.title,
-                                check=item.check,
-                                do=item.do,
-                                holder=job_id,
-                                revalidate=partial(
-                                    authorize,
-                                    ProposedWrite(
-                                        context=expected_context,
-                                        revision=proposal.revision,
-                                        proposal=proposal.proposal,
-                                    ),
-                                    frozenset({request.issue_key}),
+                for item in missing:
+                    await lease.renew()
+                    await authorize(
+                        ProposedWrite(
+                            context=expected_context,
+                            revision=proposal.revision,
+                            proposal=proposal.proposal,
+                        ),
+                        frozenset({request.issue_key}),
+                    )
+                    created = await settle(
+                        self._tracker.create_criterion_if_absent(
+                            parent_key=request.issue_key,
+                            title=item.title,
+                            check=item.check,
+                            do=item.do,
+                            holder=job_id,
+                            revalidate=partial(
+                                authorize,
+                                ProposedWrite(
+                                    context=expected_context,
+                                    revision=proposal.revision,
+                                    proposal=proposal.proposal,
                                 ),
-                            )
+                                frozenset({request.issue_key}),
+                            ),
                         )
-                        expected_context = _created_context(expected_context, created)
+                    )
+                    expected_context = _created_context(expected_context, created)
 
         result = await self._verifier.write_back(
             step=_WriteStep(surface, apply), ref=request.base_ref
@@ -818,6 +813,7 @@ class OrganizeOwner:
         judgments: Sequence[AdmissionResult],
         scope: ScopeRef,
         visibility: RepoVisibility,
+        lease: RunSurfaceLease,
     ) -> bool:
         _, marker = split_label_key(phase.spec.terminal_marker_key)
         current = await self._tracker.read_issue(issue_key=request.issue_key)
@@ -859,47 +855,41 @@ class OrganizeOwner:
                     issue_key=request.issue_key,
                     reason="outbound gate changed the phase marker",
                 )
-            async with RunSurfaceLease(
-                tracker=self._tracker,
-                job_id=job_id,
-                surfaces=frozenset({surface}),
-                lease_seconds=self._lease_seconds,
-            ) as lease:
-                await lease.renew()
-                if not await self._proof_live(scope, judgments):
-                    raise OrganizeWriteRefusalError(
-                        issue_key=request.issue_key,
-                        reason="phase evidence changed during lease acquisition",
-                    )
-                await self._may_write(request.issue_key, phase=phase, scope=scope)
-                # The run that holds the lease is the write's holder: the
-                # port checks the grant before it writes and on every retry,
-                # so the marker is written only under this job's own lease on
-                # the member's label surface, and the port refuses the write
-                # for any other holder or for a lapsed lease. The holder is an
-                # authorization checked at write time; the label records none.
-                await settle(
-                    self._tracker.set_issue_classification(
-                        issue_key=request.issue_key,
-                        classification=classification,
-                        holder=job_id,
-                    )
+            await lease.renew()
+            if not await self._proof_live(scope, judgments):
+                raise OrganizeWriteRefusalError(
+                    issue_key=request.issue_key,
+                    reason="phase evidence changed during lease acquisition",
                 )
-                # Read back before any judge runs: this body returns before the
-                # verifier re-reads the artifact and before it opens a session,
-                # so a write the board accepted and does not report is a refusal
-                # here and never a verification round.
-                confirmed = await self._tracker.read_planning_issue(
-                    issue_key=request.issue_key
+            await self._may_write(request.issue_key, phase=phase, scope=scope)
+            # The run that holds the lease is the write's holder: the
+            # port checks the grant before it writes and on every retry,
+            # so the marker is written only under this job's own lease on
+            # the member's label surface, and the port refuses the write
+            # for any other holder or for a lapsed lease. The holder is an
+            # authorization checked at write time; the label records none.
+            await settle(
+                self._tracker.set_issue_classification(
+                    issue_key=request.issue_key,
+                    classification=classification,
+                    holder=job_id,
                 )
-                if (
-                    confirmed.issue_key != request.issue_key
-                    or classification not in confirmed.issue_labels
-                ):
-                    raise OrganizeWriteRefusalError(
-                        issue_key=request.issue_key,
-                        reason="the phase marker did not read back after the write",
-                    )
+            )
+            # Read back before any judge runs: this body returns before the
+            # verifier re-reads the artifact and before it opens a session,
+            # so a write the board accepted and does not report is a refusal
+            # here and never a verification round.
+            confirmed = await self._tracker.read_planning_issue(
+                issue_key=request.issue_key
+            )
+            if (
+                confirmed.issue_key != request.issue_key
+                or classification not in confirmed.issue_labels
+            ):
+                raise OrganizeWriteRefusalError(
+                    issue_key=request.issue_key,
+                    reason="the phase marker did not read back after the write",
+                )
 
         result = await self._verifier.write_back(
             step=_WriteStep(surface, apply), ref=request.base_ref
@@ -1244,277 +1234,287 @@ class OrganizeOwner:
             # round that holds or by the bound.
             if not subjects and first_round:
                 break
-            work = {issue.issue_key for issue in gap}
-            for issue in subjects:
-                if issue.issue_key not in work:
-                    continue
-                request = await self._request(
-                    issue,
-                    phase,
-                    repo_url=repo_url,
-                    base_ref=base_ref,
+            # The round's declared set, taken whole once the round has
+            # work: every write below renews it rather than taking its
+            # own, and it is released before any halt is written. A later
+            # round with no subject still spends its dry round, and may
+            # mark, so it holds the set too.
+            declared_keys = frozenset(by_key)
+            try:
+                async with RunSurfaceLease(
+                    tracker=self._tracker,
                     job_id=job_id,
-                    classes=classes,
-                    scope=scope,
-                )
-                result = await self._admission.assess(request)
-                pending_findings = tuple(
-                    f
-                    for f in findings
-                    if f.issue_id == issue.issue_key
-                    or any(
-                        r.issue.issue_key == f.issue_id
-                        and r.issue.parent_key == issue.issue_key
-                        for r in snapshot
-                    )
-                )
-                key = phase.role.author_prompt_key
-                for _admission_round in range(self._policy.max_admission_rounds):
-                    route = await self._route(
-                        result, issue=issue, scope_issue_keys=frozenset(members)
-                    )
-                    if route is AdmissionRoute.ESCALATE:
-                        halt = await self._halt(
-                            cause=StageHaltCause.HUMAN_DECISION,
-                            results=(result,),
-                            findings=(),
-                            phase=phase,
-                            scope=scope,
-                            job_id=job_id,
+                    surfaces=phase_surfaces(member_keys=declared_keys, role=phase.role),
+                    lease_seconds=self._lease_seconds,
+                ) as lease:
+                    work = {issue.issue_key for issue in gap}
+                    for issue in subjects:
+                        if issue.issue_key not in work:
+                            continue
+                        request = await self._request(
+                            issue,
+                            phase,
+                            repo_url=repo_url,
                             base_ref=base_ref,
-                            visibility=visibility,
-                        )
-                        return _PhaseRounds(
-                            report=OrganizeReport(
-                                completed_phases=tuple(completed), halt=halt
-                            )
-                        )
-                    children = await self._tracker.read_criteria(
-                        issue_key=issue.issue_key
-                    )
-                    needs_criteria = (
-                        key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
-                        and not any(
-                            c.state_kind is not WorkflowStateKind.CANCELED
-                            for c in children
-                        )
-                    )
-                    if (
-                        route is AdmissionRoute.MARK_COMPLETE
-                        and not result.findings
-                        and not pending_findings
-                        and not needs_criteria
-                    ):
-                        break
-                    try:
-                        verified_write = await self._author_write(
-                            request,
-                            key=key,
-                            phase=phase,
-                            scope=scope,
                             job_id=job_id,
-                            evidence="\n".join(
-                                (
-                                    result.evidence,
-                                    *(f.model_dump_json() for f in pending_findings),
-                                )
-                            ),
-                            visibility=visibility,
-                        )
-                    except OrganizeDecisionRequiredError as exc:
-                        halt = await self._halt(
-                            cause=StageHaltCause.HUMAN_DECISION,
-                            results=(),
-                            findings=(),
-                            questions=(
-                                UnresolvedProposal(
-                                    kind="unresolved",
-                                    issue_id=exc.issue_key,
-                                    question=exc.question,
-                                    evidence=exc.evidence,
-                                ),
-                            ),
-                            phase=phase,
+                            classes=classes,
                             scope=scope,
-                            job_id=job_id,
-                            base_ref=base_ref,
-                            visibility=visibility,
                         )
-                        return _PhaseRounds(
-                            report=OrganizeReport(
-                                completed_phases=tuple(completed), halt=halt
-                            )
-                        )
-                    except SurfaceContendedError as unheld:
-                        # Another run holds, or is bidding for, a surface
-                        # this write needs. The subject's membership and
-                        # gate were re-asked before its lease was taken,
-                        # and graph peers are re-asked under the lease. A
-                        # lease this run itself lost is not this case: it
-                        # is the base SurfaceLeaseError and stops the run.
-                        # The round repairs nothing here; the dry round
-                        # reports the class again and the bound reports it
-                        # with its finding.
-                        await self._log.awarning(
-                            "organize_surface_unheld",
-                            issue_key=request.issue_key,
-                            phase=phase.spec.kind.value,
-                            surface_kind=unheld.surface_kind,
-                            scope_key=unheld.scope_key,
-                            current_holder=unheld.current_holder,
-                        )
-                        break
-                    if verified_write.verdict is not AuditVerdict.HOLDS:
-                        halt = await self._halt(
-                            cause=StageHaltCause.ADMISSION_EXHAUSTED,
-                            bound=OrganizeBoundEvidence(
-                                setting="write_back.max_verify_rounds",
-                                value=self._write_back_max_rounds,
-                                rounds_used=len(verified_write.rounds),
-                                loop="write_back",
-                            ),
-                            write_back_results=(verified_write,),
-                            results=(result,),
-                            findings=(),
-                            phase=phase,
-                            scope=scope,
-                            job_id=job_id,
-                            base_ref=base_ref,
-                            visibility=visibility,
-                        )
-                        return _PhaseRounds(
-                            report=OrganizeReport(
-                                completed_phases=tuple(completed), halt=halt
-                            )
-                        )
-                    # Parent edits may remove this subject; splits may add
-                    # newly minted members. Continue on the actual membership.
-                    refreshed = await self._snapshot(scope)
-                    members = {revision.issue.issue_key for revision in refreshed}
-                    if request.issue_key not in members:
-                        admissions.pop(request.issue_key, None)
-                        break
-                    result = await self._admission.verify(request)
-                    route = await self._route(
-                        result, issue=issue, scope_issue_keys=frozenset(members)
-                    )
-                    children = await self._tracker.read_criteria(
-                        issue_key=issue.issue_key
-                    )
-                    if (
-                        route is AdmissionRoute.MARK_COMPLETE
-                        and not result.findings
-                        and (
-                            key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                        result = await self._admission.assess(request)
+                        pending_findings = tuple(
+                            f
+                            for f in findings
+                            if f.issue_id == issue.issue_key
                             or any(
-                                c.state_kind is not WorkflowStateKind.CANCELED
-                                for c in children
+                                r.issue.issue_key == f.issue_id
+                                and r.issue.parent_key == issue.issue_key
+                                for r in snapshot
                             )
                         )
+                        key = phase.role.author_prompt_key
+                        for _admission_round in range(
+                            self._policy.max_admission_rounds
+                        ):
+                            route = await self._route(
+                                result, issue=issue, scope_issue_keys=frozenset(members)
+                            )
+                            if route is AdmissionRoute.ESCALATE:
+                                raise _HaltRequestError(
+                                    cause=StageHaltCause.HUMAN_DECISION,
+                                    results=(result,),
+                                )
+                            children = await self._tracker.read_criteria(
+                                issue_key=issue.issue_key
+                            )
+                            needs_criteria = (
+                                key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                                and not any(
+                                    c.state_kind is not WorkflowStateKind.CANCELED
+                                    for c in children
+                                )
+                            )
+                            if (
+                                route is AdmissionRoute.MARK_COMPLETE
+                                and not result.findings
+                                and not pending_findings
+                                and not needs_criteria
+                            ):
+                                break
+                            try:
+                                verified_write = await self._author_write(
+                                    request,
+                                    key=key,
+                                    phase=phase,
+                                    scope=scope,
+                                    job_id=job_id,
+                                    evidence="\n".join(
+                                        (
+                                            result.evidence,
+                                            *(
+                                                f.model_dump_json()
+                                                for f in pending_findings
+                                            ),
+                                        )
+                                    ),
+                                    visibility=visibility,
+                                    lease=lease,
+                                )
+                            except OrganizeDecisionRequiredError as exc:
+                                raise _HaltRequestError(
+                                    cause=StageHaltCause.HUMAN_DECISION,
+                                    results=(),
+                                    questions=(
+                                        UnresolvedProposal(
+                                            kind="unresolved",
+                                            issue_id=exc.issue_key,
+                                            question=exc.question,
+                                            evidence=exc.evidence,
+                                        ),
+                                    ),
+                                ) from exc
+                            except SurfaceContendedError as unheld:
+                                # Another run holds, or is bidding for, a surface
+                                # this write needs. The subject's membership and
+                                # gate were re-asked before its lease was taken,
+                                # and graph peers are re-asked under the lease. A
+                                # lease this run itself lost is not this case: it
+                                # is the base SurfaceLeaseError and stops the run.
+                                # The round repairs nothing here; the dry round
+                                # reports the class again and the bound reports it
+                                # with its finding.
+                                await self._log.awarning(
+                                    "organize_surface_unheld",
+                                    issue_key=request.issue_key,
+                                    phase=phase.spec.kind.value,
+                                    surface_kind=unheld.surface_kind,
+                                    scope_key=unheld.scope_key,
+                                    current_holder=unheld.current_holder,
+                                )
+                                break
+                            if verified_write.verdict is not AuditVerdict.HOLDS:
+                                raise _HaltRequestError(
+                                    cause=StageHaltCause.ADMISSION_EXHAUSTED,
+                                    bound=OrganizeBoundEvidence(
+                                        setting="write_back.max_verify_rounds",
+                                        value=self._write_back_max_rounds,
+                                        rounds_used=len(verified_write.rounds),
+                                        loop="write_back",
+                                    ),
+                                    write_back_results=(verified_write,),
+                                    results=(result,),
+                                )
+                            # Parent edits may remove this subject; splits may add
+                            # newly minted members. Continue on the actual membership.
+                            refreshed = await self._snapshot(scope)
+                            members = {
+                                revision.issue.issue_key for revision in refreshed
+                            }
+                            if request.issue_key not in members:
+                                admissions.pop(request.issue_key, None)
+                                break
+                            result = await self._admission.verify(request)
+                            route = await self._route(
+                                result, issue=issue, scope_issue_keys=frozenset(members)
+                            )
+                            children = await self._tracker.read_criteria(
+                                issue_key=issue.issue_key
+                            )
+                            if (
+                                route is AdmissionRoute.MARK_COMPLETE
+                                and not result.findings
+                                and (
+                                    key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                                    or any(
+                                        c.state_kind is not WorkflowStateKind.CANCELED
+                                        for c in children
+                                    )
+                                )
+                            ):
+                                break
+                        else:
+                            raise _HaltRequestError(
+                                cause=StageHaltCause.ADMISSION_EXHAUSTED,
+                                bound=OrganizeBoundEvidence(
+                                    setting="organize.max_admission_rounds",
+                                    value=self._policy.max_admission_rounds,
+                                    rounds_used=_admission_round + 1,
+                                    loop="admission",
+                                ),
+                                results=(result,),
+                            )
+                    # A dry round is a new verification of the whole scope,
+                    # including surfaces untouched by this round's author.
+                    current = await self._snapshot(scope)
+                    members = {r.issue.issue_key for r in current}
+                    fresh: list[AdmissionResult] = []
+                    refused: list[AdmissionResult] = []
+                    for revision in current:
+                        issue = revision.issue
+                        if (
+                            not is_organize_subject(issue)
+                            and "criterion" not in issue.issue_labels
+                        ):
+                            continue
+                        request = await self._request(
+                            issue,
+                            phase,
+                            repo_url=repo_url,
+                            base_ref=base_ref,
+                            job_id=job_id,
+                            classes=classes,
+                            scope=scope,
+                        )
+                        result = await self._admission.verify(request)
+                        fresh.append(result)
+                        if (
+                            await self._route(
+                                result, issue=issue, scope_issue_keys=frozenset(members)
+                            )
+                            is not AdmissionRoute.MARK_COMPLETE
+                        ):
+                            refused.append(result)
+                    findings = tuple(f for result in fresh for f in result.findings)
+                    classes.update(f.defect_class for f in findings)
+                    refused_keys = {r.issue_id for r in refused}
+                    for result in fresh:
+                        if result.issue_id in refused_keys or result.findings:
+                            admissions.pop(result.issue_id, None)
+                        else:
+                            admissions[result.issue_id] = result
+                    latest_members = {
+                        r.issue.issue_key for r in await self._snapshot(scope)
+                    }
+                    # A subject this round minted owes its marker to the
+                    # round that declares its label set, which is the next
+                    # one: this round holds no address on it.
+                    minted = {
+                        revision.issue.issue_key
+                        for revision in current
+                        if is_organize_subject(revision.issue)
+                    } - declared_keys
+                    if (
+                        latest_members == members
+                        and not minted
+                        and not refused
+                        and not findings
+                        and all(
+                            [await self._admission.is_live(result) for result in fresh]
+                        )
                     ):
+                        # Newly prepared split children belong to this same phase;
+                        # removed members no longer receive its marker.
+                        current_members = await self._carried_members(scope, phase)
+                        marker_subjects = [
+                            revision.issue
+                            for revision in current
+                            if is_organize_subject(revision.issue)
+                            and await self._admitted(
+                                revision.issue,
+                                phase=phase,
+                                gate_members=current_members,
+                            )
+                        ]
+                        for issue in marker_subjects:
+                            request = await self._request(
+                                issue,
+                                phase,
+                                repo_url=repo_url,
+                                base_ref=base_ref,
+                                job_id=job_id,
+                                classes=classes,
+                                scope=scope,
+                            )
+                            if not await self._mark(
+                                request,
+                                phase=phase,
+                                job_id=job_id,
+                                judgments=fresh,
+                                scope=scope,
+                                visibility=visibility,
+                                lease=lease,
+                            ):
+                                raise OrganizeWriteRefusalError(
+                                    issue_key=issue.issue_key,
+                                    reason="phase marker remains unverified",
+                                )
                         break
-                else:
-                    halt = await self._halt(
-                        cause=StageHaltCause.ADMISSION_EXHAUSTED,
-                        bound=OrganizeBoundEvidence(
-                            setting="organize.max_admission_rounds",
-                            value=self._policy.max_admission_rounds,
-                            rounds_used=_admission_round + 1,
-                            loop="admission",
-                        ),
-                        results=(result,),
-                        findings=(),
-                        phase=phase,
-                        scope=scope,
-                        job_id=job_id,
-                        base_ref=base_ref,
-                        visibility=visibility,
-                    )
-                    return _PhaseRounds(
-                        report=OrganizeReport(
-                            completed_phases=tuple(completed), halt=halt
-                        )
-                    )
-            # A dry round is a new verification of the whole scope,
-            # including surfaces untouched by this round's author.
-            current = await self._snapshot(scope)
-            members = {r.issue.issue_key for r in current}
-            fresh: list[AdmissionResult] = []
-            refused: list[AdmissionResult] = []
-            for revision in current:
-                issue = revision.issue
-                if (
-                    not is_organize_subject(issue)
-                    and "criterion" not in issue.issue_labels
-                ):
-                    continue
-                request = await self._request(
-                    issue,
-                    phase,
-                    repo_url=repo_url,
-                    base_ref=base_ref,
-                    job_id=job_id,
-                    classes=classes,
+            except _HaltRequestError as request:
+                halt = await self._halt(
+                    cause=request.cause,
+                    results=request.results,
+                    questions=request.questions,
+                    bound=request.bound,
+                    write_back_results=request.write_back_results,
+                    findings=(),
+                    phase=phase,
                     scope=scope,
+                    job_id=job_id,
+                    base_ref=base_ref,
+                    visibility=visibility,
                 )
-                result = await self._admission.verify(request)
-                fresh.append(result)
-                if (
-                    await self._route(
-                        result, issue=issue, scope_issue_keys=frozenset(members)
-                    )
-                    is not AdmissionRoute.MARK_COMPLETE
-                ):
-                    refused.append(result)
-            findings = tuple(f for result in fresh for f in result.findings)
-            classes.update(f.defect_class for f in findings)
-            refused_keys = {r.issue_id for r in refused}
-            for result in fresh:
-                if result.issue_id in refused_keys or result.findings:
-                    admissions.pop(result.issue_id, None)
-                else:
-                    admissions[result.issue_id] = result
-            latest_members = {r.issue.issue_key for r in await self._snapshot(scope)}
-            if (
-                latest_members == members
-                and not refused
-                and not findings
-                and all([await self._admission.is_live(result) for result in fresh])
-            ):
-                # Newly prepared split children belong to this same phase;
-                # removed members no longer receive its marker.
-                current_members = await self._carried_members(scope, phase)
-                marker_subjects = [
-                    revision.issue
-                    for revision in current
-                    if is_organize_subject(revision.issue)
-                    and await self._admitted(
-                        revision.issue, phase=phase, gate_members=current_members
-                    )
-                ]
-                for issue in marker_subjects:
-                    request = await self._request(
-                        issue,
-                        phase,
-                        repo_url=repo_url,
-                        base_ref=base_ref,
-                        job_id=job_id,
-                        classes=classes,
-                        scope=scope,
-                    )
-                    if not await self._mark(
-                        request,
-                        phase=phase,
-                        job_id=job_id,
-                        judgments=fresh,
-                        scope=scope,
-                        visibility=visibility,
-                    ):
-                        raise OrganizeWriteRefusalError(
-                            issue_key=issue.issue_key,
-                            reason="phase marker remains unverified",
-                        )
-                break
+                return _PhaseRounds(
+                    report=OrganizeReport(completed_phases=tuple(completed), halt=halt)
+                )
         else:
             halt = await self._halt(
                 cause=StageHaltCause.CONVERGENCE_EXHAUSTED,
