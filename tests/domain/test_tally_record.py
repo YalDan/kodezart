@@ -9,10 +9,10 @@ import pytest
 
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.issue_tree import SubtreeClosure
+from kodezart.domain.lane_alarms import alarm_event_due
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import COMMITS_WITHOUT_CLOSURE_BOUND, tally_unmoved
 from kodezart.domain.tally_record import (
-    alarm_event_due,
     anchor_of,
     is_raised,
     lane_start,

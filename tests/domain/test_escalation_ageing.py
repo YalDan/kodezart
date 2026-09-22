@@ -2,12 +2,22 @@
 
 import ast
 import inspect
+import pkgutil
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+import kodezart.domain
 from kodezart.config.app import AppConfig
-from kodezart.domain import run_shape, tally_record
+from kodezart.domain import (
+    lane_alarms,
+    mandate_graph,
+    run_alarm_record,
+    run_shape,
+    stream_signals,
+    tally_record,
+)
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_shape import escalation_ageing
 from kodezart.types.domain.escalation import (
@@ -283,43 +293,106 @@ def test_negative_limits_refuse_configuration(name):
         AppConfig(_env_file=None, **{name: -1})
 
 
-@pytest.mark.parametrize(
-    ("module", "allowed_imports"),
-    [
-        (
-            run_shape,
-            {
-                "typing",
-                "pydantic",
-                "kodezart.domain.errors",
-                "kodezart.domain.run_alarm_record",
-                "kodezart.types.domain.escalation",
-                "kodezart.types.domain.run_alarm",
-                "kodezart.types.domain.run_state",
-                "kodezart.types.domain.surface",
-                "kodezart.types.domain.scope",
-                "kodezart.types.domain.organize",
-            },
-        ),
-        # The record rule is the same kind of module: arithmetic over readings
-        # the caller supplies, so it is held to the same import set and the
-        # same no-literal-bound rule as the signal it composes for.
-        (
-            tally_record,
-            {
-                "collections.abc",
-                "kodezart.domain.errors",
-                "kodezart.domain.fire_plateau",
-                "kodezart.domain.run_event_stream",
-                "kodezart.domain.run_shape",
-                "kodezart.types.domain.run_alarm",
-                "kodezart.types.domain.run_event",
-                "kodezart.types.domain.run_state",
-                "kodezart.types.domain.tracker",
-            },
-        ),
-    ],
-)
+#: Every domain module that names an alarm signal, with the exact imports it
+#: may make. The set is not chosen by hand: the test below derives it from
+#: the package and requires this table to cover exactly that.
+SIGNAL_MODULES = [
+    (
+        run_shape,
+        {
+            "typing",
+            "pydantic",
+            "kodezart.domain.errors",
+            "kodezart.domain.run_alarm_record",
+            "kodezart.types.domain.escalation",
+            "kodezart.types.domain.run_alarm",
+            "kodezart.types.domain.run_state",
+            "kodezart.types.domain.surface",
+            "kodezart.types.domain.scope",
+            "kodezart.types.domain.organize",
+        },
+    ),
+    # The record rule is the same kind of module: arithmetic over readings
+    # the caller supplies, so it is held to the same import set and the
+    # same no-literal-bound rule as the signal it composes for.
+    (
+        tally_record,
+        {
+            "collections.abc",
+            "kodezart.domain.errors",
+            "kodezart.domain.fire_plateau",
+            "kodezart.domain.run_shape",
+            "kodezart.types.domain.run_alarm",
+            "kodezart.types.domain.run_state",
+            "kodezart.types.domain.tracker",
+        },
+    ),
+    # The two signals over a criterion's own state and its lane's account
+    # of it: the same arithmetic over readings a caller supplies, so the
+    # same import set and the same no-literal-bound rule.
+    (
+        stream_signals,
+        {
+            "collections.abc",
+            "kodezart.domain.gap",
+            "kodezart.domain.run_shape",
+            "kodezart.types.domain.run_alarm",
+            "kodezart.types.domain.run_event",
+            "kodezart.types.domain.tracker",
+        },
+    ),
+    # What one lane's observation composes at every address it owns. It
+    # holds the folds rather than being one, and it composes no count of
+    # its own, so the same two rules apply to it unchanged.
+    (
+        lane_alarms,
+        {
+            "collections.abc",
+            "dataclasses",
+            "kodezart.domain.errors",
+            "kodezart.domain.run_event_stream",
+            "kodezart.domain.run_shape",
+            "kodezart.domain.stream_signals",
+            "kodezart.domain.tally_record",
+            "kodezart.types.domain.run_alarm",
+            "kodezart.types.domain.run_event",
+            "kodezart.types.domain.run_state",
+            "kodezart.types.domain.tracker",
+        },
+    ),
+    # The two landed folds over a lane's rulings and its milestone graph: the
+    # same kind of module, held to the same rules.
+    (
+        mandate_graph,
+        {
+            "collections.abc",
+            "kodezart.domain.run_shape",
+            "kodezart.types.domain.agent",
+            "kodezart.types.domain.mandate_graph",
+            "kodezart.types.domain.run_alarm",
+            "kodezart.types.domain.scope",
+            "kodezart.types.domain.tracker",
+        },
+    ),
+    # The record's address and its one-listing read: it names every signal
+    # because an address is composed from one, and it holds no count at all.
+    (
+        run_alarm_record,
+        {
+            "collections.abc",
+            "pydantic",
+            "kodezart.domain.comment_markers",
+            "kodezart.domain.errors",
+            "kodezart.types.domain.run_alarm",
+            "kodezart.types.domain.scope",
+            "kodezart.types.domain.surface",
+            "kodezart.types.domain.tracker",
+        },
+    ),
+]
+
+
+@pytest.mark.parametrize(("module", "allowed_imports"), SIGNAL_MODULES)
 def test_signal_module_is_pure_and_count_comparisons_have_no_literal_bound(
     module, allowed_imports
 ):
@@ -357,3 +430,35 @@ def test_signal_module_is_pure_and_count_comparisons_have_no_literal_bound(
         if isinstance(node, ast.Compare)
         for child in ast.walk(node)
     )
+
+
+def _names_an_alarm_signal(path: Path) -> bool:
+    """Whether the module at *path* imports the signal vocabulary by name."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return any(
+        alias.name == "AlarmSignal"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    )
+
+
+def test_every_domain_module_naming_an_alarm_signal_is_in_the_purity_scan():
+    """The scanned surface is derived from the package, never listed by hand.
+
+    A new signal module that names the vocabulary and is missing from the
+    table above would otherwise carry none of its protection: no import
+    allow-list, no await, no literal bound. Derived from the package's own
+    modules, so a module added anywhere under it is found.
+    """
+    root = Path(kodezart.domain.__path__[0])
+    derived = {
+        f"kodezart.domain.{info.name}"
+        for info in pkgutil.iter_modules([str(root)])
+        if not info.ispkg and _names_an_alarm_signal(root / f"{info.name}.py")
+    }
+    scanned = {module.__name__ for module, _ in SIGNAL_MODULES}
+
+    # Not vacuous: the fold modules are found by the derivation itself.
+    assert {run_shape.__name__, stream_signals.__name__} <= derived
+    assert scanned == derived

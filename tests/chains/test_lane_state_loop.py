@@ -273,8 +273,15 @@ async def test_first_push_leaves_the_record_and_the_first_push_event():
 
     assert len(lane.record_comments()) == 1
     events = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
-    assert [event.kind for event in events] == [RunEventKind.FIRST_PUSH]
-    assert len(lane.port.comments) == 2
+    # The first push, and then the lane's own account of each criterion the
+    # evaluation passed, at the head it was graded at.
+    assert [event.kind for event in events] == [
+        RunEventKind.FIRST_PUSH,
+        *(RunEventKind.ISSUE_CROSSED_OFF for _ in OWED_KEYS),
+    ]
+    assert sorted(event.subject_key for event in events[1:]) == sorted(OWED_KEYS)
+    assert {event.graded_sha for event in events[1:]} == {lane.repo.head}
+    assert len(lane.port.comments) == 5
 
     record = await lane.record()
     assert record.lane_key == SUBJECT
@@ -422,7 +429,9 @@ async def test_a_second_commit_edits_the_record_and_posts_no_second_event():
 
     assert len(lane.repo.shas) == 2
     assert len(lane.record_comments()) == 1
-    assert len(lane.port.comments) == 2
+    # The record, the one first push, and one crossing-off per criterion the
+    # second evaluation passed: the failed first one announced nothing.
+    assert len(lane.port.comments) == 5
     record = await lane.record()
     assert [row.sha for row in record.commits] == lane.repo.shas
     assert record.head_sha == lane.repo.head
@@ -1369,12 +1378,14 @@ def wide_evaluation(passing) -> dict:
 
 
 async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_events():
-    """Five iterations move five criteria and add no comment between them.
+    """Five iterations move five criteria and post only the lane's own kinds.
 
-    The lane's own two comments are the record it rewrites in place and the
-    one event it posts. A per-criterion state move is not an event, so eight
-    criteria over five iterations leave the comment count where the first
-    push left it, and no criterion sub-issue is commented on at all.
+    The lane's own comments are the record it rewrites in place, the one
+    first-push event, and one crossing-off per grading that passed: iteration
+    n passes n criteria at its own head, so the five iterations announce
+    one, two, three, four and five of them. Each announcement is a distinct
+    grading, keyed to its criterion and its head, and no criterion sub-issue
+    is commented on at all.
     """
     port = wide_board()
     lane = Lane(
@@ -1394,10 +1405,16 @@ async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_e
     # The count the comment count is measured against: five moves, one per
     # criterion the five iterations passed, and two comments throughout.
     assert len(port.workflow_writes) == 5
-    assert len(port.comments) == 2
+    assert len(port.comments) == 17
     assert {comment.issue_key for comment in port.comments} == {SUBJECT}
     posted = await port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
-    assert [event.kind for event in posted] == [RunEventKind.FIRST_PUSH]
+    assert [event.kind for event in posted] == [
+        RunEventKind.FIRST_PUSH,
+        *(RunEventKind.ISSUE_CROSSED_OFF for _ in range(15)),
+    ]
+    crossings = [(event.subject_key, event.graded_sha) for event in posted[1:]]
+    assert len(set(crossings)) == len(crossings)
+    assert {key for key, _ in crossings} == set(WIDE_CRITERIA[:5])
     # A lane's own stream carries only the kinds the lane publishes; a kind
     # some other raiser owns would be somebody else's write on this log.
     assert {RUN_EVENT_PUBLISHERS[event.kind] for event in posted} == {
@@ -1452,7 +1469,15 @@ async def test_a_regression_inside_the_loop_moves_the_criterion_back_and_says_so
         lane.port.issues[SUBJECT].body,
     ) == subject_before
     assert SUBJECT not in {key for key, _, _ in lane.port.issue_writes}
-    assert len(lane.port.comments) == 3
+    # The record, the first push, the refutation, and one crossing-off per
+    # criterion each iteration passed: two at the first head, one at the
+    # second.
+    assert len(lane.port.comments) == 6
+    assert [
+        event.subject_key
+        for event in posted
+        if event.kind is RunEventKind.ISSUE_CROSSED_OFF
+    ].count(kept) == 2
 
 
 def losing_board() -> LosingBoard:

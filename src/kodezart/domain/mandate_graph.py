@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from kodezart.domain.run_shape import _unreadable, read_alarm_value
+from kodezart.domain.run_shape import read_alarm_value, unreadable_reading
 from kodezart.types.domain.agent import RulingAuthor, RulingId
 from kodezart.types.domain.mandate_graph import LaneGraphSnapshot, LaneRulingSnapshot
 from kodezart.types.domain.run_alarm import (
@@ -27,7 +27,7 @@ def _ruling_authors(
     snapshot: LaneRulingSnapshot, source_ref: str
 ) -> dict[RulingId, RulingAuthor]:
     if len(set(snapshot.issue_keys)) != len(snapshot.issue_keys):
-        raise _unreadable(
+        raise unreadable_reading(
             AlarmSignal.RULINGS_OUTPACE_CLOSURES,
             source_ref,
             "lane issue identities repeat",
@@ -36,7 +36,7 @@ def _ruling_authors(
     issues: dict[RulingId, str] = {}
     for ruling in snapshot.rulings:
         if ruling.issue_key not in snapshot.issue_keys:
-            raise _unreadable(
+            raise unreadable_reading(
                 AlarmSignal.RULINGS_OUTPACE_CLOSURES,
                 source_ref,
                 "ruling belongs to another lane's issue",
@@ -46,7 +46,7 @@ def _ruling_authors(
             old is not ruling.authored_by
             or issues[ruling.ruling_id] != ruling.issue_key
         ):
-            raise _unreadable(
+            raise unreadable_reading(
                 AlarmSignal.RULINGS_OUTPACE_CLOSURES,
                 source_ref,
                 "one ruling identity has conflicting authorship",
@@ -76,7 +76,9 @@ def rulings_outpace_closures(
     try:
         baseline, current, previous_open, current_closed, bound = readings
     except ValueError as exc:
-        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+        raise unreadable_reading(
+            signal, subject.scope_key, "incomplete readings"
+        ) from exc
     before = read_alarm_value(baseline, RulingsEvidence, signal)
     after = read_alarm_value(current, RulingsEvidence, signal)
     open_refs = read_alarm_value(previous_open, ReferencesEvidence, signal)
@@ -89,11 +91,15 @@ def rulings_outpace_closures(
         or subject.lane_key != before.lane_key
         or before.lane_key != after.lane_key
     ):
-        raise _unreadable(signal, current.source_ref, "readings identify other lanes")
+        raise unreadable_reading(
+            signal, current.source_ref, "readings identify other lanes"
+        )
     if any(item.source_ref != baseline.source_ref for item in readings[:4]):
-        raise _unreadable(signal, current.source_ref, "window sources differ")
+        raise unreadable_reading(signal, current.source_ref, "window sources differ")
     if bound.source_ref != RULINGS_BOUND:
-        raise _unreadable(signal, bound.source_ref, "incorrect configuration field")
+        raise unreadable_reading(
+            signal, bound.source_ref, "incorrect configuration field"
+        )
     old_authors = _ruling_authors(before, baseline.source_ref)
     authors = _ruling_authors(after, current.source_ref)
     old_owners = {row.ruling_id: row.issue_key for row in before.rulings}
@@ -101,7 +107,9 @@ def rulings_outpace_closures(
         row.ruling_id in old_owners and old_owners[row.ruling_id] != row.issue_key
         for row in after.rulings
     ):
-        raise _unreadable(signal, current.source_ref, "a ruling changed owning issue")
+        raise unreadable_reading(
+            signal, current.source_ref, "a ruling changed owning issue"
+        )
     count = sum(
         author is RulingAuthor.MACHINE and ruling_id not in old_authors
         for ruling_id, author in authors.items()
@@ -126,7 +134,7 @@ def _index(issues: Sequence[TrackerIssue], source_ref: str) -> dict[str, Tracker
     result: dict[str, TrackerIssue] = {}
     for issue in issues:
         if issue.issue_key in result:
-            raise _unreadable(
+            raise unreadable_reading(
                 AlarmSignal.STRUCTURAL_WRITE_UNCROSSES_MILESTONE,
                 source_ref,
                 "membership read repeats an issue identity",
@@ -147,33 +155,41 @@ def lane_graph_members(
     subtree = _index(snapshot.subtree, source_ref)
     members = _index(snapshot.milestone_members, source_ref)
     if snapshot.milestone.kind is not ScopeKind.MILESTONE:
-        raise _unreadable(signal, source_ref, "container is not a milestone")
+        raise unreadable_reading(signal, source_ref, "container is not a milestone")
     fire = subtree.get(snapshot.fire_key)
     if fire is None or fire.milestone_key != snapshot.milestone.key:
-        raise _unreadable(signal, source_ref, "fire is absent or belongs elsewhere")
+        raise unreadable_reading(
+            signal, source_ref, "fire is absent or belongs elsewhere"
+        )
     if snapshot.fire_key not in members:
-        raise _unreadable(signal, source_ref, "milestone membership omits its fire")
+        raise unreadable_reading(
+            signal, source_ref, "milestone membership omits its fire"
+        )
     for issue in members.values():
         if issue.milestone_key != snapshot.milestone.key:
-            raise _unreadable(signal, source_ref, "foreign milestone member")
+            raise unreadable_reading(signal, source_ref, "foreign milestone member")
     for key, issue in subtree.items():
         old = members.get(key)
         if old is not None and old != issue:
-            raise _unreadable(signal, source_ref, "membership reads disagree")
+            raise unreadable_reading(signal, source_ref, "membership reads disagree")
         cursor = key
         visited: set[str] = set()
         while cursor != snapshot.fire_key:
             if cursor in visited or cursor not in subtree:
-                raise _unreadable(signal, source_ref, "unrooted or cyclic subtree")
+                raise unreadable_reading(
+                    signal, source_ref, "unrooted or cyclic subtree"
+                )
             visited.add(cursor)
             parent = subtree[cursor].parent_key
             if parent is None:
-                raise _unreadable(signal, source_ref, "unrooted subtree")
+                raise unreadable_reading(signal, source_ref, "unrooted subtree")
             cursor = parent
         members[key] = issue
     refs = [entry.issue_key for entry in snapshot.supersessions]
     if len(set(refs)) != len(refs) or any(key not in members for key in refs):
-        raise _unreadable(signal, source_ref, "ambiguous supersession references")
+        raise unreadable_reading(
+            signal, source_ref, "ambiguous supersession references"
+        )
     return members
 
 
@@ -197,7 +213,9 @@ def structural_write_uncrosses_milestone(
     try:
         previous, current = readings
     except ValueError as exc:
-        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+        raise unreadable_reading(
+            signal, subject.scope_key, "incomplete readings"
+        ) from exc
     before = read_alarm_value(previous, GraphEvidence, signal)
     after = read_alarm_value(current, GraphEvidence, signal)
     if (
@@ -208,7 +226,7 @@ def structural_write_uncrosses_milestone(
         or before.milestone != after.milestone
         or previous.source_ref != current.source_ref
     ):
-        raise _unreadable(signal, current.source_ref, "graph identities differ")
+        raise unreadable_reading(signal, current.source_ref, "graph identities differ")
     old = lane_graph_members(before, source_ref=previous.source_ref)
     new = lane_graph_members(after, source_ref=current.source_ref)
     completed = WorkflowStateKind.COMPLETED

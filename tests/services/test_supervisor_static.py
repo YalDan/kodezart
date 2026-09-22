@@ -22,7 +22,7 @@ SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src"
 #: would otherwise be outside every assertion below.
 ENTRY_POINTS = (
     "kodezart.services.supervisor_pass",
-    "kodezart.services.tally_supervisor",
+    "kodezart.services.alarm_supervisor",
     "kodezart.composition.supervisor",
 )
 #: The one place the whole port is held on purpose, by design: the composition
@@ -65,14 +65,15 @@ FORBIDDEN_ROLES = frozenset(
     }
 )
 FORBIDDEN_MODULES = frozenset({"subprocess", "os", "os.path", "shutil", "socket"})
-#: Exactly what the observation's role names: three lease calls, one keyed
-#: record read and write, one lane stream read and one append to it.
+#: Exactly what the observation's role names: three lease calls, one listing
+#: of every record on a carrier, one record write, one lane stream read and one
+#: append to it.
 SUPERVISOR_ROLE_MEMBERS = frozenset(
     {
         "acquire_surfaces",
         "renew_surfaces",
         "release_surfaces",
-        "read_run_alarm",
+        "read_run_alarms",
         "record_run_alarm",
         "lane_run_events",
         "post_run_event",
@@ -84,7 +85,7 @@ SUPERVISOR_ROLE_MEMBERS = frozenset(
 #: one, of the observation's own.
 OWN_MODULES = (
     "kodezart.services.supervisor_pass",
-    "kodezart.services.tally_supervisor",
+    "kodezart.services.alarm_supervisor",
     "kodezart.composition.supervisor",
 )
 #: Waiting, scheduling and reading the time are the scheduler's, so a module of

@@ -53,7 +53,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
-from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
+from kodezart.types.domain.run_alarm import RunAlarm
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
@@ -1308,10 +1308,15 @@ class TrackerPort(
         """
         ...
 
-    async def read_run_alarm(
-        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
-    ) -> RunAlarm | None:
-        """Read exactly this address; absence is None, damage is a typed refusal."""
+    async def read_run_alarms(self, *, issue_key: str) -> tuple[RunAlarm, ...]:
+        """Every record this purpose holds on *issue_key*, in one listing.
+
+        The whole carrier rather than one address: an observation reading a
+        record per signal and per member would list the issue's comments once
+        per address, and the addresses it holds are themselves something only
+        the listing can say. Damage at any of them is a typed refusal, as it
+        is for the one that was asked for.
+        """
         ...
 
     async def post_run_event(
@@ -1649,13 +1654,12 @@ class RunAlarmTracker(SurfaceLeaseTracker, Protocol):
     A role narrowed out of the port rather than a widening of it. What it
     leaves out is the point: no workflow state, no queue state, no criterion
     reset and no description edit, so a holder of this role cannot move a
-    run's state whatever it observes. It reads one keyed record, rewrites
-    that one record under its own lease, and appends to one lane's stream.
+    run's state whatever it observes. It reads every record on one carrier,
+    rewrites one of them under its own lease, and appends to one lane's
+    stream.
     """
 
-    async def read_run_alarm(
-        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
-    ) -> RunAlarm | None: ...
+    async def read_run_alarms(self, *, issue_key: str) -> tuple[RunAlarm, ...]: ...
 
     async def record_run_alarm(
         self, *, issue_key: str, alarm: RunAlarm, holder: str

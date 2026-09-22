@@ -746,7 +746,9 @@ def test_the_holder_scan_reaches_the_port_file_and_this_lane_domain_modules():
             for path in (SOURCE_ROOT / "domain").glob("lane_*.py")
         ),
     }
-    assert len(halves) == 3
+    # The port file, the record's own module, the entry read, and the lane's
+    # alarm composition, which measures its clock off the record's head.
+    assert len(halves) == 4
     assert set(record_sources()) == set(walked)
     assert halves <= set(record_sources())
 

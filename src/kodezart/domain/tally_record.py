@@ -17,7 +17,6 @@ from collections.abc import Sequence
 
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.fire_plateau import closed_previous_work, observe_tick
-from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import (
     COMMITS_WITHOUT_CLOSURE_BOUND,
     read_alarm_value,
@@ -34,14 +33,8 @@ from kodezart.types.domain.run_alarm import (
     RunAlarm,
     TallyEvidence,
 )
-from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.tracker import TrackerIssue
-
-#: The stream's whole vocabulary for this signal: one raise, one clear.
-_TRANSITION_KINDS = frozenset(
-    {RunEventKind.RUN_ALARM_RAISED, RunEventKind.RUN_ALARM_CLEARED}
-)
 
 
 def is_raised(record: RunAlarm | None) -> bool:
@@ -178,43 +171,3 @@ def next_tally_record(
 def _reading(source_ref: str, value: AlarmEvidence, at_sha: str) -> AlarmReading:
     """One reading of this arm, all four of which are read at the record's head."""
     return AlarmReading(source_ref=source_ref, value=value, at_sha=at_sha)
-
-
-def alarm_event_due(
-    *, record: RunAlarm, events: Sequence[LaneRunEvent]
-) -> LaneRunEvent | None:
-    """The transition event this lane's stream still owes for *record*.
-
-    The owed event is read from the tracker rather than derived from what
-    this tick changed, so a tick killed between the record write and the
-    event post is repaired by the next one: the record says raised, the
-    stream's last word on this signal says nothing, and the difference is the
-    event to post. A stream already agreeing with the record owes nothing,
-    which is what keeps a condition firing across many ticks to one event.
-
-    Only this signal's own two kinds are read, and only the entries keyed to
-    it: another signal clearing on the same lane is not this one clearing.
-    """
-    if not isinstance(record.subject, LaneSubject):
-        raise ValueError("a tally alarm event is keyed to a lane")
-    spoken = [
-        event
-        for event in events
-        if event.kind in _TRANSITION_KINDS and event.subject_key == record.signal.value
-    ]
-    raised = is_raised(record)
-    last = spoken[-1] if spoken else None
-    if last is None:
-        # A stream that has never spoken for this signal owes a raise and
-        # nothing else: there is no clear to post for an alarm nobody heard.
-        if not raised:
-            return None
-    elif (last.kind is RunEventKind.RUN_ALARM_RAISED) == raised:
-        return None
-    return LaneRunEvent(
-        kind=RunEventKind.RUN_ALARM_RAISED
-        if raised
-        else RunEventKind.RUN_ALARM_CLEARED,
-        lane_key=record.subject.lane_key,
-        subject_key=record.signal.value,
-    )

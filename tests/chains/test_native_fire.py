@@ -1275,6 +1275,9 @@ class CountingTracker(FakeTrackerPort):
         super().__init__(
             issues=list(source.issues.values()),
             criteria_stage_label_key=STAGE_KEY,
+            # The same prefixes the board it copies reads and writes under: a
+            # lane announcing what it crossed off posts under them.
+            marker_prefixes=source.marker_prefixes,
             scope_label_members=source.scope_label_members,
         )
         self.spec_reads = 0

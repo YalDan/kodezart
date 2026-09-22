@@ -11,6 +11,7 @@ from kodezart.domain.errors import (
     SurfaceLeaseError,
     SurfaceLeaseLostError,
 )
+from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.run_alarm_record import render_run_alarm, run_alarm_marker
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.operation import OperationMemberAbsentError
@@ -142,8 +143,11 @@ async def store(port, *values, holder=JOB):
 
 
 async def read(port, value):
-    return await port.read_run_alarm(
-        issue_key=APPROVED_ISSUE, subject=value.subject, signal=value.signal
+    """The record at *value*'s address, picked out of the carrier's one listing."""
+    return stored_alarm(
+        await port.read_run_alarms(issue_key=APPROVED_ISSUE),
+        subject=value.subject,
+        signal=value.signal,
     )
 
 
@@ -174,6 +178,54 @@ async def test_real_adapter_implements_alarm_native_roundtrip_port(ports):
         cold = FakeTrackerPort(marker_prefixes=PREFIXES, clock=boundary.clock)
         cold.comments = list(port.comments)
     assert [await read(cold, value) for value in values] == list(values)
+
+
+async def test_every_record_on_an_issue_is_read_in_one_listing(ports, monkeypatch):
+    """One comment listing answers for every address the carrier holds.
+
+    Four addresses on one issue — two surfaces, a scope subject, another
+    signal — and one listing reads all four back as they were written, so an
+    observation holding many addresses on one lane costs one read and not one
+    per address.
+    """
+    port, _ = ports
+    values = (
+        alarm(),
+        alarm(marker="record:b"),
+        alarm(scope=True),
+        alarm(signal=AlarmSignal.WRITE_BACK_MISSING),
+    )
+    await store(port, *values)
+    listed: list[str] = []
+    listing = port.list_comments
+
+    async def counted(*, issue_key):
+        listed.append(issue_key)
+        return await listing(issue_key=issue_key)
+
+    monkeypatch.setattr(port, "list_comments", counted)
+
+    records = await port.read_run_alarms(issue_key=APPROVED_ISSUE)
+
+    assert listed == [APPROVED_ISSUE]
+    assert sorted(records, key=repr) == sorted(values, key=repr)
+
+
+async def test_a_record_whose_body_names_another_address_refuses(ports):
+    """A well-formed record moved under another record's marker is damage.
+
+    The body is a record this writer could have produced, in its canonical
+    form, and it is framed under a real address — just not its own. Read
+    under the marker it was found at, it would answer for an address it never
+    held, so the whole listing refuses rather than report either record.
+    """
+    port, _ = ports
+    first, second = alarm(), alarm(marker="record:b")
+    body = f"{address(first).marker}\n{render_run_alarm(alarm=second)}"
+    await port.post_comment(issue_key=APPROVED_ISSUE, body=body)
+
+    with pytest.raises(TrackerProtocolError):
+        await port.read_run_alarms(issue_key=APPROVED_ISSUE)
 
 
 async def test_identical_repeat_has_zero_native_mutations_and_update_keeps_address(

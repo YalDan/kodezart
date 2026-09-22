@@ -52,6 +52,7 @@ def test_vocabulary_and_notification_partition_are_complete():
         "lane_plateaued",
         "issue_crossed_off",
         "criterion_refuted",
+        "criterion_lapsed",
         "escalation_raised",
     }
     operation().require_run_event_table()

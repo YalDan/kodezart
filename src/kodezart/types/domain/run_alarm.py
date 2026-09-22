@@ -8,9 +8,11 @@ from pydantic import ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.mandate_graph import LaneGraphSnapshot, LaneRulingSnapshot
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
+from kodezart.types.domain.tracker import WorkflowStateKind
 
 Identity = Annotated[str, Field(min_length=1, pattern=r"\S")]
 
@@ -218,6 +220,46 @@ class ScopeEvidence(Evidence[ScopeRef]):
     kind: Literal["scope"] = "scope"
 
 
+class StateEvidence(Evidence[WorkflowStateKind]):
+    """The workflow kind an addressed record was actually read carrying.
+
+    The tracker's own vocabulary for what a state MEANS, and not the
+    deployment's name for it: a reading of the name would be a second
+    reading of the backend's workflow, answerable differently for two
+    boards that spell the same kind two ways.
+    """
+
+    kind: Literal["state"] = "state"
+
+
+class RunEventProjection(CamelCaseModel):
+    """One posted lane event, projected to the two facts a fold reads.
+
+    The kind and the run object it was keyed to, and nothing else: an
+    observation of a run's shape reads no body text, and a projection
+    carrying the comment it came from would put authored prose inside a
+    replayable reading. ``None`` for ``subject_key`` is a STATE of the
+    event — one addressed to the lane as a whole is keyed to nothing — as
+    it is on the stream entry this projects.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: RunEventKind
+    subject_key: Identity | None = None
+
+
+class RunEventsEvidence(Evidence[tuple[RunEventProjection, ...]]):
+    """One lane's projected stream, in the order the backend recorded it.
+
+    Order is part of the reading: what a lane last said about a member is
+    the answer a fold needs, and a set of kinds could not say which of two
+    contrary accounts came second.
+    """
+
+    kind: Literal["run_events"] = "run_events"
+
+
 class RulingsEvidence(Evidence[LaneRulingSnapshot]):
     """A typed ruling observation window with recorded attribution."""
 
@@ -243,6 +285,8 @@ AlarmEvidence = Annotated[
     | LaneFieldEvidence
     | TallyEvidence
     | ScopeEvidence
+    | StateEvidence
+    | RunEventsEvidence
     | RulingsEvidence
     | GraphEvidence,
     Field(discriminator="kind"),

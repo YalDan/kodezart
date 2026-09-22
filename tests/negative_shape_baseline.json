@@ -191,6 +191,7 @@
   "tests/domain/test_gap.py": 17,
   "tests/domain/test_git_url.py": 16,
   "tests/domain/test_issue_label_config.py": 6,
+  "tests/domain/test_lane_alarms.py": 21,
   "tests/domain/test_lane_branch_name.py": 6,
   "tests/domain/test_lane_delivery.py": 2,
   "tests/domain/test_lane_entry.py": 17,
@@ -226,6 +227,7 @@
   "tests/domain/test_self_write_retention.py": 13,
   "tests/domain/test_stage_roster.py": 7,
   "tests/domain/test_stall_report.py": 15,
+  "tests/domain/test_stream_signals.py": 28,
   "tests/domain/test_subtree_closure.py": 27,
   "tests/domain/test_surface_contention.py": 31,
   "tests/domain/test_surface_lease.py": 22,
@@ -315,6 +317,7 @@
   "tests/prompts/test_v5_wiring.py": 23,
   "tests/services/lane_tally_fixtures.py": 10,
   "tests/services/test_agent_service.py": 5,
+  "tests/services/test_alarm_supervisor.py": 56,
   "tests/services/test_amendment_interrupted_writes.py": 17,
   "tests/services/test_applied_native_amendments.py": 141,
   "tests/services/test_assertion_drift.py": 30,
@@ -367,7 +370,6 @@
   "tests/services/test_structured_run_records.py": 55,
   "tests/services/test_supervisor_pass.py": 18,
   "tests/services/test_supervisor_static.py": 18,
-  "tests/services/test_tally_supervisor.py": 56,
   "tests/services/test_tracker_lifecycle.py": 48,
   "tests/services/test_union_composition.py": 64,
   "tests/services/test_union_conflict_remediation.py": 23,
@@ -3063,6 +3065,21 @@
    "test_ambiguous_or_empty_issue_label_entries_refuse_at_construction",
    "test_issue_label_ownership_covers_every_declared_team"
   ],
+  "tests/domain/test_lane_alarms.py": [
+   "test_the_observation_folds_exactly_the_lane_and_criterion_signals",
+   "test_a_quiet_criterion_with_no_stored_record_writes_nothing",
+   "test_a_criterion_moved_back_without_an_account_is_one_regression_record",
+   "test_a_raise_and_its_clear_rewrite_the_one_record",
+   "test_a_standing_raise_is_not_rewritten",
+   "test_a_waiting_lane_composes_no_tally_record_and_still_reads_its_lapses",
+   "test_the_same_lapse_on_a_ready_lane_writes_nothing",
+   "test_a_lapse_under_a_deliverable_child_is_keyed_to_its_parent_and_its_lane",
+   "test_a_finished_lane_is_read_with_no_roster_and_no_gap",
+   "test_a_criterion_the_scope_read_does_not_carry_is_skipped",
+   "test_an_entry_keyed_to_a_criterion_that_is_not_an_account_observes_nothing",
+   "test_stored_alarm_reads_one_address_out_of_the_listing",
+   "test_only_a_lane_subject_record_owes_an_event"
+  ],
   "tests/domain/test_lane_branch_name.py": [
    "test_the_name_is_the_issue_key_and_a_short_id",
    "test_a_key_that_cannot_be_a_ref_segment_is_refused",
@@ -3529,6 +3546,23 @@
    "test_a_run_where_every_criterion_passed_at_some_point_says_so",
    "test_the_note_never_tells_the_reviewer_what_to_do",
    "test_the_note_is_pure_arithmetic_over_data_already_in_hand"
+  ],
+  "tests/domain/test_stream_signals.py": [
+   "test_a_crossed_off_criterion_back_in_todo_without_a_refutation_regresses",
+   "test_the_same_move_followed_by_its_refutation_does_not_regress",
+   "test_the_last_account_decides",
+   "test_a_lapse_does_not_regress",
+   "test_a_crossed_off_criterion_moved_to_in_review_does_not_regress",
+   "test_only_a_move_back_to_todo_is_the_regression",
+   "test_a_criterion_its_lane_never_accounted_for_is_quiet_everywhere",
+   "test_a_lapse_on_a_lane_that_is_not_ready_is_undischarged",
+   "test_the_identical_lapse_on_a_ready_lane_raises_nothing",
+   "test_a_lapse_the_next_grading_closed_again_owes_nothing",
+   "test_a_criterion_crossed_off_again_after_its_lapse_is_not_lapsed",
+   "test_a_lapse_under_a_deliverable_child_is_owned_by_the_lane_that_announced_it",
+   "test_readings_about_another_criterion_or_lane_refuse",
+   "test_a_subject_naming_no_observing_lane_refuses",
+   "test_a_raise_replays_to_itself_from_its_own_readings"
   ],
   "tests/domain/test_subtree_closure.py": [
    "test_gap_is_empty_iff_the_subtree_rollup_is_done",
@@ -4355,6 +4389,22 @@
    "test_stream_propagates_executor_error",
    "test_authored_persistence_failure_keeps_workspace_cleanup"
   ],
+  "tests/services/test_alarm_supervisor.py": [
+   "test_a_stall_across_many_ticks_leaves_one_record_and_one_raised_event",
+   "test_the_marker_prefix_comes_from_operation_configuration",
+   "test_an_absent_alarm_prefix_refuses_before_any_read",
+   "test_clearing_edits_the_record_and_posts_one_cleared_event",
+   "test_a_second_stall_after_a_clear_is_measured_from_the_clear",
+   "test_a_tick_killed_between_record_and_event_posts_the_event_next_tick",
+   "test_a_healthy_lane_with_no_stored_reading_is_not_written_to",
+   "test_a_lane_that_moved_while_still_owing_writes_a_reading_and_posts_nothing",
+   "test_a_finished_lane_with_a_raised_record_is_cleared_and_then_left_alone",
+   "test_a_lane_with_no_run_state_record_is_passed_over",
+   "test_the_supervisor_leases_exactly_the_alarm_marker_on_the_lane_issue",
+   "test_a_lane_fire_holding_the_record_marker_and_the_supervisor_both_write",
+   "test_the_alarm_marker_shares_no_prefix_with_any_other_configured_purpose",
+   "test_a_tick_in_which_an_alarm_fires_moves_no_state_and_posts_no_halt"
+  ],
   "tests/services/test_amendment_interrupted_writes.py": [
    "test_interrupted_amendment_preserves_history_across_fresh_reentry"
   ],
@@ -4718,7 +4768,7 @@
    "test_a_stream_that_will_not_parse_refuses_before_the_board_is_touched",
    "test_a_failed_verdict_on_a_criterion_in_another_state_writes_nothing",
    "test_a_lapsed_grading_is_taken_back_with_the_sha_it_was_graded_at",
-   "test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra"
+   "test_a_lapse_is_announced_as_a_lapse_and_never_as_a_refutation"
   ],
   "tests/services/test_lifecycle_watcher.py": [
    "TestTheTransitionsAJobStreamProduces.test_a_full_run_reviews_the_parent_and_retires_the_queue_entry",
@@ -5166,7 +5216,7 @@
    "test_a_failed_scope_read_does_not_stop_the_next_scope",
    "test_a_whole_tick_over_observable_lanes_reports_that_it_ran",
    "test_a_finished_member_is_observed_so_a_standing_raise_is_cleared",
-   "test_a_blocked_member_is_not_observed_and_its_raise_stands",
+   "test_a_blocked_members_tally_raise_stands",
    "test_cancellation_is_not_swallowed",
    "test_a_blank_holder_refuses_before_any_read"
   ],
@@ -5176,22 +5226,6 @@
    "test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own",
    "test_the_supervisor_role_names_no_state_moving_method",
    "test_the_pass_factory_takes_no_runner_and_no_repository_collaborator"
-  ],
-  "tests/services/test_tally_supervisor.py": [
-   "test_a_stall_across_many_ticks_leaves_one_record_and_one_raised_event",
-   "test_the_marker_prefix_comes_from_operation_configuration",
-   "test_an_absent_alarm_prefix_refuses_before_any_read",
-   "test_clearing_edits_the_record_and_posts_one_cleared_event",
-   "test_a_second_stall_after_a_clear_is_measured_from_the_clear",
-   "test_a_tick_killed_between_record_and_event_posts_the_event_next_tick",
-   "test_a_healthy_lane_with_no_stored_reading_is_not_written_to",
-   "test_a_lane_that_moved_while_still_owing_writes_a_reading_and_posts_nothing",
-   "test_a_finished_lane_with_a_raised_record_is_cleared_and_then_left_alone",
-   "test_a_lane_with_no_run_state_record_is_passed_over",
-   "test_the_supervisor_leases_exactly_the_alarm_marker_on_the_lane_issue",
-   "test_a_lane_fire_holding_the_record_marker_and_the_supervisor_both_write",
-   "test_the_alarm_marker_shares_no_prefix_with_any_other_configured_purpose",
-   "test_a_tick_in_which_an_alarm_fires_moves_no_state_and_posts_no_halt"
   ],
   "tests/services/test_tracker_lifecycle.py": [
    "TestLifecycleWrites.test_dequeue_moves_the_issue_to_in_progress",

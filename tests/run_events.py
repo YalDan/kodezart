@@ -9,6 +9,7 @@ RUN_EVENT_STATES = {
     "lane_plateaued": "in_review",
     "issue_crossed_off": "NO_TRANSITION",
     "criterion_refuted": "DERIVED",
+    "criterion_lapsed": "DERIVED",
     "escalation_raised": "NO_TRANSITION",
     "lane_dispatched": "in_progress",
     "claim_lost": "in_progress",

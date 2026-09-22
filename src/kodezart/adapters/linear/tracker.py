@@ -99,6 +99,7 @@ from kodezart.domain.run_alarm_record import (
     render_run_alarm,
     require_alarm_holder,
     run_alarm_marker,
+    run_alarm_records,
 )
 from kodezart.domain.run_event_stream import (
     LaneRunEvent,
@@ -2554,7 +2555,7 @@ class LinearMcpTracker:
             marker_prefixes=self._marker_prefixes,
         )
         require_alarm_holder(issue_key=issue_key, marker=marker, holder=holder)
-        await self.read_run_alarm(
+        await self._read_run_alarm(
             issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
         )
 
@@ -2571,10 +2572,30 @@ class LinearMcpTracker:
             validate_existing=validate_existing,
         )
 
-    async def read_run_alarm(
+    async def read_run_alarms(self, *, issue_key: str) -> tuple[RunAlarm, ...]:
+        """Every record this purpose holds on the carrier, from one listing."""
+        try:
+            return run_alarm_records(
+                issue_key=issue_key,
+                comments=await self.list_comments(issue_key=issue_key),
+                marker_prefixes=self._marker_prefixes,
+            )
+        except ValueError as exc:
+            raise TrackerProtocolError(
+                "run-alarm record does not match its declared shape",
+                tool=_TOOL_LIST_COMMENTS,
+                detail=issue_key,
+            ) from exc
+
+    async def _read_run_alarm(
         self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
     ) -> RunAlarm | None:
-        """Resolve the full subject and signal across the native comment log."""
+        """One address, for the read-back the record's own upsert makes.
+
+        The write reads the address it is about to rewrite, which is one
+        address by construction; the role outside this adapter reads the
+        whole carrier.
+        """
         marker = run_alarm_marker(
             subject=subject, signal=signal, marker_prefixes=self._marker_prefixes
         )

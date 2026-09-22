@@ -1419,6 +1419,56 @@ def refutations(port: FakeTrackerPort) -> list[LaneRunEvent]:
     ]
 
 
+def lapses(port: FakeTrackerPort) -> list[LaneRunEvent]:
+    """The lapse announcements this lane's stream holds, in order."""
+    return [
+        event
+        for event in lane_run_events(
+            comments=port.comments,
+            lane_key=LANE,
+            marker_prefixes=lane_operation().marker_prefixes,
+        )
+        if event.kind is RunEventKind.CRITERION_LAPSED
+    ]
+
+
+def crossings(port: FakeTrackerPort) -> list[tuple[str | None, str | None]]:
+    """What this lane's stream says it crossed off, and at which sha, in order."""
+    return [
+        (event.subject_key, event.graded_sha)
+        for event in lane_run_events(
+            comments=port.comments,
+            lane_key=LANE,
+            marker_prefixes=lane_operation().marker_prefixes,
+        )
+        if event.kind is RunEventKind.ISSUE_CROSSED_OFF
+    ]
+
+
+async def test_a_finished_criterion_is_announced_once_as_crossed_off():
+    """The lane's own account of what it finished, once per grading.
+
+    Each criterion the attempt passed is announced after its move to Done,
+    keyed to it and carrying the sha it was graded at. The same verdict again
+    at the same head repeats nothing; a re-grade at a later head is a second
+    grading and is announced as one.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+
+    await tick(lane_state, sha="1" * 40)
+    first = [(key, "1" * 40) for key in CRITERIA]
+    assert crossings(port) == first
+    events = len(event_comments(port))
+
+    await tick(lane_state, sha="1" * 40)
+    assert crossings(port) == first
+    assert len(event_comments(port)) == events
+
+    await tick(lane_state, sha="2" * 40, keys=CRITERIA[:1])
+    assert crossings(port) == [*first, (CRITERIA[0], "2" * 40)]
+
+
 async def test_a_criterion_this_fire_finished_and_then_broke_is_taken_back():
     """A regression is recorded, not absorbed, and recorded exactly once.
 
@@ -1911,13 +1961,15 @@ async def test_a_lapsed_grading_is_taken_back_with_the_sha_it_was_graded_at():
     )
 
 
-async def test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra():
-    """A lapse is not a regression, so no event is composed and none is sought.
+async def test_a_lapse_is_announced_as_a_lapse_and_never_as_a_refutation():
+    """A lapse is not a regression, and the stream says which one happened.
 
-    A refutation reads the stream first, to tell a second break of one
-    grading from the first. A lapse announces nothing, so there is no event
-    to look for: the listing a refutation pays for is not paid here, and the
-    stream is left exactly as the finishing attempt left it.
+    Both take-backs read the stream first, to tell a second announcement of
+    one grading from the first, and both then post under their own kind: the
+    lapse as ``criterion_lapsed``, the refutation as ``criterion_refuted``. A
+    lapse announced as nothing at all would leave a reader of the stream a
+    finished criterion moved back that nobody reported, which is what a
+    regression looks like.
     """
     operation = lane_operation()
     port = CountingBoard(
@@ -1941,8 +1993,11 @@ async def test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra():
 
     port.count_the_next_write()
     await lapse(lane_state, key=lapsing, standing_sha="1" * 40, head_sha="2" * 40)
-    assert port.listings == 0
+    assert port.listings == 1
     assert refutations(port) == []
+    assert [(event.subject_key, event.graded_sha) for event in lapses(port)] == [
+        (lapsing, "1" * 40)
+    ]
 
     port.count_the_next_write()
     await tick(lane_state, sha="2" * 40, keys=[broken], failed=[broken])

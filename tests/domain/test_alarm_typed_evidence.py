@@ -46,14 +46,19 @@ def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
         ReferencesEvidence,
         ResolutionEvidence,
         RulingsEvidence,
+        RunEventProjection,
+        RunEventsEvidence,
         ScopeEvidence,
+        StateEvidence,
         SurfaceEvidence,
         TallyEvidence,
         TextEvidence,
     )
+    from kodezart.types.domain.run_event import RunEventKind
     from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
     from kodezart.types.domain.scope import ScopeKind, ScopeRef
     from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+    from kodezart.types.domain.tracker import WorkflowStateKind
 
     scope = ScopeRef(kind=ScopeKind.MILESTONE, key="actual-milestone")
     values = (
@@ -87,6 +92,14 @@ def test_every_evidence_arm_roundtrips_without_reparsing_domain_payloads():
         ),
         TallyEvidence(value=LaneTally(open=("criterion",), commits=("head",))),
         ScopeEvidence(value=scope),
+        StateEvidence(value=WorkflowStateKind.UNSTARTED),
+        RunEventsEvidence(
+            value=(
+                RunEventProjection(
+                    kind=RunEventKind.CRITERION_LAPSED, subject_key="criterion"
+                ),
+            )
+        ),
         RulingsEvidence(
             value=LaneRulingSnapshot(lane_key="lane", issue_keys=("issue",), rulings=())
         ),
