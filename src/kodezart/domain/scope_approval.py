@@ -68,6 +68,11 @@ async def resolve_container_approval(
 ) -> bool:
     """Walk a container chain upward until a node carries approval.
 
+    ``read_container`` is a per-node membership predicate: it answers whether
+    this node carries the member being asked about, and names the node above
+    it. That is why one walk answers any configured scope member and not only
+    approval — the member is the caller's, the chain is this function's.
+
     The caller's ``seen`` set is shared when there is one, so cycle
     detection spans the issue chain and the container chain as one walk.
     A milestone's owning project is the first container node: a milestone

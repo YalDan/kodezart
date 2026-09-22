@@ -56,6 +56,7 @@ from kodezart.domain.prompt_variables import organize_variables
 from kodezart.services.lane_escalation import LaneEscalationWriter
 from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.run_surface_lease import RunSurfaceLease
+from kodezart.services.scope_approval import scope_carries
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.gating import (
     ContentClass,
@@ -336,12 +337,34 @@ class OrganizeOwner:
             ]
         )
 
+    async def _carried_members(
+        self, scope: ScopeRef, phase: ResolvedMandateSpec
+    ) -> frozenset[ScopeLabel]:
+        """The phase's scope-namespace gate member, resolved on this scope.
+
+        One resolution per reading: a configured scope member is a property of
+        the scope and of the containers above it, never of a member issue. A
+        gate naming the approval member, or naming an issue classification,
+        resolves nothing and reads nothing — the predicate answers those from
+        the cascade and from the issue's own classifications.
+        """
+        namespace, key = split_label_key(phase.spec.gate_label_key)
+        if (
+            namespace is not OrganizeLabelNamespace.SCOPE
+            or key == ScopeLabel.APPROVED.value
+        ):
+            return frozenset()
+        member = ScopeLabel(key)
+        if await scope_carries(ref=scope, member=member, tracker=self._tracker):
+            return frozenset({member})
+        return frozenset()
+
     async def _admitted(
         self,
         issue: TrackerIssue,
         *,
         phase: ResolvedMandateSpec,
-        scope_labels: frozenset[ScopeLabel],
+        gate_members: frozenset[ScopeLabel],
     ) -> bool:
         """Whether this phase may act on *issue* now.
 
@@ -358,7 +381,7 @@ class OrganizeOwner:
         ):
             gate_open = approved
         elif namespace is OrganizeLabelNamespace.SCOPE:
-            gate_open = ScopeLabel(key) in scope_labels
+            gate_open = ScopeLabel(key) in gate_members
         else:
             gate_open = key in issue.issue_labels
         return gate_open and (
@@ -374,8 +397,8 @@ class OrganizeOwner:
                 issue_key=issue_key, reason="the write target left the admitted scope"
             )
         issue = await self._tracker.read_issue(issue_key=issue_key)
-        scope_labels = await self._tracker.read_scope_labels(ref=scope)
-        if not await self._admitted(issue, phase=phase, scope_labels=scope_labels):
+        gate_members = await self._carried_members(scope, phase)
+        if not await self._admitted(issue, phase=phase, gate_members=gate_members):
             raise OrganizeWriteRefusalError(
                 issue_key=issue_key,
                 reason=f"{phase.spec.kind.value} is not admitted for this issue now",
@@ -1037,12 +1060,12 @@ class OrganizeOwner:
         keys: Sequence[str],
         by_key: Mapping[str, TrackerIssue],
         phase: ResolvedMandateSpec,
-        scope_labels: frozenset[ScopeLabel],
+        gate_members: frozenset[ScopeLabel],
     ) -> dict[str, bool]:
         """One admission reading per named member, through the one predicate."""
         return {
             key: await self._admitted(
-                by_key[key], phase=phase, scope_labels=scope_labels
+                by_key[key], phase=phase, gate_members=gate_members
             )
             for key in keys
         }
@@ -1095,7 +1118,7 @@ class OrganizeOwner:
             issues = [r.issue for r in snapshot]
             by_key = {issue.issue_key: issue for issue in issues}
             members = set(by_key)
-            scope_labels = await self._tracker.read_scope_labels(ref=scope)
+            gate_members = await self._carried_members(scope, phase)
             unlabelled = stage_unlabelled(issues=issues, marker=marker)
             finding_keys = {f.issue_id for f in findings}
             admitted = await self._admissions_for(
@@ -1107,7 +1130,7 @@ class OrganizeOwner:
                 ),
                 by_key=by_key,
                 phase=phase,
-                scope_labels=scope_labels,
+                gate_members=gate_members,
             )
             pending = stage_pending(
                 unlabelled=unlabelled,
@@ -1376,13 +1399,13 @@ class OrganizeOwner:
             ):
                 # Newly prepared split children belong to this same phase;
                 # removed members no longer receive its marker.
-                current_labels = await self._tracker.read_scope_labels(ref=scope)
+                current_members = await self._carried_members(scope, phase)
                 marker_subjects = [
                     revision.issue
                     for revision in current
                     if is_organize_subject(revision.issue)
                     and await self._admitted(
-                        revision.issue, phase=phase, scope_labels=current_labels
+                        revision.issue, phase=phase, gate_members=current_members
                     )
                 ]
                 for issue in marker_subjects:
@@ -1459,7 +1482,7 @@ class OrganizeOwner:
             # The barrier: read the board again and require the marker on
             # every member that owes it, whatever its admission now.
             settled = [revision.issue for revision in await self._snapshot(scope)]
-            settled_labels = await self._tracker.read_scope_labels(ref=scope)
+            settled_members = await self._carried_members(scope, phase)
             owed = stage_unlabelled(issues=settled, marker=marker)
             left = stage_pending(
                 unlabelled=owed,
@@ -1467,7 +1490,7 @@ class OrganizeOwner:
                     keys=owed,
                     by_key={issue.issue_key: issue for issue in settled},
                     phase=phase,
-                    scope_labels=settled_labels,
+                    gate_members=settled_members,
                 ),
                 under_approval=phase.role.runs_under_approval,
             )

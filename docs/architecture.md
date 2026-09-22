@@ -191,7 +191,11 @@ and walks its parent edge upward. A milestone carries no label level at all: no
 native object of that kind holds a configured label, so its owning project is
 the first node in the chain, and a label planted on the milestone's backing data
 approves nothing. Composed as one function over the role, so the readers of that
-answer depend on no writer.
+answer depend on no writer. The same walk answers any configured scope member,
+asked with the member rather than fixed to approval, so a milestone-addressed
+scope is groomed on its owning project's triage member exactly as it is run on
+that project's approval, resolved once per reading of the gate and never once
+per member issue.
 
 `read_scope_plan` applies native stage barriers at the actual scoped engine
 entry before any execution arm is selected. Its `require_scope_plan_reads`

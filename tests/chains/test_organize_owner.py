@@ -200,6 +200,10 @@ def factory(
         refusal=refusal,
         criteria=criteria,
     )
+    # The built port, reachable from the board a case already holds: a case
+    # about what the owner does with an answer replaces one method here
+    # instead of standing up a second tracker beside this one.
+    board.built_tracker = tracker
     workspace = RecordingWorkspace()
     rows = stage_rows(
         operation.resolve_organize_mandates(), under_approval=under_approval
@@ -652,6 +656,72 @@ async def test_an_approved_scope_admits_nobody_to_grooming_and_opens_no_session(
     assert report.halt is None
     assert executor.calls == []
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+
+
+@pytest.mark.parametrize(
+    ("members", "grooms"),
+    [(("triage",), True), (("approved",), False), ((), False)],
+    ids=["triage-only", "approved-only", "neither"],
+)
+async def test_the_triage_member_dispatches_and_the_approved_member_alone_does_not(
+    members, grooms
+):
+    """The gate is the row's configured member and nothing else.
+
+    The approved-only arm removes the triage member instead of adding approval
+    beside it, so the case distinguishes "approval stood grooming down" from
+    "the triage member is what opened the gate in the first place".
+    """
+    labels = declared_operation().scope_labels
+    owner, board, executor = factory()
+    parent = board.server.issues[CLAIMED_ISSUE]
+    parent.labels = [labels[member] for member in members]
+    report = await run_owner(owner)
+    assert report.halt is None
+    if grooms:
+        assert [phase.value for phase in report.completed_phases] == ["groom"]
+        assert "graph complete" in parent.labels
+        assert executor.calls
+        return
+    assert report.completed_phases == ()
+    assert executor.calls == []
+    assert "graph complete" not in parent.labels
+    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+
+
+async def test_the_scope_gate_is_resolved_once_per_reading_by_the_one_resolver(
+    monkeypatch,
+):
+    """Every resolution is the addressed scope's, with the row's own member.
+
+    A member is a property of the scope and of the containers above it, so the
+    count follows the readings the pass makes and not the number of members it
+    has: a resolution per member issue would be the per-issue materialization
+    the trigger must not be.
+    """
+    owner, board, _ = factory()
+    original = organize_owner.scope_carries
+    seen = []
+
+    async def recording(*, ref, member, tracker):
+        seen.append((ref, member))
+        return await original(ref=ref, member=member, tracker=tracker)
+
+    monkeypatch.setattr(organize_owner, "scope_carries", recording)
+    report = await run_owner(owner)
+    assert [phase.value for phase in report.completed_phases] == ["groom"]
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    assert {ref for ref, _ in seen} == {scope}
+    assert {member for _, member in seen} == {ScopeLabel.TRIAGE}
+    # Observed, then written: two readings inside the convergence rounds (the
+    # round's own gate reading and the marker sweep's), one at the barrier,
+    # and seven pre-write re-checks across the author write and the marker
+    # write, each of which re-asks the gate before it touches the board.
+    assert len(seen) == 10
+    members = {
+        issue.id for issue in board.server.issues.values() if issue.id != CLAIMED_ISSUE
+    }
+    assert not {ref.key for ref, _ in seen} & members
 
 
 async def test_full_scope_finding_exhausts_the_actual_convergence_bound(monkeypatch):
