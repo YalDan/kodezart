@@ -530,6 +530,24 @@ def test_a_grading_the_reading_lapses_keeps_its_sha_and_says_it_lapsed():
     assert lapsed.exercised_paths == standing.exercised_paths
 
 
+def test_the_words_a_lapse_leaves_a_reader_are_the_words_they_say():
+    """The lapse prose is written out once, because nothing derives it (KOD-698).
+
+    Every other reading of these two constants takes the constant itself, so
+    a pointer reading that the grading is fine and a reason saying nothing at
+    all satisfy all of them while the row tells a reader the opposite of what
+    happened. What the criterion asks for is a gap a reader can SEE, so the
+    words are spelled out here. A twin is the only reading that can red when
+    fixed prose drifts, and these two are fixed texts rather than composed
+    ones, so the twin costs one line each to keep.
+    """
+    assert LAPSE_POINTER == "that grading lapsed"
+    assert LAPSE_REASON == (
+        "lapsed: what this grading exercised moved after the sha it was "
+        "graded at, so the verdict it reached is owed again rather than failed"
+    )
+
+
 def test_a_criterion_with_no_reading_is_built_from_this_attempts_own_grade():
     """The absent-reading arm is what every attempt without a standing one does."""
     assert for_reading({}) == cross_offs_for(
