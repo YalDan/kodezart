@@ -3733,6 +3733,13 @@ class FakeTrackerPort:
         #: A complete scope definition spans every label namespace; knowing
         #: the same spelling as a user or queue state cannot resolve it.
         self.scope_label_identifiers: set[str] = set(scope_label_identifiers)
+        #: Every scope-label ensure this double carried out, in order.  The
+        #: three attributes such an ensure moves are all state a consumer
+        #: reads back rather than journals, and on an ensure that ADOPTS an
+        #: identifier the workspace already knows they do not move at all;
+        #: the ensure addresses the workspace, so no issue is stamped either.
+        #: The attempt is the write, as it is for a release.
+        self.label_writes: list[str] = []
         #: Every container each INSTATED value is defined in, ``None`` being
         #: the workspace itself.  A SET per value, because one name is
         #: defined once per container and a two-board operation carries its
@@ -5121,6 +5128,7 @@ class FakeTrackerPort:
             if identifier in self.scope_label_identifiers
             else EnsureAction.CREATED
         )
+        self.label_writes.append(identifier)
         self.scope_label_identifiers.add(identifier)
         self.known_identifiers.add(identifier)
         self.mapping_containers.setdefault(identifier, set()).add(None)
@@ -5282,10 +5290,11 @@ def tracker_state(port: FakeTrackerPort) -> dict[str, object]:
 #: first eight are the ones such a check named when it was written; the rest
 #: are what naming them one by one left out — the recorded base spec, the
 #: queue-state writes, the put-backs, both halves of a document write, this
-#: process's own write ledger, and the refs recorded against an issue, which
+#: process's own write ledger, the refs recorded against an issue, which
 #: stamp nothing at all when the issue is one the board does not hold and are
-#: then invisible to a check that looked only for a stamp.  The last two are
-#: the unlock attempts —
+#: then invisible to a check that looked only for a stamp, and the
+#: scope-label ensures, which address the workspace and so stamp no issue at
+#: all.  The last two are the unlock attempts —
 #: a claim release and a surface release — which move nothing on a board
 #: holding neither and would therefore be invisible to a check that read the
 #: locks back instead of the attempt.  Named here so the rendering above is
@@ -5309,6 +5318,7 @@ TRACKER_WRITE_JOURNALS = frozenset(
         "document_titles",
         "self_writes",
         "recorded_work_refs",
+        "label_writes",
         "claim_releases",
         "lease_releases",
     }
@@ -5347,11 +5357,19 @@ def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
     The surface is the declared reach list above, and it is a hand-written
     list on purpose: the completeness test beside it forces the list to name
     every journal this check reaches, so a journal that arrives later has to
-    arrive with the write that fills it.  A write that lands in an attribute
-    the list does not name — the identity map under ``upsert_issue`` — is
-    reached all the same, because those calls either stamp the issue through
-    ``_wrote``, whose stamp lands in ``self_writes``, or fill a journal the
-    list does name.
+    arrive with the write that fills it.  A write that ADDRESSES an issue is
+    reached whichever attribute it fills — the identity map under
+    ``upsert_issue``, say — because it stamps the issue through ``_wrote``
+    and that stamp lands in ``self_writes``.  The writes that address no
+    issue carry a journal of their own so they are reached too: the two
+    unlock attempts, a work ref recorded against an issue no board holds,
+    and a scope-label ensure, which addresses the workspace.
+
+    One write is outside the projection and is named here rather than left
+    for a caller to find out: the ensure arm for the OTHER instatable kinds,
+    which fills ``known_identifiers`` and ``mapping_containers`` and stamps
+    nothing.  That is boot-time mapping instatement rather than a consumer's
+    write, and ``handed_over`` is the answerer that covers it.
 
     Attributes outside the set (``issue_reads``, ``scans``, a subclass's own
     counters) are outside the claim by construction, and so is a board a
