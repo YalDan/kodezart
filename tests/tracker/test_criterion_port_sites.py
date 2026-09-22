@@ -31,12 +31,17 @@ binds to its value, pooled over the whole tree and resolved to each
 module's own words, and by the tool's literal, whether the tool is passed
 positionally or by keyword — so importing the constant from the module that
 binds it, importing it under another name, or spelling the tool inline are
-each still a listing.  A member bound to a local word and called under that
-word is likewise the same call: the caller walk resolves assignment aliases of
-the member to a fixed point before it counts, so binding the mint first is no
-way past the one-caller count either.
+each still a listing.  A member bound to a word and called under that word
+is likewise the same call, and so is a member a class holds on itself: the
+caller walk resolves assignment aliases of the member to a fixed point —
+a word, or the whole dotted spelling of an instance attribute such as
+``self._mint`` — and matches a call by the whole spelling of its target,
+so binding the mint to a name or to ``self`` first is no way past the
+one-caller count either.
 
-What it does not see: a member reached by reflection; a selection of
+What it does not see: a member reached by reflection; a binding that wraps
+the member before handing it on — a walrus, a tuple unpacking, a parameter
+default, a ``partial`` — which no module of this tree writes; a selection of
 criterion rows out of issues some container read already returned, which is
 not a listing and which an AST cannot tell from one — that rows come from
 the port's read is what the conformance cases over the parametrized tracker
@@ -514,6 +519,22 @@ PLANTED_MINTS = {
         f"    return await mint(\n"
         f"        parent_key='p', title='t', check='c', do='d', holder='h'\n"
         f"    )\n",
+        "callers",
+    ),
+    # The same member held on an instance in ``__init__`` and called through
+    # ``self`` — the way this tree's own services hold a collaborator.  The
+    # alias is recorded under its dotted spelling and the call is matched by
+    # the whole spelling of its target (KOD-621).
+    "a second caller by a member held on self": (
+        "services/second_stage.py",
+        f"class SecondStage:\n"
+        f"    def __init__(self, tracker):\n"
+        f"        self._mint = tracker.{MINT}\n"
+        f"\n"
+        f"    async def stage(self):\n"
+        f"        return await self._mint(\n"
+        f"            parent_key='p', title='t', check='c', do='d', holder='h'\n"
+        f"        )\n",
         "callers",
     ),
     "a second implementation": (

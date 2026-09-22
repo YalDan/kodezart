@@ -181,11 +181,15 @@ def called_name(node: ast.Call) -> str | None:
 def callers_of(tree: ast.Module, *, name: str) -> list[str]:
     """Every definition in *tree* that calls *name*, by its dotted name.
 
-    A member bound to a local name and called under that word is the same
-    call: ``mint = tracker.create_criterion_if_absent`` followed by
-    ``await mint(...)`` is an ordinary second call site, not reflection, and a
-    walk that compared the called name alone would be answered by binding the
-    member first.  So the aliases are resolved to a fixed point before the
+    A member bound to a word and called under that word is the same call:
+    ``mint = tracker.create_criterion_if_absent`` followed by ``await
+    mint(...)`` is an ordinary second call site, not reflection, and a walk
+    that compared the called name alone would be answered by binding the
+    member first.  The word a class holds its collaborator under is the same
+    binding written on ``self``, which is how this tree's own services hold
+    theirs, so an alias is matched by the whole spelling of the call's target
+    rather than by a bare name: ``self._mint(...)`` counts exactly as
+    ``mint(...)`` does.  The aliases are resolved to a fixed point before the
     calls are counted, by the same resolution the stage guard below uses.
     """
     where = qualified_names(tree)
@@ -195,27 +199,39 @@ def callers_of(tree: ast.Module, *, name: str) -> list[str]:
             where[id(node)]
             for node in ast.walk(tree)
             if isinstance(node, ast.Call)
-            and (
-                called_name(node) == name
-                or (isinstance(node.func, ast.Name) and node.func.id in aliases)
-            )
+            and (called_name(node) == name or ast.unparse(node.func) in aliases)
         }
     )
 
 
 def stage_names(tree: ast.Module, *, stage: str) -> set[str]:
-    """Every name in *tree* that resolves to the *stage* member.
+    """Every spelling in *tree* that resolves to the *stage* member.
 
     The member reached as an attribute is the spelling the code uses; a
     name assigned from it is the same value under another word, and a guard
-    reading only the attribute would be answered by binding it first.
-    Grown to a fixed point, because an alias can precede its source.
+    reading only the attribute would be answered by binding it first.  A
+    binding is recorded under the whole spelling of its target, so a
+    collaborator held on an instance — ``self._mint = tracker.mint`` in an
+    ``__init__``, which is how this tree's classes ordinarily hold theirs —
+    is recorded as ``self._mint`` and is the member wherever that spelling is
+    read.  Grown to a fixed point, because an alias can precede its source and
+    an alias of an alias is the same value again.
+
+    What it does not record: a binding that wraps the member before handing it
+    on — a walrus, a tuple or list unpacking, a parameter default, a
+    ``partial`` — each of which hands on a value of another shape.
     """
     names: set[str] = set()
 
     def resolves(node: ast.expr) -> bool:
-        return ast.unparse(node).endswith(f".{stage}") or (
-            isinstance(node, ast.Name) and node.id in names
+        spelling = ast.unparse(node)
+        return spelling.endswith(f".{stage}") or spelling in names
+
+    def spelled(target: ast.expr) -> str | None:
+        return (
+            ast.unparse(target)
+            if isinstance(target, ast.Name | ast.Attribute)
+            else None
         )
 
     changed = True
@@ -224,15 +240,17 @@ def stage_names(tree: ast.Module, *, stage: str) -> set[str]:
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign) and resolves(node.value):
                 names.update(
-                    target.id for target in node.targets if isinstance(target, ast.Name)
+                    spelling
+                    for target in node.targets
+                    if (spelling := spelled(target)) is not None
                 )
             elif (
                 isinstance(node, ast.AnnAssign)
                 and node.value is not None
-                and isinstance(node.target, ast.Name)
                 and resolves(node.value)
+                and (spelling := spelled(node.target)) is not None
             ):
-                names.add(node.target.id)
+                names.add(spelling)
         changed = names != previous
     return names
 
@@ -243,9 +261,8 @@ def stage_moves(tree: ast.Module, *, method: str, stage: str) -> list[str]:
     named = stage_names(tree, stage=stage)
 
     def is_stage(node: ast.expr) -> bool:
-        return ast.unparse(node).endswith(f".{stage}") or (
-            isinstance(node, ast.Name) and node.id in named
-        )
+        spelling = ast.unparse(node)
+        return spelling.endswith(f".{stage}") or spelling in named
 
     return sorted(
         {
