@@ -241,8 +241,6 @@ def test_the_legacy_set_declares_no_system_prompt_append() -> None:
 #: the writer and the grader, so the readings have one source too.
 ENGINEERING_READINGS: tuple[str, ...] = (
     "SOLID, DRY, hexagonal, and KISS as the way to get there.",
-    "Ports are narrow role protocols the application defines, and a consumer "
-    "depends on the smallest role it needs.",
     "One adapter package per vendor, the vendor's wire shapes inside it, and no "
     "judgement in an adapter.",
     "Judgement is a prompt and arithmetic is a plain function.",
@@ -251,6 +249,18 @@ ENGINEERING_READINGS: tuple[str, ...] = (
     "A test double answers its port's questions the way the real implementation "
     "does; a double that accepts what the real one refuses, or whose signature "
     "differs from the port it stands for, is a defect and not a convenience.",
+    "Ports are narrow role protocols named for their consumer, and a consumer "
+    "depends on the smallest role it needs; a port or an adapter that grows "
+    "members for many consumers is a finding.",
+    "The application defines its ports and the adapters implement them; nothing "
+    "in the domain or the workflow imports an adapter or a vendor package.",
+    "Every rule, name and derivation has one source that everything else reads; "
+    "a second copy of a constant, a hand-kept list that mirrors a type, or a "
+    "check that lists by hand what it could derive from the code is a finding.",
+    "The domain and the workflow sit in the centre and reach the outside world "
+    "only through ports; the tracker, the forge, git and model sessions are "
+    "adapters at the edge, chosen once at the composition root and never by a "
+    "branch at runtime.",
     "Typed errors before any backend call.",
     "The smallest change that satisfies the criterion: delete rather than carry, "
     "and no abstraction, parameter or file beyond what the task requires.",
@@ -272,18 +282,13 @@ ENGINEERING_PRINCIPLES: tuple[str, ...] = (
     "KISS",
 )
 
-#: The names the standard attaches to a reading, as it attaches them. Not
-#: derived from the tuple above: two of the eight are named in the standard's
-#: opening sentence rather than in front of a reading, and two share one label
-#: because the sentence they are read from states both.
+#: The names the standard attaches to a reading, as it attaches them: every
+#: one of the eight, each in front of its own reading, so the set is derived
+#: from the tuple above rather than kept beside it. A name that opens a
+#: sentence is capitalised; the tuple keeps the lowercase forms the
+#: case-insensitive naming check reads.
 ENGINEERING_PRINCIPLE_LABELS: frozenset[str] = frozenset(
-    {
-        "Interface segregation and dependency inversion",
-        "Single responsibility",
-        "Open/closed",
-        "Liskov substitution",
-        "KISS",
-    },
+    principle[0].upper() + principle[1:] for principle in ENGINEERING_PRINCIPLES
 )
 
 #: What the standard puts between a principle's name and its reading.
