@@ -46,6 +46,18 @@ def test_a_row_declares_nothing_without_a_member():
         assert phase_surfaces(member_keys=(), role=role) == frozenset()
 
 
+def test_graph_change_is_declared_by_the_pre_approval_row_and_by_no_other():
+    """Graph change is the pre-approval row's; run stages write text and children.
+
+    The report-only discipline binds an approved scope and this row runs
+    before approval, which is why the two hold together.
+    """
+    for role in MANDATE_PHASE_ROLES.values():
+        assert (SurfaceKind.ISSUE_GRAPH in role.write_surfaces) is (
+            not role.runs_under_approval
+        )
+
+
 def test_no_row_declares_a_container_surface():
     """The scope's own container is written by no organize row."""
     for role in MANDATE_PHASE_ROLES.values():

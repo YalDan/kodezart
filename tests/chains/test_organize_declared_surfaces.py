@@ -169,7 +169,6 @@ async def test_no_halt_is_written_while_the_rounds_lease_is_held():
 
 TICKET_LINES = (
     "issue_description",
-    "issue_graph",
     "issue_label_set",
     "issue_split_set",
 )

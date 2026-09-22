@@ -160,7 +160,6 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             True,
             frozenset(
                 {
-                    SurfaceKind.ISSUE_GRAPH,
                     SurfaceKind.ISSUE_DESCRIPTION,
                     SurfaceKind.ISSUE_SPLIT_SET,
                     SurfaceKind.ISSUE_LABEL_SET,

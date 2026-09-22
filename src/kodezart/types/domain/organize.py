@@ -364,7 +364,6 @@ MANDATE_PHASE_ROLES: Mapping[MandateKind, MandatePhaseRole] = {
         runs_under_approval=True,
         write_surfaces=frozenset(
             {
-                SurfaceKind.ISSUE_GRAPH,
                 SurfaceKind.ISSUE_DESCRIPTION,
                 SurfaceKind.ISSUE_SPLIT_SET,
                 SurfaceKind.ISSUE_LABEL_SET,

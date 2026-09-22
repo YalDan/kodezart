@@ -507,6 +507,18 @@ round that declares the member writes the same change. A peer outside the scope
 is refused outright and recorded as nothing. The lease decides neither
 question: it is the record of what is held, and the comparison is the owner's.
 
+Graph change — dependency and related edges, parentage, priority and
+milestone — is declared by the pre-approval row and by no other, so that row
+applies structural change rather than proposing it: a groom that only
+describes a re-parent in a body leaves the judgement that asked for it
+unanswered and halts unmarked. The run stages write text and children:
+`ticket` writes the body and split children, `criteria` the criterion
+children, and a graph change either of them authors is recorded as a finding
+on each item it would touch instead of reaching the tracker. That reservation
+is what lets the report-only discipline of a scope run and this row's
+structural authority both hold: the discipline binds an approved scope, and
+this row runs only before approval.
+
 Because approval admits a member to a run stage instead of ending it, a
 run-stage row may name `scope_labels.approved` as its gate by that exact
 reference. Such a gate reads the per-issue cascade, never the addressed
