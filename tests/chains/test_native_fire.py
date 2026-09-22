@@ -1021,6 +1021,52 @@ async def test_a_refused_scope_read_inside_the_subtree_read_stays_a_typed_error(
     assert port.issue_creations == []
 
 
+async def test_a_criterion_the_port_read_disowns_never_joins_the_subtree_roster(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Membership is the listing, and the port's criterion read cross-reads it.
+
+    The extent is taken over the listing the scope read answers, which carries
+    every child of the subject whatever its label, and the port's criterion
+    read is then consulted for each member that listing holds (KOD-710's
+    extent, KOD-618's cross-read).  A criterion the listing carries under one
+    parent that the parent's OWN criterion read does not answer for is a
+    membership that moved between the two reads, and the roster refuses
+    instead of admitting it.
+
+    Asserted on the roster and not on the words of the refusal: the same board
+    answers the criterion while both reads agree, and answers no roster at all
+    once they disagree.  A cross-read that stopped happening would be read
+    here as an admitted criterion rather than as a different error text.
+    """
+    port = nested_only_board()
+    source = TrackerCriteria(tracker=port)
+
+    admitted = await source._read_subtree(SUBJECT)
+    assert set(admitted) == {NESTED_OWED}
+
+    family = port.read_criteria
+
+    async def disowned(*, issue_key: str) -> tuple[TrackerIssue, ...]:
+        """Every criterion answers under the subject, not under its parent."""
+        return tuple(
+            criterion.model_copy(update={"parent_key": SUBJECT})
+            for criterion in await family(issue_key=issue_key)
+        )
+
+    monkeypatch.setattr(port, "read_criteria", disowned)
+
+    rosters: list[dict[str, TrackerIssue]] = []
+    with pytest.raises(ScopeReadError, match="scope criterion membership changed"):
+        rosters.append(await source._read_subtree(SUBJECT))
+    assert rosters == []
+    with pytest.raises(ScopeReadError, match="scope criterion membership changed"):
+        await source.read_entry(issue_key=SUBJECT)
+
+    assert port.issue_writes == []
+    assert port.issue_creations == []
+
+
 async def test_the_actual_native_entry_refuses_a_zero_criterion_subtree_before_the_loop(
     monkeypatch,
 ):
