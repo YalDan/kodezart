@@ -104,10 +104,9 @@ def test_a_criterion_carrying_a_reference_keeps_the_answer_of_its_arm(state, exp
     on the state arm drops it out of the gap silently -- the drop the arm
     case's own docstring says must never happen.
 
-    Callers bound: `compute_gap` as the two scope-alarm services call it
-    (`services/run_shape.py`, `services/mandate_graph.py`), each of which
-    reads every criterion NOT in the returned gap back as closed, so a
-    silent drop reports owed work as discharged.
+    Bound here: `compute_gap` itself, and no caller of it. Its callers that
+    pass a reference are not composed into the running service (KOD-799),
+    so they are not bound here.
     """
     carrying = criterion("carrying", state)
     computed = gap.compute_gap(
@@ -125,10 +124,9 @@ def test_a_reference_naming_a_live_successor_moves_neither_record(state, expecte
     one keyed on its values drops the successor. Both are the same silent
     drop, and the arms decide neither.
 
-    Callers bound: `compute_gap` as `services/run_shape.py` and
-    `services/mandate_graph.py` call it -- they pass the references their
-    reader established for a whole subtree at once, so a successor read in
-    that subtree is present beside the criterion pointing at it.
+    Bound here: `compute_gap` itself, and no caller of it. Its callers that
+    pass a reference are not composed into the running service (KOD-799),
+    so they are not bound here.
     """
     carrying = criterion("carrying", state)
     successor = criterion("successor")
