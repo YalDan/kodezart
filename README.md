@@ -514,8 +514,9 @@ escalation returns unresolved. Missing or ambiguous records, unreadable
 reply links and incomplete pages raise `EscalationReadError`. Resolution
 reads every comment page and does not parse historical escalation bodies
 as JSON, cache answers, write comments or change labels. Consuming this read
-in an alarm computation is still owed; the supervisor tick that exists reads
-the scope's ready set of every scope the operation declares, observes the lane
+in an alarm computation is still owed; the supervisor tick that exists
+observes each declared scope's stage barrier from its roster and stage markers,
+reads the ready set of every scope the operation declares, observes the lane
 tally arm for each ready lane and each finished member, and observes every
 member's own stream for a criterion moved back that nobody reported, a lapse
 nothing will re-derive, and an evaluation that opened more sessions than it

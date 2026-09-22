@@ -8,6 +8,7 @@ import structlog.testing
 from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_event_stream import LaneRunEvent
+from kodezart.domain.run_shape import TICKET_MARKER_SOURCE, tally_unmoved
 from kodezart.domain.stream_signals import lapse_undischarged
 from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.lane_records import LaneRecordReader
@@ -22,6 +23,8 @@ from kodezart.types.domain.scope import ResolvedScope, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
 from kodezart.types.domain.topology import BlockedIssue
 from kodezart.types.domain.tracker import IssuePriority
+from tests.domain.test_scope_tally import SUBJECT as SCOPE_STALL
+from tests.domain.test_scope_tally import inputs as scope_inputs
 from tests.fakes import FIXTURE_EPOCH, FakeTrackerPort, make_tracker_issue
 from tests.services.lane_tally_fixtures import (
     BOUND,
@@ -75,8 +78,18 @@ def ready_set(*, ref=REF, lanes=LANES, closed=(), blocked=()):
     )
 
 
-def pass_over(port, *, readings, tally=None):
-    """A tick whose scope reads come from *readings*, keyed by scope reference."""
+def pass_over(port, *, readings, tally=None, scope_arm=None):
+    """A tick whose scope reads come from *readings*, keyed by scope reference.
+
+    *scope_arm* answers each scope's stage-barrier observation the same way,
+    by scope reference; a scope it does not name observes no stall.
+    """
+
+    async def observe_scope(ref):
+        answer = (scope_arm or {}).get(ref, ())
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
 
     async def read_ready(ref):
         answer = readings[ref]
@@ -90,6 +103,7 @@ def pass_over(port, *, readings, tally=None):
     return SupervisorPass(
         scopes=tuple(readings),
         read_ready=read_ready,
+        observe_scope=observe_scope,
         alarms=tally if tally is not None else supervisor(port),
     )
 
@@ -133,6 +147,60 @@ async def test_a_failed_scope_read_does_not_stop_the_next_scope():
     assert caught.value.failed == (OTHER.key,)
     assert len(records_on(port, "LANE-B")) == 1
     assert len(records_on(port, "LANE-C")) == 1
+
+
+async def test_a_failed_scope_arm_is_reported_and_its_lanes_are_still_observed():
+    """The scope's own observation failing is the scope's, not its lanes'."""
+    port = await board(lanes=LANES)
+
+    with structlog.testing.capture_logs() as logs:
+        with pytest.raises(SupervisorIncompleteError) as caught:
+            await pass_over(
+                port,
+                readings={REF: ready_set()},
+                scope_arm={REF: RuntimeError("the roster read failed")},
+            ).run(FIXTURE_EPOCH)
+
+    assert caught.value.failed == (REF.key,)
+    assert [
+        (entry["event"], entry["scope"])
+        for entry in logs
+        if entry["event"] == "supervisor_scope_arm_failed"
+    ] == [("supervisor_scope_arm_failed", REF.key)]
+    for lane in LANES:
+        assert len(records_on(port, lane)) == 1, lane
+
+
+async def test_a_raised_scope_alarm_is_logged_at_warning_and_the_tick_ran():
+    """A scope's stall is said where an operator reads it, and written nowhere.
+
+    Nothing about it is keyed to the scope on a stream or a record: the next
+    tick reads the roster and the markers again and says it again.
+    """
+    port = await board(lanes=LANES)
+    stalled = tally_unmoved(
+        subject=SCOPE_STALL,
+        readings=scope_inputs(),
+        raised_at_sha="supervisor",
+        raised_by=HOLDER,
+    )
+    assert stalled is not None
+
+    with structlog.testing.capture_logs() as logs:
+        outcome = await pass_over(
+            port, readings={REF: ready_set()}, scope_arm={REF: (stalled,)}
+        ).run(FIXTURE_EPOCH)
+
+    assert outcome is PassRun.RAN
+    assert [
+        (entry["log_level"], entry["scope"], entry["marker"])
+        for entry in logs
+        if entry["event"] == "supervisor_scope_alarm_raised"
+    ] == [("warning", REF.key, TICKET_MARKER_SOURCE)]
+    # Every comment on the board is on a lane: none carries the scope's stall.
+    assert {row.issue_key for row in port.comments} == set(LANES)
+    for lane in LANES:
+        assert len(records_on(port, lane)) == 1, lane
 
 
 async def test_a_whole_tick_over_observable_lanes_reports_that_it_ran():

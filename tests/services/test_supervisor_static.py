@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from typing_extensions import get_protocol_members
 
 from kodezart.composition.supervisor import build_supervisor_pass
-from kodezart.core.protocols import RunAlarmTracker
+from kodezart.core.protocols import RunAlarmTracker, ScopeRosterReader
+from kodezart.services.supervisor_pass import SupervisorPass
 
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src"
 #: Where the scan starts. The composition module is one of them because it is
@@ -364,3 +365,31 @@ def test_the_pass_factory_takes_no_runner_and_no_repository_collaborator():
         parameter.kind is inspect.Parameter.KEYWORD_ONLY
         for parameter in parameters.values()
     )
+
+
+#: Exactly what the scope arm's role names: the scope's roster, one member's
+#: planning read, and the classification reads the roster is filtered by.
+SCOPE_ARM_ROLE_MEMBERS = frozenset(
+    {"scope_issues", "read_planning_issue", "require_issue_classification_reads"}
+)
+
+
+def test_the_scope_arm_role_reads_the_roster_and_nothing_else():
+    """No event read and no write: a scope's stall is read off the roster alone.
+
+    Pinned exactly, so a scope-keyed event read added to the role reds here
+    rather than arriving as a second way to observe the same barrier.
+    """
+    members = get_protocol_members(ScopeRosterReader)
+
+    assert members == SCOPE_ARM_ROLE_MEMBERS
+    assert members.isdisjoint(STATE_MOVING_CALLS), members & STATE_MOVING_CALLS
+    assert members.isdisjoint(SUPERVISOR_ROLE_MEMBERS)
+
+
+def test_the_scope_arm_is_a_required_argument_of_the_tick():
+    """A tick with no scope arm would be a supervisor observing less than it says."""
+    parameter = inspect.signature(SupervisorPass).parameters["observe_scope"]
+
+    assert parameter.default is inspect.Parameter.empty
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY

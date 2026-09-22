@@ -161,15 +161,17 @@ operators can set either count to zero to observe the first subsequent
 commit or tick. A counter must exceed its configured limit. These settings
 feed the read-only observation service, which no tick reaches.
 
-The supervisor tick that does exist observes every member of each declared
-scope's ready reading: for a ready or finished lane the lane tally arm of
-`TALLY_UNMOVED`, and for every lane, blocked and unapproved ones included, the
-criteria its own stream accounts for, under `TALLY_REGRESSED` and
-`LAPSE_UNDISCHARGED`, and the node-session openings its stream holds, under
-`COMPOSITION_SUBSTITUTED`. Per lane it reads the run-state record, every alarm record
-on that lane's issue in one listing, and the lane's stream, composes what each
-address should hold, and writes only where the two differ. It moves no state and opens no session. It
-is registered only when the operation declares `[[organize_scopes]]` rows and
+The supervisor tick that does exist observes each declared scope's stage
+barrier under the scope arm of `TALLY_UNMOVED`, read from the roster and the
+stage markers and logged, never recorded; and every member of the scope's ready
+reading: for a ready or finished lane the lane tally arm of `TALLY_UNMOVED`, and
+for every lane, blocked and unapproved ones included, the criteria its own
+stream accounts for, under `TALLY_REGRESSED` and `LAPSE_UNDISCHARGED`, and the
+node-session openings its stream holds, under `COMPOSITION_SUBSTITUTED`. Per
+lane it reads the run-state record, every alarm record on that lane's issue in
+one listing, and the lane's stream, composes what each address should hold,
+and writes only where the two differ. It moves no state and opens no session.
+It is registered only when the operation declares `[[organize_scopes]]` rows and
 the deployment dials a tracker; either one absent registers nothing and names
 which was missing in the boot log.
 

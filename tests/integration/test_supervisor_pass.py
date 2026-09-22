@@ -13,6 +13,7 @@ from kodezart.domain.errors import LaneRecordReadError
 from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.run_alarm_table import alarm_raised
+from kodezart.domain.run_shape import TICKET_MARKER_SOURCE
 from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
     supervisor_holder,
@@ -449,11 +450,13 @@ async def test_a_stalled_lane_whose_landing_repeats_a_sha_raises_on_distinct_sha
     async with asyncio.timeout(TICK_BOUND_SECONDS):
         assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
 
-    stored = await port.read_run_alarm(
-        issue_key=LANDING_LANE, subject=subject(LANDING_LANE), signal=SIGNAL
+    stored = stored_alarm(
+        await port.read_run_alarms(issue_key=LANDING_LANE),
+        subject=subject(LANDING_LANE),
+        signal=SIGNAL,
     )
     assert stored is not None
-    assert is_raised(stored)
+    assert alarm_raised(stored)
     assert stored.bound is not None
     assert stored.bound.config_field == "run_alarm_max_commits_without_closure"
     assert stored.bound.configured_value == BOUND
@@ -466,6 +469,58 @@ async def test_a_stalled_lane_whose_landing_repeats_a_sha_raises_on_distinct_sha
         if event.kind is RunEventKind.RUN_ALARM_RAISED
     ]
     assert len(raised) == 1
+
+
+async def test_the_composed_tick_observes_a_scope_stalled_at_a_stage_barrier():
+    """KOD-503: the scope arm runs in the composed tick, beside the lane arm.
+
+    Every member of the scope has entered the criteria stage while none carries
+    the body stage's marker, so the barrier between the two is open and the
+    tick says so at warning, naming the scope and the rung's marker. It writes
+    nothing about the scope anywhere — no record and no event is keyed to it —
+    and the lanes are still observed exactly as without it.
+    """
+    operation = declared(scopes=(SCOPE,))
+    port = await board(
+        lanes=LANES,
+        scope=SCOPE,
+        holder=supervisor_holder(operation_name=operation.operation_name),
+    )
+    for lane in LANES:
+        issue = port.issues[lane]
+        port.issues[lane] = issue.model_copy(
+            update={"issue_labels": issue.issue_labels | {"criteria"}}
+        )
+    scheduled = build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            run_alarm_max_commits_without_closure=BOUND,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=operation,
+        tracker=port,
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        async with asyncio.timeout(TICK_BOUND_SECONDS):
+            assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+
+    assert [
+        (entry["log_level"], entry["scope"], entry["marker"])
+        for entry in logs
+        if entry["event"] == "supervisor_scope_alarm_raised"
+    ] == [("warning", SCOPE.key, TICKET_MARKER_SOURCE)]
+    written = {row.comment_key: row.issue_key for row in port.comments}
+    assert {written[key] for key, _ in port.comment_writes} == set(LANES)
+    for lane in LANES:
+        stored = stored_alarm(
+            await port.read_run_alarms(issue_key=lane),
+            subject=subject(lane),
+            signal=SIGNAL,
+        )
+        assert stored is not None
+        assert alarm_raised(stored)
 
 
 #: A dispatch holder no default would produce, so a lease holder composed from
@@ -576,10 +631,18 @@ def walk_board():
 
 
 def walk_operation():
+    """The walk's own operation, as a deployment declaring its roster boots it.
+
+    A declared roster is refused at boot without the organize table beside it,
+    so the walk's marker prefixes are laid over the operation that carries the
+    table: the tick reads each scope's stage markers through it.
+    """
     declared = native_operation()
-    return declared.model_copy(
+    return declared_operation().model_copy(
         update={
+            "operation_name": declared.operation_name,
             "marker_prefixes": {
+                **declared_operation().marker_prefixes,
                 **declared.marker_prefixes,
                 MARKER_PURPOSE: ALARM_PREFIX,
             },

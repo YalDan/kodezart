@@ -102,6 +102,7 @@ does not exist.
 | ScopeStatusReader | LinearScopeStatusUpdates | The one read the scope terminal makes before its one write: the reports the container already carries, so a report is posted once across a restart; a role beside the port, over the tracker's caller |
 | ScopeStatusUpdates | LinearScopeStatusUpdates | The container-status role whole, read and write, one class over the tracker's caller |
 | SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
+| ScopeRosterReader | LinearMcpTracker | Exactly what a scope's stage barrier is read from: the scope's roster, one member's planning read and the classification reads; no event read and no write |
 | RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: every alarm record on one issue, read in one listing, one keyed record rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
 | LaneEventHistory | LinearMcpTracker | A lane's posted events read for a grading's provenance; narrowed out of the port rather than added to it, and holding no write |
 | CriterionMinter | LinearMcpTracker | Exactly the tracker calls one obligation mint makes, the lease on a lane's criterion child set, the mint under it, and the move of a child the mint answered with back to unstarted under a lease on that child, narrowed out of the port rather than added to it; it holds no other workflow state and no description edit, so its holder can add an obligation, or reopen the one it names, and change no text the lane already carries |
@@ -1039,8 +1040,9 @@ TALLY_UNMOVED)` it is announced by exactly one `run_alarm_raised` event on that
 lane's stream. A record whose readings replay to nothing is a tally reading
 kept so the next tick has an anchor, and it is written only when a lane moved
 while it still owed work — which is the only write a run that never stalls
-makes. There is no scope-subject alarm: a run event needs a lane key, and a
-scope's stall is some lane's stall.
+makes. There is no scope-keyed event: a scope's stall is observed from the
+roster and the stage markers on every tick and logged, and no run event and no
+record is keyed to a scope.
 
 The criteria a lane graded are observed at their own addresses on that lane's
 issue, `(CriterionSubject(scope, parent, criterion, lane), signal)`, and which
@@ -1090,6 +1092,16 @@ string is the pass's own identity, the operation name with the tick name on it
 (`services/supervisor_pass.py::supervisor_holder`); it is not composed from
 `dispatch_holder`, which names the process that holds fire claims.
 
+Each scope's stage barrier is observed first in that scope's iteration of the
+tick: `composition/supervisor.py::build_supervisor_pass` builds, beside the lane
+observer, a callable the tick is handed the way `read_ready` is, which calls
+`services.scope_tally.observe_scope_tally` once for each rung of the governed
+sequence that has a successor, holding only `ScopeRosterReader`. A raise is
+logged as `supervisor_scope_alarm_raised` at warning with the scope and the
+rung's marker address; a failure is logged as `supervisor_scope_arm_failed`,
+names the scope in `SupervisorIncompleteError`, and leaves the scope's lanes
+still observed. The argument is required, so there is no tick without it.
+
 `services.scope_tally.observe_scope_tally` reads current native membership and
 strict issue classification twice before computing `tally_unmoved`. Its roster
 uses the same ORGANIZE work-target predicate as the gap: criterion and
@@ -1105,7 +1117,8 @@ The signal retains the exact configuration references, native scope address,
 roster keys and member label projections as readings, so replay needs no port.
 A missing member reading or null/empty marker set counts as open in the pure
 predicate. The final execution transition still requires a native member
-lane-dispatched event reader and explicitly refuses before querying.
+lane-dispatched event reader and explicitly refuses before querying, so the
+tick never asks for that rung.
 
 `tally_unmoved` has a second arm, chosen by the subject's kind and sharing the
 signal: under a `LaneSubject` it reads one lane's tally twice. A `LaneTally` is
