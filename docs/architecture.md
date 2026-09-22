@@ -89,7 +89,7 @@ does not exist.
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
 | RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
-| TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop. The authorship read answers the backend's own attribution of a body together with the distinct holders whose recorded writes replaced it, in the order the backend placed those records; it is asked only of the two body surfaces the port can replace |
+| TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop. It declares no member of its own: every member belongs to the role its consumer names, and this composes all of them for the composition root that holds one adapter |
 | TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |
 | TrackerCriteriaReader | LinearMcpTracker | Full current criterion families for resolution and audit consumers |
 | CriterionResolver | NativeCriterionResolver | Resolves one criterion identity to its own sub-issue, or refuses; the narrow role a consumer that needs a single criterion depends on, carrying no family read of its own |
@@ -99,17 +99,66 @@ does not exist.
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers |
 | FireCriteriaSource | TrackerCriteria | Composes the typed native subject specification from the admitted subject and its subtree's criteria, and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
-| TrackerScopeApprovalReader | LinearMcpTracker | The three reads a scope-member question needs — a node's own labels, its parent edge, the per-issue cascade — narrowed out of the port; a scope run's entry and the heartbeat depend on it alone, and the organize owner's gate reading (`scope_carries`) is typed on it |
-| LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
+| TrackerScopeApprovalReader | LinearMcpTracker | The reads a scope-member question needs, composed from the cascade and the container metadata roles and declaring the scope's own labels; a scope run's entry and the heartbeat depend on it alone, and the organize owner's gate reading (`scope_carries`) is typed on it |
+| LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, composed from the comment, event, issue, description, state and criterion roles those calls belong to |
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
+| ContainerMetadataReader | LinearMcpTracker | What a container is, read on its own; composed into the approval read and taken by the tracker-artifact reader |
+| ExecutionApprovalReader | LinearMcpTracker | The one approval question an entry asks, composed into the approval read and into the scope-ready read the walker takes |
+| IssueReader | LinearMcpTracker | One issue, whole; the read the audit runtime and the native amendment arm make and the base of seven composed roles |
+| PlanningIssueReader | LinearMcpTracker | One issue with complete relations; composed into the scope-plan read, the lane escalation writer and the artifact reader |
+| IssueRevisionReader | LinearMcpTracker | One issue and its body digest; the read the organize author round and the organize owner make |
+| IssueScanReader | LinearMcpTracker | The board scan the pass gate and the fire dispatcher select on |
+| ScopeFamilyReader | LinearMcpTracker | The scope family, resolved for scope resolution and composed into every membership read |
+| StateHistoryReader | LinearMcpTracker | When an issue entered its state; the read audit candidate collection makes |
+| EscalationResolutionReader | LinearMcpTracker | Whether a decision record answers an escalation; the read the escalation signal and the run-shape reading make |
+| RecordedRepositoryReader | LinearMcpTracker | The repository a staged fire recorded; read by the audit request reader and the fire dispatcher |
+| WriterIdentityReader | LinearMcpTracker | The account this credential writes as, read once by the boot that refuses an unattributable writer |
+| ScanCapabilityReader | LinearMcpTracker | The scan scopes a credential holds, read once by the pass preflight |
+| SurfaceAuthorshipReader | LinearMcpTracker | Whom the tracker records as the author of a body it can replace. The read answers the backend's own attribution together with the distinct holders whose recorded writes replaced it, in the order the backend placed those records; it is asked only of the two body surfaces the port can replace |
+| ScopeReadPreflight | LinearMcpTracker | The capability assertions a scope read makes first; composed into the scope-plan read and the lane escalation writer |
+| TrackerVocabulary | LinearMcpTracker | The declared vocabulary resolved and instated: the two calls tracker boot makes |
+| CriterionMintWriter | LinearMcpTracker | The criterion mint on a role of its own, taken by the organize owner and by nothing else |
+| DescriptionWriter | LinearMcpTracker | The one body replacement the port offers; composed into the lane state, amendment and organize writer roles |
+| WorkflowStateWriter | LinearMcpTracker | The configured lifecycle move; composed into the lane state tracker and the per-issue lifecycle writer |
+| StateRestorer | LinearMcpTracker | The put-back a reader's own state asks for; composed into the walk's role and the lifecycle writer |
+| ClassificationWriter | LinearMcpTracker | One configured classification added; composed into the lane escalation writer and the organize owner |
+| CommentRecordWriter | LinearMcpTracker | The marker-keyed record write; composed into every role that keeps a record on an issue |
+| LaneEventWriter | LinearMcpTracker | The append to a lane's event stream, composed into the run-alarm and lane-state roles |
+| ClaimHolder | LinearMcpTracker | Extending and withdrawing a claim already held: the claim heartbeat's two calls |
+| WorkRefRecorder | LinearMcpTracker | The ref record beside the ref read, taken by base resolution and the per-issue lifecycle writer |
+| SubjectCriteriaReader | LinearMcpTracker | A subject and its criterion family: the audit terminal reading's two reads |
+| ScopeMemberReader | LinearMcpTracker | The scope family and each member's criteria, which is what scope membership resolves |
+| ScopePlanReader | LinearMcpTracker | Everything a scope plan is read from, with no write in it: the plan, tally and delivery coordinator readings |
+| ScopeRosterReader | LinearMcpTracker | A scope's roster and each member's classification, which the scope tally reads twice to agree |
+| ScopeTallyReader | LinearMcpTracker | The roster the scope tally is counted over, behind the classification preflight: exactly what a scope's stage barrier is read from, with no event read and no write |
+| ScopeReadyReader | LinearMcpTracker | The scope plan plus the approval an entry asks for: what the scope walker and the dispatcher read |
+| ScopeWalkTracker | LinearMcpTracker | What the scope walk reads and the one write it makes, the put-back; it carries no claim, lease or in-progress mark |
+| FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
+| OrganizeAuthorReader | LinearMcpTracker | The criterion family and body digests the organize and authoring rounds read |
+| OrganizeContextTracker | LinearMcpTracker | The issues, milestones and records the organize context reader assembles from |
+| PassGateReader | LinearMcpTracker | The board and review scans the pass gate decides on, with no write |
+| TrackerArtifactReader | LinearMcpTracker | Every read a tracker artifact is assembled from; taken by the audit pass, the sweep's verifier and the artifact reader itself |
+| FireDispatchTracker | LinearMcpTracker | The claim, base and staging facts the deterministic dispatch decides on |
+| BaseResolutionTracker | LinearMcpTracker | The issue read and the ref record base resolution works from |
+| RequestRecordReader | LinearMcpTracker | The comments, issues and routing an audit request is composed from |
+| AuditCandidateReader | LinearMcpTracker | The state entry and membership audit candidate collection selects on |
+| LaneEscalationTracker | LinearMcpTracker | The escalation record a lane writes and the reads it is composed from |
+| AuditPublicationWriter | LinearMcpTracker | The record an audit publishes, under the lease publication holds |
+| EscalationSignalReader | LinearMcpTracker | The resolution and records an escalation's ageing is observed from |
+| RecordSignalReader | LinearMcpTracker | The criterion family and lane record a barren tick is observed from |
+| MandateGraphReader | LinearMcpTracker | The family, criteria and records a lane's mandate graph is read from |
+| OrganizeOwnerTracker | LinearMcpTracker | Everything the organize owner reads and every write it makes: the widest single consumer |
+| FireRulingTracker | LinearMcpTracker | The criterion reads and record writes a ruling round makes |
+| AmendmentWriteTracker | LinearMcpTracker | Every read the amendment write-back is composed from and every write it makes |
+| NativeAmendmentTracker | LinearMcpTracker | The amendment writes plus the membership the native arm reads beside them |
+| LifecycleStateWriter | LinearMcpTracker | The writes the per-issue lifecycle makes on one issue, and nothing wider |
 | ScopeStatusWriter | LinearScopeStatusUpdates | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
 | ScopeStatusReader | LinearScopeStatusUpdates | The one read the scope terminal makes before its one write: the reports the container already carries, so a report is posted once across a restart; a role beside the port, over the tracker's caller |
 | ScopeStatusUpdates | LinearScopeStatusUpdates | The container-status role whole, read and write, one class over the tracker's caller |
 | SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
-| ScopeRosterReader | LinearMcpTracker | Exactly what a scope's stage barrier is read from: the scope's roster, one member's planning read and the classification reads; no event read and no write |
-| RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: every alarm record on one issue, read in one listing, one keyed record rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
+| RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: every alarm record on one issue, read in one listing, and one keyed record rewritten, which it declares, over the lease, lane-history and lane-append roles it composes. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
 | LaneEventHistory | LinearMcpTracker | A lane's posted events read for a grading's provenance; narrowed out of the port rather than added to it, and holding no write |
-| CriterionMinter | LinearMcpTracker | Exactly the tracker calls one obligation mint makes, the lease on a lane's criterion child set, the mint under it, and the move of a child the mint answered with back to unstarted under a lease on that child, narrowed out of the port rather than added to it; it holds no other workflow state and no description edit, so its holder can add an obligation, or reopen the one it names, and change no text the lane already carries |
+| CriterionMinter | LinearMcpTracker | Exactly the tracker calls one obligation mint makes, composed from the criterion mint, criterion reopen and lease roles: the lease on a lane's criterion child set, the mint under it, and the move of a child the mint answered with back to unstarted under a lease on that child, narrowed out of the port rather than added to it; it holds no other workflow state and no description edit, so its holder can add an obligation, or reopen the one it names, and change no text the lane already carries |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
 | NodeSessionRecorder | TrackerLaneStateWriter | A node's observed session openings, put on its lane's stream once each |
 | WriteBackStep | _EscalationStep and the per-surface step bodies of the organize, amendment and audit writers | One writing step the verifier drives: the step owns its write and names the surface re-read after it |

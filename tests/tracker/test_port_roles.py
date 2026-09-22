@@ -1,6 +1,13 @@
-"""The tracker port's members, each called by production code (KOD-836).
+"""The tracker port as role interfaces named by consumer (KOD-833, KOD-836).
 
-A member no production module calls is a capability nothing uses, carried
+Every member of the tracker surface is declared on exactly one role, the
+aggregate declares none of its own, and no role declares a member one of the
+roles it composes already declares. The register is derived from the port
+module's own text and from the aggregate's live member set, so a member moved
+between roles moves the guard with it and a member declared twice is named.
+
+The second half is the caller question. A member no production module calls
+is a capability nothing uses, carried
 on every implementation for no consumer. The list of such members is
 derived: every member of the whole port, matched as a member call across
 the shipped tree outside the port module and the vendor adapters. It holds
@@ -22,12 +29,20 @@ import pytest
 from tests.domain.test_criterion_cross_off import source_tree
 from tests.tracker.role_register import (
     ADAPTERS,
+    AGGREGATE,
     EXEMPT_UNTIL_KOD_390,
     PORT_MODULE,
     RUN_RECORD_EXEMPTION,
     call_pattern,
+    composed,
+    declaring_roles,
+    own_declarations,
     port_members,
+    port_module_text,
+    redeclared_from_a_base,
+    roles,
     tree_under_tests,
+    twice_declared,
     zero_callers,
 )
 
@@ -116,3 +131,59 @@ def test_a_revived_issue_write_is_reported(name, form):
     tree = {"tracker/revived.py": text}
 
     assert deleted_member_sites(tree) == ["tracker/revived.py"]
+
+
+def test_the_aggregate_declares_no_member_of_its_own():
+    text = port_module_text()
+
+    assert own_declarations(text)[AGGREGATE] == frozenset()
+
+
+def test_every_member_of_the_surface_is_declared_on_exactly_one_role():
+    text = port_module_text()
+    own = own_declarations(text)
+
+    assert twice_declared(text) == {}
+    assert redeclared_from_a_base(text) == {}
+    assert frozenset().union(*(own[name] for name in roles(text))) == port_members()
+
+
+def test_every_declaring_role_is_composed_into_the_aggregate():
+    """A role the aggregate does not reach would answer for no adapter at all."""
+    text = port_module_text()
+
+    assert declaring_roles(text) <= composed(text, AGGREGATE)
+
+
+@pytest.mark.parametrize(
+    "form",
+    ["a member back on the aggregate", "a member on two roles", "a base redeclared"],
+)
+def test_a_member_off_its_one_role_is_reported(form):
+    text = port_module_text()
+    member = sorted(port_members())[0]
+    owner = next(
+        name for name in sorted(roles(text)) if member in own_declarations(text)[name]
+    )
+    planted = {
+        "a member back on the aggregate": (
+            f"\n\n@runtime_checkable\nclass {AGGREGATE}(Protocol):\n"
+            f"    async def {member}(self) -> None: ...\n"
+        ),
+        "a member on two roles": (
+            f"\n\n@runtime_checkable\nclass SecondPlace({owner}, Protocol):\n"
+            f"    async def {member}(self) -> None: ...\n"
+        ),
+        "a base redeclared": (
+            f"\n\n@runtime_checkable\nclass Shadowing({owner}, Protocol):\n"
+            f"    async def {member}(self) -> None: ...\n"
+        ),
+    }[form]
+    grown = text + planted
+
+    if form == "a member back on the aggregate":
+        assert own_declarations(grown)[AGGREGATE] == frozenset({member})
+    else:
+        assert "SecondPlace" in str(twice_declared(grown)) or "Shadowing" in str(
+            redeclared_from_a_base(grown)
+        )
