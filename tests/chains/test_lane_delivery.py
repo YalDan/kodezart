@@ -86,23 +86,21 @@ def _names(node) -> set[str]:
     }
 
 
-def _public_surface(klass) -> set[str]:
-    """Every public name *klass* offers, whichever class in its line declares it.
+def _public_surface(instance) -> set[str]:
+    """Every public name *instance* offers, whoever put it there.
 
-    ``vars(klass)`` is the class's own namespace alone, so a public method
-    contributed by a base is on the instance's surface and invisible to it.
-    The whole line is walked instead — ``object`` left out, since its names
-    are every class's and say nothing about this one — and a name is counted
-    whether or not it is callable, because ``callable()`` answers False for a
-    property and for a classmethod.
+    Asked of the OBJECT a caller holds, through ``dir()``, which resolves the
+    whole class line and the instance's own attributes together.  Reading a
+    namespace instead answers about one placement and no other: ``vars()`` on
+    the class is the class's own namespace, so a public method contributed by
+    a base is on the surface and invisible to it; ``vars()`` on the instance
+    is the attributes ``__init__`` assigned, so a method is invisible to it;
+    and a declaration roster such as ``model_fields`` would see neither.
+    Dunders are left out — every object has them and they say nothing about
+    this one — and a name is counted whether or not it is callable, because
+    ``callable()`` answers False for a property and for a classmethod.
     """
-    return {
-        name
-        for base in klass.__mro__
-        if base is not object
-        for name in vars(base)
-        if not name.startswith("_")
-    }
+    return {name for name in dir(instance) if not name.startswith("_")}
 
 
 def _roles_in(annotation) -> set[object]:
@@ -624,32 +622,37 @@ def test_the_coordinator_branches_on_no_stalled_fact_and_names_no_do_not_merge_s
     ]
 
 
-def test_coordinator_exposes_only_the_delivery_entry_point():
+async def test_coordinator_exposes_only_the_delivery_entry_point():
     """One entry point, and the signature that keeps it one.
 
-    Every public name the class OFFERS is counted, not only the ones it
-    declares itself and not only the callable ones: a base class contributes
-    to the surface as surely as the subclass does, and ``callable()`` answers
-    False for a property and for a classmethod.
+    Asked of a CONSTRUCTED coordinator, so every public name it offers is
+    counted whatever placement carries it — a name a base declares, a name
+    its own body declares, an attribute its constructor assigns — and not
+    only the callable ones, since ``callable()`` answers False for a property
+    and for a classmethod.
 
     The signature is the other half. What it must not contain is the point:
     the branch and the final sha are read off the state the coordinator is
     handed, so a parameter for either would move that reading back out to
     every caller, and the pin above would still pass.
     """
-    assert _public_surface(LaneDeliveryCoordinator) == {"deliver"}
+    owner, *_ = await setup()
+    assert _public_surface(owner) == {"deliver"}
 
-    # The walk is shown on the very shape it exists for: a public name that
-    # only a base declares, which the class's own namespace does not hold.
+    # The walk is shown on the two shapes it exists for: a public name that
+    # only a base declares, which the class's own namespace does not hold,
+    # and one a constructor assigns, which no namespace in the line holds.
     class _Base:
         def publish(self):
             """A name on the surface of everything below it."""
 
     class _Inheriting(_Base):
-        pass
+        def __init__(self):
+            self.destination = "a name no class body declares"
 
     assert "publish" not in vars(_Inheriting)
-    assert _public_surface(_Inheriting) == {"publish"}
+    assert "destination" not in vars(_Inheriting) | vars(_Base)
+    assert _public_surface(_Inheriting()) == {"publish", "destination"}
 
     signature = inspect.signature(LaneDeliveryCoordinator.deliver)
     assert [
