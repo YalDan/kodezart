@@ -173,6 +173,22 @@ async def write_work_ref(port: FakeTrackerPort) -> None:
     )
 
 
+async def write_scope_label(port: FakeTrackerPort) -> None:
+    # A scope label is defined on the workspace, so this ensure stamps no
+    # issue, and the three attributes it moves are state a consumer reads
+    # back rather than journals — and on a second ensure of the same
+    # identifier they would not move at all. The attempt is the only trace.
+    await port.ensure_mappings(
+        refs=[
+            MappingRef(
+                kind=MappingKind.SCOPE_LABEL,
+                name="a-scope-label",
+                identifier="fixture-scope-label",
+            ),
+        ],
+    )
+
+
 async def write_self_write(port: FakeTrackerPort) -> None:
     port.self_writes.record(issue_key=ISSUE, updated_at=FIXTURE_EPOCH)
 
@@ -197,6 +213,7 @@ WRITES: Mapping[str, Callable[[FakeTrackerPort], Awaitable[None]]] = {
     "document_titles": write_document,
     "self_writes": write_self_write,
     "recorded_work_refs": write_work_ref,
+    "label_writes": write_scope_label,
     "claim_releases": write_claim_release,
     "lease_releases": write_lease_release,
 }
