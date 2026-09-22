@@ -33,6 +33,7 @@ from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import ResultEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.criteria import CriterionId
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -1016,6 +1017,13 @@ async def test_the_question_step_mints_a_pinned_answer_identity_and_no_criterion
 CRITERION_MINT = "criterion_ref"
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 
+#: Both spellings a criterion identity is brought into being under: the mint
+#: function, and the identity type itself, which is constructed bare wherever
+#: a native key is captured. Read off the shipped type rather than written
+#: here, so a rename moves the guard. A path module reaching either one has
+#: minted a criterion identity, whichever word it used (KOD-639).
+CRITERION_IDENTITIES = frozenset({CRITERION_MINT, CriterionId.__name__})
+
 #: Every module of the pre-loop question path: the node, the component it
 #: drives, the arithmetic that component does, and the reader of what it wrote.
 RULING_PATH = (
@@ -1032,8 +1040,8 @@ RULING_PATH = (
 MINT_CALLERS = {"domain/criterion_cross_off.py"}
 
 
-def _names_the_mint(module: Path) -> bool:
-    """Whether this module names the mint as a value, an import or a definition.
+def _names_the_mint(module: Path, wanted: frozenset[str]) -> bool:
+    """Whether this module names any of *wanted* as a value, import or definition.
 
     The name as an identifier, never as text: ``types/domain/criterion_ref.py``
     is a module path and ``CRITERION_REFUTED`` is a different name, so a
@@ -1041,20 +1049,29 @@ def _names_the_mint(module: Path) -> bool:
     """
     tree = ast.parse(module.read_text(encoding="utf-8"))
     return any(
-        (isinstance(node, ast.Name) and node.id == CRITERION_MINT)
+        (isinstance(node, ast.Name) and node.id in wanted)
         # The module-attribute form, which is the one the sentinel can see.
-        or (isinstance(node, ast.Attribute) and node.attr == CRITERION_MINT)
+        or (isinstance(node, ast.Attribute) and node.attr in wanted)
         # The from-import form, which is the one it cannot.
         or (
             isinstance(node, ast.ImportFrom)
-            and any(alias.name == CRITERION_MINT for alias in node.names)
+            and any(alias.name in wanted for alias in node.names)
         )
         or (
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == CRITERION_MINT
+            and node.name in wanted
         )
         for node in ast.walk(tree)
     )
+
+
+def _naming(wanted: frozenset[str]) -> set[str]:
+    """Every module of the shipped tree that names any of *wanted*."""
+    return {
+        str(module.relative_to(SOURCE_ROOT))
+        for module in SOURCE_ROOT.rglob("*.py")
+        if _names_the_mint(module, wanted)
+    }
 
 
 def test_no_module_on_the_ruling_path_names_the_criterion_mint() -> None:
@@ -1070,12 +1087,17 @@ def test_no_module_on_the_ruling_path_names_the_criterion_mint() -> None:
 
     Read statically, and as a census rather than a spot check, so a new naming
     site is reported wherever it lands and however it is imported.
+
+    Two name sets, because the two assertions want different reach. The
+    path clause takes BOTH identity spellings: ``CriterionId(...)`` mints one
+    just as surely as the function does, and being a ``NewType`` it is even
+    less observable — so a path module naming either has crossed the line, and
+    none does today. The census takes the function alone, since the identity
+    type is legitimately named across ``types/``, ``chains/criteria.py`` and
+    ``domain/criteria.py`` and a total census over it would say nothing.
     """
-    naming = {
-        str(module.relative_to(SOURCE_ROOT))
-        for module in SOURCE_ROOT.rglob("*.py")
-        if _names_the_mint(module)
-    }
+    identities = _naming(CRITERION_IDENTITIES)
+    naming = _naming(frozenset({CRITERION_MINT}))
 
     # Non-vacuous: the scan finds the sites there are, and the module that
     # defines the mint is derived rather than named.
@@ -1090,9 +1112,13 @@ def test_no_module_on_the_ruling_path_names_the_criterion_mint() -> None:
     }
     assert definer == "domain/fire_spec.py"
 
-    # The clause: no module of the question path names it at all.
-    assert naming.isdisjoint(RULING_PATH)
-    # And the census is total, so a naming site anywhere else is reported too.
+    # The clause: no module of the question path names an identity mint at
+    # all, under either spelling.
+    assert identities.isdisjoint(RULING_PATH), sorted(
+        identities.intersection(RULING_PATH)
+    )
+    # And the census over the mint function is total, so a naming site
+    # anywhere else is reported too.
     assert naming == {definer} | MINT_CALLERS
 
 
