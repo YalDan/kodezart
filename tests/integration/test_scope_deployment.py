@@ -41,6 +41,8 @@ from tests.integration.test_scope_runtime import (
     lane_record,
     resumable,
 )
+from tests.prompts.test_prompt_wiring import load_registry
+from tests.prompts.test_set_completeness import shipped_sets
 from tests.services.test_prompt_passes import HEARTBEAT_PASS
 from tests.tools.scratch_board import ScratchBoardServer
 from tests.tools.scratch_scope import (
@@ -117,6 +119,27 @@ async def test_the_shipped_scope_config_walks_one_lane_to_a_crossed_off_criterio
         if comment.issue_key == "A"
         and comment.body.startswith(f"[{loaded.marker_prefixes['run_state']}:")
     ]
+
+
+def test_the_shipped_file_names_a_rubric_role_the_registry_resolves_for_every_row() -> (
+    None
+):
+    """Every row's accept conditions resolve, in every shipped set.
+
+    All three rows, not only the pre-approval one: a run-stage row pointed at
+    the organizational rubric would ship a stage that accepts a member without
+    the implementation test, and this is where that shows.
+    """
+    rows = shipped().resolve_organize_mandates()
+    assert {row.spec.kind.value: row.spec.rubric_prompt_key.value for row in rows} == {
+        "groom": "organize_groom_rubric",
+        "ticket": "organize_spec_rubric",
+        "criteria": "organize_spec_rubric",
+    }
+    for set_name in shipped_sets():
+        registry = load_registry(default_set=set_name)
+        for row in rows:
+            assert registry.resolution_table()[row.spec.rubric_prompt_key] == set_name
 
 
 def test_the_shipped_pre_approval_row_gates_on_the_triage_member() -> None:

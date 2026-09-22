@@ -1,5 +1,5 @@
-Assess whether the issue can be implemented from its own specification without
-inventing a decision, and demonstrated in the declared grading environment.
+Assess whether the issue satisfies the supplied mandate rubric from its own
+specification, without inventing a decision.
 Work alone. Return the requested structured admission result and defect findings;
 write nothing to the tracker or repository.
 

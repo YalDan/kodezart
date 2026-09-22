@@ -343,10 +343,16 @@ Every prompt set supplies a separate data file for each organize role:
 | `organize_author` | Propose specification repairs |
 | `organize_verify` | Independently verify the current issue |
 | `organize_criteria_author` | Propose criterion sub-issues |
+| `organize_groom_rubric` | The pre-approval row's accept conditions |
+| `organize_spec_rubric` | The run-stage rows' accept conditions |
 
 The registry resolves each role independently. Removing any required file
 from the selected set aborts prompt boot and names the missing key. The
-roles inherit the set's existing authoring or judgment session policy.
+roles inherit the set's existing authoring or judgment session policy. The two
+rubric roles open no session of their own: a row names one as its
+`rubric_prompt_key`, and it is rendered into the `mandate_rubric` binding of
+whichever judging role the row runs, which is how one verify role serves rows
+with different accept conditions.
 The configured native Organize owner dispatches these roles and owns tracker
 mutation through the narrow declared surfaces. The shared `write_back_verify`
 role independently checks the exact reread artifact through the canonical

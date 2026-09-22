@@ -489,6 +489,15 @@ into the groom judge, the repair author and the two scheduled pass prompts, so
 an issue sitting outside that tree is a repairable gap rather than a matter of
 taste.
 
+Each row's accept conditions are its own rubric's, not the judging role's: the
+pre-approval row's rubric states the four-part organizational predicate — every
+stated dependency is a blocking edge on the board, every open human choice has
+the person accountable for it, target dates are ordered, and every member that
+will be executed already carries a criterion — and names no implementation
+test, while the run-stage rows' rubric states the implementation and
+demonstration test. One verify role serves all of them, because what counts as
+accepted arrives in the rubric the row names.
+
 Because approval admits a member to a run stage instead of ending it, a
 run-stage row may name `scope_labels.approved` as its gate by that exact
 reference. Such a gate reads the per-issue cascade, never the addressed

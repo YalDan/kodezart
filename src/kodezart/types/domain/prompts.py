@@ -50,6 +50,11 @@ class PromptKey(StrEnum):
     AUDIT_MANDATE = "audit_mandate"
     AUDIT_DETECTION_REMOVAL = "audit_detection_removal"
     ORGANIZE_CRITERIA_AUTHOR = "organize_criteria_author"
+    #: The accept conditions of one organize row, rendered into the per-call
+    #: ``mandate_rubric`` of whichever wrapper judges it. A rubric opens no
+    #: session of its own: it is the standard a judging role is handed.
+    ORGANIZE_GROOM_RUBRIC = "organize_groom_rubric"
+    ORGANIZE_SPEC_RUBRIC = "organize_spec_rubric"
     #: What lives where.  A prelude composed into a session that is granted
     #: the knowledge server, and into no other — a key rather than set-level
     #: fragment metadata, so it enters this census and the set-completeness

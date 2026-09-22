@@ -71,6 +71,10 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "organize_verify": ORGANIZE_INPUT_TAGS,
     "organize_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),
     "organize_criteria_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),
+    # A rubric is the standard a judging role is handed; it carries no
+    # injected artifact of its own and therefore no tag.
+    "organize_groom_rubric": (),
+    "organize_spec_rubric": (),
     "acceptance_criteria": ("ticket",),
     "acceptance_criteria__regeneration_round": ("validation_findings", "ticket"),
     "branch_name": ("task",),
