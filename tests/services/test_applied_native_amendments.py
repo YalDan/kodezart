@@ -126,6 +126,35 @@ async def test_done_criterion_archives_exact_evidence_then_resets_before_new_che
         await cleanup(workspace)
 
 
+async def test_the_criterion_state_move_takes_one_lease_on_its_own_sub_issue(
+    repository,
+):
+    """What the read declined to take, the move that writes it takes once.
+
+    The criterion sub-issue is the leased surface here, so the state move
+    back to pending is covered by exactly one grant over that criterion and
+    no other criterion is held while it runs.
+    """
+    port = tracker()
+    executor = Executor(
+        reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}
+    )
+    service, guard, workspace, _ = await build(repository, executor, port=port)
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        assert report.verdicts[0].verdict == "amended"
+        assert port.issues[DIRECT_DONE].state_kind is WorkflowStateKind.UNSTARTED
+        assert [
+            surface.ref.key
+            for lease in port.lease_acquisitions
+            for surface in lease.surfaces
+            if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE
+        ] == [DIRECT_DONE]
+    finally:
+        await cleanup(workspace)
+
+
 async def test_an_amended_criterion_keeps_its_key_and_title_token_before_and_after(
     repository,
 ):

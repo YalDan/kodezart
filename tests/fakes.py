@@ -3559,6 +3559,11 @@ class FakeTrackerPort:
         #: Every lease this double GRANTED, in order — kept past the release
         #: that removes it, the way ``claim_writes`` outlives its claim.
         self.lease_writes: list[SurfaceLease] = []
+        #: The subset of those grants that were ACQUISITIONS, apart from the
+        #: renewals that merely extend one.  Whether a read takes a lease is
+        #: a question about acquisitions alone, which a ledger mixing the two
+        #: cannot answer: a heartbeat would read as a fresh grant.
+        self.lease_acquisitions: list[SurfaceLease] = []
         #: Every renewal ATTEMPT, granted or refused, as (issue, holder).
         #: A heartbeat that has stopped is observed as a count that stopped
         #: growing, which a record of grants alone cannot tell from a
@@ -4802,6 +4807,7 @@ class FakeTrackerPort:
         for surface in surfaces:
             self.leases[surface] = granted
         self.lease_writes.append(granted)
+        self.lease_acquisitions.append(granted)
         return granted
 
     async def renew_surfaces(

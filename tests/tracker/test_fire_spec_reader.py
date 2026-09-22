@@ -97,6 +97,26 @@ async def test_spec_captures_opaque_child_keys_verbatim_body_and_subject_version
     assert tracker_writes() == before
 
 
+async def test_the_fire_spec_criterion_read_acquires_no_write_lease(
+    tracker, tracker_writes, server
+):
+    """Fire entry reads the family; the grant belongs to whoever moves it.
+
+    The criterion sub-issue is a leased write surface, so a spec read that
+    took its grant would hold the surface against the state move entitled
+    to it for the whole of the run the spec opens.
+    """
+    writes = tracker_writes()
+    spec, _ = await TrackerCriteria(tracker=tracker).read_entry(issue_key=SUBJECT)
+    assert spec.criteria == (CRITERION, "grandchild/1")
+    assert tracker_writes() == writes
+    if isinstance(tracker, FakeTrackerPort):
+        assert tracker.lease_acquisitions == []
+        assert tracker.leases == {}
+    else:
+        assert server.tool_calls("save_comment") == []
+
+
 async def test_a_spec_read_hydrates_its_subject_exactly_once(tracker, server):
     if isinstance(tracker, FakeTrackerPort):
         tracker.issue_reads.clear()
