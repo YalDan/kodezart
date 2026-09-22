@@ -882,9 +882,12 @@ class RalphLoop:
         # passing id and the empty ``passing`` skips the reading.
         at_base: Mapping[CriterionId, bool] = {}
         if native_ref is not None:
-            passing = passed_ids(grade.results) - {
-                CriterionId(str(criterion)) for criterion in reading
-            }
+            held = {str(criterion) for criterion in reading}
+            passing = frozenset(
+                criterion
+                for criterion in passed_ids(grade.results)
+                if str(criterion) not in held
+            )
             if passing:
                 at_base = await self._base_reading(
                     ctx=ctx,
