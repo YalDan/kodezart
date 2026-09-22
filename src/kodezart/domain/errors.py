@@ -1015,3 +1015,21 @@ class OrganizeDecisionRequiredError(Exception):
         super().__init__(
             f"organize author for {issue_key!r} needs a decision: {question}"
         )
+
+
+class UnverifiedWritePathError(Exception):
+    """A tracker write path in the installed code that nothing accounts for.
+
+    Raised at boot, before the tracker is dialled, for every call of the
+    tracker's artifact-write surface that no write-back verifier drives and
+    no derived-write declaration beside its writer holds out.  ``paths``
+    names each one as ``module::function::method``, so the refusal says
+    exactly which write to route through the verifier or declare.
+    """
+
+    def __init__(self, *, paths: Sequence[str]) -> None:
+        self.paths: tuple[str, ...] = tuple(paths)
+        super().__init__(
+            "tracker write paths with neither a write-back verifier nor a "
+            "derived-write declaration: " + ", ".join(self.paths)
+        )

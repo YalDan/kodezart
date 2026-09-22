@@ -25,6 +25,7 @@ from kodezart.composition.tracker import (
     boot_tracker,
 )
 from kodezart.composition.workspace import build_git_stack
+from kodezart.composition.write_adoption import verify_write_adoption
 from kodezart.config.app import AppConfig
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.logging import BoundLogger, configure_logging, get_logger
@@ -69,6 +70,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cleanup = AsyncExitStack()
     failure: BaseException | None = None
     try:
+        # Before anything is dialled or written: a tracker write path in the
+        # installed code that no verifier drives and no declaration holds out
+        # refuses boot by name (KOD-533), whatever this deployment schedules.
+        verify_write_adoption()
         github_api = build_forge_client(config=config)
         if github_api is not None:
             cleanup.push_async_callback(observed_release("forge", github_api.close))

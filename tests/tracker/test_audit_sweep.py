@@ -581,7 +581,8 @@ async def test_an_inline_holds_does_not_exempt_the_standing_sweep(setup, tracker
 
     The sweep's own judge is scripted from the artifact it is handed and
     knows nothing of the inline round: it refutes exactly because the
-    Check standing on the body names a module present at no commit.
+    Check standing on the body names a module present at no commit.  An
+    inline round is a round, not a proof (KOD-533).
     """
     build, executor, *_ = setup
     step = PlantingWriteBack(tracker)
