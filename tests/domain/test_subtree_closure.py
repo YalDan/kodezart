@@ -15,7 +15,6 @@ import inspect
 import pytest
 
 from kodezart.domain import issue_tree
-from kodezart.domain.errors import ScopeSupersessionReadError
 from kodezart.domain.gap import compute_gap
 from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -96,41 +95,38 @@ def a_met_lane_check_over_an_open_child_deliverable() -> tuple[
     return facts_of(lane, child, child_open, lane_met), ("child-AC-1",)
 
 
-def a_cancellation_without_a_supersession() -> tuple[
+def a_canceled_criterion_counts_for_nothing() -> tuple[
     dict[str, TrackerIssue], tuple[str, ...]
 ]:
     lane = make_tracker_issue("lane")
     met = criterion("lane-AC-1", parent="lane", state=WorkflowStateKind.COMPLETED)
     canceled = criterion("lane-AC-2", parent="lane", state=WorkflowStateKind.CANCELED)
-    return facts_of(lane, met, canceled), ("lane-AC-2",)
+    return facts_of(lane, met, canceled), ()
+
+
+def a_duplicate_criterion_counts_for_nothing() -> tuple[
+    dict[str, TrackerIssue], tuple[str, ...]
+]:
+    lane = make_tracker_issue("lane")
+    met = criterion("lane-AC-1", parent="lane", state=WorkflowStateKind.COMPLETED)
+    duplicate = criterion("lane-AC-2", parent="lane", state=WorkflowStateKind.DUPLICATE)
+    return facts_of(lane, met, duplicate), ()
 
 
 @pytest.mark.parametrize(
-    "row,open_keys,unresolved,subtree_closed",
+    "row,open_keys,subtree_closed",
     [
-        (all_but_one_criterion_moved_back, ("lane-AC-3",), False, False),
-        (closed_child_with_an_open_lane_check, ("lane-AC-1",), False, False),
-        (every_criterion_completed, (), False, True),
-        (
-            a_met_lane_check_over_an_open_child_deliverable,
-            ("child-AC-1",),
-            False,
-            False,
-        ),
-        (a_cancellation_without_a_supersession, (), True, False),
+        (all_but_one_criterion_moved_back, ("lane-AC-3",), False),
+        (closed_child_with_an_open_lane_check, ("lane-AC-1",), False),
+        (every_criterion_completed, (), True),
+        (a_met_lane_check_over_an_open_child_deliverable, ("child-AC-1",), False),
+        (a_canceled_criterion_counts_for_nothing, (), True),
+        (a_duplicate_criterion_counts_for_nothing, (), True),
     ],
 )
-def test_gap_is_empty_iff_the_subtree_rollup_is_done(
-    row, open_keys, unresolved, subtree_closed
-):
+def test_gap_is_empty_iff_the_subtree_rollup_is_done(row, open_keys, subtree_closed):
     facts, _ = row()
     closure = SubtreeClosure(facts=facts, ref=REF)
-    if unresolved:
-        with pytest.raises(ScopeSupersessionReadError):
-            closure.gap("lane")
-        with pytest.raises(ScopeSupersessionReadError):
-            closure.is_closed("lane")
-        return
     gap = closure.gap("lane")
     assert tuple(issue.issue_key for issue in gap) == open_keys
     assert closure.is_closed("lane") is subtree_closed
@@ -163,7 +159,7 @@ def test_a_closure_over_a_narrower_criterion_set_disagrees_with_the_gap():
         for issue in facts.values()
         if "criterion" in issue.issue_labels and issue.issue_key not in offending
     )
-    narrow_gap = compute_gap(criteria=narrower, supersession_refs={})
+    narrow_gap = compute_gap(narrower)
     assert narrow_gap == ()
     assert closure.is_closed("lane") is False
     assert (narrow_gap == ()) is not closure.is_closed("lane")

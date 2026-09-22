@@ -66,7 +66,6 @@ def inputs():
             value=CountEvidence(value=6),
             at_sha="head",
         ),
-        "supersession_refs": {},
         "raised_at_sha": "head",
         "raised_by": "supervisor",
     }
@@ -117,17 +116,11 @@ async def test_current_done_state_closes_the_same_previously_open_key(
 
 
 @pytest.mark.parametrize("state", ["Canceled", "Duplicate"])
-async def test_cancellation_closes_only_with_an_established_supersession(
-    tracker, state
-):
+async def test_a_canceled_or_duplicate_criterion_closes_the_tick(tracker, state):
+    """Abandoned work counts for nothing, so the prior open identity closed."""
     await tracker.restore_workflow_state(issue_key=OLD, state_name=state)
     config = AppConfig(_env_file=None)
-    arguments = inputs()
-    assert await observe_barren_tick(tracker=tracker, config=config, **arguments)
-    arguments["supersession_refs"] = {OLD: "recorded/successor"}
-    assert (
-        await observe_barren_tick(tracker=tracker, config=config, **arguments) is None
-    )
+    assert await observe_barren_tick(tracker=tracker, config=config, **inputs()) is None
 
 
 @pytest.mark.parametrize("change", ["missing", "unlabelled", "reparented"])
@@ -189,7 +182,6 @@ def test_observer_has_one_tracker_read_and_no_version_control_dependency():
         if isinstance(node, ast.ImportFrom)
     }
     assert imports == {
-        "collections.abc",
         "kodezart.config.app",
         "kodezart.core.protocols",
         "kodezart.domain.gap",
@@ -207,7 +199,6 @@ def test_observer_has_one_tracker_read_and_no_version_control_dependency():
         "previous_open",
         "files_changed",
         "commits_ahead",
-        "supersession_refs",
         "raised_at_sha",
         "raised_by",
     }

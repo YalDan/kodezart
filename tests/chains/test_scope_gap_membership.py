@@ -22,7 +22,7 @@ from kodezart.domain.criterion_evidence import (
     parse_criterion_evidence,
     render_evidence_field,
 )
-from kodezart.domain.errors import ScopePlanRefusalError, ScopeSupersessionReadError
+from kodezart.domain.errors import ScopePlanRefusalError
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_scope_ready import PROJECT, row
@@ -38,22 +38,22 @@ GRADED_TEST = "tests/chains/test_scope_gap_membership.py::test_case"
 #: What the subtree read does with the one criterion under test.
 OWED = "owed"
 DISCHARGED = "discharged"
-REFUSED_UNSUPERSEDED = "refused_unsuperseded"
 REFUSED_BACKLOG = "refused_backlog"
 
 #: One arm per tracker state, and nothing else may be written here: the
 #: identity assertion below is what turns "one per state" into a fact.
 #: ``refuted`` is deliberately not a member — a criterion nobody graded is
 #: owed, which is what the two OWED rows over graded and ungraded records
-#: below demonstrate.
+#: below demonstrate.  Canceled and Duplicate discharge rather than refuse:
+#: abandoned work counts for nothing and refuses nothing (KOD-794).
 MEMBERSHIP: dict[WorkflowStateKind, str] = {
     WorkflowStateKind.TRIAGE: OWED,
     WorkflowStateKind.BACKLOG: REFUSED_BACKLOG,
     WorkflowStateKind.UNSTARTED: OWED,
     WorkflowStateKind.STARTED: OWED,
     WorkflowStateKind.COMPLETED: DISCHARGED,
-    WorkflowStateKind.CANCELED: REFUSED_UNSUPERSEDED,
-    WorkflowStateKind.DUPLICATE: REFUSED_UNSUPERSEDED,
+    WorkflowStateKind.CANCELED: DISCHARGED,
+    WorkflowStateKind.DUPLICATE: DISCHARGED,
 }
 
 
@@ -88,12 +88,7 @@ def subtree(*, kind: str, body: str):
 def test_the_membership_table_carries_one_arm_per_tracker_state():
     """A state the enum gains has no arm here until somebody writes one."""
     assert set(MEMBERSHIP) == set(WorkflowStateKind)
-    assert set(MEMBERSHIP.values()) == {
-        OWED,
-        DISCHARGED,
-        REFUSED_UNSUPERSEDED,
-        REFUSED_BACKLOG,
-    }
+    assert set(MEMBERSHIP.values()) == {OWED, DISCHARGED, REFUSED_BACKLOG}
 
 
 @pytest.mark.parametrize("state", list(WorkflowStateKind))
@@ -109,12 +104,6 @@ async def test_one_gap_arm_per_criterion_state_over_the_subtree(
             await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
         assert backlog.value.backlog_criteria == (DEEP_CHECK,)
         return
-    if expected == REFUSED_UNSUPERSEDED:
-        with pytest.raises(ScopeSupersessionReadError) as unsuperseded:
-            await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
-        assert unsuperseded.value.criterion_keys == (DEEP_CHECK,)
-        return
-
     selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
 
     owed = {

@@ -17,7 +17,6 @@ import pytest
 
 from kodezart.chains import native_delivery, scope_walker
 from kodezart.domain import fire_plateau, issue_tree, lane_entry, topology
-from kodezart.domain.errors import ScopeSupersessionReadError
 from kodezart.services import lane_entry as lane_entry_reader
 from kodezart.services import scope_dispatcher, scope_runtime
 from kodezart.services.base_resolver import BaseResolver
@@ -1333,25 +1332,6 @@ async def test_the_same_lane_reads_at_rest_once_that_criterion_is_graded():
     assert report.outcome is DispatchOutcome.empty_eligible_set
     assert report.eligible == ()
     assert report.exclusions == ()
-    assert queue.submissions == []
-    assert tracker.claims == {}
-
-
-async def test_a_cancelled_unreachable_criterion_refuses_rather_than_resting():
-    """A cancellation with no supersession on record is not a closure.
-
-    Neither arithmetic finds anything OPEN in this shape, so at-rest alone
-    cannot tell a subtree reading from a filtered-member one.  This is the
-    reading that can: a walk that never left its own filter reports the
-    same restful nothing it reports for a graded criterion.
-    """
-    tracker = reach_board(child_state=WorkflowStateKind.CANCELED, out_of_filter=True)
-    walker, queue, _ = walk(tracker)
-
-    with pytest.raises(ScopeSupersessionReadError) as caught:
-        await walker.run_pass()
-
-    assert caught.value.criterion_keys == ("child-check",)
     assert queue.submissions == []
     assert tracker.claims == {}
 

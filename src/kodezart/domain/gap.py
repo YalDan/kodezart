@@ -2,48 +2,29 @@
 
 The tracker owns the criterion-state vocabulary. This module preserves
 the actual records; it neither decodes Evidence text nor
-invents a second state or grading vocabulary. Supersession references must
-already have been established by the owning tracker/lifecycle reader.
+invents a second state or grading vocabulary. Membership is a reading of
+the state kind the tracker reports, and of nothing else.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
-from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+from kodezart.types.domain.tracker import TrackerIssue, is_open
 
 
-def in_gap(criterion: TrackerIssue, *, supersession_ref: str | None) -> bool:
-    """Completion closes work; cancellation needs a supersession."""
+def in_gap(criterion: TrackerIssue) -> bool:
+    """True iff *criterion* is still owed.
+
+    The arithmetic reads state alone: Done closes, Canceled and Duplicate
+    count for nothing, every other kind is owed (KOD-794). Nothing else is
+    consulted, so two readers of one criterion cannot disagree about it.
+    """
     if "criterion" not in criterion.issue_labels:
         raise ValueError("gap membership requires a criterion sub-issue")
-    if supersession_ref is not None and not supersession_ref.strip():
-        raise ValueError("a supersession reference must be nonempty")
-    match criterion.state_kind:
-        case WorkflowStateKind.COMPLETED:
-            return False
-        case WorkflowStateKind.CANCELED:
-            return supersession_ref is None
-        case WorkflowStateKind.DUPLICATE:
-            return supersession_ref is None
-        case WorkflowStateKind.TRIAGE:
-            return True
-        case WorkflowStateKind.BACKLOG:
-            return True
-        case WorkflowStateKind.UNSTARTED:
-            return True
-        case WorkflowStateKind.STARTED:
-            return True
+    return is_open(criterion.state_kind)
 
 
-def compute_gap(
-    criteria: Sequence[TrackerIssue], *, supersession_refs: Mapping[str, str]
-) -> tuple[TrackerIssue, ...]:
+def compute_gap(criteria: Sequence[TrackerIssue]) -> tuple[TrackerIssue, ...]:
     """Retain open criterion records in their supplied order, unchanged."""
     if len({criterion.issue_key for criterion in criteria}) != len(criteria):
         raise ValueError("a criterion identity appears more than once")
-    return tuple(
-        criterion
-        for criterion in criteria
-        if in_gap(
-            criterion, supersession_ref=supersession_refs.get(criterion.issue_key)
-        )
-    )
+    return tuple(criterion for criterion in criteria if in_gap(criterion))

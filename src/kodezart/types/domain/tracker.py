@@ -82,18 +82,34 @@ class WorkflowStateKind(StrEnum):
     DUPLICATE = "duplicate"
 
 
-_CLOSED_STATE_KINDS: frozenset[WorkflowStateKind] = frozenset(
+#: The kinds a criterion counts for nothing in.  Named once here so the gap
+#: arithmetic and the spec read give one answer about them (KOD-794).
+_NON_COUNTING_STATE_KINDS: frozenset[WorkflowStateKind] = frozenset(
     {
-        WorkflowStateKind.COMPLETED,
         WorkflowStateKind.CANCELED,
         WorkflowStateKind.DUPLICATE,
     },
+)
+
+_CLOSED_STATE_KINDS: frozenset[WorkflowStateKind] = (
+    frozenset({WorkflowStateKind.COMPLETED}) | _NON_COUNTING_STATE_KINDS
 )
 
 
 def is_open(kind: WorkflowStateKind) -> bool:
     """True iff *kind* is none of the closed kinds."""
     return kind not in _CLOSED_STATE_KINDS
+
+
+def is_non_counting(kind: WorkflowStateKind) -> bool:
+    """True iff a criterion of *kind* counts for nothing and refuses nothing.
+
+    A criterion the board Canceled or closed as a Duplicate is work nobody
+    owes any more: it joins no gap, no specification and no unresolved list,
+    and it refuses no read it is present in (KOD-794).  Completion is not
+    one of these kinds — a Done criterion counts, and counts as discharged.
+    """
+    return kind in _NON_COUNTING_STATE_KINDS
 
 
 class IssueRelationKind(StrEnum):

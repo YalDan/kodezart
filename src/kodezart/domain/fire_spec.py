@@ -12,7 +12,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.types.domain.fire_spec import CriterionRef, IssueRef, TrackerSpec
 from kodezart.types.domain.operation import OperationMemberAbsentError
-from kodezart.types.domain.tracker import TrackerIssue
+from kodezart.types.domain.tracker import TrackerIssue, is_non_counting
 
 _CRITERION_ROW = re.compile(r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
@@ -237,15 +237,27 @@ def replace_criterion_fields(
 def tracker_spec_from_issues(
     *, subject: TrackerIssue, criteria: Sequence[TrackerIssue]
 ) -> TrackerSpec:
-    """Capture the subject version; a successful empty query is unfireable."""
-    if not criteria:
+    """Capture the subject version; a successful empty query is unfireable.
+
+    Three steps, in this order. The non-counting criteria are dropped first:
+    one the board Canceled or closed as a Duplicate neither joins the
+    specification nor refuses this read (KOD-794). Emptiness is judged over
+    what is left, so a subtree whose every criterion was abandoned is refused
+    as empty (KOD-710/KOD-398) rather than composed. Only then is each
+    remaining criterion's Check validated, so a counting criterion carrying no
+    single nonempty Check still refuses here and never deeper.
+    """
+    counting = [
+        criterion for criterion in criteria if not is_non_counting(criterion.state_kind)
+    ]
+    if not counting:
         raise EmptyFireCriteriaError(issue_key=subject.issue_key)
-    for criterion in criteria:
+    for criterion in counting:
         criterion_check(criterion=criterion, issue_key=subject.issue_key)
     return TrackerSpec(
         subject=IssueRef(subject.issue_key),
         body=subject.body,
-        criteria=tuple(criterion_ref(criterion.issue_key) for criterion in criteria),
+        criteria=tuple(criterion_ref(criterion.issue_key) for criterion in counting),
         read_at_version=subject.updated_at.isoformat(),
     )
 

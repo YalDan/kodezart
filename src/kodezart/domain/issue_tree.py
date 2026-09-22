@@ -2,14 +2,10 @@
 
 from collections.abc import Mapping, Sequence
 
-from kodezart.domain.errors import (
-    EmptyFireCriteriaError,
-    ScopeReadError,
-    ScopeSupersessionReadError,
-)
+from kodezart.domain.errors import EmptyFireCriteriaError, ScopeReadError
 from kodezart.domain.gap import compute_gap, in_gap
 from kodezart.types.domain.scope import ScopeRef
-from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+from kodezart.types.domain.tracker import TrackerIssue
 
 RECORD_KINDS = frozenset({"tracker", "decision"})
 
@@ -54,16 +50,8 @@ def open_criteria(
     finishedness on its own: what an issue owes is what its whole subtree
     owes, so no caller may take one family for the answer.
     """
-    unresolved = tuple(
-        issue.issue_key
-        for issue in criteria
-        if issue.state_kind in {WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE}
-    )
-    if unresolved:
-        raise ScopeSupersessionReadError(ref=ref, criterion_keys=unresolved)
-    # No criterion in this input needs a supersession reference. Do not turn
-    # an absent native reference reader into a guessed cancellation policy.
-    return compute_gap(criteria=criteria, supersession_refs={})
+    _ = ref
+    return compute_gap(criteria)
 
 
 class SubtreeClosure:
@@ -163,13 +151,12 @@ class SubtreeClosure:
 
         Every criterion the tree carries, and not only those beneath a
         candidate: an obligation under a member nobody approved is one the scope
-        has not discharged either. A criterion closed as canceled with no
-        supersession reference established still counts as owed, which is the
-        same answer the reading gives a lane that owes one.
+        has not discharged either. A criterion the board Canceled or closed as a
+        Duplicate counts for nothing here, which is the same answer the reading
+        gives a lane that carries one (KOD-794).
         """
         return tuple(
             key
             for key, issue in self.facts.items()
-            if "criterion" in issue.issue_labels
-            and in_gap(issue, supersession_ref=None)
+            if "criterion" in issue.issue_labels and in_gap(issue)
         )

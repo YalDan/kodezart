@@ -24,6 +24,7 @@ from tests.tracker.conftest import (
     FIRE_STAGE_LABEL,
 )
 from tests.tracker.test_fire_spec_reader import CRITERION, SUBJECT
+from tests.tracker.test_fire_spec_reader import abandoned_pair as abandoned_pair
 from tests.tracker.test_fire_spec_reader import server as server
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 

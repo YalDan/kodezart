@@ -1,7 +1,5 @@
 """Read-only assembly of recorded run-shape observations."""
 
-from collections.abc import Mapping
-
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.gap import compute_gap
@@ -159,7 +157,6 @@ async def observe_barren_tick(
     previous_open: AlarmReading,
     files_changed: AlarmReading,
     commits_ahead: AlarmReading,
-    supersession_refs: Mapping[str, str],
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
@@ -173,7 +170,6 @@ async def observe_barren_tick(
         previous_open=previous_open,
         files_changed=files_changed,
         commits_ahead=commits_ahead,
-        supersession_refs=supersession_refs,
         raised_at_sha=raised_at_sha,
         raised_by=raised_by,
     )
@@ -190,25 +186,20 @@ async def read_barren_tick(
     previous_open: AlarmReading,
     files_changed: AlarmReading,
     commits_ahead: AlarmReading,
-    supersession_refs: Mapping[str, str],
     raised_at_sha: str,
     raised_by: str,
 ) -> tuple[RunAlarm | None, tuple[TrackerIssue, ...]]:
     """Read current criterion closure, then compare already-recorded growth.
 
     Closure comes from the shared criterion gap arithmetic: Completion closes,
-    and canceled/duplicate work closes only with an established supersession
-    reference supplied by its owning reader. Missing references never imply
-    closure. The previous tick and both lane-base diff counts must already
-    be recorded projections, with their source references supplied here.
+    and canceled or duplicated work counts for nothing (KOD-794). The previous
+    tick and both lane-base diff counts must already be recorded projections,
+    with their source references supplied here.
     No repository, author session or tracker writer is called.
     """
     subject = LaneSubject(scope_key=scope_key, lane_key=lane_key)
     criteria = tuple(await tracker.read_criteria(issue_key=issue_key))
-    open_keys = {
-        criterion.issue_key
-        for criterion in compute_gap(criteria, supersession_refs=supersession_refs)
-    }
+    open_keys = {criterion.issue_key for criterion in compute_gap(criteria)}
     closed_keys = tuple(
         criterion.issue_key
         for criterion in criteria

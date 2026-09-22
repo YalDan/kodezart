@@ -247,11 +247,12 @@ next call recomputes from tracker reads. Scope membership, complete child trees
 and approval are checked again before returning; this is an optimistic read,
 not transactional exclusion from concurrent tracker writers.
 
-Canceled or duplicate criteria that need supersession resolution currently raise
-`ScopeSupersessionReadError`: the existing gap function accepts established
-references, but the native tracker has no declared reader for the historical
-supersession prose. No inferred reference or merge observation substitutes for
-that missing read. Full walker dispatch and pre-loop revalidation remain separate;
+A criterion the board Canceled or closed as a Duplicate counts for nothing, at
+the readiness read and at the spec read alike: it joins no gap, no
+specification and no unresolved list, and it refuses nothing (KOD-794). The gap
+arithmetic reads the criterion's own state kind and nothing else, so no second
+input and no inferred reference decides what an abandoned criterion means.
+Full walker dispatch and pre-loop revalidation remain separate;
 valid scoped entries still raise the explicit unavailable-walker error after
 recording the current ready and blocked keys.
 
@@ -967,9 +968,9 @@ deterministic precedence if both limits are exceeded. The default bounds
 are ten files and five commits; both are configurable nonnegative counts.
 
 The read-only `observe_barren_tick` service uses `read_criteria` and the shared
-criterion gap arithmetic to obtain current closure. Done closes a criterion;
-cancellation or duplication needs an established supersession reference
-supplied by its owning reader. It retains the returned closure projection
+criterion gap arithmetic to obtain current closure. Done closes a criterion,
+and Canceled and Duplicate count for nothing. It retains the returned closure
+projection
 for replay and makes no tracker writes or version-control calls. Its shared
 `read_barren_tick` assembly also retains the exact criterion snapshot used
 for that observation. `observe_recorded_barren_tick` supplies both growth
@@ -980,8 +981,8 @@ refuses both an alarm and a quiet result. It reads the declared counters
 without inferring them from commit rows or checking their agreement, which
 belongs to the separate record-consistency signal.
 
-The previous tick's open identities and established supersession references
-still require explicit supplied provenance. Their collectors remain separate
+The previous tick's open identities still require explicit supplied
+provenance. Their collectors remain separate
 work and no tick reaches them; leased alarm persistence exists, and only the
 lane tally arm writes through it. These bounded record reads do not provide
 an atomic tracker transaction or an execution event stream.
@@ -1584,7 +1585,9 @@ its own children and, recursively, its deliverable children's. A subtree
 holding none is refused with `EmptyFireCriteriaError` naming the subject,
 before the question step and before the loop's graph is dispatched (the pinned
 interim on KOD-786; what the walk does with such a member is decided there, not
-here). There is no second, narrower reading in which the subject's own
+here). A criterion the board Canceled or closed as a Duplicate neither joins
+the specification nor refuses that read, and a subtree whose every criterion is
+one of those is refused as empty. There is no second, narrower reading in which the subject's own
 criterion children alone admit or refuse a fire (KOD-790). The question step asks one read-only
 pass under the `fire_time_ruling` role what the subject text and the current
 Checks leave open, pins each answer on the issue whose text raised it, reads it

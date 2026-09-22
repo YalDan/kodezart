@@ -25,7 +25,6 @@ from kodezart.chains.scope_walker import (
 )
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import ScopeSupersessionReadError
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
@@ -252,26 +251,6 @@ async def test_the_same_lane_reads_at_rest_once_that_descendant_is_done(
     assert {issue.issue_key for issue in ready.scope.issues} == {LANE, LANE_CHECK}
     assert ready.ready == ()
     assert ready.blocked == ()
-
-
-async def test_a_cancelled_hidden_descendant_refuses_instead_of_reading_at_rest(
-    implementation: str,
-) -> None:
-    """The graded-away arm the filtered reading cannot tell from silence.
-
-    The lane owes nothing OPEN in either arithmetic here, so at-rest alone
-    cannot separate them.  A cancellation with no supersession on record is
-    not a closure, and the subtree read says so by name.  A reading taken
-    over the filtered members never sees this criterion at all and reports
-    the same restful nothing it reports for a graded one.
-    """
-    tracker = board(implementation, child_state="cancelled", out_of_filter=True)
-
-    with pytest.raises(ScopeSupersessionReadError) as caught:
-        await read_scope_ready(ref=PROJECT, tracker=tracker)
-
-    assert caught.value.criterion_keys == (CHILD_CHECK,)
-    assert caught.value.ref == PROJECT
 
 
 async def test_the_identical_shape_inside_the_filter_carries_the_child_as_a_member(

@@ -94,7 +94,6 @@ async def observe_recorded_ruling_growth(
     issue_keys: tuple[str, ...],
     baseline_rulings: AlarmReading,
     previous_open: AlarmReading,
-    supersession_refs: Mapping[str, str],
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
@@ -123,7 +122,6 @@ async def observe_recorded_ruling_growth(
         baseline_rulings=baseline_rulings,
         current_rulings=current,
         previous_open=previous_open,
-        supersession_refs=supersession_refs,
         raised_at_sha=raised_at_sha,
         raised_by=raised_by,
     )
@@ -209,7 +207,6 @@ async def observe_ruling_growth(
     baseline_rulings: AlarmReading,
     current_rulings: AlarmReading,
     previous_open: AlarmReading,
-    supersession_refs: Mapping[str, str],
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
@@ -227,7 +224,7 @@ async def observe_ruling_growth(
     criteria: list[TrackerIssue] = []
     for issue_key in snapshot.issue_keys:
         criteria.extend(await tracker.read_criteria(issue_key=issue_key))
-    gap = compute_gap(criteria, supersession_refs=supersession_refs)
+    gap = compute_gap(criteria)
     open_keys = {criterion.issue_key for criterion in gap}
     closed = tuple(
         criterion.issue_key

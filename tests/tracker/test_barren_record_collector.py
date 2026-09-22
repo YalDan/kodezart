@@ -50,7 +50,6 @@ def arguments(**overrides):
             value=ReferencesEvidence(value=(OLD,)),
             at_sha="prior-head",
         ),
-        "supersession_refs": {},
         "raised_at_sha": "supervisor-observation",
         "raised_by": "supervisor-holder",
         **overrides,
@@ -107,22 +106,14 @@ async def test_native_counters_bounds_and_replay(
 
 
 @pytest.mark.parametrize("state", ["Done", "Canceled", "Duplicate"])
-async def test_actual_closure_requires_prior_identity_and_explicit_supersession(
+async def test_actual_closure_reads_the_prior_identity_state_alone(
     tracker, tracker_writes, state
 ):
+    """Each closing kind closes, and none of them needs a second input."""
     await seed(tracker, data={**record_data(), "filesChanged": 11})
     await tracker.restore_workflow_state(issue_key=OLD, state_name=state)
     before = tracker_writes()
-    result = await observe_recorded_barren_tick(tracker=tracker, **arguments())
-    assert (result is None) is (state == "Done")
-    if state != "Done":
-        assert (
-            await observe_recorded_barren_tick(
-                tracker=tracker,
-                **arguments(supersession_refs={OLD: "established/successor"}),
-            )
-            is None
-        )
+    assert await observe_recorded_barren_tick(tracker=tracker, **arguments()) is None
     assert tracker_writes() == before
 
 
@@ -280,21 +271,6 @@ async def test_every_native_read_propagates_failure_or_cancellation(
         await observe_recorded_barren_tick(tracker=tracker, **arguments())
 
 
-async def test_supersession_input_is_captured_before_native_reads(tracker, monkeypatch):
-    await seed(tracker, data={**record_data(), "filesChanged": 11})
-    await tracker.restore_workflow_state(issue_key=OLD, state_name="Canceled")
-    inputs = arguments(supersession_refs={OLD: "established/successor"})
-    original = tracker.list_comments
-
-    async def mutate_caller_input(**kwargs):
-        result = await original(**kwargs)
-        inputs["supersession_refs"].clear()
-        return result
-
-    monkeypatch.setattr(tracker, "list_comments", mutate_caller_input)
-    assert await observe_recorded_barren_tick(tracker=tracker, **inputs) is None
-
-
 async def test_native_pagination_is_complete_for_both_record_reads():
     body = render_lane_record(
         record=LaneRunState.model_validate({**record_data(), "filesChanged": 11}),
@@ -337,7 +313,6 @@ def test_collector_calls_only_record_read_closure_and_local_construction():
         for item in node.names
     }
     assert imports == {
-        "Mapping",
         "AppConfig",
         "TrackerPort",
         "RunShapeReadError",
@@ -353,7 +328,6 @@ def test_collector_calls_only_record_read_closure_and_local_construction():
         ast.unparse(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)
     }
     assert calls == {
-        "dict",
         "LaneRecordReader",
         "reader.read",
         "read_barren_tick",

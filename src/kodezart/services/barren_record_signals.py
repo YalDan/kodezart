@@ -1,7 +1,5 @@
 """Observe barren growth from the addressed lane's recorded counters."""
 
-from collections.abc import Mapping
-
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import RunShapeReadError
@@ -26,20 +24,18 @@ async def observe_recorded_barren_tick(
     issue_key: str,
     record_ref: str | None = None,
     previous_open: AlarmReading,
-    supersession_refs: Mapping[str, str],
     raised_at_sha: str,
     raised_by: str,
 ) -> RunAlarm | None:
     """Read native growth and current closure without consulting a repository.
 
-    The prior tick's open references and established supersession references
-    remain supplied facts. Both counters come from one addressed lane comment,
+    The prior tick's open references remain a supplied fact. Both counters
+    come from one addressed lane comment,
     including its native identity and recorded head. Record and criterion
     changes during the observation refuse both alarming and quiet results.
     Commit-row agreement belongs to its separate signal; no history or count
     is reconstructed here. Scheduling and leased publication remain external.
     """
-    supersessions = dict(supersession_refs)
     reader = LaneRecordReader(tracker=tracker, operation=operation)
     comment, record = await reader.read(
         issue_key=issue_key, lane_key=lane_key, record_ref=record_ref
@@ -61,7 +57,6 @@ async def observe_recorded_barren_tick(
             value=CountEvidence(value=record.commits_ahead),
             at_sha=record.head_sha,
         ),
-        supersession_refs=supersessions,
         raised_at_sha=raised_at_sha,
         raised_by=raised_by,
     )

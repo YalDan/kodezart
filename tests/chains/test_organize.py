@@ -1453,17 +1453,17 @@ def test_the_discovered_gap_sites_are_the_upper_bound_exactly():
     [
         (
             "domain/gap.py",
-            "    return tuple(\n",
+            "    return tuple(",
             "    if any(criterion.updated_at for criterion in criteria):\n"
             '        raise ValueError("a criterion changed")\n'
-            "    return tuple(\n",
+            "    return tuple(",
         ),
         (
             "services/run_shape.py",
-            "    open_keys = {\n",
+            "    open_keys = {",
             "    if any(criterion.updated_at for criterion in criteria):\n"
             '        raise ValueError("a criterion changed")\n'
-            "    open_keys = {\n",
+            "    open_keys = {",
         ),
     ],
 )

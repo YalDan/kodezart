@@ -1,4 +1,4 @@
-"""Amended gap computation has one state arm and no body or I/O dependency."""
+"""Gap computation reads the state kind alone, with no body or I/O dependency."""
 
 import ast
 import inspect
@@ -9,6 +9,16 @@ from kodezart.domain import gap
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import make_tracker_issue
 
+#: Every kind that closes a criterion: Done discharges it, and Canceled or
+#: Duplicate makes it count for nothing (KOD-794).
+OUT_OF_GAP = frozenset(
+    {
+        WorkflowStateKind.COMPLETED,
+        WorkflowStateKind.CANCELED,
+        WorkflowStateKind.DUPLICATE,
+    },
+)
+
 
 def criterion(key="criterion-key", state=WorkflowStateKind.UNSTARTED, body=""):
     return make_tracker_issue(key, state_kind=state, body=body).model_copy(
@@ -16,35 +26,18 @@ def criterion(key="criterion-key", state=WorkflowStateKind.UNSTARTED, body=""):
     )
 
 
-@pytest.mark.parametrize(
-    "state,expected",
-    [
-        (WorkflowStateKind.TRIAGE, True),
-        (WorkflowStateKind.BACKLOG, True),
-        (WorkflowStateKind.UNSTARTED, True),
-        (WorkflowStateKind.STARTED, True),
-        (WorkflowStateKind.COMPLETED, False),
-        (WorkflowStateKind.CANCELED, True),
-        (WorkflowStateKind.DUPLICATE, True),
-    ],
-)
-def test_one_membership_arm_per_tracker_state(state, expected):
-    assert gap.in_gap(criterion(state=state), supersession_ref=None) is expected
+@pytest.mark.parametrize("state", list(WorkflowStateKind))
+def test_one_membership_answer_per_tracker_state(state):
+    assert gap.in_gap(criterion(state=state)) is (state not in OUT_OF_GAP)
 
 
 @pytest.mark.parametrize(
     "state", [WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE]
 )
-def test_cancellation_requires_its_own_explicit_supersession(state):
-    canceled = criterion("canceled", state)
+def test_a_canceled_or_duplicate_criterion_counts_for_nothing(state):
+    non_counting = criterion("non-counting", state)
     open_criterion = criterion("open")
-    assert gap.compute_gap(
-        [canceled, open_criterion], supersession_refs={"another": "replacement"}
-    ) == (canceled, open_criterion)
-    assert gap.compute_gap(
-        [canceled, open_criterion],
-        supersession_refs={"canceled": "opaque-replacement-reference"},
-    ) == (open_criterion,)
+    assert gap.compute_gap([non_counting, open_criterion]) == (open_criterion,)
 
 
 @pytest.mark.parametrize(
@@ -53,7 +46,7 @@ def test_cancellation_requires_its_own_explicit_supersession(state):
 )
 def test_open_record_is_retained_without_rewriting_evidence(body):
     original = criterion(body=body)
-    computed = gap.compute_gap([original], supersession_refs={})
+    computed = gap.compute_gap([original])
     assert computed == (original,)
     assert computed[0] is original
     assert computed[0].body == body
@@ -63,25 +56,31 @@ def test_moved_back_from_done_reenters_without_parent_state_input():
     original = criterion(
         state=WorkflowStateKind.COMPLETED, body="**Evidence:** old-sha"
     )
-    assert gap.compute_gap([original], supersession_refs={}) == ()
+    assert gap.compute_gap([original]) == ()
     lapsed = original.model_copy(update={"state_kind": WorkflowStateKind.UNSTARTED})
-    assert gap.compute_gap([lapsed], supersession_refs={}) == (lapsed,)
+    assert gap.compute_gap([lapsed]) == (lapsed,)
     assert lapsed.body == original.body
 
 
 def test_empty_gap_and_noncriterion_or_duplicate_inputs():
-    assert gap.compute_gap([], supersession_refs={}) == ()
+    assert gap.compute_gap([]) == ()
     with pytest.raises(ValueError, match="criterion"):
-        gap.compute_gap([make_tracker_issue("deliverable")], supersession_refs={})
+        gap.compute_gap([make_tracker_issue("deliverable")])
     duplicate = criterion()
     with pytest.raises(ValueError, match="more than once"):
-        gap.compute_gap([duplicate, duplicate], supersession_refs={})
-    with pytest.raises(ValueError, match="nonempty"):
-        gap.in_gap(duplicate, supersession_ref=" ")
+        gap.compute_gap([duplicate, duplicate])
+    with pytest.raises(ValueError, match="criterion"):
+        gap.in_gap(make_tracker_issue("deliverable"))
 
 
-def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
+def test_gap_module_has_only_pure_dependencies_and_no_second_state_vocabulary():
     tree = ast.parse(inspect.getsource(gap))
+    imported = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
     imports = {
         node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
     }
@@ -93,20 +92,7 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
     attributes = {
         node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
     }
-    assert attributes <= {
-        "issue_labels",
-        "strip",
-        "state_kind",
-        "COMPLETED",
-        "CANCELED",
-        "DUPLICATE",
-        "TRIAGE",
-        "BACKLOG",
-        "UNSTARTED",
-        "STARTED",
-        "issue_key",
-        "get",
-    }
+    assert attributes <= {"issue_labels", "state_kind", "issue_key"}
     pure_builtins = {
         "ValueError",
         "len",
@@ -129,17 +115,13 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
     }
     for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
         if isinstance(call.func, ast.Name):
-            assert call.func.id in pure_builtins | local_functions
-        elif isinstance(call.func, ast.Attribute):
-            assert call.func.attr in {"strip", "get"}
+            assert call.func.id in pure_builtins | local_functions | imported
         else:
             pytest.fail("unaccounted dynamic call in pure gap module")
-    matches = [node for node in ast.walk(tree) if isinstance(node, ast.Match)]
-    arms = [case.pattern for match in matches for case in match.cases]
-    assert {
-        pattern.value.attr for pattern in arms if isinstance(pattern, ast.MatchValue)
-    } == set(WorkflowStateKind.__members__)
-    assert all(isinstance(pattern, ast.MatchValue) for pattern in arms)
+    # The state reading is ``is_open``'s alone: no ``match`` here, so this
+    # module cannot grow a second, disagreeing table of what a kind means.
+    assert not any(isinstance(node, ast.Match) for node in ast.walk(tree))
+    assert "is_open" in imported
 
 
 @pytest.mark.parametrize(
@@ -150,4 +132,4 @@ def test_purity_guard_rejects_builtin_io_without_executing_it(monkeypatch, call)
     source = inspect.getsource(gap) + f"\ndef unexpected_io():\n    {call}\n"
     monkeypatch.setattr(inspect, "getsource", lambda _: source)
     with pytest.raises(AssertionError):
-        test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm()
+        test_gap_module_has_only_pure_dependencies_and_no_second_state_vocabulary()
