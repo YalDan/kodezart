@@ -5281,8 +5281,11 @@ def tracker_state(port: FakeTrackerPort) -> dict[str, object]:
 #: The journals a "this board was not written to" check has to reach.  The
 #: first eight are the ones such a check named when it was written; the rest
 #: are what naming them one by one left out — the recorded base spec, the
-#: queue-state writes, the put-backs, both halves of a document write, and
-#: this process's own write ledger.  The last two are the unlock attempts —
+#: queue-state writes, the put-backs, both halves of a document write, this
+#: process's own write ledger, and the refs recorded against an issue, which
+#: stamp nothing at all when the issue is one the board does not hold and are
+#: then invisible to a check that looked only for a stamp.  The last two are
+#: the unlock attempts —
 #: a claim release and a surface release — which move nothing on a board
 #: holding neither and would therefore be invisible to a check that read the
 #: locks back instead of the attempt.  Named here so the rendering above is
@@ -5305,6 +5308,7 @@ TRACKER_WRITE_JOURNALS = frozenset(
         "_documents",
         "document_titles",
         "self_writes",
+        "recorded_work_refs",
         "claim_releases",
         "lease_releases",
     }
@@ -5344,10 +5348,10 @@ def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
     list on purpose: the completeness test beside it forces the list to name
     every journal this check reaches, so a journal that arrives later has to
     arrive with the write that fills it.  A write that lands in an attribute
-    the list does not name — ``recorded_work_refs`` under ``record_work_ref``,
-    the identity map under ``upsert_issue`` — is reached all the same,
-    because those calls either stamp the issue through ``_wrote``, whose
-    stamp lands in ``self_writes``, or fill a journal the list does name.
+    the list does not name — the identity map under ``upsert_issue`` — is
+    reached all the same, because those calls either stamp the issue through
+    ``_wrote``, whose stamp lands in ``self_writes``, or fill a journal the
+    list does name.
 
     Attributes outside the set (``issue_reads``, ``scans``, a subclass's own
     counters) are outside the claim by construction, and so is a board a
