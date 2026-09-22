@@ -17,10 +17,18 @@ from kodezart.domain.lane_entry import (
     recorded_commit,
     require_unamended_subject,
 )
+from kodezart.domain.lane_record import LANDING_ROW_SUBJECT, next_lane_record
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.fire_spec import TrackerSpec
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.lane_entry import DeliverOnlyLane, NewLane, ResumedLane
-from kodezart.types.domain.run_state import LaneCommit, LanePR, LaneRunState
+from kodezart.types.domain.run_state import (
+    LaneBinding,
+    LaneCommit,
+    LanePR,
+    LaneRunState,
+)
 
 LANE = "KOD-684"
 BASE = "trunk"
@@ -47,8 +55,11 @@ def record(
 ) -> LaneRunState:
     """One lane's record, as the writer leaves it after a pushed commit.
 
-    ``rows`` is the commit-act sequence, which production writes ending at the
-    head; a case that gives its own says what the two may disagree about.
+    ``rows`` is the commit-act sequence, and only two cases give their own: the
+    record whose last act the head field disagrees with, and the record naming
+    no act at all. Neither is a state the one constructor composes — every row
+    it writes carries the head it was written at — and each is the state its
+    case is about. ``composed`` below builds the records production writes.
     """
     return LaneRunState(
         lane_key=LANE,
@@ -256,9 +267,91 @@ def test_a_deliverable_branch_the_remote_does_not_hold_is_carried_as_absent() ->
     assert entry.head_sha == REMOTE_HEAD
 
 
-#: The best commit of a run that did not converge: recorded after the head
-#: field's sha, so neither the head nor a branch name can stand in for it.
+#: The commit acts of a run that did not converge, in the order it made them:
+#: the second is the best of them by the trajectory's own rule, and the third
+#: is the tip the run slipped back to.
+ACTS = ("1" * 40, "2" * 40, "3" * 40)
+#: What the stall landing consolidated onto the deliverable branch: the best
+#: act, which is where that branch then stood.
+LANDED = ACTS[1]
+PRE_LANDING_TIP = ACTS[2]
+#: A commit act recorded after the head field's own sha: the state only a
+#: record nothing composed can be in, and the one the head-field case needs.
 BEST_COMMIT = "b" * 40
+
+
+def composed(*acts: str, landed: str | None = None) -> LaneRunState:
+    """This lane's record, composed act by act the only way production is.
+
+    Every row goes through ``next_lane_record`` (KOD-685), so the value is one
+    the writer could have left. *landed* is the stall landing's act — the tip
+    the consolidation left the deliverable branch at — and the push stays where
+    the loop left it, because that act moved no branch of this lane's own.
+    """
+    binding = LaneBinding(
+        lane_key=LANE,
+        loop_branch=LOOP,
+        deliverable_branch=DELIVERABLE,
+        base_ref=BASE,
+        body_digest=DIGEST,
+        repo_url=None,
+        repo_path=None,
+        run_id="first-job",
+        visibility=RepoVisibility.PRIVATE,
+    )
+    state: LaneRunState | None = None
+    for index, sha in enumerate(acts):
+        state = next_lane_record(
+            prior=state,
+            lane=binding,
+            branch_url=f"https://forge.invalid/{LOOP}",
+            head_sha=sha,
+            pushed_head_sha=sha,
+            changeset=ChangesetDigest(
+                file_paths=[f"lane-{step}.py" for step in range(index + 1)],
+                commit_subjects=[f"feat: act {step + 1}" for step in range(index + 1)],
+                commit_count=index + 1,
+            ),
+            subject=f"feat: act {index + 1}",
+        )
+    assert state is not None
+    if landed is None:
+        return state
+    return next_lane_record(
+        prior=state,
+        lane=binding,
+        branch_url=f"https://forge.invalid/{LOOP}",
+        head_sha=landed,
+        pushed_head_sha=state.pushed_head_sha,
+        changeset=ChangesetDigest(file_paths=[], commit_subjects=[], commit_count=0),
+        subject=LANDING_ROW_SUBJECT,
+    )
+
+
+def test_the_landed_best_is_the_commit_a_re_entry_resolves() -> None:
+    """The landing act is the last row, so the resolution answers with it.
+
+    The record is composed act by act through the one constructor, which is why
+    it is the pin: this is the record a stalled lane's own writer leaves, so the
+    reading holds for lanes rather than only for a fixture. The run's three acts
+    are followed by the landing, and what re-entry resolves is that act — on the
+    branch the LOOP associations resolve, by sha. The tip the run slipped back
+    to is a row of this record too, and it is not the answer.
+    """
+    source = composed(*ACTS, landed=LANDED)
+    branches = recorded_branches(record=source)
+
+    resolved = recorded_commit(record=source, branches=branches)
+
+    assert resolved == RecordedCommit(branch=LOOP, sha=LANDED)
+    assert [row.sha for row in source.commits] == [*ACTS, LANDED]
+    assert resolved.sha != PRE_LANDING_TIP
+    assert resolved.sha != source.commits[0].sha
+    assert source.commits[-1].subject == LANDING_ROW_SUBJECT
+    # The loop branch is still where the loop left it: the landing consolidated
+    # onto the other level and moved no branch of this lane's own.
+    assert source.pushed_head_sha == PRE_LANDING_TIP
+    assert resolved.branch == branches.loop_branch != branches.deliverable_branch
 
 
 def test_the_recorded_commit_is_the_last_row_on_the_role_resolved_branch() -> None:
@@ -268,6 +361,11 @@ def test_the_recorded_commit_is_the_last_row_on_the_role_resolved_branch() -> No
     lane reached — not the head field, which a record may disagree with, and
     not a ref composed from another ref's text. Asserted by sha, and the
     branch by what the LOOP associations resolve.
+
+    Kept on a hand-built record deliberately: every row the one constructor
+    composes carries the head it was written at, so no record production writes
+    can say WHICH of the two the resolution reads, and a reachable fixture
+    would answer the same whichever it read.
     """
     source = record(
         rows=(

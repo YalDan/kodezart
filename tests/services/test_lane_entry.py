@@ -12,12 +12,18 @@ import structlog.testing
 
 from kodezart.domain.errors import LaneEntryError
 from kodezart.domain.lane_entry import recorded_branches, recorded_commit
-from kodezart.domain.lane_record import render_lane_record
+from kodezart.domain.lane_record import (
+    LANDING_ROW_SUBJECT,
+    next_lane_record,
+    render_lane_record,
+)
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.lane_entry import ResumedLane
-from kodezart.types.domain.run_state import LaneCommit, LaneRunState
+from kodezart.types.domain.run_state import LaneBinding, LaneCommit, LaneRunState
 from tests.chains.test_native_fire import native_operation
 from tests.fakes import FakeGitService, FakeTrackerPort, make_tracker_issue
 
@@ -27,7 +33,8 @@ DELIVERABLE = "kodezart/KOD-684-0a1b2c3d"
 LOOP = f"{DELIVERABLE}-ralph-11112222"
 REMOTE = "fixture-remote"
 RECORDED_HEAD = "a" * 40
-#: The best commit of a run that did not converge: a row after the head field.
+#: A commit act recorded after the head field's own sha: the state only a
+#: record nothing composed can be in, and the one the head-field case needs.
 BEST_COMMIT = "b" * 40
 REMOTE_HEAD = "c" * 40
 #: Where the base stands, and where a deliverable branch that has taken
@@ -36,6 +43,14 @@ BASE_TIP = "e" * 40
 #: Where a deliverable branch that has taken work of its own stands instead.
 MOVED_TIP = "f" * 40
 DIGEST = "d" * 64
+#: The commit acts of a run that did not converge, in the order it made them:
+#: the best of them by the trajectory's own rule is the second, and the third
+#: is the tip the run slipped back to.
+ACTS = ("1" * 40, "2" * 40, "3" * 40)
+#: What the stall landing consolidated onto the deliverable branch, and where
+#: that branch then stood: the best act, not the tip after it.
+LANDED = ACTS[1]
+PRE_LANDING_TIP = ACTS[2]
 
 
 #: The three reads one record's re-entry makes, in the order it makes them:
@@ -54,9 +69,12 @@ def record(
 ) -> LaneRunState:
     """This lane's record, as the writer left it after a pushed commit.
 
-    ``rows`` is the commit-act sequence; production writes it ending at the
-    head field, and a case that gives its own is a lane whose record names a
-    commit the head field does not.
+    ``rows`` is the commit-act sequence, and it is given only by the one case
+    about a record whose last act the head field disagrees with. Every row the
+    one constructor composes carries the head it was written at, so no
+    reachable record holds that disagreement, and no reachable record can say
+    which of the two the comparison is made against; ``composed`` below is what
+    every other case is built by.
     """
     return LaneRunState(
         lane_key=LANE,
@@ -87,6 +105,59 @@ def record(
             ),
             *extra,
         ],
+    )
+
+
+def composed(*acts: str, landed: str | None = None) -> LaneRunState:
+    """This lane's record, composed act by act the only way production is.
+
+    Every row goes through ``next_lane_record`` (KOD-685), so the value is one
+    the writer could have left: the rows are the acts in the order they were
+    made, the head field is the last of them, and the push is the last one the
+    loop observed on its own branch. *landed* is the stall landing's act — the
+    tip the consolidation left the deliverable branch at — which the loop
+    branch's own push is untouched by.
+    """
+    binding = LaneBinding(
+        lane_key=LANE,
+        loop_branch=LOOP,
+        deliverable_branch=DELIVERABLE,
+        base_ref=BASE,
+        body_digest=DIGEST,
+        repo_url=None,
+        repo_path=None,
+        run_id="first-job",
+        visibility=RepoVisibility.PRIVATE,
+    )
+    state: LaneRunState | None = None
+    for index, sha in enumerate(acts):
+        state = next_lane_record(
+            prior=state,
+            lane=binding,
+            branch_url=f"https://forge.invalid/{LOOP}",
+            head_sha=sha,
+            pushed_head_sha=sha,
+            changeset=ChangesetDigest(
+                file_paths=[f"lane-{step}.py" for step in range(index + 1)],
+                commit_subjects=[f"feat: act {step + 1}" for step in range(index + 1)],
+                commit_count=index + 1,
+            ),
+            subject=f"feat: act {index + 1}",
+        )
+    if landed is None:
+        assert state is not None
+        return state
+    assert state is not None
+    return next_lane_record(
+        prior=state,
+        lane=binding,
+        branch_url=f"https://forge.invalid/{LOOP}",
+        head_sha=landed,
+        # The landing moved no branch of this lane's own, so the push stands
+        # where the loop left it.
+        pushed_head_sha=state.pushed_head_sha,
+        changeset=ChangesetDigest(file_paths=[], commit_subjects=[], commit_count=0),
+        subject=LANDING_ROW_SUBJECT,
     )
 
 
@@ -197,27 +268,29 @@ async def test_a_remote_head_at_the_last_row_says_nothing_whatever_the_head_fiel
     assert entry.head_sha == BEST_COMMIT != stored.head_sha
 
 
-async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
+async def test_a_non_convergent_lane_resolves_the_landed_best_by_sha():
     """The record is the only source of what this lane committed (KOD-705).
 
-    The run did not converge: its best commit is the last row, which is
-    neither the head field nor the loop tip the remote now holds. Re-entry
-    resolves that commit through the loop level and reports it, while the
-    deliverable branch still stands at its base tip — every fact by sha, none
-    by branch name.
+    The run did not converge, and the stall landing consolidated the best of
+    its acts onto the deliverable branch. The record is composed act by act
+    through the one constructor, so this is a record production writes — which
+    is the whole reason it is the pin: a hand-built record whose rows the writer
+    never composes would put the reader in a state no lane is ever in, and a
+    reading that only held there would say nothing about any lane.
+
+    Re-entry resolves the landing act through the loop level and reports it,
+    and the tip the run slipped back to is not the answer: resuming there would
+    be resuming from the work the landing was chosen over. Every fact by sha,
+    none by branch name.
     """
-    stored = record(
-        rows=(
-            LaneCommit(sha=RECORDED_HEAD, subject="feat: one", issue_id=LANE),
-            LaneCommit(sha=BEST_COMMIT, subject="feat: two", issue_id=LANE),
-        )
-    )
+    stored = composed(*ACTS, landed=LANDED)
     port = await board(stored)
-    # The loop tip is a third sha, and the deliverable branch has taken
-    # nothing yet: it is still where its base is.
+    # Where the two levels stand after the landing: the loop branch is at the
+    # tip the run slipped back to, and the deliverable branch is at the act the
+    # landing put on it.
     remote_shas: dict[str, str | None] = {
-        LOOP: REMOTE_HEAD,
-        DELIVERABLE: BASE_TIP,
+        LOOP: PRE_LANDING_TIP,
+        DELIVERABLE: LANDED,
         BASE: BASE_TIP,
     }
     git = FakeGitService(remote_branch_shas=remote_shas)
@@ -243,24 +316,27 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
     differs = [item for item in logs if item["event"] == "lane_record_head_differs"]
     assert len(differs) == 1
     assert differs[0]["recorded_head"] == expected
-    assert differs[0]["recorded_head"] == BEST_COMMIT
-    assert differs[0]["remote_head"] == REMOTE_HEAD
-    # And the commit the reader reports is neither the base tip the
-    # deliverable branch sits on nor the loop tip the remote holds — by sha,
-    # read off the reader's own output rather than off the fixture's dict.
-    assert differs[0]["recorded_head"] not in (BASE_TIP, REMOTE_HEAD)
+    assert differs[0]["recorded_head"] == LANDED
+    assert differs[0]["remote_head"] == PRE_LANDING_TIP
+    # And the commit the reader reports is neither the base tip nor the loop
+    # tip the remote holds — by sha, read off the reader's own output rather
+    # than off the fixture's dict.
+    assert differs[0]["recorded_head"] not in (BASE_TIP, PRE_LANDING_TIP)
+    # The landed act is a row of this record and not its first: the resolution
+    # answers with the last act, and the act the run opened with is not it.
+    assert [row.sha for row in stored.commits] == [*ACTS, LANDED]
+    assert differs[0]["recorded_head"] != stored.commits[0].sha
     assert isinstance(entry, ResumedLane)
-    assert entry.head_sha == REMOTE_HEAD
+    assert entry.head_sha == PRE_LANDING_TIP
     assert entry.deliverable_branch != entry.loop_branch
-    # The other half, "the deliverable branch is still at its base tip", read
-    # off the entry by sha: the branch the DELIVERABLE role resolves stands at
-    # the base tip, which is neither the loop tip nor the commit the record
-    # names, and the reader said nothing about it having moved.
-    assert entry.deliverable_head_sha == BASE_TIP
-    assert entry.deliverable_head_sha not in (REMOTE_HEAD, BEST_COMMIT)
-    assert [
-        item for item in logs if item["event"] == "lane_deliverable_head_differs"
-    ] == []
+    # The other level, read off the entry by sha: the branch the DELIVERABLE
+    # role resolves now holds what the landing put there, so it stands off the
+    # base it was cut from and the reader says so.
+    assert entry.deliverable_head_sha == LANDED
+    assert entry.deliverable_head_sha not in (BASE_TIP, PRE_LANDING_TIP)
+    moved = [item for item in logs if item["event"] == "lane_deliverable_head_differs"]
+    assert len(moved) == 1
+    assert (moved[0]["base_head"], moved[0]["deliverable_head"]) == (BASE_TIP, LANDED)
 
 
 async def test_a_deliverable_branch_at_its_base_tip_is_reported_by_sha():
