@@ -25,6 +25,12 @@ class ResumedLane(CamelCaseModel):
     ``body_digest`` is the subject digest AS RECORDED, and ``None`` on a record
     written before the digest was pinned; the fire compares the text it reads
     at entry against it.
+
+    ``deliverable_head_sha`` is the REMOTE head of the deliverable branch, read
+    at the decision at the branch the DELIVERABLE role resolves. The lane's two
+    levels are two facts, so each carries a sha of its own and neither stands
+    in for the other; ``None`` is the remote holding no such branch at all,
+    which is a different reading from any sha and is not a refusal.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -33,11 +39,17 @@ class ResumedLane(CamelCaseModel):
     deliverable_branch: str = Field(min_length=1)
     loop_branch: str = Field(min_length=1)
     head_sha: str = Field(min_length=1)
+    deliverable_head_sha: Annotated[str, Field(min_length=1)] | None
     body_digest: str | None
 
 
 class DeliverOnlyLane(CamelCaseModel):
-    """A record exists, the lane owes no criterion and no pull request is recorded."""
+    """A record exists, the lane owes no criterion and no pull request is recorded.
+
+    ``deliverable_head_sha`` is read and carried exactly as a resumed lane
+    carries it: the entry this one becomes is decided by the gap alone, so the
+    facts both entries stand on are the same facts.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -45,6 +57,7 @@ class DeliverOnlyLane(CamelCaseModel):
     deliverable_branch: str = Field(min_length=1)
     loop_branch: str = Field(min_length=1)
     head_sha: str = Field(min_length=1)
+    deliverable_head_sha: Annotated[str, Field(min_length=1)] | None
     body_digest: str | None
 
 

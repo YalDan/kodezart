@@ -60,32 +60,58 @@ class LaneEntryReader:
             branches = recorded_branches(record=record)
             recorded = (record, branches)
             resolved = recorded_commit(record=record, branches=branches)
-        # The remote is asked about the branch the LOOP role resolves, and the
-        # comparison is against the commit the rows name — never a field read
-        # as a name or as the lane's best state.
-        remote_head = (
-            None
-            if resolved is None
-            else await self._git.remote_branch_sha(
+        # One remote read per branch the record's roles resolve, so each level
+        # is answered by a sha of its own and no level's answer is a branch
+        # name. The loop level is asked about the branch the LOOP role
+        # resolves, and the comparison is against the commit the rows name —
+        # never a field read as a name or as the lane's best state. The
+        # deliverable level is asked about the branch the DELIVERABLE role
+        # resolves, and the comparison is against the tip of the base that
+        # record's associations name: a deliverable branch that has taken
+        # nothing from its loop still stands exactly where that base does.
+        remote_head: str | None = None
+        deliverable_head: str | None = None
+        if recorded is not None and resolved is not None:
+            named = recorded[1]
+            remote_head = await self._git.remote_branch_sha(
                 repo_path, self._remote, resolved.branch
             )
-        )
-        if (
-            resolved is not None
-            and remote_head is not None
-            and remote_head != resolved.sha
-        ):
-            await self._log.ainfo(
-                "lane_record_head_differs",
-                lane=issue_key,
-                branch=resolved.branch,
-                recorded_head=resolved.sha,
-                remote_head=remote_head,
+            deliverable_head = await self._git.remote_branch_sha(
+                repo_path, self._remote, named.deliverable_branch
             )
+            base_head = await self._git.remote_branch_sha(
+                repo_path, self._remote, named.recorded_base
+            )
+            if remote_head is not None and remote_head != resolved.sha:
+                await self._log.ainfo(
+                    "lane_record_head_differs",
+                    lane=issue_key,
+                    branch=resolved.branch,
+                    recorded_head=resolved.sha,
+                    remote_head=remote_head,
+                )
+            # A deliverable branch off its base tip is said out loud and
+            # entered anyway: it carries work of its own, which is the lane's
+            # next question rather than a reason to strand it. A branch the
+            # remote holds neither of is compared with nothing.
+            if (
+                deliverable_head is not None
+                and base_head is not None
+                and deliverable_head != base_head
+            ):
+                await self._log.ainfo(
+                    "lane_deliverable_head_differs",
+                    lane=issue_key,
+                    branch=named.deliverable_branch,
+                    base=named.recorded_base,
+                    base_head=base_head,
+                    deliverable_head=deliverable_head,
+                )
         return decide_lane_entry(
             issue_key=issue_key,
             recorded=recorded,
             remote_loop_head=remote_head,
+            remote_deliverable_head=deliverable_head,
             open_criteria=open_criteria,
             resolved_base=resolved_base,
         )

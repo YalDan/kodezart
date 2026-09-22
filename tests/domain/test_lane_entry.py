@@ -28,6 +28,9 @@ LOOP = "kodezart/KOD-684-0a1b2c3d-ralph-11112222"
 DELIVERABLE = "kodezart/KOD-684-0a1b2c3d"
 RECORDED_HEAD = "a" * 40
 REMOTE_HEAD = "c" * 40
+#: Where the remote holds the deliverable branch: its own sha, read at its own
+#: level, so neither level's head can stand in for the other's.
+DELIVERABLE_HEAD = "e" * 40
 DIGEST = "d" * 64
 
 
@@ -94,6 +97,7 @@ def decide(**overrides):
         "issue_key": LANE,
         "recorded": None,
         "remote_loop_head": None,
+        "remote_deliverable_head": DELIVERABLE_HEAD,
         "open_criteria": (),
         "resolved_base": BASE,
     }
@@ -117,6 +121,7 @@ ROWS = (
             deliverable_branch=DELIVERABLE,
             loop_branch=LOOP,
             head_sha=REMOTE_HEAD,
+            deliverable_head_sha=DELIVERABLE_HEAD,
             body_digest=DIGEST,
         ),
     ),
@@ -131,6 +136,7 @@ ROWS = (
             deliverable_branch=DELIVERABLE,
             loop_branch=LOOP,
             head_sha=REMOTE_HEAD,
+            deliverable_head_sha=DELIVERABLE_HEAD,
             body_digest=DIGEST,
         ),
     ),
@@ -141,6 +147,7 @@ ROWS = (
             deliverable_branch=DELIVERABLE,
             loop_branch=LOOP,
             head_sha=REMOTE_HEAD,
+            deliverable_head_sha=DELIVERABLE_HEAD,
             body_digest=DIGEST,
         ),
     ),
@@ -229,6 +236,24 @@ def test_a_resumed_lane_carries_the_remote_head_not_the_recorded_one() -> None:
     )
     assert isinstance(entry, ResumedLane)
     assert entry.head_sha == REMOTE_HEAD != RECORDED_HEAD
+
+
+def test_a_deliverable_branch_the_remote_does_not_hold_is_carried_as_absent() -> None:
+    """Absence at the deliverable level is its own reading, and not a refusal.
+
+    A lane that pushed a loop branch and no deliverable one is exactly the lane
+    a resumed entry exists for, so the entry is decided and says the branch is
+    not there — it does not borrow the loop level's sha to answer for it.
+    """
+    entry = decide(
+        recorded=recorded(record()),
+        remote_loop_head=REMOTE_HEAD,
+        remote_deliverable_head=None,
+        open_criteria=("KOD-684/check",),
+    )
+    assert isinstance(entry, ResumedLane)
+    assert entry.deliverable_head_sha is None
+    assert entry.head_sha == REMOTE_HEAD
 
 
 #: The best commit of a run that did not converge: recorded after the head
