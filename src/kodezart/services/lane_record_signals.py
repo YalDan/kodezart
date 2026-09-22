@@ -1,6 +1,6 @@
 """Supervisor observations collected from one addressed lane record read."""
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import TrackerCommentReader
 from kodezart.domain.run_shape import commits_ahead_of_record
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.operation import OperationConfig
@@ -16,7 +16,7 @@ from kodezart.types.domain.run_alarm import (
 
 async def observe_commits_ahead_of_record(
     *,
-    tracker: TrackerPort,
+    tracker: TrackerCommentReader,
     operation: OperationConfig,
     scope_key: str,
     lane_key: str,

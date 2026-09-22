@@ -326,7 +326,7 @@ def test_collector_calls_only_record_read_closure_and_local_construction():
     }
     assert imports == {
         "AppConfig",
-        "TrackerPort",
+        "RecordSignalReader",
         "RunShapeReadError",
         "LaneRecordReader",
         "read_barren_tick",

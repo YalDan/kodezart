@@ -28,6 +28,7 @@ from kodezart.core.protocols import (
     McpToolCaller,
     ScopeStatusUpdates,
     TrackerPort,
+    WriterIdentityReader,
 )
 from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.dispatch import SelfWriteLedger
@@ -98,7 +99,7 @@ def refuse_foreign_credential(*, backend: TrackerBackend, token: str) -> None:
 
 
 async def refuse_unattributable_writer(
-    *, tracker: TrackerPort, operation: OperationConfig
+    *, tracker: WriterIdentityReader, operation: OperationConfig
 ) -> None:
     """Refuse a deployment whose writes no declared agent identity owns.
 

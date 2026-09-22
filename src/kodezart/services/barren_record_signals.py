@@ -1,7 +1,7 @@
 """Observe barren growth from the addressed lane's recorded counters."""
 
 from kodezart.config.app import AppConfig
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import RecordSignalReader
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.run_shape import read_barren_tick
@@ -16,7 +16,7 @@ from kodezart.types.domain.run_alarm import (
 
 async def observe_recorded_barren_tick(
     *,
-    tracker: TrackerPort,
+    tracker: RecordSignalReader,
     operation: OperationConfig,
     config: AppConfig,
     scope_key: str,

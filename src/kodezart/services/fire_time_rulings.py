@@ -36,10 +36,10 @@ from kodezart.core.outbound_write import gated_exact
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import (
     AgentRunner,
+    FireRulingTracker,
     GitService,
     OutboundContentGate,
     PromptSetProvider,
-    TrackerPort,
     WorkspaceProvider,
 )
 from kodezart.domain.agent import mint_ruling_id
@@ -127,7 +127,7 @@ class _PinStep:
     surface: WritableSurface
     ruling: Ruling
     lane_key: str
-    tracker: TrackerPort
+    tracker: FireRulingTracker
     gate: OutboundContentGate
     log: BoundLogger
     lease: RunSurfaceLease
@@ -196,7 +196,7 @@ class _EscalationStep:
     escalation: DeliverableEscalation
     ruling_id: RulingId
     lane_key: str
-    tracker: TrackerPort
+    tracker: FireRulingTracker
     gate: OutboundContentGate
     log: BoundLogger
     lease: RunSurfaceLease
@@ -265,7 +265,7 @@ class FireTimeRulings:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: FireRulingTracker,
         operation: OperationConfig,
         runner: AgentRunner,
         workspace: WorkspaceProvider,

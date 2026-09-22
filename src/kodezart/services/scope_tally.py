@@ -1,6 +1,6 @@
 """Actual native roster and configured marker collection for scope observations."""
 
-from kodezart.core.protocols import ScopeRosterReader
+from kodezart.core.protocols import ScopeRosterReader, ScopeTallyReader
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.organize import is_organize_subject
 from kodezart.domain.run_shape import tally_unmoved
@@ -54,7 +54,7 @@ async def _read_members(
 
 async def observe_scope_tally(
     *,
-    tracker: ScopeRosterReader,
+    tracker: ScopeTallyReader,
     operation: OperationConfig,
     scope: ScopeRef,
     phase: MandateKind,
@@ -131,7 +131,7 @@ async def observe_scope_tally(
 
 async def observe_scope_barrier(
     *,
-    tracker: ScopeRosterReader,
+    tracker: ScopeTallyReader,
     operation: OperationConfig,
     scope: ScopeRef,
     raised_at_sha: str,
@@ -142,9 +142,9 @@ async def observe_scope_barrier(
     The rungs are read off ``phase_successor``, the same function the
     collector refuses the last rung with, so the two cannot disagree about
     which rungs exist. Every open rung's alarm is returned, in the governed
-    order, so two barriers open at once are two alarms. It holds the roster
-    role alone, as the collector does: nothing it is handed can read a
-    stream or write anything.
+    order, so two barriers open at once are two alarms. It holds the tally
+    role alone, the roster behind its classification preflight, as the
+    collector does: nothing it is handed can read a stream or write anything.
     """
     raised: list[RunAlarm] = []
     for rung in MANDATE_PHASE_ROLES:

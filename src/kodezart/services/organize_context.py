@@ -4,7 +4,7 @@ import json
 from collections.abc import Sequence
 from hashlib import sha256
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import OrganizeContextTracker
 from kodezart.domain.comment_markers import configured_marker_prefix
 from kodezart.domain.errors import OrganizeWriteRefusalError
 from kodezart.services.ruling_records import RulingRecordReader
@@ -28,7 +28,9 @@ class OrganizeContextReader:
     current gate and approval authority are separately checked before writes.
     """
 
-    def __init__(self, *, tracker: TrackerPort, operation: OperationConfig) -> None:
+    def __init__(
+        self, *, tracker: OrganizeContextTracker, operation: OperationConfig
+    ) -> None:
         configured_marker_prefix(operation.marker_prefixes, purpose="ruling")
         self._tracker = tracker
         self._rulings = RulingRecordReader(tracker=tracker, operation=operation)

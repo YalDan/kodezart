@@ -43,7 +43,9 @@ async def record(tracker, key, *, landing, sha="0000000"):
 
 
 async def resolve(tracker, git):
-    return await BaseResolver(tracker=tracker, git=git, remote="upstream").resolve(
+    return await BaseResolver(
+        tracker=tracker, git=git, remote="upstream", refs=tracker
+    ).resolve(
         issue_key=APPROVED_ISSUE,
         repo_path="/fixture/repo",
         integration_workspace="/fixture/integration",

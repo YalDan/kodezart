@@ -2,7 +2,7 @@
 
 import json
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import TrackerArtifactReader
 from kodezart.domain.errors import WriteBackReadError
 from kodezart.domain.organize_graph import graph_snapshot
 from kodezart.domain.tracker_writes import comment_under_marker
@@ -32,7 +32,7 @@ def require_artifact_read(surface: WritableSurface) -> None:
 
 
 async def read_tracker_artifact(
-    *, tracker: TrackerPort, surface: WritableSurface
+    *, tracker: TrackerArtifactReader, surface: WritableSurface
 ) -> TrackerArtifact:
     require_artifact_read(surface)
     if surface.kind is SurfaceKind.ISSUE_SPLIT_SET:

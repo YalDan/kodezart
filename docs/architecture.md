@@ -1440,7 +1440,8 @@ Each scope's stage barrier is observed first in that scope's iteration of the
 tick: `composition/supervisor.py::build_supervisor_pass` builds, beside the lane
 observer, a callable the tick is handed the way `read_ready` is, which binds the
 port to `services.scope_tally.observe_scope_barrier` and holds no loop of its
-own. That function is typed on `ScopeRosterReader` alone and calls
+own. That function is typed on `ScopeTallyReader` alone, the roster behind its
+classification preflight, and calls
 `services.scope_tally.observe_scope_tally` once for each rung of the governed
 sequence that has a successor, returning every open rung's alarm in that order,
 so two barriers open at once are two alarms. Each raise is
@@ -1590,7 +1591,8 @@ the blocker's issue. `WorkRefReader` is the one read role base resolution makes
 them through, and the scoped composition serves it from the blocker's own lane
 run-state record: one ref per record, at the DELIVERABLE branch the record's
 associations name, and no landing, so it reads unknown and keeps the existing
-resolution path (KOD-776, KOD-842). The per-issue pass keeps the port itself.
+resolution path (KOD-776, KOD-842). The per-issue pass hands the tracker itself
+as that reader, stated at its composition rather than defaulted (KOD-834).
 
 The assumed-landed arm — a closed blocker carrying no deliverable ref anywhere
 on its ancestor chain contributes no input, because its work reached the trunk

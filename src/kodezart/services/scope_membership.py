@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import ScopeMemberReader
 from kodezart.domain.errors import ScopeReadError
 from kodezart.services.scope_resolution import resolve_scope
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -10,7 +10,7 @@ from kodezart.types.domain.tracker import TrackerIssue
 
 
 async def read_scope_members(
-    *, tracker: TrackerPort, scope: ScopeRef
+    *, tracker: ScopeMemberReader, scope: ScopeRef
 ) -> dict[str, TrackerIssue]:
     members: dict[str, TrackerIssue] = {}
     scoped = (await resolve_scope(ref=scope, tracker=tracker)).issues
@@ -34,7 +34,7 @@ async def read_scope_members(
 
 
 async def read_subtree_criteria(
-    *, tracker: TrackerPort, subject: str
+    *, tracker: ScopeMemberReader, subject: str
 ) -> dict[str, TrackerIssue]:
     """Every criterion sub-issue under *subject*, keyed and at head.
 
@@ -57,7 +57,7 @@ async def read_subtree_criteria(
 
 
 async def read_member_subtrees(
-    *, tracker: TrackerPort, scope: ScopeRef, members: Mapping[str, TrackerIssue]
+    *, tracker: ScopeMemberReader, scope: ScopeRef, members: Mapping[str, TrackerIssue]
 ) -> dict[str, TrackerIssue]:
     """Every issue beneath the scope's members, read as issue scopes of their own.
 

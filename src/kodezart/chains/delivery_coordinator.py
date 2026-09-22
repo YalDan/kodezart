@@ -12,7 +12,7 @@ from kodezart.config.app import AppConfig
 from kodezart.core.protocols import (
     CheckChainRunner,
     GitService,
-    TrackerPort,
+    ScopePlanReader,
     WorkRefReader,
 )
 from kodezart.domain.errors import UnionHeadReadError
@@ -39,7 +39,7 @@ class ScopeUnionCoordinator:
         self,
         *,
         scope_kind: ScopeKind,
-        tracker: TrackerPort,
+        tracker: ScopePlanReader,
         refs: WorkRefReader,
         git: GitService,
         runner: CheckChainRunner,

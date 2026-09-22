@@ -146,7 +146,7 @@ def engine(
         lane_for=no_lane if lane_for is None else lane_for,
         probe_for=no_probe if probe_for is None else probe_for,
         union_for=no_union,
-        resolver=BaseResolver(tracker=port, git=git, remote=REMOTE),
+        resolver=BaseResolver(tracker=port, git=git, remote=REMOTE, refs=port),
         entries=LaneEntryReader(records=records, git=git, remote=REMOTE),
         terminal=ScopeTerminal(
             records=records,

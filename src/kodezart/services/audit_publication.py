@@ -5,7 +5,12 @@ from collections.abc import Awaitable, Callable
 from kodezart.chains.write_back_verifier import WriteBackVerifier
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
-from kodezart.core.protocols import OutboundContentGate, TrackerPort, WriteBackStep
+from kodezart.core.protocols import (
+    AuditPublicationWriter,
+    CommentRecordWriter,
+    OutboundContentGate,
+    WriteBackStep,
+)
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.services.audit_failures import AUDIT_PUBLICATION_FAILURES
@@ -26,7 +31,7 @@ class _AuditComment:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: CommentRecordWriter,
         gate: OutboundContentGate,
         surface: WritableSurface,
         job_id: str,
@@ -108,7 +113,7 @@ class AuditPublisher:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: AuditPublicationWriter,
         gate: OutboundContentGate,
         verifier: WriteBackVerifier,
         lease_seconds: float,

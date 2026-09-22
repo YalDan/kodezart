@@ -53,7 +53,9 @@ def tracker_with(
 
 
 async def spec_of(tracker: FakeTrackerPort) -> BaseSpec:
-    resolver = BaseResolver(tracker=tracker, git=FakeGitService(), remote=REMOTE)
+    resolver = BaseResolver(
+        tracker=tracker, git=FakeGitService(), remote=REMOTE, refs=tracker
+    )
     return await resolver.resolve(
         issue_key=LANE,
         repo_path=REPO_PATH,

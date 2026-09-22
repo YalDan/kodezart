@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import AuditCandidateReader
 from kodezart.domain.errors import ScopeReadError
 from kodezart.services.scope_membership import read_scope_members
 from kodezart.types.domain.audit import AuditCandidate
@@ -20,7 +20,7 @@ class AuditCandidateSnapshot:
 
 
 async def collect_audit_candidates(
-    *, tracker: TrackerPort, scope: ScopeRef
+    *, tracker: AuditCandidateReader, scope: ScopeRef
 ) -> tuple[AuditCandidate, ...]:
     """Return the existing ordered candidate projection of the native snapshot."""
     return (
@@ -29,7 +29,7 @@ async def collect_audit_candidates(
 
 
 async def read_audit_candidate_snapshot(
-    *, tracker: TrackerPort, scope: ScopeRef
+    *, tracker: AuditCandidateReader, scope: ScopeRef
 ) -> AuditCandidateSnapshot:
     """Return coherent issue/criterion stamps or refuse before coverage starts.
 

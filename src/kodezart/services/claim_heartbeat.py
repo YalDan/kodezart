@@ -43,7 +43,7 @@ from contextlib import asynccontextmanager, suppress
 
 from kodezart.core.errors import TrackerAccessDeniedError
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import ClaimHolder
 
 
 class ClaimHeartbeat:
@@ -52,13 +52,13 @@ class ClaimHeartbeat:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: ClaimHolder,
         holder: str,
         lease_seconds: float,
         renewal_fraction: float,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
-        self._tracker: TrackerPort = tracker
+        self._tracker: ClaimHolder = tracker
         self._holder: str = holder
         self._lease_seconds: float = lease_seconds
         self._interval_seconds: float = lease_seconds * renewal_fraction

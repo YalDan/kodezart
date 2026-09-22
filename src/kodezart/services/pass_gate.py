@@ -6,7 +6,7 @@ report a set smaller than the tracker's own query returned.  That is the
 whole reason the gate is not a cheap model call: a relayed answer is
 exactly the failure the determinism ruling was written against.
 
-Written against ``TrackerPort`` alone.  It holds no executor, no prompt
+Written against ``PassGateReader`` alone.  It holds no executor, no prompt
 provider and no runner, and a test asserts that collaborator surface
 rather than trusting the docstring.
 
@@ -72,7 +72,7 @@ from kodezart.core.errors import (
     TrackerUnavailableError,
 )
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import PassGateReader
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.domain.self_writes import matches_own_mutations
 from kodezart.types.domain.dispatch import PassDelta, PassSignal, SelfWriteLedger
@@ -92,14 +92,14 @@ class PassGate:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: PassGateReader,
         signals: Sequence[PassSignal],
         team_keys: Sequence[str],
         repo_urls: Sequence[str],
         page_size: int,
         ledger: SelfWriteLedger,
     ) -> None:
-        self._tracker: TrackerPort = tracker
+        self._tracker: PassGateReader = tracker
         #: What this process's own writes left on the issues it touched.
         #: Shared with the writer, because a listing carries no actor and
         #: the reading alone cannot say whose edit it is.

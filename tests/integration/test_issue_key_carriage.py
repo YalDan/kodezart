@@ -162,7 +162,7 @@ async def workflow_harness(
             max_bytes=ASSET_MAX_BYTES,
             fetch_timeout_seconds=ASSET_FETCH_TIMEOUT_SECONDS,
         ),
-        resolver=BaseResolver(tracker=tracker, git=git, remote=REMOTE),
+        resolver=BaseResolver(tracker=tracker, git=git, remote=REMOTE, refs=tracker),
         cache=FakeRepoCache(),
         trunk=TRUNK,
         integration_workspace_dir=INTEGRATION_DIR,

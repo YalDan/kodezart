@@ -7,7 +7,10 @@ from pydantic import ValidationError
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.owned_tasks import settle
-from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.core.protocols import (
+    LaneEscalationTracker,
+    OutboundContentGate,
+)
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import IssueLabelReadError, OutboundContentBlockedError
 from kodezart.domain.tracker_writes import classification_surface, marked_comment_body
@@ -31,7 +34,7 @@ class LaneEscalationWriter:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: LaneEscalationTracker,
         gate: OutboundContentGate,
         operation: OperationConfig,
         surface_lease_seconds: float,

@@ -13,7 +13,7 @@ board has already moved under.
 
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import ScopeReadyReader
 from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.types.domain.dispatch import (
     DispatchOutcome,
@@ -33,11 +33,11 @@ class ScopeDispatcher:
         self,
         *,
         ref: ScopeRef,
-        tracker: TrackerPort,
+        tracker: ScopeReadyReader,
         dispatcher: FireDispatcher,
     ) -> None:
         self._ref: ScopeRef = ref
-        self._tracker: TrackerPort = tracker
+        self._tracker: ScopeReadyReader = tracker
         self._dispatcher: FireDispatcher = dispatcher
         self._log: BoundLogger = get_logger(__name__)
 

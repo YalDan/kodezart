@@ -1,6 +1,6 @@
 """The tracker-side producer feeding the fire queue.
 
-Written against ``TrackerPort`` only: no vendor name and no vendor concept
+Written against ``FireDispatchTracker`` only: no vendor name and no vendor concept
 appears in this module, so it runs unchanged over any conforming adapter.
 
 One pass is a fixed procedure — query, filter, sort, claim, enqueue — over
@@ -23,10 +23,10 @@ from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     DeliveryProbe,
+    FireDispatchTracker,
     JobQueue,
     JobRegistry,
     RepoCache,
-    TrackerPort,
 )
 from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.base_staleness import is_base_stale
@@ -178,7 +178,7 @@ class FireDispatcher:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: FireDispatchTracker,
         queue: JobQueue,
         registry: JobRegistry,
         delivery: DeliveryProbe,
@@ -197,7 +197,7 @@ class FireDispatcher:
         draw: Callable[[Sequence[str]], str] = _uniform_draw,
         clock: Callable[[], datetime] = _now,
     ) -> None:
-        self._tracker: TrackerPort = tracker
+        self._tracker: FireDispatchTracker = tracker
         self._assembler: FireContextAssembler = assembler
         self._queue: JobQueue = queue
         self._registry: JobRegistry = registry

@@ -3,7 +3,12 @@
 from functools import partial
 
 from kodezart.core.owned_tasks import settle
-from kodezart.core.protocols import GitService, PRStateReader, RepoCache, TrackerPort
+from kodezart.core.protocols import (
+    GitService,
+    PRStateReader,
+    RepoCache,
+    SubjectCriteriaReader,
+)
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.gap import compute_gap
 from kodezart.domain.lane_record import associated_branches
@@ -48,7 +53,7 @@ class AuditTerminalReader:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: SubjectCriteriaReader,
         records: LaneRecordReader,
         forge: PRStateReader,
         git: GitService,

@@ -1,6 +1,6 @@
 """Native plan-time barriers, before approval-qualified dispatch selection."""
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import ScopePlanReader
 from kodezart.domain.dispatch import blocker_keys
 from kodezart.domain.errors import ScopePlanRefusalError, ScopeReadError
 from kodezart.domain.topology import plan_topology
@@ -12,7 +12,9 @@ from kodezart.types.domain.scope import ResolvedScope, ScopePlanSnapshot, ScopeR
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind, is_open
 
 
-async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSnapshot:
+async def read_scope_plan(
+    *, ref: ScopeRef, tracker: ScopePlanReader
+) -> ScopePlanSnapshot:
     """Read a coherent dependency closure and refuse named invalid stage facts.
 
     The stage barrier is measured over the same thing the exit condition is:
@@ -61,7 +63,9 @@ async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSn
     return snapshot
 
 
-async def read_scope_facts(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSnapshot:
+async def read_scope_facts(
+    *, ref: ScopeRef, tracker: ScopePlanReader
+) -> ScopePlanSnapshot:
     """Read coherent membership and dependencies without future-stage admission."""
     snapshot, _subtree = await _read_scope_facts(ref=ref, tracker=tracker)
     plan_topology(
@@ -72,7 +76,7 @@ async def read_scope_facts(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanS
 
 
 async def _read_scope_facts(
-    *, ref: ScopeRef, tracker: TrackerPort
+    *, ref: ScopeRef, tracker: ScopePlanReader
 ) -> tuple[ScopePlanSnapshot, tuple[TrackerIssue, ...]]:
     """Share the same native observations and rereads across scope consumers."""
     tracker.require_scope_plan_reads()
