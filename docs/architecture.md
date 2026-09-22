@@ -809,8 +809,10 @@ remediation phase and graph mechanics. It no longer inherits the fire's agent,
 Git, loop and persistence dependencies. Public run signatures, node names,
 checkpoint identities and terminal event shapes remain unchanged.
 
-Two fire nodes — `persist_ticket` and `persist_artifacts` — are present only
-when an ArtifactPersister is wired.
+Two fire nodes — `persist_ticket` and `persist_artifacts` — are present only on
+the authored arm, and there only when an ArtifactPersister is wired; the
+tracker-native arm writes nothing under the artifact directory, and no module
+reads it. Re-entry and satisfaction are read from the tracker.
 
 ```mermaid
 stateDiagram-v2
