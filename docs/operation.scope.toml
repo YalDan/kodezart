@@ -60,21 +60,21 @@ criteria = "organize:criteria-complete"
 [[organize_mandates]]
 kind = "groom"
 gate_label_key = "scope_labels.triage"
-rubric_prompt_key = "organize_assess"
+rubric_prompt_key = "organize_groom_rubric"
 admission_prompt_key = "organize_assess"
 terminal_marker_key = "issue_labels.groomed"
 
 [[organize_mandates]]
 kind = "ticket"
 gate_label_key = "issue_labels.groomed"
-rubric_prompt_key = "organize_assess"
+rubric_prompt_key = "organize_spec_rubric"
 admission_prompt_key = "organize_assess"
 terminal_marker_key = "issue_labels.body"
 
 [[organize_mandates]]
 kind = "criteria"
 gate_label_key = "issue_labels.body"
-rubric_prompt_key = "organize_assess"
+rubric_prompt_key = "organize_spec_rubric"
 admission_prompt_key = "organize_assess"
 terminal_marker_key = "issue_labels.criteria"
 

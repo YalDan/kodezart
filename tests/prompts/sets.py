@@ -127,6 +127,8 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "organize_author": (PromptKey.ORGANIZE_AUTHOR, ORGANIZE_CASE),
     "organize_verify": (PromptKey.ORGANIZE_VERIFY, ORGANIZE_CASE),
     "organize_criteria_author": (PromptKey.ORGANIZE_CRITERIA_AUTHOR, ORGANIZE_CASE),
+    "organize_groom_rubric": (PromptKey.ORGANIZE_GROOM_RUBRIC, {}),
+    "organize_spec_rubric": (PromptKey.ORGANIZE_SPEC_RUBRIC, {}),
     "content_audit": (
         PromptKey.CONTENT_AUDIT,
         {"content": AUDITED_PAYLOAD, "destination": AUDIT_DESTINATION},

@@ -11,7 +11,7 @@ engines = ["opus-5", "fable-5", "sonnet-5"]
 # key at authoring time — the knowledge map is here because it is a
 # prelude, and a prelude carrying its own depth block would put a second
 # one inside the prompt it joins.
-utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival"]
+utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_groom_rubric", "organize_spec_rubric"]
 
 # Which fan-out primitive this set's generative roles are told to use. Set
 # from the harness enumeration's measured verdict, never model-judged: the
@@ -273,4 +273,8 @@ keys = ["implementation", "fix"]
 [session_roles.utility]
 effort = "low"
 skills = []
-keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival"]
+keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract", "mutation_survival", "organize_groom_rubric", "organize_spec_rubric"]
+# The two rubric keys are on this roster because a rubric opens no session:
+# its text is rendered into another role's mandate_rubric block, where a
+# reasoning-depth instruction or a skills header would be data the judging
+# role reads as its standard. The effort declared here is never served.

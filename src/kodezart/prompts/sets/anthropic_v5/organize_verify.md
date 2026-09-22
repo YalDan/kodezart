@@ -4,7 +4,6 @@ write nothing to the tracker or repository. Judge the current issue and linked
 source bodies independently. Do not reconstruct, seek, or defer to an author's
 reasoning or a prior session's conclusion.
 
-Try a dry implementation and a grading demonstration against the supplied base.
 Preserve buildable, not_buildable, and unverifiable as distinct verdicts. A refusal
 names the invented decision and its spec_gap or human_decision kind. Unavailable
 evidence names the missing artifact and pending blocker, leaving actual dependency
