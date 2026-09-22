@@ -287,15 +287,31 @@ ENGINEERING_PRINCIPLE_LABELS: frozenset[str] = frozenset(
 )
 
 
+def house_rules_paragraphs() -> list[str]:
+    """The append's paragraphs, in the order the fragment states them."""
+    return fragment("house_rules").split("\n\n")
+
+
 def engineering_standard() -> str:
     """The standard's own paragraph of the append, as one line of prose."""
     paragraphs = [
         block
-        for block in fragment("house_rules").split("\n\n")
+        for block in house_rules_paragraphs()
         if block.startswith("Engineering standard:")
     ]
     assert len(paragraphs) == 1, "the append states its standard in one paragraph"
     return prose(paragraphs[0])
+
+
+def opens_with_a_named_reading(paragraph: str) -> bool:
+    """Whether *paragraph* opens the way a named principle opens.
+
+    The first line is enough: a principle arrives as ``Name — reading.``,
+    and the name it is read under sits on the first line of the paragraph
+    it opens.
+    """
+    first_line = next((line for line in paragraph.splitlines() if line.strip()), "")
+    return " — " in first_line
 
 
 def principle_labels(paragraph: str) -> frozenset[str]:
@@ -324,18 +340,25 @@ def test_the_engineering_standard_names_each_of_its_eight_principles(
 def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
     """The count, asserted over the text rather than described beside it.
 
-    Three halves, because each holds while the others are broken: every
+    Four halves, because each holds while the others are broken: every
     declared name is found, so an eighth cannot be dropped silently; the names
     put in front of a reading are exactly the declared labels, so a ninth
-    cannot arrive as a label; and the paragraph is CLOSED, so a ninth cannot
-    arrive as a bare sentence either. A ninth smuggled into the opening
-    sentence's list instead breaks that sentence's own reading pin.
+    cannot arrive as a label; the paragraph is CLOSED, so a ninth cannot
+    arrive as a bare sentence either; and neither paragraph beside the
+    standard opens with a named reading, so a ninth cannot arrive as its own
+    paragraph next to the eight. A ninth smuggled into the opening sentence's
+    list instead breaks that sentence's own reading pin.
 
-    The closure half is the one that needs saying. Counting the declared names
-    found in the text detects a name going missing and never a name arriving:
-    the list it counts is this module's own. Requiring every sentence to be a
-    declared reading is the claim that actually closes the paragraph, and it
-    closes it in every placement rather than in the two anyone thought of.
+    The closure halves are the ones that need saying. Counting the declared
+    names found in the text detects a name going missing and never a name
+    arriving: the list it counts is this module's own. Requiring every
+    sentence to be a declared reading closes the paragraph itself — but the
+    paragraph is only the block starting `Engineering standard:`, so a
+    labelled principle in the block after it is read by every session inside
+    the same append while being neither counted nor refused. The adjacency
+    half is what makes the closure hold for that placement too; it carries
+    its own controls, because a shape test that recognises nothing would
+    pass it silently.
     """
     paragraph = engineering_standard()
     named = [
@@ -352,6 +375,22 @@ def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
             continue
         sentence = part if part.endswith(".") else f"{part}."
         assert sentence.split(" — ", 1)[-1] in ENGINEERING_READINGS, sentence
+
+    assert opens_with_a_named_reading("YAGNI — Build nothing until it is asked for.")
+    assert not opens_with_a_named_reading("A paragraph that names no principle.")
+    blocks = house_rules_paragraphs()
+    standard = next(
+        index
+        for index, block in enumerate(blocks)
+        if block.startswith("Engineering standard:")
+    )
+    adjacent = [
+        blocks[index]
+        for index in (standard - 1, standard + 1)
+        if 0 <= index < len(blocks)
+    ]
+    assert adjacent
+    assert [block for block in adjacent if opens_with_a_named_reading(block)] == []
 
 
 @pytest.mark.parametrize("reading", ENGINEERING_READINGS)
