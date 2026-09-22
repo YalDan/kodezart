@@ -4411,10 +4411,19 @@ class FakeTrackerPort:
                 "state_kind": _STAGE_KIND[stage],
             },
         )
-        self.issues[issue_key] = updated
+        # A state move is a save, and a save lands on the stamp: the
+        # vendor advances ``updatedAt`` strictly (the fake MCP server's
+        # ``_moved`` does the same), so a case that reads the stamp back
+        # after a move observes it move here too rather than reading the
+        # instant the fixture seeded.  Without this, an arm asking "the
+        # stamp moved and the body digest did not" is vacuous on the
+        # double under a frozen fixture clock (KOD-494).
+        self.issues[issue_key] = updated.model_copy(
+            update={"updated_at": updated.updated_at + FIXTURE_WRITE_STEP}
+        )
         self._wrote(issue_key)
         self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
-        return updated
+        return self.issues[issue_key]
 
     async def restore_workflow_state(
         self,

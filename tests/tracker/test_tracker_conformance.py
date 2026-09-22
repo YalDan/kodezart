@@ -2950,9 +2950,13 @@ PROVENANCE_CRITERION_BODY = (
     "**Check:** a stated predicate\n\n**Do:** stated guidance\n\n**Evidence:**\n"
 )
 
-#: The two holders the ordered pair is read back as.
+#: The two holders the ordered pair is read back as.  Named so write
+#: order and lexical order DISAGREE: "another" sorts before "first" but
+#: is written second, so an implementation that answered the sorted set
+#: instead of the write order fails here rather than passing because the
+#: two happened to coincide (KOD-494).
 FIRST_WRITER = "first-writing-job"
-SECOND_WRITER = "second-writing-job"
+SECOND_WRITER = "another-writing-job"
 
 #: One address per answerable kind, so the property is stated once over the
 #: set and the kind under test is the only thing that varies.
@@ -3106,6 +3110,10 @@ class TestSurfaceWriteProvenance:
         Stated through the port's own body digest rather than through a
         vendor stamp, so both arms answer the same question: the digest is
         what changes when and only when a body changes.
+
+        The premise is asserted rather than assumed: the move has to move
+        the stamp, or the case is asking whether a change that did not
+        happen left the digest alone (KOD-494).
         """
         surface = PROVENANCE_SURFACES[kind]
         for holder in (FIRST_WRITER, SECOND_WRITER):
@@ -3123,6 +3131,7 @@ class TestSurfaceWriteProvenance:
         )
 
         after = await provenance_tracker.read_issue_revision(issue_key=surface.ref.key)
+        assert after.issue.updated_at != before.issue.updated_at
         assert after.body_digest == before.body_digest
         assert (
             (await provenance_tracker.read_surface_authorship(surface=surface)).holders
