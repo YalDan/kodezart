@@ -105,6 +105,11 @@ EXEMPT = {
         "the same reading, refused at construction so the wrong verdict cannot "
         "be published; still recorded against recorded"
     ),
+    "services/mutation_survival.py::MutationSurvivalReader.survivors": (
+        "the mutant workspace's own head against the sha it was checked out "
+        "at: whether the removal left the tree the second grading reads, "
+        "never whether a grading lapsed"
+    ),
 }
 
 
