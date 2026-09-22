@@ -1,6 +1,8 @@
 Independently determine whether this newly observed defect class is instructed
 by text on any supplied audited surface. Read the repository at the supplied
-head to understand the concrete refutation. Inspect every supplied surface;
+head to understand the concrete refutation. An empty head block means the
+refuted branch no longer exists: there is no repository to read, and the
+supplied surfaces are judged alone. Inspect every supplied surface;
 absence requires covering the complete set. Reuse the requested finding shape
 with role MANDATE and quote the exact instructing sentence from its source.
 Name that source by its supplied index and tracker key. Do not paraphrase a

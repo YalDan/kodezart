@@ -34,7 +34,9 @@ from kodezart.types.domain.audit_detection_removal import (
 )
 from kodezart.types.domain.audit_evidence import (
     AuditEvidenceObservation,
+    AuditRestampReport,
     AuditRestampTrace,
+    restamp_defect_class,
 )
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
 from kodezart.types.domain.audit_overclaim import (
@@ -51,10 +53,28 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import WorkflowStateKind
 
+#: Every arm of an observation that carries a verdict, beside the field that
+#: completes its refutation with a mandate verdict and the field that says
+#: why the hunt could not.  A REFUTED value in an arm with neither is a
+#: refutation emitted without its mandate verdict, which the observation
+#: refuses to be built as: that refusal is the sweep's own completeness
+#: assertion (KOD-516).
+MANDATED_ARMS: tuple[tuple[str, str, str], ...] = (
+    ("terminal", "terminal_report", "unavailable_reason"),
+    ("forge", "forge_report", "forge_unavailable_reason"),
+    ("restamp", "restamp_report", "unavailable_reason"),
+    ("evidence", "claim", "unavailable_reason"),
+)
+
 
 @dataclass(frozen=True)
 class AuditReadObservation:
-    """One retained target and the existing observations actually obtained."""
+    """One retained target and the existing observations actually obtained.
+
+    Every REFUTED value it carries is completed by its mandate verdict or
+    stands beside the reason its hunt could not run; one with neither is
+    refused at construction (``MANDATED_ARMS``).
+    """
 
     target: AuditRequestTarget
     claim: AuditClaimReport | None = None
@@ -70,8 +90,26 @@ class AuditReadObservation:
     forge_report: AuditClaimReport | None = None
     forge_unavailable_reason: str | None = None
     restamp: AuditRestampTrace | None = None
+    restamp_report: AuditRestampReport | None = None
 
     def __post_init__(self) -> None:
+        for arm, completed, reason in MANDATED_ARMS:
+            value = getattr(self, arm)
+            if (
+                value is not None
+                and value.verdict is AuditVerdict.REFUTED
+                and getattr(self, completed) is None
+                and getattr(self, reason) is None
+            ):
+                raise ValueError(
+                    f"a refutation without its mandate verdict: {arm} requires "
+                    "completion or the reason its hunt could not run"
+                )
+        if (
+            self.restamp_report is not None
+            and self.restamp_report.trace != self.restamp
+        ):
+            raise ValueError("restamp report differs from the native trace")
         if (
             self.terminal is not None
             and self.terminal_report is None
@@ -132,14 +170,17 @@ class AuditReadSweep:
     """One zero-argument observation sweep over a constructor-bound native scope.
 
     Every invocation enumerates every state again. A failed subject cannot
-    prevent other independent subjects from being observed. A refuted criterion
-    report requires the existing mandate-completed model. Raw forge observations
-    survive an unavailable mandate hunt, without claiming a complete report.
-    Terminal refutations with an observed branch head use the same mandate
-    hunt; missing-head observations remain explicitly unavailable. No timer,
-    scheduler or writer lives here, and no partial detector pass enters the
-    audit coverage cache. The forge verifier may request the delivery
-    classifier's bounded same-SHA reruns.
+    prevent other independent subjects from being observed. Every refutation
+    the sweep produces runs the same mandate hunt: a criterion claim, each
+    over-claim and detector-removal reading, a forge reading at its graded
+    sha, a restamp trace at the current head, and a terminal refutation. A
+    terminal whose branch no longer exists is emitted as REFUTED with
+    ``NO_BRANCH`` and hunted with no head pin, over the tracker surfaces
+    alone. A refutation whose hunt fails keeps its raw value beside the
+    reason, and never a complete report. No timer, scheduler or writer lives
+    here, and no partial detector pass enters the audit coverage cache. The
+    forge verifier may request the delivery classifier's bounded same-SHA
+    reruns.
     """
 
     def __init__(
@@ -188,10 +229,7 @@ class AuditReadSweep:
             try:
                 mandate = None
                 if terminal.verdict is AuditVerdict.REFUTED:
-                    if terminal.branch_head is None:
-                        raise AuditClaimReadError(
-                            "terminal mandate has no observed branch head"
-                        )
+                    # A missing branch has no head: the hunt runs unpinned.
                     mandate = await self._mandates.observe(
                         AuditMandateContext(
                             defect_class=terminal.defect_class(),
@@ -216,6 +254,7 @@ class AuditReadSweep:
             )
         evidence = None
         restamp = None
+        restamp_report = None
         issue = target.issue
         if issue.state_kind is WorkflowStateKind.COMPLETED or (
             issue.state_kind is WorkflowStateKind.STARTED
@@ -225,11 +264,30 @@ class AuditReadSweep:
             restamp = await self._restamps.observe(
                 request=request, evidence=evidence.recorded_evidence
             )
+            # Completed before the lapse return: a lapse is exactly a row
+            # whose commit is behind head, so it is the case the trace is
+            # most about, and its refutation carries its mandate verdict too.
+            try:
+                restamp_report = await self._restamp_report(
+                    trace=restamp,
+                    head_sha=evidence.head_sha,
+                    surfaces=surfaces,
+                    request=request,
+                )
+            except AUDIT_READ_FAILURES as exc:
+                return AuditReadObservation(
+                    target,
+                    evidence=evidence,
+                    restamp=restamp,
+                    unavailable_reason=f"{type(exc).__name__}: {exc}",
+                )
             if evidence.is_lapse:
-                # A lapse is exactly a row whose commit is behind head, so
-                # this is the case the trace is most about: it survives the
-                # lapse return rather than being dropped with it.
-                return AuditReadObservation(target, evidence=evidence, restamp=restamp)
+                return AuditReadObservation(
+                    target,
+                    evidence=evidence,
+                    restamp=restamp,
+                    restamp_report=restamp_report,
+                )
             claim = evidence.current_claim
             if claim is None:
                 raise AuditClaimReadError("current grading has no claim observation")
@@ -246,8 +304,37 @@ class AuditReadSweep:
             )
         )
         return AuditReadObservation(
-            target, claim=report, evidence=evidence, restamp=restamp
+            target,
+            claim=report,
+            evidence=evidence,
+            restamp=restamp,
+            restamp_report=restamp_report,
         )
+
+    async def _restamp_report(
+        self,
+        *,
+        trace: AuditRestampTrace | None,
+        head_sha: str,
+        surfaces: tuple[WritableSurface, ...],
+        request: AuditClaimRequest,
+    ) -> AuditRestampReport | None:
+        """Complete a refuted restamp trace with the mandate hunt at *head_sha*."""
+        if trace is None:
+            return None
+        mandate = None
+        if trace.verdict is AuditVerdict.REFUTED:
+            mandate = await self._mandates.observe(
+                AuditMandateContext(
+                    defect_class=restamp_defect_class(trace),
+                    refutation_evidence=trace.reason,
+                    head_sha=head_sha,
+                    surfaces=surfaces,
+                    repo_url=request.repo_url,
+                    cache_key=request.cache_key,
+                )
+            )
+        return AuditRestampReport(trace=trace, mandate=mandate)
 
     async def _observe_overclaims(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
@@ -477,6 +564,7 @@ class AuditReadSweep:
             # This method rebuilds the observation field by field, so a field
             # not listed here is dropped before anything composed sees it.
             restamp=observation.restamp,
+            restamp_report=observation.restamp_report,
         )
 
     async def run(self) -> AuditReadSweepResult:

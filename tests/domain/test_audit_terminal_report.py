@@ -9,6 +9,7 @@ from kodezart.types.domain.audit import AuditMandateContext, AuditMandateObserva
 from kodezart.types.domain.audit_terminal import (
     AuditTerminalObservation,
     AuditTerminalReport,
+    TerminalDiscrepancy,
 )
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -103,6 +104,38 @@ def test_bare_or_unbound_refutation_cannot_be_completed(damage):
         data["mandate"]["finding"]["defect_class"] = "another defect"
     with pytest.raises(ValidationError, match="mandate"):
         AuditTerminalReport.model_validate(data)
+
+
+@pytest.mark.parametrize("verdict", ["holds", "refuted", "unverifiable"])
+def test_a_missing_branch_refutation_is_completed_by_each_mandate_state(verdict):
+    """A gone branch is the defect itself: no head, and still a complete report.
+
+    The head requirement relaxes for exactly that discrepancy, so the same
+    refutation without its mandate verdict stays refused, and the hunt it is
+    completed by is invoked with its head stated as absent rather than left
+    out (KOD-516).
+    """
+    observed = observation().model_copy(
+        update={"discrepancies": (TerminalDiscrepancy.NO_BRANCH,), "branch_head": None}
+    )
+    report = AuditTerminalReport(
+        observation=observed, mandate=mandate(observed, verdict)
+    )
+    assert report.observation.branch_head is None
+    assert report.mandate.verdict.value == verdict
+    with pytest.raises(ValidationError, match="mandate"):
+        AuditTerminalReport(observation=observed, mandate=None)
+    context = {
+        "defect_class": observed.defect_class(),
+        "refutation_evidence": observed.refutation_evidence(),
+        "head_sha": None,
+        "surfaces": [SURFACE],
+        "repo_url": "repository",
+    }
+    assert AuditMandateContext.model_validate(context).head_sha is None
+    del context["head_sha"]
+    with pytest.raises(ValidationError, match="Field required"):
+        AuditMandateContext.model_validate(context)
 
 
 @pytest.mark.parametrize(

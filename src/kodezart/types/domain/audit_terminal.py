@@ -63,7 +63,12 @@ class AuditTerminalReport(CamelCaseModel):
         if (observed.verdict is AuditVerdict.REFUTED) != (self.mandate is not None):
             raise ValueError("every terminal refutation requires its mandate verdict")
         if observed.verdict is AuditVerdict.REFUTED:
-            if not observed.branch_head or not observed.discrepancies:
+            # A missing branch is itself the demonstrated defect: its hunt
+            # runs unpinned, so exactly that discrepancy stands in for a head.
+            if not observed.discrepancies or (
+                not observed.branch_head
+                and TerminalDiscrepancy.NO_BRANCH not in observed.discrepancies
+            ):
                 raise ValueError(
                     "terminal mandate completion requires observed head and discrepancy"
                 )

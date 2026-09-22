@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from tempfile import TemporaryDirectory
 
 from kodezart.core.owned_tasks import finish_owned, settle
 from kodezart.core.protocols import WorkspaceProvider
@@ -35,3 +36,16 @@ async def owned_workspace(
         yield path
     finally:
         await settle(provider.release(path))
+
+
+@asynccontextmanager
+async def unpinned_workspace() -> AsyncIterator[str]:
+    """An owned empty directory for a session that reads no repository.
+
+    A refutation whose branch no longer exists has no head to pin, so its
+    mandate session is judged over the supplied tracker text alone and needs
+    only somewhere to stand.  Nothing is checked out and no Git object is
+    read; the directory is removed on every exit, cancellation included.
+    """
+    with TemporaryDirectory(prefix="kodezart-mandate-") as path:
+        yield path

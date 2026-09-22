@@ -6,7 +6,11 @@ from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.domain.lapse import GradedState, graded_state
 from kodezart.types.base import CamelCaseModel
-from kodezart.types.domain.audit import AuditClaimObservation, AuditVerdict
+from kodezart.types.domain.audit import (
+    AuditClaimObservation,
+    AuditMandateObservation,
+    AuditVerdict,
+)
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
@@ -81,4 +85,39 @@ class AuditRestampTrace(CamelCaseModel):
         traced = self.history[-1] == self.recorded_evidence.graded_sha
         if (self.verdict is AuditVerdict.HOLDS) is not traced:
             raise ValueError("the restamp verdict differs from the recorded history")
+        return self
+
+
+def restamp_defect_class(trace: AuditRestampTrace) -> str:
+    """The defect a refuted restamp trace names to its mandate hunt."""
+    return f"restamp not traced to the last recorded grading: {trace.criterion_key}"
+
+
+class AuditRestampReport(CamelCaseModel):
+    """One restamp trace with the mandate verdict a refuted trace requires.
+
+    The trace is carried as read and never edited; the report beside it is
+    what makes its refutation complete, in the same three states every other
+    refutation the sweep produces carries.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    trace: AuditRestampTrace
+    mandate: AuditMandateObservation | None
+
+    def defect_class(self) -> str:
+        """The defect this report's mandate finding must name."""
+        return restamp_defect_class(self.trace)
+
+    @model_validator(mode="after")
+    def _refutation_requires_mandate(self) -> Self:
+        if (self.trace.verdict is AuditVerdict.REFUTED) != (self.mandate is not None):
+            raise ValueError("every restamp refutation requires its mandate verdict")
+        if (
+            self.mandate is not None
+            and self.mandate.finding is not None
+            and self.mandate.finding.defect_class != self.defect_class()
+        ):
+            raise ValueError("restamp mandate finding names another defect")
         return self

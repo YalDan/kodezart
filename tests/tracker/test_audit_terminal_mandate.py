@@ -12,6 +12,7 @@ from kodezart.domain.lane_record import render_lane_record
 from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_terminal import TerminalDiscrepancy
+from kodezart.types.domain.organize import DefectRole
 from kodezart.types.domain.pr_state import PRLifecycle
 from kodezart.types.domain.session import ToolPreset
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -110,29 +111,105 @@ async def test_native_terminal_refutation_reuses_actual_mandate_hunt(
         replace(parent, terminal_report=None)
 
 
-async def test_no_branch_keeps_exact_observation_without_historical_head_substitution(
-    setup, tracker, server, tracker_writes
+@pytest.mark.parametrize("outcome", ["holds", "refuted", "unverifiable"])
+async def test_a_missing_branch_refutation_carries_a_mandate_verdict_in_each_state(
+    setup, tracker, server, tracker_writes, monkeypatch, outcome
 ):
-    build, executor, git, _, _, forge, *_ = setup
+    """A gone branch is emitted REFUTED and hunted over the surfaces alone.
+
+    Every criterion is Done and the recorded branch is gone from the remote,
+    which is the demonstrated defect rather than an unreadable surface.  The
+    hunt returns whatever it finds in each of its three states, and it pins
+    nothing: no workspace is acquired at any head, historical or current,
+    and the session is told its head is empty (KOD-516).
+    """
+    build, executor, git, _, workspace, forge, *_ = setup
     await terminal_ready(tracker, server, forge)
     git._remote_branch_shas["ordinary-name"] = None
+    sweep = build()
+    terminal = await sweep._terminals.observe(
+        (await sweep._requests.read(scope=sweep._scope)).targets[1].request
+    )
+    quote = "Explicit parent instructions."
+    if outcome == "holds":
+        executor.mandate_output = {
+            "verdict": "holds",
+            "source_index": 1,
+            "evidence": "The native source instructs this defect.",
+            "finding": {
+                "issue_id": ROOT,
+                "defect_class": terminal.defect_class(),
+                "role": "mandate",
+                "mandate_text": quote,
+                "evidence": "Exact native quote.",
+            },
+        }
+    if outcome == "unverifiable":
+        original_observe = sweep._terminals.observe
+        original_get = tracker.read_issue
+        fail = False
+        failed = False
+
+        async def observe(request):
+            nonlocal fail
+            observed = await original_observe(request)
+            fail = not failed
+            return observed
+
+        async def get(*, issue_key):
+            nonlocal fail, failed
+            if fail and issue_key == CHILD:
+                fail = False
+                failed = True
+                raise TrackerUnavailableError("native body temporarily unreadable")
+            return await original_get(issue_key=issue_key)
+
+        monkeypatch.setattr(sweep._terminals, "observe", observe)
+        monkeypatch.setattr(tracker, "read_issue", get)
     before = tracker_writes()
-    parent = (await build().run()).observations[1]
+    parent = (await sweep.run()).observations[1]
+
     assert parent.terminal.branch_head is None
     assert TerminalDiscrepancy.NO_BRANCH in parent.terminal.discrepancies
-    assert (
-        parent.terminal_report is None
-        and "no observed branch head" in parent.unavailable_reason
-    )
-    assert not executor.calls and tracker_writes() == before
+    assert parent.terminal.verdict is AuditVerdict.REFUTED
+    assert parent.terminal_report.observation == parent.terminal == terminal
+    assert parent.unavailable_reason is None
+    mandate = parent.terminal_report.mandate
+    assert mandate.verdict.value == outcome
+    if outcome == "holds":
+        assert mandate.finding.mandate_text == quote
+        assert mandate.finding.role is DefectRole.MANDATE
+        assert mandate.finding_surface.ref.key == ROOT
+    elif outcome == "refuted":
+        assert mandate.finding is None
+        assert {item.surface.ref.key for item in mandate.covered} == {CHILD, ROOT}
+    else:
+        assert mandate.unreadable[0].surface.ref.key == CHILD
+    calls = [
+        call
+        for call in executor.calls
+        if call["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA
+    ]
+    assert len(calls) == (0 if outcome == "unverifiable" else 1)
+    for call in calls:
+        assert "<head_sha></head_sha>" in call["prompt"]
+        assert terminal.refutation_evidence() in call["prompt"]
+    assert not [call for call in workspace.calls if call[0] == "acquire"]
+    assert tracker_writes() == before
 
 
 @pytest.mark.parametrize(
     "failure", ["session", "wrong-defect", "wrong-source", "inexact-quote"]
 )
-async def test_mandate_failure_retains_native_terminal_and_refuses_complete_report(
+async def test_a_failed_terminal_mandate_carries_no_complete_report(
     setup, tracker, server, failure
 ):
+    """A hunt that fails keeps the raw refutation beside its reason.
+
+    It never completes a report: the terminal stays REFUTED, its reason
+    names why the mandate verdict is missing, and the observation's own
+    completeness rule is what the runtime then refuses the subject on.
+    """
     build, executor, _, _, _, forge, *_ = setup
     await terminal_ready(tracker, server, forge)
     if failure == "session":
@@ -172,6 +249,7 @@ async def test_mandate_failure_retains_native_terminal_and_refuses_complete_repo
     assert child.claim is not None
     assert parent.terminal.verdict is AuditVerdict.REFUTED
     assert parent.terminal_report is None and parent.unavailable_reason
+    assert parent.terminal.branch_head is not None
 
 
 @pytest.mark.parametrize("change", ["head", "pr", "body", "record"])
