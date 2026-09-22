@@ -310,7 +310,13 @@ async def test_approval_is_current_self_or_ancestor_not_parent_state(
 async def test_a_canceled_or_duplicate_criterion_is_excluded_and_named_beside_the_gap(
     ready_fixture, kind
 ):
-    """It leaves the gap on its state alone, and the read says so by key."""
+    """It leaves the gap on its state alone, and the read says so by key.
+
+    A criterion the board Canceled or closed as a Duplicate counts for
+    nothing: it is nobody's owed work, so the blocker carrying it owes
+    nothing, its dependent becomes a candidate, and the scope's unresolved
+    list does not name it (KOD-794).
+    """
     fixture = await ready_fixture(pair())
     fixture.state("blocker-check", kind)
 
@@ -319,6 +325,8 @@ async def test_a_canceled_or_duplicate_criterion_is_excluded_and_named_beside_th
     assert selection.excluded == ("blocker-check",)
     assert "blocker-check" not in selection.unresolved
     assert [issue.issue_key for issue in selection.closed] == ["blocker"]
+    assert keys(selection) == ["lane"]
+    assert selection.blocked == ()
     fixture.assert_read_only()
 
 

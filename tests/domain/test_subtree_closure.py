@@ -108,13 +108,22 @@ def a_finished_deliverable_over_an_open_criterion() -> tuple[
     return facts_of(lane, child, child_open, lane_met), ("child-AC-1",)
 
 
-def a_cancellation_without_a_supersession() -> tuple[
+def a_canceled_criterion_counts_for_nothing() -> tuple[
     dict[str, TrackerIssue], tuple[str, ...]
 ]:
     lane = make_tracker_issue("lane")
     met = criterion("lane-AC-1", parent="lane", state=WorkflowStateKind.COMPLETED)
     canceled = criterion("lane-AC-2", parent="lane", state=WorkflowStateKind.CANCELED)
-    return facts_of(lane, met, canceled), ("lane-AC-2",)
+    return facts_of(lane, met, canceled), ()
+
+
+def a_duplicate_criterion_counts_for_nothing() -> tuple[
+    dict[str, TrackerIssue], tuple[str, ...]
+]:
+    lane = make_tracker_issue("lane")
+    met = criterion("lane-AC-1", parent="lane", state=WorkflowStateKind.COMPLETED)
+    duplicate = criterion("lane-AC-2", parent="lane", state=WorkflowStateKind.DUPLICATE)
+    return facts_of(lane, met, duplicate), ()
 
 
 @pytest.mark.parametrize(
@@ -125,7 +134,8 @@ def a_cancellation_without_a_supersession() -> tuple[
         (every_criterion_completed, (), True),
         (a_met_lane_check_over_an_open_child_deliverable, ("child-AC-1",), False),
         (a_finished_deliverable_over_an_open_criterion, ("child-AC-1",), False),
-        (a_cancellation_without_a_supersession, (), True),
+        (a_canceled_criterion_counts_for_nothing, (), True),
+        (a_duplicate_criterion_counts_for_nothing, (), True),
     ],
 )
 def test_gap_is_empty_iff_the_subtree_rollup_is_done(row, open_keys, subtree_closed):

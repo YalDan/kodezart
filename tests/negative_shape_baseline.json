@@ -104,7 +104,7 @@
   "tests/chains/test_scope_gap_membership.py": 33,
   "tests/chains/test_scope_gap_selection.py": 9,
   "tests/chains/test_scope_observations.py": 14,
-  "tests/chains/test_scope_ready.py": 54,
+  "tests/chains/test_scope_ready.py": 57,
   "tests/chains/test_scope_terminal.py": 110,
   "tests/chains/test_session_policy_composition.py": 7,
   "tests/chains/test_shorthand_url_resolution.py": 17,
@@ -207,6 +207,7 @@
   "tests/domain/test_model_surfaces.py": 8,
   "tests/domain/test_mutation_survival.py": 6,
   "tests/domain/test_no_ref_parsing.py": 1,
+  "tests/domain/test_non_counting.py": 6,
   "tests/domain/test_operation_optionality.py": 12,
   "tests/domain/test_organize.py": 33,
   "tests/domain/test_organize_graph_peers.py": 3,
@@ -489,7 +490,7 @@
   "tests/tracker/test_escalation_resolution_drift.py": 4,
   "tests/tracker/test_fire_spec_approval.py": 16,
   "tests/tracker/test_fire_spec_approval_ancestry.py": 6,
-  "tests/tracker/test_fire_spec_reader.py": 35,
+  "tests/tracker/test_fire_spec_reader.py": 45,
   "tests/tracker/test_idempotent_writes.py": 60,
   "tests/tracker/test_issue_classification_reads.py": 6,
   "tests/tracker/test_issue_identity_boundary.py": 22,
@@ -538,7 +539,7 @@
   "tests/tracker/test_scope_planning.py": 7,
   "tests/tracker/test_scope_reads.py": 66,
   "tests/tracker/test_scope_status_writer.py": 21,
-  "tests/tracker/test_scope_subtree_reach.py": 18,
+  "tests/tracker/test_scope_subtree_reach.py": 48,
   "tests/tracker/test_scope_tally.py": 31,
   "tests/tracker/test_scope_tool_arguments.py": 7,
   "tests/tracker/test_state_history.py": 21,
@@ -3393,6 +3394,11 @@
   ],
   "tests/domain/test_no_ref_parsing.py": [
    "test_no_scope_surface_parses_a_ref_to_obtain_a_base"
+  ],
+  "tests/domain/test_non_counting.py": [
+   "test_is_non_counting_classifies_every_state_kind",
+   "test_the_duplicate_kind_is_named_in_one_module",
+   "test_the_scan_reports_a_module_that_names_the_kind_itself"
   ],
   "tests/domain/test_operation_optionality.py": [
    "test_the_two_scalars_alone_are_a_valid_config",
@@ -6460,7 +6466,9 @@
    "test_subject_changed_during_membership_read_does_not_mix_text_and_version",
    "test_missing_empty_or_ambiguous_check_refuses_at_the_spec_read",
    "test_check_content_is_read_without_rewriting_criterion_or_parent",
-   "test_unknown_backend_state_refuses_at_spec_read_without_guessing_by_name"
+   "test_unknown_backend_state_refuses_at_spec_read_without_guessing_by_name",
+   "test_an_abandoned_criterion_without_a_check_neither_joins_nor_refuses",
+   "test_a_subtree_of_abandoned_criteria_refuses_as_empty_and_writes_nothing"
   ],
   "tests/tracker/test_idempotent_writes.py": [
    "TestCommentUpsert.test_existing_first_line_matches_across_line_endings",

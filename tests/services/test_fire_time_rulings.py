@@ -1513,10 +1513,14 @@ async def test_an_identity_a_successor_absorbed_is_still_addressable_at_the_writ
     step, spec, current, _, port, _, repo_path, base = await build(
         repository, executor, port=port
     )
-    # Superseded: out of what the fire owes, still one of the subject's
-    # criterion sub-issues.
+    # Superseded: out of what the fire owes and, counting for nothing, out of
+    # the specification the pass is shown (KOD-794), yet still one of the
+    # subject's criterion sub-issues.
     assert DIRECT_OWED not in {criterion.id for criterion in current.criteria}
-    assert DIRECT_OWED in set(spec.criteria)
+    assert DIRECT_OWED not in set(spec.criteria)
+    assert DIRECT_OWED in {
+        row.issue_key for row in await port.read_criteria(issue_key=SUBJECT)
+    }
     before = board_state(port)
 
     assert await run(step, spec, current, repo_path, base) is None

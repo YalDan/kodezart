@@ -46,7 +46,8 @@ REFUSED_BACKLOG = "refused_backlog"
 #: identity assertion below is what turns "one per state" into a fact.
 #: ``refuted`` is deliberately not a member — a criterion nobody graded is
 #: owed, which is what the two OWED rows over graded and ungraded records
-#: below demonstrate.
+#: below demonstrate.  Canceled and Duplicate discharge rather than refuse:
+#: abandoned work counts for nothing and refuses nothing (KOD-794).
 MEMBERSHIP: dict[WorkflowStateKind, str] = {
     WorkflowStateKind.TRIAGE: OWED,
     WorkflowStateKind.BACKLOG: REFUSED_BACKLOG,

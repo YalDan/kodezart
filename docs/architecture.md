@@ -282,6 +282,12 @@ read's `excluded` and in each walk observation's `excluded_criteria`, so a
 reader tells an obligation the board set aside from one that was never there
 (KOD-794).
 
+A criterion the board Canceled or closed as a Duplicate counts for nothing, at
+the readiness read and at the spec read alike: it joins no gap, no
+specification and no unresolved list, and it refuses nothing (KOD-794). The gap
+arithmetic reads the criterion's own state kind and nothing else, so no second
+input and no inferred reference decides what an abandoned criterion means.
+
 Each ready lane's gap is measured on the walk observation, as `gaps`: one
 `GapMeasurement` per ready lane naming its open subtree criteria at that read,
 built fresh every tick and written to none of the three surfaces the run
@@ -2120,7 +2126,9 @@ its own children and, recursively, its deliverable children's. A subtree
 holding none is refused with `EmptyFireCriteriaError` naming the subject,
 before the question step and before the loop's graph is dispatched (the pinned
 interim on KOD-786; what the walk does with such a member is decided there, not
-here). There is no second, narrower reading in which the subject's own
+here). A criterion the board Canceled or closed as a Duplicate neither joins
+the specification nor refuses that read, and a subtree whose every criterion is
+one of those is refused as empty. There is no second, narrower reading in which the subject's own
 criterion children alone admit or refuse a fire (KOD-790). The question step asks one read-only
 pass under the `fire_time_ruling` role what the subject text and the current
 Checks leave open, pins each answer on the issue whose text raised it, reads it

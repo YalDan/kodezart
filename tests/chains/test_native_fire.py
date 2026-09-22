@@ -2590,14 +2590,16 @@ async def test_a_subtree_whose_criteria_were_all_abandoned_has_nothing_to_delive
 
     Non-counting criteria refuse nothing one at a time, which would leave a
     subtree of only abandoned criteria reading as a vacuously finished lane.
-    It is refused where a subtree holding no criterion at all is, and for the
-    same reason: there is no obligation for the delivery to discharge.
+    It is refused as a subtree holding no criterion at all is, and at the same
+    place: the capture drops what counts for nothing before it judges
+    emptiness, so there is no obligation for the delivery to discharge and
+    the entry says so before any roster is composed (KOD-794).
     """
     port, source, _ = await finished_subtree()
     for key in ALL_CRITERIA:
         moved(port, key, kind=WorkflowStateKind.CANCELED, name="Canceled")
 
-    with pytest.raises(FireSpecEntryError, match="no criteria to deliver") as caught:
+    with pytest.raises(EmptyFireCriteriaError) as caught:
         await source.read_entry(issue_key=SUBJECT, delivering=True)
 
     assert caught.value.issue_key == SUBJECT
@@ -2617,8 +2619,9 @@ async def test_a_subtree_holding_no_criterion_has_nothing_to_deliver():
     the entry refuses an empty subtree earlier, at the capture, with
     ``EmptyFireCriteriaError`` — so the entry never reaches this refusal and
     reading through it would assert the capture's clause rather than this
-    one. The companion case over an all-abandoned subtree does go through
-    ``read_entry(delivering=True)``, so the refusal is reached publicly too.
+    one. The companion case over an all-abandoned subtree goes through
+    ``read_entry(delivering=True)`` and meets the capture's clause too, since
+    the capture drops non-counting criteria before judging emptiness.
     """
     port = board([make_tracker_issue(SUBJECT, issue_labels=frozenset({STAGE_KEY}))])
     spec = TrackerSpec(
