@@ -401,6 +401,39 @@ async def test_diff_summary_returns_changeset_digest(
     assert "feat: add x" in digest.commit_subjects
 
 
+async def test_diff_summary_reads_the_commit_record_not_the_working_tree(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """The digest names committed paths only, whatever the workspace holds.
+
+    A grading is read against the commits between two revisions, so an
+    uncommitted edit in the workspace the digest is taken in must not reach
+    it: otherwise a stray file in any workspace could lapse a grading that
+    nothing committed has touched (KOD-413).  The workspace is left holding
+    each kind of uncommitted change a diff against a work tree or an index
+    would name: a tracked file the commits never touched, edited in place; a
+    new file staged but never committed; an untracked file; and an edit on
+    top of the one committed path.
+    """
+    base = await git_service.current_sha(str(git_repo))
+    await _run_git(["git", "checkout", "-b", "feat-digest"], cwd=git_repo)
+    (git_repo / "committed.txt").write_text("committed")
+    await _run_git(["git", "add", "committed.txt"], cwd=git_repo)
+    await _run_git(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-m", "feat: one path"],
+        cwd=git_repo,
+    )
+    head = await git_service.current_sha(str(git_repo))
+    (git_repo / "README.md").write_text("edited in the workspace only")
+    (git_repo / "staged.txt").write_text("staged, never committed")
+    await _run_git(["git", "add", "staged.txt"], cwd=git_repo)
+    (git_repo / "untracked.txt").write_text("untracked")
+    (git_repo / "committed.txt").write_text("changed in the workspace only")
+    digest = await git_service.diff_summary(str(git_repo), base, head)
+    assert digest.file_paths == ["committed.txt"]
+    assert digest.commit_subjects == ["feat: one path"]
+
+
 async def test_diff_summary_empty_when_refs_equal(
     git_service: SubprocessGitService, git_repo: Path
 ) -> None:
