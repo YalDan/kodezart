@@ -1,4 +1,4 @@
-"""The ports and the inner layers name no vendor module (KOD-375, KOD-393).
+"""The ports and the inner layers name no vendor module (KOD-375, KOD-384, KOD-393).
 
 Hexagonal layering is a statement about what the inside may know of the
 outside, so both checks read it off the code rather than off a list: the
@@ -14,9 +14,12 @@ import inspect
 import typing
 from collections.abc import Iterator
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, NoneType
+
+import pytest
 
 from kodezart.core import protocols
+from kodezart.core.protocols import SurfaceLeaseTracker, TrackerPort
 from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src"
@@ -176,3 +179,60 @@ def test_the_types_domain_and_chains_layers_import_no_vendor_module() -> None:
     assert vendor == []
     assert len(scanned) >= 150
     assert importlib.util.find_spec(VENDOR_PACKAGE) is not None
+
+
+#: What each lease call takes and answers, stated in domain types. The
+#: member names checked against it are read off the role, so a lease call
+#: added to the role without a stated contract fails here by name.
+LEASE_CONTRACTS: dict[str, dict[str, object]] = {
+    "acquire_surfaces": {
+        "surfaces": frozenset[WritableSurface],
+        "holder": str,
+        "lease_seconds": float,
+        "return": SurfaceLease,
+    },
+    "renew_surfaces": {
+        "surfaces": frozenset[WritableSurface],
+        "holder": str,
+        "lease_seconds": float,
+        "return": SurfaceLease | None,
+    },
+    "release_surfaces": {
+        "surfaces": frozenset[WritableSurface],
+        "holder": str,
+        "return": NoneType,
+    },
+}
+LEASE_MEMBERS = tuple(name for name, _ in _own_members(SurfaceLeaseTracker))
+
+
+def test_the_lease_role_declares_at_least_the_three_lease_calls() -> None:
+    """The derived member list cannot shrink below the three calls."""
+    assert {"acquire_surfaces", "renew_surfaces", "release_surfaces"} <= set(
+        LEASE_MEMBERS
+    )
+
+
+@pytest.mark.parametrize("owner", [TrackerPort, SurfaceLeaseTracker])
+@pytest.mark.parametrize("name", LEASE_MEMBERS)
+def test_the_lease_calls_are_async_keyword_only_and_domain_typed(
+    owner: type, name: str
+) -> None:
+    """Each lease call, on the port and on its role, is keyword-only and typed.
+
+    A positional call would let two ``frozenset`` arguments or two strings
+    trade places unnoticed, and a member typed in anything but the domain's
+    own values would leak a representation across the port.
+    """
+    member = getattr(owner, name)
+    signature = inspect.signature(member)
+    taken = list(signature.parameters.values())[1:]
+
+    assert inspect.iscoroutinefunction(member)
+    assert taken
+    assert all(
+        parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in taken
+    ), signature
+    with pytest.raises(TypeError):
+        signature.bind(object(), *(object() for _ in taken))
+    assert typing.get_type_hints(member) == LEASE_CONTRACTS[name]
