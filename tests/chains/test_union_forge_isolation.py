@@ -95,13 +95,21 @@ UNION_MODULES: tuple[str, ...] = (
     "kodezart.services.union_identity",
 )
 
-#: Each pull-request QUERY port, its exact declared surface, its double and
-#: the double's.  The write port is pinned by the shipped base-resolution
-#: case; these are the read halves, where a merge would be likeliest to
-#: arrive disguised as one more thing you can ask about a pull request.
-#: The two surfaces differ because the native client answers both read
-#: questions on one object while each port declares only its own.
+#: Each forge READ port, its exact declared surface, its double and the
+#: double's.  The write port is pinned by the shipped base-resolution case;
+#: these are the read halves, where a merge would be likeliest to arrive
+#: disguised as one more thing you can ask about a pull request.  ForgeQuery is
+#: the port the criterion literally names, so it is pinned here as well as
+#: scanned above.  A double's surface is wider than its port's wherever the
+#: native client answers several read questions on one object while each port
+#: declares only its own.
 QUERY_DOUBLES: tuple[tuple[type, frozenset[str], type, frozenset[str]], ...] = (
+    (
+        protocols.ForgeQuery,
+        frozenset({"open_pr_for_head", "branch_web_url"}),
+        FakeForgeQuery,
+        frozenset({"open_pr_for_head", "branch_web_url"}),
+    ),
     (
         protocols.PRStateReader,
         frozenset({"read_pr_state"}),
