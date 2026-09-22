@@ -33,7 +33,17 @@ REMOTE_HEAD = "c" * 40
 #: Where the base stands, and where a deliverable branch that has taken
 #: nothing from its loop still stands with it.
 BASE_TIP = "e" * 40
+#: Where a deliverable branch that has taken work of its own stands instead.
+MOVED_TIP = "f" * 40
 DIGEST = "d" * 64
+
+
+#: The three reads one record's re-entry makes, in the order it makes them:
+#: one per branch its roles resolve, each answered by a sha of its own.
+def reads(*branches: str) -> list[tuple[str, ...]]:
+    return [("remote_branch_sha", "/clone", REMOTE, branch) for branch in branches]
+
+
 OPEN = ("KOD-684/check",)
 
 
@@ -111,7 +121,9 @@ async def test_a_remote_head_past_the_record_resumes_there_and_says_so():
     record is behind is a lane somebody has to be able to see.
     """
     port = await board(record())
-    git = FakeGitService(remote_branch_shas={LOOP: REMOTE_HEAD})
+    git = FakeGitService(
+        remote_branch_shas={LOOP: REMOTE_HEAD, DELIVERABLE: BASE_TIP, BASE: BASE_TIP}
+    )
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
@@ -122,6 +134,7 @@ async def test_a_remote_head_past_the_record_resumes_there_and_says_so():
         deliverable_branch=DELIVERABLE,
         loop_branch=LOOP,
         head_sha=REMOTE_HEAD,
+        deliverable_head_sha=BASE_TIP,
         body_digest=DIGEST,
     )
     differs = [entry for entry in logs if entry["event"] == "lane_record_head_differs"]
@@ -135,7 +148,9 @@ async def test_a_remote_head_past_the_record_resumes_there_and_says_so():
 async def test_a_record_level_with_the_remote_says_nothing():
     """Not vacuous: the same reader logs nothing when the two agree."""
     port = await board(record())
-    git = FakeGitService(remote_branch_shas={LOOP: RECORDED_HEAD})
+    git = FakeGitService(
+        remote_branch_shas={LOOP: RECORDED_HEAD, DELIVERABLE: BASE_TIP, BASE: BASE_TIP}
+    )
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
@@ -145,6 +160,11 @@ async def test_a_record_level_with_the_remote_says_nothing():
     assert isinstance(entry, ResumedLane)
     assert entry.head_sha == RECORDED_HEAD
     assert [item for item in logs if item["event"] == "lane_record_head_differs"] == []
+    # Level at both levels: the deliverable branch stands where its base does,
+    # so that reading says nothing either.
+    assert [
+        item for item in logs if item["event"] == "lane_deliverable_head_differs"
+    ] == []
 
 
 async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
@@ -177,11 +197,11 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
             issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
         )
 
-    # What "the deliverable branch still stands at its base tip" means at
-    # re-entry: nothing addresses that branch at all. One remote read, at the
-    # branch the LOOP role resolves, so the deliverable branch is left where
-    # its base is by the reader never asking about it.
-    assert git.calls == [("remote_branch_sha", "/clone", REMOTE, LOOP)]
+    # One read per branch the record's roles resolve, in that order: the loop
+    # level, the deliverable level, and the base the deliverable level is
+    # compared against. Every conjunct of this case is therefore answered by a
+    # sha somebody read, not by a fixture value nothing addresses.
+    assert git.calls == reads(LOOP, DELIVERABLE, BASE)
     # The domain function is called once, for the expected value only: the
     # record it answers over is the one this test built, while the reader
     # answered over the one it parsed back out of the comment, so every
@@ -199,17 +219,76 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
     # deliverable branch sits on nor the loop tip the remote holds — by sha,
     # read off the reader's own output rather than off the fixture's dict.
     assert differs[0]["recorded_head"] not in (BASE_TIP, REMOTE_HEAD)
-    # The Check's other half, "the deliverable branch is still at its base
-    # tip", is carried by the single-read assertion above and by nothing else,
-    # and that is the whole of it: the reader never asks about that branch, so
-    # no answer it gives can mention where that branch stands.  The sha the
-    # fixture puts there is therefore arbitrary — moving it changes nothing, as
-    # it should not.  An assertion here that the base tip reaches neither
-    # answer would read like a pin and hold for the same reason the fixture
-    # value is arbitrary, so it is deliberately absent.
     assert isinstance(entry, ResumedLane)
     assert entry.head_sha == REMOTE_HEAD
     assert entry.deliverable_branch != entry.loop_branch
+    # The other half, "the deliverable branch is still at its base tip", read
+    # off the entry by sha: the branch the DELIVERABLE role resolves stands at
+    # the base tip, which is neither the loop tip nor the commit the record
+    # names, and the reader said nothing about it having moved.
+    assert entry.deliverable_head_sha == BASE_TIP
+    assert entry.deliverable_head_sha not in (REMOTE_HEAD, BEST_COMMIT)
+    assert [
+        item for item in logs if item["event"] == "lane_deliverable_head_differs"
+    ] == []
+
+
+async def test_a_deliverable_branch_at_its_base_tip_is_reported_by_sha():
+    """The deliverable level answers for itself, by sha (KOD-705).
+
+    A lane whose deliverable branch has taken nothing from its loop stands
+    where the base its record names stands. The reader asks that branch — the
+    one the DELIVERABLE role resolves — and the entry carries the answer, so
+    the fact is one somebody observed rather than one a fixture asserts about a
+    branch nothing addressed.
+    """
+    port = await board(record())
+    git = FakeGitService(
+        remote_branch_shas={LOOP: RECORDED_HEAD, DELIVERABLE: BASE_TIP, BASE: BASE_TIP}
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        entry = await reader(port, git).read(
+            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+        )
+
+    assert git.calls == reads(LOOP, DELIVERABLE, BASE)
+    assert isinstance(entry, ResumedLane)
+    assert entry.deliverable_head_sha == BASE_TIP
+    # And the level itself is silent: there is nothing to say about a branch
+    # that stands where it was cut.
+    assert [
+        item for item in logs if item["event"] == "lane_deliverable_head_differs"
+    ] == []
+
+
+async def test_a_deliverable_branch_off_its_base_tip_is_reported_and_said_out_loud():
+    """A deliverable branch carrying work of its own enters and is announced.
+
+    Not a refusal: the branch holds something the base does not, which is this
+    lane's next question rather than a reason to strand it. The moved sha is on
+    the entry and both shas are on the line, so a lane whose delivery has moved
+    on is a lane somebody can see.
+    """
+    port = await board(record())
+    git = FakeGitService(
+        remote_branch_shas={LOOP: RECORDED_HEAD, DELIVERABLE: MOVED_TIP, BASE: BASE_TIP}
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        entry = await reader(port, git).read(
+            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+        )
+
+    assert isinstance(entry, ResumedLane)
+    assert entry.deliverable_head_sha == MOVED_TIP != BASE_TIP
+    moved = [item for item in logs if item["event"] == "lane_deliverable_head_differs"]
+    assert len(moved) == 1
+    assert moved[0]["lane"] == LANE
+    assert moved[0]["branch"] == DELIVERABLE
+    assert moved[0]["base"] == BASE
+    assert moved[0]["base_head"] == BASE_TIP
+    assert moved[0]["deliverable_head"] == MOVED_TIP
 
 
 @pytest.mark.parametrize(

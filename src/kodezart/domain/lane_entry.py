@@ -125,6 +125,7 @@ def decide_lane_entry(
     issue_key: str,
     recorded: tuple[LaneRunState, RecordedBranches] | None,
     remote_loop_head: str | None,
+    remote_deliverable_head: str | None,
     open_criteria: Sequence[str],
     resolved_base: str,
 ) -> LaneEntry | None:
@@ -151,6 +152,14 @@ def decide_lane_entry(
     what the branch contains and the known cause is a commit pushed while its
     record write failed. Refusing would strand exactly that lane; the next
     commit's record write brings the record level again.
+
+    ``remote_deliverable_head`` is the other level's own reading, and it is
+    carried onto the entry rather than compared with anything here: where the
+    deliverable branch stands is a fact about that branch, and the entry is
+    the one value this lane's facts are read off. A deliverable branch the
+    remote does not hold arrives as ``None`` and refuses nothing — a lane that
+    has pushed a loop branch and no deliverable one is exactly the lane a
+    resumed entry exists for.
     """
     if recorded is None:
         return NewLane() if open_criteria else None
@@ -175,6 +184,7 @@ def decide_lane_entry(
             deliverable_branch=branches.deliverable_branch,
             loop_branch=branches.loop_branch,
             head_sha=remote_loop_head,
+            deliverable_head_sha=remote_deliverable_head,
             body_digest=record.body_digest,
         )
     if record.pr is not None:
@@ -183,6 +193,7 @@ def decide_lane_entry(
         deliverable_branch=branches.deliverable_branch,
         loop_branch=branches.loop_branch,
         head_sha=remote_loop_head,
+        deliverable_head_sha=remote_deliverable_head,
         body_digest=record.body_digest,
     )
 

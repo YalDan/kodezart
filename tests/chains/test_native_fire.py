@@ -2112,6 +2112,9 @@ async def test_a_native_remediation_round_keeps_its_roster():
 RECORDED_DELIVERABLE = "kodezart/fire/subject-1234abcd"
 RECORDED_LOOP = f"{RECORDED_DELIVERABLE}-ralph-0"
 RECORDED_HEAD = "c" * 40
+#: Where the remote holds the deliverable branch at this entry: the other
+#: level's own reading, carried by every entry that stands on a record.
+RECORDED_DELIVERABLE_HEAD = "d" * 40
 
 ALL_CRITERIA = (
     DIRECT_OWED,
@@ -2131,6 +2134,7 @@ def entry_of(kind: str):
         deliverable_branch=RECORDED_DELIVERABLE,
         loop_branch=RECORDED_LOOP,
         head_sha=RECORDED_HEAD,
+        deliverable_head_sha=RECORDED_DELIVERABLE_HEAD,
         body_digest=None,
     )
 
