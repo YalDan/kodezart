@@ -1,4 +1,4 @@
-"""Read the tracker's write surface off the roles it is dialled as.
+"""Refuse boot over a tracker write path nothing accounts for.
 
 The census needs three facts about the running code, and derives all three
 rather than restating them: which roles a dialled tracker writes through,
@@ -6,6 +6,12 @@ where a step enters the verifier, and which function a derived-write
 declaration names.  A role added beside the port, a renamed verifier
 parameter or a moved declaration therefore changes what is censused,
 instead of leaving a list here to disagree with the code.
+
+``verify_write_adoption`` is the boot gate: the first act of the
+application's lifespan, before the tracker is dialled or anything written,
+over the installed source.  The census does not read configuration, because
+a write path no verifier drives is a defect in every deployment whatever it
+schedules.
 """
 
 import functools
@@ -20,10 +26,15 @@ from kodezart.composition.tracker import DialledTracker
 from kodezart.core import protocols
 from kodezart.core.protocols import WriteBackStep
 from kodezart.domain.derived_writes import derived_writes
-from kodezart.types.domain.write_adoption import DriveEntry, Source
+from kodezart.domain.errors import UnverifiedWritePathError
+from kodezart.domain.write_adoption import artifact_writes, take_census
+from kodezart.types.domain.write_adoption import DriveEntry, Source, WriteCensus
 
 #: The installed package the census reads.
 PACKAGE_ROOT = Path(kodezart.__file__).parent
+#: The one path a tree with no tracker write at all is refused under, so a
+#: packaging change that hid the source cannot make the gate pass on nothing.
+NO_WRITE_FOUND = "(no call of the tracker's write surface was found)"
 
 
 def tracker_write_roles() -> tuple[type, ...]:
@@ -95,3 +106,32 @@ def installed_sources() -> Mapping[str, str]:
         path.relative_to(PACKAGE_ROOT).as_posix(): path.read_text(encoding="utf-8")
         for path in sorted(PACKAGE_ROOT.rglob("*.py"))
     }
+
+
+def verify_write_adoption(sources: Mapping[str, str] | None = None) -> WriteCensus:
+    """Refuse a tracker write no verifier drives and no declaration holds out.
+
+    Reads the installed source unless *sources* is given, and returns the
+    census it took.  A census is kept per distinct source content, so a
+    process pays the parse once and a changed tree is censused afresh
+    rather than answered from what an earlier tree said.  A stale
+    declaration does not refuse: a declared function that no longer writes
+    is no write path.
+    """
+    read = installed_sources() if sources is None else sources
+    census = _census(tuple(sorted(read.items())))
+    if not census.sites:
+        raise UnverifiedWritePathError(paths=(NO_WRITE_FOUND,))
+    if census.unadopted:
+        raise UnverifiedWritePathError(paths=census.paths)
+    return census
+
+
+@functools.cache
+def _census(sources: tuple[tuple[str, str], ...]) -> WriteCensus:
+    return take_census(
+        sources=dict(sources),
+        writes=artifact_writes(tracker_write_roles()),
+        entry=drive_entry(),
+        marker=marker_address(),
+    )

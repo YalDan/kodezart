@@ -690,7 +690,12 @@ There is no standalone write-back verification loop or budget setting. The
 unused verifier has been retired. Active tracker writers retain their inline
 read-back obligations, and audit sessions retain fresh-session and source
 checks. `read_tracker_artifact` remains the native full-content reader used by
-the audit path. Universal scope-writer adoption is unfinished.
+the audit path. Boot refuses, before the tracker is dialled or anything is
+written, any call of the tracker's artifact-write surface in the installed code
+that no write-back verifier drives and no derived-write declaration beside its
+writer holds out, with `UnverifiedWritePathError` naming each such path. The
+check reads the installed source rather than configuration, so no setting
+enables or disables it.
 
 The shared `AuditMandateHunt.observe` consumes an explicit `AuditMandateContext`
 from either a fresh criterion judgment or a native terminal refutation. The

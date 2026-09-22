@@ -275,6 +275,7 @@
   "tests/integration/test_stacked_scope.py": 29,
   "tests/integration/test_supervisor_pass.py": 63,
   "tests/integration/test_workflow_e2e.py": 62,
+  "tests/integration/test_write_path_boot.py": 15,
   "tests/model_members.py": 5,
   "tests/probes/notion_records.py": 4,
   "tests/probes/test_ab_failure_capture.py": 8,
@@ -3927,6 +3928,13 @@
    "test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path",
    "test_the_flipped_defaults_attach_the_sets_lenses_to_the_creator",
    "test_a_review_entry_round_is_built_on_the_consolidated_work"
+  ],
+  "tests/integration/test_write_path_boot.py": [
+   "test_a_deployment_with_an_unadopted_write_path_refuses_to_boot_naming_it",
+   "test_a_write_path_declared_derived_boots",
+   "test_a_driven_write_path_passes_the_boot_check",
+   "test_the_shipped_tree_passes_the_boot_check",
+   "test_an_empty_source_tree_refuses_to_boot"
   ],
   "tests/negative_shape.py": [
    "test_declarations",

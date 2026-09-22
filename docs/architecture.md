@@ -1068,7 +1068,8 @@ over rather than compared. Nothing is leased, claimed or marked in progress for
 it, and no writable-surface address is taken: no container-description
 destination exists, and exactly-one follows from the terminal running once and
 comparing before it posts (KOD-788). That write sits outside the write-back verifier,
-declared a derived write beside its writer, which the adoption census reads,
+declared a derived write beside its writer, which the adoption census and the
+boot gate both read,
 rather than a new read-back arm, because the walk it
 reports on has ended and there is no judged commit to verify it against
 (KOD-806). A milestone or issue scope has no status surface at the backend, so
@@ -1736,3 +1737,16 @@ unadopted, and a declared write its function no longer makes undriven is
 stale — and it cannot shelter authored prose: a declared write whose writer
 names `ContentClass.AUTHORED` stays unadopted. Each declaring function says
 in its own docstring why its write is derived (KOD-806, KOD-867).
+
+Boot refuses what the census does not account for.
+`kodezart.composition.write_adoption.verify_write_adoption` is the first act of
+the application lifespan, before the forge client, the tracker dial and the
+mapping reconciliation (itself a write): over the installed source it raises
+`UnverifiedWritePathError` naming every unadopted path as
+`module::function::method`, and it raises as well when it finds no call of the
+write surface at all, so a packaging change cannot make it pass on nothing. It
+reads no configuration, because a write path no verifier drives is a defect in
+every deployment whatever it schedules. A stale declaration does not refuse
+boot; the guard in `tests/chains/test_write_back_adoption.py` holds the census
+to none. The census is kept per distinct source content, so a process parses
+the package once (KOD-533).

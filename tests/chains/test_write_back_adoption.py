@@ -51,8 +51,10 @@ from kodezart.composition.write_adoption import (
     installed_sources,
     marker_address,
     tracker_write_roles,
+    verify_write_adoption,
 )
 from kodezart.core.protocols import ScopeStatusUpdates, TrackerPort, WriteBackStep
+from kodezart.domain.errors import UnverifiedWritePathError
 from kodezart.domain.source_resolution import SourceIndex
 from kodezart.domain.write_adoption import (
     artifact_writes,
@@ -1028,6 +1030,22 @@ def test_a_step_wired_straight_at_the_port_fails_the_static_check():
         )
         in found.driven
     )
+
+
+def test_the_boot_gate_and_the_guard_are_one_census():
+    """What boot refuses is what this guard reads, over the same source.
+
+    The gate refuses a tree carrying the direct writer with exactly the
+    paths the census names for that tree, and over the installed tree it
+    returns the very census every assertion above is made against, so the
+    guard cannot pass a tree the gate would refuse or the reverse.
+    """
+    planted = {**installed_sources(), "planted/direct.py": DIRECT}
+    with pytest.raises(UnverifiedWritePathError) as refused:
+        verify_write_adoption(planted)
+    assert refused.value.paths == census(("planted/direct.py", DIRECT)).paths
+    assert refused.value.paths == ("planted/direct.py::Writer.publish::post_comment",)
+    assert verify_write_adoption() == census()
 
 
 def test_a_writer_a_step_delegates_to_is_verified_with_it():
