@@ -121,6 +121,12 @@ def criteria_echo(
     }
 
 
+#: What a scripted base reading reports it ran, so a test that asserts the
+#: command was recorded names this rather than a literal of its own: the value
+#: under assertion is the one the answer carried.
+BASE_COMMAND = "ran the check this criterion names, at the base"
+
+
 def base_echo(*, keys: Sequence[str], satisfied: Container[str]) -> dict:
     """One base-check answer per criterion of *keys*, satisfying *satisfied*.
 
@@ -132,7 +138,7 @@ def base_echo(*, keys: Sequence[str], satisfied: Container[str]) -> dict:
         "baseCheckResults": [
             {
                 "criterionId": key,
-                "command": "ran the check this criterion names, at the base",
+                "command": BASE_COMMAND,
                 "satisfiedAtBase": key in satisfied,
             }
             for key in keys
