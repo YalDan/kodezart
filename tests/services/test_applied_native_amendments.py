@@ -25,6 +25,7 @@ from tests.services.test_native_amendments import (
     PROTECTED_BODY,
     PROTECTED_NAME,
     PROTECTED_PATH,
+    REPO_URL,
     UNVERIFIABLE_HERE,
     WEAKENED_BODY,
     Executor,
@@ -482,6 +483,85 @@ async def test_undemonstrable_here_upholds_at_the_environment_reason_touching_no
             await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
             == ""
         )
+    finally:
+        await cleanup(workspace)
+
+
+@pytest.mark.parametrize(
+    "claimed,environment,repo_url,expected",
+    [
+        pytest.param(
+            None,
+            {CheckPrerequisite.NETWORK: False},
+            REPO_URL,
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="no_declared_capability_is_not_undemonstrability",
+        ),
+        pytest.param(
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            REPO_URL,
+            UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+            id="the_typed_claim_meets_the_declared_absence",
+        ),
+        pytest.param(
+            "network",
+            {CheckPrerequisite.NETWORK: True},
+            REPO_URL,
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="the_capability_declared_present_is_not_undemonstrability",
+        ),
+        pytest.param(
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            None,
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="no_matched_repository_declares_no_environment",
+        ),
+    ],
+)
+async def test_undemonstrability_conjoins_the_typed_claim_and_the_declared_environment(
+    repository, claimed, environment, repo_url, expected
+):
+    """Neither party can force the recording, through the wiring that supplies it.
+
+    The rows run the whole writer, so the environment under test is the one
+    `for_writer` resolves off the matched repository rather than one a fixture
+    hands the resolver. The last row matches no repository at all: the guard is
+    then handed no declared environment and the refusal falls back to the ground,
+    which is the fail-closed arm the resolver alone cannot show.
+
+    In every row the departure is refused and the criterion stands: its text and
+    its state are what they were, and only the escalated row's classification
+    moves.
+    """
+    port = tracker()
+    before = port.issues[DIRECT_OWED]
+    executor = Executor(
+        reproduced=True, claimed_capability=claimed, finding=UNVERIFIABLE_HERE
+    )
+    service, guard, workspace, _ = await build(
+        repository,
+        executor,
+        port=port,
+        repo_url=repo_url,
+        runner_environment=environment,
+    )
+    escalated = expected is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        refusal = report.upheld[0]
+        assert refusal.reason is expected
+        assert refusal.publication.kind == ("escalated" if escalated else "recorded")
+        settled = port.issues[DIRECT_OWED]
+        assert settled.body == before.body
+        assert settled.state_kind is before.state_kind
+        assert settled.issue_labels == (
+            before.issue_labels | {"decision"} if escalated else before.issue_labels
+        )
+        assert len(escalations_on(port, DIRECT_OWED)) == (1 if escalated else 0)
+        assert not any(isinstance(e, ResultEvent) for e in events)
     finally:
         await cleanup(workspace)
 

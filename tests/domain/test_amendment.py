@@ -1,10 +1,13 @@
 """Native semantic addresses and report arithmetic preserve exact identities."""
 
+import importlib
+import pkgutil
 from typing import get_args
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
+import kodezart.types.domain as types_domain
 from kodezart.domain.amendment import (
     NativeWriteRefusalError,
     escalation_question,
@@ -26,9 +29,11 @@ from kodezart.types.domain.amendment import (
     NativeWriterOutput,
     RecordedRefusal,
     UpheldAmendment,
+    UpheldJudgment,
     UpheldReason,
 )
 from kodezart.types.domain.audit import TrackerArtifact
+from kodezart.types.domain.criteria import FindingEvidence
 from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.ruling_id import RulingId
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -488,6 +493,114 @@ def test_claim_cannot_carry_writer_reasoning_unknown_stage_or_unknown_ground():
         NativeWriterOutput(claims=[valid, valid])
 
 
+def _annotation_types(annotation):
+    """Every type mentioned anywhere inside one field's annotation."""
+    yield annotation
+    for argument in get_args(annotation):
+        yield from _annotation_types(argument)
+
+
+def _declared_models():
+    """Every model declared under `kodezart.types.domain`, found by walking it.
+
+    Derived rather than listed, so a model added to the package is scanned
+    without anyone remembering to add it here.
+    """
+    for info in pkgutil.iter_modules(types_domain.__path__):
+        module = importlib.import_module(f"{types_domain.__name__}.{info.name}")
+        for value in vars(module).values():
+            if (
+                isinstance(value, type)
+                and issubclass(value, BaseModel)
+                and value.__module__ == module.__name__
+            ):
+                yield value
+
+
+def test_no_field_can_carry_a_session_observed_probe_outcome():
+    """A probe outcome is a capability paired with a truth value about this host.
+
+    Undemonstrability is resolved from configuration alone, so no model a session
+    fills in may offer a seat for what a session claims to have observed about
+    this environment. The exact field names of every such model are pinned, so a
+    new field cannot appear unnoticed; the closing half is derived rather than
+    listed, because the shape to forbid is what a probe outcome IS: across these
+    models the only field that mentions the capability vocabulary at all is the
+    typed claim, which names a capability and no truth value; and across the whole
+    types package the only field pairing capabilities with truth values is the
+    repository's own declared environment, which is configuration.
+    """
+    assert {
+        model.__name__: set(model.model_fields)
+        for model in (
+            AmendmentClaim,
+            AmendmentJudgment,
+            UpheldJudgment,
+            UpheldAmendment,
+            NativeWriterOutput,
+            FindingEvidence,
+        )
+    } == {
+        "AmendmentClaim": {
+            "subject",
+            "stage",
+            "ground",
+            "departure",
+            "claimed_capability",
+        },
+        "AmendmentJudgment": {
+            "subject",
+            "base_sha",
+            "ground",
+            "reproduced",
+            "finding",
+            "citations",
+            "measured_by",
+        },
+        "UpheldJudgment": {"verdict", "claim", "reason", "judgment"},
+        "UpheldAmendment": {"verdict", "claim", "reason", "judgment", "publication"},
+        "NativeWriterOutput": {"claims"},
+        "FindingEvidence": {
+            "verdict",
+            "smallest_repair",
+            "refutation",
+            "missing_resource",
+            "cost_claim",
+            "base_demonstration",
+            "pinned_literals",
+            "forbidden_class",
+            "undeclared_switch_arms",
+        },
+    }
+    session_facing = {
+        (model.__name__, name): field.annotation
+        for model in (
+            AmendmentClaim,
+            AmendmentJudgment,
+            UpheldJudgment,
+            UpheldAmendment,
+            NativeWriterOutput,
+            FindingEvidence,
+        )
+        for name, field in model.model_fields.items()
+    }
+    assert {
+        address: str(annotation)
+        for address, annotation in session_facing.items()
+        if any(found is CheckPrerequisite for found in _annotation_types(annotation))
+    } == {
+        ("AmendmentClaim", "claimed_capability"): (
+            "kodezart.types.domain.operation.CheckPrerequisite | None"
+        )
+    }
+    assert {
+        (model.__name__, name)
+        for model in _declared_models()
+        for name, field in model.model_fields.items()
+        if field.annotation == dict[CheckPrerequisite, bool]
+    } == {("RepoEntry", "runner_environment")}
+
+
 def test_upheld_record_cannot_misattribute_a_judgment_or_claim_amended():
     value = record().model_dump()
     with pytest.raises(ValidationError):
@@ -523,6 +636,9 @@ def test_actual_scope_egress_roundtrips_required_nulls_and_rejects_bad_native_re
         ("network", None, "ground_not_reproduced"),
         ("network", {CheckPrerequisite.NETWORK: True}, "ground_not_reproduced"),
         ("network", {CheckPrerequisite.NETWORK: False}, "environment_lacks_capability"),
+        # A declaration that says nothing about this capability is a declaration
+        # that it is absent: the reading fails closed rather than assuming it.
+        ("network", {}, "environment_lacks_capability"),
     ],
 )
 def test_missing_capability_requires_a_typed_claim_absent_from_declared_capabilities(
@@ -654,16 +770,21 @@ def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_am
         "uneconomic_without_escalation",
         "environment_without_escalation",
         "ground_with_escalation",
+        "environment_without_capability",
     ],
 )
 def test_completed_reports_refuse_missing_or_unrelated_canonical_evidence(mutation):
     """The publication rule is a biconditional, refused from both directions.
 
-    The two environment rows are the controls the set rule needs. The one
-    withholding the escalation carries the typed claimed capability, so the
-    subject rule cannot speak first and only the publication rule can refuse;
-    the one adding an escalation leaves the reason a person is never asked
-    about, so an escalation on it is a question with no addressee.
+    Two rows are the controls the set rule needs. The one withholding the
+    escalation carries the typed claimed capability, so the subject rule cannot
+    speak first and only the publication rule can refuse; the one adding an
+    escalation leaves the reason a person is never asked about, so an escalation
+    on it is a question with no addressee.
+
+    The last row is the fail-closed half: a missing-capability reason with no
+    capability to name is refused whatever its publication carries, and it is
+    escalated here so that the publication rule cannot be what speaks.
     """
     value = record().model_dump()
     if mutation == "missing_publication":
@@ -680,6 +801,15 @@ def test_completed_reports_refuse_missing_or_unrelated_canonical_evidence(mutati
         value["reason"] = "environment_lacks_capability"
         value["claim"]["claimed_capability"] = "network"
     elif mutation == "ground_with_escalation":
+        value["publication"] = {
+            "kind": "escalated",
+            "record": value["publication"]["record"],
+            "escalation": value["publication"]["record"],
+        }
+    elif mutation == "environment_without_capability":
+        # Escalated, so the publication rule passes and the only rule left to
+        # speak is the one requiring the capability this reason names.
+        value["reason"] = "environment_lacks_capability"
         value["publication"] = {
             "kind": "escalated",
             "record": value["publication"]["record"],

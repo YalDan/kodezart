@@ -352,6 +352,7 @@
   "tests/services/test_prompt_delta_cancel_independent.py": 3,
   "tests/services/test_prompt_pass.py": 58,
   "tests/services/test_prompt_passes.py": 73,
+  "tests/services/test_refusal_surface_static.py": 8,
   "tests/services/test_run_recorder.py": 46,
   "tests/services/test_run_surface_lease.py": 52,
   "tests/services/test_scope_classification_static.py": 13,
@@ -4939,6 +4940,10 @@
    "TestTheClauseAndTheRunnerNameOneRow.test_a_row_titled_as_prescribed_is_verified_and_not_backfilled",
    "TestTheClauseAndTheRunnerNameOneRow.test_the_row_the_clause_instructs_is_verified_with_its_prose",
    "TestTheClauseAndTheRunnerNameOneRow.test_a_row_titled_any_other_way_leaves_the_run_unrecorded"
+  ],
+  "tests/services/test_refusal_surface_static.py": [
+   "test_the_refusal_path_exposes_no_clearing_surface",
+   "test_the_detector_finds_a_planted_clearing_surface"
   ],
   "tests/services/test_run_recorder.py": [
    "TestRunRecorder.test_an_absent_record_is_backfilled_to_its_systems_sink",
