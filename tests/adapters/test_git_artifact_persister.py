@@ -229,6 +229,100 @@ async def test_clean_noop_when_no_artifacts(
     )
 
 
+@pytest.mark.parametrize("failing", ["acquire", "add_all"])
+async def test_clean_logs_and_swallows_a_failure_rather_than_raising(
+    git_env: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failing: str,
+) -> None:
+    """Cleanup is housekeeping before a pull request opens, and never aborts it.
+
+    Both halves of the act are covered: one that fails before it holds a tree
+    at all, and one that fails with the tree held and the directory really
+    there. In both, ``clean`` answers None, exactly one cleanup failure is
+    recorded at error level naming the branch, and a tree that was taken is
+    given back.
+    """
+    repo, _bare = git_env
+    git = SubprocessGitService(remote="origin")
+    cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
+    workspace = GitWorktreeProvider(git=git, cache=cache)
+    persister = GitArtifactPersister(
+        git=git,
+        workspace=workspace,
+        committer_name="test",
+        committer_email="t@t.dev",
+    )
+    await persister.persist(
+        repo_path=str(repo),
+        repo_url=None,
+        branch="swallow-branch",
+        base_branch="main",
+        artifacts={"test.json": "{}"},
+    )
+
+    acquired: list[str] = []
+    released: list[str] = []
+    real_acquire = workspace.acquire
+    real_release = workspace.release
+
+    async def acquiring(
+        *,
+        repo_path: str | None = None,
+        repo_url: str | None = None,
+        ref: str,
+        branch_name: str | None = None,
+        create_branch: bool = True,
+        cache_key: str | None = None,
+    ) -> str:
+        path = await real_acquire(
+            repo_path=repo_path,
+            repo_url=repo_url,
+            ref=ref,
+            branch_name=branch_name,
+            create_branch=create_branch,
+            cache_key=cache_key,
+        )
+        acquired.append(path)
+        assert (Path(path) / ARTIFACT_DIR).is_dir()
+        return path
+
+    async def releasing(workspace_path: str) -> None:
+        released.append(workspace_path)
+        await real_release(workspace_path)
+
+    async def refusing(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError(f"{failing} could not be carried out")
+
+    monkeypatch.setattr(workspace, "release", releasing)
+    if failing == "acquire":
+        monkeypatch.setattr(workspace, "acquire", refusing)
+    else:
+        monkeypatch.setattr(workspace, "acquire", acquiring)
+        monkeypatch.setattr(git, "add_all", refusing)
+
+    with structlog.testing.capture_logs() as logs:
+        answer = await persister.clean(
+            repo_path=str(repo),
+            repo_url=None,
+            branch="swallow-branch",
+        )
+
+    assert answer is None
+    failures = [
+        record for record in logs if record.get("event") == "artifact_cleanup_failed"
+    ]
+    assert len(failures) == 1
+    assert failures[0]["log_level"] == "error"
+    assert failures[0]["branch"] == "swallow-branch"
+    assert failing in failures[0]["error"]
+    # The tree is given back exactly when it was taken, so a failure inside the
+    # act leaves no worktree held.
+    assert len(acquired) == (0 if failing == "acquire" else 1)
+    assert released == acquired
+
+
 async def test_persist_skips_when_target_gitignores_artifact_dir(
     git_env: tuple[Path, Path],
     tmp_path: Path,
