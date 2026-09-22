@@ -1,0 +1,250 @@
+{
+  "chains/audit_detection_removal.py::DetectorRemovalVerifier._require_removed_quote": {
+    "reason": "the removed quote read at the graded commit and again at the head: each read's own commit is checked against the commit it was asked for, a self-resolution twice over and never one revision against the other",
+    "meetings": [
+      "baseline.commit_sha != snapshot.evidence.graded_sha",
+      "baseline.commit_sha != snapshot.evidence.graded_sha or baseline.path != quote.path",
+      "current.commit_sha != snapshot.head_sha",
+      "current.commit_sha != snapshot.head_sha or current.path != quote.path",
+      "self._git.find_source(cwd=snapshot.repository, commit_sha=snapshot.head_sha, path=quote.path)",
+      "self._git.read_source(cwd=snapshot.repository, commit_sha=snapshot.evidence.graded_sha, path=quote.path)"
+    ]
+  },
+  "chains/audit_detection_removal.py::DetectorRemovalVerifier.observe": {
+    "reason": "both revisions quoted into the session's prompt, recorded onto the observation and handed to the quote reads above: prose, a record and a ref, never a reading of the pair",
+    "meetings": [
+      "DetectorRemovalJudgment.model_validate(payload)",
+      "DetectorRemovalObservation(judgment=judgment, graded_sha=snapshot.evidence.graded_sha, head_sha=snapshot.head_sha, record_ref=snapshot.comment.comment_key, check=snapshot.check)",
+      "self._sessions.judge(repository=snapshot.repository, head_sha=snapshot.head_sha, key=key, prompt=prompt, output_schema=DETECTOR_REMOVAL_SCHEMA, site='audit_detection_removal')",
+      "{'criterion_key': snapshot.criterion.issue_key, 'check': snapshot.check, 'graded_sha': snapshot.evidence.graded_sha, 'head_sha': snapshot.head_sha}"
+    ]
+  },
+  "chains/audit_evidence.py::AuditEvidenceVerifier._head": {
+    "reason": "the body that resolves the head the reading below is taken at and hands it on; the two revisions meet nowhere in it",
+    "meetings": []
+  },
+  "chains/audit_evidence.py::AuditEvidenceVerifier._head.observe": {
+    "reason": "self-resolution: each recorded revision must resolve to itself; and the ancestry weighing of the graded commit against the recorded branch, whose miss is a refusal to read the record, not a reading that the grading stopped standing",
+    "meetings": [
+      "await self._source.resolve_commit(cwd=repository, ref=evidence.graded_sha) != evidence.graded_sha",
+      "await self._source.resolve_commit(cwd=repository, ref=head) != head",
+      "self._git.is_ancestor(repository, evidence.graded_sha, head)",
+      "self._source.resolve_commit(cwd=repository, ref=evidence.graded_sha)",
+      "self._source.resolve_commit(cwd=repository, ref=head)"
+    ]
+  },
+  "chains/audit_evidence.py::AuditEvidenceVerifier._observe": {
+    "reason": "the audit lane's one consultation of the rule, and the remote head read again to refuse a record the branch moved under: head against head",
+    "meetings": [
+      "graded_state(graded_sha=evidence.graded_sha, head_sha=head)",
+      "latest_head != head"
+    ]
+  },
+  "chains/audit_evidence.py::AuditEvidenceVerifier.observe": {
+    "reason": "awaits the consultation above and hands its observation on, holding what that reading returns without reading a revision out of it",
+    "meetings": []
+  },
+  "chains/audit_overclaim.py::AuditOverclaimVerifier._adoption": {
+    "reason": "membership: whether an adopted source sha is one of the audited pair, never one of the pair against the other",
+    "meetings": [
+      "pair.source_sha not in {snapshot.evidence.graded_sha, snapshot.head_sha}",
+      "{snapshot.evidence.graded_sha, snapshot.head_sha}"
+    ]
+  },
+  "chains/audit_overclaim.py::AuditOverclaimVerifier.observe": {
+    "reason": "the same prompt-and-record shape as the removal observation: quoted into the session and recorded onto the observation",
+    "meetings": [
+      "AuditOverclaimJudgment.model_validate(output)",
+      "AuditOverclaimObservation(judgment=judgment, graded_sha=snapshot.evidence.graded_sha, head_sha=snapshot.head_sha, record_ref=snapshot.comment.comment_key, check=snapshot.check)",
+      "self._sessions.judge(repository=snapshot.repository, head_sha=snapshot.head_sha, key=key, prompt=prompt, output_schema=AUDIT_OVERCLAIM_SCHEMA, site='audit_overclaim')",
+      "{'criterion_key': snapshot.criterion.issue_key, 'graded_sha': snapshot.evidence.graded_sha, 'head_sha': snapshot.head_sha, 'check': snapshot.check}"
+    ]
+  },
+  "chains/audit_sweep.py::AuditReadSweep._observe": {
+    "reason": "each arm's observation, carrying the revisions that arm read at, collected into the sweep's reading unweighed",
+    "meetings": [
+      "AuditReadObservation(target, claim=report, evidence=evidence, restamp=restamp)"
+    ]
+  },
+  "chains/audit_sweep.py::AuditReadSweep._observe_forge": {
+    "reason": "the recorded commit of a historical forge observation, carried onto the claim the mandate is asked about, and the mandate's report checked for naming that same claim: a record against a record",
+    "meetings": [
+      "report.claim != claim",
+      "self._mandates.complete(AuditMandateRequest(claim=claim, defect_class=f'forge checks refute the recorded grading: {check}', surfaces=surfaces, repo_url=request.repo_url, cache_key=request.cache_key))"
+    ]
+  },
+  "chains/audit_sweep.py::AuditReadSweep.observe_target": {
+    "reason": "the observations of one target, collected and handed on unweighed",
+    "meetings": [
+      "AuditReadObservation(target=observation.target, claim=observation.claim, evidence=observation.evidence, terminal=observation.terminal, terminal_report=observation.terminal_report, unavailable_reason=observation.unavailable_reason, overclaims=overclaims, overclaim_unavailable_reason=overclaim_reason, detector_removal=removals, removal_unavailable_reason=removal_reason, forge=forge, forge_report=forge_report, forge_unavailable_reason=forge_reason, restamp=observation.restamp)"
+    ]
+  },
+  "chains/audit_sweep.py::AuditReadSweep.run": {
+    "reason": "the same collection over every target: it holds those observations and reads no revision out of them",
+    "meetings": []
+  },
+  "chains/ralph_loop.py::RalphLoop._cross_off": {
+    "reason": "the sha this attempt graded at, carried to the lane writer that records it on each row, beside the loop context that carries the head",
+    "meetings": [
+      "lane_state.write_cross_offs(lane=self._lane_binding(ctx), dispatched=tuple((criterion for criterion, _ in decided)), cross_offs=tuple((cross_off for _, cross_off in decided)))"
+    ]
+  },
+  "chains/ralph_loop.py::RalphLoop._evaluate_node": {
+    "reason": "the loop's grading node: it hands the standing gradings and the head this iteration grades at to the lane's one reader of the rule and to the digest, reads the partition back, and records the head on the outcome",
+    "meetings": [
+      "EvaluatedRalphOutcome(event=event, criteria=dispatched) if native_ref is None else NativeEvaluatedRalphOutcome(event=event, criteria=dispatched, head_sha=native_ref)",
+      "held_standing(prior=prior, head_sha=native_ref, changesets=await self._moved_since(cwd=cwd, prior=prior, head_sha=native_ref))",
+      "native_ref if native_ref is not None else ctx.ralph_branch",
+      "native_ref is not None and prior",
+      "self._cross_off(ctx=ctx, grade=grade, dispatched=dispatched, graded_sha=native_ref, graded_in=graded_in, demonstrated=demonstrated, iteration=state['iteration'], standing=prior, reading=reading)",
+      "self._git.diff_summary(cwd=cwd, base_ref=ctx.base_branch, head_ref=evaluation_ref)",
+      "self._moved_since(cwd=cwd, prior=prior, head_sha=native_ref)",
+      "{'verdict': verdict, 'pending_failures': pending_failures, 'iteration_records': records, 'standing': next_standing, 'outcome': EvaluatedRalphOutcome(event=event, criteria=dispatched) if native_ref is None else NativeEvaluatedRalphOutcome(event=event, criteria=dispatched, head_sha=native_ref)}",
+      "{**{cross_off.criterion: GradedState.counted for cross_off in standing.carried}, **{cross_off.criterion: GradedState.lapsed for cross_off in standing.lapsed}}",
+      "{cross_off.criterion: GradedState.counted for cross_off in standing.carried}",
+      "{cross_off.criterion: GradedState.lapsed for cross_off in standing.lapsed}"
+    ]
+  },
+  "chains/ralph_loop.py::RalphLoop._evaluate_node.evaluate": {
+    "reason": "the evaluation session inside that node: it withholds what the partition carried or lapsed, and confirms the workspace sits at the head it grades, head against head",
+    "meetings": [
+      "(*standing.carried, *standing.lapsed)",
+      "(str(cross_off.criterion) for cross_off in (*standing.carried, *standing.lapsed))",
+      "AcceptanceCriteriaOutput.model_validate(result_event.structured_output)",
+      "await read_workspace_head(git=self._git, workspace=graded_in_path) == (native_ref, False)",
+      "iteration_output(criteria=roster.criteria, standing=prior, reading=reading, graded=output)",
+      "native_ref is not None and await self._resolve(cwd=cwd, ref=ctx.ralph_branch) != native_ref",
+      "read_workspace_head(git=self._git, workspace=graded_in_path)",
+      "result_event is None or result_event.structured_output is None",
+      "self._log.awarning('evaluation_undemonstrated', site='ralph_evaluator', iteration=state['iteration'], graded_sha=native_ref)",
+      "self._service.stream(prompt=eval_prompt, repo_path=ctx.repo_path, repo_url=ctx.repo_url, branch=evaluation_ref, permission_mode=EVAL_PERMISSION_MODE, allowed_tools=ToolPreset.EVALUATION, skills=skills, session_type=SessionType.TICKET_FIRE, run_identity=ctx.run_identity, agents=NO_SUBAGENTS, session_policy=policy, output_format={'type': 'json_schema', 'schema': ACCEPTANCE_CRITERIA_SCHEMA}, cache_key=ctx.cache_key)",
+      "self._service.stream_in_workspace(prompt=eval_prompt, workspace_path=graded_in_path, permission_mode=EVAL_PERMISSION_MODE, allowed_tools=ToolPreset.EVALUATION, skills=skills, session_type=SessionType.TICKET_FIRE, run_identity=ctx.run_identity, agents=NO_SUBAGENTS, session_policy=policy, output_format={'type': 'json_schema', 'schema': ACCEPTANCE_CRITERIA_SCHEMA})",
+      "soft_failure(msg, raise_site='ralph_evaluator', result_event=result_event, rate_limit_rejected=rate_limit_rejected)",
+      "{**execution_criteria_variables(for_session), **changeset_variables(changeset)}"
+    ]
+  },
+  "chains/ralph_loop.py::RalphLoop._moved_since": {
+    "reason": "the interval's base, not an operand: each distinct graded sha is handed to the Git service port as one end of the digest the rule consumes",
+    "meetings": [
+      "self._git.diff_summary(cwd=cwd, base_ref=sha, head_ref=head_sha)",
+      "{sha: await self._git.diff_summary(cwd=cwd, base_ref=sha, head_ref=head_sha) for sha in sorted({cross_off.evidence.graded_sha for cross_off in prior if cross_off.state is CrossOffState.passed and cross_off.rederivation_class in PATH_BOUND_CLASSES})}"
+    ]
+  },
+  "domain/lapse.py::held_standing": {
+    "reason": "the lane arm's one consultation of the rule: both revisions handed over, the digest map keyed by the recorded one, and the answer read",
+    "meetings": [
+      "graded_state(graded_sha=cross_off.evidence.graded_sha, head_sha=head_sha, rederivation_class=cross_off.rederivation_class, exercised_paths=cross_off.exercised_paths, changeset=changesets.get(cross_off.evidence.graded_sha))"
+    ]
+  },
+  "services/assertion_drift.py::AssertionDriftDetector.compare": {
+    "reason": "the protected assertions read AT the graded commit and AT the head: each commit resolved and checked against itself, each blob against the commit it was asked for, and the two readings' assertions compared, never the two revisions",
+    "meetings": [
+      "(resolved_graded, resolved_head)",
+      "(row.structural_form for row in after)",
+      "(row.structural_form for row in before)",
+      "AssertionDeviationClaim(protected_test=protected, graded_sha=resolved_graded, head_sha=resolved_head, graded_blob_sha=before_blob.blob_sha, head_blob_sha=after_blob.blob_sha, before=before, after=after)",
+      "blob.commit_sha != sha",
+      "blob.commit_sha != sha or blob.path != protected.path",
+      "blobs[resolved_graded, protected.path]",
+      "blobs[resolved_head, protected.path]",
+      "claims.append(AssertionDeviationClaim(protected_test=protected, graded_sha=resolved_graded, head_sha=resolved_head, graded_blob_sha=before_blob.blob_sha, head_blob_sha=after_blob.blob_sha, before=before, after=after))",
+      "key not in blobs",
+      "resolved_graded != graded_sha",
+      "self._git.read_source(cwd=repo_path, commit_sha=sha, path=protected.path)",
+      "self._git.resolve_commit(cwd=repo_path, ref=graded_sha)",
+      "tuple((row.structural_form for row in before)) != tuple((row.structural_form for row in after))"
+    ]
+  },
+  "services/audit_runtime.py::AuditScheduledPass._publish.compose": {
+    "reason": "the publication composed from observations that carry both revisions: a repaired report checked against the one it repairs, head against head, and the observations handed on",
+    "meetings": [
+      "(item for item in context.snapshot.targets if item.issue.issue_key == observation.target.issue.issue_key)",
+      "AuditPublishedArtifact(publication=current, escalation_refs=tuple(escalation_refs.values()))",
+      "[item for item in _reports(refreshed) if _detector(item) == detector]",
+      "_head(current) != _head(publication)",
+      "context.repair_observations.append(refreshed)",
+      "current.report.claim.judgment.verdict if not isinstance(current, AuditTerminalPublication) else current.report.observation.verdict",
+      "mandate is not None and isinstance(mandate.root, InstructedMandateObservation)",
+      "target.escalations.raise_mandate(issue_key=observation.target.issue.issue_key, lane_key=request.lane_key, job_id=identity.title(), head_sha=_head(current), mandate=mandate.root, visibility=self._operation.board_visibility(observation.target.issue.team_key), publisher=target.publisher, require_current=require_current, accept_classification=accept_classification, accept_comment=accept_comment, writes=writes, interrupted=interrupted)",
+      "target.sweep.observe_target(snapshot=context.snapshot, target=next((item for item in context.snapshot.targets if item.issue.issue_key == observation.target.issue.issue_key)))"
+    ]
+  },
+  "services/audit_runtime.py::AuditScheduledPass._scope.complete": {
+    "reason": "a finished scope's observations, read for whether the evidence arm found a lapse through the rule's own reading, and handed to publication and take-back",
+    "meetings": [
+      "(observation, current, writes[-1].artifact.native_ref)",
+      "(observation.unavailable_reason, observation.overclaim_unavailable_reason, observation.removal_unavailable_reason, observation.forge_unavailable_reason)",
+      "observation.evidence is not None and observation.evidence.is_lapse",
+      "owed.append((observation, current, writes[-1].artifact.native_ref))",
+      "refuse(subject, reason)",
+      "self._publish(target=target, context=context, observation=observation, publication=publication, identity=identity, writes=writes, interrupted=interrupted)",
+      "self._take_back(target=target, context=context, identity=identity, observation=observation, publication=publication, refutation_ref=refutation_ref)"
+    ]
+  },
+  "services/audit_runtime.py::AuditScheduledPass.run": {
+    "reason": "the pass over every scope, logging the ones that came back incomplete: it holds their reports and reads no revision out of them",
+    "meetings": [
+      "(isinstance(scope, AuditScopeIncomplete) for scope in scopes)",
+      "self._log.ainfo('audit_run_finished', run_identity=identity.title(), report=report.model_dump(mode='json'))"
+    ]
+  },
+  "services/audit_runtime.py::_all_reports": {
+    "reason": "every report of every observation, flattened",
+    "meetings": [
+      "(item for observation in observations for item in _reports(observation))"
+    ]
+  },
+  "services/audit_runtime.py::_reports": {
+    "reason": "the reports one observation carries, collected",
+    "meetings": [
+      "found.append(AuditForgePublication(graded_sha=observation.forge.recorded_evidence.graded_sha, report=observation.forge_report))",
+      "found.append(AuditTerminalPublication(report=observation.terminal_report))"
+    ]
+  },
+  "services/audit_sources.py::AuditSourceReader.read": {
+    "reason": "the snapshot the audit arms read, recording both revisions the reader resolved",
+    "meetings": [
+      "AuditSourceSnapshot(request=request, criterion=criterion, check=check, evidence=evidence, comment=comment, record=record, repository=repository, head_sha=head)"
+    ]
+  },
+  "services/audit_sources.py::AuditSourceReader.read.resolve": {
+    "reason": "self-resolution over both revisions as one loop, and the ancestry weighing of the graded commit against the recorded branch",
+    "meetings": [
+      "(evidence.graded_sha, head)",
+      "await self._source.resolve_commit(cwd=repository, ref=sha) != sha",
+      "self._git.is_ancestor(repository, evidence.graded_sha, head)",
+      "self._git.remote_branch_sha(repository, self._remote, record.branch)",
+      "self._source.resolve_commit(cwd=repository, ref=sha)"
+    ]
+  },
+  "services/audit_sources.py::AuditSourceReader.require_unchanged": {
+    "reason": "the snapshot read again and refused if it moved: the remote head against the snapshot's head, head against head",
+    "meetings": []
+  },
+  "services/recorded_assertion_drift.py::RecordedAssertionDriftDetector.compare": {
+    "reason": "a ref again: the revision the recorded assertions are read AT, handed to the detector beside the head it reads them against",
+    "meetings": [
+      "self._detector.compare(repo_path=snapshot.repository, graded_sha=snapshot.evidence.graded_sha, head_ref=snapshot.head_sha, protected_tests=tuple(protected))"
+    ]
+  },
+  "types/domain/audit_detection_removal.py::DetectorRemovalReport.reports_preserve_findings": {
+    "reason": "refused at construction unless every finding survives into its report: a record against the record it was built from",
+    "meetings": []
+  },
+  "types/domain/audit_evidence.py::AuditEvidenceObservation.is_lapse": {
+    "reason": "the audit lane's observation of a finished claim's recorded grading, which hands both revisions to the rule rather than weighing them",
+    "meetings": [
+      "graded_state(graded_sha=self.recorded_evidence.graded_sha, head_sha=self.head_sha)"
+    ]
+  },
+  "types/domain/audit_evidence.py::AuditEvidenceObservation.verdict_follows_observation": {
+    "reason": "refused at construction unless the fresh claim belongs to the observation: its head against the observation's head, head against head",
+    "meetings": []
+  },
+  "types/domain/audit_runtime.py::AuditForgePublication._recorded_revision_matches_report": {
+    "reason": "the forge report's own provenance: the recorded commit a publication names must be the head its report was taken at",
+    "meetings": [
+      "self.report.claim.head_sha != self.graded_sha"
+    ]
+  }
+}
