@@ -256,28 +256,41 @@ def _family_dependents(root: Path) -> dict[str, list[str]]:
     return found
 
 
-#: A checkbox once written, and the two ways a pattern spells the marks it
-#: accepts: a character class, and an alternation group. Both, because the
-#: predecessor detector this clause replaced was caught on the alternation
-#: spelling — a pattern reading `\[( |x)\]` scans for a checkbox exactly as
-#: one reading `\[[ x]\]` does, and a walk that knew only the class would
-#: have reported the second and stayed silent on the first (KOD-651).
-CHECKBOX = re.compile(r"\[(?:[ xX]{1,4}\]|\(\s*[ xX]\s*\|\s*[ xX]\s*\)\\?\])")
+#: The marks a checkbox is written with: the blank of an open box and either
+#: case of the tick.
+CHECKBOX_MARKS = frozenset(" xX")
+#: What a pattern can put around its marks without changing which marks it
+#: accepts: group and alternation punctuation, escapes, a nested class bracket,
+#: and whitespace other than the blank, which is itself a mark.
+MARK_PUNCTUATION = frozenset("()|?:\\[\t\n\r\f\v")
+#: Every short bracketed body, read from each opening bracket in turn so an
+#: earlier bracket cannot swallow a later box.
+BRACKETED = re.compile(r"\[(?=(?P<body>[^\]]{1,16})\])")
+#: A named group's prologue, whose name is a label rather than a mark.
+GROUP_NAME = re.compile(r"\?P<\w*>")
 
 
 def checkbox_shapes(text: str) -> list[str]:
-    """Each complete checkbox shape in *text*: `[ ]`, `[x]`, or a pair of marks.
+    """Each complete checkbox shape in *text*, read by the marks it names.
 
-    A pair of marks rather than one: `[X]` on its own is also a one-letter
-    subscript, so a three-character hit counts and a longer one counts when it
-    names both marks — spelled as a class containing the blank, or as an
-    alternation, which is what the pipe reads.
+    Group syntax is not enumerated (KOD-651): a bracketed body counts when,
+    with group punctuation and a named group's prologue set aside, every
+    character left is a mark, and those marks are a single one — `[x]`, `[ ]`,
+    `[X]` — or include the blank.  So a class `[ xX]`, a capturing or
+    non-capturing alternation `( |x)`, `(?: |x)`, a named group
+    `(?P<mark> |x)` and any number of arms `( |x|X)` are the same reading.  A
+    body carrying anything that could not be a mark is not a box: `[X]` alone
+    is also a one-letter subscript, which is why only literals are read.
     """
-    return [
-        found.group(0)
-        for found in CHECKBOX.finditer(text)
-        if len(found.group(0)) == 3 or " " in found.group(0) or "|" in found.group(0)
-    ]
+    found = []
+    for bracket in BRACKETED.finditer(text):
+        body = GROUP_NAME.sub("", bracket.group("body"))
+        if not set(body) <= CHECKBOX_MARKS | MARK_PUNCTUATION:
+            continue
+        marks = [char for char in body if char in CHECKBOX_MARKS]
+        if len(marks) == 1 or " " in marks:
+            found.append(f"[{bracket.group('body')}]")
+    return found
 
 
 def _checkbox_constants(tree: ast.AST) -> list[tuple[int, list[str]]]:
@@ -335,8 +348,10 @@ def test_no_module_scans_for_checkbox_syntax() -> None:
     rather than a decision procedure: `[X]` is also a one-letter subscript,
     which is why only literals are read and never code.
 
-    Both spellings of the marks a pattern accepts are read, the class and the
-    alternation, so the shape of the pattern is no cover.
+    The marks a pattern accepts are read out of its bracketed body rather than
+    out of one group shape, so a class, an alternation of any arity, and a
+    capturing, non-capturing or named group are one reading.  A mark written
+    as an escape such as `\\x20` is not a mark to this walk.
     """
     assert _checkbox_scans(SOURCE) == {}
 
@@ -455,6 +470,11 @@ def test_a_protocol_declaration_is_not_an_implementation() -> None:
         # The same pattern spelling its two marks as an alternation instead of
         # a class: the spelling the predecessor detector was caught on.
         'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[( |x)\\]\\s*(?P<label>.+)$")\n',
+        # The same alternation as a non-capturing group, as a named group, and
+        # with a third arm: group syntax is no part of what is read.
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[(?: |x)\\]\\s*(?P<label>.+)$")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[(?P<mark> |x)\\]\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[( |x|X)\\]\\s*(?P<label>.+)$")\n',
         'def ticked(line):\n    return "- [x] " in line\n',
         'def ticked(line):\n    return line.startswith("- [ ]")\n',
         'ROW = "- [X] {key}: {check}"\n',
