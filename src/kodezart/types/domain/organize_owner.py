@@ -257,11 +257,14 @@ class ConvergenceExhaustedHalt(_HaltEvidence):
 
 
 class HumanDecisionHalt(_HaltEvidence):
-    """An actual unresolved choice, from admission or the author, never a gap."""
+    """An actual unresolved choice, from admission or the author, never a gap.
+
+    The narrowing is about what caused the halt, not what evidence it
+    carries: findings still open when the choice arose travel with it.
+    """
 
     cause: Literal[StageHaltCause.HUMAN_DECISION]
     bound: None = None
-    surviving_findings: tuple[()] = ()
     write_back_results: tuple[()] = ()
     unrecorded_escalation_issue_ids: tuple[()] = ()
     phase: None = None

@@ -854,30 +854,49 @@ class OrganizeOwner:
         base_ref: str,
         visibility: RepoVisibility,
     ) -> StageHaltReport:
-        records = {
-            r.issue_id: (
-                r.invented_decision or r.missing_artifact or r.evidence,
-                r.evidence,
+        """Write one record per item and question, after the round's lease is gone."""
+        # Keyed by (item, question): two open questions on one item are two
+        # records, and the same question raised twice is one. Later sources
+        # replace earlier ones on an equal key.
+        records: dict[tuple[str, str], str] = {
+            (r.issue_id, r.invented_decision or r.missing_artifact or r.evidence): (
+                r.evidence
             )
             for r in results
         }
         records.update(
             {
-                f.issue_id: (f.mandate_text or f.defect_class, f.evidence)
-                for f in findings
+                (f.issue_id, f.mandate_text or f.defect_class): f.evidence
+                for f in (
+                    *(f for r in results for f in r.findings),
+                    *findings,
+                )
             }
         )
-        records.update({q.issue_id: (q.question, q.evidence) for q in questions})
+        records.update({(q.issue_id, q.question): q.evidence for q in questions})
         records.update(
             {
-                result.artifact.surface.ref.key: (
+                (
+                    result.artifact.surface.ref.key,
                     "The written artifact remains independently unverified.",
-                    result.model_dump_json(),
-                )
+                ): result.model_dump_json()
                 for result in write_back_results
             }
         )
-        for issue_key, (question, evidence) in records.items():
+        # The admission evidence is read once, before the first record: each
+        # record's decision label changes the scope context the judgement was
+        # bound to, so a second record read after it would find the halt's own
+        # write rather than a change made elsewhere.
+        stale = (
+            set()
+            if write_back_results
+            else {
+                result.issue_id
+                for result in results
+                if not await self._admission.is_live(result)
+            }
+        )
+        for (issue_key, question), evidence in records.items():
             revision = await self._tracker.read_issue_revision(issue_key=issue_key)
             if revision.issue.issue_key != issue_key:
                 raise OrganizeWriteRefusalError(
@@ -888,13 +907,7 @@ class OrganizeOwner:
                 *, revision: TrackerIssueRevision = revision
             ) -> None:
                 await self._require_revision(revision)
-                if not write_back_results and any(
-                    [
-                        not await self._admission.is_live(result)
-                        for result in results
-                        if result.issue_id == revision.issue.issue_key
-                    ]
-                ):
+                if revision.issue.issue_key in stale:
                     raise OrganizeWriteRefusalError(
                         issue_key=revision.issue.issue_key,
                         reason="the escalation admission evidence is no longer current",
@@ -1431,7 +1444,9 @@ class OrganizeOwner:
                         questions=request.questions,
                         bound=request.bound,
                         write_back_results=request.write_back_results,
-                        findings=(),
+                        # Every finding still open: the last dry round's and
+                        # the residuals this round formed before it halted.
+                        findings=(*findings, *residuals),
                         phase=phase,
                         scope=scope,
                         job_id=job_id,
