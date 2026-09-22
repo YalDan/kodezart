@@ -144,6 +144,7 @@ def _issues(
     out_of_filter: bool,
     ref: ScopeRef = PROJECT,
     child_milestone: str | None = OTHER_MILESTONE,
+    approved: bool = True,
 ) -> list[ScopeMcpIssue]:
     """The one board shape every reading and both implementations run on.
 
@@ -152,7 +153,8 @@ def _issues(
     reference every row sits in the addressed project — a milestone member
     with no owning project is not a shape the backend has — and the child
     leaves the filter by carrying *child_milestone*, which is another
-    milestone or no milestone at all.
+    milestone or no milestone at all.  With *approved* off the lane carries
+    no approval label of its own.
     """
     by_milestone = ref.kind is ScopeKind.MILESTONE
     lane_milestone = MILESTONE.key if by_milestone else None
@@ -168,7 +170,7 @@ def _issues(
         ScopeMcpIssue(
             id=LANE,
             description="the lane the walk selects",
-            labels=[APPROVED_LABEL],
+            labels=[APPROVED_LABEL] if approved else [],
             status="Todo",
             status_type="unstarted",
             project_key=PROJECT.key,
@@ -249,13 +251,16 @@ def _domain_issue(issue: ScopeMcpIssue) -> TrackerIssue:
     )
 
 
-def _double(issues: Sequence[ScopeMcpIssue]) -> FakeTrackerPort:
+def _double(
+    issues: Sequence[ScopeMcpIssue], *, approved: bool = True
+) -> FakeTrackerPort:
     """The same board as a domain double, under either container filter.
 
     Each filter selects the rows it carries: the project's members are the
     rows in that project, the milestone's are the rows on that milestone.
     The approval stays on the project, which is the only container level a
-    label lives at — a milestone adds none of its own.
+    label lives at — a milestone adds none of its own.  With *approved* off
+    no approval is seeded at all.
     """
     return FakeTrackerPort(
         issues=[_domain_issue(issue) for issue in issues],
@@ -279,7 +284,9 @@ def _double(issues: Sequence[ScopeMcpIssue]) -> FakeTrackerPort:
                 issue.id for issue in issues if issue.milestone_key == MILESTONE.key
             ],
         },
-        scope_label_members={PROJECT: frozenset({ScopeLabel.APPROVED})},
+        scope_label_members=(
+            {PROJECT: frozenset({ScopeLabel.APPROVED})} if approved else {}
+        ),
     )
 
 
@@ -297,16 +304,18 @@ def board(
     out_of_filter: bool,
     ref: ScopeRef = PROJECT,
     child_milestone: str | None = OTHER_MILESTONE,
+    approved: bool = True,
 ) -> TrackerPort:
     issues = _issues(
         child_state=child_state,
         out_of_filter=out_of_filter,
         ref=ref,
         child_milestone=child_milestone,
+        approved=approved,
     )
     if implementation == "linear-mcp":
         return _adapter(ReachMcpServer(issues=issues))
-    return _double(issues)
+    return _double(issues, approved=approved)
 
 
 async def test_the_lane_is_not_at_rest_while_the_hidden_descendant_is_open(
@@ -389,7 +398,7 @@ async def test_the_identical_shape_inside_the_filter_carries_the_child_as_a_memb
     [
         (
             PROJECT,
-            OTHER_MILESTONE,
+            None,
             UnreachableCriterion(
                 issue_key=CHILD_CHECK,
                 reason=UnreachableReason.OTHER_PROJECT,
@@ -457,6 +466,34 @@ async def test_the_same_shape_inside_the_filter_names_no_unreachable_descendant(
 
     assert ready.unreachable == ()
     assert {lane.issue.issue_key for lane in ready.ready} == {LANE, CHILD}
+
+
+async def test_the_read_names_the_unreachable_criterion_of_a_lane_nobody_approved(
+    implementation: str,
+) -> None:
+    """The naming covers every member, not only the lanes the walk can fire.
+
+    The out-of-filter shape with the lane's approval withheld: nothing is
+    ready, yet the criterion the filter cannot reach is still named, because
+    an obligation under a member nobody approved is one the scope has not
+    discharged either.
+    """
+    tracker = board(
+        implementation, child_state="open", out_of_filter=True, approved=False
+    )
+
+    ready = await read_scope_ready(ref=PROJECT, tracker=tracker)
+
+    assert ready.ready == ()
+    assert ready.unapproved == (LANE,)
+    assert CHILD_CHECK in ready.unresolved
+    assert ready.unreachable == (
+        UnreachableCriterion(
+            issue_key=CHILD_CHECK,
+            reason=UnreachableReason.OTHER_PROJECT,
+            container=OTHER_PROJECT,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
