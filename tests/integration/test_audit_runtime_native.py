@@ -662,12 +662,15 @@ async def test_two_unchanged_sweeps_hold_one_escalation_for_a_reworded_mandate(
 async def test_the_composed_sweep_traces_a_criterion_restamp_to_its_lanes_gradings(
     native_audit,
 ):
-    """The arm is reachable from composition, not only from a unit fixture.
+    """The forged restamp is reachable from composition, not only from a unit.
 
-    The lane's stream holds one grading of CHILD, at the commit before the
-    one its Evidence row names, so the trace refuses and says why. It is an
-    observation and not a publication: the refusal moves no state, writes no
-    comment of its own and leaves the scope complete.
+    The lane's stream holds one grading of CHILD, at the commit before the one
+    its Evidence row names, and nothing at that row's own commit — which is
+    what a lane leaves for a row moved forward by something other than its
+    own cross-off, since every cross-off records its grading (KOD-506). So the
+    trace refuses and says why. It is an observation and not a publication:
+    the refusal moves no state, writes no comment of its own and leaves the
+    scope complete.
     """
     audit, _executor, server, tracker, _git, workspace, repository = native_audit
     _remote, _author, _observer, prior, head = repository
@@ -700,6 +703,49 @@ async def test_the_composed_sweep_traces_a_criterion_restamp_to_its_lanes_gradin
     assert state_writes(server) == []
     assert server.issues[CHILD].status == "Done"
     assert len(server.comments) - comments_before == len(scope.writes)
+    assert not workspace._workspaces
+
+
+async def test_the_composed_sweep_holds_a_restamp_its_lane_recorded_a_pass_for(
+    native_audit,
+):
+    """The ordinary lifecycle, seeded as a lane's own writes leave it.
+
+    Refuted at the earlier commit, then passed at the one the Evidence row
+    names: two entries, the last of them at the row's commit, so the trace
+    holds. Before a passing cross-off recorded its grading this state was
+    unreachable — the stream ended at the refutation and the row had moved on
+    — and the case above was indistinguishable from it (KOD-506).
+    """
+    audit, _executor, server, tracker, _git, workspace, repository = native_audit
+    _remote, _author, _observer, prior, head = repository
+    for kind, graded_sha in (
+        (RunEventKind.CRITERION_REFUTED, prior),
+        (RunEventKind.CRITERION_PASSED, head),
+    ):
+        await tracker.post_run_event(
+            issue_key=ROOT,
+            event=LaneRunEvent(
+                kind=kind,
+                lane_key=LANE_KEY,
+                subject_key=CHILD,
+                graded_sha=graded_sha,
+            ),
+        )
+
+    assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    scope = audit.last_report.scopes[0]
+    assert scope.status == "complete", audit.last_report.model_dump_json()
+
+    traces = [
+        row for row in scope.raw_observations if isinstance(row, AuditRestampTrace)
+    ]
+    assert len(traces) == 1, [type(row).__name__ for row in scope.raw_observations]
+    assert traces[0].criterion_key == CHILD
+    assert traces[0].recorded_evidence.graded_sha == head
+    assert traces[0].history == (prior, head)
+    assert traces[0].verdict is AuditVerdict.HOLDS
+    assert state_writes(server) == []
     assert not workspace._workspaces
 
 
