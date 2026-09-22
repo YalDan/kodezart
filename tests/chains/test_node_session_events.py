@@ -12,6 +12,7 @@ from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.adapters.claude.sdk_mapping import map_message
 from kodezart.core.node_sessions import NodeSessionObserver
 from kodezart.types.domain.agent import NodeSessionStartedEvent
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.node_session import (
     NodeInvocation,
     NodeSessionObservationError,
@@ -19,6 +20,7 @@ from kodezart.types.domain.node_session import (
 from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.run_state import LaneBinding
 from tests.chains.test_ralph_loop import _make_loop, _run_kwargs
 from tests.fakes import (
     DEFAULT_SETTING_SOURCES,
@@ -267,3 +269,79 @@ async def test_actual_evaluator_emits_only_its_native_sessions(monkeypatch, mode
     assert sum(row[0] == "release" for row in workspace.calls) == sum(
         row[0] == "acquire" for row in workspace.calls
     )
+
+
+class RecordingSessions:
+    """A session recorder that keeps what each evaluation handed it."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def record_node_sessions(self, *, lane, started):
+        self.calls.append((lane, tuple(started)))
+
+
+LANE = LaneBinding(
+    lane_key="subject/42",
+    body_digest="0" * 64,
+    loop_branch="ralph/loop",
+    deliverable_branch="feature/deliverable",
+    base_ref="main",
+    repo_url="https://github.com/acme/repo",
+    repo_path=None,
+    run_id="job-1",
+    visibility=RepoVisibility.PUBLIC,
+)
+
+
+@pytest.mark.parametrize(
+    ("mode", "recorded"),
+    [("one", [1]), ("two-sessions", [2]), ("iterations", [1, 1]), ("untracked", [])],
+)
+async def test_each_evaluations_openings_are_handed_to_the_lanes_recorder(
+    monkeypatch, mode, recorded
+):
+    """What the observer saw open is put on the lane's stream after the drain.
+
+    Once per observed evaluation, with exactly the openings that evaluation
+    streamed and nothing inferred: two openings under one invocation are
+    handed over together, two iterations hand over one each, and an
+    evaluation nothing observed hands over nothing at all.
+    """
+    state = {
+        "clients": [],
+        "closed": [],
+        "mode": mode,
+        "evaluations": 0,
+        "opened": asyncio.Event(),
+    }
+    monkeypatch.setattr(
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
+        lambda **kwargs: SDKClient(**kwargs, state=state),
+    )
+    executor = ClaudeClientExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES, knowledge_grant=NO_KNOWLEDGE_GRANT
+    )
+    loop = _make_loop(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        retry_initial_interval=0.001,
+    )
+    sessions = RecordingSessions()
+    loop._node_sessions = sessions
+    # The lane this loop commits for is named by the scoped run's own
+    # context; this bare loop is dispatched without one, so the binding it
+    # would compose is stood in for.
+    monkeypatch.setattr(loop, "_lane_binding", lambda _ctx: LANE)
+    events = []
+
+    async with asyncio.timeout(10):
+        async for event in loop.run(
+            **_run_kwargs(), run_identity=None if mode == "untracked" else RUN
+        ):
+            events.append(event)
+
+    starts = [event for event in events if isinstance(event, NodeSessionStartedEvent)]
+    assert [len(started) for _, started in sessions.calls] == recorded
+    assert [event for _, started in sessions.calls for event in started] == starts
+    assert {lane for lane, _ in sessions.calls} <= {LANE}

@@ -22,7 +22,7 @@ from kodezart.config.app import AppConfig
 from kodezart.config.job_queue import JobQueueSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.errors import TrackerUnavailableError
-from kodezart.core.protocols import PRCreator
+from kodezart.core.protocols import NodeSessionRecorder, PRCreator
 from kodezart.domain.agent import (
     best_iteration_ref,
     generate_ralph_branch_name,
@@ -72,6 +72,7 @@ from kodezart.types.domain.consolidation import (
 )
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.native_delivery import LaneDeliveryEvent
+from kodezart.types.domain.node_session import NodeSessionKey
 from kodezart.types.domain.operation import LifecycleStage, RepoEntry, ScopeLabel
 from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -1853,27 +1854,42 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
         assert criterion.state_kind is WorkflowStateKind.COMPLETED
         assert parse_criterion_evidence(criterion.body).graded_sha == own_head
         assert record.head_sha == record.pushed_head_sha == own_head
-        # The first push, then the grading entry and the lane's own account of
-        # the criterion it finished, each keyed to it and carrying the head it
-        # was graded at.
+        # The first push, the one session the evaluation opened, then the
+        # grading entry and the lane's own account of the criterion it
+        # finished, each keyed to it and carrying the head it was graded at.
+        stream = await port.lane_run_events(issue_key=lane, lane_key=lane)
         assert [
             (event.kind, event.subject_key, event.graded_sha)
-            for event in await port.lane_run_events(issue_key=lane, lane_key=lane)
+            for event in stream
+            if event.kind is not RunEventKind.NODE_SESSION_STARTED
         ] == [
             (RunEventKind.FIRST_PUSH, None, None),
             (RunEventKind.CRITERION_PASSED, f"{lane}/check", own_head),
             (RunEventKind.ISSUE_CROSSED_OFF, f"{lane}/check", own_head),
         ]
+        assert [event.kind for event in stream] == [
+            RunEventKind.FIRST_PUSH,
+            RunEventKind.NODE_SESSION_STARTED,
+            RunEventKind.CRITERION_PASSED,
+            RunEventKind.ISSUE_CROSSED_OFF,
+        ]
+        assert stream[3].subject_key == f"{lane}/check"
+        opened = NodeSessionKey.model_validate_json(stream[1].subject_key or "")
+        assert (opened.invocation.node_key, opened.invocation.declared_sessions) == (
+            "evaluation",
+            1,
+        )
+        assert opened.invocation.run.name == lane
         assert port.issues[lane].state_kind is WorkflowStateKind.UNSTARTED
 
     assert port.workflow_writes == [
         ("A/check", LifecycleStage.DONE),
         ("B/check", LifecycleStage.DONE),
     ]
-    # One record per lane, and on each lane's stream its first push, the
-    # grading of the one criterion it crossed off and its crossing-off —
-    # nothing else.
-    assert len(port.comments) == 8
+    # One record per lane, and on each lane's stream its first push, the one
+    # session its evaluation opened, the grading of the one criterion it
+    # crossed off and its crossing-off — nothing else.
+    assert len(port.comments) == 10
     # Push status is per branch: a branch this walk never pushed is reported
     # as unpushed, so no lane's push is ever read off another lane's branch.
     assert await git.remote_branch_sha("/w", repos.remote, "never-pushed") is None
@@ -2443,6 +2459,24 @@ async def test_a_recorded_lane_the_facts_no_longer_admit_is_reported_not_fired(
     assert minted == []
     assert second.executor.schema_calls == []
     assert await lane_record(port, "A") == before
+
+
+def test_the_scoped_arm_loop_puts_node_openings_on_the_lanes_own_stream():
+    """The scoped lanes' loop holds the lane writer as its session recorder.
+
+    The same writer instance that records the lane's commits and ticks, so an
+    opening observed in an evaluation lands on the stream that lane's record
+    lives beside. The authored arm has no lane stream and is handed none.
+    """
+    harness = runtime()
+
+    for url in (ORIGIN, FORGE_ORIGIN):
+        fire = harness.engine._scoped_arm._lane_for(url).fire
+        loop = fire.implementation._quality_gate
+        assert isinstance(loop._node_sessions, NodeSessionRecorder)
+        assert loop._node_sessions is loop._lane_state
+    authored = harness.engine.arm_for(None).fire.implementation._quality_gate
+    assert authored._node_sessions is None
 
 
 async def test_the_scoped_arm_holds_no_checkpointer_while_the_authored_arm_keeps_it():

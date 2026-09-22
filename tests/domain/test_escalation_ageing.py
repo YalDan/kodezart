@@ -336,6 +336,7 @@ SIGNAL_MODULES = [
             "collections.abc",
             "kodezart.domain.gap",
             "kodezart.domain.run_shape",
+            "kodezart.types.domain.node_session",
             "kodezart.types.domain.run_alarm",
             "kodezart.types.domain.run_event",
             "kodezart.types.domain.tracker",

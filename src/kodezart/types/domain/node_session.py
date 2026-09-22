@@ -25,6 +25,20 @@ class NodeInvocation(CamelCaseModel):
         return self
 
 
+class NodeSessionKey(CamelCaseModel):
+    """What one observed opening is keyed to on its lane's stream.
+
+    The whole invocation, not its key alone: a resumed lane reusing its loop
+    branch can repeat an invocation key under another run, and the declared
+    session count is a fact of the invocation that a reader of the key needs
+    in order to say whether the node opened more than it declared.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    invocation: NodeInvocation
+    session_id: str = Field(min_length=1, pattern=r"\S")
+
+
 class NodeSessionObservationError(ValueError):
     """A native stream cannot establish the sessions it says it completed."""
 

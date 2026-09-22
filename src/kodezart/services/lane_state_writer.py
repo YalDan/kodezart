@@ -42,6 +42,7 @@ from kodezart.domain.run_event_stream import (
     lane_run_events,
 )
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.types.domain.agent import NodeSessionStartedEvent
 from kodezart.types.domain.criteria import TrackerCriterion
 from kodezart.types.domain.criterion_lifecycle import (
     CriterionCrossOff,
@@ -53,6 +54,7 @@ from kodezart.types.domain.gating import (
     OutboundDestination,
     RepoVisibility,
 )
+from kodezart.types.domain.node_session import NodeSessionKey
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.run_event import (
@@ -597,6 +599,37 @@ class TrackerLaneStateWriter:
             await settle(
                 self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
             )
+
+    async def record_node_sessions(
+        self, *, lane: LaneBinding, started: Sequence[NodeSessionStartedEvent]
+    ) -> None:
+        """Put each observed session opening on the lane's stream, once.
+
+        What the harness observed a node open is a fact of the lane's own
+        run, and the stream is where a reader of the run finds it: keyed to
+        the whole invocation and the session it opened, so the count of
+        openings per invocation can be read back against what that
+        invocation declared. The stream is read once, before any post, so an
+        opening already announced — by this call or an earlier one on a
+        resumed lane — posts nothing, and an empty observation reads nothing.
+        """
+        if not started:
+            return
+        posted = set(self._events(comments=await self._board(lane), lane=lane))
+        for opening in started:
+            event = LaneRunEvent(
+                kind=RunEventKind.NODE_SESSION_STARTED,
+                lane_key=lane.lane_key,
+                subject_key=NodeSessionKey(
+                    invocation=opening.invocation, session_id=opening.session_id
+                ).model_dump_json(by_alias=True),
+            )
+            if event in posted:
+                continue
+            await settle(
+                self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
+            )
+            posted.add(event)
 
     async def _write_one(
         self,

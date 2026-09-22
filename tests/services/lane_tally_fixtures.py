@@ -286,6 +286,8 @@ def operation(prefixes=PREFIXES):
 
 #: The signal every address in this module addresses unless one says otherwise.
 SIGNAL = AlarmSignal.TALLY_UNMOVED
+#: The signals observed at the lane's own addresses on its issue.
+LANE_SIGNALS = (AlarmSignal.TALLY_UNMOVED, AlarmSignal.COMPOSITION_SUBSTITUTED)
 #: The signals observed at a criterion's own address on its lane's issue.
 CRITERION_SIGNALS = (AlarmSignal.TALLY_REGRESSED, AlarmSignal.LAPSE_UNDISCHARGED)
 
@@ -301,10 +303,10 @@ def supervisor(port, *, bound=BOUND, holder=HOLDER):
     )
 
 
-def alarm_marker(port, lane, *, scope_key=SCOPE):
+def alarm_marker(port, lane, *, scope_key=SCOPE, signal=SIGNAL):
     return run_alarm_marker(
         subject=subject(lane, scope_key=scope_key),
-        signal=SIGNAL,
+        signal=signal,
         marker_prefixes=port.marker_prefixes,
     )
 
@@ -342,11 +344,11 @@ def snapshot(port):
 def declared_pairs(entry):
     """The ``(lane, marker)`` pairs this board's ticks may write under.
 
-    Per lane: the lane's run-event stream, and the alarm marker when the board
-    configures an alarm prefix. The alarm marker is keyed by the scope the lane
-    is a member of, as the board recorded it, so a board holding lanes under
-    two scopes declares each lane's own address and neither lane's address
-    covers the other. The lane record's own marker is not among them — the
+    Per lane: the lane's run-event stream, and the alarm markers of the lane's
+    own signals when the board configures an alarm prefix. Each is keyed by the
+    scope the lane is a member of, as the board recorded it, so a board
+    holding lanes under two scopes declares each lane's own address and neither
+    lane's address covers the other. The lane record's own marker is not among them — the
     supervisor holds no surface there — so a write under it is outside the set
     unless a test named it.
 
@@ -368,8 +370,14 @@ def declared_pairs(entry):
     ]
     if MARKER_PURPOSE in entry.port.marker_prefixes:
         pairs.extend(
-            (lane, alarm_marker(entry.port, lane, scope_key=entry.scope_keys[lane]))
+            (
+                lane,
+                alarm_marker(
+                    entry.port, lane, scope_key=entry.scope_keys[lane], signal=signal
+                ),
+            )
             for lane in entry.lanes
+            for signal in LANE_SIGNALS
         )
         pairs.extend(
             (

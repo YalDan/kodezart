@@ -992,7 +992,9 @@ LANE_STATE = "services/lane_state_writer.py"
 #: with, put where a lane's delivery is retained (KOD-843).  The two accounts a
 #: lane gives of a criterion it graded — crossed off, and the grading no longer
 #: standing — are the same kind again: a kind, a sub-issue key and the sha the
-#: grading was read at, and nothing authored (KOD-843).
+#: grading was read at, and nothing authored (KOD-843).  So is a node's observed
+#: session opening: a kind, the invocation the harness declared and the session
+#: id the native stream reported (KOD-843).
 LANE_STATE_WRITES = frozenset(
     {
         CallSite(
@@ -1028,6 +1030,11 @@ LANE_STATE_WRITES = frozenset(
         CallSite(
             module=LANE_STATE,
             function="TrackerLaneStateWriter._write_one",
+            method="post_run_event",
+        ),
+        CallSite(
+            module=LANE_STATE,
+            function="TrackerLaneStateWriter.record_node_sessions",
             method="post_run_event",
         ),
         CallSite(
