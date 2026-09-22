@@ -55,7 +55,13 @@ from tests.fakes import (
     FakeTrackerPort,
     FakeWorkspaceProvider,
 )
-from tests.name_resolution import call_sites, parsed, reaches, source_tree
+from tests.name_resolution import (
+    bound_names,
+    call_sites,
+    parsed,
+    reaches,
+    source_tree,
+)
 from tests.prompts.sets import OPUS_SET, V5_SET
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
@@ -1357,6 +1363,10 @@ CHANGE_STAMP_FIELDS = frozenset({"updated_at", "updated_since", "updatedAt"})
 GAP_ARITHMETIC_NAMES = frozenset(
     {"compute_gap", "in_gap", "organize_gap", "SubtreeClosure"}
 )
+#: Every supplied module the derivation below discovers, re-measured off the
+#: tree rather than chosen: the seven that spell a seed of the arithmetic, and
+#: the five that reach one only through a helper handing back a value grown
+#: from the gap's answer.
 GAP_COMPUTATION_MODULES = frozenset(
     {
         "domain/gap.py",
@@ -1366,6 +1376,11 @@ GAP_COMPUTATION_MODULES = frozenset(
         "services/mandate_graph.py",
         "services/organize_owner.py",
         "services/run_shape.py",
+        "composition/organize.py",
+        "composition/supervisor.py",
+        "services/barren_record_signals.py",
+        "services/scope_dispatcher.py",
+        "services/scope_runtime.py",
     }
 )
 
@@ -1389,26 +1404,55 @@ def change_stamp_reads(tree):
     return reads
 
 
-def _hands_back(tree, statement, names):
-    """Whether *statement* returns a value that reaches one of *names*.
+def _handed_back(statement):
+    """Every value *statement* hands its caller, by return or by yield."""
+    return tuple(
+        node.value
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Return | ast.Yield | ast.YieldFrom)
+        and node.value is not None
+    )
 
-    The returned expression alone, read beside its module's own imports so an
-    aliased or routed spelling resolves the way the whole-module walk resolves
-    it.  A definition that merely calls the arithmetic on the way to some
-    other answer hands nothing of it back and is no wrapper of it.
+
+def _hands_back(tree, statement, names):
+    """Whether *statement* hands back a value reaching one of *names*.
+
+    Read against the whole enclosing definition, not against the handed-back
+    expression alone: the ordinary spelling of a wrapper binds the
+    arithmetic's answer to a local and hands the local back, and a local alias
+    of the arithmetic is called under a word the module never imports, so a
+    walk that sees only the ``return`` recognises a wrapper by the spelling
+    inside it rather than by what it hands back.  The definition's own
+    bindings are therefore grown from *names* to a fixed point, so a local
+    bound from the answer, and a local bound from that local, are names of it
+    here; each value is read beside the module's imports, so an aliased or
+    routed spelling resolves the way the whole-module walk resolves it; and a
+    ``return``, a ``yield`` or a ``yield from`` of any of them hands it back.
+
+    A consequence, stated because it widens the surface: a definition that
+    computes the gap on the way to its own answer hands that answer back
+    whenever the answer is grown from the gap's, so a reading derived from the
+    open set carries the guard to whoever reads the reading.  A definition
+    that calls the arithmetic and hands back nothing grown from it — a
+    refusal, a count of something else, a value bound before the call — binds
+    no name this walk follows and is no wrapper of it.
     """
     imports = [
         node for node in tree.body if isinstance(node, ast.Import | ast.ImportFrom)
     ]
-    for node in ast.walk(statement):
-        if not isinstance(node, ast.Return) or node.value is None:
-            continue
-        handed = ast.Module(
-            body=[*imports, ast.Expr(value=node.value)], type_ignores=[]
-        )
-        if reaches(handed, names=names):
-            return True
-    return False
+
+    def beside_imports(value):
+        return ast.Module(body=[*imports, ast.Expr(value=value)], type_ignores=[])
+
+    handed = bound_names(
+        ast.Module(body=[*imports, *statement.body], type_ignores=[]),
+        yields=lambda value, bound: bool(reaches(beside_imports(value), names=bound)),
+        seeds=names,
+    )
+    return any(
+        reaches(beside_imports(value), names=handed)
+        for value in _handed_back(statement)
+    )
 
 
 def gap_wrappers(trees):
@@ -1600,22 +1644,51 @@ def test_a_module_that_only_quotes_a_seed_name_is_not_a_gap_site():
 
 
 def test_the_gap_wrappers_at_head_are_the_helpers_that_hand_back_its_answer():
-    """The wrapper derivation is not vacuous: the tree already holds two.
+    """The wrapper derivation is not vacuous: the tree already holds five.
 
-    Both return what the arithmetic returned — the subtree's open criteria and
-    the organize gap's emptiness — so both carry the guard to whoever calls
-    them.  A third helper written beside the arithmetic reds here, which is
-    where a new gap surface should be read rather than in the module bound.
+    Two hand back what the arithmetic returned — the subtree's open criteria
+    and the organize gap's emptiness.  The other three hand back a value grown
+    from it: a ready set carrying each lane's own gap, and two alarm readings
+    computed out of the open-key set the arithmetic answered.  Each carries the
+    guard to whoever calls it, which is why the module bound below grew when
+    the walk began following the answer through a definition's own bindings.  A
+    sixth helper written beside the arithmetic reds here, which is where a new
+    gap surface should be read rather than in the module bound.
     """
     discovered = gap_computation_sites(source_tree())
 
     assert gap_wrappers(discovered.values()) == frozenset(
-        {"open_criteria", "organize_at_rest"}
+        {
+            "open_criteria",
+            "organize_at_rest",
+            "read_scope_ready",
+            "read_barren_tick",
+            "observe_ruling_growth",
+        }
     )
 
 
+#: The ways a helper can hand the gap's answer back: straight out of the
+#: call, out of a local the call was bound to, out of a local alias of the
+#: arithmetic called under a word the module never imports, and out of a
+#: generator.  The middle two are the spelling the package itself writes — a
+#: local bound to the arithmetic, then handed on — and reading the whole
+#: definition rather than the returned expression alone is what sees them.
+WRAPPER_SHAPES = {
+    "returned call": "    return compute_gap(criteria, supersession_refs={})\n",
+    "returned local": "    answer = compute_gap(criteria, supersession_refs={})\n"
+    "    return answer\n",
+    "aliased arithmetic": "    arithmetic = compute_gap\n"
+    "    return arithmetic(criteria, supersession_refs={})\n",
+    "yielded answer": "    yield from compute_gap(criteria, supersession_refs={})\n",
+}
+
+
 @pytest.mark.parametrize("reads", [True, False])
-def test_a_module_reaching_the_gap_through_a_wrapper_is_discovered_and_scanned(reads):
+@pytest.mark.parametrize("shape", sorted(WRAPPER_SHAPES))
+def test_a_module_reaching_the_gap_through_a_wrapper_is_discovered_and_scanned(
+    shape, reads
+):
     """A consumer of a helper that hands back the gap's answer is a gap site.
 
     Discovery that collected the arithmetic's own names alone answered such a
@@ -1624,16 +1697,14 @@ def test_a_module_reaching_the_gap_through_a_wrapper_is_discovered_and_scanned(r
     The wrapper is planted beside the arithmetic and consumed from a module of
     its own, under a name the guard cannot have been written around.
 
-    Both rows are planted: the reading row must redden the guard, and the
-    read-free twin pins the discovery itself, so a derivation that stopped
+    One row per shape the helper can hand the answer back in, each with and
+    without the read: the reading rows must redden the guard, and the
+    read-free twins pin the discovery itself, so a derivation that stopped
     resolving the helper reads as a module missing from the discovered set
     rather than as one more green run.
     """
     sources = source_tree()
-    sources["domain/gap.py"] += (
-        "\n\ndef gap_since(criteria):\n"
-        "    return compute_gap(criteria, supersession_refs={})\n"
-    )
+    sources["domain/gap.py"] += f"\n\ndef gap_since(criteria):\n{WRAPPER_SHAPES[shape]}"
     read = " if c.updated_at > since" if reads else ""
     sources["services/planted.py"] = (
         "from kodezart.domain.gap import gap_since\n"
