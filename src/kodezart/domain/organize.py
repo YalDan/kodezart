@@ -234,3 +234,17 @@ def organize_at_rest(
         open_findings=open_findings,
         body_marker_key=body_marker_key,
     )
+
+
+def evidence_is_fillable(
+    *, runnable_test: str | None, named_observation: str | None
+) -> bool:
+    """Whether a proposed criterion names anything its Evidence row can hold.
+
+    The graded sha is not asked: no commit is graded at authoring. What
+    authoring settles is whether anything will ever demonstrate the
+    criterion. Presence, never prose: a blank string names nothing.
+    """
+    return any(
+        part is not None and part.strip() for part in (runnable_test, named_observation)
+    )

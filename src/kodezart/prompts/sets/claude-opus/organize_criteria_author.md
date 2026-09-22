@@ -9,6 +9,12 @@ configured criterion label. Reuse an existing child when its Check already state
 the criterion; do not duplicate it or use title numbering as identity. Existing
 criterion bodies below are the source for that comparison.
 
+Name what will fill each criterion's Evidence: the exact runnable test that will
+demonstrate it at the graded commit, or, where no test can run it, the observation
+that will be recorded instead. A criterion that names neither is refused before it
+is created; re-grain it until one of the two is nameable, preserving the underlying
+requirement. The Evidence field itself stays empty here.
+
 Check individual satisfiability, joint consistency, and demonstrability in the
 declared grading environment before proposing a criterion. Name missing evidence
 or an unruled decision instead of inventing it. Preserve the underlying requirement

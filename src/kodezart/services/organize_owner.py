@@ -41,6 +41,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.organize import (
     admission_route,
+    evidence_is_fillable,
     is_organize_subject,
     organize_gap,
     owes_stage_label,
@@ -684,6 +685,24 @@ class OrganizeOwner:
                     raise OrganizeWriteRefusalError(
                         issue_key=request.issue_key,
                         reason="duplicate proposed Check identities",
+                    )
+                # Asked over the criteria this step is about to create, not
+                # over every proposed one: replaying an existing child stays
+                # dry, and a child is never created with nothing that could
+                # ever fill its Evidence row.
+                if not all(
+                    evidence_is_fillable(
+                        runnable_test=item.runnable_test,
+                        named_observation=item.named_observation,
+                    )
+                    for item in missing
+                ):
+                    raise OrganizeWriteRefusalError(
+                        issue_key=request.issue_key,
+                        reason=(
+                            "a proposed criterion names no demonstration its "
+                            "Evidence row could be filled with"
+                        ),
                     )
                 for item in missing:
                     body = criterion_body(

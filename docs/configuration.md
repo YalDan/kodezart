@@ -364,6 +364,8 @@ The configured native Organize owner dispatches these roles and owns tracker
 mutation through the narrow declared surfaces. The shared `write_back_verify`
 role independently checks the exact reread artifact through the canonical
 write-back repair loop.
+The admission and verification roles render each declared repository's check
+chain and runner environment from the operation namespace.
 
 The rubric and issue evidence vary per call: `mandate_rubric`, `issue_body`,
 `linked_issue_bodies`, `criterion_issue_bodies`, `refusal_evidence`, and

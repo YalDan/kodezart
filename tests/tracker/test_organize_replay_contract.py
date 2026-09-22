@@ -232,6 +232,7 @@ class PortExecutor:
                             "title": title_text,
                             "check": f"{title_text} match the declared source.",
                             "do": f"Compare the source and {title_text.lower()}.",
+                            "runnable_test": "tests/fixture/test_criterion.py",
                         }
                         for title_text in self.criteria
                     ],

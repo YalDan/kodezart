@@ -383,6 +383,25 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                     else None
                 ),
                 "checks_absent": None if repo.checks else True,
+                # The environment facts a repository declares about its
+                # runner, each declared available or declared unavailable;
+                # a repository declaring none says so.
+                "runner_environment": (
+                    [
+                        {
+                            "name": prerequisite.value,
+                            "available": True if available else None,
+                            "unavailable": None if available else True,
+                        }
+                        for prerequisite, available in sorted(
+                            repo.runner_environment.items(),
+                            key=lambda item: item[0].value,
+                        )
+                    ]
+                    if repo.runner_environment
+                    else None
+                ),
+                "runner_environment_absent": None if repo.runner_environment else True,
             }
             for repo in config.repos
         ],

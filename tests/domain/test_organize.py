@@ -814,3 +814,33 @@ async def test_invalid_table_stops_normal_boot_before_tracker_or_dispatch(
             pytest.fail(
                 "dispatch became available with an unresolved mandate reference"
             )
+
+
+EVIDENCE_FILLABILITY = [
+    ("tests/fixture/test_criterion.py", None, True),
+    (None, "The recorded observation of the landed board.", True),
+    ("tests/fixture/test_criterion.py", "And the recorded observation.", True),
+    (None, None, False),
+    ("", None, False),
+    ("   ", None, False),
+    (None, "", False),
+    (None, "   ", False),
+    ("", "   ", False),
+]
+
+
+@pytest.mark.parametrize(
+    ("runnable_test", "named_observation", "fillable"), EVIDENCE_FILLABILITY
+)
+def test_evidence_is_fillable_only_when_a_demonstration_is_named(
+    runnable_test, named_observation, fillable
+):
+    """Presence of a demonstration, not prose about one, and never a blank."""
+    from kodezart.domain.organize import evidence_is_fillable
+
+    assert (
+        evidence_is_fillable(
+            runnable_test=runnable_test, named_observation=named_observation
+        )
+        is fillable
+    )

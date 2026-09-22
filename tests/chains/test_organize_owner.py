@@ -124,6 +124,7 @@ class BoardExecutor:
                                 "title": title,
                                 "check": f"{title} match the declared source.",
                                 "do": f"Compare the source and {title.lower()}.",
+                                "runnable_test": "tests/fixture/test_criterion.py",
                             }
                             for title in self.criteria
                         ],
