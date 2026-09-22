@@ -19,7 +19,7 @@ import pkgutil
 import re
 import tomllib
 from collections import Counter
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import get_args
 
@@ -1136,6 +1136,23 @@ def fields_reaching(record: type[BaseModel], leaf: object) -> tuple[str, ...]:
     )
 
 
+def enums_reached(record: type[BaseModel]) -> tuple[type[Enum], ...]:
+    """Every enum class the record's own fields reach, sorted by class name.
+
+    Unfolds typing arguments exactly as ``fields_reaching`` does and no
+    further: an enum reached through a sub-model field is that record's own
+    declaration, not this one's.  Sorted by name rather than by field order,
+    so adding a field ahead of another is not a difference this reports.
+    """
+    reached = {
+        leaf
+        for info in record.model_fields.values()
+        for leaf in _annotation_leaves(info.annotation)
+        if isinstance(leaf, type) and issubclass(leaf, Enum)
+    }
+    return tuple(sorted(reached, key=lambda enum: enum.__name__))
+
+
 def boolean_verdicts(records: dict[str, type[BaseModel]]) -> tuple[str, ...]:
     """Every boolean-annotated field on a record that carries a graded sha.
 
@@ -1419,6 +1436,27 @@ def test_the_domain_package_has_one_satisfaction_carrier_and_its_state_is_the_en
     assert satisfaction_carriers(domain_records()) == (SATISFACTION_CARRIER,)
     assert fields_reaching(CriterionCrossOff, CrossOffState) == ("state",)
     assert CriterionCrossOff.model_fields["state"].annotation is CrossOffState
+
+
+#: Every enum a cross-off's own fields may reach, and why each belongs: the
+#: satisfaction state itself, what re-deriving the criterion costs, and which
+#: reading came back empty on the one state that carries no verdict.  A fourth
+#: enum here would be a second declaration of the same resolution beside the
+#: state field, whether or not it were named like one.
+CROSS_OFF_ENUMS = (CrossOffState, RederivationClass, UndemonstratedReason)
+
+
+def test_the_satisfaction_carrier_reaches_exactly_these_enums():
+    """The state field is the single declaring site, so no second enum joins it.
+
+    Derived from the model rather than from a list of field names: a field
+    added for an honest reason is reported only when it brings an enum the
+    carrier has no business declaring, and the reason it is reported is the
+    enum, which is the thing the single-declaring-site rule is about.  The
+    boolean ban beside this one closes the same gap for a ``bool``; neither
+    ban sees what the other does.
+    """
+    assert enums_reached(CriterionCrossOff) == CROSS_OFF_ENUMS
 
 
 @pytest.mark.parametrize(
