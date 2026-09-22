@@ -16,7 +16,16 @@ key and in both sort keys, which used no forbidden token at all.
 register green while any change to what that key reads moves it. The one
 expression that makes a rank is pinned by its text for the same reason: what
 it reads is counted as attributes off ``issue`` and what it calls by the word
-spelled, and a subscript of the bare ``issue`` name is neither.
+spelled, and a subscript of the bare ``issue`` name is neither. That function
+is pinned by its WHOLE body, not by that expression alone: the unparsed
+statements after its docstring are compared to the one written return, so the
+definition has room for no statement at all — nothing may substitute the issue
+before the read, and nothing may rebind the name the return calls. And because
+a call is pinned by the word it spells and never by what that word resolves
+to, a second register states the resolution as a fact: every name the module
+binds is disjoint from every name it imports from the domain types, so
+``priority_rank`` inside this module means the domain order and not a function
+standing in its place.
 
 Two weaker nets sit outside the shape pins. One collects every ``len(...)``
 whose argument is an attribute and asserts none of those attributes is a text
@@ -59,7 +68,16 @@ size of a label set — is outside the text-length net; strings and comments are
 not scanned. The
 words ``effort``, ``remaining`` and ``size`` are deliberately absent from the
 vocabulary because the package uses them for a session effort setting, for
-iteration and round counters, and for page sizes.
+iteration and round counters, and for page sizes. The register of bound names
+reads bindings — assignments with unpacking undone, loop and comprehension
+targets, ``with`` and ``except`` aliases, parameters, and imports of anything
+but the domain types — in this one module only, and it is disjoint from the
+imported names rather than from every name those objects could be reached
+under: an imported module's attribute rewritten in place, or the same domain
+name re-imported under an alias from the domain types themselves, is outside
+it. Names a class body declares are in that class's namespace, not the
+module's, so they are not bindings here; the methods of that class are read
+like any other definition.
 
 ``fire_plateaued`` compares ``len(ticks)`` with the plateau bound. The bound
 counts ticks, which is the per-tick budget the lane deliverable allows, and it
@@ -278,6 +296,19 @@ RANK_KEY_TEXT = (
     "RankKey(priority_rank=priority_rank(issue.priority), created_at=issue.created_at)"
 )
 
+#: Exact. The whole body of that function after its docstring: the one return
+#: and room for nothing else, so a statement placed before it — one that
+#: substitutes the issue, or rebinds the name the return calls — moves a
+#: register here even while the returned expression stays byte-identical.
+RANK_KEY_BODY = (
+    "return RankKey(priority_rank=priority_rank(issue.priority), "
+    "created_at=issue.created_at)"
+)
+
+#: The package the domain row types are declared in, read off one of them, so
+#: the rebinding register names no module by hand.
+DOMAIN_TYPES = priority_rank.__module__.rsplit(".", 1)[0]
+
 #: Exact, over the same five definitions. The text of each registered
 #: ordering's key and arguments, so a read the attribute register cannot see —
 #: a bare name, a subscript of one — moves a register too.
@@ -452,6 +483,135 @@ def callees(function: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
     )
 
 
+def body_after_docstring(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.stmt, ...]:
+    """Every statement a definition holds after its docstring.
+
+    A docstring is a string constant in the first statement position, so a
+    definition written without one keeps its whole body here.
+    """
+    body = tuple(function.body)
+    opens_with_prose = (
+        bool(body)
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    )
+    return body[1:] if opens_with_prose else body
+
+
+def body_text(function: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    """The unparsed statements of a definition after its docstring.
+
+    One text for the whole body, so a pin over it says what the definition
+    does and not only what its return expression reads. ``ast.unparse``
+    normalises formatting here as everywhere else in this module.
+    """
+    return "\n".join(
+        ast.unparse(statement) for statement in body_after_docstring(function)
+    )
+
+
+def _bound_by(target: ast.expr) -> Iterator[str]:
+    """Every name one assignment target binds, unpacking undone."""
+    if isinstance(target, ast.Name):
+        yield target.id
+    elif isinstance(target, ast.Starred):
+        yield from _bound_by(target.value)
+    elif isinstance(target, ast.Tuple | ast.List):
+        for element in target.elts:
+            yield from _bound_by(element)
+
+
+def _class_scoped(tree: ast.Module) -> frozenset[int]:
+    """The assignments a class body holds, which bind in its own namespace."""
+    return frozenset(
+        id(statement)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+        for statement in node.body
+    )
+
+
+def _parameters(function: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[str]:
+    """Every parameter name a definition binds, in every position."""
+    arguments = function.args
+    for one in (
+        *arguments.posonlyargs,
+        *arguments.args,
+        *arguments.kwonlyargs,
+        arguments.vararg,
+        arguments.kwarg,
+    ):
+        if one is not None:
+            yield one.arg
+
+
+def _from_domain_types(node: ast.ImportFrom) -> bool:
+    """Whether an import reads from the package the domain types live in."""
+    module = node.module or ""
+    return module == DOMAIN_TYPES or module.startswith(f"{DOMAIN_TYPES}.")
+
+
+def imported_domain_names(tree: ast.Module) -> frozenset[str]:
+    """Every name a module imports from the domain types, as it binds it."""
+    return frozenset(
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and _from_domain_types(node)
+        for alias in node.names
+    )
+
+
+def bound_names(tree: ast.Module) -> frozenset[str]:
+    """Every name a module binds other than by importing it from the domain.
+
+    A binding is an assignment — plain, annotated, augmented or walrus, with
+    unpacking undone — a loop or comprehension target, a ``with`` or
+    ``except`` alias, a parameter, or an import of anything but the domain
+    types, whose own import is what :func:`imported_domain_names` reads and
+    would otherwise report every module as rebinding what it imports. An
+    annotation carrying no value binds nothing. A name a class body declares
+    binds in that class's namespace rather than the module's, so a field
+    called after an imported function is no rebinding of it, while the
+    methods of that class are read like any other definition.
+    """
+    class_scoped = _class_scoped(tree)
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign)
+            and id(node) in class_scoped
+        ):
+            continue
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                found.update(_bound_by(target))
+        elif isinstance(node, ast.AnnAssign):
+            if node.value is not None:
+                found.update(_bound_by(node.target))
+        elif isinstance(node, ast.AugAssign | ast.NamedExpr):
+            found.update(_bound_by(node.target))
+        elif isinstance(node, ast.For | ast.AsyncFor | ast.comprehension):
+            found.update(_bound_by(node.target))
+        elif isinstance(node, ast.withitem):
+            if node.optional_vars is not None:
+                found.update(_bound_by(node.optional_vars))
+        elif isinstance(node, ast.ExceptHandler):
+            if node.name is not None:
+                found.add(node.name)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            found.update(_parameters(node))
+        elif isinstance(node, ast.Import):
+            found.update(
+                alias.asname or alias.name.split(".")[0] for alias in node.names
+            )
+        elif isinstance(node, ast.ImportFrom) and not _from_domain_types(node):
+            found.update(alias.asname or alias.name for alias in node.names)
+    return frozenset(found)
+
+
 def _named_types(annotation: object) -> tuple[object, ...]:
     """Every type an annotation names, with wrappers and unions unwrapped.
 
@@ -493,6 +653,14 @@ def test_the_rank_key_is_priority_then_age_and_nothing_else():
     derived quantity to the rank inside the one function that makes one and
     moves no other register here. "Nothing else" is a claim about the whole
     expression, so the whole expression is written out.
+
+    It is a claim about the whole function too, because a statement before the
+    return leaves that expression byte-identical while substituting the issue
+    it reads or the function it calls. So the body after the docstring is
+    written out as well, leaving room for no statement at all, and the module's
+    bound names are asserted disjoint from what it imports from the domain
+    types: the return calls ``priority_rank``, and in this module that word can
+    mean nothing but the domain order it is imported as.
     """
     tree = PARSED[DISPATCH]
     comparison = _defined(tree, COMPARISON)
@@ -515,6 +683,9 @@ def test_the_rank_key_is_priority_then_age_and_nothing_else():
     )
     assert callees(made) == frozenset({RankKey.__name__, priority_rank.__name__})
     assert ast.unparse(returned(made)) == RANK_KEY_TEXT
+    assert body_text(made) == RANK_KEY_BODY
+    assert priority_rank.__name__ in imported_domain_names(tree)
+    assert bound_names(tree) & imported_domain_names(tree) == frozenset()
 
 
 def test_every_ordering_that_consults_priority_reads_only_the_rank_inputs():
@@ -728,6 +899,31 @@ MUTANTS = {
         "        priority_rank=priority_rank(issue.priority)\n"
         "        + (_SIZES[issue] if issue in _SIZES else 0),\n",
     ),
+    "rank_key_substituted_issue": (
+        "def rank_key(issue: TrackerIssue) -> RankKey:\n"
+        '    """Primary rank (Urgent first, None last), secondary oldest-first."""\n'
+        "    return RankKey(\n",
+        "_TABLE: dict = {}\n"
+        "\n"
+        "\n"
+        "def rank_key(issue: TrackerIssue) -> RankKey:\n"
+        '    """Primary rank (Urgent first, None last), secondary oldest-first."""\n'
+        "    issue = _TABLE[issue] if issue in _TABLE else issue\n"
+        "    return RankKey(\n",
+    ),
+    "rank_key_shadowed_order": (
+        "def rank_key(issue: TrackerIssue) -> RankKey:\n"
+        '    """Primary rank (Urgent first, None last), secondary oldest-first."""\n'
+        "    return RankKey(\n",
+        "_TABLE: dict = {}\n"
+        "_ORDER = priority_rank\n"
+        "\n"
+        "\n"
+        "def rank_key(issue: TrackerIssue) -> RankKey:\n"
+        '    """Primary rank (Urgent first, None last), secondary oldest-first."""\n'
+        "    priority_rank = _TABLE[issue] if issue in _TABLE else _ORDER\n"
+        "    return RankKey(\n",
+    ),
 }
 
 
@@ -751,6 +947,16 @@ def test_the_guard_reddens_on_a_size_derived_rank_input(hunk):
     arithmetic between them. Each of those is asserted here as an equality,
     not skipped: what reds it is the text of the rank-making expression and
     nothing else in this module.
+
+    The last two move the same table one statement earlier, where the returned
+    expression stays byte-identical and the text of it is satisfied too. One
+    substitutes the issue whose fields the return then reads; the other rebinds
+    the name the return calls, so the call still spells ``priority_rank`` while
+    meaning a per-issue function a producer injects. Every register the size
+    table leaves alone these leave alone as well, the text of the return among
+    them, and each is asserted here as an equality: what reds the first is the
+    body of the rank-making function, and the second reds that and the
+    disjointness of what this module binds from what it imports.
     """
     anchor, planted = MUTANTS[hunk]
     source = PACKAGE[DISPATCH]
@@ -778,7 +984,7 @@ def test_the_guard_reddens_on_a_size_derived_rank_input(hunk):
         assert sites != DISPATCH_ORDERINGS
         assert "estimate" in sites[f"{DISPATCH}::ranked_order"][1]
         assert estimate_identifiers(mutated)
-    else:
+    elif hunk == "rank_key_size_table":
         made = _defined(mutated, rank_key.__name__)
         with_table = {**PARSED, DISPATCH: mutated}
         assert receiver_reads(made, receiver="issue") == frozenset(
@@ -791,6 +997,39 @@ def test_the_guard_reddens_on_a_size_derived_rank_input(hunk):
         assert text_length_reads(mutated) == text_length_reads(PARSED[DISPATCH])
         assert estimate_identifiers(mutated) == frozenset()
         assert ast.unparse(returned(made)) != RANK_KEY_TEXT
+    elif hunk == "rank_key_substituted_issue":
+        made = _defined(mutated, rank_key.__name__)
+        with_table = {**PARSED, DISPATCH: mutated}
+        assert receiver_reads(made, receiver="issue") == frozenset(
+            {"priority", "created_at"}
+        )
+        assert callees(made) == frozenset({RankKey.__name__, priority_rank.__name__})
+        assert ast.unparse(returned(made)) == RANK_KEY_TEXT
+        assert ordering_sites(with_table) == DISPATCH_ORDERINGS
+        assert ordering_calls(with_table) == ordering_calls(PARSED)
+        assert ordering_key_texts(with_table) == DISPATCH_ORDERING_KEYS
+        assert text_length_reads(mutated) == text_length_reads(PARSED[DISPATCH])
+        assert estimate_identifiers(mutated) == frozenset()
+        assert bound_names(mutated) & imported_domain_names(mutated) == frozenset()
+        assert body_text(made) != RANK_KEY_BODY
+    elif hunk == "rank_key_shadowed_order":
+        made = _defined(mutated, rank_key.__name__)
+        with_table = {**PARSED, DISPATCH: mutated}
+        assert receiver_reads(made, receiver="issue") == frozenset(
+            {"priority", "created_at"}
+        )
+        assert callees(made) == frozenset({RankKey.__name__, priority_rank.__name__})
+        assert ast.unparse(returned(made)) == RANK_KEY_TEXT
+        assert ordering_sites(with_table) == DISPATCH_ORDERINGS
+        assert ordering_calls(with_table) == ordering_calls(PARSED)
+        assert ordering_key_texts(with_table) == DISPATCH_ORDERING_KEYS
+        assert text_length_reads(mutated) == text_length_reads(PARSED[DISPATCH])
+        assert estimate_identifiers(mutated) == frozenset()
+        assert body_text(made) != RANK_KEY_BODY
+        assert priority_rank.__name__ in bound_names(mutated)
+        assert priority_rank.__name__ in imported_domain_names(mutated)
+    else:
+        raise AssertionError(f"{hunk} is planted with no control asserted")
 
 
 def test_the_plateau_bound_is_a_tick_count_and_not_a_rank_input():
