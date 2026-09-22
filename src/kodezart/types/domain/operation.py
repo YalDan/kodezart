@@ -1007,7 +1007,6 @@ class OperationConfig(OperationModel):
             OrganizeLabelNamespace.SCOPE: self.scope_labels,
             OrganizeLabelNamespace.ISSUE: self.issue_labels,
         }
-        approved_label = self.scope_labels.get(ScopeLabel.APPROVED.value)
         resolved: list[ResolvedMandateSpec] = []
         for spec in sorted(
             self.organize_mandates, key=lambda row: sequence.index(row.kind)
@@ -1024,7 +1023,9 @@ class OperationConfig(OperationModel):
                     failures.append(
                         f"{location} has no nonempty mapping for {reference!r}"
                     )
-                elif label == approved_label and not (
+                elif aliases_approval_member(
+                    label=label, scope_labels=self.scope_labels
+                ) and not (
                     field == "gate_label_key"
                     and namespace is OrganizeLabelNamespace.SCOPE
                     and MANDATE_PHASE_ROLES[spec.kind].runs_under_approval
