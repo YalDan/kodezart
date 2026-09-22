@@ -43,6 +43,15 @@ out of the type checker's reach, because the checker reads the stub in
 place of it.  That shape has no directive to count and no roster can see
 it; it is a diff the code review has to catch.
 
+A fourth is the gate's own command line.  What is pinned below is the
+configuration the project file declares; what reads it is `make check`, and
+a flag added to the `mypy` or `ruff` invocation there -- an `--ignore`, a
+`--disable-error-code`, a narrowed path -- relaxes the gate with no row here
+changing.  Nothing below reads the `Makefile`.  The one relaxation it
+already carries, `tests/` left outside the type checker's reach, is a
+decision of record (KOD-140) written in that file's own comment rather than
+counted here.
+
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
 that needs it, with its reason written there.
@@ -360,9 +369,18 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
 #: above meaningless for everything below it.  The project file's own name
 #: is a row here because a second copy of it under a walked tree is read the
 #: same way; the pinned one at the root is not a hit.
+#:
+#: ``.pytest.ini`` is a row for the runner rather than the linter: the
+#: version the gate runs searches ``pytest.ini``, ``.pytest.ini`` and then
+#: ``pyproject.toml``, and takes the first it finds as the whole of its
+#: configuration even when that file is empty.  One of those beside the
+#: project file therefore shadows ``[tool.pytest.ini_options]`` entire --
+#: the error-on-warning setting and the declared marks with it -- while
+#: every table pinned above goes on reading exactly as it does now.
 FOREIGN_TOOL_FILES: tuple[str, ...] = (
     ".flake8",
     ".mypy.ini",
+    ".pytest.ini",
     ".ruff.toml",
     "mypy.ini",
     "pyproject.toml",
@@ -681,9 +699,10 @@ def test_the_configuration_scan_reads_every_directory_the_walk_reaches(
 ) -> None:
     """A file nested under a walked tree is the same hole as one beside the root.
 
-    Two hits over a fake tree, one under a package and one a second copy of
-    the project file; the pinned file at the root is not a hit, and the same
-    tree without them is clean.
+    Three hits over a fake tree: one the linter reads, one the runner reads
+    ahead of the project file, and one a second copy of the project file
+    itself.  The pinned file at the root is not a hit, and the same tree
+    without them is clean.
     """
     walked = ("src/kodezart/services/agent_service.py", "tests/domain/test_a.py")
     project = tmp_path / "pyproject.toml"
@@ -695,9 +714,14 @@ def test_the_configuration_scan_reads_every_directory_the_walk_reaches(
         negative_shape.foreign_configuration(project, walked, FOREIGN_TOOL_FILES) == []
     )
 
+    (nested / ".pytest.ini").write_text("", encoding="utf-8")
     (nested / "ruff.toml").write_text("", encoding="utf-8")
     (tmp_path / "src" / "pyproject.toml").write_text("", encoding="utf-8")
 
     assert negative_shape.foreign_configuration(
         project, walked, FOREIGN_TOOL_FILES
-    ) == ["src/kodezart/services/ruff.toml", "src/pyproject.toml"]
+    ) == [
+        "src/kodezart/services/.pytest.ini",
+        "src/kodezart/services/ruff.toml",
+        "src/pyproject.toml",
+    ]
