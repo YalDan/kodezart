@@ -189,13 +189,20 @@ class NativeExecutor(RecordingExecutor):
 
     async def stream(self, **kwargs):
         assert kwargs["session_id"] is None
-        assert (
-            Path(kwargs["cwd"], "check.txt").read_text()
-            == "current committed contents\n"
-        )
+        schema = kwargs["output_format"]["schema"]
+        if schema == AUDIT_MANDATE_SCHEMA and not self.tagged(
+            kwargs["prompt"], "head_sha"
+        ):
+            # A hunt with no head pin stands in an empty directory: the
+            # refuted branch is gone and there is no repository to read.
+            assert not any(Path(kwargs["cwd"]).iterdir())
+        else:
+            assert (
+                Path(kwargs["cwd"], "check.txt").read_text()
+                == "current committed contents\n"
+            )
         if self.during is not None:
             await self.during(kwargs)
-        schema = kwargs["output_format"]["schema"]
         if schema == AUDIT_CLAIM_SCHEMA:
             about = self.subject(kwargs["prompt"])
             payload = {
@@ -269,11 +276,11 @@ class NativeExecutor(RecordingExecutor):
             yield event
 
 
-def native_operation(repo_url):
+def native_operation(repo_url, *, trunk="ordinary-name"):
     """The configured operation the native audit fixtures run under."""
     fields = base_operation(repos=(repo_url,)).model_dump()
     fields["repos"][0].update(
-        trunk="ordinary-name",
+        trunk=trunk,
         checks=[{"name": "test", "command": "cat check.txt", "forge_check": "test"}],
     )
     fields["workflow_states"] = WORKFLOW_STATE_NAMES
@@ -295,10 +302,12 @@ def native_operation(repo_url):
     return OperationConfig.model_validate(declare_organize_owner(fields))
 
 
-async def build_native_audit(repository, server, tmp_path, *, gate):
+async def build_native_audit(
+    repository, server, tmp_path, *, gate, trunk="ordinary-name"
+):
     """The composed audit over the native doubles, under the supplied gate."""
     remote, _author, _observer, _prior, head = repository
-    operation = native_operation(remote.as_uri())
+    operation = native_operation(remote.as_uri(), trunk=trunk)
     server._comment_clock = lambda: FIXTURE_NOW
     tracker = tracker_over(
         server,
@@ -701,6 +710,142 @@ async def test_the_composed_sweep_traces_a_criterion_restamp_to_its_lanes_gradin
     assert server.issues[CHILD].status == "Done"
     assert len(server.comments) - comments_before == len(scope.writes)
     assert not workspace._workspaces
+
+
+#: A trunk kept apart from the lane's branch, so the lane's branch can go.
+TRUNK = "trunk-name"
+
+
+async def missing_branch(repository, server, tmp_path):
+    """The composed audit after the lane's branch was deleted from the remote.
+
+    The trunk is one commit past the lane's head and leaves check.txt as the
+    head has it, so a write-back judged at the trunk head reads the same
+    contents and the trunk head is still a commit no report names.  Every
+    criterion is Done and the parent is under review, so the recorded branch
+    being gone is the demonstrated defect.
+    """
+    from tests.tracker.test_audit_evidence_git import command
+
+    _remote, author, *_ = repository
+    (author / "trunk.txt").write_text("trunk only\n")
+    command(author, "add", "--all")
+    command(author, "commit", "-qm", "trunk")
+    trunk_head = command(author, "rev-parse", "HEAD")
+    command(author, "push", "-q", "configured-remote", f"HEAD:refs/heads/{TRUNK}")
+    built = await build_native_audit(
+        repository, server, tmp_path, gate=PassThroughGate(), trunk=TRUNK
+    )
+    command(author, "push", "-q", "configured-remote", "--delete", "ordinary-name")
+    return built, trunk_head
+
+
+def terminal_records(server):
+    """The published terminal records on the audited parent, decoded."""
+    return [
+        (row, json.loads(row.body.partition("\n")[2])["publication"])
+        for row in server.comments
+        if row.issue_id == ROOT
+        and row.body.startswith("[native-audit:")
+        and json.loads(row.body.partition("\n")[2])["publication"]["kind"] == "terminal"
+    ]
+
+
+def judged_at(executor, native_ref):
+    """The refs every write-back round over one landed artifact was judged at."""
+    return [
+        NativeExecutor.tagged(call["prompt"], "base_ref")
+        for call in executor.calls
+        if call["output_format"]["schema"] == WRITE_BACK_SCHEMA
+        and json.loads(NativeExecutor.tagged(call["prompt"], "written_artifact"))[
+            "nativeRef"
+        ]
+        == native_ref
+    ]
+
+
+@pytest.mark.parametrize("outcome", ["holds", "refuted"])
+async def test_a_missing_branch_refutation_is_published_leaving_the_mandate_unedited(
+    repository, server, tmp_path, outcome
+):
+    """A gone branch is published as a refutation, judged at the trunk head.
+
+    The report names no head, so the write-back that lands it is judged at
+    the remote trunk head, the read the scope's summary is judged at.  The
+    hunt read the parent's instructions and edited none of them: no
+    description of any issue was written.  The tick itself ends incomplete,
+    because the criterion's own claim needs the branch that is gone.
+    """
+    built, trunk_head = await missing_branch(repository, server, tmp_path)
+    audit, executor, server, *_ = built
+    executor.instruction = outcome == "holds"
+    bodies = {key: issue.description for key, issue in server.issues.items()}
+
+    with pytest.raises(AuditRunIncompleteError):
+        await audit.run(FIXTURE_NOW)
+
+    ((record, publication),) = terminal_records(server)
+    observation = publication["report"]["observation"]
+    assert observation["branch_head"] is None
+    assert "no_branch" in observation["discrepancies"]
+    assert publication["report"]["mandate"]["verdict"] == outcome
+    assert set(judged_at(executor, record.id)) == {trunk_head}
+    hunts = [
+        call
+        for call in executor.calls
+        if call["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA
+    ]
+    assert [NativeExecutor.tagged(call["prompt"], "head_sha") for call in hunts] == [""]
+    escalations = escalation_comments(server)
+    assert len(escalations) == (1 if outcome == "holds" else 0)
+    for row in escalations:
+        assert row.issue_id == ROOT
+        assert set(judged_at(executor, row.id)) == {trunk_head}
+        assert json.loads(row.body.partition("\n")[2])["raisedAtSha"] == trunk_head
+    assert not [
+        arguments
+        for name, arguments in server.calls
+        if name == "save_issue" and "description" in arguments
+    ]
+    assert {key: issue.description for key, issue in server.issues.items()} == bodies
+
+
+async def test_a_refutation_whose_mandate_hunt_fails_leaves_the_audit_run_incomplete(
+    repository, server, tmp_path
+):
+    """A hunt that fails leaves the refutation raw, named and unpublished.
+
+    The sweep keeps the raw REFUTED terminal beside the reason its hunt
+    could not run, and the runtime refuses the subject on that reason, so
+    the tick ends incomplete rather than reporting coverage it lacks.
+    """
+    from kodezart.domain.errors import AgentSDKError
+    from kodezart.types.domain.audit_terminal import AuditTerminalObservation
+
+    built, _trunk_head = await missing_branch(repository, server, tmp_path)
+    audit, executor, server, *_ = built
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+            raise AgentSDKError("mandate session unavailable", error_kind="fixture")
+
+    executor.during = during
+    with pytest.raises(AuditRunIncompleteError) as incomplete:
+        await audit.run(FIXTURE_NOW)
+
+    scope = incomplete.value.report.scopes[0]
+    assert any(
+        row.subject.key == ROOT and "mandate session unavailable" in row.reason
+        for row in scope.unavailable
+    ), [row.model_dump() for row in scope.unavailable]
+    raw = [
+        row
+        for row in scope.raw_observations
+        if isinstance(row, AuditTerminalObservation)
+    ]
+    assert [row.verdict for row in raw] == [AuditVerdict.REFUTED]
+    assert raw[0].branch_head is None
+    assert terminal_records(server) == []
 
 
 async def test_executor_programming_failure_escapes_the_native_owner(native_audit):

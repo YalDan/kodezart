@@ -642,15 +642,20 @@ scope issue bodies, any addressed parent outside the scope, and the scope
 container body when applicable. The returned surface set bounds the mandate
 finding; it does not claim to have read every charter or ruling elsewhere.
 Terminal observations retain their own issue and native record identity. A
-refutation with an observed branch head now invokes the same mandate hunt as
-criterion refutations and returns its mandate-completed terminal report. It
-passes the native discrepancy and PR facts at that exact head, without creating
-a criterion judgment for an issue. Missing-branch observations retain an
-explicit unavailable reason; a historical lane-record head does not supply the
-missing verification context. A failed hunt likewise retains the original
-terminal observation without claiming a complete report. Final terminal and
-scope reads still refuse changed source facts. Independent readable targets
-continue after a target fails.
+terminal refutation invokes the same mandate hunt as criterion refutations and
+returns its mandate-completed terminal report. It passes the native discrepancy
+and PR facts, without creating a criterion judgment for an issue. With an
+observed branch head the hunt is pinned at that exact head. A recorded branch
+that is gone from the remote is itself the demonstrated defect: the
+observation is REFUTED with `no_branch`, and its hunt runs with no head pin
+over the tracker surfaces alone, so its verdict is whatever the hunt returns
+and it is unverifiable only when a surface cannot be read. A historical
+lane-record head is never substituted. Its report is published and its
+write-back judged at the remote trunk head, the read the scope summary is
+judged at. A failed hunt retains the original terminal observation beside its
+reason without claiming a complete report, and the subject is refused. Final
+terminal and scope reads still refuse changed source facts. Independent
+readable targets continue after a target fails.
 When supplied, the existing over-claim verifier runs independently for each
 criterion request. Its four categories retain separate mandate-completed reports
 and their original source evidence. Missing configuration or unreadable revision
@@ -707,8 +712,11 @@ with an instruction verdict over an explicit addressed text set. A quoted
 mandate must occur exactly in its native source; absence requires full reads.
 Unsupported or unreachable surfaces yield unverifiable coverage. This consumer
 does not enumerate the full audit scope or publish/edit any tracker artifact.
-Before and after the mandate session, an active Git replacement reference
-refuses the observation even if the workspace reports the expected SHA and
+`head_sha` may be empty: the refuted branch no longer exists, no repository is
+acquired or read, the session stands in an owned empty directory, and the
+supplied surfaces are judged alone. Both prompt sets say so.
+With a head, before and after the mandate session, an active Git replacement
+reference refuses the observation even if the workspace reports the expected SHA and
 clean status. The native namespace read settles before cancellation releases
 the workspace; an unreadable namespace cannot establish a valid observation.
 

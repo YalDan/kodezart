@@ -1,6 +1,8 @@
 """Fresh current-head claim judgments, before full sweep publication."""
 
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from kodezart.core.protocols import (
     AgentRunner,
@@ -21,7 +23,7 @@ from kodezart.services.git_observations import (
     read_workspace_head,
 )
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.services.owned_workspace import owned_workspace
+from kodezart.services.owned_workspace import owned_workspace, unpinned_workspace
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, AUDIT_MANDATE_SCHEMA
@@ -238,6 +240,44 @@ class AuditMandateHunt:
             {"claim": request.claim, "mandate": mandate}
         )
 
+    async def _require_pinned(
+        self, workspace: str, *, head_sha: str, drifted: str
+    ) -> None:
+        """Refuse substituted objects, or a workspace not clean at *head_sha*."""
+        if await read_replace_refs(git=self._git, workspace=workspace):
+            raise AuditClaimReadError("the mandate repository substitutes Git objects")
+        if await read_workspace_head(git=self._git, workspace=workspace) != (
+            head_sha,
+            False,
+        ):
+            raise AuditClaimReadError(drifted)
+
+    @asynccontextmanager
+    async def _workspace_for(self, request: AuditMandateContext) -> AsyncIterator[str]:
+        """Where the session stands: pinned at the head, or nowhere in Git.
+
+        With a head, the workspace is checked out at it and checked before
+        the session as well as after.  With none, the refuted branch no
+        longer exists, the session is judged over the supplied surfaces
+        alone, and no repository is acquired or read.
+        """
+        if request.head_sha is None:
+            async with unpinned_workspace() as workspace:
+                yield workspace
+            return
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.head_sha,
+            cache_key=request.cache_key,
+        ) as workspace:
+            await self._require_pinned(
+                workspace,
+                head_sha=request.head_sha,
+                drifted="mandate workspace is not clean at the observed head",
+            )
+            yield workspace
+
     async def observe(self, request: AuditMandateContext) -> AuditMandateObservation:
         """Hunt once over native text for a fresh, exactly addressed refutation."""
         covered, unreadable = await self._read_set(request.surfaces)
@@ -252,29 +292,13 @@ class AuditMandateHunt:
                     evidence="The addressed surface set could not be fully read.",
                 )
             )
-        async with owned_workspace(
-            self._workspace,
-            repo_url=request.repo_url,
-            ref=request.head_sha,
-            cache_key=request.cache_key,
-        ) as workspace:
-            if await read_replace_refs(git=self._git, workspace=workspace):
-                raise AuditClaimReadError(
-                    "the mandate repository substitutes Git objects"
-                )
-            if await read_workspace_head(git=self._git, workspace=workspace) != (
-                request.head_sha,
-                False,
-            ):
-                raise AuditClaimReadError(
-                    "mandate workspace is not clean at the observed head"
-                )
+        async with self._workspace_for(request) as workspace:
             key = PromptKey.AUDIT_MANDATE
             prompt = self._prompts.template_for(key).render(
                 {
                     "defect_class": request.defect_class,
                     "refutation_evidence": request.refutation_evidence,
-                    "head_sha": request.head_sha,
+                    "head_sha": request.head_sha or "",
                     "audited_surfaces": json.dumps(
                         [
                             {
@@ -301,16 +325,11 @@ class AuditMandateHunt:
                 failure_message="Mandate hunt produced no structured judgment.",
             )
             judgment = AuditMandateJudgment.model_validate(structured)
-            if await read_replace_refs(git=self._git, workspace=workspace):
-                raise AuditClaimReadError(
-                    "the mandate repository substitutes Git objects"
-                )
-            if await read_workspace_head(git=self._git, workspace=workspace) != (
-                request.head_sha,
-                False,
-            ):
-                raise AuditClaimReadError(
-                    "mandate workspace changed during verification"
+            if request.head_sha is not None:
+                await self._require_pinned(
+                    workspace,
+                    head_sha=request.head_sha,
+                    drifted="mandate workspace changed during verification",
                 )
             latest, unreadable = await self._read_set(request.surfaces)
             if latest != covered or unreadable:

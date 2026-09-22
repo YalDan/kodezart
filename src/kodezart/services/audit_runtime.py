@@ -234,15 +234,11 @@ def _all_reports(
     return tuple(item for observation in observations for item in _reports(observation))
 
 
-def _head(publication: AuditPublication) -> str:
+def _head(publication: AuditPublication) -> str | None:
+    """The report's own source head; none for a branch that no longer exists."""
     if not isinstance(publication, AuditTerminalPublication):
         return publication.report.claim.head_sha
-    head = publication.report.observation.branch_head
-    if head is None:
-        raise AuditClaimReadError(
-            "the terminal report has no immutable verification head"
-        )
-    return head
+    return publication.report.observation.branch_head
 
 
 def _detector(publication: AuditPublication) -> str:
@@ -537,7 +533,7 @@ class AuditScheduledPass:
             for item in context.snapshot.targets
             if item.issue.issue_key == issue_key
         )
-        head = _head(publication)
+        head = await self._verification_ref(target=target, publication=publication)
         result = await target.reopener.reopen(
             criterion=criterion,
             ref=head,
@@ -557,6 +553,32 @@ class AuditScheduledPass:
             head_sha=head,
             refutation_ref=refutation_ref,
         )
+
+    async def _trunk_head(self, target: AuditTarget) -> str:
+        """The audited repository's remote trunk head, read now."""
+        repository = await ensure_repository(
+            cache=self._cache, repo_url=target.repository.url, cache_key=None
+        )
+        head = await read_remote_head(
+            git=self._git,
+            repository=repository,
+            remote=self._remote,
+            branch=target.repository.trunk,
+        )
+        if head is None:
+            raise AuditClaimReadError("the audited repository has no remote trunk head")
+        return head
+
+    async def _verification_ref(
+        self, *, target: AuditTarget, publication: AuditPublication
+    ) -> str:
+        """The commit a publication's write-back is judged at.
+
+        The report's own head where it has one.  A refutation whose branch
+        no longer exists has none, so it is judged at the trunk head, the
+        same read the scope's summary is judged at.
+        """
+        return _head(publication) or await self._trunk_head(target)
 
     async def _summarize(
         self,
@@ -579,19 +601,7 @@ class AuditScheduledPass:
             )
 
         await require_current()
-        repository = await ensure_repository(
-            cache=self._cache, repo_url=target.repository.url, cache_key=None
-        )
-        head = await read_remote_head(
-            git=self._git,
-            repository=repository,
-            remote=self._remote,
-            branch=target.repository.trunk,
-        )
-        if head is None:
-            raise AuditClaimReadError(
-                "the audit summary repository has no remote trunk head"
-            )
+        head = await self._trunk_head(target)
         destination = await self._tracker.read_issue(issue_key=target.report_issue_key)
         if destination.issue_key != target.report_issue_key:
             raise AuditClaimReadError(
@@ -754,7 +764,9 @@ class AuditScheduledPass:
                     issue_key=observation.target.issue.issue_key,
                     lane_key=request.lane_key,
                     job_id=identity.title(),
-                    head_sha=_head(current),
+                    head_sha=await self._verification_ref(
+                        target=target, publication=current
+                    ),
                     mandate=mandate.root,
                     visibility=self._operation.board_visibility(
                         observation.target.issue.team_key
@@ -778,7 +790,7 @@ class AuditScheduledPass:
                 lane=request.lane_key,
                 occurrence_key=f"{identity.title()}:{observation.target.issue.issue_key}:{detector}",
             ),
-            ref=_head(publication),
+            ref=await self._verification_ref(target=target, publication=publication),
             job_id=identity.title(),
             visibility=self._operation.board_visibility(
                 observation.target.issue.team_key

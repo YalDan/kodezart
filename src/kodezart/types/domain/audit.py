@@ -106,12 +106,17 @@ class AuditMandateContext(CamelCaseModel):
 
     This invocation has no criterion identity: both criterion judgments and
     native issue-terminal observations use the same mandate hunt.
+
+    ``head_sha`` is required and nullable, so every caller states it.
+    ``None`` means the refuted branch no longer exists: there is no head to
+    pin, the hunt reads no repository, and the supplied surfaces are judged
+    alone.  A blank head is still refused.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     defect_class: str = Field(min_length=1, pattern=r"\S")
     refutation_evidence: str = Field(min_length=1, pattern=r"\S")
-    head_sha: str = Field(min_length=1, pattern=r"\S")
+    head_sha: Annotated[str, Field(min_length=1, pattern=r"\S")] | None
     surfaces: tuple[WritableSurface, ...] = Field(min_length=1)
     repo_url: str = Field(min_length=1, pattern=r"\S")
     cache_key: str | None = None

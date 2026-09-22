@@ -1385,6 +1385,15 @@ commit is behind head. A failed or damaged stream read raises the typed
 Evidence read failure, which the sweep's single translation point turns into
 an unavailable reason.
 
+A refuted trace is still a refutation the sweep produces, so it carries a
+mandate verdict like every other (KOD-516). Before the lapse return, the sweep
+runs the same mandate hunt at the current head, with the defect named as a
+restamp not traced to the last recorded grading and the trace's reason as the
+refutation evidence, and keeps the result beside the trace as an
+`AuditRestampReport`, which refuses a refuted trace without a mandate verdict
+and a finding that names another defect. The trace itself is not edited, and
+the report is not published: the raw observations still carry the trace.
+
 
 ## Standing over-claim observations
 
@@ -1467,6 +1476,24 @@ source checks still cover its body, state, Evidence and lane record. Historical
 forge SHAs do not enter the current-head equality check: a current lapse can
 coexist with a green or refuted historical forge proposition. Scheduling,
 coverage advancement and leased publication remain separate consumers.
+
+A terminal refutation is hunted the same way. When the recorded branch is gone
+from the remote, the terminal read is emitted as REFUTED with `NO_BRANCH`: the
+absent branch is the demonstrated defect, not an unreadable surface.
+`AuditTerminalReport` relaxes its head requirement for exactly that
+discrepancy, and the hunt runs with `head_sha=None`, acquiring no workspace
+and reading no Git object, so its verdict is whatever it finds over the
+tracker surfaces. The runtime publishes that report and judges its write-back,
+and any escalation it raises, at the remote trunk head, the same read the
+scope summary is judged at.
+
+Every verdict-bearing arm of `AuditReadObservation` — the terminal read, the
+forge reading, the restamp trace and the recorded Evidence — is listed in
+`MANDATED_ARMS` beside the field that completes it and the reason field that
+excuses it. A REFUTED value with neither refuses construction, so the sweep
+cannot emit a refutation without its mandate verdict. A refutation whose hunt
+genuinely fails keeps its raw value beside that reason, and the runtime then
+refuses the subject and ends the tick incomplete (KOD-516).
 
 `AuditEvidenceVerifier.observe` reads the requested criterion's current full
 record and its lane's addressed run-state comment. The existing Evidence field

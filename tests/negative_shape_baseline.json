@@ -403,6 +403,7 @@
   "tests/tracker/test_audit_forge_sweep.py": 59,
   "tests/tracker/test_audit_forge_sweep_git.py": 23,
   "tests/tracker/test_audit_mandate.py": 44,
+  "tests/tracker/test_audit_mandate_completeness.py": 15,
   "tests/tracker/test_audit_mandate_replacements.py": 15,
   "tests/tracker/test_audit_overclaim.py": 13,
   "tests/tracker/test_audit_overclaim_bytes.py": 6,
@@ -515,6 +516,7 @@
   "tests/tracker/test_tracker_conformance.py": 275,
   "tests/types/test_audit_mandate_independent.py": 10,
   "tests/types/test_audit_report_contract.py": 11,
+  "tests/types/test_audit_restamp_report.py": 6,
   "tests/types/test_audit_union_contracts.py": 12,
   "tests/types/test_organize_halt.py": 10,
   "tests/types/test_output_descriptions.py": 4,
@@ -5644,6 +5646,11 @@
    "test_failed_session_never_completes_refutation",
    "test_complete_report_cannot_claim_same_surface_read_and_unreadable"
   ],
+  "tests/tracker/test_audit_mandate_completeness.py": [
+   "test_a_refuted_restamp_carries_a_mandate_verdict",
+   "test_a_refutation_without_its_mandate_fails_the_completeness_assertion",
+   "test_every_verdict_bearing_arm_is_under_the_completeness_assertion"
+  ],
   "tests/tracker/test_audit_mandate_replacements.py": [
    "test_actual_mandate_reuses_cache_without_accepting_replaced_bytes",
    "test_unreadable_replacement_refs_cannot_return_mandate",
@@ -5714,8 +5721,6 @@
   ],
   "tests/tracker/test_audit_terminal_mandate.py": [
    "test_native_terminal_refutation_reuses_actual_mandate_hunt",
-   "test_no_branch_keeps_exact_observation_without_historical_head_substitution",
-   "test_mandate_failure_retains_native_terminal_and_refuses_complete_report",
    "test_terminal_facts_changing_during_mandate_refuse_whole_sweep",
    "test_actual_terminal_mandate_cancellation_propagates_after_release"
   ],
@@ -6809,6 +6814,11 @@
   "tests/types/test_audit_report_contract.py": [
    "test_native_model_inputs_obey_the_complete_report_pair",
    "test_json_schema_expresses_required_mandate_and_nested_verdict"
+  ],
+  "tests/types/test_audit_restamp_report.py": [
+   "test_a_refuted_restamp_requires_its_mandate_verdict",
+   "test_a_holding_restamp_carries_none",
+   "test_a_restamp_mandate_names_the_restamp_defect"
   ],
   "tests/types/test_audit_union_contracts.py": [
    "test_mandate_schema_discriminates_payload_by_verdict",
