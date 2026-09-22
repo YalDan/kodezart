@@ -24,7 +24,7 @@ from kodezart.chains.fire_time_ruling import (
     route_after_questions,
     rule_open_questions,
 )
-from kodezart.core.protocols import FireCriteriaSource
+from kodezart.core.protocols import FireCriteriaSource, LaneStateWriter
 from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.domain.accept_gate import (
     gate_cleared,
@@ -38,6 +38,7 @@ from kodezart.domain.criteria_feasibility import (
 from kodezart.domain.errors import (
     ScopedExecutionUnavailableError,
 )
+from kodezart.domain.fire_spec import body_digest
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.outcome import classify_outcome
 from kodezart.domain.thread_id import workflow_thread_id
@@ -48,6 +49,7 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
 )
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     RepoVisibility,
 )
@@ -58,6 +60,7 @@ from kodezart.types.domain.lane_entry import (
     ResumedLane,
 )
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.run_state import LaneBinding
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.workflow import (
@@ -95,6 +98,7 @@ class RalphWorkflowEngine:
         delay_floor_for: DelayFloor,
         criteria: FireCriteriaSource | None = None,
         rulings: FireTimeRulings | None = None,
+        lane_state: LaneStateWriter | None = None,
     ) -> None:
         self.specification = specification
         self.implementation = implementation
@@ -103,6 +107,10 @@ class RalphWorkflowEngine:
         self.remediation = remediation
         self.criteria = criteria
         self.rulings = rulings
+        # The same writer the committing loop records through: the landing act
+        # is a row on the one record, so it is written at the one site rather
+        # than by a second writer of the same comment.
+        self._lane_state = lane_state
         self._git_base_url = git_base_url
         self.checkpointer = checkpointer
         self.retry = RetryPolicy(
@@ -438,7 +446,66 @@ class RalphWorkflowEngine:
     ) -> dict[str, object]:
         """Keep best-iteration publication tied to the judged obligations."""
         await require_current_native_snapshot(state, reader=self.criteria)
-        return await self.consolidation.land_best_iteration(state, config)
+        landed = await self.consolidation.land_best_iteration(state, config)
+        await self._record_landing(state, config, landed=landed)
+        return landed
+
+    async def _record_landing(
+        self,
+        state: WorkflowState,
+        config: RunnableConfig,
+        *,
+        landed: dict[str, object],
+    ) -> None:
+        """Put the landing act on this lane's record, where re-entry reads it.
+
+        The landing consolidates the best iteration of a stalled run onto the
+        deliverable branch, and the record's rows are the acts a re-entry
+        resolves: a lane re-entered against the last act the loop recorded
+        would resume from the work this landing was chosen over (KOD-705).
+        This step is the one that has both the lane and the tip, so the row is
+        written here, through the writer the loop's own commits go through.
+
+        Written only when the landing put that work ON the deliverable branch.
+        An unintegrated landing left it under a ref of its own, which is no
+        commit act of the branches this record names; and a lane whose subject
+        is not a tracker one has no record at all.
+        """
+        spec = state["fire_spec"]
+        if not isinstance(spec, TrackerSpec):
+            return
+        landed_sha = landed.get("feature_tip_sha")
+        if (
+            not isinstance(landed_sha, str)
+            or landed.get("feature_branch") != state["feature_branch"]
+        ):
+            return
+        ctx = ExecutionContext.from_configurable(config)
+        if ctx.surface_holder is None:
+            raise NativeWriteRefusalError(
+                "The landing act has no holder to record the run under"
+            )
+        if self._lane_state is None:
+            raise NativeWriteRefusalError(
+                "Native execution requires the lane state writer"
+            )
+        await self._lane_state.record_landing(
+            lane=LaneBinding(
+                lane_key=spec.subject,
+                body_digest=body_digest(spec.body),
+                loop_branch=state["ralph_branch"],
+                deliverable_branch=state["feature_branch"],
+                base_ref=ctx.base_branch,
+                repo_url=ctx.repo_url,
+                repo_path=ctx.repo_path,
+                run_id=ctx.surface_holder,
+                visibility=state["repo_visibility"],
+            ),
+            # The same tree this step's own consolidation reads the run in:
+            # the two shas of the interval are read there and nowhere else.
+            repo_path=await self.consolidation.repo_dir(config),
+            landed_sha=landed_sha,
+        )
 
     async def _complete_node(
         self,

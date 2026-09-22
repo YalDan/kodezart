@@ -19,7 +19,12 @@ from kodezart.domain.criterion_cross_off import (
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import TransientAPIError
 from kodezart.domain.issue_tree import SubtreeClosure
-from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
+from kodezart.domain.lane_entry import recorded_branches, recorded_commit
+from kodezart.domain.lane_record import (
+    LANDING_ROW_SUBJECT,
+    RUN_STATE_PURPOSE,
+    render_lane_record,
+)
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.accept import AcceptVerdict
@@ -65,7 +70,7 @@ from tests.chains.test_native_fire import (
     tracker,
 )
 from tests.domain.test_criterion_cross_off import callers_of
-from tests.fakes import make_tracker_issue
+from tests.fakes import FakeBranchMerger, FakeRefPublisher, make_tracker_issue
 from tests.lane_fixture import (
     ADDED_OWED,
     LaneGit,
@@ -1711,3 +1716,78 @@ async def test_an_expensive_grading_whose_paths_moved_is_dispatched_again():
     # The re-derived grading declares nothing this time, so it is cheap again:
     # the later declaration wins, exactly as the model's own reading says.
     assert rows[CARRIED].rederivation_class is RederivationClass.cheap
+
+
+#: Where the deliverable branch stands once the stall landing consolidated the
+#: best iteration onto it: a sha of the merger's own, so no commit this lane
+#: made can stand in for it.
+LANDED_TIP = "9" * 40
+
+
+async def test_a_stall_landing_records_the_consolidated_tip_as_this_lanes_next_act():
+    """The landing is a commit act of this lane, so the record carries it.
+
+    A run that stalls has its best iteration consolidated onto the deliverable
+    branch, and the rows of the record ARE the acts a re-entry resolves
+    (KOD-681). Without this row the resolution answers with the loop tip the
+    run slipped back to, and the lane would resume from the work the landing
+    was chosen over (KOD-705). Driven through the whole native fire, so the
+    row is the one the landing step itself wrote.
+    """
+    port = tracker()
+    publisher = FakeRefPublisher()
+    # The branch this run mints is drawn in ``prepare``, and the repository is
+    # the branch the run works on: it is told which one once the run has named
+    # it, before any read of it.
+    repo = LaneRepo(branch="unnamed")
+    fire = engine(
+        criteria=CountingCriteria(tracker=port),
+        real_loop=True,
+        executor=NativeExecutor([native_evaluation(failed=True)]),
+        git=LaneGit(repo),
+        source=LaneSource(repo),
+        persister=LanePersister(repo),
+        forge=lane_forge(),
+        merger=FakeBranchMerger(merge_sha=LANDED_TIP),
+        ref_publisher=publisher,
+    )
+    state, config = fire.prepare(
+        prompt="Implement the current Checks.",
+        issue_key=None,
+        repo_path="/tmp/fire",
+        repo_url=REPO_URL,
+        base_spec=trunk_base("main"),
+        scope=SCOPE_OF_SUBJECT,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=["Bash"],
+        cache_key=JOB,
+        surface_holder=JOB,
+    )
+    repo.branch = state["ralph_branch"]
+
+    async for _ in fire.native_graph.astream(
+        state, config=config, stream_mode="custom"
+    ):
+        pass
+
+    _, record = await LaneRecordReader(tracker=port, operation=native_operation()).read(
+        issue_key=SUBJECT, lane_key=SUBJECT
+    )
+    # The loop's own commit is still the row before it, and the landing act is
+    # the last: two acts, the second at the tip the consolidation returned.
+    landed = record.commits[-1]
+    assert (landed.sha, landed.issue_id) == (LANDED_TIP, SUBJECT)
+    assert landed.subject == LANDING_ROW_SUBJECT
+    assert len(record.commits) == 2
+    # The pre-landing tip is the sha the best iteration was published AT, and
+    # it is not the answer: the landing consolidated it onto the deliverable
+    # branch, and the tip of that branch is where the lane's best work stands.
+    published = publisher.calls[0]["commit_sha"]
+    assert published == record.commits[0].sha != LANDED_TIP
+    # And what a re-entry resolves off this record, through the LOOP role, is
+    # the landed tip — by sha, the reader's own function over the record the
+    # landing left.
+    assert (
+        recorded_commit(record=record, branches=recorded_branches(record=record)).sha
+        == LANDED_TIP
+    )

@@ -230,6 +230,8 @@ def engine(
     writes_lane_state: bool = True,
     owns_workspace: bool = True,
     rulings=DEFAULT,
+    merger=None,
+    ref_publisher=None,
 ) -> RalphWorkflowEngine:
     """The fire engine, wired the way composition wires it, plus the stage.
 
@@ -240,6 +242,8 @@ def engine(
     *writes_lane_state* and *owns_workspace* are the two collaborators a test
     withholds on purpose: a native loop without either is the wiring the
     execute node refuses at, before it opens a session.
+    *ref_publisher* is withheld by default, so only a test about the stall
+    exit reaches the landing this deployment would publish and consolidate.
     """
     git = (
         git
@@ -255,6 +259,22 @@ def engine(
     )
     prompts = make_prompt_provider()
     gate = PassThroughGate()
+    # One writer for both sites that record onto this lane's record: the
+    # committing loop's rows and the landing act the stall exit leaves. Built
+    # here rather than inside either, so the two cannot be handed copies whose
+    # refusals differ.
+    lane_state = (
+        TrackerLaneStateWriter(
+            tracker=criteria._tracker,
+            operation=lane_operation or native_operation(),
+            git=git,
+            git_remote="origin",
+            forge=forge,
+            gate=gate,
+        )
+        if criteria is not None and writes_lane_state
+        else None
+    )
     if real_loop:
         source = source if source is not None else NativeSourceReader()
         quality_gate = RalphLoop(
@@ -278,18 +298,7 @@ def engine(
                 if criteria is not None
                 else None
             ),
-            lane_state=(
-                TrackerLaneStateWriter(
-                    tracker=criteria._tracker,
-                    operation=lane_operation or native_operation(),
-                    git=git,
-                    git_remote="origin",
-                    forge=forge,
-                    gate=gate,
-                )
-                if criteria is not None and writes_lane_state
-                else None
-            ),
+            lane_state=lane_state,
             service=service,
             workspace=workspace if owns_workspace else None,
             max_iterations=max_iterations,
@@ -332,11 +341,11 @@ def engine(
             gate=gate,
         ),
         consolidation=FireConsolidation(
-            merger=FakeBranchMerger(),
+            merger=merger if merger is not None else FakeBranchMerger(),
             git=git,
             cache=FakeRepoCache(),
             git_remote="origin",
-            ref_publisher=None,
+            ref_publisher=ref_publisher,
         ),
         review=FireReview(
             criteria_reader=criteria,
@@ -365,6 +374,7 @@ def engine(
         retry_max_attempts=1,
         retry_initial_interval=0,
         delay_floor_for=no_delay_floor,
+        lane_state=lane_state,
         criteria=criteria,
         rulings=(
             FireTimeRulings(
