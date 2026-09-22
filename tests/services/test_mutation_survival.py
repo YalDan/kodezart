@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.domain.criteria_grading import grade_iteration
+from kodezart.domain.mutation_survival import passing_checks
 from kodezart.services.mutation_survival import MutationSurvivalReader
 from kodezart.types.domain.agent import AcceptanceCriteriaOutput, ResultEvent
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
@@ -188,6 +189,26 @@ async def test_the_mutant_tree_is_asked_the_clean_trees_question_unchanged(tmp_p
     mutant = executor.gradings[0][1]
     assert mutant != str(tree)
     assert mutant != REPO
+
+
+async def test_the_removal_session_is_told_which_criteria_to_take_apart(tmp_path):
+    """Every passing criterion's id reaches the prompt the session is handed.
+
+    The template says a removal is wanted; which behaviour to remove is the
+    roster bound into it, and that binding is where "remove the behaviour that
+    criterion names" becomes production code. Bound to nothing, the session is
+    asked to take nothing apart, and a tree that lost nothing withholds
+    nothing — so the failure this pins is silent everywhere else.
+    """
+    workspaces, _, grade = await graded(tmp_path)
+    executor = FixtureExecutor(removes=remove_the_behaviour)
+
+    await survivors(workspaces, grade, executor)
+
+    passing = passing_checks(grade.results)
+    assert passing == frozenset(CriterionId(key) for key in CHECKS)
+    prompt = executor.removals[0][0]
+    assert {key for key in passing if key in prompt} == passing
 
 
 async def test_the_mutant_workspace_is_acquired_at_the_graded_sha_and_released(
