@@ -6,12 +6,13 @@ from pathlib import Path
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.types.domain.agent import WorkflowCompleteEvent
 from kodezart.types.domain.delivery import LaneDelivery
+from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.workflow import WorkflowState
 from tests.chains.test_fire_extraction import DELIVERY_FIELDS, fire
 
-#: Every field the fire's terminal event declares, and every key its state
-#: declares, as both stood when the hand-off was pinned.  Closed sets rather
-#: than a screen for the five legacy delivery spellings in
+#: Every field the fire's terminal event PUTS ON THE WIRE, and every key its
+#: state declares, as both stood when the hand-off was pinned.  Closed sets
+#: rather than a screen for the five legacy delivery spellings in
 #: ``DELIVERY_FIELDS``: "the hand-off adds no field" is a claim about ANY
 #: field, and a screen answers only about the names somebody thought to
 #: write down — ``delivery_pr_url`` would walk straight past it.  A field the
@@ -94,6 +95,21 @@ def test_compiled_fire_has_no_delivery_nodes_routes_or_capabilities():
         assert name not in source
 
 
+def emitted_terminal() -> WorkflowCompleteEvent:
+    """One terminal built with the fire's own required facts and nothing else.
+
+    Every optional field keeps its default, because what is asked of it is
+    the KEY set of its rendering rather than any value on it.
+    """
+    return WorkflowCompleteEvent(
+        feature_branch="feature/pinned",
+        ralph_branch="ralph/pinned",
+        total_iterations=1,
+        accepted=False,
+        outcome=WorkflowOutcome.loop_not_accepted,
+    )
+
+
 def test_the_fire_terminal_and_state_grow_no_field_of_the_lane_s_delivery():
     """The other half of the hand-off claim: neither surface grew a field.
 
@@ -103,7 +119,16 @@ def test_the_fire_terminal_and_state_grow_no_field_of_the_lane_s_delivery():
     reds; and the delivery record intersected with each surface, so a
     delivery fact moving onto the fire is named by the intersection it joins
     even if the rosters are updated in the same breath.
+
+    The terminal's roster is taken from a CONSTRUCTED terminal's rendering,
+    not from ``model_fields``, which lists declared fields only: a delivery
+    fact grown as a computed field is absent from ``model_fields`` and
+    present on the wire, so a roster read there is closed against
+    declarations while the event serialises whatever it likes.  The
+    declaration roster is kept beside it, so a field declared but held back
+    from the rendering reds too.
     """
+    assert set(emitted_terminal().model_dump()) == TERMINAL_FIELDS
     assert set(WorkflowCompleteEvent.model_fields) == TERMINAL_FIELDS
     assert set(WorkflowState.__annotations__) == STATE_KEYS
 
