@@ -192,6 +192,49 @@ def union_import_closure() -> tuple[str, ...]:
     return tuple(sorted(seen))
 
 
+def _reads_a_member_by_a_computed_name(node: ast.AST) -> bool:
+    """A ``getattr`` call, however it is reached, asked for a computed name."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    is_getattr = (
+        func.id == "getattr"
+        if isinstance(func, ast.Name)
+        else isinstance(func, ast.Attribute) and func.attr == "getattr"
+    )
+    if not is_getattr or len(node.args) < 2:
+        return False
+    asked = node.args[1]
+    return not (isinstance(asked, ast.Constant) and isinstance(asked.value, str))
+
+
+def dynamic_member_read_sites(module: ModuleType) -> frozenset[tuple[str, str]]:
+    """Every member *module* reads by a name that is not one string literal.
+
+    ``getattr(git, "open" + "_pr_for_head")`` writes the question it asks
+    nowhere, so a scan over attribute names and one over string literals both
+    pass straight over it.  Each site is reported as the module and the
+    innermost function the read sits in, because the reason a read like this
+    is harmless belongs to the body performing it and not to a whole file.
+    Bounded by the module's own syntax tree.
+    """
+    found: set[tuple[str, str]] = set()
+
+    def visit(node: ast.AST, where: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if _reads_a_member_by_a_computed_name(child):
+                found.add((module.__name__, where))
+            visit(
+                child,
+                child.name
+                if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef)
+                else where,
+            )
+
+    visit(ast.parse(inspect.getsource(module)), "<module>")
+    return frozenset(found)
+
+
 #: Forge-shaped is either half: a question one of the ports declares, or an
 #: authority over a pull request no port declares because no port is allowed to.
 FORGE_HANDLE_NAMES: frozenset[str] = FORGE_METHODS | FORBIDDEN_CAPABILITIES
@@ -485,7 +528,15 @@ async def test_the_composed_union_step_holds_no_forge_collaborator() -> None:
 
 
 def test_no_module_the_union_step_reaches_asks_a_pull_request_anything() -> None:
-    """The whole reachable closure, computed: nobody on it consults the forge."""
+    """The whole reachable closure, computed: nobody on it consults the forge.
+
+    Four things are read off each module on the closure: an attribute named
+    like a forge question, a string equal to one — which is how such a read is
+    spelled when it goes through ``getattr`` rather than a dot — the
+    merge-state vocabulary arriving by import, and a forge client imported
+    under any name.  A name ASSEMBLED at runtime is none of those, and is
+    refused by the case below instead.
+    """
     closure = union_import_closure()
 
     assert "kodezart.services.union_composition" in closure
@@ -497,6 +548,8 @@ def test_no_module_the_union_step_reaches_asks_a_pull_request_anything() -> None
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute):
                 assert node.attr not in FORGE_METHODS, (name, node.attr)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                assert node.value not in FORGE_METHODS, (name, node.value)
             if isinstance(node, ast.ImportFrom):
                 held = {alias.name for alias in node.names}
                 assert held & MERGE_STATE_NAMES <= DECLARED_BY.get(name, frozenset()), (
@@ -506,6 +559,44 @@ def test_no_module_the_union_step_reaches_asks_a_pull_request_anything() -> None
                 for alias in node.names:
                     assert "github" not in alias.name, name
                     assert "forge" not in alias.name, name
+
+
+#: Where the closure reads a member by a name that is not a literal, and why
+#: each of those reads cannot be a forge read.  Keyed by module AND by the
+#: function the read sits in: an exemption given to a whole file would also
+#: cover a forge read added anywhere else in it.
+#:
+#: ``kodezart.core.prompt_rendering._member`` resolves one segment of a
+#: template path against the scopes a prompt is rendered with and hands the
+#: value straight back without calling it, and the holdings cases above say the
+#: union step holds no forge collaborator that a scope could carry to it.
+ALLOWED_DYNAMIC_MEMBER_READS: frozenset[tuple[str, str]] = frozenset(
+    {("kodezart.core.prompt_rendering", "_member")}
+)
+
+
+def test_no_module_the_union_step_reaches_reads_a_member_by_a_computed_name() -> None:
+    """The one spelling the scans above cannot reach, accounted for by site.
+
+    A forge read reached through ``getattr`` with an assembled name never
+    writes the method name, so neither scan above can see it, anywhere on the
+    closure — including the module every lane head is read through, which is
+    one call deeper than the union step's own files.  So every site on the
+    closure that reads a member by a computed name is named above with its
+    reason and the set must match exactly: an unregistered read fails here,
+    and a registered one that has gone fails too rather than standing as a
+    permission nothing uses.
+    """
+    closure = union_import_closure()
+
+    assert "kodezart.services.git_observations" in closure
+    found: set[tuple[str, str]] = set()
+    for name in closure:
+        found |= dynamic_member_read_sites(importlib.import_module(name))
+
+    assert found == ALLOWED_DYNAMIC_MEMBER_READS, sorted(
+        found ^ ALLOWED_DYNAMIC_MEMBER_READS
+    )
 
 
 def test_the_union_steps_own_modules_name_the_merge_state_reader_nowhere() -> None:
