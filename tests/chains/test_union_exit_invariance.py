@@ -17,6 +17,8 @@ from kodezart.domain.errors import (
     CheckChainExecutionError,
     GitOperationError,
     MergeConflictError,
+    UnionHeadReadError,
+    UnionUnstableError,
 )
 from kodezart.services.union_composition import UnionComposition
 from kodezart.types.domain.operation import CheckStep
@@ -220,6 +222,29 @@ class PathlessConflict(RecordingPublisher):
         )
 
 
+class MovingHeads(RecordingPublisher):
+    """A port whose remote head read answers with a different commit every time.
+
+    The tick requires two matching head reads around its fetch, so heads
+    that move on every read exhaust its bounded attempts and it refuses
+    without composing.  The movement is in the OBSERVATION and not in the
+    world: every real ref stays exactly where it was, which is the fact the
+    case around this double measures on that exit.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.head_reads = 0
+
+    async def remote_branch_sha(self, cwd: str, remote: str, branch: str) -> str | None:
+        # Read the real branch first, so an absent branch is still reported
+        # absent rather than answered with a commit name nothing carries.
+        if await super().remote_branch_sha(cwd, remote, branch) is None:
+            return None
+        self.head_reads += 1
+        return f"{self.head_reads:040x}"
+
+
 class BlockedCreate(RecordingPublisher):
     """A git port that parks inside worktree creation until released."""
 
@@ -268,6 +293,32 @@ async def drive_unobservable_chain(fixture) -> None:
         await fixture.coordinator(RaisingRunner()).verify()
 
 
+async def drive_unstable_heads(fixture) -> None:
+    with pytest.raises(UnionUnstableError):
+        await fixture.coordinator().verify()
+
+
+async def drive_roster_change(fixture) -> None:
+    """Membership moves once the composed chain has run, before the last check.
+
+    The mutation is made from the chain the step itself runs, which is the
+    one point inside a measurement that is after the roster was read and
+    before the roster is read back, so the refusal is the coordinator's own.
+    """
+
+    class MovingRosterRunner(SubprocessCheckChainRunner):
+        async def run_chain(self, *, cwd, steps):
+            result = await super().run_chain(cwd=cwd, steps=steps)
+            fixture.tracker.scope_memberships[PROJECT] = (OPENED_ORDER[-1],)
+            return result
+
+    runner = MovingRosterRunner(
+        timeout=AppConfig().union_check_step_timeout_seconds,
+    )
+    with pytest.raises(UnionHeadReadError, match="roster changed"):
+        await fixture.coordinator(runner).verify()
+
+
 async def drive_cancellation(fixture) -> None:
     task = asyncio.create_task(fixture.coordinator().verify())
     try:
@@ -306,6 +357,8 @@ EXIT_SCENARIOS = (
         drive_unobservable_chain,
     ),
     ("cancellation while composing", None, BlockedCreate, drive_cancellation),
+    ("heads that will not hold still", None, MovingHeads, drive_unstable_heads),
+    ("a roster that changed underneath", None, RecordingPublisher, drive_roster_change),
 )
 
 
