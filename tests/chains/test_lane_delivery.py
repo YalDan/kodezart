@@ -464,7 +464,10 @@ async def test_watch_bound_cancellation_releases_slot_for_next_lane():
     ci = Blocking()
     parts = await setup(monitor=ci, watches=1)
     first = asyncio.create_task(deliver(parts))
-    await entered.wait()
+    # Bounded, as the sibling n+1 fixture's wait is: a coordinator that
+    # refuses before the watch never sets this event, and an unbounded wait
+    # would hang the module run instead of reding the fixture that saw it.
+    await asyncio.wait_for(entered.wait(), timeout=5)
     second = asyncio.create_task(deliver(parts))
     first.cancel()
     with pytest.raises(asyncio.CancelledError):
