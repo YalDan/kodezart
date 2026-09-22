@@ -176,7 +176,7 @@ async def test_mandate_failure_retains_native_terminal_and_refuses_complete_repo
 
 @pytest.mark.parametrize("change", ["head", "pr", "body", "record"])
 async def test_terminal_facts_changing_during_mandate_refuse_whole_sweep(
-    setup, tracker, server, change
+    setup, tracker, server, change, seed_issue
 ):
     build, executor, git, _, _, forge, *_ = setup
     await terminal_ready(tracker, server, forge)
@@ -211,7 +211,7 @@ async def test_terminal_facts_changing_during_mandate_refuse_whole_sweep(
             )
             assert reparsed[1].files_changed == source.record.files_changed + 1
         else:
-            await tracker.update_issue(issue_key=ROOT, body="Changed instructions.")
+            seed_issue(issue_key=ROOT, body="Changed instructions.")
 
     executor.during = during
     with pytest.raises(AuditClaimReadError):

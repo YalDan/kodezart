@@ -27,14 +27,12 @@ from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import (
-    IssuePriority,
     MappingKind,
     MappingRef,
     WorkflowStateKind,
 )
 from tests.fakes import (
     FIXTURE_EPOCH,
-    FIXTURE_TEAM_KEY,
     TRACKER_WRITE_JOURNALS,
     FakeTrackerPort,
     handed_over,
@@ -75,7 +73,10 @@ def board() -> FakeTrackerPort:
 
 
 async def write_issue(port: FakeTrackerPort) -> None:
-    await port.update_issue(issue_key=ISSUE, title="a retitled issue")
+    current = await port.read_issue(issue_key=ISSUE)
+    await port.edit_description(
+        target=ISSUE, expected=current.body, replacement="a rewritten body"
+    )
 
 
 async def write_classification(port: FakeTrackerPort) -> None:
@@ -129,11 +130,26 @@ async def write_lease_release(port: FakeTrackerPort) -> None:
 
 
 async def write_issue_creation(port: FakeTrackerPort) -> None:
-    await port.create_issue(
-        title="a new issue",
-        body="a body",
-        team_key=FIXTURE_TEAM_KEY,
-        priority=IssuePriority.NONE,
+    # The port creates an issue only by minting one; a criterion under its
+    # parent's child-set grant is the mint this board can take.
+    await port.acquire_surfaces(
+        surfaces=frozenset(
+            {
+                WritableSurface(
+                    kind=SurfaceKind.CRITERION_CHILD_SET,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=ISSUE),
+                )
+            }
+        ),
+        holder=HOLDER,
+        lease_seconds=LEASE_SECONDS,
+    )
+    await port.create_criterion_if_absent(
+        parent_key=ISSUE,
+        title="a new criterion",
+        check="a new condition holds",
+        do="make it hold",
+        holder=HOLDER,
     )
 
 

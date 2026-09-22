@@ -457,9 +457,8 @@
   "tests/tracker/test_fire_spec_reader.py": 28,
   "tests/tracker/test_idempotent_writes.py": 60,
   "tests/tracker/test_issue_classification_reads.py": 6,
-  "tests/tracker/test_issue_identity_boundary.py": 22,
+  "tests/tracker/test_issue_identity_boundary.py": 16,
   "tests/tracker/test_issue_ruling_records.py": 9,
-  "tests/tracker/test_issue_upsert.py": 38,
   "tests/tracker/test_labeled_issues.py": 14,
   "tests/tracker/test_landing_ambiguity.py": 6,
   "tests/tracker/test_landing_base_resolution.py": 17,
@@ -485,6 +484,7 @@
   "tests/tracker/test_organize_replay_contract.py": 42,
   "tests/tracker/test_ownership_arbitration.py": 144,
   "tests/tracker/test_port_failure_boundary.py": 4,
+  "tests/tracker/test_port_roles.py": 9,
   "tests/tracker/test_protected_comment_retry.py": 7,
   "tests/tracker/test_recorded_assertion_drift.py": 20,
   "tests/tracker/test_recorded_deliverable_refs.py": 12,
@@ -506,12 +506,13 @@
   "tests/tracker/test_scope_subtree_reach.py": 16,
   "tests/tracker/test_scope_tally.py": 31,
   "tests/tracker/test_scope_tool_arguments.py": 7,
+  "tests/tracker/test_seed.py": 3,
   "tests/tracker/test_state_history.py": 21,
   "tests/tracker/test_status_update_arguments.py": 12,
   "tests/tracker/test_tracker_boot.py": 48,
   "tests/tracker/test_tracker_boot_cleanup.py": 12,
   "tests/tracker/test_tracker_boot_wiring.py": 80,
-  "tests/tracker/test_tracker_conformance.py": 275,
+  "tests/tracker/test_tracker_conformance.py": 271,
   "tests/types/test_audit_mandate_independent.py": 10,
   "tests/types/test_audit_report_contract.py": 11,
   "tests/types/test_audit_union_contracts.py": 12,
@@ -6028,7 +6029,6 @@
    "test_duplicate_on_later_page_refuses_before_any_write",
    "test_missing_or_repeated_cursor_never_degrades_to_creation",
    "test_page_overlap_does_not_invent_duplicate_issues",
-   "test_new_adapter_recovers_a_create_whose_reply_was_lost",
    "test_a_failed_full_read_does_not_allow_creation",
    "test_malformed_owned_carrier_refuses_lookup_and_writes",
    "test_description_edit_cannot_rekey_an_existing_issue",
@@ -6041,22 +6041,6 @@
    "test_ordinary_comment_and_other_namespace_remain_unselected",
    "test_native_pages_retain_historical_lane_and_current_native_provenance",
    "test_full_valid_payload_cannot_override_native_provenance"
-  ],
-  "tests/tracker/test_issue_upsert.py": [
-   "test_same_identity_twice_returns_one_issue_without_replay_writes",
-   "test_fresh_adapter_reads_persisted_identity_without_a_process_index",
-   "test_changed_hit_uses_guarded_description_edit_and_updates_title",
-   "test_stale_description_refusal_prevents_the_following_title_write",
-   "test_scope_kind_scope_key_and_deliverable_all_participate_in_identity",
-   "test_title_similarity_does_not_adopt_an_unkeyed_issue",
-   "test_duplicate_identities_refuse_without_picking_a_survivor",
-   "test_ordinary_description_writes_preserve_adapter_owned_identity",
-   "test_read_description_can_be_passed_back_without_duplicating_the_carrier",
-   "test_creation_metadata_is_not_reapplied_over_existing_tracker_values",
-   "test_empty_deliverable_key_refuses_before_writes",
-   "test_opaque_keys_round_trip_without_becoming_markup_or_extra_lines",
-   "test_changed_upsert_replay_keeps_one_issue_and_performs_zero_second_writes",
-   "test_upsert_stale_full_body_cannot_edit_a_matching_fragment"
   ],
   "tests/tracker/test_labeled_issues.py": [
    "test_complete_query_keeps_every_state_parent_and_foreign_team",
@@ -6342,6 +6326,14 @@
    "test_tracker_refusal_does_not_escape_as_a_transport_type",
    "test_consumers_translate_port_failures_from_non_mcp_adapters"
   ],
+  "tests/tracker/test_port_roles.py": [
+   "test_no_port_member_lacks_a_production_caller_beyond_the_exemptions",
+   "test_every_exempted_member_is_a_member_of_the_port_today",
+   "test_a_member_whose_only_caller_goes_is_reported",
+   "test_a_caller_of_the_exempted_read_empties_its_exemption",
+   "test_the_deleted_issue_writes_are_neither_defined_nor_called_anywhere",
+   "test_a_revived_issue_write_is_reported"
+  ],
   "tests/tracker/test_protected_comment_retry.py": [
    "test_write_attempt_budget_and_receipt_failures",
    "test_backoff_rechecks_drift_and_preserves_task_cancellation"
@@ -6569,6 +6561,9 @@
   "tests/tracker/test_scope_tool_arguments.py": [
    "test_scope_reads_send_declared_arguments_on_every_call"
   ],
+  "tests/tracker/test_seed.py": [
+   "test_a_seed_lands_on_the_issue_without_a_write"
+  ],
   "tests/tracker/test_state_history.py": [
    "test_state_stamp_is_native_and_read_only",
    "test_created_issue_has_initial_state_history",
@@ -6667,8 +6662,6 @@
    "TestScanAndRead.test_unmapped_marks_are_not_queue_states",
    "TestScanAndRead.test_state_kind_partitions_open_from_closed",
    "TestPriorityMapping.test_every_fixture_priority_maps_to_its_domain_member",
-   "TestWrites.test_create_issue_round_trips",
-   "TestWrites.test_update_issue_leaves_omitted_fields_untouched",
    "TestWrites.test_set_workflow_state_resolves_the_stage",
    "TestWrites.test_restore_workflow_state_puts_back_what_a_reader_read",
    "TestWrites.test_set_queue_state_replaces_the_previous_member",
@@ -6776,7 +6769,7 @@
    "TestPrincipalAuthoredBodies.test_a_body_this_writer_is_attributed_reads_as_machine_authored",
    "TestPrincipalAuthoredBodies.test_authorship_is_not_answered_for_a_body_this_port_cannot_write",
    "TestPrincipalAuthoredBodies.test_replacing_a_principal_authored_body_is_refused_intact",
-   "TestPrincipalAuthoredBodies.test_a_raw_body_update_cannot_replace_it_either",
+   "TestPrincipalAuthoredBodies.test_a_leased_body_edit_cannot_replace_it_either",
    "TestPrincipalAuthoredBodies.test_a_replay_that_replaces_nothing_is_not_a_replacement",
    "TestPrincipalAuthoredBodies.test_a_machine_authored_body_is_still_replaceable",
    "TestACriterionKeyReadThroughThePortAddressesItsWrites.test_a_criterion_key_read_through_the_port_is_taken_by_its_three_writes",

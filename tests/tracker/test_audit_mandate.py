@@ -232,13 +232,13 @@ async def test_session_cannot_invent_or_redirect_mandate(setup, damage):
 
 @pytest.mark.parametrize("damage", ["source", "head", "dirty"])
 async def test_inflight_changes_refuse_complete_report(
-    setup, tracker, monkeypatch, damage
+    setup, tracker, monkeypatch, damage, seed_issue
 ):
     build, runner, git, workspace = setup
 
     async def mutate():
         if damage == "source":
-            await tracker.update_issue(issue_key=ISSUE, body="Changed instruction")
+            seed_issue(issue_key=ISSUE, body="Changed instruction")
         elif damage == "head":
             monkeypatch.setattr(git, "current_sha", AsyncMock(return_value="b" * 40))
         else:

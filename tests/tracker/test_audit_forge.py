@@ -51,8 +51,8 @@ REPOSITORY = RepoEntry(
 
 
 @pytest.fixture
-async def setup(tracker):
-    await tracker.update_issue(issue_key=CHILD, body=evidence_fixtures.body(SHA))
+async def setup(tracker, seed_issue):
+    seed_issue(issue_key=CHILD, body=evidence_fixtures.body(SHA))
     await tracker.restore_workflow_state(issue_key=CHILD, state_name="Done")
 
     def build(ci, *, repository=REPOSITORY, bound=1):
@@ -206,8 +206,10 @@ async def test_only_the_current_completed_criterion_enters_this_check(
     assert ci.calls == []
 
 
-async def test_foreign_recorded_prose_cannot_supply_a_convenient_sha(setup, tracker):
-    await tracker.update_issue(issue_key=CHILD, body=f"**Evidence:** {SHA} test_unit")
+async def test_foreign_recorded_prose_cannot_supply_a_convenient_sha(
+    setup, tracker, seed_issue
+):
+    seed_issue(issue_key=CHILD, body=f"**Evidence:** {SHA} test_unit")
     ci = FakeCIMonitor()
     with pytest.raises(AuditEvidenceReadError):
         await setup(ci).observe(REQUEST)
@@ -216,7 +218,7 @@ async def test_foreign_recorded_prose_cannot_supply_a_convenient_sha(setup, trac
 
 @pytest.mark.parametrize("damage", ["body", "state", "membership"])
 async def test_a_mid_watch_source_change_cannot_receive_a_forge_verdict(
-    setup, tracker, monkeypatch, damage
+    setup, tracker, monkeypatch, damage, seed_issue
 ):
     async with forge("fake", "green") as (ci, _):
         original = ci.wait_for_checks
@@ -224,9 +226,7 @@ async def test_a_mid_watch_source_change_cannot_receive_a_forge_verdict(
         async def changing(**kwargs):
             result = await original(**kwargs)
             if damage == "body":
-                await tracker.update_issue(
-                    issue_key=CHILD, body=evidence_fixtures.body("c" * 40)
-                )
+                seed_issue(issue_key=CHILD, body=evidence_fixtures.body("c" * 40))
             elif damage == "state":
                 await tracker.restore_workflow_state(issue_key=CHILD, state_name="Todo")
             else:

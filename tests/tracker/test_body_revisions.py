@@ -48,7 +48,7 @@ async def test_repeated_reads_preserve_body_and_digest_without_writes(
 @pytest.mark.parametrize("issue_key", [PARENT, CRITERION])
 @pytest.mark.parametrize("change", ["comment", "label", "workflow", "title"])
 async def test_metadata_changes_preserve_the_body_revision(
-    tracker: TrackerPort, issue_key, change
+    tracker: TrackerPort, issue_key, change, seed_issue
 ):
     before = await tracker.read_issue_revision(issue_key=issue_key)
     if change == "comment":
@@ -60,7 +60,7 @@ async def test_metadata_changes_preserve_the_body_revision(
             issue_key=issue_key, stage=LifecycleStage.IN_PROGRESS
         )
     else:
-        await tracker.update_issue(issue_key=issue_key, title="A changed title")
+        seed_issue(issue_key=issue_key, title="A changed title")
     after = await tracker.read_issue_revision(issue_key=issue_key)
     assert after.issue.body == before.issue.body
     assert after.body_digest == before.body_digest
@@ -93,13 +93,15 @@ async def test_body_change_moves_only_its_surface_and_unchanged_replay_moves_non
 
 
 @pytest.mark.parametrize("body", ["", " ", "\n", "A\n", "A\r\n", "é", "é"])
-async def test_every_exact_body_has_a_nonempty_stable_revision(tracker, body):
-    await tracker.update_issue(issue_key=PARENT, body=body)
+async def test_every_exact_body_has_a_nonempty_stable_revision(
+    tracker, body, seed_issue
+):
+    seed_issue(issue_key=PARENT, body=body)
     before = await tracker.read_issue_revision(issue_key=PARENT)
     assert before.issue.body == body
     assert before.body_digest
     assert await tracker.read_issue_revision(issue_key=PARENT) == before
-    await tracker.update_issue(issue_key=PARENT, body=body + " ")
+    seed_issue(issue_key=PARENT, body=body + " ")
     after = await tracker.read_issue_revision(issue_key=PARENT)
     assert after.body_digest != before.body_digest
 

@@ -90,7 +90,10 @@ async def test_every_native_state_and_evidence_survives_the_port_round_trip(
     # separate criterion artifact or inferred grading state participates.
     replacement = body.replace("Preserve the native record.", "Updated check wording.")
     for row in rows:
-        written = await tracker.update_issue(issue_key=row.issue_key, body=replacement)
+        await tracker.edit_description(
+            target=row.issue_key, expected=row.body, replacement=replacement
+        )
+        written = await tracker.read_issue(issue_key=row.issue_key)
         expected = row.model_copy(update={"body": replacement})
         assert written.issue_key == expected.issue_key
         assert written.parent_key == expected.parent_key

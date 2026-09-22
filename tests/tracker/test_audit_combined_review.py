@@ -32,12 +32,20 @@ from tests.tracker.test_detector_removal_sweep import payload as removal_payload
 
 @pytest.mark.parametrize("mode", ["complete", "mandate-error", "head-moves", "cancel"])
 async def test_combined_native_arms_keep_their_own_revisions_and_lifetimes(
-    setup, tracker, server, tracker_writes, repository, tmp_path, monkeypatch, mode
+    setup,
+    tracker,
+    server,
+    tracker_writes,
+    repository,
+    tmp_path,
+    monkeypatch,
+    mode,
+    seed_issue,
 ):
     build, executor, _, _, _, _, stored, operation = setup
     remote, author, _, graded, head = repository
     assert graded != head
-    await tracker.update_issue(
+    seed_issue(
         issue_key=CHILD,
         body=f"**Check:** {CHECK}\n"
         + render_evidence_field(

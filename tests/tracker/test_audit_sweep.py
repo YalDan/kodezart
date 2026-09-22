@@ -128,9 +128,9 @@ async def state(tracker, server, key, name, kind):
 
 
 @pytest.fixture
-async def setup(tracker, server):
-    await tracker.update_issue(issue_key=CHILD, body=BODY)
-    await tracker.update_issue(issue_key=ROOT, body="Explicit parent instructions.")
+async def setup(tracker, server, seed_issue):
+    seed_issue(issue_key=CHILD, body=BODY)
+    seed_issue(issue_key=ROOT, body="Explicit parent instructions.")
     await state(tracker, server, CHILD, "Todo", WorkflowStateKind.UNSTARTED)
     stored = await lane_record(
         tracker,
@@ -335,7 +335,7 @@ async def test_every_state_reaches_actual_fresh_claim_dispatch(
 
 @pytest.mark.parametrize("mode", ["lapse", "review"])
 async def test_recorded_grading_uses_existing_lapse_and_review_arms(
-    setup, tracker, server, mode
+    setup, tracker, server, mode, seed_issue
 ):
     """The lapse arm carries the restamp trace; the review arm reaches a claim.
 
@@ -345,7 +345,7 @@ async def test_recorded_grading_uses_existing_lapse_and_review_arms(
     the observation the lapse return built.
     """
     build, executor, *_ = setup
-    await tracker.update_issue(issue_key=CHILD, body=BODY.replace(HEAD, PRIOR))
+    seed_issue(issue_key=CHILD, body=BODY.replace(HEAD, PRIOR))
     await state(
         tracker,
         server,
@@ -416,15 +416,15 @@ async def test_refutation_completes_actual_mandate_hunt(
 
 @pytest.mark.parametrize("mode", ["healthy", "refuted", "bad-check", "bad-evidence"])
 async def test_independent_terminal_read_survives_failed_criterion(
-    setup, tracker, server, mode
+    setup, tracker, server, mode, seed_issue
 ):
     build, executor, _, _, _, forge, *_ = setup
     await state(tracker, server, ROOT, "In Review", WorkflowStateKind.STARTED)
     await state(tracker, server, CHILD, "Done", WorkflowStateKind.COMPLETED)
     if mode == "bad-check":
-        await tracker.update_issue(issue_key=CHILD, body="**Evidence:** unreadable")
+        seed_issue(issue_key=CHILD, body="**Evidence:** unreadable")
     elif mode == "bad-evidence":
-        await tracker.update_issue(
+        seed_issue(
             issue_key=CHILD, body=f"**Check:** {CHECK}\n**Evidence:** legacy only"
         )
     elif mode == "refuted":
@@ -460,7 +460,7 @@ async def test_criterion_only_scope_keeps_native_parent_in_mandate_set(setup):
 
 @pytest.mark.parametrize("change", ["head", "body"])
 async def test_change_after_claim_during_mandate_refuses_whole_read_result(
-    setup, tracker, change
+    setup, tracker, change, seed_issue
 ):
     build, executor, git, *_ = setup
     executor.verdict = "refuted"
@@ -470,7 +470,7 @@ async def test_change_after_claim_during_mandate_refuses_whole_read_result(
             if change == "head":
                 git._remote_branch_shas["ordinary-name"] = "c" * 40
             else:
-                await tracker.update_issue(issue_key=CHILD, body=BODY + "\nchanged")
+                seed_issue(issue_key=CHILD, body=BODY + "\nchanged")
 
     executor.during = during
     with pytest.raises(AuditClaimReadError, match="changed"):
@@ -518,7 +518,10 @@ class PlantingWriteBack:
 
     async def write(self, *, finding):
         self.findings.append(finding)
-        await self._tracker.update_issue(issue_key=CHILD, body=PLANTED_BODY)
+        current = await self._tracker.read_issue(issue_key=CHILD)
+        await self._tracker.edit_description(
+            target=CHILD, expected=current.body, replacement=PLANTED_BODY
+        )
 
 
 class CredulousJudge:

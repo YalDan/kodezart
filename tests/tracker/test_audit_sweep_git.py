@@ -32,6 +32,7 @@ async def test_full_native_sweep_uses_real_cache_worktree_and_current_bytes(
     repository,
     tmp_path,
     mode,
+    seed_issue,
 ):
     build, executor, _, _, _, _, _, op = setup
     remote, author, _, prior, head = repository
@@ -45,7 +46,7 @@ async def test_full_native_sweep_uses_real_cache_worktree_and_current_bytes(
         update={"repos": [op.repos[0].model_copy(update={"url": remote.as_uri()})]}
     )
     if mode == "lapse":
-        await tracker.update_issue(issue_key=CHILD, body=BODY.replace(HEAD, prior))
+        seed_issue(issue_key=CHILD, body=BODY.replace(HEAD, prior))
         await state(tracker, server, CHILD, "Done", WorkflowStateKind.COMPLETED)
     if mode == "refuted":
         executor.verdict = "refuted"

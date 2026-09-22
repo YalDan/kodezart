@@ -195,10 +195,10 @@ async def test_all_three_judgments_preserved_without_writes(
     ],
 )
 async def test_missing_or_ambiguous_check_refuses_before_git_and_session(
-    setup, tracker, body
+    setup, tracker, body, seed_issue
 ):
     build, runner, _, cache, workspace, _ = setup
-    await tracker.update_issue(issue_key=CHILD, body=body)
+    seed_issue(issue_key=CHILD, body=body)
     with pytest.raises(InvalidFireCriterionError):
         await build().verify(REQUEST)
     assert not runner.calls and not cache.calls and not workspace.calls
@@ -227,15 +227,13 @@ async def test_missing_remote_refuses_without_session(setup, head):
     ],
 )
 async def test_inflight_changes_and_failed_sessions_never_return_observation(
-    setup, tracker, monkeypatch, damage
+    setup, tracker, monkeypatch, damage, seed_issue
 ):
     build, runner, git, _, workspace, stored = setup
 
     async def during():
         if damage == "criterion":
-            await tracker.update_issue(
-                issue_key=CHILD, body=BODY.replace(CHECK, "Changed Check.")
-            )
+            seed_issue(issue_key=CHILD, body=BODY.replace(CHECK, "Changed Check."))
         elif damage == "record":
             await leased_comment(
                 tracker,

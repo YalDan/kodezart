@@ -24,7 +24,7 @@ WRITING_METHODS = frozenset(
         "upsert_comment",
         "post_comment",
         "edit_description",
-        "update_issue",
+        "_patch_issue",
         "record_work_ref",
         "record_base_spec",
         "compose_comment_marker",

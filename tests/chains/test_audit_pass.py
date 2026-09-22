@@ -36,6 +36,7 @@ from tests.domain.test_lane_record import record_data
 from tests.fakes import FakeGitService, FakeMcpIssue, FakePRStateReader, FakeRepoCache
 from tests.tracker.conftest import WORKFLOW_STATE_NAMES, fixture_server
 from tests.tracker.conftest import clock as clock
+from tests.tracker.conftest import seed_issue as seed_issue
 from tests.tracker.conftest import tracker as tracker
 from tests.tracker.conftest import tracker_writes as tracker_writes
 from tests.tracker.lease_fixtures import leased_comment
@@ -254,7 +255,7 @@ async def test_current_pr_may_use_a_recorded_deliverable_branch(setup, forge):
 
 @pytest.mark.parametrize("damage", ["issue", "criterion", "record", "pr", "branch"])
 async def test_changing_terminal_never_returns_healthy_observation(
-    setup, tracker, forge, monkeypatch, damage
+    setup, tracker, forge, monkeypatch, damage, seed_issue
 ):
     reader, git, record, comment = setup
     original = reader._head
@@ -265,9 +266,9 @@ async def test_changing_terminal_never_returns_healthy_observation(
         count += 1
         if count == 2:
             if damage == "issue":
-                await tracker.update_issue(issue_key=ISSUE, body="changed")
+                seed_issue(issue_key=ISSUE, body="changed")
             elif damage == "criterion":
-                await tracker.update_issue(issue_key=CHILD, body="changed Check")
+                seed_issue(issue_key=CHILD, body="changed Check")
             elif damage == "record":
                 changed = record.model_copy(update={"head_sha": "new-recorded-head"})
                 await leased_comment(

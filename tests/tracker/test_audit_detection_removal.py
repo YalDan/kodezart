@@ -131,7 +131,7 @@ class NativeProbeExecutor(RecordingExecutor):
 
 
 @pytest.fixture
-async def build(tracker, tmp_path):
+async def build(tracker, tmp_path, seed_issue):
     remote, author, observer = (
         tmp_path / name for name in ("remote", "author", "observer")
     )
@@ -186,7 +186,7 @@ async def build(tracker, tmp_path):
                 CriterionEvidence(graded_sha=baseline, test="OLD_RECORDED_VERDICT")
             )
         )
-        await tracker.update_issue(issue_key=CHILD, body=body)
+        seed_issue(issue_key=CHILD, body=body)
         await tracker.restore_workflow_state(issue_key=CHILD, state_name="Done")
         record = LaneRunState.model_validate(record_data())
         comment = await tracker.post_comment(
@@ -340,13 +340,13 @@ async def test_ungrounded_or_malformed_findings_refuse_before_publication(
     assert tracker_writes() == before and not workspace._workspaces
 
 
-async def test_source_changed_during_judgment_is_not_reported(build, tracker):
+async def test_source_changed_during_judgment_is_not_reported(
+    build, tracker, seed_issue
+):
     detector, request, executor, workspace, *_ = await build()
 
     async def change():
-        await tracker.update_issue(
-            issue_key=CHILD, body="**Check:** A replacement claim."
-        )
+        seed_issue(issue_key=CHILD, body="**Check:** A replacement claim.")
 
     executor.during = change
     with pytest.raises(AuditEvidenceReadError, match="criterion changed"):

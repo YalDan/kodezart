@@ -58,11 +58,11 @@ async def test_resolution_preserves_own_key_full_source_and_every_state(
 
 
 async def test_identical_text_and_parent_prose_cannot_redirect_the_native_key(
-    tracker, tracker_writes
+    tracker, tracker_writes, seed_issue
 ):
     first = await tracker.read_issue(issue_key=FIRST)
-    await tracker.update_issue(issue_key=SECOND, body=first.body)
-    await tracker.update_issue(issue_key=PARENT, body=f"- [x] {SECOND}: {first.body}")
+    seed_issue(issue_key=SECOND, body=first.body)
+    seed_issue(issue_key=PARENT, body=f"- [x] {SECOND}: {first.body}")
     before = tracker_writes()
     for key in (FIRST, SECOND):
         resolved = await resolver(tracker).resolve_criterion(

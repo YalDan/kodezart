@@ -8,7 +8,7 @@ from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import DuplicateCommentMarkerError, StaleWriteError
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
-from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE
+from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE, Seed
 from tests.tracker.lease_fixtures import lease_for_comment, leased_comment
 
 MARKER = "[fixture:lane:decision-1]"
@@ -116,11 +116,10 @@ class TestCommentUpsert:
 
 class TestDescriptionEdit:
     async def test_exact_description_is_replaced_preserving_other_issue_fields(
-        self, tracker: TrackerPort
+        self, tracker: TrackerPort, seed_issue: Seed
     ):
-        before = await tracker.update_issue(
-            issue_key=APPROVED_ISSUE, body="before\nexpected anchor\nafter"
-        )
+        seed_issue(issue_key=APPROVED_ISSUE, body="before\nexpected anchor\nafter")
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
         result = await tracker.edit_description(
             target=APPROVED_ISSUE,
             expected=before.body,
@@ -167,10 +166,13 @@ class TestDescriptionEdit:
         assert tracker_writes() == calls
 
     async def test_changed_anchor_is_detected_on_a_fresh_tracker_read(
-        self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        seed_issue: Seed,
     ):
         initial = await tracker.read_issue(issue_key=APPROVED_ISSUE)
-        await tracker.update_issue(issue_key=APPROVED_ISSUE, body="concurrent edit")
+        seed_issue(issue_key=APPROVED_ISSUE, body="concurrent edit")
         calls = tracker_writes()
         with pytest.raises(StaleWriteError):
             await tracker.edit_description(
@@ -201,9 +203,10 @@ class TestDescriptionEdit:
     @pytest.mark.parametrize("current", ["body", "unrelated", ""])
     @pytest.mark.parametrize("same", ["body", ""])
     async def test_identical_expected_and_replacement_is_a_write_free_noop(
-        self, tracker, tracker_writes, current, same
+        self, tracker, tracker_writes, current, same, seed_issue
     ):
-        before = await tracker.update_issue(issue_key=APPROVED_ISSUE, body=current)
+        seed_issue(issue_key=APPROVED_ISSUE, body=current)
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
         writes = tracker_writes()
         assert (
             await tracker.edit_description(
@@ -226,9 +229,10 @@ class TestDescriptionEdit:
         ],
     )
     async def test_partial_or_incidental_target_never_authorizes_a_write(
-        self, tracker, tracker_writes, current
+        self, tracker, tracker_writes, current, seed_issue
     ):
-        before = await tracker.update_issue(issue_key=APPROVED_ISSUE, body=current)
+        seed_issue(issue_key=APPROVED_ISSUE, body=current)
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
         writes = tracker_writes()
         with pytest.raises(StaleWriteError) as caught:
             await tracker.edit_description(
@@ -241,9 +245,9 @@ class TestDescriptionEdit:
 
     @pytest.mark.parametrize("current", ["body plus body", "", "é\r\nbody"])
     async def test_full_description_disambiguates_repeated_and_empty_text(
-        self, tracker, tracker_writes, current
+        self, tracker, tracker_writes, current, seed_issue
     ):
-        await tracker.update_issue(issue_key=APPROVED_ISSUE, body=current)
+        seed_issue(issue_key=APPROVED_ISSUE, body=current)
         desired = "new " + current
         first = await tracker.edit_description(
             target=APPROVED_ISSUE, expected=current, replacement=desired

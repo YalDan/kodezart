@@ -121,15 +121,13 @@ async def test_malformed_or_foreign_judgment_never_completes(setup, tracker, dam
 
 @pytest.mark.parametrize("damage", ["criterion", "head", "record"])
 async def test_changed_source_never_produces_a_completed_observation(
-    setup, tracker, damage
+    setup, tracker, damage, seed_issue
 ):
     answer(setup[1], payload())
 
     async def during():
         if damage == "criterion":
-            await tracker.update_issue(
-                issue_key=fixtures.CHILD, body=fixtures.body(fixtures.HEAD)
-            )
+            seed_issue(issue_key=fixtures.CHILD, body=fixtures.body(fixtures.HEAD))
         elif damage == "head":
             setup[2]._remote_branch_shas["ordinary-name"] = fixtures.PRIOR
         else:

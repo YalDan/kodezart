@@ -43,9 +43,9 @@ def server():
     ],
 )
 async def test_parent_heading_shapes_all_read_empty_and_refuse_fire(
-    tracker, tracker_writes, body
+    tracker, tracker_writes, body, seed_issue
 ):
-    await tracker.update_issue(issue_key=PARENT, body=body)
+    seed_issue(issue_key=PARENT, body=body)
     writes = tracker_writes()
     assert tuple(await tracker.read_criteria(issue_key=PARENT)) == ()
     with pytest.raises(EmptyFireCriteriaError) as caught:

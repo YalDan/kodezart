@@ -52,6 +52,8 @@ from tests.fakes import (
     FakeMcpIssue,
     FakeTrackerPort,
     FakeWorkspaceProvider,
+    seed_fake_issue,
+    seed_server_issue,
 )
 from tests.name_resolution import call_sites, parsed, reaches, source_tree
 from tests.prompts.sets import OPUS_SET, V5_SET
@@ -344,7 +346,7 @@ async def test_surface_liveness_reads_never_retest_or_restamp():
     calls = len(executor.calls)
     acquired = list(workspace.arguments)
     original_body = source.issues["criterion/a"].body
-    await source.update_issue(issue_key="criterion/a", body="An amended Check body.")
+    seed_fake_issue(source, issue_key="criterion/a", body="An amended Check body.")
     for key in keys:
         assert await admission.is_live(results[key]) is False
     assert len(executor.calls) == calls
@@ -390,8 +392,8 @@ async def test_body_edit_during_session_does_not_stamp_the_later_revision(method
 
     class EditingExecutor(RecordingExecutor):
         async def stream(self, **kwargs):
-            await source.update_issue(
-                issue_key=SUBJECT, body="Written after judgment input."
+            seed_fake_issue(
+                source, issue_key=SUBJECT, body="Written after judgment input."
             )
             async for event in super().stream(**kwargs):
                 yield event
@@ -474,9 +476,9 @@ async def test_real_revision_reader_lapses_the_exact_admission_surface(issue_key
     assert await admission.is_live(judged) is True
     await source.post_comment(issue_key=issue_key, body="A later discussion.")
     assert await admission.is_live(judged) is True
-    await source.update_issue(issue_key=issue_key, title="A later title")
+    seed_server_issue(server, issue_key=issue_key, title="A later title")
     assert await admission.is_live(judged) is False
-    await source.update_issue(issue_key=issue_key, body="A later body")
+    seed_server_issue(server, issue_key=issue_key, body="A later body")
     assert await admission.is_live(judged) is False
     assert judged.model_dump_json() == recorded
     assert len(executor.calls) == 1
@@ -1061,6 +1063,9 @@ def organized_port(request):
 
         def stamp_reads() -> None:
             source.stamp_moves_on_read = True
+
+        def seed_issue(*, issue_key: str, body: str) -> None:
+            seed_fake_issue(source, issue_key=issue_key, body=body)
     else:
         server = FakeLinearMcpServer(
             issues=[
@@ -1089,7 +1094,10 @@ def organized_port(request):
         def stamp_reads() -> None:
             server.stamp_moves_on_read = True
 
-    return source, keys, stamp_reads
+        def seed_issue(*, issue_key: str, body: str) -> None:
+            seed_server_issue(server, issue_key=issue_key, body=body)
+
+    return source, keys, stamp_reads, seed_issue
 
 
 async def read_gap_revisions(source, keys):
@@ -1106,7 +1114,7 @@ async def test_the_organized_port_moves_its_stamp_on_read_and_not_its_body_revis
     reads of one unwritten body with two digests, and the digest holding still
     across those reads is the prohibition itself.
     """
-    source, keys, stamp_reads = organized_port
+    source, keys, stamp_reads, _seed = organized_port
     stamp_reads()
     first = await source.read_issue(issue_key=keys[1])
     second = await source.read_issue(issue_key=keys[1])
@@ -1122,7 +1130,7 @@ async def test_the_organized_port_moves_its_stamp_on_read_and_not_its_body_revis
 async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
     organized_port, change
 ):
-    source, keys, stamp_reads = organized_port
+    source, keys, stamp_reads, seed_issue = organized_port
     executor = RecordingExecutor([])
     workspace = RecordingWorkspace()
     admission = consumer(source, executor, workspace)
@@ -1156,9 +1164,7 @@ async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
     child_key = keys[1]
     before = await source.read_issue(issue_key=child_key)
     if change == "amended_body":
-        await source.update_issue(
-            issue_key=child_key, body="Check: revised runnable condition."
-        )
+        seed_issue(issue_key=child_key, body="Check: revised runnable condition.")
     elif change == "unchanged_body":
         # The replay writes nothing, so from here the port moves its stamp on
         # every read: that is the only way this arm can tell a body digest from
@@ -1236,7 +1242,8 @@ async def test_mention_ripple_bumps_the_stamp_without_entering_the_gap():
     assert gap_of(await read_gap_revisions(source, keys), admissions=admissions) == ()
 
     before = {key: await source.read_issue(issue_key=key) for key in keys}
-    await source.update_issue(
+    seed_fake_issue(
+        source,
         issue_key=SUBJECT,
         body=f"Revised body for {SUBJECT}, which mentions {MENTIONED} and edits "
         f"nothing there.",
@@ -1394,9 +1401,9 @@ def gap_computation_sites(sources):
     route, an assignment alias, a declaration, a bare or attribute spelling.
     A string constant is not a route, so the terminal vocabulary's ``in_gap``
     label stays out and the module list above stays the upper bound.
-    ``in_gap`` is the seed that keeps that negative live: the one module
-    spelling a seed name inside a string constant spells ``in_gap``, so a
-    string constant read as a route would pull it in.  Dropping the seed
+    ``in_gap`` is the seed_issue that keeps that negative live: the one module
+    spelling a seed_issue name inside a string constant spells ``in_gap``, so a
+    string constant read as a route would pull it in.  Dropping the seed_issue
     changes no discovered module at head, and nothing here claims it would.
 
     Two shapes are no route here, neither of them in the package at head: a
@@ -1440,7 +1447,7 @@ def test_the_discovered_gap_sites_are_the_upper_bound_exactly():
     """The derived surface is the whole bound, not merely inside it.
 
     The guard above bounds the discovered set from above and holds a
-    three-module floor, so a seed dropped from ``GAP_ARITHMETIC_NAMES`` can
+    three-module floor, so a seed_issue dropped from ``GAP_ARITHMETIC_NAMES`` can
     take a gap consumer off the scanned surface while both still hold:
     ``chains/scope_walker.py`` is reached by ``SubtreeClosure`` alone and
     consumes the gap through it. Equality is what reds then.

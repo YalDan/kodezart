@@ -10,9 +10,12 @@ from kodezart.domain.errors import ScopeReadError
 from kodezart.services.audit_collection import collect_audit_candidates
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.tracker import IssuePriority
 from tests.fakes import FakeMcpIssue, FakeTrackerPort
-from tests.tracker.conftest import fixture_server, linear_over_fake_mcp
+from tests.tracker.conftest import (
+    CLAIMED_ISSUE,
+    fixture_server,
+    linear_over_fake_mcp,
+)
 
 ROOT = "audit/root"
 CHILD = "audit/criterion"
@@ -58,15 +61,12 @@ async def test_state_stamp_is_native_and_read_only(tracker, tracker_writes):
 
 
 async def test_created_issue_has_initial_state_history(tracker):
-    issue = await tracker.create_issue(
-        title="new audit subject",
-        body="body",
-        team_key="engineering",
-        priority=IssuePriority.NONE,
-    )
+    issue = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
     revision = await tracker.read_issue_state_change(issue_key=issue.issue_key)
     assert revision.state_changed_at == issue.created_at
-    await tracker.update_issue(issue_key=issue.issue_key, body="changed body")
+    await tracker.edit_description(
+        target=issue.issue_key, expected=issue.body, replacement="changed body"
+    )
     assert (
         await tracker.read_issue_state_change(issue_key=issue.issue_key)
     ).state_changed_at == revision.state_changed_at
@@ -76,7 +76,9 @@ async def test_created_issue_has_initial_state_history(tracker):
 async def test_non_state_changes_do_not_move_state_entry_time(tracker, edit):
     before = await tracker.read_issue_state_change(issue_key=ROOT)
     if edit == "body":
-        await tracker.update_issue(issue_key=ROOT, body="amended body")
+        await tracker.edit_description(
+            target=ROOT, expected=before.issue.body, replacement="amended body"
+        )
     elif edit == "comment":
         await tracker.post_comment(issue_key=ROOT, body="ordinary comment")
     else:

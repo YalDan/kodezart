@@ -57,7 +57,7 @@ async def test_native_failure_preserves_exact_cause_and_never_repeats_unsafe_wri
     boundary = _RefusingBoundary(failure)
     tracker = tracker_over(boundary, max_retries=4)
     with pytest.raises(expected) as caught:
-        await tracker.update_issue(issue_key=ROOT.key, title="changed")
+        await tracker.post_comment(issue_key=ROOT.key, body="changed")
     assert caught.value.__cause__ is failure
     assert boundary.attempts == 1
 

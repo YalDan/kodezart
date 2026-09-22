@@ -2005,27 +2005,7 @@ class LinearMcpTracker:
             )
         return current
 
-    async def create_issue(
-        self,
-        *,
-        title: str,
-        body: str,
-        team_key: str,
-        priority: IssuePriority,
-    ) -> TrackerIssue:
-        """Create an issue on *team_key* and return it as stored."""
-        payload = await self._call(
-            _TOOL_SAVE_ISSUE,
-            {
-                "title": title,
-                "description": body,
-                "team": self._team_identifier(team_key),
-                "priority": _RAW_BY_PRIORITY[priority],
-            },
-        )
-        return self._saved_issue(payload)
-
-    async def update_issue(
+    async def _patch_issue(
         self,
         *,
         issue_key: str,
@@ -2164,34 +2144,6 @@ class LinearMcpTracker:
             current.description or "", issue_key=current.id
         )
 
-    async def upsert_issue(
-        self,
-        *,
-        scope_key: ScopeRef,
-        deliverable_key: str,
-        title: str,
-        body: str,
-        team_key: str,
-        priority: IssuePriority,
-    ) -> TrackerIssue:
-        identity = IssueIdentity(scope_key=scope_key, deliverable_key=deliverable_key)
-        self._issue_identity.require_prefix()
-        current = await self._find_issue_identity(identity)
-        content = self._issue_identity.encode(
-            identity, body=body, issue_key=current.issue_key if current else "new issue"
-        )
-        if current is None:
-            return await self.create_issue(
-                title=title, body=content, team_key=team_key, priority=priority
-            )
-        if current.body != content:
-            await self.edit_description(
-                target=current.issue_key, expected=current.body, replacement=content
-            )
-        if current.title != title:
-            await self.update_issue(issue_key=current.issue_key, title=title)
-        return await self.read_issue(issue_key=current.issue_key)
-
     async def _identity_issues(self) -> tuple[tuple[IssueIdentity, TrackerIssue], ...]:
         arguments: dict[str, object] = {
             "includeArchived": True,
@@ -2236,20 +2188,6 @@ class LinearMcpTracker:
                 if held is not None:
                     matches.append((held, self._to_issue(wire)))
         return tuple(matches)
-
-    async def _find_issue_identity(
-        self, identity: IssueIdentity
-    ) -> TrackerIssue | None:
-        matches = [
-            issue for held, issue in await self._identity_issues() if held == identity
-        ]
-        if len(matches) > 1:
-            raise DuplicateIssueIdentityError(
-                scope_key=identity.scope_key,
-                deliverable_key=identity.deliverable_key,
-                issue_keys=[issue.issue_key for issue in matches],
-            )
-        return matches[0] if matches else None
 
     async def edit_description(
         self,
@@ -2338,7 +2276,7 @@ class LinearMcpTracker:
         )
         if body is None:
             return DescriptionEditResult.UNCHANGED
-        await self.update_issue(issue_key=target, body=body)
+        await self._patch_issue(issue_key=target, body=body)
         return DescriptionEditResult.EDITED
 
     async def set_workflow_state(

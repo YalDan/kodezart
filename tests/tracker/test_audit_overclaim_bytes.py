@@ -153,10 +153,12 @@ async def test_native_bytes_override_coverage_without_confusing_equal_pairs(
     )
 
 
-async def test_source_movement_during_native_byte_read_refuses_result(setup, tracker):
+async def test_source_movement_during_native_byte_read_refuses_result(
+    setup, tracker, seed_issue
+):
     class NativeBoundary:
         async def read_source(self, *, cwd, commit_sha, path):
-            await tracker.update_issue(
+            seed_issue(
                 issue_key=fixtures.fixtures.CHILD,
                 body=fixtures.fixtures.body(fixtures.fixtures.HEAD),
             )

@@ -58,17 +58,17 @@ class RevisionSource(Source):
         return None
 
 
-async def ready(tracker, server):
-    await tracker.update_issue(issue_key=CHILD, body=BODY.replace(HEAD, PRIOR))
+async def ready(tracker, server, seed_issue):
+    seed_issue(issue_key=CHILD, body=BODY.replace(HEAD, PRIOR))
     await state(tracker, server, CHILD, "In Review", WorkflowStateKind.STARTED)
 
 
 @pytest.mark.parametrize("verdict", ["holds", "refuted", "unverifiable"])
 async def test_actual_sweep_preserves_source_findings_and_each_mandate(
-    setup, tracker, server, tracker_writes, verdict
+    setup, tracker, server, tracker_writes, verdict, seed_issue
 ):
     build, executor, _, _, workspace, _, stored, *_ = setup
-    await ready(tracker, server)
+    await ready(tracker, server, seed_issue)
     executor.removal_output = payload(verdict)
     before = tracker_writes()
     child, parent = (
@@ -112,10 +112,10 @@ async def test_actual_sweep_preserves_source_findings_and_each_mandate(
 
 
 async def test_each_source_loss_gets_its_own_exact_mandate_finding(
-    setup, tracker, server
+    setup, tracker, server, seed_issue
 ):
     build, executor, *_ = setup
-    await ready(tracker, server)
+    await ready(tracker, server, seed_issue)
     executor.removal_output = payload()
     suffixes = iter(("z", "a"))
 
@@ -159,10 +159,10 @@ async def test_each_source_loss_gets_its_own_exact_mandate_finding(
 
 @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
 async def test_independent_failure_retains_every_other_available_arm(
-    setup, tracker, server, failed
+    setup, tracker, server, failed, seed_issue
 ):
     build, executor, *_ = setup
-    await ready(tracker, server)
+    await ready(tracker, server, seed_issue)
     executor.removal_output = payload()
     executor.overclaim_output = overclaim_payload()
     reached = []
@@ -208,10 +208,10 @@ async def test_independent_failure_retains_every_other_available_arm(
 
 @pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
 async def test_programmer_failure_is_not_a_detector_unavailability(
-    setup, tracker, server, failed
+    setup, tracker, server, failed, seed_issue
 ):
     build, executor, *_ = setup
-    await ready(tracker, server)
+    await ready(tracker, server, seed_issue)
     executor.removal_output = payload()
     executor.overclaim_output = overclaim_payload()
     error = RuntimeError(f"programmer failure in {failed}")
@@ -238,10 +238,10 @@ async def test_programmer_failure_is_not_a_detector_unavailability(
 
 @pytest.mark.parametrize("mode", ["unconfigured", "unstarted", "lapsed"])
 async def test_unavailable_revision_arm_and_lapsed_claim_remain_distinct(
-    setup, tracker, server, mode
+    setup, tracker, server, mode, seed_issue
 ):
     build, executor, *_ = setup
-    await ready(tracker, server)
+    await ready(tracker, server, seed_issue)
     if mode != "unconfigured":
         await state(
             tracker,
@@ -271,10 +271,10 @@ async def test_unavailable_revision_arm_and_lapsed_claim_remain_distinct(
 
 @pytest.mark.parametrize("phase", ["removal", "mandate"])
 async def test_cancellation_is_not_downgraded_to_a_detector_refusal(
-    setup, tracker, server, phase
+    setup, tracker, server, phase, seed_issue
 ):
     build, executor, _, _, workspace, *_ = setup
-    await ready(tracker, server)
+    await ready(tracker, server, seed_issue)
     executor.removal_output = payload()
     active = asyncio.Event()
 
@@ -304,10 +304,10 @@ async def test_cancellation_is_not_downgraded_to_a_detector_refusal(
 
 
 async def test_only_successful_removal_report_still_pins_its_observed_head(
-    setup, tracker, server
+    setup, tracker, server, seed_issue
 ):
     build, executor, git, *_ = setup
-    await ready(tracker, server)
+    await ready(tracker, server, seed_issue)
     executor.removal_output = payload()
 
     async def during(kwargs):
@@ -325,10 +325,10 @@ async def test_only_successful_removal_report_still_pins_its_observed_head(
 
 @pytest.mark.parametrize("damage", ["foreign", "wrong-line", "no-findings"])
 async def test_unproven_removal_is_unavailable_without_erasing_the_regular_claim(
-    setup, tracker, server, damage
+    setup, tracker, server, damage, seed_issue
 ):
     build, executor, *_ = setup
-    await ready(tracker, server)
+    await ready(tracker, server, seed_issue)
     output = payload()
     if damage == "foreign":
         output["criterionKey"] = "foreign/criterion"
@@ -347,10 +347,10 @@ async def test_unproven_removal_is_unavailable_without_erasing_the_regular_claim
 
 @pytest.mark.parametrize("change", ["body", "record", "head-between-arms"])
 async def test_final_source_and_head_checks_follow_the_actual_removal_arm(
-    setup, tracker, server, monkeypatch, change
+    setup, tracker, server, monkeypatch, change, seed_issue
 ):
     build, executor, git, _, _, _, stored, operation = setup
-    await ready(tracker, server)
+    await ready(tracker, server, seed_issue)
     executor.removal_output = payload()
     sweep = build(include_removals=True, selected_source=RevisionSource())
     observed_heads = []
@@ -381,9 +381,7 @@ async def test_final_source_and_head_checks_follow_the_actual_removal_arm(
                 return
             changed = True
             if change == "body":
-                await tracker.update_issue(
-                    issue_key=CHILD, body=BODY + "\nChanged Check source."
-                )
+                seed_issue(issue_key=CHILD, body=BODY + "\nChanged Check source.")
             else:
                 records = LaneRecordReader(tracker=tracker, operation=operation)
                 _, original = await records.read(

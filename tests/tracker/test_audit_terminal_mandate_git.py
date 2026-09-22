@@ -31,12 +31,12 @@ from tests.tracker.test_audit_terminal_mandate import terminal_ready
     "case", ["closed", "open", "unresolved", "cancel", "replacement"]
 )
 async def test_native_terminal_mandate_observes_current_head_without_criterion_cast(
-    setup, tracker, server, tracker_writes, repository, tmp_path, case
+    setup, tracker, server, tracker_writes, repository, tmp_path, case, seed_issue
 ):
     build, executor, _, _, _, forge, _, operation = setup
     remote, author, _, prior, head = repository
     await terminal_ready(tracker, server, forge)
-    await tracker.update_issue(
+    seed_issue(
         issue_key=CHILD,
         body=f"**Check:** {CHECK}\n"
         + render_evidence_field(

@@ -34,7 +34,7 @@ def server():
 
 
 async def test_duplicate_text_and_later_wording_do_not_locate_a_criterion(
-    tracker, tracker_writes
+    tracker, tracker_writes, seed_issue
 ):
     before = tracker_writes()
     members = await tracker.read_criteria(issue_key=SUBJECT)
@@ -45,9 +45,7 @@ async def test_duplicate_text_and_later_wording_do_not_locate_a_criterion(
     assert set(first.criteria) == {SECOND, fixtures.CRITERION}
     assert tracker_writes() == before
 
-    await tracker.update_issue(
-        issue_key=SECOND, body="**Check:** Completely amended wording."
-    )
+    seed_issue(issue_key=SECOND, body="**Check:** Completely amended wording.")
     after_edit = tracker_writes()
     second, _ = await entry.read_entry(issue_key=SUBJECT)
     assert second.criteria == first.criteria

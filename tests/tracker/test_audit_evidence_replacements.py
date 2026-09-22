@@ -21,7 +21,15 @@ from tests.tracker.test_audit_evidence_git import repository as repository
 @pytest.mark.parametrize("phase", ["off-branch", "lapse", "before", "during"])
 @pytest.mark.parametrize("namespace", ["default", "configured"])
 async def test_actual_evidence_requires_original_head_history(
-    setup, tracker, tracker_writes, repository, tmp_path, monkeypatch, phase, namespace
+    setup,
+    tracker,
+    tracker_writes,
+    repository,
+    tmp_path,
+    monkeypatch,
+    phase,
+    namespace,
+    seed_issue,
 ):
     build, runner, _, _, _, workspace, *_ = setup
     remote, author, _, prior, head = repository
@@ -74,7 +82,7 @@ async def test_actual_evidence_requires_original_head_history(
     if phase == "before":
         await substitute()
     evidence_sha = prior if phase == "lapse" else graded
-    await tracker.update_issue(issue_key=CHILD, body=body(evidence_sha))
+    seed_issue(issue_key=CHILD, body=body(evidence_sha))
     request = REQUEST.model_copy(
         update={"repo_url": remote.as_uri(), "cache_key": "lane-cache"}
     )

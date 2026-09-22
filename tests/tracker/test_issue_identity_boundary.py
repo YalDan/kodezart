@@ -1,21 +1,30 @@
-"""Issue identity lookup uses complete measured reads before any create."""
+"""Issue identity lookup uses complete measured reads before any create.
+
+The lookup is the one the split mint runs before it creates a child: every
+issue carrying an identity is listed, archived ones included, and each is
+read in full, because a listing's description is truncated and can never
+prove a carrier absent. The cases drive it through ``read_split_children``,
+the read that answers it, so none of them writes.
+"""
 
 import json
 from collections.abc import Mapping
 
 import pytest
 
-from kodezart.core.errors import (
-    McpCallUnansweredError,
-    TrackerProtocolError,
-    TrackerUnavailableError,
-)
+from kodezart.core.errors import TrackerProtocolError, TrackerUnavailableError
 from kodezart.domain.errors import DuplicateIssueIdentityError
 from kodezart.types.domain.operation import OperationMemberAbsentError
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.tracker import TrackerIssue
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue
 from tests.tracker.conftest import linear_over_fake_mcp
 from tests.tracker.marker_config import MARKER_PREFIXES
-from tests.tracker.test_issue_upsert import BODY, DELIVERABLE, SCOPE, upsert
+
+SOURCE = "SOURCE-1"
+SCOPE = ScopeRef(kind=ScopeKind.ISSUE, key=SOURCE)
+DELIVERABLE = "deliverable-one"
+BODY = "The user's description."
 
 
 def carrier(deliverable_key: str = DELIVERABLE) -> str:
@@ -27,6 +36,16 @@ def carrier(deliverable_key: str = DELIVERABLE) -> str:
         separators=(",", ":"),
     )
     return f"<!-- {MARKER_PREFIXES['issue_identity']} {payload} -->\n\n{BODY}"
+
+
+def child(issue_id: str, description: str) -> FakeMcpIssue:
+    return FakeMcpIssue(
+        id=issue_id, title="Deliverable", description=description, parent_id=SOURCE
+    )
+
+
+async def lookup(tracker) -> tuple[TrackerIssue, ...]:
+    return await tracker.read_split_children(source_key=SOURCE)
 
 
 class IdentityPagesServer(FakeLinearMcpServer):
@@ -41,7 +60,7 @@ class IdentityPagesServer(FakeLinearMcpServer):
 
 
 async def test_match_on_later_page_is_found_before_create_even_if_archived():
-    existing = FakeMcpIssue(id="EXISTING-1", title="Deliverable", description=carrier())
+    existing = child("EXISTING-1", carrier())
     server = IdentityPagesServer(
         issues=[FakeMcpIssue(id="OTHER-1"), existing],
         pages={
@@ -53,8 +72,8 @@ async def test_match_on_later_page_is_found_before_create_even_if_archived():
             "next": {"issues": [{"id": existing.id}], "hasNextPage": False},
         },
     )
-    found = await upsert(linear_over_fake_mcp(server))
-    assert found.issue_key == existing.id
+    found = await lookup(linear_over_fake_mcp(server))
+    assert [issue.issue_key for issue in found] == [existing.id]
     assert server.tool_calls("save_issue") == []
     assert all(
         call["includeArchived"] is True for call in server.tool_calls("list_issues")
@@ -64,9 +83,7 @@ async def test_match_on_later_page_is_found_before_create_even_if_archived():
 
 async def test_truncated_listing_description_never_proves_absence():
     key = "long identity " * 100
-    existing = FakeMcpIssue(
-        id="EXISTING-1", title="Deliverable", description=carrier(key)
-    )
+    existing = child("EXISTING-1", carrier(key))
     server = IdentityPagesServer(
         issues=[existing],
         pages={
@@ -78,15 +95,15 @@ async def test_truncated_listing_description_never_proves_absence():
             }
         },
     )
-    found = await upsert(linear_over_fake_mcp(server), deliverable_key=key)
-    assert found.issue_key == existing.id
+    found = await lookup(linear_over_fake_mcp(server))
+    assert [issue.issue_key for issue in found] == [existing.id]
     assert server.tool_calls("save_issue") == []
     assert server.tool_calls("get_issue")
 
 
 async def test_duplicate_on_later_page_refuses_before_any_write():
-    first = FakeMcpIssue(id="FIRST-1", description=carrier())
-    second = FakeMcpIssue(id="SECOND-1", description=carrier())
+    first = child("FIRST-1", carrier())
+    second = child("SECOND-1", carrier())
     server = IdentityPagesServer(
         issues=[first, second],
         pages={
@@ -95,7 +112,7 @@ async def test_duplicate_on_later_page_refuses_before_any_write():
         },
     )
     with pytest.raises(DuplicateIssueIdentityError):
-        await upsert(linear_over_fake_mcp(server))
+        await lookup(linear_over_fake_mcp(server))
     assert server.tool_calls("save_issue") == []
 
 
@@ -109,12 +126,12 @@ async def test_missing_or_repeated_cursor_never_degrades_to_creation(cursor):
         },
     )
     with pytest.raises(TrackerProtocolError, match="cannot advance"):
-        await upsert(linear_over_fake_mcp(server))
+        await lookup(linear_over_fake_mcp(server))
     assert server.tool_calls("save_issue") == []
 
 
 async def test_page_overlap_does_not_invent_duplicate_issues():
-    existing = FakeMcpIssue(id="EXISTING-1", title="Deliverable", description=carrier())
+    existing = child("EXISTING-1", carrier())
     server = IdentityPagesServer(
         issues=[existing],
         pages={
@@ -126,39 +143,9 @@ async def test_page_overlap_does_not_invent_duplicate_issues():
             "next": {"issues": [{"id": existing.id}], "hasNextPage": False},
         },
     )
-    assert (await upsert(linear_over_fake_mcp(server))).issue_key == existing.id
+    found = await lookup(linear_over_fake_mcp(server))
+    assert [issue.issue_key for issue in found] == [existing.id]
     assert server.tool_calls("save_issue") == []
-
-
-class LostCreateReplyServer(FakeLinearMcpServer):
-    def __init__(self):
-        super().__init__()
-        self.lose_reply = True
-
-    def _tool_save_issue(self, arguments: Mapping[str, object]):
-        result = super()._tool_save_issue(arguments)
-        if self.lose_reply:
-            self.lose_reply = False
-            raise McpCallUnansweredError(
-                "reply lost after committed creation",
-                server_name="fixture",
-                tool_name="save_issue",
-            )
-        return result
-
-
-async def test_new_adapter_recovers_a_create_whose_reply_was_lost():
-    server = LostCreateReplyServer()
-    with pytest.raises(TrackerUnavailableError) as caught:
-        await upsert(linear_over_fake_mcp(server))
-    assert isinstance(caught.value.__cause__, McpCallUnansweredError)
-    assert len(server.issues) == 1
-    issue_key = next(iter(server.issues))
-    resumed = await upsert(linear_over_fake_mcp(server))
-    assert resumed.issue_key == issue_key
-    assert len(server.issues) == 1
-    assert len(server.tool_calls("save_issue")) == 1
-    assert server.tool_calls("save_comment") == []
 
 
 async def test_a_failed_full_read_does_not_allow_creation():
@@ -167,7 +154,7 @@ async def test_a_failed_full_read_does_not_allow_creation():
         tool_errors={"get_issue": "unavailable"},
     )
     with pytest.raises(TrackerUnavailableError):
-        await upsert(linear_over_fake_mcp(server))
+        await lookup(linear_over_fake_mcp(server))
     assert server.tool_calls("save_issue") == []
 
 
@@ -184,7 +171,7 @@ async def test_malformed_owned_carrier_refuses_lookup_and_writes(payload):
         ]
     )
     with pytest.raises(TrackerProtocolError, match="malformed"):
-        await upsert(linear_over_fake_mcp(server))
+        await lookup(linear_over_fake_mcp(server))
     assert server.tool_calls("save_issue") == []
 
 
@@ -194,7 +181,9 @@ async def test_description_edit_cannot_rekey_an_existing_issue():
     )
     tracker = linear_over_fake_mcp(server)
     with pytest.raises(TrackerProtocolError, match="cannot replace"):
-        await tracker.update_issue(issue_key="EXISTING-1", body=carrier("different"))
+        await tracker.edit_description(
+            target="EXISTING-1", expected=carrier(), replacement=carrier("different")
+        )
     assert server.tool_calls("save_issue") == []
 
 
@@ -204,5 +193,5 @@ async def test_missing_identity_prefix_refuses_before_lookup_or_write():
     server = FakeLinearMcpServer()
     tracker = tracker_over(server, marker_prefixes={})
     with pytest.raises(OperationMemberAbsentError, match="issue_identity"):
-        await upsert(tracker)
+        await lookup(tracker)
     assert server.calls == []

@@ -25,12 +25,12 @@ from tests.tracker.test_audit_sweep import setup as setup
 
 @pytest.mark.parametrize("red", [False, True])
 async def test_historical_forge_sha_is_not_restamped_to_current_head(
-    setup, tracker, server, tracker_writes, repository, tmp_path, red
+    setup, tracker, server, tracker_writes, repository, tmp_path, red, seed_issue
 ):
     build, executor, _, _, _, _, stored, operation = setup
     remote, _, _, graded, head = repository
     assert graded != head
-    await tracker.update_issue(
+    seed_issue(
         issue_key=CHILD,
         body=f"**Check:** {CHECK}\n**Do:** AUTHOR_REASONING\n"
         + render_evidence_field(CriterionEvidence(graded_sha=graded, test="old_test")),

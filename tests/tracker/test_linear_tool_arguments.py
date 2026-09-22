@@ -30,7 +30,6 @@ from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import (
-    IssuePriority,
     IssueQuery,
     MappingKind,
     MappingRef,
@@ -337,27 +336,15 @@ async def sent_arguments() -> Mapping[str, set[str]]:
     )
     await tracker.read_issue(issue_key=CLAIMED_ISSUE)
     await tracker.writer_identity()
-    keyed = await tracker.upsert_issue(
-        scope_key=ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope"),
-        deliverable_key="fixture-deliverable",
-        title="keyed",
-        body="keyed body",
-        team_key="engineering",
-        priority=IssuePriority.LOW,
-    )
-    await tracker.read_issue_identity(issue_key=keyed.issue_key)
-    await tracker.read_criteria(issue_key=keyed.issue_key)
+    await tracker.read_issue_identity(issue_key=CLAIMED_ISSUE)
+    await tracker.read_criteria(issue_key=CLAIMED_ISSUE)
     await tracker.set_issue_classification(
         issue_key=CLAIMED_ISSUE, classification="criterion"
     )
-    await tracker.create_issue(
-        title="t",
-        body="b",
-        team_key="engineering",
-        priority=IssuePriority.LOW,
+    claimed = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    await tracker.edit_description(
+        target=CLAIMED_ISSUE, expected=claimed.body, replacement="z"
     )
-    await tracker.update_issue(issue_key=CLAIMED_ISSUE, title="x", body="y")
-    await tracker.edit_description(target=CLAIMED_ISSUE, expected="y", replacement="z")
     await tracker.set_workflow_state(
         issue_key=CLAIMED_ISSUE,
         stage=LifecycleStage.DONE,

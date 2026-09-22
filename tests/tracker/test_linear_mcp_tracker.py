@@ -288,11 +288,8 @@ class TestShapeRefusal:
     async def test_an_unconfigured_team_raises(self) -> None:
         server = fixture_server()
         with pytest.raises(TrackerProtocolError):
-            await tracker_over(server).create_issue(
-                title="t",
-                body="b",
-                team_key="not-configured",
-                priority=IssuePriority.LOW,
+            await tracker_over(server).scan_issues(
+                query=IssueQuery(team_key="not-configured", page_size=1),
             )
 
 
@@ -1285,12 +1282,12 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
             tracker = tracker_over(workspace, caller=caller, max_retries=2)
             with structlog.testing.capture_logs() as logs:
                 with pytest.raises(TrackerUnavailableError):
-                    await tracker.update_issue(issue_key="T-9", title="renamed")
+                    await tracker.post_comment(issue_key="T-9", body="renamed")
         finally:
             await caller.close()
 
         assert endpoint.dropped, "the death was never met"
-        assert workspace.tool_calls("save_issue") == []
+        assert workspace.tool_calls("save_comment") == []
         assert "tracker_mcp_retry" not in [entry["event"] for entry in logs]
 
 

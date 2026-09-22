@@ -1643,9 +1643,10 @@ Description edits address the complete issue body. An exact desired body or
 identical expected/replacement is unchanged without a write; an exact expected
 body is replaced once. Any other current body raises `StaleWriteError`.
 Substring matches, repeated fragments and incidental desired text never
-identify the target. `upsert_issue` supplies the complete body it read and
-preserves its adapter-owned identity. This is optimistic stale-read detection,
-not atomic compare-and-swap; callers still serialize writes.
+identify the target. A body carrying an adapter-owned identity keeps it
+across the edit, and an edit that would replace it is refused. This is
+optimistic stale-read detection, not atomic compare-and-swap; callers still
+serialize writes.
 
 ### Ownership on the tracker's own capabilities
 

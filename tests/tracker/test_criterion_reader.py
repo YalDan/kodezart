@@ -65,8 +65,8 @@ async def test_successful_empty_is_distinct_from_a_failed_parent_read(tracker):
     assert raised.value.issue_key == "absent/1"
 
 
-async def test_parent_text_cannot_mint_criterion_membership(tracker):
-    await tracker.update_issue(
+async def test_parent_text_cannot_mint_criterion_membership(tracker, seed_issue):
+    seed_issue(
         issue_key=SECOND,
         body="- [x] parent/42-AC-1 (hard) · This looks like a checked criterion.",
     )
