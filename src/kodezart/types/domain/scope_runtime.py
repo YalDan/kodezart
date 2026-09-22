@@ -9,6 +9,7 @@ from kodezart.types.domain.agent import AgentEvent, ErrorEvent, NativeFireProgre
 from kodezart.types.domain.dispatch import IssueExclusion
 from kodezart.types.domain.native_delivery import LaneDeliveryEvent
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.scope_ready import UnreachableCriterion
 
 
 class LaneFailure(CamelCaseModel):
@@ -42,6 +43,9 @@ class ScopeWalkObservation(CamelCaseModel):
     one the facts left nothing to do, one whose own work raised — so an empty
     ready set beside entries here says which lanes stopped being offered and
     which of them were never offered at all.
+
+    ``unreachable_criteria`` names the open criteria the scope's own filter
+    cannot address; the walk still fires the lanes that owe them.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -54,6 +58,7 @@ class ScopeWalkObservation(CamelCaseModel):
     failed_lanes: tuple[LaneFailure, ...] = ()
     rested_lanes: tuple[str, ...] = ()
     unresolved_criteria: tuple[str, ...]
+    unreachable_criteria: tuple[UnreachableCriterion, ...]
     unapproved_lanes: tuple[str, ...]
     exclusions: tuple[IssueExclusion, ...]
 

@@ -116,7 +116,8 @@ the declared repository as the origin:
 
 Watch the stream. A `scope_walk` row is one tick of the walk: which lanes it
 found ready, which are blocked and by what, which are unapproved, which it has
-dispatched and which are resting. A `scope_lane` row wraps one lane's own fire
+dispatched, which are resting, and which open criteria the scope's own filter
+cannot reach. A `scope_lane` row wraps one lane's own fire
 events. A lane's failure appears on the observation rather than ending the
 stream.
 

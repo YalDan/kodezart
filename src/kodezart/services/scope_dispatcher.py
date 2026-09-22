@@ -11,7 +11,7 @@ re-reads on the next tick rather than fanning out a schedule that the
 board has already moved under.
 """
 
-from kodezart.chains.scope_walker import read_scope_ready, unreachable_criteria
+from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
 from kodezart.services.fire_dispatcher import FireDispatcher
@@ -76,16 +76,13 @@ class ScopeDispatcher:
                 *(members[blocked.issue_key] for blocked in ready.blocked),
             )
         )
-        unreachable = unreachable_criteria(
-            ref=self._ref, members=members, lanes=ready.ready
-        )
         exclusions = [
             IssueExclusion(
                 issue_key=named.issue_key,
                 clause=ExclusionClause.OUT_OF_SCOPE,
-                detail=named.reason,
+                detail=named.container or named.reason.value,
             )
-            for named in unreachable
+            for named in ready.unreachable
         ]
         exclusions.extend(
             IssueExclusion(
@@ -102,7 +99,7 @@ class ScopeDispatcher:
             scope_key=self._ref.key,
             ready=list(eligible_keys),
             blocked=[blocked.issue_key for blocked in ready.blocked],
-            unreachable=[named.issue_key for named in unreachable],
+            unreachable=[named.issue_key for named in ready.unreachable],
         )
         for lane in ready.ready:
             exclusion = await self._dispatcher.standing_exclusion(lane.issue)

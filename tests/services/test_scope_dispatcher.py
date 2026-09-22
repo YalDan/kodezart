@@ -1430,7 +1430,7 @@ async def test_the_report_names_the_open_criterion_the_filter_cannot_reach():
     ("child_milestone", "detail"),
     [
         ("other-milestone", "other-milestone"),
-        (None, "the issue belongs to no milestone"),
+        (None, "no_milestone"),
     ],
 )
 async def test_an_out_of_milestone_criterion_is_named_in_the_milestones_own_terms(

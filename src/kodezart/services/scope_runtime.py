@@ -769,12 +769,14 @@ def _observation(
             skipped_lanes=tuple(skipped),
             failed_lanes=tuple(failures),
             rested_lanes=tuple(rested),
-            # Copied from the ready read, which took it off the closure that
-            # computed the gaps. Reading a criterion's state kind here instead
-            # would be a second arithmetic over the same question, and this
-            # module is scanned whole for the vocabulary such a reading is
-            # spelled in (KOD-725).
+            # Both copied from the ready read, which took them off the
+            # closure that computed the gaps and the membership the lanes were
+            # selected over. Reading a criterion's state kind here instead, or
+            # asking the filter again, would be a second arithmetic over the
+            # same question, and this module is scanned whole for the
+            # vocabulary such a reading is spelled in (KOD-725).
             unresolved_criteria=ready.unresolved,
+            unreachable_criteria=ready.unreachable,
             unapproved_lanes=ready.unapproved,
             exclusions=tuple(exclusions),
         )

@@ -7,40 +7,49 @@ the lane owes is its whole subtree, so the container filter changes what the
 run can ADDRESS and never what the lane OWES.
 
 The readings are the descendant open, the descendant graded, and the
-descendant cancelled with no supersession on record.  Each runs through the
-shipped Linear adapter over the in-process MCP server AND through the
-in-process double, so neither implementation can answer "nothing left"
-alone.
+descendant cancelled with no supersession on record.  The read names what its
+filter cannot reach under a project and under a milestone reference alike.
+Each runs through the shipped Linear adapter over the in-process MCP server
+AND through the in-process double, so neither implementation can answer
+"nothing left" alone.
 """
 
+import asyncio
 from collections.abc import Mapping, Sequence
 
 import pytest
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
-from kodezart.chains.scope_walker import (
-    UnreachableCriterion,
-    read_scope_ready,
-    unreachable_criteria,
-)
+from kodezart.chains import scope_walker
+from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import ScopeSupersessionReadError
+from kodezart.domain.errors import ScopeReadError, ScopeSupersessionReadError
+from kodezart.domain.issue_tree import SubtreeClosure
+from kodezart.handlers.agent_handler import _queued_event_payload
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.scope_ready import (
+    UnreachableCriterion,
+    UnreachableReason,
+)
+from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.tracker import (
     IssuePriority,
     TrackerIssue,
     WorkflowStateKind,
 )
-from tests.fakes import FakeLinearMcpServer, FakeTrackerPort
+from tests.fakes import FakeLinearMcpServer, FakeTrackerPort, make_tracker_issue
+from tests.integration import test_scope_runtime as walk
 from tests.tracker.conftest import FIXTURE_NOW
 from tests.tracker.marker_config import MARKER_PREFIXES
 from tests.tracker.test_scope_reads import ScopeMcpIssue
 
 PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="reach-project")
 OTHER_PROJECT = "reach-other-project"
+MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="reach-milestone")
+OTHER_MILESTONE = "reach-other-milestone"
 
 LANE = "REACH-1"
 LANE_CHECK = "REACH-2"
@@ -75,15 +84,48 @@ def _project(key: str) -> dict[str, object]:
     }
 
 
+def _milestone(key: str) -> dict[str, object]:
+    return {
+        "id": key,
+        "name": key,
+        "description": f"Complete description of {key}",
+        "progress": 0,
+        "sortOrder": 0,
+    }
+
+
 class ReachMcpServer(FakeLinearMcpServer):
-    """The project-filtered issue reads this shape is measured through."""
+    """The project- and milestone-filtered issue reads this shape is measured through.
+
+    Both milestones belong to the addressed project, because that is the
+    shape a milestone reference is resolved through: the adapter walks the
+    workspace's projects, lists each one's milestones and then reads the one
+    it matched.
+    """
 
     def __init__(self, *, issues: Sequence[ScopeMcpIssue]) -> None:
         super().__init__(
             issues=issues,
             projects={key: _project(key) for key in (PROJECT.key, OTHER_PROJECT)},
             state_types=dict(CHILD_STATES.values()),
+            milestones={
+                PROJECT.key: [_milestone(MILESTONE.key), _milestone(OTHER_MILESTONE)]
+            },
         )
+
+    def _tool_list_projects(
+        self, arguments: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        return {"projects": list(self.projects.values()), "hasNextPage": False}
+
+    def _tool_get_milestone(
+        self, arguments: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        query = arguments["query"]
+        for milestone in self.milestones[str(arguments["project"])]:
+            if query in (milestone["id"], milestone["name"]):
+                return milestone
+        raise LookupError(f"No fixture milestone {query!r}")
 
     def _tool_list_issues(
         self, arguments: Mapping[str, object]
@@ -96,9 +138,30 @@ class ReachMcpServer(FakeLinearMcpServer):
         return {"issues": rows, "hasNextPage": False}
 
 
-def _issues(*, child_state: str, out_of_filter: bool) -> list[ScopeMcpIssue]:
-    """The one board shape every reading and both implementations run on."""
-    child_project = OTHER_PROJECT if out_of_filter else PROJECT.key
+def _issues(
+    *,
+    child_state: str,
+    out_of_filter: bool,
+    ref: ScopeRef = PROJECT,
+    child_milestone: str | None = OTHER_MILESTONE,
+) -> list[ScopeMcpIssue]:
+    """The one board shape every reading and both implementations run on.
+
+    Under a project reference the child leaves the filter by sitting in
+    another project and no row carries a milestone at all.  Under a milestone
+    reference every row sits in the addressed project — a milestone member
+    with no owning project is not a shape the backend has — and the child
+    leaves the filter by carrying *child_milestone*, which is another
+    milestone or no milestone at all.
+    """
+    by_milestone = ref.kind is ScopeKind.MILESTONE
+    lane_milestone = MILESTONE.key if by_milestone else None
+    if not by_milestone:
+        child_project = OTHER_PROJECT if out_of_filter else PROJECT.key
+        child_milestone_key = None
+    else:
+        child_project = PROJECT.key
+        child_milestone_key = child_milestone if out_of_filter else MILESTONE.key
     child_status, child_kind = CHILD_STATES[child_state]
     graded_status, graded_kind = CHILD_STATES["graded"]
     return [
@@ -109,7 +172,7 @@ def _issues(*, child_state: str, out_of_filter: bool) -> list[ScopeMcpIssue]:
             status="Todo",
             status_type="unstarted",
             project_key=PROJECT.key,
-            milestone_key=None,
+            milestone_key=lane_milestone,
         ),
         ScopeMcpIssue(
             id=LANE_CHECK,
@@ -119,7 +182,7 @@ def _issues(*, child_state: str, out_of_filter: bool) -> list[ScopeMcpIssue]:
             status=graded_status,
             status_type=graded_kind,
             project_key=PROJECT.key,
-            milestone_key=None,
+            milestone_key=lane_milestone,
         ),
         ScopeMcpIssue(
             id=CHILD,
@@ -128,7 +191,7 @@ def _issues(*, child_state: str, out_of_filter: bool) -> list[ScopeMcpIssue]:
             status="Todo",
             status_type="unstarted",
             project_key=child_project,
-            milestone_key=None,
+            milestone_key=child_milestone_key,
         ),
         ScopeMcpIssue(
             id=CHILD_CHECK,
@@ -138,7 +201,7 @@ def _issues(*, child_state: str, out_of_filter: bool) -> list[ScopeMcpIssue]:
             status=child_status,
             status_type=child_kind,
             project_key=child_project,
-            milestone_key=None,
+            milestone_key=child_milestone_key,
         ),
     ]
 
@@ -187,6 +250,13 @@ def _domain_issue(issue: ScopeMcpIssue) -> TrackerIssue:
 
 
 def _double(issues: Sequence[ScopeMcpIssue]) -> FakeTrackerPort:
+    """The same board as a domain double, under either container filter.
+
+    Each filter selects the rows it carries: the project's members are the
+    rows in that project, the milestone's are the rows on that milestone.
+    The approval stays on the project, which is the only container level a
+    label lives at — a milestone adds none of its own.
+    """
     return FakeTrackerPort(
         issues=[_domain_issue(issue) for issue in issues],
         scope_containers=[
@@ -196,9 +266,18 @@ def _double(issues: Sequence[ScopeMcpIssue]) -> FakeTrackerPort:
                 description="",
                 url=f"https://tracker.invalid/project/{PROJECT.key}",
             ),
+            ScopeContainer(
+                ref=MILESTONE,
+                name=MILESTONE.key,
+                description="",
+                url=None,
+            ),
         ],
         scope_memberships={
             PROJECT: [issue.id for issue in issues if issue.project_key == PROJECT.key],
+            MILESTONE: [
+                issue.id for issue in issues if issue.milestone_key == MILESTONE.key
+            ],
         },
         scope_label_members={PROJECT: frozenset({ScopeLabel.APPROVED})},
     )
@@ -211,8 +290,20 @@ def implementation(request: pytest.FixtureRequest) -> str:
     return param
 
 
-def board(implementation: str, *, child_state: str, out_of_filter: bool) -> TrackerPort:
-    issues = _issues(child_state=child_state, out_of_filter=out_of_filter)
+def board(
+    implementation: str,
+    *,
+    child_state: str,
+    out_of_filter: bool,
+    ref: ScopeRef = PROJECT,
+    child_milestone: str | None = OTHER_MILESTONE,
+) -> TrackerPort:
+    issues = _issues(
+        child_state=child_state,
+        out_of_filter=out_of_filter,
+        ref=ref,
+        child_milestone=child_milestone,
+    )
     if implementation == "linear-mcp":
         return _adapter(ReachMcpServer(issues=issues))
     return _double(issues)
@@ -252,6 +343,7 @@ async def test_the_same_lane_reads_at_rest_once_that_descendant_is_done(
     assert {issue.issue_key for issue in ready.scope.issues} == {LANE, LANE_CHECK}
     assert ready.ready == ()
     assert ready.blocked == ()
+    assert ready.unreachable == ()
 
 
 async def test_a_cancelled_hidden_descendant_refuses_instead_of_reading_at_rest(
@@ -292,36 +384,376 @@ async def test_the_identical_shape_inside_the_filter_carries_the_child_as_a_memb
     assert ready.blocked == ()
 
 
-def _named(ready) -> tuple[UnreachableCriterion, ...]:
-    """What the read declares out of its own filter's reach, over its members."""
-    return unreachable_criteria(
-        ref=PROJECT,
-        members={issue.issue_key for issue in ready.scope.issues},
-        lanes=ready.ready,
+@pytest.mark.parametrize(
+    ("ref", "child_milestone", "named"),
+    [
+        (
+            PROJECT,
+            OTHER_MILESTONE,
+            UnreachableCriterion(
+                issue_key=CHILD_CHECK,
+                reason=UnreachableReason.OTHER_PROJECT,
+                container=OTHER_PROJECT,
+            ),
+        ),
+        (
+            MILESTONE,
+            OTHER_MILESTONE,
+            UnreachableCriterion(
+                issue_key=CHILD_CHECK,
+                reason=UnreachableReason.OTHER_MILESTONE,
+                container=OTHER_MILESTONE,
+            ),
+        ),
+        (
+            MILESTONE,
+            None,
+            UnreachableCriterion(
+                issue_key=CHILD_CHECK,
+                reason=UnreachableReason.NO_MILESTONE,
+                container=None,
+            ),
+        ),
+    ],
+    ids=["other-project", "other-milestone", "no-milestone"],
+)
+async def test_the_lane_owes_the_criterion_its_scope_cannot_reach(
+    implementation: str,
+    ref: ScopeRef,
+    child_milestone: str | None,
+    named: UnreachableCriterion,
+) -> None:
+    """The out-of-filter arm: the read itself names the key and the reason.
+
+    Three placements of the one criterion, each stated in the terms the
+    addressed filter is itself stated in: in another project under a project
+    reference, and under another milestone or under none at all under a
+    milestone reference.
+    """
+    tracker = board(
+        implementation,
+        child_state="open",
+        out_of_filter=True,
+        ref=ref,
+        child_milestone=child_milestone,
+    )
+
+    ready = await read_scope_ready(ref=ref, tracker=tracker)
+
+    assert ready.unreachable == (named,)
+    assert [lane.issue.issue_key for lane in ready.ready] == [LANE]
+    assert ready.blocked == ()
+    assert CHILD_CHECK in ready.unresolved
+
+
+@pytest.mark.parametrize("ref", [PROJECT, MILESTONE], ids=["project", "milestone"])
+async def test_the_same_shape_inside_the_filter_names_no_unreachable_descendant(
+    implementation: str, ref: ScopeRef
+) -> None:
+    """The in-filter arm: the family carries the criterion, so nothing is named."""
+    tracker = board(implementation, child_state="open", out_of_filter=False, ref=ref)
+
+    ready = await read_scope_ready(ref=ref, tracker=tracker)
+
+    assert ready.unreachable == ()
+    assert {lane.issue.issue_key for lane in ready.ready} == {LANE, CHILD}
+
+
+# ---------------------------------------------------------------------------
+# The two private seams the read's naming is computed by, asked directly.
+# ---------------------------------------------------------------------------
+
+
+def _criterion(key: str, *, project: str | None, milestone: str | None) -> TrackerIssue:
+    """One criterion record carrying both container fields, set independently."""
+    return _domain_issue(
+        ScopeMcpIssue(
+            id=key,
+            description="a criterion outside some filter",
+            labels=[CRITERION_LABEL],
+            project_key=project,
+            milestone_key=milestone,
+        )
     )
 
 
-async def test_the_lane_owes_the_criterion_its_scope_cannot_reach(
-    implementation: str,
-) -> None:
-    """The out-of-filter arm: the criterion is named with its key and reason."""
-    tracker = board(implementation, child_state="open", out_of_filter=True)
-
-    ready = await read_scope_ready(ref=PROJECT, tracker=tracker)
-
-    assert _named(ready) == (
+#: One criterion per filter kind, and per answer within a kind: the container
+#: field the filter reads is set and absent in turn.  Every row carries BOTH
+#: container fields wherever both can be set, to values that differ, so a
+#: reading that folded one filter's field into the other's would answer with
+#: the wrong container instead of passing on a row where the two agree.
+FILTER_ROWS: tuple[
+    tuple[ScopeKind, str | None, str | None, UnreachableCriterion], ...
+] = (
+    (
+        ScopeKind.PROJECT,
+        OTHER_PROJECT,
+        OTHER_MILESTONE,
         UnreachableCriterion(
-            issue_key=CHILD_CHECK, lane_key=LANE, reason=OTHER_PROJECT
+            issue_key=CHILD_CHECK,
+            reason=UnreachableReason.OTHER_PROJECT,
+            container=OTHER_PROJECT,
+        ),
+    ),
+    (
+        ScopeKind.PROJECT,
+        None,
+        OTHER_MILESTONE,
+        UnreachableCriterion(
+            issue_key=CHILD_CHECK, reason=UnreachableReason.NO_PROJECT
+        ),
+    ),
+    (
+        ScopeKind.INITIATIVE,
+        OTHER_PROJECT,
+        OTHER_MILESTONE,
+        UnreachableCriterion(
+            issue_key=CHILD_CHECK,
+            reason=UnreachableReason.OTHER_PROJECT,
+            container=OTHER_PROJECT,
+        ),
+    ),
+    (
+        ScopeKind.MILESTONE,
+        OTHER_PROJECT,
+        OTHER_MILESTONE,
+        UnreachableCriterion(
+            issue_key=CHILD_CHECK,
+            reason=UnreachableReason.OTHER_MILESTONE,
+            container=OTHER_MILESTONE,
+        ),
+    ),
+    (
+        ScopeKind.MILESTONE,
+        OTHER_PROJECT,
+        None,
+        UnreachableCriterion(
+            issue_key=CHILD_CHECK, reason=UnreachableReason.NO_MILESTONE
+        ),
+    ),
+)
+
+
+def test_every_filter_reason_is_stated_in_its_filters_own_terms() -> None:
+    """Each kind reads the field its own filter reads, and never the other.
+
+    Every reason the vocabulary holds is produced by one of these rows, so a
+    member added to it without a filter that answers with it fails here rather
+    than shipping unreachable.
+    """
+    produced = []
+    for kind, project, milestone, named in FILTER_ROWS:
+        entry = scope_walker._filter_reason(
+            _criterion(CHILD_CHECK, project=project, milestone=milestone),
+            ref=ScopeRef(kind=kind, key="whatever-this-filter-addresses"),
+        )
+        assert entry == named, kind
+        produced.append(entry)
+
+    assert {entry.reason for entry in produced} == set(UnreachableReason)
+
+
+def test_an_issue_scope_that_omits_an_open_criterion_refuses() -> None:
+    """An issue scope's members ARE its subtree, so the omission is a bad read."""
+    with pytest.raises(ScopeReadError):
+        scope_walker._filter_reason(
+            _criterion(CHILD_CHECK, project=OTHER_PROJECT, milestone=OTHER_MILESTONE),
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=LANE),
+        )
+
+
+def test_the_unreachable_criteria_are_the_unresolved_ones_the_members_omit() -> None:
+    """The naming is the open reading projected onto membership and nothing else.
+
+    The closure carries open criteria under an approved member, under an
+    unapproved one and under a blocked one, plus one closed criterion outside
+    the filter and one open criterion the filter does carry. What comes back is
+    every open criterion the members omit, whatever held the member up: an
+    obligation under a member nobody approved is one the scope has not
+    discharged either.
+    """
+    members = {"APPROVED", "UNAPPROVED", "BLOCKED", "APPROVED-CHECK"}
+    facts = {
+        "APPROVED": make_tracker_issue("APPROVED", project_id=PROJECT.key),
+        "APPROVED-CHECK": make_tracker_issue(
+            "APPROVED-CHECK",
+            parent_key="APPROVED",
+            project_id=PROJECT.key,
+            issue_labels=frozenset({"criterion"}),
+        ),
+        "OUT-OF-APPROVED": make_tracker_issue(
+            "OUT-OF-APPROVED", parent_key="APPROVED", project_id=OTHER_PROJECT
+        ),
+        "OUT-OF-APPROVED-CHECK": make_tracker_issue(
+            "OUT-OF-APPROVED-CHECK",
+            parent_key="OUT-OF-APPROVED",
+            project_id=OTHER_PROJECT,
+            issue_labels=frozenset({"criterion"}),
+        ),
+        "OUT-OF-APPROVED-GRADED": make_tracker_issue(
+            "OUT-OF-APPROVED-GRADED",
+            parent_key="OUT-OF-APPROVED",
+            project_id=OTHER_PROJECT,
+            state_name="Done",
+            state_kind=WorkflowStateKind.COMPLETED,
+            issue_labels=frozenset({"criterion"}),
+        ),
+        "UNAPPROVED": make_tracker_issue("UNAPPROVED", project_id=PROJECT.key),
+        "OUT-OF-UNAPPROVED": make_tracker_issue(
+            "OUT-OF-UNAPPROVED", parent_key="UNAPPROVED", project_id=OTHER_PROJECT
+        ),
+        "OUT-OF-UNAPPROVED-CHECK": make_tracker_issue(
+            "OUT-OF-UNAPPROVED-CHECK",
+            parent_key="OUT-OF-UNAPPROVED",
+            project_id=OTHER_PROJECT,
+            issue_labels=frozenset({"criterion"}),
+        ),
+        "BLOCKED": make_tracker_issue(
+            "BLOCKED", project_id=PROJECT.key, blocked_by=["APPROVED"]
+        ),
+        "OUT-OF-BLOCKED": make_tracker_issue(
+            "OUT-OF-BLOCKED", parent_key="BLOCKED", project_id=None
+        ),
+        "OUT-OF-BLOCKED-CHECK": make_tracker_issue(
+            "OUT-OF-BLOCKED-CHECK",
+            parent_key="OUT-OF-BLOCKED",
+            project_id=None,
+            issue_labels=frozenset({"criterion"}),
+        ),
+    }
+    closure = SubtreeClosure(facts=facts, ref=PROJECT)
+
+    produced = scope_walker._unreachable_criteria(closure=closure, members=members)
+
+    assert [entry.issue_key for entry in produced] == [
+        key for key in closure.open_criterion_keys() if key not in members
+    ]
+    assert produced == (
+        UnreachableCriterion(
+            issue_key="OUT-OF-APPROVED-CHECK",
+            reason=UnreachableReason.OTHER_PROJECT,
+            container=OTHER_PROJECT,
+        ),
+        UnreachableCriterion(
+            issue_key="OUT-OF-UNAPPROVED-CHECK",
+            reason=UnreachableReason.OTHER_PROJECT,
+            container=OTHER_PROJECT,
+        ),
+        UnreachableCriterion(
+            issue_key="OUT-OF-BLOCKED-CHECK", reason=UnreachableReason.NO_PROJECT
         ),
     )
 
 
-async def test_the_same_shape_inside_the_filter_names_no_unreachable_descendant(
-    implementation: str,
+# ---------------------------------------------------------------------------
+# The wired walk carries the naming on every observation it emits (KOD-875).
+# ---------------------------------------------------------------------------
+
+
+def _deliverable_rows(port: FakeTrackerPort, *, project: str | None) -> None:
+    """A deliverable under lane A, outside the walk board's own filter or in it.
+
+    It carries the lane's own run-stage markers, so the subtree read the walk
+    takes of the lane passes the named stage barriers, and one open criterion
+    of its own, which is the obligation the lane owes and the scope cannot
+    address.
+    """
+    lane = port.issues["A"]
+    port.issues["A-deliverable"] = make_tracker_issue(
+        "A-deliverable",
+        parent_key="A",
+        project_id=project,
+        issue_labels=lane.issue_labels,
+        body="the deliverable lane A parents\n",
+    )
+    port.issues["A-deliverable/check"] = make_tracker_issue(
+        "A-deliverable/check",
+        parent_key="A-deliverable",
+        project_id=project,
+        issue_labels=frozenset({"criterion"}),
+        body="**Check:** A-deliverable/check live Check  bytes\n**Evidence:** —",
+    )
+
+
+@pytest.mark.parametrize(
+    ("placement", "project", "named", "wire"),
+    [
+        (
+            "other-project",
+            "reach-elsewhere",
+            (
+                UnreachableCriterion(
+                    issue_key="A-deliverable/check",
+                    reason=UnreachableReason.OTHER_PROJECT,
+                    container="reach-elsewhere",
+                ),
+            ),
+            [
+                {
+                    "issueKey": "A-deliverable/check",
+                    "reason": "other_project",
+                    "container": "reach-elsewhere",
+                }
+            ],
+        ),
+        (
+            "no-project",
+            None,
+            (
+                UnreachableCriterion(
+                    issue_key="A-deliverable/check",
+                    reason=UnreachableReason.NO_PROJECT,
+                ),
+            ),
+            [{"issueKey": "A-deliverable/check", "reason": "no_project"}],
+        ),
+        ("inside", "reach-elsewhere", (), []),
+    ],
+)
+async def test_the_walk_observes_the_criterion_its_filter_cannot_reach(
+    placement: str,
+    project: str | None,
+    named: tuple[UnreachableCriterion, ...],
+    wire: list[dict[str, str]],
 ) -> None:
-    """The in-filter arm: the family carries the criterion, so nothing is named."""
-    tracker = board(implementation, child_state="open", out_of_filter=False)
+    """The composed walk copies the read's naming onto the event it emits.
 
-    ready = await read_scope_ready(ref=PROJECT, tracker=tracker)
+    The same board three ways: the deliverable in another project, in no
+    project, and carried by the scope's own membership. The two out-of-filter
+    placements are named on the observation and reach a consumer through the
+    shipped egress under the reason the filter answered with; the in-filter one
+    names nothing and walks the child as a lane of its own.
+    """
+    port = walk.board(lanes=("A",))
+    # The lane's own criterion is graded, so what it still owes is the
+    # deliverable's criterion and nothing else.
+    port.issues["A/check"] = port.issues["A/check"].model_copy(
+        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+    )
+    _deliverable_rows(port, project=project)
+    if placement == "inside":
+        port.scope_memberships[walk.SCOPE] = ("A", "A-deliverable")
 
-    assert _named(ready) == ()
+    stream = walk.drive(walk.runtime(port=port))
+    event = None
+    async with asyncio.timeout(walk.WALK_BOUND_SECONDS):
+        async for emitted in stream:
+            if isinstance(emitted, ScopeWalkEvent):
+                event = emitted
+                break
+    await stream.aclose()
+    assert event is not None, "a walk that observed nothing states nothing here"
+    observation = event.observation
+
+    assert observation.tick == 1
+    # The deliverable took the lane's approval, so the naming is the one
+    # reading that separates the placements.
+    assert observation.unapproved_lanes == ()
+    assert observation.unreachable_criteria == named
+    payload = _queued_event_payload(event)
+    assert payload["observation"]["unreachableCriteria"] == wire
+    assert ScopeWalkEvent.model_validate(payload) == event
+    if placement == "inside":
+        assert "A-deliverable" in observation.ready
+    else:
+        assert observation.ready == ("A",)
