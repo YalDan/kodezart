@@ -366,6 +366,9 @@ def surface_contended(
     Repeated writes by one holder count once. Different runs holding the
     same address remain in that address's history, so they use this same
     signal arm. Original readings, including their order, survive replay.
+
+    The cross-run case is a WIDENING of ``SURFACE_CONTENDED``, never a
+    second member: it is one more firing/clean pair on this function.
     """
     signal = AlarmSignal.SURFACE_CONTENDED
     try:
@@ -502,6 +505,10 @@ def tally_unmoved(
     same question asked of what the run's shape is addressed to, so both are
     arms of this member rather than a second signal, and a subject with no
     arm refuses instead of being answered from some other arm's readings.
+
+    The scope arm is a WIDENING of ``TALLY_UNMOVED``, not a member of its
+    own: it is one more firing/clean pair on this function, and a second
+    signal for it would be a thirteenth member the vocabulary refuses.
     """
     if isinstance(subject, LaneSubject):
         return _lane_tally_unmoved(
