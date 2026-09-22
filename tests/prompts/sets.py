@@ -136,6 +136,13 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
         PromptKey.MUTATION_SURVIVAL,
         execution_criteria_variables(CRITERIA),
     ),
+    #: The base reading's member binds what ``RalphLoop._checks_at_base``
+    #: binds: the passing criteria's roster and the full commit the lane's
+    #: recorded base resolved to.
+    "base_check": (
+        PromptKey.BASE_CHECK,
+        {**execution_criteria_variables(CRITERIA), "base_sha": "b" * 40},
+    ),
 }
 
 ALL_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {

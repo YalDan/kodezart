@@ -91,6 +91,9 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     # The criteria roster is the only thing the removal member renders, and
     # it renders as plain lines rather than inside a named tag.
     "mutation_survival": (),
+    # The base reading renders the same roster the same way, beside the sha
+    # it names in prose.
+    "base_check": (),
     "fire_time_ruling": ("issue_key", "pinned_answers", "task_md"),
     "post_merge_review": ("acceptance_criteria", "changeset"),
     "pr_description": ("ticket", "acceptance_criteria"),
