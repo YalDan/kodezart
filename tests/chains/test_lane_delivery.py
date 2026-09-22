@@ -79,6 +79,25 @@ def _names(node) -> set[str]:
     }
 
 
+def _public_surface(klass) -> set[str]:
+    """Every public name *klass* offers, whichever class in its line declares it.
+
+    ``vars(klass)`` is the class's own namespace alone, so a public method
+    contributed by a base is on the instance's surface and invisible to it.
+    The whole line is walked instead — ``object`` left out, since its names
+    are every class's and say nothing about this one — and a name is counted
+    whether or not it is callable, because ``callable()`` answers False for a
+    property and for a classmethod.
+    """
+    return {
+        name
+        for base in klass.__mro__
+        if base is not object
+        for name in vars(base)
+        if not name.startswith("_")
+    }
+
+
 def _roles_in(annotation) -> set[object]:
     """*annotation* together with every member a union of it is built from.
 
@@ -586,18 +605,29 @@ def test_the_coordinator_branches_on_no_stalled_fact_and_names_no_do_not_merge_s
 def test_coordinator_exposes_only_the_delivery_entry_point():
     """One entry point, and the signature that keeps it one.
 
-    Every public name the class declares is counted, not only the callable
-    ones: ``callable()`` answers False for a property and for a classmethod,
-    so filtering on it lets a public descriptor onto the surface unreported.
+    Every public name the class OFFERS is counted, not only the ones it
+    declares itself and not only the callable ones: a base class contributes
+    to the surface as surely as the subclass does, and ``callable()`` answers
+    False for a property and for a classmethod.
 
     The signature is the other half. What it must not contain is the point:
     the branch and the final sha are read off the state the coordinator is
     handed, so a parameter for either would move that reading back out to
     every caller, and the pin above would still pass.
     """
-    assert {
-        name for name in vars(LaneDeliveryCoordinator) if not name.startswith("_")
-    } == {"deliver"}
+    assert _public_surface(LaneDeliveryCoordinator) == {"deliver"}
+
+    # The walk is shown on the very shape it exists for: a public name that
+    # only a base declares, which the class's own namespace does not hold.
+    class _Base:
+        def publish(self):
+            """A name on the surface of everything below it."""
+
+    class _Inheriting(_Base):
+        pass
+
+    assert "publish" not in vars(_Inheriting)
+    assert _public_surface(_Inheriting) == {"publish"}
 
     signature = inspect.signature(LaneDeliveryCoordinator.deliver)
     assert [
