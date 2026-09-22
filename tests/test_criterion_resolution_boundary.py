@@ -8,6 +8,14 @@ the narrow role also names the family surface — which is what stops a consumer
 being handed a roster plus permission to search it.  A third, separate clause is
 kept: no module carries a checkbox shape it could locate a write target by.
 
+The second of those is exactly "no HOLDER of the role also reads the family",
+and that is narrower than "every other module depends on the resolver rather
+than on the roster": a module that never names the role and resolves a key off
+the roster itself holds nothing and so the dependency rule never looks at it.
+Such a module is policed by the SITE COUNT instead — it is a second resolution
+site, and there is only ever one — so the two assertions together are the
+Check's sentence, and neither is it alone.
+
 Every name the walk keys on is read off the shipped objects — the role, its one
 method, that method's identity parameters AND the types they carry, and the two
 modules where the role and its implementation are DECLARED.
