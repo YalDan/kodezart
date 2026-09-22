@@ -271,19 +271,14 @@ async def test_an_exhausted_budget_is_unverifiable_rather_than_refuted():
 
 
 def test_the_reopen_is_a_port_write_the_verifier_drives():
-    """The positive control for the adoption register's exact equality."""
-    from tests.chains.test_write_back_adoption import (
-        CallSite,
-        Production,
-        artifact_writes,
-        production_sources,
-    )
+    """The positive control for the adoption census's exact partition."""
+    from kodezart.types.domain.write_adoption import CallSite
+    from tests.chains.test_write_back_adoption import census
 
-    production = Production(production_sources())
     site = CallSite(
         module="services/audit_reopen.py",
         function="_CriterionReopen.write",
         method="reset_criterion_pending",
     )
-    assert site in production.call_sites(artifact_writes())
-    assert site not in production.outside_a_write_back(artifact_writes())
+    assert site in census().sites
+    assert site in census().driven

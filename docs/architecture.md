@@ -1067,8 +1067,9 @@ propagates before any write, and a person's note on the same surface is passed
 over rather than compared. Nothing is leased, claimed or marked in progress for
 it, and no writable-surface address is taken: no container-description
 destination exists, and exactly-one follows from the terminal running once and
-comparing before it posts (KOD-788). That write sits outside the write-back verifier under a named
-call-site register entry rather than a new read-back arm, because the walk it
+comparing before it posts (KOD-788). That write sits outside the write-back verifier,
+declared a derived write beside its writer, which the adoption census reads,
+rather than a new read-back arm, because the walk it
 reports on has ended and there is no judged commit to verify it against
 (KOD-806). A milestone or issue scope has no status surface at the backend, so
 it ends with the terminal event alone and `scope_status_surface_absent` in the
@@ -1693,3 +1694,45 @@ read-only tool and permission policy, drains the result and preserves typed
 soft failures. The caller supplies its phase, prompt policy and error context,
 and retains the workspace through its own before/after source checks. ORGANIZE
 keeps its own session type and requires no Git dependency for this reuse.
+
+### Write-back adoption
+
+Every tracker write that leaves an artifact a later reader reads back is
+either driven by `WriteBackVerifier.write_back` or declared derived beside
+the function that makes it; nothing else may reach the tracker.
+`kodezart.domain.write_adoption.take_census` states that over the installed
+source rather than over a list.
+
+The write surface is read off the roles the tracker is dialled as: the
+fields of `DialledTracker` whose type is declared in `kodezart.core.protocols`,
+so a role dialled beside the port over the same session (KOD-829) is censused
+exactly as a port member is. A public member whose leading name token is a
+mutating verb is a write; a write that takes more than addresses and lease
+bookkeeping is an artifact write.
+
+A call site is every call of an artifact write through a receiver other than
+`self`. Driven is proven by declared types, never by a name or a shape: a
+call resolves only through the enclosing scopes, the module's own
+definitions, its `kodezart` imports, annotated parameters, locals every
+assignment of which constructs one class, `self` attributes typed by their
+class annotation or by every `__init__` assignment, and constructor calls.
+From the verifier's step parameter, read off the real method and the step
+protocol's one member, a step constructed into a sink grounds its class and
+drives the appliers passed to it; a caller's own parameter handed to a sink
+becomes a sink; a grounded step that forwards its write to a stored
+constructor parameter makes that parameter a sink. A function is driven by
+delegation only when every reference to its name anywhere in the tree is a
+resolved call, at least one resolves to it, and every such call stands in a
+driven function, so an unresolved reference withholds the grant rather than
+widening it.
+
+A write no verifier drives is admissible only under
+`@derived_writes("<method>", …)` on the function that makes it
+(`kodezart.domain.derived_writes`, an identity decorator the census reads off
+the source): a state move or a fact any process recomputes from what the
+tracker already holds, which is the `ContentClass.DERIVED` reading. The
+declaration is exact in both directions — an undeclared undriven write is
+unadopted, and a declared write its function no longer makes undriven is
+stale — and it cannot shelter authored prose: a declared write whose writer
+names `ContentClass.AUTHORED` stays unadopted. Each declaring function says
+in its own docstring why its write is derived (KOD-806, KOD-867).

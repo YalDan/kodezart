@@ -2150,7 +2150,6 @@
    "test_a_step_wired_straight_at_the_port_fails_the_adoption_check",
    "test_every_criterion_evaluator_write_passes_the_verifier",
    "test_every_open_question_write_passes_the_verifier",
-   "test_every_production_write_of_the_port_runs_inside_a_write_back",
    "test_a_writer_a_step_delegates_to_is_verified_with_it",
    "test_the_open_question_record_write_is_a_steps_own_write",
    "test_no_write_outside_a_write_back_puts_authored_content_on_a_surface",

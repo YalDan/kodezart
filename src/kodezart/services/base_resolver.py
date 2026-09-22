@@ -28,6 +28,7 @@ from typing import assert_never
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService, TrackerPort, WorkRefReader
 from kodezart.domain.base_resolution import BasePlan, resolve_base
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.errors import (
     BaseIntegrationConflictError,
     BaseResolutionError,
@@ -264,6 +265,7 @@ class BaseResolver:
                     pairs.append((contained, containing))
         return tuple(pairs)
 
+    @derived_writes("record_work_ref")
     async def _construct(
         self,
         *,
@@ -278,6 +280,9 @@ class BaseResolver:
         Rebuilt, never patched: the branch name is a digest over the ordered
         inputs, so a change to any input yields a NEW ref rather than
         advancing an existing one under a graded branch.
+
+        Derived: the ref is a digest over ordered inputs and the sha the push answered
+        with, put at a role before any run exists to verify it against (KOD-843).
         """
         branch = plan.spec.base_branch
         await self._git.create_worktree(

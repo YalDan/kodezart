@@ -22,6 +22,7 @@ from collections.abc import Callable, Sequence
 
 from kodezart.core.errors import TrackerBootValidationError, TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.types.domain.operation import (
     FIELD_OWNERSHIP,
     ConfigOwnership,
@@ -297,6 +298,7 @@ def adopt_mappings(
     return config.model_copy(update={"documents": documents})
 
 
+@derived_writes("ensure_mappings")
 async def reconcile_tracker_mappings(
     *,
     tracker: TrackerPort,
@@ -315,6 +317,9 @@ async def reconcile_tracker_mappings(
     the operation named and boot created carries an id nobody could have
     declared, and a prompt rendered from the pre-boot copy would name a
     placeholder no session can open.
+
+    Derived: instating the operation's own vocabulary happens at boot, where no run and
+    no judged commit exists to verify anything against (KOD-843).
     """
     refs = owned_mappings(config)
     # Keyed by CONTAINER as well as kind and identifier, because a container

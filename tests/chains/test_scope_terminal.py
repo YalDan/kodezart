@@ -54,9 +54,9 @@ from tests.chains.test_native_fire import (
     native_operation,
 )
 from tests.chains.test_write_back_adoption import (
+    WRITES,
     Journal,
     RecordingTracker,
-    artifact_writes,
 )
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -626,7 +626,7 @@ async def test_the_terminal_writes_no_description_and_no_issue_surface(fixture):
     finally:
         await closer()
 
-    assert {write.method for write in writes} & artifact_writes() == set()
+    assert {write.method for write in writes} & WRITES == set()
     assert "edit_description" not in {write.method for write in writes}
 
 
@@ -682,7 +682,7 @@ def test_the_terminal_holds_no_tracker_port_to_write_through():
 def test_the_terminals_source_names_one_write_and_it_is_the_status_update():
     """Every write of the whole derived surface the module names, which is one."""
     source = inspect.getsource(terminal_module)
-    named = {method for method in artifact_writes() if method in source}
+    named = {method for method in WRITES if method in source}
     assert named == {"post_status_update"}
 
 

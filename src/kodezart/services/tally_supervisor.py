@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import RunAlarmTracker
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.run_alarm_record import run_alarm_marker, run_alarm_surface
 from kodezart.domain.tally_record import alarm_event_due, next_tally_record
 from kodezart.services.lane_records import LaneRecordReader
@@ -101,6 +102,7 @@ class TallySupervisor:
         if current is not None:
             await self._announce(lane_key=lane_key, record=current)
 
+    @derived_writes("record_run_alarm")
     async def _write_record(
         self, *, lane_key: str, surface: WritableSurface, record: RunAlarm
     ) -> None:
@@ -109,6 +111,10 @@ class TallySupervisor:
         The lease is taken only around a write. It is itself a comment on the
         carrier, so a tick that takes one on finding nothing to say would
         write on every healthy tick and the quiet run would not be quiet.
+
+        Derived: the record is arithmetic over facts the tracker already carries, so
+        there is no authored commit to verify it against and re-judging it would be no
+        second judgement (KOD-843).
         """
         async with RunSurfaceLease(
             tracker=self._tracker,
@@ -122,12 +128,16 @@ class TallySupervisor:
                 )
             )
 
+    @derived_writes("post_run_event")
     async def _announce(self, *, lane_key: str, record: RunAlarm) -> None:
         """Post the transition the lane's stream still owes, or post nothing.
 
         What is owed is read from the stream rather than from what this tick
         wrote, so a condition firing across many ticks is announced once and
         an announcement lost with its tick is made by the next one.
+
+        Derived: the event announces a record already written and says nothing that
+        record does not (KOD-843).
         """
         events = await self._tracker.lane_run_events(
             issue_key=lane_key, lane_key=lane_key

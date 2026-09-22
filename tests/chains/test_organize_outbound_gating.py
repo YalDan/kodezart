@@ -26,6 +26,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from kodezart.domain.write_adoption import content_parameters
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -37,9 +38,9 @@ from kodezart.types.domain.gating import (
 from tests.chains import test_organize_owner as organize_suite
 from tests.chains.test_organize_owner import factory, run_owner
 from tests.chains.test_write_back_adoption import (
+    ROLES,
     SHAPES,
     RecordingTracker,
-    content_parameters,
 )
 from tests.chains.test_write_back_adoption import organize_run as observed_organize_run
 from tests.fakes import PassThroughGate
@@ -108,7 +109,7 @@ class RecordingGate(PassThroughGate):
 
 def carried_content(write: PortWrite) -> tuple[tuple[str, str], ...]:
     """The bytes *write* puts on a surface, named by the port's signature."""
-    names = content_parameters(write.method)
+    names = content_parameters(write.method, ROLES)
     return tuple(
         (name, value)
         for name, value in write.kwargs.items()
