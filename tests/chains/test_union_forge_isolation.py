@@ -72,6 +72,28 @@ FORGE_METHODS: frozenset[str] = frozenset().union(
     *(declared_surface(port) for port in FORGE_PORTS)
 )
 
+#: What must not be doable to a pull request from anywhere the union step can
+#: reach.  The derivation above names only what six EXISTING ports happen to
+#: declare, so a collaborator carrying pull-request merge and close authority —
+#: the one authority this module exists to forbid — matched nothing at all and
+#: the holdings walk reported no forge handle.  A handle is forge-shaped for
+#: what it can DO, so the verbs are named here and every spelling is generated
+#: from them rather than typed out one at a time.
+FORBIDDEN_VERBS: tuple[str, ...] = ("merge", "close", "reopen", "approve")
+
+#: How a pull request is spelled as the object of one of those verbs.  The empty
+#: spelling is the bare verb, which is how a handle dedicated to a single pull
+#: request says it and how both merge capabilities planted on these doubles were
+#: spelled.
+PULL_REQUEST_NOUNS: tuple[str, ...] = ("", "pull_request", "pullrequest", "pr")
+
+FORBIDDEN_CAPABILITIES: frozenset[str] = frozenset(
+    name
+    for verb in FORBIDDEN_VERBS
+    for noun in PULL_REQUEST_NOUNS
+    for name in ((f"{verb}_{noun}", f"{noun}_{verb}") if noun else (verb,))
+)
+
 #: The merge-state vocabulary the union step must not consume. The port
 #: itself is legitimate audit evidence; consuming it here is not.
 MERGE_STATE_NAMES: frozenset[str] = frozenset(
@@ -153,8 +175,13 @@ def union_import_closure() -> tuple[str, ...]:
     return tuple(sorted(seen))
 
 
+#: Forge-shaped is either half: a question one of the ports declares, or an
+#: authority over a pull request no port declares because no port is allowed to.
+FORGE_HANDLE_NAMES: frozenset[str] = FORGE_METHODS | FORBIDDEN_CAPABILITIES
+
+
 def is_forge_shaped(value: object) -> bool:
-    return any(hasattr(value, name) for name in FORGE_METHODS)
+    return any(hasattr(value, name) for name in FORGE_HANDLE_NAMES)
 
 
 def held_by(subject: object) -> list[object]:
@@ -363,6 +390,11 @@ def test_the_forge_predicate_recognises_every_forge_double() -> None:
     assert is_forge_shaped(FakeForgeQuery())
     assert is_forge_shaped(FakePRStateReader(records={}))
     assert is_forge_shaped(FakeDeliveryProbe())
+    # And the other half, which no double declares because no port may: one
+    # handle per generated spelling, so a capability the walk below is supposed
+    # to catch cannot be one the predicate is silent about.
+    for name in sorted(FORBIDDEN_CAPABILITIES):
+        assert is_forge_shaped(type("Handle", (), {name: None})()), name
 
 
 def test_the_holdings_walk_reaches_a_collaborator_inside_a_container() -> None:
