@@ -3598,6 +3598,94 @@ class TestSuppliedHolderWrites:
         assert refused.value.current_holder == JOB_B
 
 
+#: A criterion sub-issue whose body a person wrote.  Its own key, because a
+#: criterion's words are answerable at the criterion's own address and not
+#: at its parent's.
+PRINCIPAL_CRITERION = "FIX-8"
+
+
+class TestAPrincipalAuthoredCriterionBody:
+    """A grant over a criterion is authority to write, not to overwrite.
+
+    The grant and the authorship answer two different questions, and the
+    criterion's own surface is where both are asked: holding it says no
+    other writer may move these words, and the attribution says these
+    words are not this writer's to move.  The surface under test is the
+    criterion's complete address, which the amendment write-back addresses
+    when it edits a native criterion body, so the refusal is the one that
+    production meets there.
+    """
+
+    @pytest.fixture
+    def server(self, clock: FixtureClock) -> FakeLinearMcpServer:
+        """The fixture workspace plus one criterion a person wrote.
+
+        ``created_by`` names a member that is not the dialled account, so
+        both implementations read the body as principal-authored from the
+        workspace's own attribution rather than from a second statement of
+        the fixture.  Seeded here so no module built on the shared
+        workspace sees the member.
+        """
+        value = fixture_server(clock=clock)
+        value.issues[PRINCIPAL_CRITERION] = criterion_sub_issue(
+            PRINCIPAL_CRITERION,
+            title="a criterion a person wrote",
+            created_by=BYSTANDER,
+        )
+        return value
+
+    async def test_a_principal_authored_criterion_body_is_refused_under_its_own_grant(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """The holder holds the criterion, and the words are still not its own.
+
+        Every reason to refuse except the authorship is removed first: the
+        grant is over this criterion's own complete surface and it is live,
+        the authority addresses that surface and that target, and the
+        expected body is the one just read, so no staleness and no missing
+        holder can stand in for the refusal under test.  The error names
+        the criterion's kind and its own key — not the parent's, and not
+        the issue-description kind — because that is the address whose
+        author is being answered for.
+
+        The body is read back byte-identical and the observed write log is
+        unmoved, so the refusal precedes the save rather than undoing it,
+        and no body-write record is left in the holder's name: a refused
+        replacement must not make this writer one of the holders that
+        replaced these words.
+        """
+        surface = criterion_surface(PRINCIPAL_CRITERION)
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({surface}), holder=JOB_A, lease_seconds=LEASE_SECONDS
+        )
+        before = await tracker.read_issue(issue_key=PRINCIPAL_CRITERION)
+        assert (
+            await tracker.read_surface_authorship(surface=surface)
+        ).authorship is SurfaceAuthorship.PRINCIPAL_AUTHORED
+        written = tracker_writes()
+
+        with pytest.raises(PrincipalAuthoredSurfaceError) as refused:
+            await tracker.edit_description(
+                target=PRINCIPAL_CRITERION,
+                expected=before.body,
+                replacement=before.body.replace(
+                    "**Evidence:**", "**Evidence:** a grading this writer would add"
+                ),
+                authorization=DescriptionWriteAuthority(holder=JOB_A, surface=surface),
+            )
+
+        assert (refused.value.surface_kind, refused.value.scope_key) == (
+            SurfaceKind.CRITERION_SUB_ISSUE.value,
+            PRINCIPAL_CRITERION,
+        )
+        after = await tracker.read_issue(issue_key=PRINCIPAL_CRITERION)
+        assert after.body == before.body
+        assert tracker_writes() == written
+        assert (await tracker.read_surface_authorship(surface=surface)).holders == ()
+
+
 #: The criterion sub-issue the provenance property addresses, and the body
 #: it starts from.  Seeded into that property's own workspace rather than
 #: into the shared one: every ordinary case reads its scan, its scope and
