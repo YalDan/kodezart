@@ -93,18 +93,44 @@ def _names(node) -> set[str]:
 def _public_surface(instance) -> set[str]:
     """Every public name *instance* offers, whoever put it there.
 
-    Asked of the OBJECT a caller holds, through ``dir()``, which resolves the
-    whole class line and the instance's own attributes together.  Reading a
-    namespace instead answers about one placement and no other: ``vars()`` on
-    the class is the class's own namespace, so a public method contributed by
-    a base is on the surface and invisible to it; ``vars()`` on the instance
-    is the attributes ``__init__`` assigned, so a method is invisible to it;
-    and a declaration roster such as ``model_fields`` would see neither.
-    Dunders are left out — every object has them and they say nothing about
-    this one — and a name is counted whether or not it is callable, because
+    Two readings, unioned, because each answers about a placement the other
+    can be talked out of.  The class line is walked namespace by namespace —
+    ``object`` left out, since its names are every class's and say nothing
+    about this one — so a public method a base contributes is counted even
+    when a ``__dir__`` override leaves it out of ``dir()``.  And the OBJECT a
+    caller holds is asked through ``dir()``, which resolves the instance's
+    own attributes too, so an attribute ``__init__`` assigns is counted
+    although no namespace in the line holds it.  A name the class answers
+    only through ``__getattr__`` is in neither; that is refused outright by
+    the pin, which is what keeps this union the whole surface.  Dunders are
+    left out, and a name is counted whether or not it is callable, because
     ``callable()`` answers False for a property and for a classmethod.
     """
-    return {name for name in dir(instance) if not name.startswith("_")}
+    declared = {
+        name
+        for base in type(instance).__mro__
+        if base is not object
+        for name in vars(base)
+        if not name.startswith("_")
+    }
+    resolved = {name for name in dir(instance) if not name.startswith("_")}
+    return declared | resolved
+
+
+#: The hooks through which a class can answer for a name no namespace
+#: declares, or hide one it does from ``dir()``.
+_DYNAMIC_LOOKUPS = frozenset({"__getattr__", "__getattribute__", "__dir__"})
+
+
+def _dynamic_lookups(klass: type) -> set[str]:
+    """Each lookup hook a class in *klass*'s line, other than ``object``, defines."""
+    return {
+        name
+        for base in klass.__mro__
+        if base is not object
+        for name in vars(base)
+        if name in _DYNAMIC_LOOKUPS
+    }
 
 
 def _roles_in(annotation) -> set[object]:
@@ -680,7 +706,10 @@ async def test_coordinator_exposes_only_the_delivery_entry_point():
     counted whatever placement carries it — a name a base declares, a name
     its own body declares, an attribute its constructor assigns — and not
     only the callable ones, since ``callable()`` answers False for a property
-    and for a classmethod.
+    and for a classmethod.  No class in its line may define ``__getattr__``,
+    ``__getattribute__`` or ``__dir__``: through the first two a name is
+    offered that no namespace declares and ``dir()`` does not list, and the
+    third decides what ``dir()`` lists.
 
     The signature is the other half. What it must not contain is the point:
     the branch and the final sha are read off the state the coordinator is
@@ -689,10 +718,12 @@ async def test_coordinator_exposes_only_the_delivery_entry_point():
     """
     owner, *_ = await setup()
     assert _public_surface(owner) == {"deliver"}
+    assert _dynamic_lookups(LaneDeliveryCoordinator) == set()
 
-    # The walk is shown on the two shapes it exists for: a public name that
-    # only a base declares, which the class's own namespace does not hold,
-    # and one a constructor assigns, which no namespace in the line holds.
+    # The walk is shown on the shapes it exists for: a public name that only
+    # a base declares, which the class's own namespace does not hold; one a
+    # constructor assigns, which no namespace in the line holds; and one a
+    # ``__dir__`` override leaves out of ``dir()``.
     class _Base:
         def publish(self):
             """A name on the surface of everything below it."""
@@ -701,9 +732,26 @@ async def test_coordinator_exposes_only_the_delivery_entry_point():
         def __init__(self):
             self.destination = "a name no class body declares"
 
+    class _Hiding(_Base):
+        def __dir__(self):
+            return ["deliver"]
+
     assert "publish" not in vars(_Inheriting)
     assert "destination" not in vars(_Inheriting) | vars(_Base)
     assert _public_surface(_Inheriting()) == {"publish", "destination"}
+    assert "publish" not in dir(_Hiding())
+    assert _public_surface(_Hiding()) == {"publish", "deliver"}
+
+    # And the refusal is shown to see a lookup hook a base defines.
+    class _Answering:
+        def __getattr__(self, name):
+            raise AttributeError(name)
+
+    class _Below(_Answering):
+        pass
+
+    assert _dynamic_lookups(_Below) == {"__getattr__"}
+    assert _dynamic_lookups(_Hiding) == {"__dir__"}
 
     signature = inspect.signature(LaneDeliveryCoordinator.deliver)
     assert [

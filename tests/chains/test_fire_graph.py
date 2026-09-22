@@ -1,19 +1,35 @@
 """The actual compiled fire excludes every delivery node and route."""
 
 import inspect
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from enum import Enum
+from itertools import product
 from pathlib import Path
+from types import UnionType
+from typing import Literal, Union, get_args, get_origin
+
+from pydantic import BaseModel
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
-from kodezart.types.domain.agent import WorkflowCompleteEvent
+from kodezart.handlers.agent_handler import (
+    _queued_event_payload,
+    _streamed_event_payload,
+)
+from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
+    Contradiction,
+    CostMeasurement,
     CriteriaValidation,
     CriterionFeasibility,
+    CriterionFlag,
     CriterionVerdict,
+    ForbiddenCriterionClass,
 )
 from kodezart.types.domain.delivery import LaneDelivery
 from kodezart.types.domain.outcome import WorkflowOutcome
-from kodezart.types.domain.trajectory import LoopTrajectory
+from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
 from tests.chains.test_fire_extraction import DELIVERY_FIELDS, fire
 
@@ -69,29 +85,43 @@ STATE_KEYS = {
     "trajectory",
     "work_base_ref",
 }
-#: Every key the terminal SERIALISES: the union over the renderings above and
-#: over the instances below, measured at the commit this pin was written.  It
-#: is a union rather than one rendering of one instance because a delivery key
-#: needs to appear in only ONE of them to reach a consumer — the snake and
-#: camel spellings of the same field are both in it for that reason.
-TERMINAL_WIRE_KEYS = {
-    "accepted",
-    "criteriaValidation",
-    "criteria_validation",
-    "featureBranch",
-    "feature_branch",
-    "finalCommitSha",
-    "final_commit_sha",
-    "mergeError",
-    "merge_error",
-    "merged",
-    "outcome",
-    "ralphBranch",
-    "ralph_branch",
-    "totalIterations",
-    "total_iterations",
-    "trajectory",
-    "type",
+#: Every field each model NESTED in the terminal declares, reached through
+#: the terminal's own annotations, as they stood when the hand-off was
+#: pinned.  The renderings below compare what a nested value sends against
+#: that value's own model, which is exactly as closed as the model is: a
+#: delivery fact declared on a nested model — ``pr_url`` on the trajectory —
+#: is on that model and on the wire together and agrees with itself.  So the
+#: nested models are held to a roster the way the terminal is, and a field
+#: they grow is added here in the commit that grows it.
+NESTED_FIELDS: dict[type[BaseModel], set[str]] = {
+    LoopTrajectory: {
+        "best_commit_sha",
+        "best_iteration",
+        "best_passed_count",
+        "never_passed_ids",
+        "plateaued",
+        "records",
+    },
+    IterationRecord: {
+        "commit_sha",
+        "failing_criterion_ids",
+        "iteration",
+        "passed_count",
+    },
+    CriteriaValidation: {"conjunction", "verdicts"},
+    ConjunctionVerdict: {"contradictions", "satisfiable"},
+    Contradiction: {"criterion_ids", "explanation"},
+    CriterionFeasibility: {
+        "cost_measurement",
+        "criterion_id",
+        "flags",
+        "forbidden_class",
+        "missing_resource",
+        "refutation",
+        "undeclared_switch_arms",
+        "verdict",
+    },
+    CostMeasurement: {"affordable", "observed"},
 }
 #: What the lane's delivery record and the fire's two surfaces already share,
 #: measured at the same commit as the rosters above.  These two names are the
@@ -126,79 +156,212 @@ def test_compiled_fire_has_no_delivery_nodes_routes_or_capabilities():
         assert name not in source
 
 
-def emitted_terminal() -> WorkflowCompleteEvent:
-    """One terminal built with the fire's own required facts and nothing else.
+@dataclass(frozen=True)
+class Rendering:
+    """One function production puts the terminal on a wire with.
 
-    Every optional field keeps its default: the all-default half of the pair
-    the roster is measured over.
+    ``send`` is production's own function, called as production calls it;
+    this module never renders the event itself.  The two flags are what the
+    wire is EXPECTED to do with a field — carry it under its alias, and leave
+    it off when it holds ``None`` — and the keys each rendering must carry
+    are derived from them and from the model, per instance.
     """
-    return WorkflowCompleteEvent(
-        feature_branch="feature/pinned",
-        ralph_branch="ralph/pinned",
-        total_iterations=1,
-        accepted=False,
-        outcome=WorkflowOutcome.loop_not_accepted,
-    )
+
+    send: Callable[[AgentEvent], Mapping[str, object]]
+    aliased: bool
+    drops_none: bool
 
 
-def carrying_terminal() -> WorkflowCompleteEvent:
-    """The same terminal with every optional field CARRYING a value.
-
-    The other half of the pair, and the half a roster taken from one
-    all-default instance cannot answer for: a key that is serialised only
-    when its field holds something is absent from the default rendering and
-    present here, so a delivery fact reaching a consumer on exactly the runs
-    that have one would be invisible to a roster measured once over defaults.
-    """
-    return WorkflowCompleteEvent(
-        feature_branch="feature/pinned",
-        ralph_branch="ralph/pinned",
-        total_iterations=1,
-        accepted=True,
-        outcome=WorkflowOutcome.handed_off_for_delivery,
-        merged=True,
-        final_commit_sha="c" * 40,
-        merge_error="a consolidation refusal",
-        trajectory=LoopTrajectory(
-            records=[],
-            never_passed_ids=[],
-            best_passed_count=0,
-            best_iteration=0,
-            plateaued=False,
-        ),
-        criteria_validation=CriteriaValidation(
-            verdicts=[
-                CriterionFeasibility(
-                    criterion_id="AC-1", verdict=CriterionVerdict.feasible
-                )
-            ],
-            conjunction=ConjunctionVerdict(satisfiable=True),
-        ),
-    )
+#: Every function the handler sends an event through: the queued job's
+#: frames, and the live stream's, which the error frame shares.  A terminal
+#: is neither scope envelope, so the queued rendering drops its ``None``s.
+PRODUCTION_RENDERINGS: dict[str, Rendering] = {
+    "queued": Rendering(send=_queued_event_payload, aliased=True, drops_none=True),
+    "streamed": Rendering(send=_streamed_event_payload, aliased=True, drops_none=True),
+}
+#: The required facts of the terminal that are not a choice among enumerated
+#: values.  Checked against the model below, so a required field it grows
+#: arrives with no value here and reds.
+REQUIRED = {
+    "feature_branch": "feature/pinned",
+    "ralph_branch": "ralph/pinned",
+    "total_iterations": 1,
+    "accepted": True,
+}
 
 
-def serialised_keys(*events: WorkflowCompleteEvent) -> set[str]:
-    """Every key *events* put on a wire, under every rendering they have.
+def carried() -> dict[str, object]:
+    """A value for EVERY optional field of the terminal, each holding something.
 
-    A key reaches a consumer if ANY rendering carries it, so all four the
-    event has are asked and the answers unioned: the python dump; the json
-    dump, which a field serialiser of its own can shape differently; the
-    ALIASED dump, since every field on this base carries a camelCase alias
-    and a field declaring an alias of its own serialises under that name and
-    under no other; and the dump that keeps a ``None``, which a key can be
-    present in while absent from the default one.
+    The nested values carry every optional field of their own as well, so a
+    key a nested model sends only when it holds something is on the wire in
+    this half.  Checked against the model below, so an optional field the
+    terminal grows arrives with no value here and reds.
     """
     return {
-        key
-        for event in events
-        for rendering in (
-            event.model_dump(),
-            event.model_dump(mode="json"),
-            event.model_dump(by_alias=True),
-            event.model_dump(exclude_none=False),
-        )
-        for key in rendering
+        "merged": True,
+        "final_commit_sha": "c" * 40,
+        "merge_error": "a consolidation refusal",
+        "trajectory": LoopTrajectory(
+            records=[
+                IterationRecord(
+                    iteration=1,
+                    passed_count=0,
+                    failing_criterion_ids=["AC-1"],
+                    commit_sha="d" * 40,
+                )
+            ],
+            never_passed_ids=["AC-1"],
+            best_passed_count=0,
+            best_iteration=1,
+            best_commit_sha="d" * 40,
+            plateaued=True,
+        ),
+        "criteria_validation": CriteriaValidation(
+            verdicts=[
+                CriterionFeasibility(
+                    criterion_id="AC-1",
+                    verdict=CriterionVerdict.infeasible,
+                    refutation="a refutation",
+                    missing_resource="a resource",
+                    cost_measurement=CostMeasurement(
+                        observed="an observation", affordable=False
+                    ),
+                    flags=[next(iter(CriterionFlag))],
+                    forbidden_class=next(iter(ForbiddenCriterionClass)),
+                    undeclared_switch_arms=["an arm"],
+                )
+            ],
+            conjunction=ConjunctionVerdict(
+                satisfiable=False,
+                contradictions=[
+                    Contradiction(
+                        criterion_ids=["AC-1", "AC-2"], explanation="they collide"
+                    )
+                ],
+            ),
+        ),
     }
+
+
+def enumerated(model: type[BaseModel]) -> dict[str, tuple[object, ...]]:
+    """Every field of *model* typed by an enum or a ``Literal``, with its values.
+
+    Read off the annotations, through a union's members, so a field typed
+    ``SomeEnum | None`` is enumerated too; ``None`` itself is the unset half
+    and is not one of the values.
+    """
+    choices: dict[str, tuple[object, ...]] = {}
+    for name, field in model.model_fields.items():
+        annotation = field.annotation
+        members = (
+            get_args(annotation)
+            if get_origin(annotation) in (Union, UnionType)
+            else (annotation,)
+        )
+        values: list[object] = []
+        for member in members:
+            if get_origin(member) is Literal:
+                values.extend(get_args(member))
+            elif isinstance(member, type) and issubclass(member, Enum):
+                values.extend(member)
+        if values:
+            choices[name] = tuple(values)
+    return choices
+
+
+def terminals() -> list[tuple[str, WorkflowCompleteEvent]]:
+    """One terminal per value of every enumerated field, twice over.
+
+    Once with every optional field unset and once with every one of them
+    set: a key sent only for one outcome, or only when a field holds
+    something, is on the wire in exactly one of these.  The values are the
+    product over the enumerated fields, which is bounded by their members.
+    """
+    choices = enumerated(WorkflowCompleteEvent)
+    built = []
+    for values in product(*choices.values()):
+        chosen = dict(zip(choices, values, strict=True))
+        label = ", ".join(f"{name}={value}" for name, value in chosen.items())
+        built.append((f"{label}, unset", WorkflowCompleteEvent(**REQUIRED, **chosen)))
+        built.append(
+            (
+                f"{label}, set",
+                WorkflowCompleteEvent(**REQUIRED, **chosen, **carried()),
+            )
+        )
+    return built
+
+
+def expected_keys(value: BaseModel, rendering: Rendering) -> dict[str, str]:
+    """The key each field of *value* is sent under, by *rendering*, and no other.
+
+    Derived from the model: every declared field, under its alias when the
+    rendering uses aliases, and — for a rendering that drops ``None`` — only
+    the fields that hold something on this instance.
+    """
+    return {
+        (
+            (field.serialization_alias or field.alias or name)
+            if rendering.aliased
+            else name
+        ): name
+        for name, field in type(value).model_fields.items()
+        if not (rendering.drops_none and getattr(value, name) is None)
+    }
+
+
+def assert_sends_its_fields(
+    value: BaseModel, sent: object, rendering: Rendering, where: str
+) -> None:
+    """*sent* carries exactly *value*'s own fields, and so does every model in it.
+
+    An equality per instance, not a union over several: a key that one
+    rendering or one instance adds is a key that one wire carries.  Recurses
+    into every nested model value, directly held or held in a list, and
+    compares it against that nested model's own fields; the walk is bounded
+    by the value's own depth.
+    """
+    assert isinstance(sent, Mapping), where
+    keys = expected_keys(value, rendering)
+    assert set(sent) == set(keys), where
+    for key, name in keys.items():
+        held = getattr(value, name)
+        inside = f"{where} / {key}"
+        if isinstance(held, BaseModel):
+            assert_sends_its_fields(held, sent[key], rendering, inside)
+        elif isinstance(held, list | tuple):
+            items = sent[key]
+            assert isinstance(items, list | tuple), inside
+            assert len(items) == len(held), inside
+            for index, item in enumerate(held):
+                if isinstance(item, BaseModel):
+                    assert_sends_its_fields(
+                        item, items[index], rendering, f"{inside}[{index}]"
+                    )
+
+
+def models_under(model: type[BaseModel]) -> dict[type[BaseModel], set[str]]:
+    """*model* and every model its annotations reach, each with its fields.
+
+    Bounded: each model is visited once, and each annotation is a finite
+    tree of arguments.
+    """
+    found: dict[type[BaseModel], set[str]] = {}
+    pending = [model]
+    while pending:
+        current = pending.pop()
+        if current in found:
+            continue
+        found[current] = set(current.model_fields)
+        for field in current.model_fields.values():
+            annotations: list[object] = [field.annotation]
+            while annotations:
+                annotation = annotations.pop()
+                if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+                    pending.append(annotation)
+                annotations.extend(get_args(annotation))
+    return found
 
 
 def test_the_fire_terminal_and_state_grow_no_field_of_the_lane_s_delivery():
@@ -211,24 +374,62 @@ def test_the_fire_terminal_and_state_grow_no_field_of_the_lane_s_delivery():
     delivery fact moving onto the fire is named by the intersection it joins
     even if the rosters are updated in the same breath.
 
-    The terminal's roster is the UNION OF WHAT SERIALISES — every key any of
-    the event's four renderings carries, over two constructed instances, one
-    all-default and one carrying every optional field — rather than what one
-    instance happened to carry under one rendering.  A roster read off
-    ``model_fields`` is closed against declarations only, and a delivery fact
-    grown as a computed field is absent there and present on the wire; a
-    roster read off one all-default python-mode dump is closed against that
-    one rendering, and a fact that arrives under an alias, under the json
-    rendering, or only on the runs that have one is absent there and present
-    on the wire as well.  The declaration roster is kept beside it, so a
-    field declared but held back from every rendering reds too.
+    The terminal's roster reaches into the models it nests, which the wire
+    check below compares only against themselves, and no model on it may
+    declare a computed field: a computed field is absent from every roster
+    and present on the wire, and one spelled as an existing field's alias —
+    ``mergeError`` — would overwrite that key and leave the key set
+    unchanged.
     """
-    assert (
-        serialised_keys(emitted_terminal(), carrying_terminal()) == TERMINAL_WIRE_KEYS
-    )
     assert set(WorkflowCompleteEvent.model_fields) == TERMINAL_FIELDS
+    assert models_under(WorkflowCompleteEvent) == {
+        WorkflowCompleteEvent: TERMINAL_FIELDS,
+        **NESTED_FIELDS,
+    }
+    assert WorkflowCompleteEvent.model_computed_fields == {}
+    assert {
+        model: model.model_computed_fields
+        for model in models_under(WorkflowCompleteEvent)
+        if model.model_computed_fields
+    } == {}
     assert set(WorkflowState.__annotations__) == STATE_KEYS
 
     delivery = set(LaneDelivery.model_fields)
     assert delivery & set(WorkflowCompleteEvent.model_fields) == SHARED_WITH_TERMINAL
     assert delivery & set(WorkflowState.__annotations__) == SHARED_WITH_STATE
+
+
+def test_what_production_sends_for_the_terminal_is_its_fields_and_no_more():
+    """Every rendering production sends the terminal through, per instance.
+
+    What is compared is what PRODUCTION sends — the handler's own functions,
+    called on the event — and not a rendering this module chose: a key only
+    the json mode, the aliases, or the dropping of ``None`` puts on the wire
+    is on it here exactly when it is on it in production.  Each rendering is
+    compared per instance, with an equality, against the keys the model
+    derives for that instance, and so is every model nested in it; the
+    instances are one per value of every enumerated field, each once with
+    every optional field unset and once with every one of them set, so a key
+    sent for one outcome, or only when a field holds something, reds.
+    """
+    optional = {
+        name
+        for name, field in WorkflowCompleteEvent.model_fields.items()
+        if not field.is_required()
+    }
+    required = set(WorkflowCompleteEvent.model_fields) - optional
+    choices = enumerated(WorkflowCompleteEvent)
+    assert set(REQUIRED) == required - set(choices)
+    assert set(carried()) == optional - set(choices)
+    assert set(choices["outcome"]) == set(WorkflowOutcome)
+
+    built = terminals()
+    assert len(built) == 2 * len(WorkflowOutcome)
+    for rendering_name, rendering in PRODUCTION_RENDERINGS.items():
+        for instance_name, terminal in built:
+            assert_sends_its_fields(
+                terminal,
+                rendering.send(terminal),
+                rendering,
+                f"{rendering_name}: {instance_name}",
+            )
