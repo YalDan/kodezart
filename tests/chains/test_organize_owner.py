@@ -14,7 +14,10 @@ from kodezart.composition.organize import build_organize_owner, build_organize_t
 from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
-from kodezart.domain.errors import OrganizeAdmissionIdentityError
+from kodezart.domain.errors import (
+    OrganizeAdmissionIdentityError,
+    SurfaceLeaseError,
+)
 from kodezart.domain.organize import stage_rows
 from kodezart.services import organize_owner
 from kodezart.services.agent_service import AgentService
@@ -722,6 +725,77 @@ async def test_the_scope_gate_is_resolved_once_per_reading_by_the_one_resolver(
         issue.id for issue in board.server.issues.values() if issue.id != CLAIMED_ISSUE
     }
     assert not {ref.key for ref, _ in seen} & members
+
+
+def record_classification_writes(board, monkeypatch):
+    """Every marker write the owner sends, recorded around the built port.
+
+    The adapter's own write still runs, so the lease check and the board's
+    answer are the real ones; the wrapper only keeps what was asked of it.
+    """
+    port = board.built_tracker
+    original = port.set_issue_classification
+    writes = []
+
+    async def recording(*, issue_key, classification, holder=None):
+        writes.append((issue_key, classification, holder))
+        return await original(
+            issue_key=issue_key, classification=classification, holder=holder
+        )
+
+    monkeypatch.setattr(port, "set_issue_classification", recording)
+    return writes
+
+
+async def test_the_marker_write_carries_the_run_as_its_holder(monkeypatch):
+    """The terminal write is the leased run's, and the adapter checks it.
+
+    Every marker write names the job the pass ran under as its holder. The
+    control shows the argument is load-bearing: over a fresh board where no
+    run holds the member's label surface, the same write under the same holder
+    refuses before it touches the board.
+    """
+    owner, board, _ = factory()
+    writes = record_classification_writes(board, monkeypatch)
+    report = await run_owner(owner)
+    assert [phase.value for phase in report.completed_phases] == ["groom"]
+    assert writes
+    assert {holder for _, _, holder in writes} == {"actual-organize-job"}
+
+    _, fresh, _ = factory()
+    with pytest.raises(SurfaceLeaseError):
+        await fresh.built_tracker.set_issue_classification(
+            issue_key=CLAIMED_ISSUE,
+            classification="groomed",
+            holder="actual-organize-job",
+        )
+    assert "graph complete" not in fresh.server.issues[CLAIMED_ISSUE].labels
+
+
+async def test_the_marker_write_is_keyed_on_the_member_and_the_marker(monkeypatch):
+    """One write per member, of the phase's own marker, and none on a replay.
+
+    The member and the marker are the write's whole key: a member already
+    carrying the marker is never written again, so a second entry into the
+    same board sends nothing. The write names the configured marker member;
+    the board shows the label the operation spells it as.
+    """
+    owner, board, _ = factory()
+    writes = record_classification_writes(board, monkeypatch)
+    await run_owner(owner)
+    marked = sorted(
+        issue.id
+        for issue in board.server.issues.values()
+        if "graph complete" in issue.labels
+    )
+    assert marked
+    assert sorted(issue_key for issue_key, _, _ in writes) == marked
+    assert {classification for _, classification, _ in writes} == {"groomed"}
+
+    writes.clear()
+    report = await run_owner(owner)
+    assert report.halt is None
+    assert writes == []
 
 
 async def test_full_scope_finding_exhausts_the_actual_convergence_bound(monkeypatch):

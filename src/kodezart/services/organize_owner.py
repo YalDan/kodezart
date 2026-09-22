@@ -848,9 +848,15 @@ class OrganizeOwner:
                         reason="phase evidence changed during lease acquisition",
                     )
                 await self._may_write(request.issue_key, phase=phase, scope=scope)
+                # The run that holds the lease is the write's holder: the
+                # adapter checks the grant before it writes and on every retry,
+                # so the marker carries the job's provenance and a lapsed
+                # lease refuses instead of writing without one.
                 await settle(
                     self._tracker.set_issue_classification(
-                        issue_key=request.issue_key, classification=classification
+                        issue_key=request.issue_key,
+                        classification=classification,
+                        holder=job_id,
                     )
                 )
 

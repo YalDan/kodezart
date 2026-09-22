@@ -512,6 +512,13 @@ write. The work set itself always comes from the one gap computation, which is
 entered on every pass through a stage, including a replay with nothing left to
 do.
 
+The marker is the stage's terminal act, and it is keyed on the member and the
+marker alone: a member already carrying it is never written again. It is
+written inside the run's own lease on the member's label surface, and the job
+that holds that lease is named as the write's holder, so the adapter checks the
+grant before it writes and on every retry, and a marker is never written
+without the run's provenance.
+
 Setting the approval label is what starts a scope run. The `scope_heartbeat`
 pass reads each `[[organize_scopes]]` row on the dispatch cadence and submits a
 scope run for every row that is approved and has no live job, onto the
