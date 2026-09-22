@@ -10,11 +10,11 @@ import pytest
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.lane_alarms import alarm_event_due
+from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import COMMITS_WITHOUT_CLOSURE_BOUND, tally_unmoved
 from kodezart.domain.tally_record import (
     anchor_of,
-    is_raised,
     lane_start,
     next_tally_record,
 )
@@ -163,8 +163,8 @@ RAISED_STORED = stored_record(
 
 def test_the_stored_fixtures_are_the_two_states_the_table_names():
     """The table's two stored states, asserted rather than assumed."""
-    assert not is_raised(QUIET_STORED)
-    assert is_raised(RAISED_STORED)
+    assert not alarm_raised(QUIET_STORED)
+    assert alarm_raised(RAISED_STORED)
 
 
 @pytest.mark.parametrize(
@@ -261,7 +261,7 @@ def test_each_row_of_the_record_table(row, stored, gap, commits, writes, raised_
     )
 
     assert (desired is not None) == writes, row
-    assert is_raised(desired if writes else stored) == raised_after, row
+    assert alarm_raised(desired if writes else stored) == raised_after, row
 
 
 def test_a_raise_names_its_configured_bound_and_the_work_it_observed():
@@ -393,7 +393,7 @@ def test_a_closure_under_a_deliverable_child_is_movement():
     )
 
     assert desired is not None
-    assert not is_raised(desired)
+    assert not alarm_raised(desired)
     assert desired.readings[2].value.value == ("c-nested",)
 
 
@@ -431,7 +431,7 @@ def test_a_criterion_moved_to_in_review_closes_nothing_so_the_stall_raises():
     )
 
     assert desired is not None
-    assert is_raised(desired)
+    assert alarm_raised(desired)
     assert desired.readings[2].value.value == ()
 
 
@@ -439,7 +439,7 @@ def test_a_stored_record_whose_replay_disagrees_with_its_bound_refuses():
     claimed = RAISED_STORED.model_copy(update={"bound": None})
 
     with pytest.raises(RunShapeReadError, match="replays to a bound"):
-        is_raised(claimed)
+        alarm_raised(claimed)
 
     with pytest.raises(RunShapeReadError, match="replays to a bound"):
         next_tally_record(

@@ -45,6 +45,8 @@ from kodezart.core.protocols import (
     WorkspaceProvider,
 )
 from kodezart.domain.git_url import is_forge_less_origin
+from kodezart.domain.lane_alarms import OBSERVED_ALARMS
+from kodezart.domain.run_alarm_table import ALARM_TABLE, require_alarm_table
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.dispatch_pass import GatedDispatchPass
@@ -56,6 +58,7 @@ from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
 from kodezart.services.run_recorder import RunRecorder
+from kodezart.services.supervisor_pass import SUPERVISOR_TICK_NAME
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import (
@@ -579,7 +582,9 @@ async def _verify_wired_gates(
     does not schedule is not a capability it needs, and refusing boot over
     one would hold a deployment hostage to a knob nothing reads. A deployment
     that declares ``organize_scopes`` schedules neither session pass and no
-    per-issue dispatch pass, so it needs none of their signals.
+    per-issue dispatch pass, so it needs none of their signals — but it does
+    schedule the supervisor tick, so it needs every scan the alarms that tick
+    observes declare, each named as ``supervisor/<alarm>``.
 
     Every refused signal is named at once, with the passes it gates and the
     backend's own diagnosis, because an operator fixing one scope at a time
@@ -598,6 +603,14 @@ async def _verify_wired_gates(
         and any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
     ):
         wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
+    if runs_scope_flow(operation):
+        # The supervisor tick is registered on exactly this predicate, so its
+        # alarms' scans are this deployment's to answer: one entry per alarm
+        # it observes, named so a refusal says which alarm needs the scan.
+        for alarm in sorted(OBSERVED_ALARMS):
+            wired[f"{SUPERVISOR_TICK_NAME}/{alarm.value}"] = sorted(
+                ALARM_TABLE[alarm].scans
+            )
     passes_by_signal: dict[PassSignal, list[str]] = {}
     for name, signals in wired.items():
         for signal in signals:
@@ -728,6 +741,9 @@ async def verify_pass_preflight(
 
     All three refusals are decided by CONFIGURATION plus one tracker round
     trip, and none of them needs a queue, an executor or a workflow engine.
+    Before all of them the alarm table is checked total, which needs nothing
+    at all: a signal of the vocabulary with no fold refuses the boot here and
+    is never asked about again.
     They used to fire from inside :func:`build_dispatch_runtime`, which the
     composition root reaches only after it has started the job queue and
     opened the tracker's MCP transport — so a refusal aborted the lifespan
@@ -744,6 +760,7 @@ async def verify_pass_preflight(
     template it will never send would refuse a boot over a hole nothing
     reaches.
     """
+    require_alarm_table()
     # Called for its refusals, which are the point: a partial Organize
     # configuration must not reach a scheduler. Its answer is read nowhere
     # here, because which templates render is decided by the wiring predicate.

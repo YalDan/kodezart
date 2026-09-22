@@ -848,6 +848,25 @@ The alarm vocabulary and payload validation are available independently of
 signal computation and of the writers that publish it; constructing a model
 enables neither.
 
+`domain.run_alarm_table.ALARM_TABLE` is keyed by the signal vocabulary and
+gives each member its one pure fold and the `PassSignal` scans its readings are
+collected through: `issues_changed` for the signals that read rosters,
+criterion states, stage markers or the issue graph, and none for those that
+read only comments and records. `require_alarm_table` is the first statement of
+`composition/passes.py::verify_pass_preflight`, so a member with no fold aborts
+startup with `AlarmTableError` naming every such member before anything is
+built. When the deployment schedules the supervisor tick — a dialled tracker
+and a declared roster, the predicate that registers it — `_verify_wired_gates`
+adds one entry per alarm the tick observes, `supervisor/<alarm>`, carrying that
+alarm's declared scans, and the landed probe refuses with
+`PassGateCapabilityError` naming each refused scan with every alarm that
+declares it. A deployment that does not schedule the tick probes nothing on its
+behalf. Nothing at runtime asks whether a signal has a fold or a capability, no
+configuration field can name a signal, and nothing catches either refusal;
+`tests/test_capability_checked_at_boot.py` holds all three. Whether a stored
+record is an alarm is answered by `alarm_raised`, which replays the record
+through its own row's fold for every signal alike.
+
 ### Supervisor pass
 
 `services.supervisor_pass.SupervisorPass` is one scheduled tick over the
@@ -999,8 +1018,7 @@ observation, including a newly answered or withdrawn decision. All returned read
 their source comment identities, and neither collector writes or reads Git.
 The walker's recorded tick-age input remains unwired, and no tick of any
 pass reaches these readers. Leased alarm persistence exists, but only the
-supervisor tick's own observation writes through it. These readers do not declare the complete
-signal table or a boot capability for it.
+supervisor tick's own observation writes through it.
 
 `barren_tick_with_diff_growth` compares recorded files-changed and
 commits-ahead against their own configured bounds when a tick closes no

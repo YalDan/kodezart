@@ -8,8 +8,8 @@ from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.lane_alarms import Finished, Ready
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_surface
+from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE, LaneRunEvent
-from kodezart.domain.tally_record import is_raised
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.node_session import NodeInvocation, NodeSessionKey
@@ -81,7 +81,7 @@ async def test_a_stall_across_many_ticks_leaves_one_record_and_one_raised_event(
     ]
     stored = await stored_on(port, LANE)
     assert stored is not None
-    assert is_raised(stored)
+    assert alarm_raised(stored)
     assert stored.raised_by == HOLDER
     assert stored.raised_at_sha == HEAD
 
@@ -133,7 +133,7 @@ async def test_clearing_edits_the_record_and_posts_one_cleared_event():
     ]
     stored = await stored_on(port, LANE)
     assert stored is not None
-    assert not is_raised(stored)
+    assert not alarm_raised(stored)
     assert stored.readings[2].value.value == (SECOND,)
 
     after = snapshot(port)
@@ -154,7 +154,7 @@ async def test_a_second_stall_after_a_clear_is_measured_from_the_clear():
 
     stored = await stored_on(port, LANE)
     assert stored is not None
-    assert is_raised(stored)
+    assert alarm_raised(stored)
     assert stored.bound is not None
     assert stored.bound.observed_value == 2
     assert [event.kind for event in await events_on(port, LANE)] == [
@@ -225,7 +225,7 @@ async def test_a_lane_that_moved_while_still_owing_writes_a_reading_and_posts_no
     assert len(records_on(port, LANE)) == 1
     stored = await stored_on(port, LANE)
     assert stored is not None
-    assert not is_raised(stored)
+    assert not alarm_raised(stored)
     assert stored.readings[2].value.value == (SECOND,)
     assert await events_on(port, LANE) == []
 
@@ -351,7 +351,9 @@ async def test_a_tick_in_which_an_alarm_fires_moves_no_state_and_posts_no_halt()
 
     stored = await stored_on(port, LANE)
     assert stored is not None
-    assert is_raised(stored), "a tick that raised nothing states nothing about moving"
+    assert alarm_raised(stored), (
+        "a tick that raised nothing states nothing about moving"
+    )
 
     assert port.workflow_writes == []
     assert port.restored_states == []
@@ -382,8 +384,8 @@ async def test_a_substituted_evaluation_is_recorded_once_announced_once_and_left
     """Two openings under one single-session invocation, on the lane's stream.
 
     One tick writes the lane's substitution record and announces the raise
-    once, keyed to its own signal. Later ticks over the same stream write and post nothing more: an opening
-    is never taken back, so the raise stands.
+    once, keyed to its own signal. Later ticks over the same stream write and
+    post nothing more: an opening is never taken back, so the raise stands.
     """
     port = await one_lane(commits=())
     tally = supervisor(port)

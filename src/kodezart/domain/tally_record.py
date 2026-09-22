@@ -6,8 +6,9 @@ what the address should hold given what the tracker says now, and writes
 only when the two differ. A killed tick therefore loses nothing — the next
 one reads the same two facts and reaches the same answer.
 
-Whether a record is an alarm is decided by replaying its own readings, never
-by asking whether it carries a bound: the scope arm of the same signal
+Whether a record is an alarm is decided by replaying its own readings through
+the signal's one fold (:func:`kodezart.domain.run_alarm_table.alarm_raised`),
+never by asking whether it carries a bound: the scope arm of the same signal
 raises with no bound at all, so a bound's presence answers a different
 question. A record whose readings replay to something other than what it
 claims was written by another arm at this address, and refuses.
@@ -15,8 +16,8 @@ claims was written by another arm at this address, and refuses.
 
 from collections.abc import Sequence
 
-from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.fire_plateau import closed_previous_work, observe_tick
+from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_shape import (
     COMMITS_WITHOUT_CLOSURE_BOUND,
     read_alarm_value,
@@ -37,38 +38,6 @@ from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.tracker import TrackerIssue
 
 
-def is_raised(record: RunAlarm | None) -> bool:
-    """Whether *record*'s own readings still replay to an alarm.
-
-    Absence is not raised, and neither is a record kept only so the next tick
-    has an earlier reading to measure from. The replay is the answer because
-    it is the same arithmetic the raise was made by, and asking whether the
-    record carries a bound would answer a different question: the scope arm
-    of this same signal raises with none.
-
-    The bound is still read, as a consistency check rather than the answer. A
-    record whose replay does not reproduce the bound it carries — a threshold
-    it never crossed, a bound on a record that replays to nothing — was
-    written by something other than this arithmetic, and reading it either
-    way would report a threshold nobody measured.
-    """
-    if record is None:
-        return False
-    replayed = tally_unmoved(
-        subject=record.subject,
-        readings=record.readings,
-        raised_at_sha=record.raised_at_sha,
-        raised_by=record.raised_by,
-    )
-    if record.bound != (None if replayed is None else replayed.bound):
-        raise RunShapeReadError(
-            signal=record.signal.value,
-            source_ref=record.raised_at_sha,
-            reason="the stored record replays to a bound it does not carry",
-        )
-    return replayed is not None
-
-
 def anchor_of(record: RunAlarm) -> LaneTally:
     """The reading the next tick measures from, read off *record*.
 
@@ -78,7 +47,7 @@ def anchor_of(record: RunAlarm) -> LaneTally:
     saw no movement keeps the anchor it already carries, which is what makes
     a stall measurable across any number of ticks.
     """
-    is_raised(record)
+    alarm_raised(record)
     anchor_reading, latest_reading, closed_reading, _ = record.readings
     signal = record.signal
     if read_alarm_value(closed_reading, ReferencesEvidence, signal):
@@ -120,7 +89,7 @@ def next_tally_record(
     A tick over unchanged state composes the record that is already there and
     writes nothing, so replay costs its reads and no write.
     """
-    stored_raised = is_raised(stored)
+    stored_raised = alarm_raised(stored)
     anchor = anchor_of(stored) if stored is not None else lane_start(roster)
     closed = tuple(
         sorted(

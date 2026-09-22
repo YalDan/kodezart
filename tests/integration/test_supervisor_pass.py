@@ -12,7 +12,7 @@ from kodezart.config.app import AppConfig
 from kodezart.domain.errors import LaneRecordReadError
 from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
-from kodezart.domain.tally_record import is_raised
+from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
     supervisor_holder,
@@ -341,7 +341,7 @@ async def test_a_whole_tick_dispatches_no_agent_and_touches_no_repository(monkey
             signal=SIGNAL,
         )
         assert stored is not None
-        assert is_raised(stored)
+        assert alarm_raised(stored)
 
 
 #: A second declared scope beside :data:`SCOPE`, and the one stalled lane each
@@ -400,7 +400,7 @@ async def test_a_tick_observes_a_stalled_lane_under_every_declared_scope() -> No
             signal=SIGNAL,
         )
         assert stored is not None, ref.key
-        assert is_raised(stored), ref.key
+        assert alarm_raised(stored), ref.key
         raised = [
             event
             for event in await port.lane_run_events(issue_key=lane, lane_key=lane)
@@ -635,7 +635,7 @@ async def observed_alarms(port):
             subject=LaneSubject(scope_key=WALK_SCOPE.key, lane_key=lane),
             signal=SIGNAL,
         )
-        if stored is not None and is_raised(stored):
+        if stored is not None and alarm_raised(stored):
             raised.append(lane)
     return raised
 
@@ -725,7 +725,7 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
         signal=SIGNAL,
     )
     assert stored is not None
-    assert is_raised(stored)
+    assert alarm_raised(stored)
     assert stored.bound is not None
     assert stored.bound.config_field == "run_alarm_max_commits_without_closure"
     assert stored.bound.configured_value == STALL_BOUND

@@ -215,6 +215,7 @@
   "tests/domain/test_run_alarm.py": 16,
   "tests/domain/test_run_alarm_payload.py": 4,
   "tests/domain/test_run_alarm_record.py": 6,
+  "tests/domain/test_run_alarm_table.py": 9,
   "tests/domain/test_run_event_table.py": 11,
   "tests/domain/test_scope_approval.py": 3,
   "tests/domain/test_scope_container.py": 15,
@@ -377,6 +378,7 @@
   "tests/services/test_union_tick.py": 75,
   "tests/spec/test_model_agreement.py": 73,
   "tests/test_audit_lane_placement.py": 13,
+  "tests/test_capability_checked_at_boot.py": 9,
   "tests/test_composition_root.py": 35,
   "tests/test_criterion_resolution_boundary.py": 14,
   "tests/test_fakes_state.py": 8,
@@ -3438,6 +3440,13 @@
    "test_a_blank_or_absent_holder_refuses_with_the_addressed_surface",
    "test_a_holder_with_any_content_at_all_is_admitted"
   ],
+  "tests/domain/test_run_alarm_table.py": [
+   "test_every_member_of_the_vocabulary_has_a_fold",
+   "test_a_member_with_no_fold_refuses_the_boot_naming_every_one",
+   "test_the_supervisors_alarms_declare_the_issue_listing_and_nothing_else",
+   "test_a_stored_record_is_raised_exactly_when_its_readings_replay_to_one",
+   "test_a_record_carrying_a_bound_its_readings_never_crossed_refuses"
+  ],
   "tests/domain/test_run_event_table.py": [
    "test_vocabulary_and_notification_partition_are_complete",
    "test_every_missing_member_and_every_unknown_row_are_named_together",
@@ -5366,6 +5375,15 @@
    "test_a_planted_second_import_path_reds_the_re_export_assertion",
    "test_a_nested_declaration_is_not_a_hiding_place",
    "test_a_plain_import_of_a_role_for_use_is_not_a_second_import_path"
+  ],
+  "tests/test_capability_checked_at_boot.py": [
+   "test_the_credential_is_asked_what_it_can_scan_in_one_place",
+   "test_the_boot_checks_are_made_by_the_preflight_alone",
+   "test_no_code_catches_a_boot_refusal_and_carries_on",
+   "test_no_configuration_field_can_name_an_alarm_signal",
+   "test_a_probe_outside_the_boot_check_is_found",
+   "test_a_caught_refusal_is_found_alone_and_in_a_tuple",
+   "test_a_field_naming_a_signal_is_found_through_nesting"
   ],
   "tests/test_composition_root.py": [
    "test_the_composition_root_defines_only_its_hook_and_its_factory",
