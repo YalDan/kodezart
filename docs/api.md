@@ -267,7 +267,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `delivered` |
 | `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
-| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed/rested lane keys, unresolved criterion keys, unreachable criteria (key, the reason the scope's filter misses it, and, where it sits in one, the project or milestone), excluded criterion keys, unapproved lane keys and exclusions |
+| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed/rested lane keys, each ready lane's gap (gaps: lane key and open criterion keys), unresolved criterion keys, unreachable criteria (key, the reason the scope's filter misses it, and, where it sits in one, the project or milestone), excluded criterion keys, unapproved lane keys and exclusions, including out_of_scope exclusions naming open criteria the scope's filter cannot reach, with the reason |
 | `scope_lane`                   | `laneKey`, `event`: the complete typed inner event, including its discriminator |
 | `scope_terminal`               | `scope`; `lanes`: one entry per lane of the reading, carrying its issue, whether it is done, its recorded branch and its recorded pull request; `outcome`: scope_converged when every lane is done, else scope_stopped_short |
 
@@ -289,6 +289,9 @@ named under any member, approved or not, blocked or not, and only a lane that is
 ready (approved and unblocked) is fired for it. Its reason is `other_project` or
 `no_project` under a project or initiative scope and `other_milestone` or
 `no_milestone` under a milestone scope.
+Each ready lane's gap is measured there, fresh on every tick, and on no durable
+write the run makes: not the lane record, not a criterion's Evidence write and
+not the status update.
 
 This request route executes eligible lanes serially, and a lane is fired again in
 the same invocation while its last fire closed a previously open criterion of its

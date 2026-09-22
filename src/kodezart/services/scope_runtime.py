@@ -12,7 +12,7 @@ from pydantic import TypeAdapter
 
 from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.chains.native_delivery import NativeLaneWorkflow
-from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.chains.scope_walker import read_scope_ready, unreachable_criteria
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import DeliveryProbe, RepoCache, TrackerPort
@@ -41,6 +41,7 @@ from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
 from kodezart.types.domain.scope_runtime import (
+    GapMeasurement,
     LaneFailure,
     ScopeLaneEvent,
     ScopeLaneProgress,
@@ -598,7 +599,23 @@ class ScopeWorkflowEngine:
             if union is not None:
                 async with self._union_boundary(scope):
                     await self._observe_union(union, scope=scope)
+            # An open criterion inside a ready lane's subtree whose OWN issue
+            # the scope's filter never resolved is named here with the reason
+            # the filter gives, rather than left to be inferred from a silence.
+            # Ready lanes only: one under a blocked or unapproved member has no
+            # gap on this reading and is named when its lane becomes ready.
+            members = {issue.issue_key for issue in ready.scope.issues}
             exclusions = [
+                IssueExclusion(
+                    issue_key=named.issue_key,
+                    clause=ExclusionClause.OUT_OF_SCOPE,
+                    detail=named.reason,
+                )
+                for named in unreachable_criteria(
+                    ref=scope, members=members, lanes=ready.ready
+                )
+            ]
+            exclusions.extend(
                 IssueExclusion(
                     issue_key=blocked.issue_key,
                     clause=ExclusionClause.LIVE_BLOCKER,
@@ -606,7 +623,7 @@ class ScopeWorkflowEngine:
                 )
                 for blocked in ready.blocked
                 for key in blocked.blocker_keys
-            ]
+            )
             selected = self._select(ready=ready, delivers=lane.delivers, rested=rested)
             yield _observation(
                 scope, tick, ready, dispatched, skipped, rested, failures, exclusions
@@ -765,6 +782,16 @@ def _observation(
             scope=scope,
             tick=tick,
             ready=tuple(row.issue.issue_key for row in ready.ready),
+            # One entry per ready lane, in that order, built from the same read
+            # the lanes were selected from. Nothing keeps it: the next tick's
+            # read answers the question again.
+            gaps=tuple(
+                GapMeasurement(
+                    lane_key=row.issue.issue_key,
+                    criterion_keys=tuple(criterion.issue_key for criterion in row.gap),
+                )
+                for row in ready.ready
+            ),
             dispatched=tuple(dispatched),
             skipped_lanes=tuple(skipped),
             failed_lanes=tuple(failures),

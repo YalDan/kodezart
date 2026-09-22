@@ -15,13 +15,17 @@ from typing import NoReturn
 
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.types.domain.branch import trunk_base
-from kodezart.types.domain.operation import RepoEntry
-from kodezart.types.domain.scope_runtime import ScopeWalkEvent
+from kodezart.types.domain.dispatch import ExclusionClause
+from kodezart.types.domain.operation import RepoEntry, ScopeLabel
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope_runtime import GapMeasurement, ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import WorkflowStateKind
-from tests.fakes import FakeDeliveryProbe, FakeTrackerPort
+from tests.fakes import FakeDeliveryProbe, FakeTrackerPort, make_tracker_issue
 from tests.services.test_scope_runtime import (
+    LANE_STATE,
     SCOPE,
+    STAGED,
     URL,
     criterion_row,
     engine,
@@ -100,6 +104,84 @@ async def test_the_walk_lists_the_excluded_criteria_beside_each_gap() -> None:
     assert observation.unresolved_criteria == ("A/check",)
     assert observation.ready == ("A",)
 
+    assert observation.gaps == (
+        GapMeasurement(lane_key="A", criterion_keys=("A/check",)),
+    )
+
     ready = await read_scope_ready(ref=SCOPE, tracker=port)
     assert [issue.issue_key for issue in ready.closed] == ["B"]
     assert ready.excluded == ("A/dropped", "B/twin")
+
+
+def out_of_reach_board() -> FakeTrackerPort:
+    """One lane, a deliverable child under it, and a criterion under the child.
+
+    The child is the shape a container filter misses: it is nobody's direct
+    criterion child, so no member read resolves it, while the criterion it
+    carries is squarely inside the lane's subtree and squarely the lane's work.
+    """
+    return scope_board(
+        criterion_row("A/check"),
+        criterion_row("A1/check", parent="A1"),
+        children=(
+            make_tracker_issue(
+                "A1",
+                parent_key="A",
+                issue_labels=frozenset({STAGED}),
+                state_name=LANE_STATE,
+                state_kind=WorkflowStateKind.STARTED,
+            ),
+        ),
+    )
+
+
+def out_of_scope(observation) -> list[tuple[str, ExclusionClause, str]]:
+    """The observation's out-of-scope exclusions, as key, clause and reason."""
+    return [
+        (item.issue_key, item.clause, item.detail)
+        for item in observation.exclusions
+        if item.clause is ExclusionClause.OUT_OF_SCOPE
+    ]
+
+
+async def test_an_open_criterion_the_filter_cannot_reach_is_named_with_its_reason() -> (
+    None
+):
+    """Unreachable is stated, with the reason the filter itself is stated in.
+
+    A reader that saw neither the criterion nor a statement about it could not
+    tell an obligation the scope cannot address from none at all, so the walk
+    says which key and why. The lane is still fired for it: the key is on the
+    lane's own gap measurement beside the criterion the filter does reach.
+    """
+    observation = await first_observation(out_of_reach_board())
+
+    assert out_of_scope(observation) == [
+        ("A1/check", ExclusionClause.OUT_OF_SCOPE, "the issue belongs to no project")
+    ]
+    assert "A/check" not in [key for key, _, _ in out_of_scope(observation)]
+    assert observation.gaps == (
+        GapMeasurement(lane_key="A", criterion_keys=("A/check", "A1/check")),
+    )
+
+
+async def test_the_same_shape_inside_the_filter_names_no_out_of_scope_entry() -> None:
+    """The control arm: the filter resolves the child, so nothing is out of reach.
+
+    Same tree, same criteria, one difference — the child is a scope member, so
+    the member read resolves its criterion in its own right. An exclusion that
+    appeared here would be naming reachable work unreachable.
+    """
+    port = out_of_reach_board()
+    port.scope_memberships[SCOPE] = ("A", "A1")
+    port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key="A1")] = frozenset(
+        {ScopeLabel.APPROVED}
+    )
+
+    observation = await first_observation(port)
+
+    assert out_of_scope(observation) == []
+    assert observation.gaps == (
+        GapMeasurement(lane_key="A", criterion_keys=("A1/check", "A/check")),
+        GapMeasurement(lane_key="A1", criterion_keys=("A1/check",)),
+    )
