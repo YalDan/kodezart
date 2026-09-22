@@ -466,6 +466,7 @@
   "tests/tracker/test_lane_escalation.py": 34,
   "tests/tracker/test_lane_record_signals.py": 20,
   "tests/tracker/test_lane_records.py": 21,
+  "tests/tracker/test_linear_call_log.py": 2,
   "tests/tracker/test_linear_mcp_tracker.py": 113,
   "tests/tracker/test_linear_tool_arguments.py": 12,
   "tests/tracker/test_linear_tool_roster.py": 6,
@@ -6106,6 +6107,10 @@
    "test_native_read_requires_the_complete_comment_listing",
    "test_cancellation_propagates_without_manufacturing_a_record",
    "test_empty_address_refuses_before_any_tracker_call"
+  ],
+  "tests/tracker/test_linear_call_log.py": [
+   "test_every_role_that_declares_a_member_has_a_flow",
+   "test_the_adapter_sends_the_recorded_call_log"
   ],
   "tests/tracker/test_linear_mcp_tracker.py": [
    "TestPriorityEncoding.test_every_raw_value_maps_explicitly",
