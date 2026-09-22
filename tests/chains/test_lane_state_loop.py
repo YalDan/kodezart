@@ -67,6 +67,7 @@ from tests.domain.test_criterion_cross_off import callers_of
 from tests.fakes import dispatched_checks, dispatched_ids, make_tracker_issue
 from tests.lane_fixture import (
     ADDED_OWED,
+    BASE_COMMAND,
     LaneGit,
     LanePersister,
     LaneRepo,
@@ -1136,9 +1137,9 @@ async def test_the_lanes_log_names_the_criterion_the_base_already_satisfied():
     """What a person reading the run's log finds, once, per criterion.
 
     Keyed to the criterion because the fact is the criterion's, and carrying
-    both shas so the reading can be repeated: the commit the verdict would
-    have been stamped with, and the commit the base resolved to. The criterion
-    the base does not satisfy gets no row.
+    both shas and the command so the reading can be repeated: the commit the
+    verdict would have been stamped with, the commit the base resolved to, and
+    what was run there. The criterion the base does not satisfy gets no row.
     """
     first, *rest = OWED_KEYS
     lane = Lane(evaluations=[graded(OWED_KEYS)])
@@ -1151,8 +1152,9 @@ async def test_the_lanes_log_names_the_criterion_the_base_already_satisfied():
         entry for entry in logs if entry.get("event") == "criterion_satisfied_at_base"
     ]
     assert [
-        (entry["criterion"], entry["graded_sha"], entry["base_sha"]) for entry in rows
-    ] == [(first, lane.repo.head, TRUNK_SHA)]
+        (entry["criterion"], entry["graded_sha"], entry["base_sha"], entry["command"])
+        for entry in rows
+    ] == [(first, lane.repo.head, TRUNK_SHA, BASE_COMMAND)]
     assert {entry["criterion"] for entry in rows}.isdisjoint(rest)
 
 
