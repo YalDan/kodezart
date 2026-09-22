@@ -756,6 +756,16 @@ pre-approval row no lease marker. A member the round mints is outside the set
 that round declared and is declared by the next round, which snapshots the
 board again.
 
+That same set is the bound on what the row may write. Every address a
+proposal needs — the subject's own surface and, for a graph change, the graph
+address of every affected peer — is weighed against the held set before any
+renewal or backend call. An address inside the scope and outside the set, such
+as a peer that joined after the round's snapshot, is refused there and recorded
+as a finding on the item that owns the address, and the round works on: a next
+round that declares the member writes the same change. A peer outside the scope
+is refused outright and recorded as nothing. The lease decides neither
+question: it is the record of what is held, and the comparison is the owner's.
+
 Because approval admits a member to a run stage instead of ending it, a
 run-stage row may name `scope_labels.approved` as its gate by that exact
 reference. Such a gate reads the per-issue cascade, never the addressed

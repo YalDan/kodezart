@@ -325,3 +325,190 @@ async def test_approval_landing_before_the_groom_marker_refuses_the_marker(monke
     ]
     assert len(marked) == 1
     assert board.grants() == []
+
+
+LATE = "FIX-LATE"
+FOREIGN = "FIX-2"
+
+
+def edging(board, executor, monkeypatch, peer, *, join=None):
+    """An author that adds one dependency edge, and a judge that waits for it.
+
+    *join* is called during each admission session, which is where a case
+    about a member the round never declared has the scope gain one.
+    """
+    original = executor.stream
+
+    def landed():
+        return ("blockedBy", peer) in board.server.issues[CLAIMED_ISSUE].relations
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if title != "WriteBackFinding" and keys and keys[-1] == CLAIMED_ISSUE:
+            if not landed():
+                executor.calls.append(kwargs)
+                if title == "OrganizeProposal":
+                    yield result(
+                        structured_output={
+                            "kind": "graph",
+                            "issue_id": CLAIMED_ISSUE,
+                            "changes": [{"kind": "blocked_by", "add": [peer]}],
+                        }
+                    )
+                else:
+                    if join is not None:
+                        join()
+                    yield result(
+                        structured_output={
+                            "issue_id": CLAIMED_ISSUE,
+                            "verdict": "not_buildable",
+                            "evidence": "The recorded dependency is absent.",
+                            "refusal_kind": "spec_gap",
+                            "invented_decision": "Record the dependency.",
+                        }
+                    )
+                return
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+
+
+def renewals(board, line="issue_graph|issue|"):
+    """Every renewal of the round's own lease: an edit naming its own address."""
+    return [
+        args
+        for name, args in board.calls
+        if name == "save_comment"
+        and "since:" in str(args.get("body", ""))
+        and line in str(args.get("body", ""))
+    ]
+
+
+def edge_writes(board):
+    return [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "blockedBy" in args
+    ]
+
+
+async def test_a_graph_write_inside_the_declared_set_lands(monkeypatch):
+    """Both addresses the edge needs are the round's, so the write lands."""
+    owner, board, executor = factory(convergence_bound=3, bound=3)
+    member(board, SIBLING)
+    edging(board, executor, monkeypatch, SIBLING)
+    report = await run_owner(owner)
+    assert report.halt is None
+    assert ("blockedBy", SIBLING) in board.server.issues[CLAIMED_ISSUE].relations
+    assert ("blocks", CLAIMED_ISSUE) in board.server.issues[SIBLING].relations
+    assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
+
+
+async def test_a_graph_write_naming_a_member_that_joined_late_is_a_finding_on_it(
+    monkeypatch,
+):
+    """A member inside the scope and outside the held set is a residual.
+
+    The scope gains the member during the admission session, so the round
+    declares every address but that one. The write is refused before any
+    renewal or backend call, and the finding is written to the member that
+    owns the address rather than to the subject the write was authored for.
+    """
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+
+    def join():
+        if LATE not in board.server.issues:
+            member(board, LATE)
+
+    edging(board, executor, monkeypatch, LATE, join=join)
+    report = await run_owner(owner)
+    assert report.halt.cause == "convergence_exhausted"
+    assert [
+        (finding.issue_id, finding.defect_class)
+        for finding in report.halt.surviving_findings
+    ] == [(LATE, "undeclared_surface")]
+    assert "issue_graph" in report.halt.surviving_findings[0].evidence
+    assert edge_writes(board) == []
+    assert renewals(board) == []
+    assert "needs decision" in board.server.issues[LATE].labels
+    assert [
+        comment.body
+        for comment in board.server.comments
+        if comment.issue_id == LATE and "undeclared_surface" in comment.body
+    ]
+
+
+async def test_a_graph_write_naming_an_issue_outside_the_scope_stays_a_refusal(
+    monkeypatch,
+):
+    """A peer outside the scope is refused outright, with no finding at all."""
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    edging(board, executor, monkeypatch, FOREIGN)
+    with pytest.raises(OrganizeWriteRefusalError, match="outside the current admitted"):
+        await run_owner(owner)
+    assert edge_writes(board) == []
+    assert "needs decision" not in board.server.issues[CLAIMED_ISSUE].labels
+    assert board.grants() == []
+
+
+async def test_the_refused_write_lands_once_the_next_round_declares_the_member(
+    monkeypatch,
+):
+    """The next round snapshots the board again, so the repeated write lands."""
+    owner, board, executor = factory(convergence_bound=3, bound=2)
+
+    def join():
+        if LATE not in board.server.issues:
+            member(board, LATE)
+
+    edging(board, executor, monkeypatch, LATE, join=join)
+    report = await run_owner(owner)
+    assert report.halt is None
+    assert ("blockedBy", LATE) in board.server.issues[CLAIMED_ISSUE].relations
+    assert "needs decision" not in board.server.issues[LATE].labels
+    assert "graph complete" in board.server.issues[LATE].labels
+
+
+async def test_an_answer_that_writes_nothing_is_not_weighed_against_the_set(
+    monkeypatch,
+):
+    """A decision the author asks for keeps its halt on a row without the body.
+
+    The criteria stage declares no description, and an unresolved answer
+    needs no address at all, so it is the human decision it always was
+    rather than a residual on the subject.
+    """
+    owner, board, executor = factory(under_approval=True)
+    original = executor.stream
+
+    async def unresolved(**kwargs):
+        # The first stage's marker is what admits the criteria stage, so an
+        # author session after it is that stage's.
+        staged = "body complete" in board.server.issues[CLAIMED_ISSUE].labels
+        async for event in original(**kwargs):
+            if (
+                staged
+                and kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
+            ):
+                event = result(
+                    structured_output={
+                        "kind": "unresolved",
+                        "issue_id": CLAIMED_ISSUE,
+                        "question": "Which declared source names the check?",
+                        "evidence": "Two sources name different checks.",
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", unresolved)
+    report = await run_owner(owner)
+    assert [phase.value for phase in report.completed_phases] == ["ticket"]
+    assert report.halt.cause == "human_decision"
+    assert report.halt.questions[0].issue_id == CLAIMED_ISSUE
+    assert "undeclared_surface" not in {
+        finding.defect_class for finding in report.halt.surviving_findings
+    }
