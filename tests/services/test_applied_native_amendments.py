@@ -531,6 +531,13 @@ async def test_undemonstrable_here_upholds_at_the_environment_reason_touching_no
             UpheldReason.GROUND_NOT_REPRODUCED,
             id="no_matched_repository_declares_no_environment",
         ),
+        pytest.param(
+            "network",
+            None,
+            REPO_URL,
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="a_matched_repository_at_its_default_environment_leaves_it_unknown",
+        ),
     ],
 )
 async def test_undemonstrability_conjoins_the_typed_claim_and_the_declared_environment(
@@ -540,9 +547,12 @@ async def test_undemonstrability_conjoins_the_typed_claim_and_the_declared_envir
 
     The rows run the whole writer, so the environment under test is the one
     `for_writer` resolves off the matched repository rather than one a fixture
-    hands the resolver. The last row matches no repository at all: the guard is
-    then handed no declared environment and the refusal falls back to the ground,
-    which is the fail-closed arm the resolver alone cannot show.
+    hands the resolver. One row matches no repository at all: the guard is then
+    handed no declared environment and the refusal falls back to the ground,
+    which is the fail-closed arm the resolver alone cannot show. Another matches
+    a repository that leaves `runner_environment` at its default: an omitted
+    capability is unknown, not absent, so that refusal falls back to the ground
+    as well.
 
     In every row the departure is refused and the criterion stands: its text and
     its state are what they were, and only the escalated row's classification
