@@ -1673,14 +1673,30 @@ rather than either claiming it. A holder that cannot find its own marker in
 the read-back withdraws and refuses: a grant that cannot be verified is not a
 grant.
 
-Renewal reads before it writes — a holder without a live marker over the
-whole set writes nothing — then edits its marker in place, which is what
-preserves the order the grant was taken in. The write can outlive the lease
-it was extending; after it lands, the holder compares its own clock against
-the expiry it HAD, and a lease that lapsed mid-write is handed back with its
-marker deleted, whoever took the issue meanwhile. Release deletes only this
-holder's own markers, and expiry is read from the marker against the reader's
-clock, so a process that died renews nothing and its grant lapses on its own.
+Renewal reads before it writes. A holder without a live marker over the whole
+set extends nothing, and what it may take down is only its own marker standing
+for exactly that set on part of it: a half-standing grant is no hold, and
+leaving it would name the holder as writing what it does not hold whole, while
+a marker of the same holder for a different address set is another grant and
+is left alone. Otherwise the set is renewed one marker at a time, editing each
+in place — which is what preserves the order the grant was taken in — and
+reading each write back before the next is published.
+
+The deadline a renewal puts in force is decided from the backend's stamp on
+that write against the deadline the write was published against, never from
+the holder's own clock, so neither skew nor the time a write took to land can
+move the fence. A renewal that lands late renews nothing and takes back only
+the deadlines it accounts for: a deadline carried past those was put there by
+a later grant of the same holder, whose ownership lives inside the marker this
+renewal was extending, so an earlier renewal's lapse never voids it. Release
+deletes only this holder's own markers, and expiry is read from the marker
+against the reader's clock, so a process that died renews nothing and its grant
+lapses on its own.
+
+Two processes writing under one holder identity at once are outside the
+design: the arbitration is over the identity, so it cannot tell them apart.
+A restart re-entering under a reused holder acquires only after its
+predecessor's grant is released or has lapsed (KOD-832).
 
 ### Owned resource operations
 

@@ -10,17 +10,23 @@ extending, and a marker the log does not answer with.
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import pytest
 import structlog.testing
 
-from kodezart.adapters.linear.tracker import LinearMcpTracker
+from kodezart.adapters.linear.tracker import LinearMcpTracker, _surface_line
 from kodezart.core.errors import McpTransportError, TrackerProtocolError
 from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import SurfaceLeaseError
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceKind,
+    SurfaceLease,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import ClaimResult, ClaimStatus
 from tests.fakes import FakeLinearMcpServer
 from tests.tracker.conftest import CLAIMED_ISSUE, FIXTURE_NOW, fixture_server
@@ -725,6 +731,19 @@ def _standing(server: FakeLinearMcpServer) -> list[tuple[str, str]]:
     ]
 
 
+def _addresses_of(body: str) -> list[str]:
+    """The address lines a marker body declares, in the order it carries them.
+
+    Read off the body because the holder and the state a marker states are
+    not the whole of what it claims: a stand-down that took down the right
+    holder's marker for the wrong address set would be invisible to a
+    reading that stopped at the holder.
+    """
+    lines = body.splitlines()
+    start = lines.index("surfaces:") + 1
+    return [line.removeprefix("- ") for line in lines[start:] if line.startswith("- ")]
+
+
 CONTAINER = WritableSurface(
     kind=SurfaceKind.CONTAINER_DESCRIPTION,
     ref=ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope"),
@@ -1380,6 +1399,80 @@ async def test_two_markers_of_one_holder_are_a_duplicate_and_not_two_owners() ->
     assert still is not None and still.holder == "runner-one"
 
 
+#: A marker-keyed comment on the claimed issue, addressed apart from the
+#: spanning set: a second grant of the SAME holder on the same target, which
+#: a stand-down reading the holder alone would sweep up with the first.
+ISSUE_MARKER = WritableSurface(
+    kind=SurfaceKind.MARKER_COMMENT,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+    marker="renewal",
+)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _StaleRenewal:
+    """One run of the stale-renewal schedule, and nothing asserted about it.
+
+    The marker ids are recorded at the two instants the schedule passes
+    through — as the first grant wrote them, and as the second grant found
+    them — because the board moves again the moment the held write lands,
+    and a reading taken afterwards would be about a different instant.
+    """
+
+    granted: SurfaceLease
+    carried: SurfaceLease
+    markers: list[str]
+    carried_into: list[str]
+    renewal: asyncio.Task[SurfaceLease | None]
+    tracker: LinearMcpTracker
+
+
+async def _stale_renewal_schedule(board: _Board) -> _StaleRenewal:
+    """Drive one holder's renewal past a later grant of its own identity.
+
+    One holder, two processes: the first process's renewal is held
+    mid-edit, the second acquires the same set and is carried into the very
+    markers the first is renewing, and the clock is then moved past the
+    deadline those markers carried before the held write is released.
+
+    Stated as a schedule that asserts nothing, so every case that needs
+    this interleaving states its own conclusions in its own body and the
+    schedule itself is written once.
+    """
+    paused = _PausedRenewal(board.server)
+    holding = board.holder(caller=paused)
+    granted = await holding.acquire_surfaces(
+        surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+    )
+    markers = [comment.id for comment in board.server.comments]
+    board.advance(LEASE_SECONDS - 10)
+    paused.holding = True
+    renewal = asyncio.create_task(
+        holding.renew_surfaces(
+            surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+        )
+    )
+    await asyncio.wait_for(paused.reached.wait(), 5)
+    board.advance(1)
+    carried = await board.holder().acquire_surfaces(
+        surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+    )
+    carried_into = [comment.id for comment in board.server.comments]
+    deadline = board.server.comments[0].created_at + timedelta(seconds=LEASE_SECONDS)
+    board.now = deadline + timedelta(seconds=2)
+
+    paused.resume.set()
+
+    return _StaleRenewal(
+        granted=granted,
+        carried=carried,
+        markers=markers,
+        carried_into=carried_into,
+        renewal=renewal,
+        tracker=holding,
+    )
+
+
 async def test_a_stale_renewal_cannot_void_the_grant_it_was_carried_into() -> None:
     """A renewal takes back what it published, never a later grant's ownership.
 
@@ -1399,36 +1492,16 @@ async def test_a_stale_renewal_cannot_void_the_grant_it_was_carried_into() -> No
     believes it holds.
     """
     board = _Board()
-    paused = _PausedRenewal(board.server)
-    holding = board.holder(caller=paused)
-    granted = await holding.acquire_surfaces(
-        surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
-    )
-    markers = [comment.id for comment in board.server.comments]
-    board.advance(LEASE_SECONDS - 10)
-    paused.holding = True
-    renewal = asyncio.create_task(
-        holding.renew_surfaces(
-            surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
-        )
-    )
-    await asyncio.wait_for(paused.reached.wait(), 5)
-    board.advance(1)
-    carried = await board.holder().acquire_surfaces(
-        surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
-    )
+
+    schedule = await _stale_renewal_schedule(board)
+
     # The second process is carried into the markers the first one is
     # renewing, which is what puts one grant's ownership inside another's.
-    assert [comment.id for comment in board.server.comments] == markers
-    assert carried.expires_at > granted.expires_at
-    deadline = board.server.comments[0].created_at + timedelta(seconds=LEASE_SECONDS)
-    board.now = deadline + timedelta(seconds=2)
-
-    paused.resume.set()
-
-    assert await asyncio.wait_for(renewal, 5) is None
+    assert schedule.carried_into == schedule.markers
+    assert schedule.carried.expires_at > schedule.granted.expires_at
+    assert await asyncio.wait_for(schedule.renewal, 5) is None
     # The renewal holds nothing while the grant it was carried into runs on.
-    assert carried.expires_at > board.now
+    assert schedule.carried.expires_at > board.now
     # The one marker its write reached is its own to take back; the marker
     # it never reached keeps the deadline the later grant put there.
     assert _standing(board.server) == [("job-one", "held")]
@@ -1440,3 +1513,75 @@ async def test_a_stale_renewal_cannot_void_the_grant_it_was_carried_into() -> No
     assert refused.value.scope_key == CLAIMED_ISSUE
     # The rival holds nothing either: the board is the owner's marker alone.
     assert _standing(board.server) == [("job-one", "held")]
+
+
+async def test_a_renewal_over_a_half_standing_set_holds_nothing_and_names_nothing() -> (
+    None
+):
+    """A half-standing set is no hold, and the refusing renewal keeps nothing.
+
+    The schedule above leaves this holder standing on ONE marker of a
+    two-address set.  It then takes a second, disjoint grant, so the board
+    carries two grants of one holder on the same target — which is what
+    tells a stand-down that reads the holder alone apart from one that
+    reads the holder AND the address set it stands for.
+
+    Renewing the spanning set now extends nothing: the holder does not
+    hold every address of it live.  What the refusal may take off the
+    board is its own half-marker for exactly that set, and nothing else:
+    the disjoint grant is untouched, its own writes still land under it,
+    and the spanning set is free for the next holder — who, once granted,
+    is the one this holder's description write is refused in the name of.
+    """
+    board = _Board()
+    schedule = await _stale_renewal_schedule(board)
+    assert await asyncio.wait_for(schedule.renewal, 5) is None
+    assert _standing(board.server) == [("job-one", "held")]
+
+    disjoint = await schedule.tracker.acquire_surfaces(
+        surfaces=frozenset({ISSUE_MARKER}),
+        holder="job-one",
+        lease_seconds=LEASE_SECONDS,
+    )
+    assert disjoint.surfaces == frozenset({ISSUE_MARKER})
+    assert _standing(board.server) == [("job-one", "held")] * 2
+
+    refused_renewal = await schedule.tracker.renew_surfaces(
+        surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+    )
+
+    assert refused_renewal is None
+    # The half-marker for the spanning set is gone; the grant that names
+    # another address entirely is still this holder's.
+    assert _standing(board.server) == [("job-one", "held")]
+    assert [_addresses_of(comment.body) for comment in board.server.comments] == [
+        [_surface_line(ISSUE_MARKER)]
+    ]
+    posted = await schedule.tracker.upsert_comment(
+        target=CLAIMED_ISSUE,
+        marker="renewal",
+        body="a record the surviving grant covers",
+        holder="job-one",
+    )
+    assert posted.body.endswith("a record the surviving grant covers")
+
+    rival = await board.holder().acquire_surfaces(
+        surfaces=SPANNING, holder="job-two", lease_seconds=LEASE_SECONDS
+    )
+
+    assert rival.holder == "job-two"
+    standing = await schedule.tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    with pytest.raises(SurfaceLeaseError) as refused:
+        await schedule.tracker.edit_description(
+            target=CLAIMED_ISSUE,
+            expected=standing.body,
+            replacement="a body the lapsed renewal's holder no longer addresses",
+            authorization=DescriptionWriteAuthority(
+                holder="job-one", surface=ISSUE_DESCRIPTION
+            ),
+        )
+    assert refused.value.current_holder == "job-two"
+    assert refused.value.scope_key == CLAIMED_ISSUE
+    assert (
+        await schedule.tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    ).body == standing.body
