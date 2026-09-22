@@ -2183,7 +2183,7 @@ def unavailable_network_operation():
 GRADABILITY_SENTENCE = "Ask gradability as well as buildability"
 
 
-@pytest.mark.parametrize("declared", ["declared", "no_repository"])
+@pytest.mark.parametrize("declared", ["declared", "no_checks", "no_repository"])
 @pytest.mark.parametrize("method", ["assess", "verify"])
 @pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
 async def test_both_sets_put_the_declared_environments_in_front_of_the_admission(
@@ -2193,10 +2193,19 @@ async def test_both_sets_put_the_declared_environments_in_front_of_the_admission
 
     The check chain and the runner environment arrive as data, beside the
     instruction that makes an undemonstrable deliverable a repairable
-    refusal. An operation declaring no repository renders the same prompt
-    without the block, and neither state leaves an unrendered placeholder.
+    refusal. A repository declaring no check chain renders its named
+    absence, an operation declaring no repository renders the same prompt
+    without the block, and no state leaves an unrendered placeholder.
     """
     operation = unavailable_network_operation()
+    if declared == "no_checks":
+        operation = operation.model_copy(
+            update={
+                "repos": tuple(
+                    repo.model_copy(update={"checks": ()}) for repo in operation.repos
+                )
+            }
+        )
     if declared == "no_repository":
         operation = operation.model_copy(update={"repos": ()})
     executor = RecordingExecutor([result()])
@@ -2214,6 +2223,10 @@ async def test_both_sets_put_the_declared_environments_in_front_of_the_admission
     if declared == "declared":
         step = unavailable_network_operation().repos[0].checks[0]
         assert f"check {step.name}: `{step.command}`" in prompt
+        assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in prompt
+        return
+    if declared == "no_checks":
+        assert "no check chain is declared" in prompt
         assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in prompt
         return
     assert "declared_environments" not in prompt
