@@ -93,6 +93,7 @@ class Arm:
             prompts=make_prompt_provider(),
             skills=SUPPRESS_ALL_SKILLS,
             repositories=(),
+            git_base_url="https://forge.example",
             gate=PassThroughGate(),
             max_verify_rounds=2,
             lease_seconds=900,

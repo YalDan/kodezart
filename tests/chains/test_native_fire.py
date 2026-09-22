@@ -271,6 +271,7 @@ def engine(
                     prompts=prompts,
                     skills=SUPPRESS_ALL_SKILLS,
                     repositories=(),
+                    git_base_url="https://github.com",
                     gate=gate,
                     max_verify_rounds=2,
                     lease_seconds=900,

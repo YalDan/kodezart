@@ -55,6 +55,9 @@ from tests.lane_fixture import RecordingAfterPublish
 from tests.prompts.test_prompt_wiring import load_registry
 
 REPO_URL = "https://example.invalid/owner/repo"
+#: The configured git base URL the engine resolves every repository reference
+#: against; the declared URL above carries no `.git`, the resolved one does.
+GIT_BASE_URL = "https://example.invalid"
 QUOTE = "def answer(): return 42"
 #: The Check an upheld amendment replaces the claimed criterion's text with.
 AMENDED_CHECK = "the amended observable Check"
@@ -244,6 +247,7 @@ async def build(
     held=None,
     runner_environment=None,
     issue_labels=None,
+    repositories=None,
 ):
     """*held* is the roster a run this fixture reconstructs already holds.
 
@@ -258,6 +262,9 @@ async def build(
     *runner_environment* is the one repository's declared environment facts,
     the single field the writer gate reads off a matched repository. Omitted,
     the entry carries the field's own default rather than an assumed empty map.
+
+    *repositories*, when given, replaces the one declared repository whole, for
+    a case about the declarations themselves rather than one environment.
 
     *issue_labels* is the classification vocabulary this operation is dialled
     with. A case about a board that maps a classification the ordinary
@@ -280,7 +287,7 @@ async def build(
         executor=executor,
         workspace=workspace,
         persister=persister,
-        git_base_url="https://example.invalid",
+        git_base_url=GIT_BASE_URL,
     )
     port = port or tracker()
     criteria = TrackerCriteria(tracker=port)
@@ -309,14 +316,19 @@ async def build(
         prompts=prompts,
         skills=SUPPRESS_ALL_SKILLS,
         repositories=(
-            RepoEntry(url=REPO_URL, trunk="main")
-            if runner_environment is None
-            else RepoEntry(
-                url=REPO_URL,
-                trunk="main",
-                runner_environment=dict(runner_environment),
-            ),
+            tuple(repositories)
+            if repositories is not None
+            else (
+                RepoEntry(url=REPO_URL, trunk="main")
+                if runner_environment is None
+                else RepoEntry(
+                    url=REPO_URL,
+                    trunk="main",
+                    runner_environment=dict(runner_environment),
+                ),
+            )
         ),
+        git_base_url=GIT_BASE_URL,
         gate=gate or PassThroughGate(),
         max_verify_rounds=2,
         lease_seconds=900,
@@ -670,6 +682,24 @@ async def test_a_stage_with_no_registration_is_refused_before_any_session(reposi
         assert executor.calls == []
     finally:
         await cleanup(workspace)
+
+
+async def test_two_declarations_resolving_to_one_repository_are_ambiguous(repository):
+    """Declarations are matched on the resolved clone URL, so spelling cannot split one.
+
+    The same repository declared once with `.git` and once without resolves to
+    one clone URL; the writer gate cannot tell which declared environment
+    governs, so it refuses rather than picking one.
+    """
+    with pytest.raises(NativeWriteRefusalError, match="declaration is ambiguous"):
+        await build(
+            repository,
+            Executor(),
+            repositories=(
+                RepoEntry(url=REPO_URL, trunk="main"),
+                RepoEntry(url=f"{REPO_URL}.git", trunk="main"),
+            ),
+        )
 
 
 async def test_an_unreadable_registry_is_refused_before_the_writer_session(

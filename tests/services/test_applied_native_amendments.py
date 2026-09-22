@@ -13,6 +13,7 @@ from kodezart.domain.criterion_cross_off import (
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import SurfaceLeaseError
 from kodezart.domain.fire_spec import criterion_field_bodies
+from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION
 from kodezart.domain.rulings import render_ruling
@@ -35,6 +36,7 @@ from tests.chains.test_native_fire import (
 from tests.services.test_lane_state_writer import lane_repo, lapse, writer
 from tests.services.test_native_amendments import (
     AMENDED_CHECK,
+    GIT_BASE_URL,
     PROTECTED_BODY,
     PROTECTED_NAME,
     PROTECTED_PATH,
@@ -516,6 +518,13 @@ async def test_undemonstrable_here_upholds_at_the_environment_reason_touching_no
             REPO_URL,
             UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
             id="the_typed_claim_meets_the_declared_absence",
+        ),
+        pytest.param(
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            resolve_repo_url(REPO_URL, GIT_BASE_URL),
+            UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+            id="the_resolved_clone_url_matches_its_declared_repository",
         ),
         pytest.param(
             "network",
