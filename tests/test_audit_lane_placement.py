@@ -20,6 +20,16 @@ all three are read: a ``class`` under the owned name, an assignment onto
 it, and an import alias onto it.  The third used to pass every assertion
 here — the type checker the gate runs refuses it, so the tree could not
 carry one, but a guard that says it sees rebinds has to see that one too.
+
+All three are read at the same depth, and each is judged by what it
+binds.  A binding inside a module-level ``if``, ``try`` or ``with`` binds
+the module's own namespace, so it is read wherever a ``class`` at that
+depth is read; a binding inside a function or a class body is read by
+nothing here, because it shadows nothing the module reads.  And an alias
+is a rebind when the word it binds is not the imported symbol's own name,
+whichever module it is imported out of — a sibling class of the owner
+hands every read below it another object just as an alias from a foreign
+module does (KOD-540).
 """
 
 import ast
@@ -162,7 +172,7 @@ def _source_module(node: ast.ImportFrom | ast.Import, alias: ast.alias) -> str |
 
 
 def _import_rebindings(node: ast.ImportFrom | ast.Import) -> set[str]:
-    """Each owned name this import node binds to another module's symbol.
+    """Each owned name this import node binds to something else.
 
     ``import ... as`` binds a word exactly as ``=`` does, so the two are one
     evasion under two spellings: ``from elsewhere import Other as
@@ -170,23 +180,62 @@ def _import_rebindings(node: ast.ImportFrom | ast.Import) -> set[str]:
     the owned name with no assignment and no ``class`` statement in the
     file at all.
 
-    What is compared is the module the name comes OUT of against the module
-    that owns it, so importing an owned symbol from its owner is not a
-    rebind however it is spelled, and only a source other than the owner is
-    reported.
+    What is compared is the SYMBOL, not the module it came out of: an alias
+    binding an owned word to anything whose own name is a different word is
+    a rebind wherever it is imported from, and the owning module of a
+    sibling class is an owning module too.  The source is read for one case
+    only — ``X as X``, where the bound word is the imported symbol's own
+    name — which is a re-export of the owned symbol when it comes out of
+    the owner and a second statement of it when it does not (KOD-540).
     """
     names: set[str] = set()
     for alias in node.names:
         bound = alias.asname
         if bound is None or bound not in OWNERS:
             continue
-        if _source_module(node, alias) != OWNERS[bound]:
+        if alias.name != bound or _source_module(node, alias) != OWNERS[bound]:
             names.add(bound)
     return names
 
 
+#: The statements that carry more statements at the module's own level.
+MODULE_BLOCKS = (ast.If, ast.Try, ast.With)
+
+
+def _module_level_statements(tree: ast.Module) -> list[ast.stmt]:
+    """Every statement of *tree* that binds into the module's own namespace.
+
+    Not ``tree.body``: a conditional, a ``try`` and a ``with`` bind their
+    bodies at module level too, so ``SpecFinding`` bound one statement
+    inside ``if TYPE_CHECKING:`` or a ``try: / except ImportError:`` shadows
+    the owned word for the whole module exactly as a binding at the
+    outermost level does.  This is the reach the class scan beside it
+    already had through ``ast.walk``, given to the binding scans as well —
+    a guard that saw a ``class`` at a depth but not an alias at the same
+    depth was stopped by indentation (KOD-540).
+
+    A function or a class body is NOT descended into, and that is the whole
+    of what this declines to read: those bind in their own namespace and
+    shadow nothing the module reads.  Bounded by the tree: each node is
+    taken once and only the three block kinds above are opened.
+    """
+    statements: list[ast.stmt] = []
+    pending: list[ast.stmt] = list(tree.body)
+    while pending:
+        node = pending.pop()
+        statements.append(node)
+        if not isinstance(node, MODULE_BLOCKS):
+            continue
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.stmt):
+                pending.append(child)
+            elif isinstance(child, ast.ExceptHandler):
+                pending.extend(child.body)
+    return statements
+
+
 def _rebindings(tree: ast.Module) -> frozenset[str]:
-    """Each owned name this module binds at its top level, and not by class.
+    """Each owned name this module binds at module level, and not by class.
 
     A ``class`` is not the only way to state a symbol a second time:
     ``SpecFinding = _LocalStub`` leaves the ``ImportFrom`` in place for the
@@ -196,12 +245,14 @@ def _rebindings(tree: ast.Module) -> frozenset[str]:
     ``_import_rebindings``, because the binding is what matters and not the
     statement that does it (KOD-540).
 
-    Only a binding at the module's own top level shadows the name the
-    module reads, so the scan stops there: a local variable inside a
-    function is that function's own and shadows nothing.
+    Module level is what ``_module_level_statements`` reaches, not the
+    outermost statement list alone: a binding inside a module-level ``if``,
+    ``try`` or ``with`` is a module-level binding. A binding inside a
+    function or a class body is not read, because it shadows nothing the
+    module reads.
     """
     names: set[str] = set()
-    for node in tree.body:
+    for node in _module_level_statements(tree):
         if isinstance(node, ast.Assign):
             targets: list[ast.expr] = list(node.targets)
         elif isinstance(node, ast.AnnAssign):
@@ -439,6 +490,75 @@ def test_an_import_alias_onto_the_owned_name_reds_the_single_declaration_asserti
         ")\n"
     )
     assert _redeclarations(tmp_path) == {"alias.py": [SpecFinding.__name__]}
+
+
+#: One row per alias that binds an owned word to something whose own name is
+#: another word, with the source module the owner itself — the case the arm
+#: used to exempt by source alone. A row per NODE kind, because the two are
+#: one hole under two statements: ``ImportFrom`` binding a sibling class of
+#: the owner, and ``Import`` binding the owning module itself. Both leave
+#: every read of the owned word below them reaching another object.
+OWNING_MODULE = "kodezart.types.domain.organize"
+SIBLING_ALIASES = (
+    f"from {OWNING_MODULE} import {DefectRole.__name__} as {SpecFinding.__name__}\n",
+    f"import {OWNING_MODULE} as {SpecFinding.__name__}\n",
+)
+
+
+@pytest.mark.parametrize("source", SIBLING_ALIASES, ids=SIBLING_ALIASES)
+def test_an_alias_out_of_the_owning_module_onto_a_sibling_name_is_a_rebind(
+    source: str, tmp_path: Path
+) -> None:
+    """The source module is the owner and the binding is still a rebind.
+
+    The arm used to ask which module the name came out of and never which
+    symbol it bound, so an alias whose source happened to be the owning
+    module was exempt however it was spelled — including when it bound the
+    owner's OTHER class, or the owning module itself, to the owned word.
+    Planted on this control's own tree, so what is demonstrated is the
+    detector answering.
+    """
+    (tmp_path / "sibling.py").write_text(source)
+
+    assert _redeclarations(tmp_path) == {"sibling.py": [SpecFinding.__name__]}
+
+
+#: One row per statement that carries a binding at the module's own level,
+#: against the depth the scan has to reach. The last row is the boundary the
+#: scan declines: a function body binds its own namespace and shadows
+#: nothing, so it must report nothing and the reach cannot simply be
+#: ``ast.walk``.
+ALIAS = "from kodezart.types.domain.write_back import WriteBackFinding as SpecFinding"
+NESTED_BINDINGS = (
+    (f"from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    {ALIAS}\n", True),
+    (f"try:\n    {ALIAS}\nexcept ImportError:\n    pass\n", True),
+    (
+        f"import contextlib\n\nwith contextlib.suppress(ImportError):\n    {ALIAS}\n",
+        True,
+    ),
+    (f"def _load() -> None:\n    {ALIAS}\n", False),
+)
+
+
+@pytest.mark.parametrize(
+    ("source", "reported"),
+    NESTED_BINDINGS,
+    ids=["if", "try", "with", "function-body"],
+)
+def test_the_binding_scan_reaches_every_statement_that_binds_module_level(
+    source: str, reported: bool, tmp_path: Path
+) -> None:
+    """The alias arm reads the depths the class arm reads, and no further.
+
+    The class scan walks the whole tree, so a ``class SpecFinding`` inside
+    ``if TYPE_CHECKING:`` was caught while the identical alias one statement
+    deeper was invisible — to this guard and to the type checker both. What
+    separated reported from unreported was indentation.
+    """
+    (tmp_path / "nested.py").write_text(source)
+    expected = {"nested.py": [SpecFinding.__name__]} if reported else {}
+
+    assert _redeclarations(tmp_path) == expected
 
 
 def test_an_import_of_an_owned_symbol_from_its_owner_is_not_a_rebind(
