@@ -8,9 +8,12 @@ carried alongside that read stands in for it.
 """
 
 import ast
+import functools
+import importlib
 import inspect
 import pathlib
 import re
+import types
 from unittest.mock import Mock
 
 import pytest
@@ -2362,65 +2365,180 @@ async def test_a_delivering_lane_reads_its_finished_roster_once_and_then_holds_i
     assert port.issues[DIRECT_DONE].state_kind is WorkflowStateKind.COMPLETED
 
 
-def _asking_barriers(tree, *, refusal):
-    """Each outermost function in *tree* whose body reaches *refusal*.
+@functools.cache
+def _package_modules():
+    """Every module of the package, imported, beside its own syntax tree.
 
-    The name recorded is the outermost function the call sits inside -- the
-    barrier a caller reaches -- so a call written in a closure defined
-    inside a node is that node's asking.  A call at module level belongs to
-    no barrier and is recorded as its own line, which no barrier name can
-    equal, so it is reported rather than folded into one.
+    Read once per session: one file per module, each parsed once, so every
+    walk below is bounded by the package itself.
     """
+    package = pathlib.Path(kodezart.__file__).resolve().parent
+    found = []
+    for path in sorted(package.rglob("*.py")):
+        parts = path.relative_to(package.parent).with_suffix("").parts
+        name = ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+        found.append(
+            (
+                importlib.import_module(name),
+                ast.parse(path.read_text(encoding="utf-8")),
+            )
+        )
+    return tuple(found)
+
+
+def _module_named_by(node, modules):
+    """The module an expression names through module aliases, or nothing."""
+    if isinstance(node, ast.Name):
+        return modules.get(node.id)
+    if isinstance(node, ast.Attribute):
+        outer = _module_named_by(node.value, modules)
+        inner = getattr(outer, node.attr, None) if outer is not None else None
+        return inner if isinstance(inner, types.ModuleType) else None
+    return None
+
+
+def _callers_in(module, tree, function):
+    """Each outermost function of *module* holding a call that IS *function*."""
+    namespace = vars(module)
+    # Resolved by identity, not by spelling: an aliased import and a
+    # module-level rebinding both leave a name whose value is the function.
+    names = {name for name, value in namespace.items() if value is function}
+    modules = {
+        name: value
+        for name, value in namespace.items()
+        if isinstance(value, types.ModuleType)
+    }
+    # A local rebinding exists only in the tree: every plain name assigned
+    # from a name already known is the function too, to a fixed point.  Each
+    # pass adds a name or ends the loop, so it runs at most once per
+    # assignment.
+    rebindings = [
+        (target.id, node.value.id)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        and isinstance(node.value, ast.Name)
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    ]
+    grown = True
+    while grown:
+        added = {name for name, source in rebindings if source in names} - names
+        names |= added
+        grown = bool(added)
+
+    def is_function(callee):
+        if isinstance(callee, ast.Name):
+            return callee.id in names
+        if isinstance(callee, ast.Attribute):
+            owner = _module_named_by(callee.value, modules)
+            return owner is not None and getattr(owner, callee.attr, None) is function
+        return False
+
     found = set()
 
-    def walk(parent, outer):
+    def walk(parent, prefix, outer):
         for child in ast.iter_child_nodes(parent):
-            here = outer
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                here = outer or child.name
-            if isinstance(child, ast.Call):
-                called = child.func
-                reached = (
-                    called.id
-                    if isinstance(called, ast.Name)
-                    else getattr(called, "attr", None)
-                )
-                if reached == refusal:
-                    found.add(here or f"module line {child.lineno}")
-            walk(child, here)
+            here, path = outer, prefix
+            if outer is None and isinstance(child, ast.ClassDef):
+                path = (*prefix, child.name)
+            if outer is None and isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                here = ".".join((*prefix, child.name))
+            if isinstance(child, ast.Call) and is_function(child.func):
+                found.add((module.__name__, here or f"module line {child.lineno}"))
+            walk(child, path, here)
 
-    walk(tree, None)
+    walk(tree, (), None)
     return found
 
 
-def native_roster_barriers():
-    """The barrier roster the shipped tree states, not a hand-kept twin.
+def callers_of(function):
+    """Every function in the package that calls *function*, found by identity.
 
-    Every module under the package is parsed once -- a bounded walk per
-    file -- and every call to the persisted-set refusal is attributed to
-    the function that holds it, by the refusal's own name.
+    A call counts when its callee resolves to the function object itself:
+    a name whose module-level value IS the function (so an aliased import or
+    a module-level rebinding counts), a name rebound from one of those inside
+    the module, or an attribute of a module alias that resolves to it.  Each
+    caller is recorded as ``(module, qualified name of the outermost
+    function)``, so two modules or two classes never merge into one name,
+    and a call made in a closure is the node that holds it.  A call outside
+    any function -- a class body, a module-level lambda -- is recorded as
+    its own line, which no reach table can hold, so it is reported rather
+    than folded in.
+
+    Not seen: a name bound by an import made inside a function, and a
+    function reached through any other object (an instance, a mapping, a
+    ``functools.partial``).
     """
-    root = pathlib.Path(kodezart.__file__).resolve().parent
-    refusal = recorded_native_roster.__name__
-    asking = set()
-    for path in sorted(root.rglob("*.py")):
-        asking |= _asking_barriers(
-            ast.parse(path.read_text(encoding="utf-8")), refusal=refusal
+    return tuple(
+        sorted(
+            caller
+            for module, tree in _package_modules()
+            for caller in _callers_in(module, tree, function)
         )
-    return tuple(sorted(asking))
+    )
+
+
+def node_of(function):
+    """The ``(module, qualified name)`` a reach table keys *function* under.
+
+    Read off the function object, so a reach table names its nodes the way
+    ``callers_of`` records them and never through a hand-typed twin.
+    """
+    return (function.__module__, function.__qualname__)
 
 
 #: Every native barrier that states its own roster, derived from the shipped
-#: tree instead of named by hand.  The entry gate is one of four, not the
+#: tree instead of named by hand: every function that calls the persisted-set
+#: refusal, however it is spelled.  The entry gate is one of four, not the
 #: only one: a checkpoint resumed at the loop or at the post-merge review
 #: lands on a node that passes *held* as well, and the snapshot barrier the
 #: delivery and loop-gate nodes go through asks the same question without
-#: being a node itself.  Derived, a fifth barrier is covered the day it is
-#: written and a barrier that stops asking reds the case below (KOD-652).
-PERSISTED_SET_BARRIERS = native_roster_barriers()
+#: being a node itself (KOD-652).
+PERSISTED_SET_BARRIERS = callers_of(recorded_native_roster)
+
+#: How each barrier is reached, one hand-written line per barrier.  Which
+#: barriers exist is read off the tree; requiring the two to agree is what
+#: makes the refusal a statement about the whole set.  A new asking site
+#: arrives here without a way to reach it, and a site that stops asking
+#: leaves one behind.
+BARRIER_REACH = {
+    node_of(revalidate_criteria): lambda at: revalidate_criteria(
+        at.state, at.config, source=at.counting
+    ),
+    node_of(require_current_native_snapshot): lambda at: (
+        require_current_native_snapshot(at.state, reader=at.counting)
+    ),
+    node_of(FireImplementation.run_ralph_loop): lambda at: (
+        at.fire.implementation.run_ralph_loop(at.state, at.config)
+    ),
+    node_of(FireReview.review_against_ticket): lambda at: (
+        at.fire.review.review_against_ticket(at.state, at.config)
+    ),
+}
 
 
-@pytest.mark.parametrize("barrier", PERSISTED_SET_BARRIERS)
+def test_every_derived_barrier_has_a_reach_and_every_reach_a_barrier():
+    """The derived roster is the reach table's keys, and it is never empty.
+
+    Not parametrised: a derivation that found nothing would collect no case
+    at all, and the refusal below would then be stated over no barrier while
+    reporting green.  Here an empty roster fails outright (KOD-652).
+    """
+    assert PERSISTED_SET_BARRIERS, "the tree derived no persisted-set barrier"
+    assert set(PERSISTED_SET_BARRIERS) == set(BARRIER_REACH)
+
+
+def persisted_artifact():
+    """A criteria document of the kind a branch file carries, not a roster."""
+    return CriteriaArtifact(
+        criteria=make_criteria("recorded"),
+        conjunction=ConjunctionVerdict(satisfiable=True),
+    )
+
+
+@pytest.mark.parametrize("barrier", sorted(BARRIER_REACH), ids=":".join)
 async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier(
     barrier, monkeypatch
 ):
@@ -2440,13 +2558,13 @@ async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier(
     spec, _ = await counting.read_entry(issue_key=SUBJECT)
     counting.calls.clear()
     fire = engine(criteria=counting)
-    # One state over the three barriers, holding what each reads before it
-    # asks the roster question: the entry gate reads the lane it entered
-    # on, the loop and the review read the remediation slot, and the
-    # review reads the two shas consolidation left behind.  The branch and
-    # counter slots are what the loop reads AFTER the barrier, present so
-    # that a barrier which failed to refuse is reported as a refusal that
-    # did not happen rather than as a missing key further down.
+    # One state over the barriers, holding what each reads before it asks
+    # the roster question: the entry gate reads the lane it entered on, the
+    # loop and the review read the remediation slot, and the review reads
+    # the two shas consolidation left behind.  The branch and counter slots
+    # are what the loop reads AFTER the barrier, present so that a barrier
+    # which failed to refuse is reported as a refusal that did not happen
+    # rather than as a missing key further down.
     state = {
         "issue_key": SUBJECT,
         "fire_spec": spec,
@@ -2459,10 +2577,7 @@ async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier(
         "work_base_ref": "main",
         "repo_visibility": RepoVisibility.PUBLIC,
         "total_iterations": 0,
-        "criterion_set": CriteriaArtifact(
-            criteria=make_criteria("recorded"),
-            conjunction=ConjunctionVerdict(satisfiable=True),
-        ),
+        "criterion_set": persisted_artifact(),
     }
     config = {
         "configurable": {
@@ -2477,26 +2592,10 @@ async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier(
     }
     for module in (fire_implementation, fire_review):
         monkeypatch.setattr(module, "get_stream_writer", lambda: lambda _: None)
-    reach = {
-        "revalidate_criteria": lambda: revalidate_criteria(
-            state, config, source=counting
-        ),
-        "require_current_native_snapshot": lambda: require_current_native_snapshot(
-            state, reader=counting
-        ),
-        "run_ralph_loop": lambda: fire.implementation.run_ralph_loop(state, config),
-        "review_against_ticket": lambda: fire.review.review_against_ticket(
-            state, config
-        ),
-    }
-    # How to reach a barrier is written here; WHICH barriers exist is read
-    # off the tree.  Requiring the two to agree is what makes the refusal a
-    # statement about the whole set: a new asking site arrives here without
-    # a way to reach it, and a site that stops asking leaves one behind.
-    assert set(reach) == set(PERSISTED_SET_BARRIERS)
+    at = types.SimpleNamespace(state=state, config=config, counting=counting, fire=fire)
 
     with pytest.raises(PersistedCriterionSetError):
-        await reach[barrier]()
+        await BARRIER_REACH[barrier](at)
 
     assert counting.calls == []
     assert port.issues[DIRECT_OWED].state_kind is WorkflowStateKind.UNSTARTED
