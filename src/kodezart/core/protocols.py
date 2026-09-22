@@ -1671,6 +1671,30 @@ class RunAlarmTracker(SurfaceLeaseTracker, Protocol):
 
 
 @runtime_checkable
+class CriterionMinter(SurfaceLeaseTracker, Protocol):
+    """Exactly the tracker calls one obligation mint makes.
+
+    A role narrowed out of the port rather than a widening of it: the lease
+    on one lane's criterion child set, and the mint under it. What it leaves
+    out is the point: no workflow state, no description edit and no reset of
+    a criterion that already stands, so a holder of this role can add an
+    obligation to a lane and can change nothing it already carries.
+    ``TrackerPort`` satisfies it structurally.
+    """
+
+    async def create_criterion_if_absent(
+        self,
+        *,
+        parent_key: str,
+        title: str,
+        check: str,
+        do: str,
+        holder: str,
+        revalidate: WriteRevalidation | None = None,
+    ) -> TrackerIssue: ...
+
+
+@runtime_checkable
 class LaneEventHistory(Protocol):
     """The one read a grading's provenance needs, and no write beside it.
 
@@ -2035,6 +2059,23 @@ class NativeWriteGuard(Protocol):
         authorized_commit_sha: str,
     ) -> None:
         """Recheck current authority against the harness's actual commit receipt."""
+        ...
+
+    async def require_unweakened(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        commit_sha: str,
+        report: AmendmentReport,
+    ) -> None:
+        """Refuse a commit that loses an assertion a pinned record designates.
+
+        The comparison runs between the writer's own starting HEAD and the
+        harness commit, over the designations the held records carry, less
+        those of a record this run amended. A loss leaves the obligation on
+        the lane as a criterion and refuses publication.
+        """
         ...
 
     async def require_unchanged_head(

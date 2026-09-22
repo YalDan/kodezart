@@ -62,8 +62,23 @@ baseline only: a deviation belongs to the ruling source, and does not itself
 refute that criterion. Neither the recorded Evidence test string nor a dispatch
 base is interpreted as a protection declaration.
 
-The current ruling-node producer, historical declaration migration, complete
-scheduled audit invocation and claim publication remain separate work. Returned
-claims are observations, not audit judgments or permission to rewrite assertions.
-This reader introduces no tracker write or protection enforcement; any eventual
-record publication must use the authorized lease and outbound gate boundaries.
+Returned claims are observations, not audit judgments or permission to rewrite
+assertions. What acts on them is the native writer's guard. Before a harness
+commit is published it compares the writer's own starting HEAD with that
+commit, over the designations the pinned records it holds carry — less those
+of a record this run amended through the canonical writer, whose departure was
+claimed and independently judged. An assertion the later reading no longer
+carries is a loss; an added, reordered or reformatted assertion is not. Each
+loss mints one `criterion` sub-issue on the lane, gated exactly as derived
+content under that lane's criterion child-set lease, so the lane's rollup
+carries the obligation and cannot converge while it stands, and publication is
+refused. A comparison that cannot be made refuses with no mark: an unreadable
+designation is not evidence that the assertions survived.
+
+`RecordedAssertionDriftDetector`, which addresses a designation by its comment
+identity and rereads the criterion family around the comparison, is not
+constructed anywhere in the composition root. It is carried as an owed
+obligation on its own lane, which decides whether to wire it or delete it, and
+the static reach assertion in `tests/test_composition_reach.py` names it until
+that is settled. The current ruling-node producer and historical declaration
+migration remain separate work.

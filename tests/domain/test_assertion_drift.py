@@ -3,8 +3,15 @@
 import pytest
 from pydantic import ValidationError
 
-from kodezart.domain.assertion_drift import protected_assertions
-from kodezart.types.domain.assertion_drift import ProtectedTestRef
+from kodezart.domain.assertion_drift import (
+    lost_assertions,
+    protected_assertions,
+    weakening_mark,
+)
+from kodezart.types.domain.assertion_drift import (
+    AssertionDeviationClaim,
+    ProtectedTestRef,
+)
 
 
 def assertions(source, name="test_behavior"):
@@ -105,3 +112,95 @@ def test_protected_reference_requires_canonical_explicit_python_address(path, na
         ProtectedTestRef(
             source_ref="owning-ruling/native-id", path=path, qualified_name=name
         )
+
+
+def claim(*, before, after, graded="a" * 40, head="b" * 40):
+    """One deviation claim over the designated test the fixtures above use."""
+    return AssertionDeviationClaim(
+        protected_test=ProtectedTestRef(
+            source_ref="owning-record/native-id",
+            path="tests/protected.py",
+            qualified_name="test_behavior",
+        ),
+        graded_sha=graded,
+        head_sha=head,
+        graded_blob_sha="c" * 40,
+        head_blob_sha="d" * 40,
+        before=before,
+        after=after,
+    )
+
+
+def test_a_removed_or_changed_assertion_is_lost_and_an_added_one_is_not():
+    before = assertions("def test_behavior():\n    assert calls == 1\n")
+    removed = assertions("def test_behavior():\n    pass\n")
+    changed = assertions("def test_behavior():\n    assert calls is not None\n")
+    added = assertions(
+        "def test_behavior():\n    assert calls == 1\n    assert calls > 0\n"
+    )
+
+    assert lost_assertions(before=before, after=removed) == before
+    assert lost_assertions(before=before, after=changed) == before
+    assert lost_assertions(before=before, after=added) == ()
+
+
+def test_counted_so_a_reorder_loses_nothing_and_a_dropped_duplicate_loses_one():
+    before = assertions(
+        "def test_behavior():\n    assert calls == 1\n    assert calls == 2\n"
+    )
+    reordered = assertions(
+        "def test_behavior():\n    assert calls == 2\n    assert calls == 1\n"
+    )
+    twice = assertions(
+        "def test_behavior():\n    assert calls == 1\n    assert calls == 1\n"
+    )
+    once = assertions("def test_behavior():\n    assert calls == 1\n")
+
+    assert lost_assertions(before=before, after=reordered) == ()
+    assert lost_assertions(before=twice, after=once) == (twice[1],)
+    assert len(lost_assertions(before=twice, after=once)) == 1
+
+
+def test_a_reformatted_assertion_loses_nothing():
+    before = assertions('def test_behavior():\n    assert calls == 1, "old message"\n')
+    after = assertions(
+        "# heading\n\ndef test_behavior():\n"
+        '    assert (\n        calls  ==  1\n    ), "new message"\n'
+    )
+
+    assert (
+        before[0].expression != after[0].expression or before[0].line != after[0].line
+    )
+    assert lost_assertions(before=before, after=after) == ()
+
+
+def test_the_mark_names_the_test_the_record_and_each_lost_assertion_and_no_sha():
+    before = assertions(
+        "def test_behavior():\n    assert calls == 1\n    assert seen == 'x'\n"
+    )
+    after = assertions("def test_behavior():\n    pass\n")
+    lost = lost_assertions(before=before, after=after)
+    first = claim(before=before, after=after)
+    second = claim(before=before, after=after, graded="e" * 40, head="f" * 40)
+
+    mark = weakening_mark(claim=first, lost=lost)
+
+    assert mark == weakening_mark(claim=second, lost=lost)
+    assert "tests/protected.py::test_behavior" in mark.check
+    assert "owning-record/native-id" in mark.check
+    assert "`calls == 1`" in mark.check
+    assert "`seen == 'x'`" in mark.check
+    assert "a" * 40 not in mark.check + mark.do + mark.title
+    assert "b" * 40 not in mark.check + mark.do + mark.title
+    assert "pass" not in mark.check
+
+
+def test_a_claim_that_lost_nothing_renders_no_mark():
+    before = assertions("def test_behavior():\n    assert calls == 1\n")
+    after = assertions(
+        "def test_behavior():\n    assert calls == 1\n    assert calls > 0\n"
+    )
+
+    assert lost_assertions(before=before, after=after) == ()
+    with pytest.raises(ValueError, match="at least one lost assertion"):
+        weakening_mark(claim=claim(before=before, after=after), lost=())

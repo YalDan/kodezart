@@ -15,6 +15,7 @@ from kodezart.types.domain.agent import (
     RulingAnswer,
     RulingAuthor,
     RulingId,
+    RulingProtectedTestRef,
 )
 from kodezart.types.domain.escalation import DeliverableEscalation
 
@@ -173,6 +174,26 @@ def render_deliverable_escalation(
         body="```json\n"
         + escalation.model_dump_json(by_alias=True, indent=2)
         + "\n```",
+    )
+
+
+def designated_tests(
+    records: Sequence[Ruling], *, amended: Collection[RulingId]
+) -> tuple[RulingProtectedTestRef, ...]:
+    """Every designated test the roster still protects, in record order.
+
+    Arithmetic, not judgement. A record whose field is the absence itself
+    designates nothing, and a record this run amended through the canonical
+    writer designates nothing either: the departure from it was claimed and
+    independently judged, so the change it authorizes is not an unclaimed
+    one.
+    """
+    exempt = frozenset(amended)
+    return tuple(
+        reference
+        for record in records
+        if record.ruling_id not in exempt
+        for reference in record.protected_tests or ()
     )
 
 

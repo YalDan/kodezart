@@ -255,6 +255,12 @@ class NativeExecution:
                 start=phase.start,
                 authorized_commit_sha=sha,
             )
+            await self._guard.require_unweakened(
+                workspace_path=path,
+                start=phase.start,
+                commit_sha=sha,
+                report=phase.report,
+            )
 
         receipt = await self._persister.persist(
             workspace_path=path,

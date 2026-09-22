@@ -952,6 +952,17 @@ UNVERIFIED_WRITES = frozenset(
             function="ScopeTerminal._post",
             method="post_status_update",
         ),
+        # The mark a lost designated assertion leaves on its lane. Its whole
+        # text is arithmetic over two pinned Git objects and a pinned record,
+        # and the commit it describes is refused, so there is no judged commit
+        # to verify it against and re-judging that arithmetic would be no
+        # second judgement (KOD-843). Held out by name, exactly as the writes
+        # above are.
+        CallSite(
+            module="services/weakened_assertions.py",
+            function="WeakenedAssertionMarks.refuse_weakening",
+            method="create_criterion_if_absent",
+        ),
     }
 )
 
