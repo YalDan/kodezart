@@ -1,22 +1,38 @@
-"""The vocabulary and its table form one complete boot contract."""
+"""The vocabulary and its table form one complete boot contract.
 
+The table and every surface that consumes it carry the stage and effect
+vocabularies only: a tracker's own state string is resolved at the port
+boundary, through the configured ``workflow_states`` mapping the adapter is
+built with, and nowhere else (KOD-795).
+"""
+
+import ast
+import inspect
+import tomllib
+import typing
+from collections.abc import Mapping
+from pathlib import Path
+from typing import get_args
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError, create_model
 
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import DialledTracker, boot_tracker
 from kodezart.config.app import AppConfig
+from kodezart.core import prompt_namespaces
 from kodezart.core.errors import OperationConfigError
 from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.run_event import (
     DERIVED_RUN_EVENTS,
     EVIDENCE_ROW_WRITES,
     RUN_EVENT_PUBLISHERS,
     SILENT_STATE_EVENTS,
     UNDEMONSTRATED_EVENT_KINDS,
+    RunEventEffect,
     RunEventKind,
     RunEventPublisher,
 )
@@ -203,3 +219,245 @@ def test_the_evidence_row_writes_are_the_two_gradings_that_restamp_the_row():
         RunEventPublisher.LANE
     }
     assert EVIDENCE_ROW_WRITES.isdisjoint(UNDEMONSTRATED_EVENT_KINDS.values())
+
+
+REPO_ROOT = Path(__file__).parents[2]
+SOURCE_ROOT = REPO_ROOT / "src" / "kodezart"
+TABLE_FIELD = "run_event_states"
+#: The configured mapping a tracker state string is resolved through: every
+#: operation field keyed by the lifecycle vocabulary, read off the model.
+CONFIGURED = frozenset(
+    name
+    for name, info in OperationConfig.model_fields.items()
+    if get_args(info.annotation)[:1] == (LifecycleStage,)
+)
+#: The adapter's constructor keyword that receives that mapping, read off its
+#: own signature.
+ADAPTER_MAPPING = frozenset(
+    name
+    for name, hint in typing.get_type_hints(LinearMcpTracker.__init__).items()
+    if name in inspect.signature(LinearMcpTracker.__init__).parameters
+    and get_args(hint)[:1] == (LifecycleStage,)
+)
+GROOMING_PROMPT = SOURCE_ROOT / "prompts" / "sets" / "claude-opus" / "grooming_pass.md"
+
+
+def operation_files() -> tuple[Path, ...]:
+    """Every shipped operation file."""
+    return tuple(sorted((REPO_ROOT / "docs").glob("operation*.toml")))
+
+
+def vendor_state_names() -> frozenset[str]:
+    """Every tracker state string the shipped operation files declare."""
+    return frozenset(
+        name
+        for path in operation_files()
+        for field in CONFIGURED
+        for name in tomllib.loads(path.read_text()).get(field, {}).values()
+    )
+
+
+def table_surfaces() -> dict[str, str]:
+    """Each shipped ``[run_event_states]`` table, its rows rendered as text."""
+    surfaces = {}
+    for path in operation_files():
+        table = tomllib.loads(path.read_text()).get(TABLE_FIELD)
+        if table:
+            surfaces[f"{path.name}:[{TABLE_FIELD}]"] = "\n".join(
+                f"{event} = {effect!r}" for event, effect in table.items()
+            )
+    return surfaces
+
+
+def binding_call(name: str) -> str:
+    """The one prompt binding of the operation field *name*, as source text."""
+    tree = ast.parse(inspect.getsource(prompt_namespaces))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == prompt_namespaces._bind_absentable.__name__
+        and any(
+            isinstance(argument, ast.Constant) and argument.value == name
+            for argument in node.args
+        )
+    ]
+    if len(calls) != 1:
+        raise LookupError(f"expected one binding of {name!r}, found {len(calls)}")
+    return ast.unparse(calls[0])
+
+
+def guarded_block(text: str, name: str) -> str:
+    """The template region rendered only when *name* is bound."""
+    opening = f"{{{{#if {name}}}}}"
+    start = text.find(opening)
+    if start < 0:
+        raise LookupError(f"no {opening} block")
+    end = text.find("{{/if}}", start)
+    if end < 0:
+        raise LookupError(f"{opening} is never closed")
+    return text[start : end + len("{{/if}}")]
+
+
+def scanned_surfaces() -> dict[str, str]:
+    """The table and every surface that consumes it, located by name."""
+    return {
+        **table_surfaces(),
+        "OperationConfig.require_run_event_table": inspect.getsource(
+            OperationConfig.require_run_event_table
+        ),
+        "prompt_namespaces.operation_bindings": binding_call(TABLE_FIELD),
+        f"{GROOMING_PROMPT.name}:{TABLE_FIELD}": guarded_block(
+            GROOMING_PROMPT.read_text(), TABLE_FIELD
+        ),
+    }
+
+
+def state_names_in(
+    surfaces: Mapping[str, str], tokens: frozenset[str]
+) -> dict[str, tuple[str, ...]]:
+    """Each surface that carries a tracker state string, with the strings."""
+    return {
+        name: found
+        for name, text in sorted(surfaces.items())
+        if (found := tuple(sorted(token for token in tokens if token in text)))
+    }
+
+
+def value_domain(model: type[BaseModel], field: str) -> tuple[object, set[object]]:
+    """The key type of a mapping field and every type its values may take."""
+    key, value = get_args(model.model_fields[field].annotation)
+    return key, set(get_args(value)) or {value}
+
+
+def test_the_table_value_domain_is_the_stage_and_effect_vocabularies():
+    assert value_domain(OperationConfig, TABLE_FIELD) == (
+        str,
+        {LifecycleStage, RunEventEffect},
+    )
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [dict[str, str], dict[str, LifecycleStage | RunEventEffect | str]],
+)
+def test_a_widened_value_domain_is_reported(annotation):
+    probe = create_model("Probe", **{TABLE_FIELD: (annotation, ...)})
+    assert value_domain(probe, TABLE_FIELD) != (
+        str,
+        {LifecycleStage, RunEventEffect},
+    )
+
+
+def test_no_tracker_state_string_appears_in_the_table_or_its_consumers():
+    tokens = vendor_state_names()
+    assert tokens
+    surfaces = scanned_surfaces()
+    assert table_surfaces()
+    for name, text in surfaces.items():
+        assert text, name
+    for name in (
+        "OperationConfig.require_run_event_table",
+        "prompt_namespaces.operation_bindings",
+        f"{GROOMING_PROMPT.name}:{TABLE_FIELD}",
+    ):
+        assert TABLE_FIELD in surfaces[name]
+    assert state_names_in(surfaces, tokens) == {}
+
+
+def test_the_state_resolution_site_is_outside_the_scanned_surfaces():
+    """The configured mapping's own binding and the prompt's resolution site
+    exist, carry what the scan forbids elsewhere, and are not scanned."""
+    tokens = vendor_state_names()
+    surfaces = scanned_surfaces()
+    for field in CONFIGURED:
+        sibling = binding_call(field)
+        assert sibling not in surfaces.values()
+    whole = GROOMING_PROMPT.read_text()
+    assert state_names_in({"whole": whole}, tokens)
+    block = guarded_block(whole, TABLE_FIELD)
+    assert state_names_in({"block": block}, tokens) == {}
+
+
+@pytest.mark.parametrize("surface", sorted(scanned_surfaces()))
+def test_a_tracker_state_string_injected_into_each_scanned_surface_is_reported(
+    surface,
+):
+    tokens = vendor_state_names()
+    token = sorted(tokens)[0]
+    surfaces = dict(scanned_surfaces())
+    surfaces[surface] = f"{surfaces[surface]}\n{token}"
+    assert state_names_in(surfaces, tokens) == {surface: (token,)}
+
+
+def production_sources() -> dict[str, str]:
+    """Every module of the package, keyed by its path under the package."""
+    return {
+        path.relative_to(SOURCE_ROOT).as_posix(): path.read_text()
+        for path in sorted(SOURCE_ROOT.rglob("*.py"))
+    }
+
+
+def state_constants(
+    sources: Mapping[str, str], tokens: frozenset[str]
+) -> tuple[str, ...]:
+    """Each string constant in a module that IS a tracker state string."""
+    return tuple(
+        f"{name}:{node.lineno}:{node.value}"
+        for name, text in sorted(sources.items())
+        for node in ast.walk(ast.parse(text))
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value in tokens
+    )
+
+
+def mapping_sites(sources: Mapping[str, str]) -> tuple[tuple[str, bool], ...]:
+    """Each call handing the adapter its state mapping, and whether the value
+    names the configured field."""
+    return tuple(
+        (f"{name}:{keyword.value.lineno}", _names_configured(keyword.value))
+        for name, text in sorted(sources.items())
+        for node in ast.walk(ast.parse(text))
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+        if keyword.arg in ADAPTER_MAPPING
+    )
+
+
+def _names_configured(expression: ast.expr) -> bool:
+    return any(
+        isinstance(node, ast.Attribute) and node.attr in CONFIGURED
+        for node in ast.walk(expression)
+    )
+
+
+def test_a_tracker_state_string_is_resolved_only_through_the_configured_mapping():
+    assert CONFIGURED
+    assert ADAPTER_MAPPING
+    sources = production_sources()
+    assert state_constants(sources, vendor_state_names()) == ()
+    sites = mapping_sites(sources)
+    assert len(sites) == 1
+    assert all(named for _, named in sites)
+
+
+def test_a_state_string_constant_or_a_second_mapping_site_is_reported():
+    tokens = vendor_state_names()
+    token = sorted(tokens)[0]
+    (keyword,) = ADAPTER_MAPPING
+    planted = {
+        "chains/state_writer.py": f"stage_name = {token!r}\n",
+        "composition/second.py": (
+            f"adapter = Adapter({keyword}={{LifecycleStage.DONE: {token!r}}})\n"
+        ),
+    }
+    assert state_constants(planted, tokens) == (
+        f"chains/state_writer.py:1:{token}",
+        f"composition/second.py:1:{token}",
+    )
+    sources = {**production_sources(), **planted}
+    sites = mapping_sites(sources)
+    assert len(sites) == 2
+    assert ("composition/second.py:1", False) in sites
