@@ -1235,6 +1235,20 @@ class OrganizeOwner:
                             return OrganizeReport(
                                 completed_phases=tuple(completed), halt=halt
                             )
+                        except SurfaceLeaseError as unheld:
+                            # Another holder owns a surface this write needs,
+                            # inside the admitted scope (membership and the gate
+                            # were re-asked before the write). The round repairs
+                            # nothing here; the dry round reports the class
+                            # again and the bound reports it with its finding.
+                            await self._log.awarning(
+                                "organize_surface_unheld",
+                                issue_key=request.issue_key,
+                                phase=phase.spec.kind.value,
+                                surface_kind=unheld.surface_kind,
+                                current_holder=unheld.current_holder,
+                            )
+                            break
                         if verified_write.verdict is not AuditVerdict.HOLDS:
                             halt = await self._halt(
                                 cause=StageHaltCause.ADMISSION_EXHAUSTED,
