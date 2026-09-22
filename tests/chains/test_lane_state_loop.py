@@ -345,12 +345,24 @@ async def test_first_push_leaves_the_record_and_the_first_push_event():
 
     assert len(lane.record_comments()) == 1
     events = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    # The first push, and then for each criterion the evaluation passed its
+    # grading entry and the lane's own account of it, at the head it was
+    # graded at.
     assert [(event.kind, event.subject_key) for event in events] == [
         (RunEventKind.FIRST_PUSH, None),
-        *((RunEventKind.CRITERION_PASSED, key) for key in OWED_KEYS),
+        *(
+            (kind, key)
+            for key in OWED_KEYS
+            for kind in (RunEventKind.CRITERION_PASSED, RunEventKind.ISSUE_CROSSED_OFF)
+        ),
     ]
+    crossings = [
+        event for event in events if event.kind is RunEventKind.ISSUE_CROSSED_OFF
+    ]
+    assert len(crossings) == len(OWED_KEYS)
+    assert sorted(event.subject_key for event in crossings) == sorted(OWED_KEYS)
     assert {event.graded_sha for event in events[1:]} == {lane.repo.head}
-    assert len(lane.port.comments) == 5
+    assert len(lane.port.comments) == 8
 
     record = await lane.record()
     assert record.lane_key == SUBJECT
@@ -507,9 +519,16 @@ async def test_a_second_commit_edits_the_record_and_posts_no_second_event():
     events = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
     assert [(event.kind, event.subject_key) for event in events] == [
         (RunEventKind.FIRST_PUSH, None),
-        *((RunEventKind.CRITERION_PASSED, key) for key in OWED_KEYS),
+        *(
+            (kind, key)
+            for key in OWED_KEYS
+            for kind in (RunEventKind.CRITERION_PASSED, RunEventKind.ISSUE_CROSSED_OFF)
+        ),
     ]
-    assert len(lane.port.comments) == 5
+    # The record, the one first push, and one grading entry and one
+    # crossing-off per criterion the second evaluation passed: the failed
+    # first one announced nothing.
+    assert len(lane.port.comments) == 8
     record = await lane.record()
     assert [row.sha for row in record.commits] == lane.repo.shas
     assert record.head_sha == lane.repo.head
@@ -1399,17 +1418,25 @@ async def test_a_check_the_base_already_passes_is_no_reading_of_the_branch():
     assert first not in {key for key, _, _ in lane.port.issue_writes}
     # The one thing on the board that says why is the reason's own event on
     # the lane's stream: the lane's record, its first push, that event and
-    # the gradings of the two it crossed off are every comment this run wrote.
+    # the gradings and crossings-off of the two it crossed off are every
+    # comment this run wrote.
     posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
     assert [event.kind for event in posted] == [
         RunEventKind.FIRST_PUSH,
         RunEventKind.CRITERION_SATISFIED_AT_BASE,
-        *(RunEventKind.CRITERION_PASSED for _ in rest),
+        *(
+            kind
+            for _ in rest
+            for kind in (RunEventKind.CRITERION_PASSED, RunEventKind.ISSUE_CROSSED_OFF)
+        ),
     ]
     assert survived(posted, RunEventKind.CRITERION_SATISFIED_AT_BASE) == [
         (first, lane.repo.head)
     ]
     assert survived(posted, RunEventKind.CRITERION_PASSED) == [
+        (key, lane.repo.head) for key in rest
+    ]
+    assert survived(posted, RunEventKind.ISSUE_CROSSED_OFF) == [
         (key, lane.repo.head) for key in rest
     ]
     assert len(posted) + len(lane.record_comments()) == len(lane.port.comments)
@@ -1944,15 +1971,18 @@ def wide_evaluation(passing) -> dict:
 
 
 async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_events():
-    """Five iterations move five criteria and comment on none of them.
+    """Five iterations move five criteria and post only the lane's own kinds.
 
     The lane's comments are the record it rewrites in place and its own
-    stream: the first push, and the grading of each criterion each iteration
-    crossed off (KOD-506). Every iteration here crosses off the whole set it
-    has passed so far and restamps each of their Evidence rows at its own
-    head, so each of those restamps is its own entry — which is the point of
-    the entry: the row a later head restamped and an entry naming only the
-    first head would read as a row pointing behind its last grading.
+    stream: the first push, and for each grading that passed both its
+    grading entry (KOD-506) and the lane's crossing-off. Iteration n passes
+    n criteria at its own head, so the five iterations announce one, two,
+    three, four and five of them. Every iteration here crosses off the whole
+    set it has passed so far and restamps each of their Evidence rows at its
+    own head, so each of those restamps is its own entry — which is the point
+    of the entry: the row a later head restamped and an entry naming only the
+    first head would read as a row pointing behind its last grading. Each
+    crossing-off is a distinct grading, keyed to its criterion and its head.
 
     A per-criterion state move is still not an event, so the three criteria
     nothing finished add nothing, the record is never duplicated, and no
@@ -1976,20 +2006,29 @@ async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_e
     } == set(WIDE_CRITERIA[:5])
     # The count the comment count is measured against: five moves, one per
     # criterion the five iterations passed, and one comment each for the
-    # record, the first push and the fifteen gradings the five iterations
-    # recorded over them.
+    # record, the first push, the fifteen gradings the five iterations
+    # recorded over them and the fifteen crossings-off that followed them.
     assert len(port.workflow_writes) == 5
-    assert len(port.comments) == 17
+    assert len(port.comments) == 32
     assert {comment.issue_key for comment in port.comments} == {SUBJECT}
     posted = await port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
     assert [(event.kind, event.subject_key) for event in posted] == [
         (RunEventKind.FIRST_PUSH, None),
         *(
-            (RunEventKind.CRITERION_PASSED, key)
+            (kind, key)
             for index in range(5)
             for key in WIDE_CRITERIA[: index + 1]
+            for kind in (RunEventKind.CRITERION_PASSED, RunEventKind.ISSUE_CROSSED_OFF)
         ),
     ]
+    crossings = [
+        (event.subject_key, event.graded_sha)
+        for event in posted
+        if event.kind is RunEventKind.ISSUE_CROSSED_OFF
+    ]
+    assert len(crossings) == 15
+    assert len(set(crossings)) == len(crossings)
+    assert {key for key, _ in crossings} == set(WIDE_CRITERIA[:5])
     # A lane's own stream carries only the kinds the lane publishes; a kind
     # some other raiser owns would be somebody else's write on this log.
     assert {RUN_EVENT_PUBLISHERS[event.kind] for event in posted} == {
@@ -2053,7 +2092,15 @@ async def test_a_regression_inside_the_loop_moves_the_criterion_back_and_says_so
         lane.port.issues[SUBJECT].body,
     ) == subject_before
     assert SUBJECT not in {key for key, _, _ in lane.port.issue_writes}
-    assert len(lane.port.comments) == 6
+    # The record, the first push, the refutation, and one grading entry and
+    # one crossing-off per criterion each iteration passed: two at the first
+    # head, one at the second.
+    assert len(lane.port.comments) == 9
+    assert [
+        event.subject_key
+        for event in posted
+        if event.kind is RunEventKind.ISSUE_CROSSED_OFF
+    ].count(kept) == 2
 
 
 def losing_board() -> LosingBoard:
@@ -2837,9 +2884,9 @@ async def test_a_criterion_whose_check_fails_in_the_mutant_tree_keeps_its_verdic
 
     So the harness withholds and never converts: the criterion is crossed off
     at the sha the clean grading read, and no reading-failure event on the
-    lane names it. The one entry keyed to it is its own passing grading at
+    lane names it. The entries keyed to it are its own passing grading at
     that sha, which every cross-off that finishes a criterion records
-    (KOD-506).
+    (KOD-506), and the lane's crossing-off of it at the same sha.
     """
     lane = mutation_lane(tmp_path)
 
@@ -2854,7 +2901,10 @@ async def test_a_criterion_whose_check_fails_in_the_mutant_tree_keeps_its_verdic
         (event.kind, event.graded_sha)
         for event in posted
         if event.subject_key == MUTATION_WIRED
-    ] == [(RunEventKind.CRITERION_PASSED, lane.repo.head)]
+    ] == [
+        (RunEventKind.CRITERION_PASSED, lane.repo.head),
+        (RunEventKind.ISSUE_CROSSED_OFF, lane.repo.head),
+    ]
 
 
 async def test_the_surviving_criterion_reaches_no_passing_state(tmp_path):

@@ -5,6 +5,7 @@ from collections.abc import Awaitable
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import TrackerPort
+from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.pass_scheduler import ScheduledPass
 from kodezart.services.supervisor_pass import (
@@ -12,7 +13,6 @@ from kodezart.services.supervisor_pass import (
     SupervisorPass,
     supervisor_holder,
 )
-from kodezart.services.tally_supervisor import TallySupervisor
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
@@ -35,7 +35,7 @@ def build_supervisor_pass(
     process that holds fire claims, and a lease holder is never derived from it.
     """
     records = LaneRecordReader(tracker=tracker, operation=operation)
-    tally = TallySupervisor(
+    alarms = AlarmSupervisor(
         tracker=tracker,
         records=records,
         marker_prefixes=operation.marker_prefixes,
@@ -53,7 +53,7 @@ def build_supervisor_pass(
     observation = SupervisorPass(
         scopes=tuple(row.scope for row in operation.organize_scopes),
         read_ready=read_ready,
-        tally=tally,
+        alarms=alarms,
     )
     return ScheduledPass(
         name=SUPERVISOR_TICK_NAME,

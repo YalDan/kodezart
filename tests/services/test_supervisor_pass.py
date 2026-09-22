@@ -5,14 +5,19 @@ import asyncio
 import pytest
 import structlog.testing
 
+from kodezart.domain.lane_alarms import stored_alarm
+from kodezart.domain.run_event_stream import LaneRunEvent
+from kodezart.domain.stream_signals import lapse_undischarged
 from kodezart.domain.tally_record import is_raised
+from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.supervisor_pass import (
     SupervisorIncompleteError,
     SupervisorPass,
 )
-from kodezart.services.tally_supervisor import SIGNAL, TallySupervisor
 from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.run_alarm import AlarmSignal, CriterionSubject
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ResolvedScope, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
 from kodezart.types.domain.topology import BlockedIssue
@@ -20,6 +25,7 @@ from kodezart.types.domain.tracker import IssuePriority
 from tests.fakes import FIXTURE_EPOCH, FakeTrackerPort, make_tracker_issue
 from tests.services.lane_tally_fixtures import (
     BOUND,
+    HEAD,
     HOLDER,
     LEASE_SECONDS,
     PREFIXES,
@@ -32,7 +38,7 @@ from tests.services.lane_tally_fixtures import (
     operation,
     records_on,
     still_open,
-    subject,
+    stored_on,
     subtree,
     supervisor,
 )
@@ -58,7 +64,13 @@ def ready_set(*, ref=REF, lanes=LANES, closed=(), blocked=()):
             for lane in lanes
         ),
         blocked=blocked,
-        criteria=tuple(row for lane in (*lanes, *closed) for row in subtree(lane)),
+        # Every criterion of the scope, a blocked member's included, as the
+        # walker's own read carries them.
+        criteria=tuple(
+            row
+            for lane in (*lanes, *closed, *(member.issue_key for member in blocked))
+            for row in subtree(lane)
+        ),
         closed=tuple(make_tracker_issue(lane) for lane in closed),
     )
 
@@ -78,7 +90,7 @@ def pass_over(port, *, readings, tally=None):
     return SupervisorPass(
         scopes=tuple(readings),
         read_ready=read_ready,
-        tally=tally if tally is not None else supervisor(port),
+        alarms=tally if tally is not None else supervisor(port),
     )
 
 
@@ -103,9 +115,7 @@ async def test_one_unobservable_lane_is_reported_and_the_others_are_still_observ
         await pass_over(port, readings={REF: ready_set()}).run(FIXTURE_EPOCH)
 
     assert caught.value.failed == ("LANE-B",)
-    stored = await port.read_run_alarm(
-        issue_key="LANE-C", subject=subject("LANE-C"), signal=SIGNAL
-    )
+    stored = await stored_on(port, "LANE-C")
     assert stored is not None
     assert is_raised(stored)
     assert [event.kind.value for event in await events_on(port, "LANE-C")] == [
@@ -150,9 +160,7 @@ async def test_a_finished_member_is_observed_so_a_standing_raise_is_cleared():
         "run_alarm_raised",
         "run_alarm_cleared",
     ]
-    stored = await port.read_run_alarm(
-        issue_key="LANE-B", subject=subject("LANE-B"), signal=SIGNAL
-    )
+    stored = await stored_on(port, "LANE-B")
     assert stored is not None
     assert not is_raised(stored)
     # What the lane closed is read off the SCOPE's criteria: a finished member is
@@ -161,18 +169,25 @@ async def test_a_finished_member_is_observed_so_a_standing_raise_is_cleared():
     assert stored.readings[2].value.value == tuple(sorted(checks("LANE-B")))
 
 
-async def test_a_blocked_member_is_not_observed_and_its_raise_stands(monkeypatch):
-    """A member nothing can fire records nothing, so there is nothing to measure.
+async def test_a_blocked_members_tally_raise_stands(monkeypatch):
+    """A member nothing can fire has no clock to measure, and is still read.
 
-    A blocked member is not read at all, which is the only safe reading: with
-    no roster and no gap it would look like a lane that had finished its work,
+    Its tally is not composed at all, which is the only safe reading: with no
+    roster and no gap it would look like a lane that had finished its work,
     and the standing raise on it would be cleared by the very fact that it is
     stuck. The stated consequence is that the raise keeps standing until the
     member is ready again.
+
+    What its stream already said is read all the same. A criterion whose
+    grading lapsed keeps its lane's gap open, so a lane holding one is never a
+    ready lane, and a tick that passed over the blocked members could not see
+    an undischarged lapse anywhere.
     """
     port = await board(lanes=LANES)
     tally = supervisor(port)
     await pass_over(port, readings={REF: ready_set()}, tally=tally).run(FIXTURE_EPOCH)
+    raised = records_on(port, "LANE-B")
+    events = await events_on(port, "LANE-B")
 
     listed: list[str] = []
     listing = port.list_comments
@@ -194,15 +209,83 @@ async def test_a_blocked_member_is_not_observed_and_its_raise_stands(monkeypatch
         tally=tally,
     ).run(FIXTURE_EPOCH)
 
-    assert "LANE-B" not in listed
-    assert listed, "a tick that read nothing states nothing about what it skipped"
-    stored = await port.read_run_alarm(
-        issue_key="LANE-B", subject=subject("LANE-B"), signal=SIGNAL
-    )
+    assert "LANE-B" in listed
+    assert [row.body for row in records_on(port, "LANE-B")] == [
+        row.body for row in raised
+    ]
+    stored = await stored_on(port, "LANE-B")
     assert stored is not None
     assert is_raised(stored)
-    assert [event.kind.value for event in await events_on(port, "LANE-B")] == [
-        "run_alarm_raised"
+    assert await events_on(port, "LANE-B") == events
+    assert [event.kind.value for event in events] == ["run_alarm_raised"]
+
+
+async def test_a_lapse_on_a_blocked_lane_is_raised_at_its_criterion_until_it_is_ready():
+    """A lapse nothing will re-derive is an alarm; the lane made ready clears it.
+
+    The lane finished its first criterion and then found that grading lapsed,
+    and said both on its stream; the criterion stands in Todo. Blocked, the
+    lane is not going to be run, so the lapse is owed by nobody and the tick
+    records it at the criterion's own address on the lane. Nothing is posted:
+    a criterion record is not a lane transition. Made ready, the lane will
+    grade the criterion again, so the next tick rewrites that address quiet.
+    """
+    port = await board(lanes=LANES)
+    lapsed = checks("LANE-B")[0]
+    for kind in (RunEventKind.ISSUE_CROSSED_OFF, RunEventKind.CRITERION_LAPSED):
+        await port.post_run_event(
+            issue_key="LANE-B",
+            event=LaneRunEvent(
+                kind=kind, lane_key="LANE-B", subject_key=lapsed, graded_sha=HEAD
+            ),
+        )
+    accounts = await events_on(port, "LANE-B")
+    address = CriterionSubject(
+        scope_key=SCOPE, issue_id="LANE-B", member_id=lapsed, lane_key="LANE-B"
+    )
+    tally = supervisor(port)
+
+    await pass_over(
+        port,
+        readings={
+            REF: ready_set(
+                lanes=("LANE-C",),
+                blocked=(BlockedIssue(issue_key="LANE-B", blocker_keys=("LANE-X",)),),
+            )
+        },
+        tally=tally,
+    ).run(FIXTURE_EPOCH)
+
+    records = await port.read_run_alarms(issue_key="LANE-B")
+    assert [(row.subject, row.signal) for row in records] == [
+        (address, AlarmSignal.LAPSE_UNDISCHARGED)
+    ]
+    assert records[0].bound is None
+    assert await events_on(port, "LANE-B") == accounts
+
+    await pass_over(port, readings={REF: ready_set()}, tally=tally).run(FIXTURE_EPOCH)
+
+    cleared = stored_alarm(
+        await port.read_run_alarms(issue_key="LANE-B"),
+        subject=address,
+        signal=AlarmSignal.LAPSE_UNDISCHARGED,
+    )
+    assert cleared is not None
+    assert cleared.bound is None
+    assert (
+        lapse_undischarged(
+            subject=cleared.subject,
+            readings=cleared.readings,
+            raised_at_sha=cleared.raised_at_sha,
+            raised_by=cleared.raised_by,
+        )
+        is None
+    )
+    # The lane's own tally is observed now that it is ready, and announced;
+    # the criterion address never is.
+    assert [event.kind for event in await events_on(port, "LANE-B")] == [
+        *(event.kind for event in accounts),
+        RunEventKind.RUN_ALARM_RAISED,
     ]
 
 
@@ -217,8 +300,8 @@ async def test_cancellation_is_not_swallowed(stopped):
     """
     port = await board(lanes=LANES)
 
-    class Cancelling(TallySupervisor):
-        async def observe(self, **_):
+    class Cancelling(AlarmSupervisor):
+        async def observe_lane(self, **_):
             raise asyncio.CancelledError
 
     if stopped == "the scope read":
@@ -250,7 +333,7 @@ def test_a_blank_holder_refuses_before_any_read():
     port = FakeTrackerPort(issues=[], marker_prefixes=PREFIXES)
 
     with pytest.raises(ValueError, match="names the holder"):
-        TallySupervisor(
+        AlarmSupervisor(
             tracker=port,
             records=LaneRecordReader(tracker=port, operation=operation()),
             marker_prefixes=PREFIXES,

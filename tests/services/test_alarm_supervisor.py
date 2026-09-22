@@ -3,13 +3,13 @@
 import pytest
 
 from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.lane_alarms import Finished, Ready
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_surface
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
 from kodezart.domain.tally_record import is_raised
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.run_surface_lease import RunSurfaceLease
-from kodezart.services.tally_supervisor import SIGNAL
 from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.run_event import RunEventKind
 from tests.fakes import FakeTrackerPort, make_tracker_issue
@@ -31,14 +31,13 @@ from tests.services.lane_tally_fixtures import (
     rewrite_record,
     snapshot,
     still_open,
-    subject,
+    stored_on,
     subtree,
     supervisor,
 )
 
 LANE = "LANE-1"
 FIRST, SECOND = checks(LANE)
-SUBJECT = subject(LANE)
 
 
 every_write_of_a_tick_is_inside_the_declared_set = declared_set_fixture()
@@ -51,11 +50,12 @@ async def one_lane(*, commits=("sha-one", "sha-two"), prefixes=PREFIXES):
 
 
 async def observe(tally, *, closed=()):
-    await tally.observe(
+    await tally.observe_lane(
         scope_key=SCOPE,
         lane_key=LANE,
-        roster=subtree(LANE, closed=closed),
-        gap=still_open(LANE, closed=closed),
+        standing=Ready(
+            roster=subtree(LANE, closed=closed), gap=still_open(LANE, closed=closed)
+        ),
         criteria=subtree(LANE, closed=closed),
     )
 
@@ -74,7 +74,7 @@ async def test_a_stall_across_many_ticks_leaves_one_record_and_one_raised_event(
     assert [event.kind for event in await events_on(port, LANE)] == [
         RunEventKind.RUN_ALARM_RAISED
     ]
-    stored = await port.read_run_alarm(issue_key=LANE, subject=SUBJECT, signal=SIGNAL)
+    stored = await stored_on(port, LANE)
     assert stored is not None
     assert is_raised(stored)
     assert stored.raised_by == HOLDER
@@ -126,7 +126,7 @@ async def test_clearing_edits_the_record_and_posts_one_cleared_event():
         RunEventKind.RUN_ALARM_RAISED,
         RunEventKind.RUN_ALARM_CLEARED,
     ]
-    stored = await port.read_run_alarm(issue_key=LANE, subject=SUBJECT, signal=SIGNAL)
+    stored = await stored_on(port, LANE)
     assert stored is not None
     assert not is_raised(stored)
     assert stored.readings[2].value.value == (SECOND,)
@@ -147,7 +147,7 @@ async def test_a_second_stall_after_a_clear_is_measured_from_the_clear():
 
     await observe(tally, closed=(SECOND,))
 
-    stored = await port.read_run_alarm(issue_key=LANE, subject=SUBJECT, signal=SIGNAL)
+    stored = await stored_on(port, LANE)
     assert stored is not None
     assert is_raised(stored)
     assert stored.bound is not None
@@ -218,7 +218,7 @@ async def test_a_lane_that_moved_while_still_owing_writes_a_reading_and_posts_no
     await observe(tally, closed=(SECOND,))
 
     assert len(records_on(port, LANE)) == 1
-    stored = await port.read_run_alarm(issue_key=LANE, subject=SUBJECT, signal=SIGNAL)
+    stored = await stored_on(port, LANE)
     assert stored is not None
     assert not is_raised(stored)
     assert stored.readings[2].value.value == (SECOND,)
@@ -238,11 +238,10 @@ async def test_a_finished_lane_with_a_raised_record_is_cleared_and_then_left_alo
 
     # A member owing nothing is observed with no roster and no gap, so a raise
     # standing on a lane that has since finished is cleared rather than kept.
-    await tally.observe(
+    await tally.observe_lane(
         scope_key=SCOPE,
         lane_key=LANE,
-        roster=(),
-        gap=(),
+        standing=Finished(),
         criteria=subtree(LANE, closed=(FIRST, SECOND)),
     )
 
@@ -252,11 +251,10 @@ async def test_a_finished_lane_with_a_raised_record_is_cleared_and_then_left_alo
     ]
     after = snapshot(port)
 
-    await tally.observe(
+    await tally.observe_lane(
         scope_key=SCOPE,
         lane_key=LANE,
-        roster=(),
-        gap=(),
+        standing=Finished(),
         criteria=subtree(LANE, closed=(FIRST, SECOND)),
     )
 
@@ -346,7 +344,7 @@ async def test_a_tick_in_which_an_alarm_fires_moves_no_state_and_posts_no_halt()
 
     await observe(tally)
 
-    stored = await port.read_run_alarm(issue_key=LANE, subject=SUBJECT, signal=SIGNAL)
+    stored = await stored_on(port, LANE)
     assert stored is not None
     assert is_raised(stored), "a tick that raised nothing states nothing about moving"
 

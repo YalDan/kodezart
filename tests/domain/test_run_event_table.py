@@ -56,6 +56,7 @@ def test_vocabulary_and_notification_partition_are_complete():
         "issue_crossed_off",
         "criterion_refuted",
         "criterion_passed",
+        "criterion_lapsed",
         "escalation_raised",
         "criterion_grading_unverified",
         "criterion_check_survived_mutation",

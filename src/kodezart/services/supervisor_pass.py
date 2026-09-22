@@ -1,4 +1,4 @@
-"""One tick over every declared scope: read each lane, observe its tally.
+"""One tick over every declared scope: read each member, observe each lane.
 
 The pass holds no port. What it needs from the tracker is one reading per
 scope, injected as a callable, and one observation per lane, which the
@@ -16,11 +16,11 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.services.tally_supervisor import TallySupervisor
+from kodezart.domain.lane_alarms import Finished, LaneStanding, Ready, Waiting
+from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
-from kodezart.types.domain.tracker import TrackerIssue
 
 #: The name this tick is registered under on the existing scheduler.
 SUPERVISOR_TICK_NAME = "supervisor"
@@ -57,12 +57,12 @@ class SupervisorPass:
         *,
         scopes: Sequence[ScopeRef],
         read_ready: Callable[[ScopeRef], Awaitable[ScopeReadySet]],
-        tally: TallySupervisor,
+        alarms: AlarmSupervisor,
         log: BoundLogger | None = None,
     ) -> None:
         self._scopes = tuple(scopes)
         self._read_ready = read_ready
-        self._tally = tally
+        self._alarms = alarms
         self._log: BoundLogger = get_logger(__name__) if log is None else log
 
     async def run(self, _started_at: datetime) -> PassRun:
@@ -72,13 +72,15 @@ class SupervisorPass:
         nowhere, so it has no record whose identity the stamp would be half
         of, and inventing one would name a run nothing holds.
 
-        Ready lanes are observed with their own roster and gap; finished
-        members are observed with neither, so a raise standing on a lane that
-        has since finished is cleared rather than left. A blocked or
-        unapproved member is not observed at all: it is never fired, so it
-        records nothing and there is no clock to measure. The stated
-        consequence is that a lane raised and then blocked by hand stays
-        raised until it is ready again.
+        Every member of the reading is observed, at the standing the reading
+        gives it. Ready lanes carry their own roster and gap; finished members
+        carry neither, so a raise standing on a lane that has since finished
+        is cleared rather than left; a blocked or unapproved member is
+        waiting, which is not the same absence — its tally is not composed at
+        all, so a raise on a member nothing can fire keeps standing until it
+        is ready again, while what its stream already said about the criteria
+        it graded is still read. A lane holding a lapse nothing will
+        re-derive is by construction one of those.
         """
         failed: list[str] = []
         for ref in self._scopes:
@@ -92,16 +94,28 @@ class SupervisorPass:
                 await self._observe(
                     ready=ready,
                     lane_key=row.issue.issue_key,
-                    roster=row.criteria,
-                    gap=row.gap,
+                    standing=Ready(roster=row.criteria, gap=row.gap),
                     failed=failed,
                 )
             for issue in ready.closed:
                 await self._observe(
                     ready=ready,
                     lane_key=issue.issue_key,
-                    roster=(),
-                    gap=(),
+                    standing=Finished(),
+                    failed=failed,
+                )
+            for blocked in ready.blocked:
+                await self._observe(
+                    ready=ready,
+                    lane_key=blocked.issue_key,
+                    standing=Waiting(),
+                    failed=failed,
+                )
+            for unapproved in ready.unapproved:
+                await self._observe(
+                    ready=ready,
+                    lane_key=unapproved,
+                    standing=Waiting(),
                     failed=failed,
                 )
         if failed:
@@ -113,17 +127,15 @@ class SupervisorPass:
         *,
         ready: ScopeReadySet,
         lane_key: str,
-        roster: Sequence[TrackerIssue],
-        gap: Sequence[TrackerIssue],
+        standing: LaneStanding,
         failed: list[str],
     ) -> None:
         """One lane's own observation, whose failure is that lane's alone."""
         try:
-            await self._tally.observe(
+            await self._alarms.observe_lane(
                 scope_key=ready.scope.ref.key,
                 lane_key=lane_key,
-                roster=roster,
-                gap=gap,
+                standing=standing,
                 criteria=ready.criteria,
             )
         except Exception:

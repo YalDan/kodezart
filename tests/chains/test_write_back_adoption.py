@@ -902,13 +902,13 @@ KOD_806_STATE_MOVES = frozenset(
 UNVERIFIED_WRITES = frozenset(
     {
         CallSite(
-            module="services/tally_supervisor.py",
-            function="TallySupervisor._write_record",
+            module="services/alarm_supervisor.py",
+            function="AlarmSupervisor._write_records",
             method="record_run_alarm",
         ),
         CallSite(
-            module="services/tally_supervisor.py",
-            function="TallySupervisor._announce",
+            module="services/alarm_supervisor.py",
+            function="AlarmSupervisor._announce",
             method="post_run_event",
         ),
         CallSite(
@@ -989,7 +989,10 @@ LANE_STATE = "services/lane_state_writer.py"
 #: produced the verdict, and it is the one the Evidence row points back at;
 #: re-judging a sha string is not a second judgement (KOD-806).  The pull
 #: request is the same kind of fact: a url and a number the forge answered
-#: with, put where a lane's delivery is retained (KOD-843).
+#: with, put where a lane's delivery is retained (KOD-843).  The two accounts a
+#: lane gives of a criterion it graded — crossed off, and the grading no longer
+#: standing — are the same kind again: a kind, a sub-issue key and the sha the
+#: grading was read at, and nothing authored (KOD-843).
 LANE_STATE_WRITES = frozenset(
     {
         CallSite(

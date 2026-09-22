@@ -10,15 +10,16 @@ from datetime import datetime
 import pytest
 
 from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
+from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.supervisor_pass import supervisor_holder
-from kodezart.services.tally_supervisor import SIGNAL, TallySupervisor
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
-from kodezart.types.domain.run_alarm import LaneSubject
+from kodezart.types.domain.run_alarm import AlarmSignal, CriterionSubject, LaneSubject
 from kodezart.types.domain.run_state import LaneCommit, LaneRunState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -283,8 +284,14 @@ def operation(prefixes=PREFIXES):
     )
 
 
+#: The signal every address in this module addresses unless one says otherwise.
+SIGNAL = AlarmSignal.TALLY_UNMOVED
+#: The signals observed at a criterion's own address on its lane's issue.
+CRITERION_SIGNALS = (AlarmSignal.TALLY_REGRESSED, AlarmSignal.LAPSE_UNDISCHARGED)
+
+
 def supervisor(port, *, bound=BOUND, holder=HOLDER):
-    return TallySupervisor(
+    return AlarmSupervisor(
         tracker=port,
         records=LaneRecordReader(tracker=port, operation=operation()),
         marker_prefixes=port.marker_prefixes,
@@ -314,6 +321,19 @@ async def events_on(port, lane):
     return list(await port.lane_run_events(issue_key=lane, lane_key=lane))
 
 
+async def stored_on(port, lane, *, signal=SIGNAL, scope_key=SCOPE):
+    """The record at one of *lane*'s addresses, out of the carrier's listing.
+
+    The port answers with every record the carrier holds, so a test asking
+    about one address picks it out of that listing the same way the tick does.
+    """
+    return stored_alarm(
+        await port.read_run_alarms(issue_key=lane),
+        subject=subject(lane, scope_key=scope_key),
+        signal=signal,
+    )
+
+
 def snapshot(port):
     """What the board holds and what was written to it, as one comparable value."""
     return (list(port.comments), list(port.comment_writes), list(port.lease_writes))
@@ -329,6 +349,11 @@ def declared_pairs(entry):
     covers the other. The lane record's own marker is not among them — the
     supervisor holds no surface there — so a write under it is outside the set
     unless a test named it.
+
+    Each of the lane's own criteria has an address per criterion signal on the
+    lane's issue, keyed to the lane that owns it, and those are declared one by
+    one: a criterion record written under another lane, another parent or
+    another signal matches none of them.
     """
     pairs = [
         (
@@ -345,6 +370,24 @@ def declared_pairs(entry):
         pairs.extend(
             (lane, alarm_marker(entry.port, lane, scope_key=entry.scope_keys[lane]))
             for lane in entry.lanes
+        )
+        pairs.extend(
+            (
+                lane,
+                run_alarm_marker(
+                    subject=CriterionSubject(
+                        scope_key=entry.scope_keys[lane],
+                        issue_id=lane,
+                        member_id=key,
+                        lane_key=lane,
+                    ),
+                    signal=signal,
+                    marker_prefixes=entry.port.marker_prefixes,
+                ),
+            )
+            for lane in entry.lanes
+            for key in checks(lane)
+            for signal in CRITERION_SIGNALS
         )
     return pairs
 

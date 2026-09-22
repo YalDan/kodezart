@@ -10,13 +10,13 @@ import structlog.testing
 from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.config.app import AppConfig
 from kodezart.domain.errors import LaneRecordReadError
+from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.tally_record import is_raised
 from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
     supervisor_holder,
 )
-from kodezart.services.tally_supervisor import SIGNAL
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import (
     OperationMemberAbsentError,
@@ -52,6 +52,7 @@ from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.services.lane_tally_fixtures import (
     BOUND,
     PREFIXES,
+    SIGNAL,
     board,
     checks,
     declared_set_fixture,
@@ -334,8 +335,10 @@ async def test_a_whole_tick_dispatches_no_agent_and_touches_no_repository(monkey
     # The tick did observe: a board whose lanes are all past the bound raises
     # on each, so "no agent and no repository" is not "nothing happened".
     for lane in LANES:
-        stored = await port.read_run_alarm(
-            issue_key=lane, subject=subject(lane), signal=SIGNAL
+        stored = stored_alarm(
+            await port.read_run_alarms(issue_key=lane),
+            subject=subject(lane),
+            signal=SIGNAL,
         )
         assert stored is not None
         assert is_raised(stored)
@@ -391,8 +394,8 @@ async def test_a_tick_observes_a_stalled_lane_under_every_declared_scope() -> No
         assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
 
     for ref, lane in PAIRED_LANES.items():
-        stored = await port.read_run_alarm(
-            issue_key=lane,
+        stored = stored_alarm(
+            await port.read_run_alarms(issue_key=lane),
             subject=LaneSubject(scope_key=ref.key, lane_key=lane),
             signal=SIGNAL,
         )
@@ -505,8 +508,10 @@ async def test_the_composed_tick_leases_under_its_pass_identity_not_dispatch_hol
     assert {lease.holder for lease in port.lease_writes} == {expected}
     assert [body for _, body in port.comment_writes if FOREIGN_PROCESS in body] == []
     for lane in LANES:
-        stored = await port.read_run_alarm(
-            issue_key=lane, subject=subject(lane), signal=SIGNAL
+        stored = stored_alarm(
+            await port.read_run_alarms(issue_key=lane),
+            subject=subject(lane),
+            signal=SIGNAL,
         )
         assert stored is not None
         assert stored.raised_by == expected
@@ -684,8 +689,8 @@ async def observed_alarms(port):
     """Every alarm address on the board whose readings replay to an alarm."""
     raised = []
     for lane in WALK_LANES:
-        stored = await port.read_run_alarm(
-            issue_key=lane,
+        stored = stored_alarm(
+            await port.read_run_alarms(issue_key=lane),
             subject=LaneSubject(scope_key=WALK_SCOPE.key, lane_key=lane),
             signal=SIGNAL,
         )
@@ -776,8 +781,8 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
             list(port.lease_writes),
         ) == quiet
 
-    stored = await port.read_run_alarm(
-        issue_key="S",
+    stored = stored_alarm(
+        await port.read_run_alarms(issue_key="S"),
         subject=LaneSubject(scope_key=WALK_SCOPE.key, lane_key="S"),
         signal=SIGNAL,
     )

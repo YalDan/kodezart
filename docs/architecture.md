@@ -97,7 +97,7 @@ does not exist.
 | ScopeStatusReader | LinearScopeStatusUpdates | The one read the scope terminal makes before its one write: the reports the container already carries, so a report is posted once across a restart; a role beside the port, over the tracker's caller |
 | ScopeStatusUpdates | LinearScopeStatusUpdates | The container-status role whole, read and write, one class over the tracker's caller |
 | SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
-| RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: one keyed record read and rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
+| RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: every alarm record on one issue, read in one listing, one keyed record rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
 | LaneEventHistory | LinearMcpTracker | A lane's posted events read for a grading's provenance; narrowed out of the port rather than added to it, and holding no write |
 | CriterionMinter | LinearMcpTracker | Exactly the tracker calls one obligation mint makes, the lease on a lane's criterion child set, the mint under it, and the move of a child the mint answered with back to unstarted under a lease on that child, narrowed out of the port rather than added to it; it holds no other workflow state and no description edit, so its holder can add an obligation, or reopen the one it names, and change no text the lane already carries |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
@@ -425,7 +425,12 @@ the pass is posted unless the criterion's last row-write entry there is already
 that same pass: the same verdict written again at the same head restamps the
 same row and announces nothing twice, while a head that returns to a commit
 the criterion passed at before a later refutation announces that pass again,
-so the history ends at the commit the row names. For a criterion the attempt
+so the history ends at the commit the row names. After the transition, one
+`issue_crossed_off` event keyed to that criterion and carrying that sha is
+posted on the lane's stream, unless the stream already holds that exact event.
+It is the lane's own account of the act: a reader finding the sub-issue out of
+Done later can tell a criterion this lane finished and something else moved
+back from one that was never finished. For a criterion the attempt
 failed that this fire had already finished, the sub-issue moves back to the
 team's unstarted state first, the refuting grading then goes on its Evidence
 row, and one `criterion_refuted` event is posted under
@@ -433,20 +438,22 @@ row, and one `criterion_refuted` event is posted under
 failure anywhere after the move back leaves the criterion owed, and the next
 fire re-grades it, instead of leaving it certified at a sha that failed it. The
 lane's event stream is read once for the whole act, before any sub-issue is
-touched, and only when the roster holds a pass, a fail or an undemonstrated
-reading, so a pass, a refutation and an undemonstrated reading in one attempt
-look their entries up in that one reading of the board; an act of lapses alone
-reads no stream. For a criterion the attempt read nothing about, its event is
-the act's only write.
+touched, so a pass, a refutation, a lapse and an undemonstrated reading in one
+attempt look their entries up in that one reading of the board. For a
+criterion the attempt read nothing about, its event is the act's only write.
 
-A criterion whose grading no longer stands goes back the same way and announces
-nothing. The sub-issue returns to the team's unstarted state, keeping the sha it
-was graded at on its Evidence row with its pointer saying that grading lapsed,
-so a reader sees the gap between what was graded and where the branch went
-rather than a satisfied criterion. No event is composed and none is looked for:
-a lapse is the criterion being owed again, not a regression, so the take-back
-that reports one and the take-back that reports nothing are one act with one
-difference. A lapse repeated in a later iteration finds the sub-issue already
+A criterion whose grading no longer stands goes back the same way and is
+announced under its own kind. The sub-issue returns to the team's unstarted
+state, keeping the sha it was graded at on its Evidence row with its pointer
+saying that grading lapsed, so a reader sees the gap between what was graded and
+where the branch went rather than a satisfied criterion, and one
+`criterion_lapsed` event keyed to it is posted last, unless the stream already
+holds that exact event. A lapse is the criterion being owed again, not a
+regression, so the take-back that reports a refutation and the take-back that
+reports a lapse are one act with one difference — the kind of its event — and
+a reader of the stream never sees a move back nobody reported. A lapse records
+no new commit on the row, so it is no entry of the row's write history. A
+lapse repeated in a later iteration finds the sub-issue already
 unstarted and writes nothing at all. Nothing is written on the criterion itself
 beyond its state and its Evidence row, and no parent's workflow state. A grading
 resting on a performed observation, which the loop cannot re-derive, does leave
@@ -983,12 +990,16 @@ holds no port at all: the scope read is injected as a callable and the
 observation is the observer's, so it can reach no repository, session, queue
 or forge.
 
-Per scope it observes every ready lane with that lane's own roster and gap,
-and every finished member with neither — a raise standing on a lane that has
-since finished is cleared rather than left. Blocked and unapproved members are
-not observed: they are never fired, so they record nothing and there is no
-clock to measure. The accepted consequence is that a lane raised and then
-blocked by hand stays raised until it is ready again.
+Per scope it observes every member of the ready reading at the standing that
+reading gives it (`domain.lane_alarms.LaneStanding`): every ready lane with that
+lane's own roster and gap, every finished member with neither — a raise standing
+on a lane that has since finished is cleared rather than left — and every
+blocked or unapproved member as waiting. A waiting lane's tally is not composed:
+it is never fired, so there is no clock to measure, and the accepted consequence
+is that a lane raised and then blocked by hand stays raised until it is ready
+again. Its stream is still read, because a lapsed criterion keeps its lane's gap
+open, so a lane holding a lapse nothing will re-derive is exactly a lane that is
+not ready.
 
 One lane's failure is that lane's. Each scope read and each lane observation
 is contained, logged as `supervisor_scope_failed` or `supervisor_lane_failed`,
@@ -997,30 +1008,49 @@ reach, so the scheduler reports it failed with whatever it did write already
 on the tracker. Cancellation and the scheduler's own timeout are not a lane's
 failure and pass straight through.
 
-What the tick is observable by: an alarm is a record at
-`(LaneSubject(scope, lane), TALLY_UNMOVED)` on the lane's own issue whose
-readings replay to an alarm, announced by exactly one `run_alarm_raised` event
-on that lane's stream. A record whose readings replay to nothing is a tally
-reading kept so the next tick has an anchor, and it is written only when a
-lane moved while it still owed work — which is the only write a run that never
-stalls makes. There is no scope-subject alarm: a run event needs a lane key,
-and a scope's stall is some lane's stall.
+What the tick is observable by: an alarm is a record on the lane's own issue
+whose readings replay to an alarm. At `(LaneSubject(scope, lane),
+TALLY_UNMOVED)` it is announced by exactly one `run_alarm_raised` event on that
+lane's stream. A record whose readings replay to nothing is a tally reading
+kept so the next tick has an anchor, and it is written only when a lane moved
+while it still owed work — which is the only write a run that never stalls
+makes. There is no scope-subject alarm: a run event needs a lane key, and a
+scope's stall is some lane's stall.
 
-`services.tally_supervisor.TallySupervisor` is the writer the tick observes
+The criteria a lane graded are observed at their own addresses on that lane's
+issue, `(CriterionSubject(scope, parent, criterion, lane), signal)`, and which
+lane a criterion belongs to is read off a fact rather than recomputed: it is the
+lane whose stream carries an account of it — `issue_crossed_off`,
+`criterion_refuted` or `criterion_lapsed` keyed to it — which is by construction
+a lane in whose subtree it sits. Its current state comes from the scope's own
+criterion reading. `domain.stream_signals.tally_regressed` raises when the
+lane's last account of a criterion is that it crossed it off and the criterion
+now stands unstarted: something moved it back and nobody reported it. A
+refutation is the lane reporting that move, and a lapse is not a regression, so
+neither raises. `domain.stream_signals.lapse_undischarged` raises when the last
+account is a lapse, the criterion is still owed, and the lane is not ready on
+this tick — nothing on the scope path takes a claim, and the walk re-derives
+exactly the ready lanes, so "nothing will re-derive it" is "not ready". Both
+raise with no bound. A criterion record is written only when what the address
+says differs from what the tick observed, where absence says not raised, so a
+healthy walk writes none; and it is never announced on the stream, whose
+transitions are the lane's.
+
+`services.alarm_supervisor.AlarmSupervisor` is the writer the tick observes
 through.
-Per lane it reads the run-state record, reads the one alarm record at
-`(LaneSubject, TALLY_UNMOVED)` on that lane's issue, composes what the
-address should hold through `domain.tally_record`, and writes only when the
-two differ. A lane with no run-state record is passed over before the address
-is read. The record is rewritten in place — a clear is an edit showing the
-tally moving, never a delete — under a lease on exactly that one marker
-surface, which `domain.run_alarm_record.run_alarm_surface` is the single
-expression for. The lease is taken only around a write, because a lease is
-itself a comment on the carrier and a tick with nothing to say writes
-nothing. The record is written before its event: a record whose event was
-lost is repaired by the next tick, while an event without its record
-announces nothing. What the stream owes is read from the stream, so a
-condition firing across many ticks is announced once. The holder that takes
+Per lane it reads the run-state record, every alarm record on that lane's issue
+in one listing (`read_run_alarms`), and the lane's stream once, and
+`domain.lane_alarms.lane_alarm_records` composes what each address should
+hold. A lane with no run-state record is passed over before anything else is
+read. Each record is rewritten in place — a clear is an edit showing the
+condition ending, never a delete — under one lease over exactly the marker
+surfaces written that tick, which `domain.run_alarm_record.run_alarm_surface`
+is the single expression for. The lease is taken only around a write, because a
+lease is itself a comment on the carrier and a tick with nothing to say writes
+nothing. The records are written before their events: a record whose event was
+lost is repaired by the next tick, while an event without its record announces
+nothing. What the stream owes is read from the stream, so a condition firing
+across many ticks is announced once. The holder that takes
 the lease and the holder recorded on the alarm are the same string. That
 string is the pass's own identity, the operation name with the tick name on it
 (`services/supervisor_pass.py::supervisor_holder`); it is not composed from
@@ -1088,7 +1118,7 @@ observation, including a newly answered or withdrawn decision. All returned read
 their source comment identities, and neither collector writes or reads Git.
 The walker's recorded tick-age input remains unwired, and no tick of any
 pass reaches these readers. Leased alarm persistence exists, but only the
-lane tally arm writes through it. These readers do not declare the complete
+supervisor tick's own observation writes through it. These readers do not declare the complete
 signal table or a boot capability for it.
 
 `barren_tick_with_diff_growth` compares recorded files-changed and
@@ -1117,7 +1147,7 @@ belongs to the separate record-consistency signal.
 The previous tick's open identities and established supersession references
 still require explicit supplied provenance. Their collectors remain separate
 work and no tick reaches them; leased alarm persistence exists, and only the
-lane tally arm writes through it. These bounded record reads do not provide
+supervisor tick's own observation writes through it. These bounded record reads do not provide
 an atomic tracker transaction or an execution event stream.
 
 `surface_contended` counts distinct opaque run-holder identities for one
@@ -1228,7 +1258,7 @@ The service performs no repository read or tracker write and does not turn
 an unreadable record into an empty lane. The signal's whole-record-staleness
 limit remains unchanged. Event-to-target collection for skipped writes remains separate work, and
 nothing observes this signal: the leased writer that exists observes the lane
-tally arm only.
+tally arm and the criterion signals read off a lane's stream only.
 
 `record_superseded` compares explicit assertions about the same field in the
 same lane. Its three raw readings contain the record's `LaneFieldValue`, an
@@ -1246,7 +1276,8 @@ order. The alarm retains all original readings and has no threshold bound.
 The field projection is an observation input, not a new run-event vocabulary;
 the event/record readers must supply those assertions and the commit order.
 Their collectors remain separate work, and nothing observes this signal: the
-leased writer that exists observes the lane tally arm only.
+leased writer that exists observes the lane tally arm and the criterion signals
+read off a lane's stream only.
 
 `rulings_outpace_closures` counts distinct machine-authored ruling identities
 added since the recorded last-closure snapshot. Its five readings preserve
@@ -1327,7 +1358,8 @@ existing member changing only state does not. No derived crossed flag or vendor 
 timestamp replaces this graph comparison. Both signals preserve their raw
 readings for replay; the structural signal has no threshold. Retaining prior
 snapshots remains separate work, and nothing observes either signal: the
-leased writer that exists observes the lane tally arm only.
+leased writer that exists observes the lane tally arm and the criterion signals
+read off a lane's stream only.
 ## Audit coverage selection
 
 `AuditCoverage` visits the supplied complete eligible snapshot in state-change

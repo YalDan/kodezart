@@ -4,7 +4,9 @@ The `[run_event_states]` table is optional, and dialling the tracker does not
 consult it. A table that IS declared must be total: its keys are the single
 `RunEventKind` vocabulary, and loading the file names every missing or
 undeclared key. `DERIVED` and `NO_TRANSITION` retain their meanings, including
-`NO_TRANSITION` for both supervisor events and `node_session_started`. Other
+`NO_TRANSITION` for both supervisor events and `node_session_started`, and
+`DERIVED` for `criterion_refuted` and `criterion_lapsed`, the two accounts a
+lane gives when it takes a finished criterion back. Other
 rows select an existing semantic workflow state. The table classifies events; it
 does not introduce a workflow-state writer or override criterion rollup — a run
 event's comment is rendered from `[marker_prefixes]` alone, so a deployment that
@@ -159,11 +161,13 @@ operators can set either count to zero to observe the first subsequent
 commit or tick. A counter must exceed its configured limit. These settings
 feed the read-only observation service, which no tick reaches.
 
-The supervisor tick that does exist observes one thing: each declared scope's
-ready lanes and finished members, and for each the lane tally arm of
-`TALLY_UNMOVED`. Per lane it reads the run-state record and the one alarm
-record at that lane's address, composes what the address should hold, and
-writes only when the two differ. It moves no state and opens no session. It
+The supervisor tick that does exist observes every member of each declared
+scope's ready reading: for a ready or finished lane the lane tally arm of
+`TALLY_UNMOVED`, and for every lane, blocked and unapproved ones included, the
+criteria its own stream accounts for, under `TALLY_REGRESSED` and
+`LAPSE_UNDISCHARGED`. Per lane it reads the run-state record, every alarm record
+on that lane's issue in one listing, and the lane's stream, composes what each
+address should hold, and writes only where the two differ. It moves no state and opens no session. It
 is registered only when the operation declares `[[organize_scopes]]` rows and
 the deployment dials a tracker; either one absent registers nothing and names
 which was missing in the boot log.

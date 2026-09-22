@@ -64,12 +64,17 @@ from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState
 from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
 
 #: The cross-off states whose write can announce something on the lane's
-#: run-event stream: a pass announces the grading it stamped, a fail
-#: announces a refutation and an undemonstrated reading announces which
-#: reading failed. A lapse announces nothing, so an act holding only lapses
-#: reads no stream.
+#: run-event stream: a pass announces the grading it stamped and the
+#: crossing-off, a fail announces a refutation, a lapse announces itself
+#: under its own kind and an undemonstrated reading announces which
+#: reading failed.
 ANNOUNCING_STATES = frozenset(
-    {CrossOffState.passed, CrossOffState.failed, CrossOffState.undemonstrated}
+    {
+        CrossOffState.passed,
+        CrossOffState.failed,
+        CrossOffState.lapsed,
+        CrossOffState.undemonstrated,
+    }
 )
 
 
@@ -481,19 +486,20 @@ class TrackerLaneStateWriter:
         left on it, because there is no verdict to write there.
         A criterion this attempt FAILED and this fire had already finished is
         a regression, and is taken back. A criterion whose earlier grading
-        this attempt found LAPSED is taken back the same way and announced
-        nowhere: it is owed again, which is not a regression to report. A
+        this attempt found LAPSED is taken back the same way and says so
+        with its own kind: it is owed again, which is not the regression the
+        refutation reports, and a reader with no word for it at all would
+        have to read a silent move back as one. A
         criterion this attempt read nothing about has the reading that failed
         appended to the lane's run-event stream, keyed to that sub-issue and
         at the sha the verdict would have been stamped with.
 
         The stream is read once for the whole act, before any sub-issue is
         touched, and only when the roster holds something the act could
-        announce — a pass, a fail or an undemonstrated reading: a pass, a
-        refutation and an undemonstrated reading in one attempt share that
-        one reading, a take-back announcing nothing asks the board nothing
-        extra, and a stream that will not parse refuses while every
-        sub-issue still reads as whatever the last attempt left on it.
+        announce: a pass, a refutation, a lapse and an undemonstrated reading
+        in one attempt share that one reading, and a stream that will not
+        parse refuses while every sub-issue still reads as whatever the last
+        attempt left on it.
         """
         addressed = tuple(str(cross_off.criterion) for cross_off in cross_offs)
         if addressed != tuple(str(criterion.id) for criterion in dispatched):
@@ -548,7 +554,12 @@ class TrackerLaneStateWriter:
                     lane=lane,
                     criterion=criterion,
                     cross_off=cross_off,
-                    event=None,
+                    event=LaneRunEvent(
+                        kind=RunEventKind.CRITERION_LAPSED,
+                        lane_key=lane.lane_key,
+                        subject_key=criterion.id,
+                        graded_sha=cross_off.evidence.graded_sha,
+                    ),
                     events=events,
                 )
 
@@ -646,9 +657,25 @@ class TrackerLaneStateWriter:
         attempt announces its own grading, while one already finished keeps
         its restamped row unannounced, which is the same partial state a lost
         refutation leaves and is repaired by nobody.
+
+        The lane then says on its own stream which criterion it crossed off
+        and at which sha. That is the lane's account of the act: a reader
+        finding the sub-issue out of its finished state later has no other
+        way to tell a criterion this lane finished and something moved back
+        from one that was never finished at all. It is looked up in the same
+        one reading of the stream, taken BEFORE the first write, as a
+        take-back reads it, so a repeat of the same act at the same sha
+        announces nothing, and it goes last, after the transition, because an
+        announcement of a transition that never landed says something untrue.
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=issue, criterion=criterion)
+        crossed_off = LaneRunEvent(
+            kind=RunEventKind.ISSUE_CROSSED_OFF,
+            lane_key=lane.lane_key,
+            subject_key=criterion.id,
+            graded_sha=cross_off.evidence.graded_sha,
+        )
         event = LaneRunEvent(
             kind=RunEventKind.CRITERION_PASSED,
             lane_key=lane.lane_key,
@@ -656,6 +683,7 @@ class TrackerLaneStateWriter:
             graded_sha=cross_off.evidence.graded_sha,
         )
         posted = _ends_row_history(event=event, events=events)
+        crossed = crossed_off in events
         await self._stamp(
             lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
         )
@@ -670,6 +698,10 @@ class TrackerLaneStateWriter:
                 issue_key=criterion.id, stage=LifecycleStage.DONE
             )
         )
+        if not crossed:
+            await settle(
+                self._tracker.post_run_event(issue_key=lane.lane_key, event=crossed_off)
+            )
 
     async def _take_back(
         self,
@@ -677,7 +709,7 @@ class TrackerLaneStateWriter:
         lane: LaneBinding,
         criterion: TrackerCriterion,
         cross_off: CriterionCrossOff,
-        event: LaneRunEvent | None,
+        event: LaneRunEvent,
         events: Sequence[LaneRunEvent],
     ) -> None:
         """Take back a criterion this fire finished, once, for either reason.
@@ -686,9 +718,11 @@ class TrackerLaneStateWriter:
         same way: a fresh grading refuted it, or the grading that finished
         it no longer stands. Only the announcement differs, so it arrives as
         *event*: a refutation is a regression and says so on the stream,
-        while a lapse is the criterion being owed again and says nothing,
-        which is also what makes a repeat lapse write nothing at all — the
-        early return below already reads the board as unfinished.
+        while a lapse is the criterion being owed again and says THAT, under
+        its own kind, so a reader of the stream can tell the two apart and
+        neither reads as a move back nobody reported. A repeat of either
+        writes nothing at all — the early return below already reads the
+        board as unfinished.
 
         A criterion the fresh read finds unfinished is no regression: it was
         never this fire's claim to take back. A criterion found finished is
@@ -699,12 +733,11 @@ class TrackerLaneStateWriter:
         violation on the board rather than a case to tell apart here.
 
         Everything knowable is read before anything is written: the state the
-        board holds, the body the writes depend on, and — when there is an
-        event to announce — the stream, read once for the whole act before
-        the first sub-issue is read, so a stream that will not parse refuses
-        while the sub-issue still reads as the pass it was. A take-back
-        announcing nothing asks the board nothing extra at all.
-        The move back is then the FIRST write, because a
+        board holds, the body the writes depend on, and the stream the event
+        is announced on, read once for the whole act before the first
+        sub-issue is read, so a stream that will not parse refuses while the
+        sub-issue still reads as the pass it was. The move back is then the
+        FIRST write, because a
         criterion left finished is in no later fire's roster and would never
         be graded again: a failure after it leaves the criterion unstarted and
         owed, and the next fire re-grades it, rather than certified at a sha
@@ -721,7 +754,9 @@ class TrackerLaneStateWriter:
         again at the first and refuted again at the later one has its row
         restamped at the later commit again, and without a fresh entry the
         history would end at the pass while the row names the refuting
-        commit.
+        commit. A lapse is no kind that records a row write, so it is no
+        entry of that history: it is posted unless the same lapse is already
+        on the stream.
 
         The sub-issue is read once more after the move and asked the same
         precondition, because the Evidence row is set against THAT body: a
@@ -741,14 +776,18 @@ class TrackerLaneStateWriter:
         # refuses here, while the sub-issue still reads as the pass it was,
         # rather than after the move back has already taken it.
         self._evidence_body(issue=issue, criterion=criterion, cross_off=cross_off)
-        posted = event is not None and _ends_row_history(event=event, events=events)
+        posted = (
+            _ends_row_history(event=event, events=events)
+            if event.kind in EVIDENCE_ROW_WRITES
+            else event in events
+        )
         await settle(self._tracker.reset_criterion_pending(expected=issue, holder=None))
         moved = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=moved, criterion=criterion)
         await self._stamp(
             lane=lane, criterion=criterion, issue=moved, cross_off=cross_off
         )
-        if event is not None and not posted:
+        if not posted:
             await settle(
                 self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
             )

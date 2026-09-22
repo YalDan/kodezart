@@ -515,8 +515,10 @@ reply links and incomplete pages raise `EscalationReadError`. Resolution
 reads every comment page and does not parse historical escalation bodies
 as JSON, cache answers, write comments or change labels. Consuming this read
 in an alarm computation is still owed; the supervisor tick that exists reads
-the scope's ready set, and observes the lane tally arm for each ready lane and
-each finished member of every scope the operation declares.
+the scope's ready set of every scope the operation declares, observes the lane
+tally arm for each ready lane and each finished member, and observes every
+member's own stream for a criterion moved back that nobody reported and a lapse
+nothing will re-derive.
 
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the
