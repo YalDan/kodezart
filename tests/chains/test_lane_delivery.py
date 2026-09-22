@@ -2,6 +2,7 @@
 
 import ast
 import asyncio
+import copy
 import inspect
 from types import UnionType
 from typing import Union, get_args, get_origin
@@ -175,10 +176,17 @@ async def deliver(parts, *, stalled=False, remediation=False):
     into it.  Pinning the fire's own annotations instead would only say which
     names the state DECLARES; a key written into the dict at run time carries
     no annotation and would pass that. Here it reds every fixture.
+
+    The snapshot is DEEP, because the state carries mutable values — the
+    criteria and the flagged items are lists, and one of them is handed on to
+    a collaborator — and a shallow copy shares each of them with the live
+    state, so a fact appended to a list ON the state compares equal to
+    itself.  Deep, the claim covers a key written onto the dict and a value
+    reached through it alike.
     """
     owner, state, context, _, _, _, tracker = parts
     unwritten = nothing_written(tracker)
-    handed = dict(state)
+    handed = copy.deepcopy(state)
     try:
         return await owner.deliver(
             state=state,
@@ -188,7 +196,7 @@ async def deliver(parts, *, stalled=False, remediation=False):
         )
     finally:
         assert unwritten(), "the coordinator wrote to the tracker"
-        assert dict(state) == handed, "the coordinator wrote to the state it was handed"
+        assert state == handed, "the coordinator wrote to the state it was handed"
 
 
 async def test_green_opens_on_actual_head_and_resolved_base_and_round_trips():
