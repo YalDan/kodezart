@@ -1559,6 +1559,9 @@ async def test_no_base_tree_survives_the_iteration_that_opened_it():
         "iteration_commit_sha",
         "amendment_reports",
         "amendment_blocked",
+        # The standing gradings the lapse reading carries between iterations:
+        # cross-offs and their shas, naming no workspace and no path.
+        "standing",
     }
 
 

@@ -1871,7 +1871,7 @@ async def lapse(
         results=graded([key]),
         graded_sha=standing_sha,
         observation=evaluation_observation(session_id="eval-session", iteration=1),
-        demonstrated=True,
+        demonstrated={CriterionId(key)},
     )
     await lane_state.write_cross_offs(
         lane=binding(),
@@ -1880,7 +1880,7 @@ async def lapse(
             results=graded([key]),
             graded_sha=head_sha,
             observation=evaluation_observation(session_id="eval-session", iteration=2),
-            demonstrated=True,
+            demonstrated={CriterionId(key)},
             standing=standing,
             reading={criterion_ref(CriterionId(key)): GradedState.lapsed},
         ),

@@ -676,7 +676,7 @@ def for_reading(reading) -> tuple[CriterionCrossOff, ...]:
         results=[result()],
         graded_sha=GRADED_SHA,
         observation=evaluation_observation(session_id="second-session", iteration=2),
-        demonstrated=True,
+        demonstrated={CriterionId(KEY)},
         standing=[standing_cross_off()],
         reading=reading,
     )
@@ -711,7 +711,7 @@ def test_a_criterion_with_no_reading_is_built_from_this_attempts_own_grade():
         results=[result()],
         graded_sha=GRADED_SHA,
         observation=evaluation_observation(session_id="second-session", iteration=2),
-        demonstrated=True,
+        demonstrated={CriterionId(KEY)},
     )
 
 
@@ -722,7 +722,7 @@ def test_a_reading_naming_a_criterion_nothing_stands_for_refuses():
             results=[result()],
             graded_sha=GRADED_SHA,
             observation=evaluation_observation(session_id="s", iteration=2),
-            demonstrated=True,
+            demonstrated={CriterionId(KEY)},
             standing=[],
             reading={criterion_ref(CriterionId(KEY)): GradedState.counted},
         )
@@ -807,7 +807,7 @@ def test_a_declaration_that_earns_no_class_reaches_the_board_as_cheap(
         ],
         graded_sha=GRADED_SHA,
         observation=evaluation_observation(session_id="session-7", iteration=3),
-        demonstrated=True,
+        demonstrated={CriterionId(KEY)},
         standing=(),
         reading={},
     )
