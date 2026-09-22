@@ -28,7 +28,12 @@ from kodezart.types.domain.union_tick import ScopeUnionRequest
 from tests.chains.test_delivery_coordinator import RECORD_OPERATION, RaisingRunner
 from tests.chains.test_delivery_coordinator import delivery as delivery
 from tests.chains.test_delivery_coordinator import repository as repository
-from tests.chains.test_union_exit_invariance import RecordingPublisher
+from tests.chains.test_union_exit_invariance import (
+    CONFLICTING_EDITS,
+    INDEPENDENT_EDITS,
+    RecordingPublisher,
+    build_delivery,
+)
 from tests.fakes import (
     FakeDeliveryProbe,
     FakeGitService,
@@ -247,22 +252,45 @@ async def lifecycles(
     }
 
 
-async def test_verifying_leaves_every_open_pull_request_open(delivery) -> None:
+#: Both ways verifying RETURNS, and the edits that drive each one.  The step
+#: also leaves by raising, which the exit sibling's scenarios cover; a read-back
+#: around the call can only be made where there is a result to read it around,
+#: and there are two of those.  ``composed`` says which one: a chain was run and
+#: reported, or the merge refused and the chain was never reached.
+RETURN_PATHS: tuple[tuple[str, dict[str, tuple[str, str]], bool], ...] = (
+    ("independent edits", INDEPENDENT_EDITS, True),
+    ("conflicting edits", CONFLICTING_EDITS, False),
+)
+
+
+@pytest.mark.parametrize(
+    "name, edits, composed",
+    RETURN_PATHS,
+    ids=[row[0] for row in RETURN_PATHS],
+)
+async def test_verifying_leaves_every_open_pull_request_open(
+    tmp_path, name: str, edits: dict[str, tuple[str, str]], composed: bool
+) -> None:
     """Read back around the verify, not asserted of the step's own surface.
 
     The port surfaces above show a merge cannot be spelled; this shows the
     lifecycle of every open request is the same fact after the union step
-    returns as it was before it was called.
+    returns as it was before it was called — on EACH way it returns, because a
+    lifecycle write placed on the return the read-back never drives is a write
+    nothing here would see.
     """
-    delivery.git = ReachableForgeGit()
-    forge = delivery.git.forge
+    fixture = await build_delivery(
+        tmp_path / "world", edits=edits, git=ReachableForgeGit()
+    )
+    forge = fixture.git.forge
     before = await lifecycles(forge)
 
-    result = await delivery.coordinator().verify()
+    result = await fixture.coordinator().verify()
 
     after = await lifecycles(forge)
-    assert result.checks is not None
-    assert (before, after) == (ALL_OPEN, ALL_OPEN)
+    assert (result.checks is not None) is composed, name
+    assert (result.merge_conflict is not None) is not composed, name
+    assert (before, after) == (ALL_OPEN, ALL_OPEN), name
 
 
 def test_the_forge_predicate_recognises_every_forge_double() -> None:
