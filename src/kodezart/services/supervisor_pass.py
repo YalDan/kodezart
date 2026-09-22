@@ -1,9 +1,10 @@
-"""One tick over every declared scope: read each member, observe each lane.
+"""One tick over every declared scope: its stage barrier, then each lane.
 
 The pass holds no port. What it needs from the tracker is one reading per
-scope, injected as a callable, and one observation per lane, which the
-observer owns. It therefore cannot reach a repository, a session, a queue or
-a forge — not by convention, but because nothing it holds could.
+scope and one observation of the scope's stage barrier, each injected as a
+callable, and one observation per lane, which the observer owns. It
+therefore cannot reach a repository, a session, a queue or a forge — not by
+convention, but because nothing it holds could.
 
 A lane's failure is the lane's. One damaged record does not decide anything
 about the lanes beside it, so each lane and each scope is contained and the
@@ -19,6 +20,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.domain.lane_alarms import Finished, LaneStanding, Ready, Waiting
 from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.run_alarm import RunAlarm
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
 
@@ -57,11 +59,13 @@ class SupervisorPass:
         *,
         scopes: Sequence[ScopeRef],
         read_ready: Callable[[ScopeRef], Awaitable[ScopeReadySet]],
+        observe_scope: Callable[[ScopeRef], Awaitable[Sequence[RunAlarm]]],
         alarms: AlarmSupervisor,
         log: BoundLogger | None = None,
     ) -> None:
         self._scopes = tuple(scopes)
         self._read_ready = read_ready
+        self._observe_scope = observe_scope
         self._alarms = alarms
         self._log: BoundLogger = get_logger(__name__) if log is None else log
 
@@ -81,9 +85,16 @@ class SupervisorPass:
         is ready again, while what its stream already said about the criteria
         it graded is still read. A lane holding a lapse nothing will
         re-derive is by construction one of those.
+
+        Each scope's stage barrier is observed first, from its roster and its
+        members' stage markers, and a raise there is logged: nothing about it
+        is keyed to the scope on any stream or record, so the next tick reads
+        it again from the same tracker facts. Its failure is the scope's and
+        the scope's lanes are still observed.
         """
         failed: list[str] = []
         for ref in self._scopes:
+            await self._observe_scope_arm(ref=ref, failed=failed)
             try:
                 ready = await self._read_ready(ref)
             except Exception:
@@ -121,6 +132,21 @@ class SupervisorPass:
         if failed:
             raise SupervisorIncompleteError(failed=tuple(failed))
         return PassRun.RAN
+
+    async def _observe_scope_arm(self, *, ref: ScopeRef, failed: list[str]) -> None:
+        """The scope's own stall, logged where it stands; a failure is the scope's."""
+        try:
+            raised = await self._observe_scope(ref)
+        except Exception:
+            await self._log.aexception("supervisor_scope_arm_failed", scope=ref.key)
+            failed.append(ref.key)
+            return
+        for alarm in raised:
+            await self._log.awarning(
+                "supervisor_scope_alarm_raised",
+                scope=ref.key,
+                marker=alarm.readings[0].source_ref,
+            )
 
     async def _observe(
         self,

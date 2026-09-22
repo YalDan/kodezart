@@ -1675,6 +1675,25 @@ class RunAlarmTracker(SurfaceLeaseTracker, Protocol):
 
 
 @runtime_checkable
+class ScopeRosterReader(Protocol):
+    """Exactly what a scope's stage barrier is read from: its roster and markers.
+
+    A role narrowed out of the port rather than a widening of it. It names no
+    event read and no write, so a holder of it can observe a scope's stall
+    from the roster and each member's stage markers and from nothing keyed to
+    the scope — there is no such thing for it to read.
+    """
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]: ...
+
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue: ...
+
+    def require_issue_classification_reads(
+        self, *, additional_keys: frozenset[str] = frozenset()
+    ) -> None: ...
+
+
+@runtime_checkable
 class LaneEventHistory(Protocol):
     """The one read a grading's provenance needs, and no write beside it.
 

@@ -8,12 +8,15 @@ from kodezart.core.protocols import TrackerPort
 from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.pass_scheduler import ScheduledPass
+from kodezart.services.scope_tally import observe_scope_tally
 from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
     SupervisorPass,
     supervisor_holder,
 )
 from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.organize import MANDATE_PHASE_ROLES, phase_successor
+from kodezart.types.domain.run_alarm import RunAlarm
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
 
@@ -34,18 +37,42 @@ def build_supervisor_pass(
     contention. It is not composed from ``dispatch_holder``: that names the
     process that holds fire claims, and a lease holder is never derived from it.
     """
+    holder = supervisor_holder(operation_name=operation.operation_name)
     records = LaneRecordReader(tracker=tracker, operation=operation)
     alarms = AlarmSupervisor(
         tracker=tracker,
         records=records,
         marker_prefixes=operation.marker_prefixes,
         max_commits_without_closure=config.run_alarm_max_commits_without_closure,
-        holder=supervisor_holder(operation_name=operation.operation_name),
+        holder=holder,
         lease_seconds=config.tracker.surface_lease_seconds,
     )
 
     def read_ready(ref: ScopeRef) -> Awaitable[ScopeReadySet]:
         return read_scope_ready(ref=ref, tracker=tracker)
+
+    # Every rung of the governed sequence that has a later stage to have been
+    # entered, read off the same function the collector refuses the last rung
+    # with, so the two cannot disagree about which rungs exist.
+    rungs = tuple(
+        kind for kind in MANDATE_PHASE_ROLES if phase_successor(kind) is not None
+    )
+
+    async def observe_scope(ref: ScopeRef) -> tuple[RunAlarm, ...]:
+        """The scope's stage barrier at each rung, from its roster and markers."""
+        raised: list[RunAlarm] = []
+        for rung in rungs:
+            alarm = await observe_scope_tally(
+                tracker=tracker,
+                operation=operation,
+                scope=ref,
+                phase=rung,
+                raised_at_sha=SUPERVISOR_TICK_NAME,
+                raised_by=holder,
+            )
+            if alarm is not None:
+                raised.append(alarm)
+        return tuple(raised)
 
     # The declared rows projected to their bare scope refs: the tick reads
     # tracker state only, so the repository and report destination beside each
@@ -53,6 +80,7 @@ def build_supervisor_pass(
     observation = SupervisorPass(
         scopes=tuple(row.scope for row in operation.organize_scopes),
         read_ready=read_ready,
+        observe_scope=observe_scope,
         alarms=alarms,
     )
     return ScheduledPass(
