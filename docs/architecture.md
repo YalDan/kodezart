@@ -453,7 +453,12 @@ tree for the same reason it passes in the clean one, so it survives every
 removal and reaches that same reading with that same value. No second reading
 is taken for it, and no detector of its own is built: one mechanism resolves
 both, and what tells the two readings apart on the record is
-`UndemonstratedReason`, never a fifth cross-off state.
+`UndemonstratedReason`, never a fifth cross-off state. The gap one mechanism
+leaves is the case it cannot reach at all: a criterion whose named behaviour no
+removal session can take out of the tree leaves the copy unchanged, so no
+reading is taken there and the pass stands. Closing that needs a third reading,
+over what the production code holds rather than over what a removal changed
+(KOD-613), not a second mechanism here.
 
 A native evaluation whose grading did stand then runs each criterion it passed
 through that criterion's own check again, in a further tree the loop owns at the
