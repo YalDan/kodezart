@@ -22,7 +22,7 @@ from collections.abc import Awaitable, Callable, Mapping
 
 import pytest
 
-from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -48,6 +48,10 @@ ISSUE = "KOD-1"
 #: one the board already defines: a put-back to the issue's own state is
 #: the double's no-op and would fill no journal.
 OTHER = "KOD-2"
+#: A third key, deliberately NOT on the board: a ref recorded against an
+#: issue the board does not hold moves no stamp, so the journal is the write's
+#: only trace and the case below is about that journal and no other.
+ABSENT = "KOD-3"
 STARTED_STATE = "In Progress"
 HOLDER = "fixture-holder"
 LEASE_SECONDS = 60.0
@@ -158,6 +162,17 @@ async def write_document(port: FakeTrackerPort) -> None:
     )
 
 
+async def write_work_ref(port: FakeTrackerPort) -> None:
+    await port.record_work_ref(
+        ref=WorkRef(
+            issue_id=ABSENT,
+            role=WorkRefRole.DELIVERABLE,
+            branch="fixture-work-branch",
+            recorded_at=FIXTURE_EPOCH,
+        ),
+    )
+
+
 async def write_self_write(port: FakeTrackerPort) -> None:
     port.self_writes.record(issue_key=ISSUE, updated_at=FIXTURE_EPOCH)
 
@@ -181,6 +196,7 @@ WRITES: Mapping[str, Callable[[FakeTrackerPort], Awaitable[None]]] = {
     "_documents": write_document,
     "document_titles": write_document,
     "self_writes": write_self_write,
+    "recorded_work_refs": write_work_ref,
     "claim_releases": write_claim_release,
     "lease_releases": write_lease_release,
 }
