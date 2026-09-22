@@ -13,7 +13,10 @@ outside the rank inputs reds even when it spells no suspicious word: that is
 the mutation this guard exists for, ``estimate=len(issue.body)`` on the rank
 key and in both sort keys, which used no forbidden token at all.
 ``ast.unparse`` normalises formatting, so reflowing a key leaves the text
-register green while any change to what that key reads moves it.
+register green while any change to what that key reads moves it. The one
+expression that makes a rank is pinned by its text for the same reason: what
+it reads is counted as attributes off ``issue`` and what it calls by the word
+spelled, and a subscript of the bare ``issue`` name is neither.
 
 Two weaker nets sit outside the shape pins. One collects every ``len(...)``
 whose argument is an attribute and asserts none of those attributes is a text
@@ -267,6 +270,14 @@ DISPATCH_ORDERINGS = {
     ),
 }
 
+#: Exact. The one expression that makes a rank, written out, so the same read
+#: the attribute and callee pins cannot see — a subscript of the bare ``issue``
+#: name into a size table — moves a register at the site that makes the rank
+#: and not only at the sites that order by it.
+RANK_KEY_TEXT = (
+    "RankKey(priority_rank=priority_rank(issue.priority), created_at=issue.created_at)"
+)
+
 #: Exact, over the same five definitions. The text of each registered
 #: ordering's key and arguments, so a read the attribute register cannot see —
 #: a bare name, a subscript of one — moves a register too.
@@ -418,6 +429,20 @@ def receiver_reads(
     )
 
 
+def returned(function: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.expr:
+    """The one expression a definition returns.
+
+    Found rather than indexed: the definition that makes a rank opens with a
+    docstring, so its first statement is not its return, and a second return
+    would mean the rank is made in more than one place.
+    """
+    returns = [node for node in ast.walk(function) if isinstance(node, ast.Return)]
+    assert len(returns) == 1
+    value = returns[0].value
+    assert value is not None
+    return value
+
+
 def callees(function: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
     """Every name a definition calls, plain or as an attribute."""
     return frozenset(
@@ -459,7 +484,16 @@ NUMERIC = (int, float, Decimal)
 
 
 def test_the_rank_key_is_priority_then_age_and_nothing_else():
-    """The rank is a priority and an age, made from two reads and two calls."""
+    """The rank is a priority and an age, made from two reads and two calls.
+
+    Pinned by text as well, the way the comparison is: the reads are counted
+    as attributes off ``issue`` and the calls by the word they spell, so a
+    read that is neither — a subscript of the bare ``issue`` name into a
+    module-level table, filled from a count by whoever selects — adds a
+    derived quantity to the rank inside the one function that makes one and
+    moves no other register here. "Nothing else" is a claim about the whole
+    expression, so the whole expression is written out.
+    """
     tree = PARSED[DISPATCH]
     comparison = _defined(tree, COMPARISON)
     made = _defined(tree, rank_key.__name__)
@@ -480,6 +514,7 @@ def test_the_rank_key_is_priority_then_age_and_nothing_else():
         {"priority", "created_at"}
     )
     assert callees(made) == frozenset({RankKey.__name__, priority_rank.__name__})
+    assert ast.unparse(returned(made)) == RANK_KEY_TEXT
 
 
 def test_every_ordering_that_consults_priority_reads_only_the_rank_inputs():
@@ -679,18 +714,43 @@ MUTANTS = {
         "                rank_key(issue).created_at,\n"
         "                rank_key(issue).estimate,\n",
     ),
+    "rank_key_size_table": (
+        "def rank_key(issue: TrackerIssue) -> RankKey:\n"
+        '    """Primary rank (Urgent first, None last), secondary oldest-first."""\n'
+        "    return RankKey(\n"
+        "        priority_rank=priority_rank(issue.priority),\n",
+        "_SIZES: dict = {}\n"
+        "\n"
+        "\n"
+        "def rank_key(issue: TrackerIssue) -> RankKey:\n"
+        '    """Primary rank (Urgent first, None last), secondary oldest-first."""\n'
+        "    return RankKey(\n"
+        "        priority_rank=priority_rank(issue.priority)\n"
+        "        + (_SIZES[issue] if issue in _SIZES else 0),\n",
+    ),
 }
 
 
 @pytest.mark.parametrize("hunk", sorted(MUTANTS))
 def test_the_guard_reddens_on_a_size_derived_rank_input(hunk):
-    """The mutation that survived, planted one hunk at a time.
+    """The mutations that survived, planted one hunk at a time.
 
     Each hunk is caught by the pin that covers the place it touched: the
     declared rank fields, the reads and calls of the one function that makes a
-    rank, and the register of what every ordering reads. The length of a text
-    column reds the outer net as well, and the word reds the vocabulary net —
-    but the shape pins would have caught all three without either.
+    rank, the register of what every ordering reads, and the text of the
+    expression that makes the rank. The first three spell a word of the
+    vocabulary and take the length of a text column, so the outer nets red on
+    them too — though the shape pins would have caught all three without
+    either.
+
+    The size table is the hunk that proves the nets are not what does the
+    work. It spells no vocabulary word, takes no length, reads no new
+    attribute off ``issue``, calls nothing new and leaves every ordering's
+    register — count, attribute names, called names and written text — exactly
+    as it was, because it touches neither an ordering nor a field but the
+    arithmetic between them. Each of those is asserted here as an equality,
+    not skipped: what reds it is the text of the rank-making expression and
+    nothing else in this module.
     """
     anchor, planted = MUTANTS[hunk]
     source = PACKAGE[DISPATCH]
@@ -702,6 +762,7 @@ def test_the_guard_reddens_on_a_size_derived_rank_input(hunk):
             "priority_rank",
             "created_at",
         )
+        assert estimate_identifiers(mutated)
     elif hunk == "rank_key_call":
         made = _defined(mutated, rank_key.__name__)
         assert receiver_reads(made, receiver="issue") == frozenset(
@@ -711,12 +772,25 @@ def test_the_guard_reddens_on_a_size_derived_rank_input(hunk):
             {RankKey.__name__, priority_rank.__name__, len.__name__}
         )
         assert text_length_reads(mutated) == frozenset({"body"})
-    else:
+        assert estimate_identifiers(mutated)
+    elif hunk == "ranked_order_key":
         sites = ordering_sites({**PARSED, DISPATCH: mutated})
         assert sites != DISPATCH_ORDERINGS
         assert "estimate" in sites[f"{DISPATCH}::ranked_order"][1]
-
-    assert estimate_identifiers(mutated)
+        assert estimate_identifiers(mutated)
+    else:
+        made = _defined(mutated, rank_key.__name__)
+        with_table = {**PARSED, DISPATCH: mutated}
+        assert receiver_reads(made, receiver="issue") == frozenset(
+            {"priority", "created_at"}
+        )
+        assert callees(made) == frozenset({RankKey.__name__, priority_rank.__name__})
+        assert ordering_sites(with_table) == DISPATCH_ORDERINGS
+        assert ordering_calls(with_table) == ordering_calls(PARSED)
+        assert ordering_key_texts(with_table) == DISPATCH_ORDERING_KEYS
+        assert text_length_reads(mutated) == text_length_reads(PARSED[DISPATCH])
+        assert estimate_identifiers(mutated) == frozenset()
+        assert ast.unparse(returned(made)) != RANK_KEY_TEXT
 
 
 def test_the_plateau_bound_is_a_tick_count_and_not_a_rank_input():
