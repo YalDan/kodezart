@@ -1,6 +1,12 @@
 """Historical check arithmetic, with the union as its actual consumer."""
 
-from kodezart.domain.check_chain import classify_check_failures
+import pytest
+
+from kodezart.domain.check_chain import (
+    classify_check_failures,
+    counted_checks,
+    rostered_forge_checks,
+)
 from kodezart.types.domain.operation import CheckStep
 
 
@@ -52,3 +58,69 @@ def test_unknown_failed_names_remain_sorted_roots():
     )
     assert result.roots == ("gate", "unknown-a", "unknown-z")
     assert result.cascades == ("last",)
+
+
+def rostered_chain():
+    """A chain mixing steps that name a forge check and steps that do not."""
+    return (
+        CheckStep(name="gate", command="gate", forge_check="unit"),
+        CheckStep(name="middle", command="middle", depends_on="gate"),
+        CheckStep(
+            name="last", command="last", depends_on="middle", forge_check="integration"
+        ),
+    )
+
+
+def test_a_chain_rosters_only_the_forge_checks_its_steps_name():
+    assert rostered_forge_checks(rostered_chain()) == frozenset({"unit", "integration"})
+    assert rostered_forge_checks(chain()) == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("reported", "failed", "rostered", "excluded", "failures"),
+    [
+        pytest.param(
+            {"unit", "lint"}, {"lint"}, set(), set(), {"lint"}, id="no-roster"
+        ),
+        pytest.param({"unit"}, {"unit"}, {"unit"}, set(), {"unit"}, id="roster-equal"),
+        pytest.param(
+            {"unit", "lint"}, set(), {"unit"}, {"lint"}, set(), id="roster-subset"
+        ),
+        pytest.param(
+            {"unit", "lint"}, {"lint"}, {"unit"}, {"lint"}, set(), id="excluded-failure"
+        ),
+        pytest.param(
+            {"unit"},
+            {"unit"},
+            {"unit", "absent"},
+            set(),
+            {"unit"},
+            id="roster-unreported",
+        ),
+    ],
+)
+def test_the_counted_checks_are_the_reported_ones_a_roster_keeps(
+    reported, failed, rostered, excluded, failures
+):
+    """An empty roster counts everything; a named roster counts its own.
+
+    A rostered name nobody reported leaves the counted set the intersection:
+    the arm's own roster clause is what refuses that observation, and this
+    arithmetic does not answer it twice.
+    """
+    counted = counted_checks(
+        reported=frozenset(reported),
+        failed=frozenset(failed),
+        rostered=frozenset(rostered),
+    )
+    assert counted.excluded == frozenset(excluded)
+    assert counted.failures == frozenset(failures)
+
+
+def test_a_failure_outside_the_reported_roster_is_refused():
+    with pytest.raises(ValueError, match="reported roster"):
+        counted_checks(
+            reported=frozenset({"unit"}),
+            failed=frozenset({"lint"}),
+            rostered=frozenset(),
+        )

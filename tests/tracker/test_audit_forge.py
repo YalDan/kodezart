@@ -70,13 +70,24 @@ async def setup(tracker):
 
 @asynccontextmanager
 async def forge(backend, case):
-    red = case in {"work", "flake", "unknown", "environment"}
-    observed_names = frozenset({"unit"}) if case == "roster" else NAMES
+    rostered_red = case in {"work", "flake", "unknown", "environment", "mixed"}
+    failing = (
+        frozenset({"unit", "lint"})
+        if case == "mixed"
+        else NAMES
+        if rostered_red
+        else frozenset({"lint"})
+        if case == "unrostered"
+        else frozenset()
+    )
+    observed_names = frozenset({"unit"}) if case == "roster" else NAMES | failing
     observed_sha = "b" * 40 if case == "foreign-sha" else SHA
-    passed = None if case == "absent" else not red
+    passed = None if case == "absent" else not failing
     rerun_failed = (
         NAMES
         if case == "work"
+        else failing
+        if case == "mixed"
         else frozenset({"unit"})
         if case == "unknown"
         else frozenset()
@@ -84,17 +95,21 @@ async def forge(backend, case):
     if backend == "fake":
         ci = FakeCIMonitor(
             passed=passed,
-            failed_names=NAMES if red else frozenset(),
+            failed_names=failing,
             rerun_results=[(not bool(rerun_failed), "fresh result", rerun_failed)],
             observed_sha_by_ref={SHA: observed_sha},
             check_names=observed_names,
         )
         yield ci, ci.rerun_calls
         return
-    actions = ActionsAPI(names=tuple(sorted(NAMES)), fresh_failed=rerun_failed)
+    # The github double marks every job of attempt one failed, so a rerun that
+    # reproduces that red fails every reported name rather than the subset the
+    # fake observes.
+    reproduced = frozenset(observed_names) if case == "mixed" else rerun_failed
+    actions = ActionsAPI(names=tuple(sorted(observed_names)), fresh_failed=reproduced)
 
     def handler(request):
-        if red:
+        if rostered_red:
             return actions(request)
         actions.requests.append(request)
         assert request.method == "GET"
@@ -107,7 +122,7 @@ async def forge(backend, case):
                 "name": name,
                 "head_sha": observed_sha,
                 "status": "completed",
-                "conclusion": "success",
+                "conclusion": "failure" if name in failing else "success",
             }
             for index, name in enumerate(sorted(observed_names), start=1)
         ]
@@ -156,6 +171,7 @@ async def test_exact_sha_roster_and_the_one_red_classifier_determine_the_verdict
         assert result.criterion.issue_key == CHILD
         assert result.recorded_evidence.graded_sha == SHA and SHA in result.reason
         assert result.required_check_names == NAMES
+        assert result.excluded_check_names == frozenset()
         assert (
             AuditForgeObservation.model_validate_json(result.model_dump_json())
             == result
@@ -462,6 +478,7 @@ async def test_an_empty_declared_roster_leaves_the_native_ci_roster_authoritativ
         result = await setup(ci, repository=repository).observe(REQUEST)
         assert result.verdict is AuditVerdict.HOLDS
         assert result.required_check_names == frozenset()
+        assert result.excluded_check_names == frozenset()
         assert result.checks.check_names == NAMES
 
 
@@ -506,3 +523,134 @@ async def test_a_constructed_green_verdict_cannot_ignore_the_declared_roster(set
     data["verdict"] = AuditVerdict.HOLDS
     with pytest.raises(ValidationError, match="complete declared roster"):
         AuditForgeObservation.model_validate(data)
+
+
+#: A reported check no declared step rosters, and one nobody reported twice.
+UNROSTERED = "lint"
+LATE = "docs"
+
+
+@pytest.mark.parametrize("backend", ["fake", "github"])
+async def test_a_reported_check_outside_the_roster_is_excluded_and_named(
+    setup, backend
+):
+    """A red in a check the repository does not roster refutes nothing.
+
+    The whole reported snapshot is kept, because the roster it was read in is
+    what makes the exclusion legible, and the observation states what it left
+    out. Nothing is rerun: the arm has no failure among the checks it counts.
+    """
+    async with forge(backend, "unrostered") as (ci, calls):
+        result = await setup(ci).observe(REQUEST)
+    assert result.verdict is AuditVerdict.HOLDS
+    assert result.excluded_check_names == frozenset({UNROSTERED})
+    assert result.required_check_names == NAMES
+    assert result.checks.check_names == NAMES | {UNROSTERED}
+    assert result.checks.failed_check_names == frozenset({UNROSTERED})
+    assert result.red is None
+    assert not (
+        calls if backend == "fake" else [r for r in calls if r.method == "POST"]
+    )
+    assert AuditForgeObservation.model_validate_json(result.model_dump_json()) == result
+
+
+@pytest.mark.parametrize("backend", ["fake", "github"])
+async def test_a_rostered_red_is_not_excused_by_an_unrostered_green(setup, backend):
+    """An exclusion cannot launder a red in a check the repository rosters."""
+    async with forge(backend, "mixed") as (ci, _):
+        result = await setup(ci).observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    assert result.excluded_check_names == frozenset({UNROSTERED})
+
+
+async def test_the_counted_reading_is_taken_from_the_rerun_snapshot(setup):
+    """The exclusions a claim states are the ones its own snapshot leaves out.
+
+    The rerun reports a check the first observation did not, and fails that
+    one alone: a differing red set is unclassified, so the claim is
+    unverifiable, and the exclusions it states are the second snapshot's.
+    Reading them off the first would make the record refuse its own arm, and
+    the reason would then name an exception class instead of the fact.
+    """
+    ci = FakeCIMonitor(
+        passed=False,
+        failed_names=frozenset({"unit"}),
+        check_names=NAMES,
+        rerun_results=[(False, "a different red", frozenset({LATE}))],
+        observed_sha_by_ref={SHA: SHA},
+    )
+    result = await setup(ci).observe(REQUEST)
+    assert result.verdict is AuditVerdict.UNVERIFIABLE
+    assert result.red.red_class is CheckRedClass.UNCLASSIFIED
+    assert result.checks.check_names == NAMES | {LATE}
+    assert result.excluded_check_names == frozenset({LATE})
+    assert "unclassified" in result.reason
+    assert "ValidationError" not in result.reason
+
+
+@pytest.mark.parametrize("backend", ["fake", "github"])
+async def test_an_empty_declared_roster_excludes_nothing_and_still_classifies_red(
+    setup, backend
+):
+    """A repository rostering no forge check counts everything reported.
+
+    Any other reading would let such a repository's claims hold vacuously,
+    with every reported red excluded and nothing saying so.
+    """
+    repository = REPOSITORY.model_copy(
+        update={"checks": (CheckStep(name="local-only", command="run local"),)}
+    )
+    async with forge(backend, "work") as (ci, calls):
+        result = await setup(ci, repository=repository).observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    assert result.required_check_names == frozenset()
+    assert result.excluded_check_names == frozenset()
+    reruns = calls if backend == "fake" else [r for r in calls if r.method == "POST"]
+    assert len(reruns) == 1
+
+
+async def excluding_result(setup, case="unrostered"):
+    """One observation whose roster leaves a reported check out."""
+    async with forge("fake", case) as (ci, _):
+        return await setup(ci).observe(REQUEST)
+
+
+async def test_a_green_claim_cannot_drop_the_names_it_excluded(setup):
+    values = (await excluding_result(setup)).model_dump()
+    values["excluded_check_names"] = frozenset()
+    with pytest.raises(ValidationError, match="excluded checks"):
+        AuditForgeObservation.model_validate(values)
+
+
+async def test_a_green_claim_cannot_overstate_what_it_excluded(setup):
+    values = (await excluding_result(setup)).model_dump()
+    values["excluded_check_names"] = frozenset({UNROSTERED, "unit"})
+    with pytest.raises(ValidationError, match="excluded checks"):
+        AuditForgeObservation.model_validate(values)
+
+
+async def test_an_excluded_check_outside_the_observed_roster_is_refused(setup):
+    values = (await excluding_result(setup)).model_dump()
+    values["excluded_check_names"] = frozenset({"invented"})
+    with pytest.raises(ValidationError, match="excluded checks"):
+        AuditForgeObservation.model_validate(values)
+
+
+async def test_a_refutation_over_an_excluded_red_alone_is_refused(setup):
+    values = (await excluding_result(setup)).model_dump()
+    values["verdict"] = AuditVerdict.REFUTED
+    with pytest.raises(ValidationError, match="classified work failure"):
+        AuditForgeObservation.model_validate(values)
+
+
+@pytest.mark.parametrize("case", ["roster", "absent"])
+async def test_an_unverifiable_claim_still_states_its_exclusions_truly(setup, case):
+    """An exclusion set is read before a verdict is, so an unverifiable claim
+    states its own exclusions or is refused: a reported name its roster keeps
+    is not excluded, and a claim with no observed roster excludes nothing."""
+    values = (await excluding_result(setup, case)).model_dump()
+    values["excluded_check_names"] = frozenset(
+        {"unit"} if case == "roster" else {UNROSTERED}
+    )
+    with pytest.raises(ValidationError, match="excluded"):
+        AuditForgeObservation.model_validate(values)

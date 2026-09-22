@@ -8,6 +8,7 @@ from kodezart.core.protocols import (
     CIMonitor,
     CriterionResolver,
 )
+from kodezart.domain.check_chain import counted_checks, rostered_forge_checks
 from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES, parse_audit_evidence
@@ -95,6 +96,11 @@ class AuditForgeVerifier:
     ) -> AuditForgeObservation:
         required: frozenset[str] = frozenset()
         checks: ObservedChecks | None = None
+        # What the arm leaves out of what was reported: the reading of
+        # whatever ``checks`` holds, recomputed beside every assignment of it
+        # and nowhere else, because the record refuses an exclusion set that
+        # disagrees with the roster it was reported in.
+        excluded: frozenset[str] = frozenset()
         red: CheckRedObservation | None = None
 
         def result(verdict: AuditVerdict, reason: str) -> AuditForgeObservation:
@@ -102,6 +108,7 @@ class AuditForgeVerifier:
                 criterion=criterion,
                 recorded_evidence=evidence,
                 required_check_names=required,
+                excluded_check_names=excluded,
                 checks=checks,
                 red=red,
                 verdict=verdict,
@@ -110,9 +117,7 @@ class AuditForgeVerifier:
 
         try:
             repository = self._repository(request.repo_url)
-            required = frozenset(
-                step.forge_check for step in repository.checks if step.forge_check
-            )
+            required = rostered_forge_checks(repository.checks)
             if self._ci is None:
                 raise AuditClaimReadError(
                     "the forge check capabilities are unavailable"
@@ -125,9 +130,17 @@ class AuditForgeVerifier:
             if isinstance(watched, IncompleteChecks):
                 raise AuditClaimReadError(watched.summary)
             checks = self._checked_snapshot(watched, evidence)
-            if checks.checks_passed:
+            counted = counted_checks(
+                reported=checks.check_names,
+                failed=checks.failed_check_names,
+                rostered=required,
+            )
+            excluded = counted.excluded
+            if not counted.failures:
                 self._require_roster(checks, required)
-                return result(AuditVerdict.HOLDS, "the recorded SHA has green checks")
+                return result(
+                    AuditVerdict.HOLDS, "the rostered checks are green at that SHA"
+                )
             red = await classify_red_checks(
                 ci=self._ci,
                 repository=repository,
@@ -141,11 +154,22 @@ class AuditForgeVerifier:
                     "the classified rerun has no completed check observation",
                 )
             checks = self._checked_snapshot(red.observation, evidence)
+            counted = counted_checks(
+                reported=checks.check_names,
+                failed=checks.failed_check_names,
+                rostered=required,
+            )
+            excluded = counted.excluded
             match red.red_class:
                 case CheckRedClass.RUNNER_FLAKE:
                     self._require_roster(checks, required)
                     return result(AuditVerdict.HOLDS, "a same-SHA rerun is green")
                 case CheckRedClass.WORK_DEFECT:
+                    if not counted.failures:
+                        return result(
+                            AuditVerdict.UNVERIFIABLE,
+                            "the reproduced red is in no rostered check",
+                        )
                     return result(AuditVerdict.REFUTED, "same-SHA checks reproduce red")
                 case CheckRedClass.ENVIRONMENT_PREREQUISITE_UNMET:
                     return result(

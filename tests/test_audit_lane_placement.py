@@ -14,6 +14,11 @@ package, derived by walking it, not a hand-listed set of audit modules —
 a copy planted in a module no list names is exactly the copy a list
 misses.  The walk is textual and executes nothing; the controls at the
 bottom plant each shape the guard is for and prove it reds.
+
+The same mechanism, asked one more question, states that the check-red
+vocabulary and the body that classifies a red are each declared once in the
+package: the member set and the answered shape are read off the symbols, so a
+copy under another name or another enum alias is reported (KOD-322).
 """
 
 import ast
@@ -29,6 +34,7 @@ from kodezart.chains.audit_sweep import AuditReadSweep, AuditReadSweepResult
 from kodezart.chains.write_back_verifier import FreshWriteBackJudge, WriteBackVerifier
 from kodezart.composition.audit import build_audit_pass
 from kodezart.core.protocols import LaneEventHistory, WriteBackJudge, WriteBackStep
+from kodezart.services.check_classification import classify_red_checks
 from kodezart.types.domain.audit import AuditClaimReport, AuditVerdict
 from kodezart.types.domain.criterion_lifecycle import CrossOffState
 from kodezart.types.domain.delivery import CheckRedClass
@@ -73,6 +79,7 @@ PLACEMENTS: tuple[tuple[Declared, str], ...] = (
     (AuditClaimReport, "types/domain/audit.py"),
     (build_audit_pass, "composition/audit.py"),
     (CrossOffState, "types/domain/criterion_lifecycle.py"),
+    (classify_red_checks, "services/check_classification.py"),
 )
 
 #: The symbols another lane owns and this one may only import by name.
@@ -97,6 +104,14 @@ ROLE_SHAPES: Mapping[str, frozenset[str]] = {
 }
 
 ROLE_NAMES = frozenset(ROLE_SHAPES)
+
+#: The red vocabulary's own member set, read off the enum: a second enum
+#: assigning these members is a second vocabulary whatever it is called.
+RED_MEMBERS = frozenset(member.name for member in CheckRedClass)
+#: The shape a classifier answers with, read off the classifier's own return
+#: annotation rather than named here: a second body answering it is a second
+#: classifier.
+RED_OBSERVATION = classify_red_checks.__annotations__["return"].__name__
 
 
 def _modules(root: Path) -> list[tuple[str, ast.Module]]:
@@ -237,6 +252,77 @@ def _imported_from(module: str, source_module: str) -> frozenset[str]:
         if isinstance(node, ast.ImportFrom) and node.module == source_module
         for alias in node.names
     )
+
+
+def _enum_names(tree: ast.Module) -> frozenset[str]:
+    """Every name this module binds an enum base to.
+
+    Read out of the module's own imports, the way protocol bases are, so
+    ``from enum import StrEnum as _S`` is seen as the enum base it is.
+    """
+    return frozenset(
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "enum"
+        for alias in node.names
+    )
+
+
+def _red_vocabularies(root: Path) -> dict[str, list[str]]:
+    """Each class outside the owner assigning the red vocabulary's members."""
+    found: dict[str, list[str]] = {}
+    owner = declared_in(CheckRedClass)
+    for module, tree in _modules(root):
+        if module == owner:
+            continue
+        bases = _enum_names(tree)
+        copies = sorted(
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef)
+            and any(
+                isinstance(base, ast.Name) and base.id in bases for base in node.bases
+            )
+            and _declared_members(node) == RED_MEMBERS
+        )
+        if copies:
+            found[module] = copies
+    return found
+
+
+def _red_classifiers(root: Path) -> dict[str, list[str]]:
+    """Each awaitable outside the owner answering with the classifier's shape."""
+    found: dict[str, list[str]] = {}
+    owner = declared_in(classify_red_checks)
+    for module, tree in _modules(root):
+        if module == owner:
+            continue
+        classifiers = sorted(
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+            and node.returns is not None
+            and ast.unparse(node.returns) == RED_OBSERVATION
+        )
+        if classifiers:
+            found[module] = classifiers
+    return found
+
+
+def test_no_module_but_the_owner_declares_the_red_vocabulary() -> None:
+    """One red vocabulary in the package, recognised by its member set.
+
+    A lane is not a boundary a syntax tree can read, so the scanned side is
+    the whole package: a copy planted in a module no list names is exactly
+    the copy a list misses.
+    """
+    assert RED_MEMBERS
+    assert _red_vocabularies(SOURCE) == {}
+
+
+def test_no_module_but_the_owner_declares_a_red_classifier() -> None:
+    """One body in the package answers with a red classification."""
+    assert _red_classifiers(SOURCE) == {}
 
 
 def test_each_named_module_owns_the_symbol_the_placement_names() -> None:
@@ -425,3 +511,43 @@ def test_a_plain_import_of_a_role_for_use_is_not_a_second_import_path(
         "    return judge\n"
     )
     assert _second_import_paths(tmp_path) == {}
+
+
+def test_a_planted_second_red_vocabulary_reds_the_vocabulary_assertion(
+    tmp_path: Path,
+) -> None:
+    """The member set is what is compared, under any name and any alias."""
+    members = "\n".join(
+        f"    {name} = {name.lower()!r}" for name in sorted(RED_MEMBERS)
+    )
+    (tmp_path / "copy.py").write_text(
+        f"from enum import StrEnum as _S\n\n\nclass RedKind(_S):\n{members}\n"
+    )
+    assert _red_vocabularies(tmp_path) == {"copy.py": ["RedKind"]}
+
+
+def test_a_planted_second_red_classifier_reds_the_classifier_assertion(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "second.py").write_text(
+        f"async def classify(initial) -> {RED_OBSERVATION}:\n    return initial\n"
+    )
+    assert _red_classifiers(tmp_path) == {"second.py": ["classify"]}
+
+
+def test_importing_or_reading_the_red_vocabulary_is_not_declaring_it(
+    tmp_path: Path,
+) -> None:
+    """A consumer names both symbols; a synchronous reader is not a classifier."""
+    (tmp_path / "consumer.py").write_text(
+        "from kodezart.types.domain.delivery import (\n"
+        "    CheckRedClass,\n"
+        f"    {RED_OBSERVATION},\n"
+        ")\n"
+        "\n"
+        "\n"
+        f"def is_defect(red: {RED_OBSERVATION}) -> bool:\n"
+        "    return red.red_class is CheckRedClass.WORK_DEFECT\n"
+    )
+    assert _red_vocabularies(tmp_path) == {}
+    assert _red_classifiers(tmp_path) == {}

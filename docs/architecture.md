@@ -1541,8 +1541,11 @@ no branch name, newer branch run or ancestor run can substitute. Completed watch
 snapshots now retain their check names, and every explicitly configured
 `CheckStep.forge_check` must be present before accepting green. A readable red
 is still classified when another declared check is missing: reproduced failure
-can refute the forge claim without proving unrelated missing checks. An empty
-configured roster leaves the repository's observed CI roster authoritative.
+can refute the forge claim without proving unrelated missing checks. A reported
+check the repository does not roster is left out of the arm — its red refutes
+nothing and prompts no rerun — and the observation names what it left out. An
+empty configured roster leaves the repository's observed CI roster
+authoritative.
 
 Green at that SHA holds the forge proposition. Red goes through the existing
 `classify_red_checks` with the operation's repository declarations and existing
