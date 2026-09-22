@@ -25,7 +25,7 @@ from functools import cache
 from inspect import signature
 from pathlib import Path
 from types import MappingProxyType
-from typing import get_args
+from typing import Literal, get_args
 
 import pytest
 from pydantic import BaseModel, ValidationError, create_model
@@ -36,6 +36,7 @@ from kodezart.domain.base_staleness import is_base_stale
 from kodezart.domain.errors import StaleBaseError
 from kodezart.domain.lapse import GradedState, graded_state
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.branch import BaseInput, BaseSpec
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
@@ -1323,6 +1324,58 @@ def boolean_verdicts(records: dict[str, type[BaseModel]]) -> tuple[str, ...]:
     )
 
 
+def _is_enum(annotation: object) -> bool:
+    return isinstance(annotation, type) and issubclass(annotation, Enum)
+
+
+def verdict_enum_fields(
+    records: dict[str, type[BaseModel]],
+) -> tuple[tuple[str, object], ...]:
+    """Every enum-annotated field of a record that carries a graded sha.
+
+    The mirror of the ban beside it, read the same way: that one reports a
+    partition member's boolean fields, this one reports the fields whose
+    annotation IS an enum, and both read the partition off the tree.  A
+    field is recognised by the type it names and never by its own name, so
+    a verdict widened to ``str`` leaves this table rather than staying in
+    it under a name the table kept, and a verdict widened to ``Enum |
+    None`` leaves it too, because the annotation is carried here as the
+    object and not as the word it renders as.
+
+    Blind spot, stated where the ban beside it states its own (KOD-592): an
+    enum inside a sub-model field is not unfolded, because
+    ``fields_reaching`` unfolds typing arguments only.  These helpers
+    unfold exactly what it unfolds, so all three agree about what the
+    partition is.
+    """
+    return tuple(
+        (f"{name}.{field}", info.annotation)
+        for name, record in sorted(records.items())
+        if carries_graded_sha(record)
+        for field, info in sorted(record.model_fields.items())
+        if _is_enum(info.annotation)
+    )
+
+
+def widened_verdict_fields(
+    records: dict[str, type[BaseModel]], names: frozenset[str]
+) -> tuple[tuple[str, object], ...]:
+    """A partition member's field, named as a verdict here, reaching no enum.
+
+    *names* is derived from the table above rather than written down, so
+    the set of names a verdict is carried under moves with the partition.
+    Without this, a record joining the partition with ``verdict: str``
+    would be absent from the table above and reported by nothing.
+    """
+    return tuple(
+        (f"{name}.{field}", info.annotation)
+        for name, record in sorted(records.items())
+        if carries_graded_sha(record)
+        for field, info in sorted(record.model_fields.items())
+        if field in names and not _is_enum(info.annotation)
+    )
+
+
 def satisfaction_carriers(records: dict[str, type[BaseModel]]) -> tuple[str, ...]:
     """Every record that addresses a criterion and carries its satisfaction.
 
@@ -1548,6 +1601,71 @@ def test_the_graded_sha_partition_carries_no_boolean_verdict():
     assert "audit_evidence.AuditEvidenceObservation" in partition
     assert "check_observation.ObservedChecks" not in partition
     assert boolean_verdicts(records) == ()
+
+
+def test_every_verdict_the_graded_sha_partition_carries_is_a_state_enum():
+    records = domain_records()
+    fields = verdict_enum_fields(records)
+    assert fields == (
+        ("audit_evidence.AuditEvidenceObservation.verdict", AuditVerdict),
+        ("audit_evidence.AuditRestampTrace.verdict", AuditVerdict),
+        ("audit_forge.AuditForgeObservation.verdict", AuditVerdict),
+        (
+            "criterion_lifecycle.CriterionCrossOff.rederivation_class",
+            RederivationClass,
+        ),
+        ("criterion_lifecycle.CriterionCrossOff.state", CrossOffState),
+    )
+    names = frozenset(site.rsplit(".", 1)[1] for site, _ in fields)
+    assert widened_verdict_fields(records, names) == ()
+
+
+def verdict_names() -> frozenset[str]:
+    """The names a verdict is carried under, read off the partition itself."""
+    return frozenset(
+        site.rsplit(".", 1)[1] for site, _ in verdict_enum_fields(domain_records())
+    )
+
+
+@pytest.mark.parametrize("field", sorted(verdict_names()))
+@pytest.mark.parametrize(
+    "annotation", [str, int, AuditVerdict | None, Literal["holds", "refuted"]]
+)
+def test_a_widened_verdict_beside_a_graded_sha_leaves_the_table_and_is_reported(
+    field, annotation
+):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        **{field: (annotation, ...)},
+    )
+    records = {"probe.Probe": probe}
+    names = verdict_names()
+    assert verdict_enum_fields(records) == ()
+    assert widened_verdict_fields(records, names) == (
+        (f"probe.Probe.{field}", annotation),
+    )
+
+
+def test_an_enum_verdict_on_a_record_without_a_graded_sha_is_outside_the_partition():
+    probe = create_model("Probe", __base__=CamelCaseModel, verdict=(AuditVerdict, ...))
+    records = {"probe.Probe": probe}
+    assert verdict_enum_fields(records) == ()
+    assert widened_verdict_fields(records, frozenset({"verdict"})) == ()
+
+
+def test_a_plain_field_that_is_not_a_verdict_is_not_reported():
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        note=(str, ...),
+    )
+    records = {"probe.Probe": probe}
+    names = verdict_names()
+    assert verdict_enum_fields(records) == ()
+    assert widened_verdict_fields(records, names) == ()
 
 
 @pytest.mark.parametrize("annotation", [bool, bool | None, tuple[bool, ...]])
