@@ -158,7 +158,10 @@ async def test_mixed_declared_issue_fields_and_comment_churn_stay_quiet() -> Non
     tracker = _tracker(server, ledger)
     gate = _gate(tracker, ledger)
     await gate.delta()
-    await tracker.update_issue(issue_key=ISSUE, title="our title", body="our body")
+    current = await tracker.read_issue(issue_key=ISSUE)
+    await tracker.edit_description(
+        target=ISSUE, expected=current.body, replacement="our body"
+    )
     await tracker.set_queue_state(issue_key=ISSUE, state=QueueState.PROPOSED)
     await tracker.set_queue_state(issue_key=ISSUE, state=QueueState.APPROVED)
     await tracker.set_issue_classification(issue_key=ISSUE, classification="criterion")

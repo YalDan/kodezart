@@ -3681,7 +3681,7 @@ class FakeTrackerPort:
         #: the recorded target repository for a staged fire (KOD-169).
         self.recorded_repositories: dict[str, str] = dict(recorded_repositories or {})
         #: Initiative names-and-ids per project id, for the scope clause.
-        #: A project the fixture does not seed belongs to no initiative,
+        #: A project the fixture does not seed_issue belongs to no initiative,
         #: which is a real tracker answer.
         self.initiative_identifiers_by_project: dict[str, frozenset[str]] = dict(
             initiative_identifiers or {},
@@ -4234,7 +4234,7 @@ class FakeTrackerPort:
                 issue_key=source_key,
                 reason="split creation requires a team, identity and specification",
             )
-        created = await self.upsert_issue(
+        created = await self._upsert_issue(
             scope_key=identity.scope_key,
             deliverable_key=deliverable_key,
             title=title,
@@ -4300,7 +4300,7 @@ class FakeTrackerPort:
                 issue_key=parent_key,
                 reason="criterion creation requires title and declared team",
             )
-        created = await self.create_issue(
+        created = await self._create_issue(
             title=title,
             body=body,
             team_key=parent.team_key,
@@ -4360,7 +4360,7 @@ class FakeTrackerPort:
         self._wrote(expected.issue_key)
         return self.issues[expected.issue_key]
 
-    async def create_issue(
+    async def _create_issue(
         self,
         *,
         title: str,
@@ -4430,7 +4430,7 @@ class FakeTrackerPort:
         await self.read_issue(issue_key=issue_key)
         return self.issue_identities.get(issue_key)
 
-    async def upsert_issue(
+    async def _upsert_issue(
         self,
         *,
         scope_key: ScopeRef,
@@ -4449,7 +4449,7 @@ class FakeTrackerPort:
                 scope_key=scope_key, deliverable_key=deliverable_key, issue_keys=keys
             )
         if not keys:
-            created = await self.create_issue(
+            created = await self._create_issue(
                 title=title, body=body, team_key=team_key, priority=priority
             )
             self.issue_identities[created.issue_key] = identity
@@ -4460,7 +4460,7 @@ class FakeTrackerPort:
                 target=current.issue_key, expected=current.body, replacement=body
             )
         if current.title != title:
-            await self.update_issue(issue_key=current.issue_key, title=title)
+            await self._patch_issue(issue_key=current.issue_key, title=title)
         return await self.read_issue(issue_key=current.issue_key)
 
     async def read_surface_authorship(
@@ -4482,7 +4482,7 @@ class FakeTrackerPort:
         ):
             raise PrincipalAuthoredSurfaceError(surface=surface)
 
-    async def update_issue(
+    async def _patch_issue(
         self,
         *,
         issue_key: str,
@@ -4555,7 +4555,7 @@ class FakeTrackerPort:
                 ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
             ),
         )
-        await self.update_issue(issue_key=target, body=body)
+        await self._patch_issue(issue_key=target, body=body)
         if authorization is not None:
             self.body_write_holders.setdefault(authorization.surface, []).append(
                 authorization.holder
@@ -5614,6 +5614,50 @@ def make_tracker_issue(
         updated_at=created_at if updated_at is None else updated_at,
         url=f"https://tracker.invalid/issue/{issue_key}",
     )
+
+
+def seed_fake_issue(
+    port: FakeTrackerPort,
+    *,
+    issue_key: str,
+    title: str | None = None,
+    body: str | None = None,
+) -> None:
+    """Put a title or body on a board issue as someone editing it by hand would.
+
+    Setup, never one of the port's writes: nothing is journalled and nothing
+    lands in this process's own write ledger, so a case counting the writes
+    a consumer makes starts from the board the seed_issue left. The stamp moves as
+    the backend's would, forward only. ``None`` leaves a field untouched.
+    """
+    issue = port.issues[issue_key]
+    port.issues[issue_key] = issue.model_copy(
+        update={
+            "title": issue.title if title is None else title,
+            "body": issue.body if body is None else body,
+            "updated_at": max(port._clock(), issue.updated_at),
+        }
+    )
+
+
+def seed_server_issue(
+    server: FakeLinearMcpServer,
+    *,
+    issue_key: str,
+    title: str | None = None,
+    body: str | None = None,
+) -> None:
+    """The same seed_issue on the vendor workspace, written into it through no tool.
+
+    No tool call is recorded, so the adapter arm's write observation — the
+    mutation tools in the server's call log — does not grow either.
+    """
+    issue = server.issues[issue_key]
+    if title is not None:
+        issue.title = title
+    if body is not None:
+        issue.description = body
+    server._moved(issue_key)
 
 
 class FakeJobQueue:

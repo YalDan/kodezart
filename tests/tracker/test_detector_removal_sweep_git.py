@@ -34,7 +34,7 @@ from tests.tracker.test_audit_sweep import setup as setup
     "case", ["removed", "retained", "replacement", "unchanged", "cancel"]
 )
 async def test_actual_scope_reports_lost_detection_but_not_a_retained_guard(
-    setup, tracker, server, tracker_writes, repository, tmp_path, case
+    setup, tracker, server, tracker_writes, repository, tmp_path, case, seed_issue
 ):
     build, executor, _, _, _, _, _, operation = setup
     remote, author, *_ = repository
@@ -60,7 +60,7 @@ async def test_actual_scope_reports_lost_detection_but_not_a_retained_guard(
     head = command(author, "rev-parse", "HEAD")
     command(author, "push", "-q", "configured-remote", "ordinary-name")
     check = "The protected mechanism remains available."
-    await tracker.update_issue(
+    seed_issue(
         issue_key=CHILD,
         body=f"**Check:** {check}\n**Do:** AUTHOR_REASONING\n"
         + render_evidence_field(

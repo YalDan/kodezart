@@ -75,7 +75,6 @@ from kodezart.types.domain.surface import (
 )
 from kodezart.types.domain.tracker import (
     ClaimResult,
-    IssuePriority,
     IssueQuery,
     MappingOutcome,
     MappingRef,
@@ -802,7 +801,12 @@ class ModelMemberReader(TrackerCriteriaReader, Protocol):
     async def read_labeled_issues(
         self, *, classification: str
     ) -> Sequence[TrackerIssue]:
-        """Read every issue carrying the configured classification."""
+        """Read every issue with a configured semantic label, including archived.
+
+        This is a complete, strict membership read, independent of queue state.
+        Missing configuration, incomplete pagination or contradictory membership
+        refuses instead of returning a truncated or filtered set.
+        """
         ...
 
 
@@ -855,6 +859,7 @@ class TrackerScopeApprovalReader(Protocol):
 @runtime_checkable
 class TrackerPort(
     TrackerCommentReader,
+    ModelMemberReader,
     TrackerCriteriaReader,
     TrackerContextReader,
     TrackerScopeApprovalReader,
@@ -946,17 +951,6 @@ class TrackerPort(
 
     async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
         """Read reported labels and full dependency relations; omission refuses."""
-        ...
-
-    async def read_labeled_issues(
-        self, *, classification: str
-    ) -> Sequence[TrackerIssue]:
-        """Read every issue with a configured semantic label, including archived.
-
-        This is a complete, strict membership read, independent of queue state.
-        Missing configuration, incomplete pagination or contradictory membership
-        refuses instead of returning a truncated or filtered set.
-        """
         ...
 
     def require_scope_plan_reads(self) -> None:
@@ -1107,51 +1101,6 @@ class TrackerPort(
         A supplied ``holder`` must hold the criterion surface live, else
         ``SurfaceLeaseError``. ``holder=None`` is the single-writer write: no
         lease is consulted, and every other refusal on this call still applies.
-        """
-        ...
-
-    async def create_issue(
-        self,
-        *,
-        title: str,
-        body: str,
-        team_key: str,
-        priority: IssuePriority,
-    ) -> TrackerIssue:
-        """Create an issue on *team_key* and return it as stored."""
-        ...
-
-    async def update_issue(
-        self,
-        *,
-        issue_key: str,
-        title: str | None = None,
-        body: str | None = None,
-    ) -> TrackerIssue:
-        """Update the given fields; ``None`` leaves a field untouched.
-
-        A body replacing one the tracker attributes to a principal raises
-        ``PrincipalAuthoredSurfaceError`` before the mutation is sent.
-        """
-        ...
-
-    async def upsert_issue(
-        self,
-        *,
-        scope_key: ScopeRef,
-        deliverable_key: str,
-        title: str,
-        body: str,
-        team_key: str,
-        priority: IssuePriority,
-    ) -> TrackerIssue:
-        """Find the persisted identity before creating an issue for it.
-
-        Team and priority govern creation. On a hit, converge title and
-        description, with description changes going through edit_description.
-        Duplicate identities refuse before any write. Callers serialize
-        concurrent creation of the same identity. The backend owns the
-        identity carrier; descriptions retain its raw representation.
         """
         ...
 

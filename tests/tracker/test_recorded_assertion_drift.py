@@ -104,11 +104,11 @@ async def seed(
 
 
 @pytest.fixture
-async def native(claim_setup, tracker, repo, tmp_path):
+async def native(claim_setup, tracker, repo, tmp_path, seed_issue):
     graded = commit(repo, source(1))
     head = commit(repo, source(2))
     git(repo, "branch", "-M", "ordinary-name")
-    await tracker.update_issue(issue_key=CHILD, body=fixtures.body(graded))
+    seed_issue(issue_key=CHILD, body=fixtures.body(graded))
     await tracker.restore_workflow_state(issue_key=CHILD, state_name="Done")
     native_git = SubprocessGitService(remote="configured-remote")
     git_source = SubprocessGitSourceReader()
@@ -344,10 +344,10 @@ async def test_cold_native_reader_retains_designation(native, tracker, server):
 
 
 async def test_prose_evidence_and_other_lane_records_never_designate_tests(
-    native, tracker
+    native, tracker, seed_issue
 ):
     build, request, graded, _ = native
-    await tracker.update_issue(
+    seed_issue(
         issue_key=CHILD,
         body=fixtures.body(graded).replace(fixtures.TEST, f"{PATH}::test_contract"),
     )
@@ -387,7 +387,7 @@ async def test_unreadable_designation_never_becomes_a_clean_result(
     "change", ["ruling", "add-ruling", "family", "evidence", "record", "head"]
 )
 async def test_changed_native_inputs_refuse_before_returning_claims(
-    native, tracker, repo, monkeypatch, change
+    native, tracker, repo, monkeypatch, change, seed_issue
 ):
     build, request, graded, _ = native
     _stored, ruling = await seed(tracker)
@@ -423,7 +423,7 @@ async def test_changed_native_inputs_refuse_before_returning_claims(
 
                 monkeypatch.setattr(tracker, "read_criteria", amended_family)
             elif change == "evidence":
-                await tracker.update_issue(
+                seed_issue(
                     issue_key=CHILD, body=fixtures.body(graded) + "\nChanged source"
                 )
             elif change == "record":

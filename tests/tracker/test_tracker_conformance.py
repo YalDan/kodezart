@@ -396,29 +396,7 @@ class TestPriorityMapping:
 
 
 class TestWrites:
-    """Create, update, and the two state writes."""
-
-    async def test_create_issue_round_trips(self, tracker: TrackerPort) -> None:
-        created = await tracker.create_issue(
-            title="created by the port",
-            body="body",
-            team_key="engineering",
-            priority=IssuePriority.LOW,
-        )
-        assert created.title == "created by the port"
-        assert created.priority is IssuePriority.LOW
-
-    async def test_update_issue_leaves_omitted_fields_untouched(
-        self,
-        tracker: TrackerPort,
-    ) -> None:
-        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
-        after = await tracker.update_issue(
-            issue_key=APPROVED_ISSUE,
-            body="rewritten",
-        )
-        assert after.body == "rewritten"
-        assert after.title == before.title
+    """The two state writes."""
 
     async def test_set_workflow_state_resolves_the_stage(
         self,
@@ -2460,7 +2438,7 @@ class TestAThreadedRecordIsNotAnEvent:
     adapters' input: no port write takes a parent, so a threaded comment
     cannot be produced through the surface under test.
 
-    Both cases seed the SAME bytes — the body a real posted event was
+    Both cases seed_issue the SAME bytes — the body a real posted event was
     written with, read back off the log — so the only difference between
     them is the reply link.  Nothing else can be what excluded it.
     """
@@ -2833,17 +2811,29 @@ class TestPrincipalAuthoredBodies:
         assert after.body == before.body
         assert tracker_writes() == written
 
-    async def test_a_raw_body_update_cannot_replace_it_either(
+    async def test_a_leased_body_edit_cannot_replace_it_either(
         self,
         tracker: TrackerPort,
         tracker_writes: Callable[[], tuple[object, ...]],
     ) -> None:
         """The refusal is at the write, not at one caller's way in."""
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({PRINCIPAL_DESCRIPTION}),
+            holder=JOB_HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
         before = await tracker.read_issue(issue_key=ASSET_ISSUE)
         written = tracker_writes()
 
         with pytest.raises(PrincipalAuthoredSurfaceError):
-            await tracker.update_issue(issue_key=ASSET_ISSUE, body="replaced")
+            await tracker.edit_description(
+                target=ASSET_ISSUE,
+                expected=before.body,
+                replacement="replaced",
+                authorization=DescriptionWriteAuthority(
+                    holder=JOB_HOLDER, surface=PRINCIPAL_DESCRIPTION
+                ),
+            )
 
         after = await tracker.read_issue(issue_key=ASSET_ISSUE)
         assert after.body == before.body

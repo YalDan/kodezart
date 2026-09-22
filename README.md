@@ -428,17 +428,15 @@ record. Successful absence is an empty tuple; malformed records, duplicate
 identities, foreign ownership and incomplete reads refuse. A fresh reader
 observes replay edits through the existing marker upsert primitive.
 
-Declare `issue_identity` to use keyed issue upsert. The Linear adapter records
-the scope kind, scope key and deliverable key in a hidden first description
-line in the initial create request. A retry reads that persisted identity,
-including after a lost create response; matching issues receive guarded
-description edits and title updates. Team and priority apply at creation.
-Ordinary description updates preserve the carrier, and `read_issue_identity`
-returns its decoded value. Descriptions otherwise retain the backend's raw
-representation. Lookup includes archived issues and fully reads every listed
-issue because Linear's listing descriptions can be truncated. Callers must
-serialize concurrent creation of the same key; this lookup cannot provide an
-atomic uniqueness constraint. Duplicate recorded identities refuse any write.
+Declare `issue_identity` to key the children a split creates. The Linear
+adapter records the scope kind, scope key and deliverable key in a hidden
+first description line of the child it creates, and a split read finds a
+source's children by those recorded identities. Description edits preserve the
+carrier and refuse to replace it, and `read_issue_identity` returns its decoded
+value. Descriptions otherwise retain
+the backend's raw representation. Lookup includes archived issues and fully
+reads every listed issue because Linear's listing descriptions can be
+truncated. Duplicate recorded identities refuse any write.
 
 `issue_labels` maps semantic issue-label keys to tracker label names. Declare
 `criterion` for criterion reads; boot adopts or creates these labels using the

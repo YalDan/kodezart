@@ -23,7 +23,7 @@ server = fixtures.server
 @pytest.mark.parametrize("kind", list(OverclaimKind))
 @pytest.mark.parametrize("defective", [True, False])
 async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
-    setup, tracker, tracker_writes, tmp_path, monkeypatch, kind, defective
+    setup, tracker, tracker_writes, tmp_path, monkeypatch, kind, defective, seed_issue
 ):
     remote = tmp_path / "remote"
     author = tmp_path / "author"
@@ -89,7 +89,7 @@ async def test_actual_revisions_exercise_each_overclaim_and_its_clean_pair(
             "including its own computation and evaluation claims."
         ),
     }[kind]
-    await tracker.update_issue(
+    seed_issue(
         issue_key=fixtures.fixtures.CHILD,
         body=f"**Check:** {check}\n**Do:** AUTHOR_REASONING\n"
         + render_evidence_field(

@@ -26,7 +26,15 @@ from tests.tracker.test_audit_sweep import setup as setup
 @pytest.mark.parametrize("kind", list(OverclaimKind))
 @pytest.mark.parametrize("defective", [True, False])
 async def test_actual_native_sweep_reports_each_counterexample_and_clean_control(
-    setup, tracker, server, tracker_writes, repository, tmp_path, kind, defective
+    setup,
+    tracker,
+    server,
+    tracker_writes,
+    repository,
+    tmp_path,
+    kind,
+    defective,
+    seed_issue,
 ):
     build, executor, _, _, _, _, _, operation = setup
     remote, author, *_ = repository
@@ -71,7 +79,7 @@ async def test_actual_native_sweep_reports_each_counterexample_and_clean_control
     check = (
         "The current claims in claim.txt, roster.json, adopted.md and charter.txt hold."
     )
-    await tracker.update_issue(
+    seed_issue(
         issue_key=CHILD,
         body=f"**Check:** {check}\n**Do:** AUTHOR_REASONING\n"
         + render_evidence_field(

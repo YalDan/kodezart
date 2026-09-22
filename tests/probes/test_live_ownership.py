@@ -47,7 +47,7 @@ from kodezart.domain.errors import SurfaceLeaseError
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
-from kodezart.types.domain.tracker import ClaimStatus, IssuePriority, IssueQuery
+from kodezart.types.domain.tracker import ClaimStatus, IssueQuery
 from tests.probes.recording import record
 
 #: One board, one pair of sessions, one probe issue for the whole module —
@@ -79,6 +79,9 @@ PROBE_MARKER_PREFIX = "kodezart-probe-claim"
 
 #: The team the operation calls its own board.
 PROBE_TEAM_KEY = "primary"
+#: The vendor's own spelling of a low priority: the probe issue asks for no
+#: attention from anyone reading the board.
+PROBE_PRIORITY = 4
 
 #: Long enough that a race decides inside it, short enough that a probe
 #: that dies leaves nothing standing for long.
@@ -241,8 +244,14 @@ async def _dial(
     return tracker, caller
 
 
-async def _probe_issue(tracker: TrackerPort) -> str:
-    """The probe issue, found by its exact title or created once."""
+async def _probe_issue(
+    tracker: TrackerPort, caller: McpToolCaller, operation: OperationConfig
+) -> str:
+    """The probe issue, found by its exact title or created once.
+
+    Created through the session the probe already holds rather than through
+    the port, which creates an issue only by minting one under a grant.
+    """
     found = [
         issue
         for issue in await tracker.scan_issues(
@@ -254,13 +263,17 @@ async def _probe_issue(tracker: TrackerPort) -> str:
         raise AssertionError(f"the board carries {len(found)} probe issues")
     if found:
         return found[0].issue_key
-    created = await tracker.create_issue(
-        title=PROBE_TITLE,
-        body=PROBE_BODY,
-        team_key=PROBE_TEAM_KEY,
-        priority=IssuePriority.LOW,
+    created = await caller.call_tool(
+        name="save_issue",
+        arguments={
+            "title": PROBE_TITLE,
+            "description": PROBE_BODY,
+            "team": operation.teams[PROBE_TEAM_KEY].name,
+            "priority": PROBE_PRIORITY,
+        },
     )
-    return created.issue_key
+    assert isinstance(created, Mapping)
+    return str(created["id"])
 
 
 async def _probe_comments(
@@ -307,7 +320,7 @@ async def ownership() -> AsyncIterator[Ownership]:
 
     first, first_caller = await _dial(operation, wrap=delaying)
     second, second_caller = await _dial(operation)
-    issue_key = await _probe_issue(first)
+    issue_key = await _probe_issue(first, first_caller, operation)
     assert issue_key, "the probe has no issue to write to"
     held = Ownership(
         first=first,

@@ -209,14 +209,14 @@ async def test_failed_independent_arm_never_suppresses_the_other_actual_session(
 
 @pytest.mark.parametrize("mode", ["unconfigured", "unstarted", "lapsed"])
 async def test_partial_source_availability_is_explicit_and_retains_normal_claim(
-    setup, tracker, server, mode
+    setup, tracker, server, mode, seed_issue
 ):
     build, executor, *_ = setup
     executor.overclaim_output = payload()
     if mode != "unstarted":
         await completed(tracker, server)
     if mode == "lapsed":
-        await tracker.update_issue(issue_key=CHILD, body=BODY.replace(HEAD, PRIOR))
+        seed_issue(issue_key=CHILD, body=BODY.replace(HEAD, PRIOR))
     child = (await build(include_overclaims=mode != "unconfigured").run()).observations[
         0
     ]
@@ -235,7 +235,7 @@ async def test_partial_source_availability_is_explicit_and_retains_normal_claim(
 
 @pytest.mark.parametrize("change", ["body", "record", "head-between-arms"])
 async def test_cross_arm_source_drift_cannot_become_a_coherent_sweep(
-    setup, tracker, server, monkeypatch, change
+    setup, tracker, server, monkeypatch, change, seed_issue
 ):
     build, executor, git, _, _, _, stored, op = setup
     await completed(tracker, server)
@@ -266,9 +266,7 @@ async def test_cross_arm_source_drift_cannot_become_a_coherent_sweep(
             if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
                 return
             if change == "body":
-                await tracker.update_issue(
-                    issue_key=CHILD, body=BODY + "\nChanged body."
-                )
+                seed_issue(issue_key=CHILD, body=BODY + "\nChanged body.")
             else:
                 reader = LaneRecordReader(tracker=tracker, operation=op)
                 _, before = await reader.read(

@@ -116,11 +116,9 @@ async def test_only_approval_inherits_from_parent(tracker, server, tracker_write
 
 
 async def test_parent_text_and_queue_label_do_not_supply_either_fact(
-    tracker, server, tracker_writes
+    tracker, server, tracker_writes, seed_issue
 ):
-    await tracker.update_issue(
-        issue_key=SUBJECT, body="scope:approved queue:approved:criteria"
-    )
+    seed_issue(issue_key=SUBJECT, body="scope:approved queue:approved:criteria")
     approval(tracker, server, SUBJECT, False)
     marker(tracker, server, SUBJECT, False)
     if not isinstance(tracker, FakeTrackerPort):

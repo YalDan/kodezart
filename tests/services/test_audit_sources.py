@@ -14,6 +14,7 @@ from kodezart.services.lane_records import LaneRecordReader
 from tests.artifact_trap import nothing_read_under_the_directory
 from tests.tracker import test_audit_evidence as fixtures
 from tests.tracker.conftest import clock as clock
+from tests.tracker.conftest import seed_issue as seed_issue
 from tests.tracker.conftest import tracker as tracker
 from tests.tracker.conftest import tracker_writes as tracker_writes
 from tests.tracker.lease_fixtures import leased_comment
@@ -73,14 +74,12 @@ async def test_actual_source_pair_reads_own_evidence_and_current_remote(
 
 @pytest.mark.parametrize("damage", ["criterion", "membership", "record", "head"])
 async def test_reread_refuses_changed_source_identity(
-    setup, tracker, monkeypatch, damage
+    setup, tracker, monkeypatch, damage, seed_issue
 ):
     source = reader(setup, tracker)
     value = await source.read(fixtures.REQUEST)
     if damage == "criterion":
-        await tracker.update_issue(
-            issue_key=fixtures.CHILD, body=fixtures.body(fixtures.HEAD)
-        )
+        seed_issue(issue_key=fixtures.CHILD, body=fixtures.body(fixtures.HEAD))
     elif damage == "membership":
         original = tracker.read_criteria
 
@@ -131,11 +130,11 @@ async def test_ineligible_state_refuses_before_repository_work(setup, tracker, s
     assert source._cache.calls == [] and source._git.calls == []
 
 
-async def test_missing_evidence_is_never_a_current_head_default(setup, tracker):
+async def test_missing_evidence_is_never_a_current_head_default(
+    setup, tracker, seed_issue
+):
     source = reader(setup, tracker)
-    await tracker.update_issue(
-        issue_key=fixtures.CHILD, body="**Check:** Check the behavior."
-    )
+    seed_issue(issue_key=fixtures.CHILD, body="**Check:** Check the behavior.")
     with pytest.raises(AuditEvidenceReadError):
         await source.read(fixtures.REQUEST)
     assert source._cache.calls == [] and source._git.calls == []

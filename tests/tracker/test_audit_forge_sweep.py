@@ -211,12 +211,12 @@ async def test_forge_survives_independent_failure_and_retains_raw_mandate_failur
 
 
 async def test_missing_own_evidence_never_borrows_a_parent_grading(
-    setup, tracker, server
+    setup, tracker, server, seed_issue
 ):
     build, _, _, _, _, _, _, operation = setup
     await completed(tracker, server)
-    await tracker.update_issue(issue_key=ROOT, body=BODY)
-    await tracker.update_issue(issue_key=CHILD, body=f"**Check:** {CHECK}")
+    seed_issue(issue_key=ROOT, body=BODY)
+    seed_issue(issue_key=CHILD, body=f"**Check:** {CHECK}")
     op = selected_operation(operation)
     async with forge("fake", "green") as (ci, _):
         child = (
@@ -323,7 +323,7 @@ async def test_forge_and_mandate_cancellation_propagate_without_partial_result(
 
 @pytest.mark.parametrize("damage", ["criterion", "record"])
 async def test_final_native_snapshot_rejects_changes_after_completed_forge_hunt(
-    setup, tracker, server, damage
+    setup, tracker, server, damage, seed_issue
 ):
     build, executor, _, _, _, _, stored, operation = setup
     await completed(tracker, server)
@@ -339,9 +339,7 @@ async def test_final_native_snapshot_rejects_changes_after_completed_forge_hunt(
         if kwargs["output_format"]["schema"] != AUDIT_MANDATE_SCHEMA:
             return
         if damage == "criterion":
-            await tracker.update_issue(
-                issue_key=CHILD, body=BODY + "\nChanged after watch."
-            )
+            seed_issue(issue_key=CHILD, body=BODY + "\nChanged after watch.")
         else:
             # Edit the same keyed record into a different, still-readable value.
             record = original_record.model_copy(update={"files_changed": 17})

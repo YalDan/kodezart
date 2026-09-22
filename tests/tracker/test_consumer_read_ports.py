@@ -146,14 +146,14 @@ async def test_each_record_reader_preserves_failure_or_cancellation(
 
 
 async def test_criterion_only_reader_observes_native_edits_and_preserves_source(
-    tracker: TrackerPort, tracker_writes
+    tracker: TrackerPort, tracker_writes, seed_issue
 ):
     criteria = CriteriaOnly(tracker)
     first = await NativeCriterionResolver(tracker=criteria).resolve_criterion(
         issue_key=APPROVED_ISSUE, criterion_key=CRITERION
     )
     assert first.body.endswith("unchanged bytes λ\n")
-    await tracker.update_issue(issue_key=CRITERION, body="**Check:** Changed source.\n")
+    seed_issue(issue_key=CRITERION, body="**Check:** Changed source.\n")
     before = tracker_writes()
     second = await NativeCriterionResolver(tracker=criteria).resolve_criterion(
         issue_key=APPROVED_ISSUE, criterion_key=CRITERION

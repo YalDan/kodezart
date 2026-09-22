@@ -37,6 +37,8 @@ from tests.fakes import (
     FakeMcpDocument,
     FakeMcpIssue,
     FakeTrackerPort,
+    seed_fake_issue,
+    seed_server_issue,
 )
 from tests.tracker.marker_config import MARKER_PREFIXES
 
@@ -641,6 +643,31 @@ def tracker_writes(
 ) -> Callable[[], tuple[object, ...]]:
     """Observe actual mutation calls independently of the port's return values."""
     return observed_writes(tracker, server)
+
+
+#: Put a title or body on a fixture issue: ``seed_issue(issue_key=..., body=...)``.
+Seed = Callable[..., None]
+
+
+@pytest.fixture
+def seed_issue(tracker: TrackerPort, server: FakeLinearMcpServer) -> Seed:
+    """Edit a fixture issue behind the implementation under test, as a person would.
+
+    Written straight into the workspace each arm serves from — the double's
+    own board, or the vendor workspace the adapter dials — and through no
+    port member and no tool call, so a seed is setup and never one of the
+    writes ``tracker_writes`` observes.
+    """
+
+    def seeding(
+        *, issue_key: str, title: str | None = None, body: str | None = None
+    ) -> None:
+        if isinstance(tracker, FakeTrackerPort):
+            seed_fake_issue(tracker, issue_key=issue_key, title=title, body=body)
+        else:
+            seed_server_issue(server, issue_key=issue_key, title=title, body=body)
+
+    return seeding
 
 
 #: The verbs a backend tool READS with.  Closed: a tool whose verb is not

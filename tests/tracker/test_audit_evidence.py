@@ -84,9 +84,9 @@ class Source:
 
 
 @pytest.fixture
-async def setup(claim_setup, tracker):
+async def setup(claim_setup, tracker, seed_issue):
     claim_build, runner, git, cache, workspace, stored = claim_setup
-    await tracker.update_issue(issue_key=CHILD, body=body())
+    seed_issue(issue_key=CHILD, body=body())
     await tracker.restore_workflow_state(issue_key=CHILD, state_name="Done")
     git._ancestor_pairs.update({(PRIOR, HEAD), (HEAD, HEAD)})
     source = Source()
@@ -152,10 +152,10 @@ async def test_the_same_criterion_lapses_then_is_reverified_at_head(
 
 @pytest.mark.parametrize("verdict", list(AuditVerdict))
 async def test_current_completed_claim_uses_the_same_fresh_verifier(
-    setup, tracker, verdict
+    setup, tracker, verdict, seed_issue
 ):
     build, runner, *_ = setup
-    await tracker.update_issue(issue_key=CHILD, body=body(HEAD))
+    seed_issue(issue_key=CHILD, body=body(HEAD))
     runner._events = [
         result_event(
             subtype="success",
@@ -185,14 +185,14 @@ async def test_other_states_do_not_enter_the_recorded_grading_reader(
 
 @pytest.mark.parametrize("damage", ["source", "membership", "record", "head"])
 async def test_lapse_read_refuses_a_changed_source_instead_of_returning_a_stale_claim(
-    setup, tracker, monkeypatch, damage
+    setup, tracker, monkeypatch, damage, seed_issue
 ):
     build, _, git, source, _, _, stored, _ = setup
 
     async def change():
         source.during = None
         if damage == "source":
-            await tracker.update_issue(issue_key=CHILD, body=body(HEAD))
+            seed_issue(issue_key=CHILD, body=body(HEAD))
         elif damage == "membership":
             original = tracker.read_criteria
 
@@ -306,10 +306,12 @@ async def test_ambiguous_initial_membership_is_refused_before_git(
     assert git.calls == []
 
 
-async def test_legacy_prose_does_not_supply_a_convenient_sha(setup, tracker):
+async def test_legacy_prose_does_not_supply_a_convenient_sha(
+    setup, tracker, seed_issue
+):
     build, runner, git, source, cache, workspace, *_ = setup
     legacy = f"**Check:** {CHECK}\n**Evidence:** {PRIOR} passed; {HEAD} also green"
-    await tracker.update_issue(issue_key=CHILD, body=legacy)
+    seed_issue(issue_key=CHILD, body=legacy)
     with pytest.raises(AuditEvidenceReadError, match="explicit fenced JSON"):
         await build().observe(REQUEST)
     assert (await tracker.read_issue(issue_key=CHILD)).body == legacy
@@ -319,10 +321,10 @@ async def test_legacy_prose_does_not_supply_a_convenient_sha(setup, tracker):
 
 @pytest.mark.parametrize("field,value", [("check", "Other Check"), ("head_sha", PRIOR)])
 async def test_current_claim_cannot_be_attached_to_another_source(
-    setup, tracker, monkeypatch, field, value
+    setup, tracker, monkeypatch, field, value, seed_issue
 ):
     build, _, _, _, _, _, _, claims = setup
-    await tracker.update_issue(issue_key=CHILD, body=body(HEAD))
+    seed_issue(issue_key=CHILD, body=body(HEAD))
     original = claims.verify
 
     async def foreign(request):

@@ -66,7 +66,7 @@ def repository(tmp_path):
     "case", ["lapse", "current", "review-rewrite", "off-branch", "missing"]
 )
 async def test_actual_git_evidence_is_bound_to_the_remote_not_a_stale_local_branch(
-    setup, tracker, tracker_writes, repository, monkeypatch, tmp_path, case
+    setup, tracker, tracker_writes, repository, monkeypatch, tmp_path, case, seed_issue
 ):
     build, runner, git, _, cache, workspace, *_ = setup
     remote, author, observer, prior, head = repository
@@ -82,7 +82,7 @@ async def test_actual_git_evidence_is_bound_to_the_remote_not_a_stale_local_bran
         )
     if case == "missing":
         graded = "e" * 40
-    await tracker.update_issue(issue_key=CHILD, body=fixtures.body(graded))
+    seed_issue(issue_key=CHILD, body=fixtures.body(graded))
     if case == "review-rewrite":
         await tracker.restore_workflow_state(issue_key=CHILD, state_name="In Review")
     native = SubprocessGitService(remote="configured-remote")
