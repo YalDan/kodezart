@@ -869,18 +869,24 @@ class RalphLoop:
             )
             if escalator is not None:
                 # After the move back, so a question never names a criterion
-                # the board still shows as satisfied. The field IS the
-                # transition: a grading that lapsed in an earlier iteration is
-                # in `lapsed` and not here, so nothing is asked twice.
+                # the board still shows as satisfied.
                 #
-                # On every reachable path the two fields hold the same thing,
-                # and handing over the whole set instead changes no outcome:
-                # a criterion whose grading lapsed leaves the roster for good,
-                # so it is never graded again and never earns a second
-                # standing. What actually keeps one question to one transition
-                # is that departure, and the occurrence marker the raise is
-                # written under. The transition field is the honest name for
-                # what this call wants, not the guard.
+                # The two fields are different sets, and the difference is
+                # load-bearing. `lapsed` carries every lapsed grading,
+                # including the ones that lapsed at an earlier head:
+                # cross_offs_for re-emits a lapsed cross-off with
+                # state=lapsed into the next standing, and held_standing
+                # puts it straight back into `lapsed`, which is what keeps
+                # it withheld from every later session. `newly_lapsed`
+                # carries only the gradings that crossed over at this head.
+                #
+                # So the transition field is the guard, not merely the
+                # honest name: handing the whole lapsed set over here would
+                # ask the same question again at every iteration after the
+                # one that lapsed. The three-iteration lapse case in
+                # tests/chains/test_lane_state_loop.py reds on that second
+                # raise if either the guard above or this argument is moved
+                # to `standing.lapsed`.
                 await escalator.raise_lapses(
                     lane=self._lane_binding(ctx),
                     lapsed=standing.newly_lapsed,
