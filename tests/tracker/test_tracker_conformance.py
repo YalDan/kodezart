@@ -19,6 +19,7 @@ import pytest
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.criterion_evidence import apply_evidence, parse_criterion_evidence
 from kodezart.domain.errors import (
     ApprovalLabelWriteError,
     DuplicateWorkRefError,
@@ -26,8 +27,10 @@ from kodezart.domain.errors import (
     StaleWriteError,
     SurfaceLeaseError,
 )
+from kodezart.domain.fire_spec import replace_criterion_fields
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLabel
 from kodezart.types.domain.run_event import RunEventKind
@@ -2905,6 +2908,43 @@ class TestACriterionKeyReadThroughThePortAddressesItsWrites:
         replayed = await tracker.read_issue(issue_key=row.issue_key)
         assert replayed.state_kind is WorkflowStateKind.UNSTARTED
         assert replayed.body == stamped
+
+    async def test_a_forty_hex_graded_sha_reads_back_byte_identical(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The sha a tick stamps is the sha the next read of the row parses.
+
+        A grading identity that lost a byte between the write and the read
+        would name another commit, and a row read back through the port is
+        the only place a lane learns which commit its own stamp stands at.
+        The write is the field-scoped one production makes, over the body the
+        read handed out, so every byte outside the Evidence row is asserted
+        to be that body's own.
+        """
+        read = await tracker.read_issue(issue_key=OWED_CRITERION)
+        # Every hex digit, so a lost, reordered or recased byte is another sha.
+        written = CriterionEvidence(
+            graded_sha="0123456789abcdef" * 2 + "01234567",
+            test="the case that graded it",
+        )
+        replacement = apply_evidence(body=read.body, evidence=written)
+
+        edited = await tracker.edit_description(
+            target=read.issue_key, expected=read.body, replacement=replacement
+        )
+
+        assert edited is DescriptionEditResult.EDITED
+        stamped = await tracker.read_issue(issue_key=read.issue_key)
+        parsed = parse_criterion_evidence(stamped.body)
+        assert parsed == written
+        assert parsed.graded_sha == written.graded_sha
+        assert len(parsed.graded_sha) == 40
+        assert stamped.body == replacement
+        # Outside the Evidence row, byte for byte the body that was read.
+        assert replace_criterion_fields(
+            stamped.body, replacements={"Evidence": ""}
+        ) == replace_criterion_fields(read.body, replacements={"Evidence": ""})
 
     @pytest.mark.parametrize(
         "holder",
