@@ -145,14 +145,21 @@ async def setup(*, monitor=None, git=None, repositories=(), bound=1, watches=2):
 
 
 async def deliver(parts, *, stalled=False, remediation=False):
-    """Drive one delivery and hold the coordinator to its write set (KOD-326).
+    """Drive one delivery and hold it to its write set and its hand-off (KOD-326).
 
     The projection is taken before the call and compared after it on every
     way out — a result, a refusal, a cancellation — so each fixture in this
     module makes the claim by driving the coordinator at all.
+
+    The state dict it is handed is claimed the same way (KOD-313): the branch
+    and the final sha are READ off that state, and no delivery fact goes back
+    into it.  Pinning the fire's own annotations instead would only say which
+    names the state DECLARES; a key written into the dict at run time carries
+    no annotation and would pass that. Here it reds every fixture.
     """
     owner, state, context, _, _, _, tracker = parts
     unwritten = nothing_written(tracker)
+    handed = dict(state)
     try:
         return await owner.deliver(
             state=state,
@@ -162,6 +169,7 @@ async def deliver(parts, *, stalled=False, remediation=False):
         )
     finally:
         assert unwritten(), "the coordinator wrote to the tracker"
+        assert dict(state) == handed, "the coordinator wrote to the state it was handed"
 
 
 async def test_green_opens_on_actual_head_and_resolved_base_and_round_trips():
