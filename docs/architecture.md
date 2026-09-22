@@ -472,6 +472,16 @@ Incomplete parent identity or duplicate revision/admission records refuse
 computation. Collecting and persisting these snapshots and running leased
 author sessions remain orchestration work outside this pure function.
 
+The admission test asks gradability beside buildability. The assessing and
+verifying roles are given each declared repository's check chain and runner
+environment, with the named absence where a repository declares none, and a
+deliverable no declared environment can demonstrate is a repairable refusal
+whose repair is to move the demonstration. A criterion sub-issue is created
+only when its author names what will fill its Evidence (a runnable test, or
+the observation recorded where no test can run); one that names neither is
+refused before the child exists. The Evidence row itself is still created
+empty.
+
 One organize table declares three phases, and the role table says which side
 of scope approval each runs on. `groom` runs before approval, on the grooming
 cadence, and ends the moment approval lands: an approved scope admits nobody

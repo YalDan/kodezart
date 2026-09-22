@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
+from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.errors import (
     OrganizeAdmissionIdentityError,
     OrganizeWriteRefusalError,
@@ -22,6 +23,7 @@ from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
+from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.organize import (
     AdmissionJudgment,
     AdmissionResult,
@@ -213,7 +215,7 @@ class RecordingWorkspace(FakeWorkspaceProvider):
         return await super().acquire(**kwargs)
 
 
-def consumer(source, executor, workspace, set_name=V5_SET):
+def consumer(source, executor, workspace, set_name=V5_SET, bindings=None):
     runner = AgentService(
         executor=executor, workspace=workspace, git_base_url="https://example.invalid"
     )
@@ -222,7 +224,7 @@ def consumer(source, executor, workspace, set_name=V5_SET):
         context=OrganizeContextReader(tracker=source, operation=declared_operation()),
         runner=runner,
         workspace=workspace,
-        prompts=load_registry(default_set=set_name),
+        prompts=load_registry(default_set=set_name, bindings=bindings),
         skills=SUPPRESS_ALL_SKILLS,
     )
 
@@ -2167,3 +2169,173 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     assert probe.answers[0] != ()
     assert executor.calls == []
     assert not [name for name, _ in board.calls if name.startswith("save_")]
+
+
+def unavailable_network_operation():
+    """The declared operation, with its first repository denying the network."""
+    operation = declared_operation()
+    repo = operation.repos[0].model_copy(
+        update={"runner_environment": {CheckPrerequisite.NETWORK: False}}
+    )
+    return operation.model_copy(update={"repos": (repo, *operation.repos[1:])})
+
+
+GRADABILITY_SENTENCE = "Ask gradability as well as buildability"
+
+
+@pytest.mark.parametrize("declared", ["declared", "no_repository"])
+@pytest.mark.parametrize("method", ["assess", "verify"])
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+async def test_both_sets_put_the_declared_environments_in_front_of_the_admission(
+    set_name, method, declared
+):
+    """Both admission roles of both sets carry the operation's environments.
+
+    The check chain and the runner environment arrive as data, beside the
+    instruction that makes an undemonstrable deliverable a repairable
+    refusal. An operation declaring no repository renders the same prompt
+    without the block, and neither state leaves an unrendered placeholder.
+    """
+    operation = unavailable_network_operation()
+    if declared == "no_repository":
+        operation = operation.model_copy(update={"repos": ()})
+    executor = RecordingExecutor([result()])
+    boundary = consumer(
+        tracker(),
+        executor,
+        RecordingWorkspace(),
+        set_name=set_name,
+        bindings=operation_bindings(operation),
+    )
+    await getattr(boundary, method)(request())
+    prompt = executor.calls[0]["prompt"]
+    assert GRADABILITY_SENTENCE in prompt
+    assert "{{" not in prompt
+    if declared == "declared":
+        step = unavailable_network_operation().repos[0].checks[0]
+        assert f"check {step.name}: `{step.command}`" in prompt
+        assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in prompt
+        return
+    assert "declared_environments" not in prompt
+
+
+UNDEMONSTRABLE_EVIDENCE = "No declared environment can run the demonstration."
+RELOCATION = "Move the demonstration onto a declared check."
+
+
+async def test_an_undemonstrable_deliverable_is_refused_and_relocated_on_the_board(
+    monkeypatch,
+):
+    """A deliverable no declared environment can demonstrate is not admitted.
+
+    The stage's own prompt carries the declared check chain, the refusal is
+    a repairable spec gap, the relocation it names is put to the author as
+    the repair, and it is readable back on the board as the escalation of
+    the bounded halt. Nothing is marked and no criterion child is created.
+    """
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True, phases=h.ticket_only, body=h.PREPARED_BODY, bound=1
+    )
+    admit_as(
+        monkeypatch,
+        executor,
+        key=CLAIMED_ISSUE,
+        payload={
+            "verdict": "not_buildable",
+            "refusal_kind": "spec_gap",
+            "evidence": UNDEMONSTRABLE_EVIDENCE,
+            "invented_decision": RELOCATION,
+        },
+    )
+    report = await h.run_owner(owner)
+    assessed = [
+        call["prompt"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "AdmissionJudgment"
+    ]
+    assert declared_operation().repos[0].checks[0].command in assessed[0]
+    halt = report.halt
+    assert halt.cause == "admission_exhausted"
+    assert halt.bound.value == halt.bound.rounds_used == 1
+    assert [r.refusal_kind for r in halt.admission_results] == [RefusalKind.SPEC_GAP]
+    # The re-author is put the refusal's own evidence, which is what the
+    # author role is given; the relocation it names reaches the board with
+    # the escalation below.
+    assert any(
+        UNDEMONSTRABLE_EVIDENCE in prompt for prompt in subject_proposals(executor)
+    )
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+        and comment.issue_id == CLAIMED_ISSUE
+    ]
+    assert len(escalations) == 1
+    assert RELOCATION in escalations[0].body
+    assert "body complete" not in board.server.issues[CLAIMED_ISSUE].labels
+    assert not [
+        native
+        for native in board.server.issues.values()
+        if native.parent_id == CLAIMED_ISSUE
+    ]
+
+
+@pytest.mark.parametrize("named", [False, True])
+async def test_a_criterion_naming_no_demonstration_is_refused_before_it_is_created(
+    monkeypatch, named
+):
+    """A criterion child is created only once something can fill its Evidence.
+
+    The author either names the runnable test that will demonstrate the
+    criterion or names nothing; naming nothing is refused before the child
+    exists. The created child's Evidence row is still empty.
+    """
+    h = owner_harness()
+    owner, board, executor = h.factory(under_approval=True, body=h.PREPARED_BODY)
+    original = executor.stream
+
+    async def stripped(**kwargs):
+        async for event in original(**kwargs):
+            payload = event.structured_output
+            if payload.get("kind") == "criteria":
+                event = result(
+                    structured_output={
+                        **payload,
+                        "criteria": [
+                            {
+                                name: value
+                                for name, value in item.items()
+                                if name not in ("runnable_test", "named_observation")
+                            }
+                            for item in payload["criteria"]
+                        ],
+                    }
+                )
+            yield event
+
+    if not named:
+        monkeypatch.setattr(executor, "stream", stripped)
+
+    def children():
+        return [
+            native
+            for native in board.server.issues.values()
+            if native.parent_id == CLAIMED_ISSUE
+        ]
+
+    if not named:
+        with pytest.raises(OrganizeWriteRefusalError, match="names no demonstration"):
+            await h.run_owner(owner)
+        assert children() == []
+        assert not [
+            args
+            for name, args in board.calls
+            if name == "save_issue" and args.get("parentId") == CLAIMED_ISSUE
+        ]
+        return
+    assert (await h.run_owner(owner)).halt is None
+    created = children()
+    assert [native.description.endswith("**Evidence:**\n") for native in created] == [
+        True
+    ]

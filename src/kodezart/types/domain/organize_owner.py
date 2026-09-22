@@ -40,6 +40,20 @@ class CriterionProposal(CamelCaseModel):
             "preparation does not execute them."
         ),
     )
+    runnable_test: str | None = Field(
+        default=None,
+        description=(
+            "Exact path of the test that will demonstrate this criterion at "
+            "the graded commit, absent when no test can demonstrate it."
+        ),
+    )
+    named_observation: str | None = Field(
+        default=None,
+        description=(
+            "The observation that will demonstrate this criterion where no "
+            "test runs it, absent when a runnable test demonstrates it."
+        ),
+    )
 
 
 class BodyProposal(CamelCaseModel):

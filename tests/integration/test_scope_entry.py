@@ -179,6 +179,7 @@ class OrganizingExecutor(ObservedNativeExecutor):
                             "title": check,
                             "check": check,
                             "do": f"Compare the source and {check}.",
+                            "runnable_test": "tests/fixture/test_criterion.py",
                         }
                         for check in self._checks(key)
                     ],
