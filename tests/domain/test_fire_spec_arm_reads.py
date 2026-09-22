@@ -562,6 +562,22 @@ def test_the_scan_catches_the_renderer_reached_under_another_name():
     assert _control(control) == (2, 0)
 
 
+def test_the_scan_catches_a_whole_spec_rendered_by_str_or_an_f_string():
+    """The two forms that render a spec without naming a field of it.
+
+    Neither reaches the arm's text through the formatter, and what each
+    renders is the model's own repr rather than the text, which is why they
+    are counted here and not left to the field read.
+    """
+    control = (
+        "from kodezart.types.domain.fire_spec import AuthoredSpec\n"
+        "\n"
+        "def rendered(spec: AuthoredSpec) -> str:\n"
+        '    return f"{spec}" + str(spec.ticket)\n'
+    )
+    assert _control(control) == (2, 0)
+
+
 def test_the_scan_catches_an_arm_text_read_inside_a_comprehension():
     """A name taken one at a time out of a collection of specs is a spec.
 
