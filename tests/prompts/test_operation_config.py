@@ -40,6 +40,8 @@ from kodezart.types.domain.operation import (
     QueueState,
     RunKind,
 )
+from kodezart.types.domain.organize import MandateSpec
+from kodezart.types.domain.organize_owner import StageHaltCause
 from kodezart.types.domain.prompts import PromptKey
 from tests.outbound import make_admission
 from tests.prompt_census import PROMPT_FUNCTION_NAMES
@@ -473,6 +475,30 @@ def test_no_deployment_knob_lives_in_the_operation_config() -> None:
     fields = set(OperationConfig.model_fields)
     for deployment_knob in ("github_token", "checkpoint_url", "model", "prompt_set"):
         assert deployment_knob not in fields
+
+
+def test_no_operation_field_restricts_who_may_set_a_scope_label() -> None:
+    """Nothing an operator configures says who may put a gate member on a scope.
+
+    The pinned reading of the gate is that its member is settable by anybody:
+    the predicate asks whether the scope carries the row's configured member
+    and nothing about the hand that wrote it. A field naming a setter would be
+    the first place that reading could be taken back, so its absence is pinned
+    on both the operation and the per-phase row, and the halt causes the pass
+    can report are pinned to the five it declares — a setter-role refusal is
+    not among them and is absent rather than unreachable.
+    """
+    restriction = re.compile(r"setter|set_by|label_role|gate_role")
+    for model in (OperationConfig, MandateSpec):
+        offenders = [field for field in model.model_fields if restriction.search(field)]
+        assert offenders == [], (model.__name__, offenders)
+    assert {cause.name for cause in StageHaltCause} == {
+        "ADMISSION_EXHAUSTED",
+        "CONVERGENCE_EXHAUSTED",
+        "ESCALATION_UNRECORDED",
+        "HUMAN_DECISION",
+        "STAGE_INCOMPLETE",
+    }
 
 
 def test_operation_config_references_no_tracker_vendor_type() -> None:
