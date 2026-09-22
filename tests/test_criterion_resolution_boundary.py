@@ -9,8 +9,8 @@ being handed a roster plus permission to search it.  A third, separate clause is
 kept: no module carries a checkbox shape it could locate a write target by.
 
 Every name the walk keys on is read off the shipped objects — the role, its one
-method, that method's identity parameters AND the types they carry, the row it
-returns, and the two modules where the role and its implementation are DECLARED.
+method, that method's identity parameters AND the types they carry, and the two
+modules where the role and its implementation are DECLARED.
 A declaration is not a dependency, so those two are the dependency rule's only
 exemptions, and adding a second method to either role reddens the single-name
 unpackings below rather than silently halving what is checked.  The set of names
@@ -22,12 +22,19 @@ dependency rule — and since depending on an implementation where a narrow role
 would do is itself a finding here, the wider set is the right answer twice over.
 
 The resolution walk is a SIGNATURE shape, not an expression walk: a function
-that reads the family, declares the identity the role addresses a criterion by,
-and returns exactly one row is a resolution however it performs the lookup — by
-dict index, by ``.get``, by a keys list and ``.index()``, or behind an alias.
-The refuted predecessor walked comparison nodes and so missed all four lookup
-shapes, and it counted MODULES rather than sites, which let two resolutions in
-one allowed module pass.  The count here is of sites.
+that reads the family and declares the identity the role addresses a criterion
+by is a resolution however it performs the lookup — by dict index, by ``.get``,
+by a keys list and ``.index()``, or behind an alias.  The refuted predecessor
+walked comparison nodes and so missed all four lookup shapes, and it counted
+MODULES rather than sites, which let two resolutions in one allowed module pass.
+The count here is of sites.
+
+What the site is NOT keyed on is the declared return.  A function given the
+family and one identity has resolved that identity whatever it then hands back
+— the row, a field off the row, a one-row tuple, nothing at all — so requiring
+the return annotation to be the row would have admitted a second resolution
+under any other annotation, which is ordinary code and not one of the misses
+stated below.  The return is therefore read as no part of the shape.
 
 Declaring that identity is read two ways, either sufficing, because a name and a
 type each see what the other is blind to: a parameter set spelling the role's
@@ -88,9 +95,6 @@ IDENTITY_ANNOTATIONS = Counter(
     if name in IDENTITY_PARAMETERS
 )
 ROW = TrackerIssue.__name__
-#: The return annotations that say "exactly one criterion row", optional
-#: included: returning the row or nothing is still resolving one identity.
-ONE_ROW = frozenset({ROW, f"{ROW} | None"})
 
 
 def _module_of(declared: type[object]) -> str:
@@ -194,20 +198,19 @@ def _declares_an_identity(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return annotated == IDENTITY_ANNOTATIONS
 
 
-def _returns_one_row(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Whether the declared return is exactly one criterion row."""
-    return node.returns is not None and ast.unparse(node.returns) in ONE_ROW
-
-
 def _resolution_sites(tree: ast.AST) -> list[str]:
-    """Each function in this module that resolves a criterion identity to a row."""
+    """Each function in this module that resolves a criterion identity to a row.
+
+    Two conjuncts, and the declared return is not one of them: see the module
+    docstring — a site handed the family and one identity has resolved it
+    whatever it hands back.
+    """
     return sorted(
         f"{node.name}:{node.lineno}"
         for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and _reads_the_family(node)
         and _declares_an_identity(node)
-        and _returns_one_row(node)
     )
 
 
@@ -317,23 +320,48 @@ def test_no_module_scans_for_checkbox_syntax() -> None:
 
 
 @pytest.mark.parametrize(
-    "lookup",
+    ("returns", "lookup"),
     [
-        "    by_key = {row.issue_key: row for row in rows}\n"
-        "    return by_key[criterion_key]\n",
-        "    by_key = {row.issue_key: row for row in rows}\n"
-        "    return by_key.get(criterion_key)\n",
-        "    keys = [row.issue_key for row in rows]\n"
-        "    return rows[keys.index(criterion_key)]\n",
-        "    wanted = criterion_key\n"
-        "    return [row for row in rows if row.issue_key == wanted][0]\n",
+        (
+            f"{ROW} | None",
+            "    by_key = {row.issue_key: row for row in rows}\n"
+            "    return by_key[criterion_key]\n",
+        ),
+        (
+            f"{ROW} | None",
+            "    by_key = {row.issue_key: row for row in rows}\n"
+            "    return by_key.get(criterion_key)\n",
+        ),
+        (
+            f"{ROW} | None",
+            "    keys = [row.issue_key for row in rows]\n"
+            "    return rows[keys.index(criterion_key)]\n",
+        ),
+        (
+            f"{ROW} | None",
+            "    wanted = criterion_key\n"
+            "    return [row for row in rows if row.issue_key == wanted][0]\n",
+        ),
+        # The fifth is not a lookup shape but a RETURN shape: the same walk,
+        # the same family read, the same identity, handing back a field off
+        # the resolved row instead of the row (KOD-651).
+        (
+            "str",
+            "    by_key = {row.issue_key: row for row in rows}\n"
+            "    return by_key[criterion_key].body\n",
+        ),
     ],
 )
-def test_the_refused_lookup_shapes_are_reported(lookup: str) -> None:
-    """Every form the refuted comparison walk missed is one signature shape here."""
+def test_the_refused_lookup_shapes_are_reported(returns: str, lookup: str) -> None:
+    """Every form the refuted comparison walk missed is one signature shape here.
+
+    And one form no return annotation covers: the declared return is no part
+    of the shape, so a site handing back a field off the row it resolved is
+    reported exactly as the four lookups are.
+    """
     source = (
-        "async def locate(*, tracker, issue_key: str, criterion_key: str"
-        ") -> TrackerIssue | None:\n"
+        f"async def locate(*, tracker, issue_key: str, criterion_key: str"
+        f") -> {returns}:\n"
         "    rows = await tracker.read_criteria(issue_key=issue_key)\n"
         f"{lookup}"
     )
