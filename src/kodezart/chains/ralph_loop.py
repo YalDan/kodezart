@@ -1121,7 +1121,7 @@ class RalphLoop:
         that graded it.
 
         Each digest is the commit record's own reading of that interval,
-        obtained through the Git source port, and never a diff of a working
+        obtained through the Git service port, and never a diff of a working
         tree: the paths it names are the ones the commits between those two
         revisions changed, so nothing uncommitted in any workspace can move a
         grading, and the same two revisions read the same way whoever asks.
