@@ -141,6 +141,7 @@
   "tests/core/test_organize_settings.py": 10,
   "tests/core/test_outbound_write.py": 7,
   "tests/core/test_owned_tasks.py": 6,
+  "tests/core/test_port_layering.py": 9,
   "tests/core/test_prompt_boot.py": 18,
   "tests/core/test_retired_config.py": 15,
   "tests/core/test_retry.py": 26,
@@ -2408,6 +2409,10 @@
   "tests/core/test_owned_tasks.py": [
    "test_settlement_preserves_the_operation_outcome",
    "test_repeated_caller_cancellation_waits_for_the_same_owned_operation"
+  ],
+  "tests/core/test_port_layering.py": [
+   "test_no_port_member_annotation_resolves_to_a_vendor_module",
+   "test_the_types_domain_and_chains_layers_import_no_vendor_module"
   ],
   "tests/core/test_prompt_boot.py": [
    "test_lifespan_logs_one_prompt_resolution_table_event",
