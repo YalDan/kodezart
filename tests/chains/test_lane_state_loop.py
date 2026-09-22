@@ -1649,9 +1649,13 @@ async def test_the_vacuous_reading_is_the_same_value_the_mutation_reading_produc
         if state is CrossOffState.undemonstrated
     ]
     assert vacuous_received == withheld
-    assert {
-        event.kind for event in vacuous_posted if event.subject_key is not None
-    } == {event.kind for event in survivor_posted if event.subject_key is not None}
+    vacuous_kinds = {e.kind for e in vacuous_posted if e.subject_key is not None}
+    assert vacuous_kinds, (
+        "non-vacuity: the vacuous run keyed some reading to its sub-issue"
+    )
+    assert vacuous_kinds == {
+        e.kind for e in survivor_posted if e.subject_key is not None
+    }
 
 
 async def test_a_vacuous_check_does_not_count_toward_the_iterations_passes(tmp_path):
