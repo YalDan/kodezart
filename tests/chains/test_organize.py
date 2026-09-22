@@ -16,6 +16,7 @@ from kodezart.domain.errors import (
     OrganizeWriteRefusalError,
 )
 from kodezart.domain.organize import organize_at_rest, organize_gap
+from kodezart.services import organize_owner
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.organize_context import OrganizeContextReader
@@ -851,11 +852,21 @@ def test_gap_preserves_input_order_and_exact_records():
     )
 
 
-@pytest.mark.parametrize(
-    "malformed",
-    ["duplicate_revision", "duplicate_admission", "orphan_criterion", "empty_marker"],
-)
-def test_gap_refuses_incoherent_snapshots_instead_of_dropping_evidence(malformed):
+#: Every way one snapshot can be incoherent, and the name each is read by.
+INCOHERENT_SNAPSHOTS = [
+    "duplicate_revision",
+    "duplicate_admission",
+    "orphan_criterion",
+    "empty_marker",
+]
+
+
+def incoherent_snapshot(malformed):
+    """One incoherent snapshot: its revisions, its admissions and its marker.
+
+    The gap and the pre-query are asked the same question over the same
+    snapshot, so the snapshot is built once and read by both.
+    """
     parent, child = organized_family()
     revisions = (parent, child)
     admissions = tuple(gap_admission(revision) for revision in revisions)
@@ -868,6 +879,12 @@ def test_gap_refuses_incoherent_snapshots_instead_of_dropping_evidence(malformed
         revisions = (child,)
     else:
         marker = "  "
+    return revisions, admissions, marker
+
+
+@pytest.mark.parametrize("malformed", INCOHERENT_SNAPSHOTS)
+def test_gap_refuses_incoherent_snapshots_instead_of_dropping_evidence(malformed):
+    revisions, admissions, marker = incoherent_snapshot(malformed)
     with pytest.raises(ValueError, match="organize gap requires"):
         gap_of(revisions, admissions=admissions, marker=marker)
 
@@ -1029,25 +1046,11 @@ def test_the_scope_table_answers_both_ways_so_the_agreement_is_not_vacuous():
     assert answered == {True, False}
 
 
-@pytest.mark.parametrize(
-    "malformed",
-    ["duplicate_revision", "duplicate_admission", "orphan_criterion", "empty_marker"],
-)
+@pytest.mark.parametrize("malformed", INCOHERENT_SNAPSHOTS)
 def test_the_pre_query_refuses_an_incoherent_snapshot_instead_of_answering_rest(
     malformed,
 ):
-    parent, child = organized_family()
-    revisions = (parent, child)
-    admissions = tuple(gap_admission(revision) for revision in revisions)
-    marker = BODY_MARKER
-    if malformed == "duplicate_revision":
-        revisions += (parent,)
-    elif malformed == "duplicate_admission":
-        admissions += (admissions[0],)
-    elif malformed == "orphan_criterion":
-        revisions = (child,)
-    else:
-        marker = "  "
+    revisions, admissions, marker = incoherent_snapshot(malformed)
     with pytest.raises(ValueError, match="organize gap requires"):
         at_rest_of(revisions, admissions=admissions, marker=marker)
 
@@ -2100,3 +2103,67 @@ async def test_a_finding_outside_the_admitted_scope_stays_a_refusal(monkeypatch)
     assert not {"body complete", "criteria complete"} & set(
         board.server.issues[CLAIMED_ISSUE].labels
     )
+
+
+class RosterReads:
+    """Every ``organize_gap`` call the owner makes, over the reads before it.
+
+    At each call the roster listings already on the board's log are counted,
+    so a listing made between a stage's snapshot and its gap call shows up
+    as a higher count. The inputs and the answer are kept whole, so the
+    pre-query can be asked the same question the gap was asked.
+    """
+
+    def __init__(self, monkeypatch, board):
+        self.at_gap = []
+        self.inputs = []
+        self.answers = []
+        computed = organize_owner.organize_gap
+
+        def recorded(**kwargs):
+            answer = computed(**kwargs)
+            self.at_gap.append([name for name, _ in board.calls].count("list_issues"))
+            self.inputs.append(kwargs)
+            self.answers.append(tuple(answer))
+            return answer
+
+        monkeypatch.setattr(organize_owner, "organize_gap", recorded)
+
+
+async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
+    monkeypatch,
+):
+    """The tick reads the roster once per stage and asks the gap over it.
+
+    A heartbeat over a converged scope: each stage takes one snapshot, asks
+    the gap over exactly that snapshot, and the barrier that follows is the
+    stage's only further listing. The pre-query is not a second read — it is
+    the cardinality of the answer the gap already gave.
+    """
+    h = owner_harness()
+    owner, board, _executor = h.two_lane_board()
+    assert (await h.run_owner(owner)).halt is None
+    second, board, executor = h.factory(under_approval=True, board=board)
+    board.calls.clear()
+    await board.tracker().scope_issues(
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    )
+    per_read = [name for name, _ in board.calls].count("list_issues")
+    board.calls.clear()
+    probe = RosterReads(monkeypatch, board)
+    report = await h.run_owner(second)
+
+    assert report.halt is None
+    assert per_read >= 1
+    # The stage's own snapshot, then that stage's barrier and the next
+    # stage's snapshot: no listing sits between a snapshot and its gap call.
+    assert probe.at_gap == [per_read, 3 * per_read]
+    assert [name for name, _ in board.calls].count("list_issues") == 4 * per_read
+    assert len(probe.at_gap) == len(report.completed_phases) == 2
+    assert all(
+        organize_at_rest(**inputs) is (answer == ())
+        for inputs, answer in zip(probe.inputs, probe.answers, strict=True)
+    )
+    assert probe.answers[0] != ()
+    assert executor.calls == []
+    assert not [name for name, _ in board.calls if name.startswith("save_")]
