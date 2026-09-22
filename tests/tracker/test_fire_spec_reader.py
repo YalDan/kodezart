@@ -60,6 +60,19 @@ def server():
             status="Todo",
             status_type=STATE_TYPES["Todo"],
         ),
+        # Depth three, reachable through two PLAIN owners and so only by the
+        # recursive walk: a reading that listed the subject's direct children
+        # and then asked each of them for its own criteria would find the
+        # criterion under a criterion above, but never this one (KOD-710).
+        FakeMcpIssue(id="nested-owner/1", parent_id="ordinary/1"),
+        FakeMcpIssue(
+            id="great-grandchild/1",
+            parent_id="nested-owner/1",
+            labels=[LABEL],
+            description="**Check:** A criterion three deep is in the subtree.",
+            status="Todo",
+            status_type=STATE_TYPES["Todo"],
+        ),
         FakeMcpIssue(
             id="empty/1",
             labels=FIRE_ENTRY_LABELS,
@@ -86,12 +99,21 @@ async def test_failed_subject_lookup_is_not_a_successful_empty_spec(tracker):
 async def test_spec_captures_opaque_child_keys_verbatim_body_and_subject_version(
     tracker, tracker_writes
 ):
+    """The subtree is read to its depth, and both halves of the entry name it.
+
+    The deepest criterion sits under two plain owners, so it is reachable
+    only by a walk that keeps descending: a reading that listed the
+    subject's direct children and then asked each of them for its own
+    criteria would compose a spec missing it, and the roster the loop
+    starts on would be missing it too (KOD-710).
+    """
     before = tracker_writes()
-    spec, _ = await TrackerCriteria(tracker=tracker).read_entry(issue_key=SUBJECT)
+    spec, roster = await TrackerCriteria(tracker=tracker).read_entry(issue_key=SUBJECT)
     assert isinstance(spec, TrackerSpec)
     assert spec.subject == SUBJECT
     assert spec.body == BODY
-    assert spec.criteria == (CRITERION, "grandchild/1")
+    assert spec.criteria == (CRITERION, "grandchild/1", "great-grandchild/1")
+    assert {criterion.id for criterion in roster.criteria} == set(spec.criteria)
     assert spec.read_at_version == FIXTURE_NOW.isoformat()
     assert format_fire_spec(spec) == BODY
     assert tracker_writes() == before
@@ -221,7 +243,7 @@ async def test_check_content_is_read_without_rewriting_criterion_or_parent(
         server.issues[CRITERION].description = body
     before = tracker_writes()
     spec, _ = await TrackerCriteria(tracker=tracker).read_entry(issue_key=SUBJECT)
-    assert spec.criteria == (CRITERION, "grandchild/1")
+    assert spec.criteria == (CRITERION, "grandchild/1", "great-grandchild/1")
     assert spec.body == BODY
     assert (await tracker.read_issue(issue_key=CRITERION)).body == body
     assert tracker_writes() == before
