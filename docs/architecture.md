@@ -485,6 +485,18 @@ into the groom judge, the repair author and the two scheduled pass prompts, so
 an issue sitting outside that tree is a repairable gap rather than a matter of
 taste.
 
+The role table also states what each phase may write on a member, as a set of
+surface kinds. That set is the declared set: once a round has a roster with
+work, the owner leases every kind its row lists on every member of its
+snapshot in one all-or-nothing acquisition through the port's lease calls,
+renews it before each write of the round, releases it before any halt is
+written, and holds nothing at all when the acquisition is refused — a refused
+round is not retried, and the next pass reads the board again. A roster with
+no work takes no lease, so an approved scope and a replay cost the
+pre-approval row no lease marker. A member the round mints is outside the set
+that round declared and is declared by the next round, which snapshots the
+board again.
+
 Because approval admits a member to a run stage instead of ending it, a
 run-stage row may name `scope_labels.approved` as its gate by that exact
 reference. Such a gate reads the per-issue cascade, never the addressed

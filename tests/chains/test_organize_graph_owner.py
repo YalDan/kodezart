@@ -61,7 +61,9 @@ async def test_configured_owner_applies_graph_priority_then_reentry_writes_nothi
 async def test_configured_split_prepares_children_without_execution_and_replays_cleanly(
     monkeypatch,
 ):
-    owner, board, executor = factory(convergence_bound=4, bound=3)
+    # Split children are declared by the run stage that writes text and
+    # children, so this case drives the owner of an approved scope run.
+    owner, board, executor = factory(convergence_bound=4, bound=3, under_approval=True)
     original = executor.stream
 
     async def stream(**kwargs):
@@ -164,7 +166,7 @@ async def test_cancel_during_issued_split_settles_before_lease_release(monkeypat
 
     import pytest
 
-    owner, board, executor = factory()
+    owner, board, executor = factory(under_approval=True)
     original = executor.stream
 
     async def stream(**kwargs):
@@ -210,7 +212,7 @@ async def test_cancel_during_issued_split_settles_before_lease_release(monkeypat
         )
         == 1
     )
-    assert "graph complete" not in board.server.issues[CLAIMED_ISSUE].labels
+    assert "body complete" not in board.server.issues[CLAIMED_ISSUE].labels
 
 
 async def test_peer_refutation_retains_citations_and_bound_without_peer_repair(

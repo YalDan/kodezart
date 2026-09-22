@@ -118,6 +118,7 @@ def test_the_sources_dispatch_on_a_mandate_kind_at_the_phase_table_alone():
 def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
     from kodezart.types.domain.operation import OperationConfig
     from kodezart.types.domain.prompts import PromptKey
+    from kodezart.types.domain.surface import SurfaceKind
     from tests.domain.test_organize import mandate_operation_fields
 
     fields = mandate_operation_fields()
@@ -131,6 +132,7 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             phase.role.marks_specification_body,
             phase.role.marks_execution_stage,
             phase.role.runs_under_approval,
+            phase.role.write_surfaces,
             phase.marker_source,
         )
         for phase in phases
@@ -141,6 +143,13 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             False,
             False,
             False,
+            frozenset(
+                {
+                    SurfaceKind.ISSUE_GRAPH,
+                    SurfaceKind.ISSUE_DESCRIPTION,
+                    SurfaceKind.ISSUE_LABEL_SET,
+                }
+            ),
             "organize_mandates.groom.terminal_marker_key",
         ),
         (
@@ -149,6 +158,14 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             True,
             False,
             True,
+            frozenset(
+                {
+                    SurfaceKind.ISSUE_GRAPH,
+                    SurfaceKind.ISSUE_DESCRIPTION,
+                    SurfaceKind.ISSUE_SPLIT_SET,
+                    SurfaceKind.ISSUE_LABEL_SET,
+                }
+            ),
             "organize_mandates.ticket.terminal_marker_key",
         ),
         (
@@ -157,6 +174,7 @@ def test_each_resolved_row_carries_what_a_phase_branch_used_to_select():
             False,
             True,
             True,
+            frozenset({SurfaceKind.CRITERION_CHILD_SET, SurfaceKind.ISSUE_LABEL_SET}),
             "organize_mandates.criteria.terminal_marker_key",
         ),
     ]
