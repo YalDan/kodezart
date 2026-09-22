@@ -96,7 +96,11 @@ from tests.lane_fixture import (
     criteria_echo,
     lane_forge,
 )
-from tests.mutation_fixture import MutationLaneFixture
+from tests.mutation_fixture import (
+    MutationLaneFixture,
+    run_named_check,
+    write_fixture_tree,
+)
 
 BRANCH = "ralph/fire-subject"
 FEATURE = "feature/fire-subject"
@@ -2906,3 +2910,22 @@ async def test_a_vacuous_check_does_not_count_toward_the_iterations_passes(tmp_p
     assert iterations[-1].trajectory.best_passed_count == 0
     assert [record.passed_count for record in iterations[-1].trajectory.records] == [0]
     assert finished(lane.port, VACUOUS) == set()
+
+
+def test_a_check_that_cannot_run_is_a_broken_fixture(tmp_path):
+    """The instrument's own guarantee, asserted rather than only documented.
+
+    Every reading above is "this check discriminates", read off a check really
+    run in two copies of a tree. A runner that came back `False` for a check
+    that raised would report a broken fixture as the check failing, and a
+    criterion whose check no longer loads would then keep its pass under a
+    reading that observed nothing. So an `AssertionError` is the check failing
+    and nothing else is: anything else propagates.
+    """
+    write_fixture_tree(tmp_path)
+    (tmp_path / "checks" / "broken.py").write_text(
+        "def check():\n    raise TypeError('this check cannot run')\n"
+    )
+
+    with pytest.raises(TypeError, match="this check cannot run"):
+        run_named_check(tmp_path, "broken")
