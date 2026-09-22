@@ -490,6 +490,7 @@ async def test_the_put_back_writes_the_unstarted_state_the_board_names() -> None
     assert rested == ["A"]
     assert port.restored_states == [("A", "Ready")]
     assert port.issues["A"].state_name == "Ready"
+    assert port.lease_acquisitions == []
 
 
 async def test_the_put_back_passes_over_a_started_row_for_the_unstarted_one() -> None:

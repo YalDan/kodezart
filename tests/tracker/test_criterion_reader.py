@@ -59,6 +59,26 @@ async def test_exactly_direct_configured_criterion_children_are_read(
         assert await tracker.read_issue(issue_key=criterion.issue_key) == criterion
 
 
+async def test_the_criterion_read_acquires_no_write_lease(
+    tracker, tracker_writes, server
+):
+    """Reading the family leaves the surface free for whoever writes it next.
+
+    The criterion sub-issue is a leased write surface, so a read that quietly
+    took its grant would block the state move that is entitled to it while
+    proving nothing about the family it read.
+    """
+    writes = tracker_writes()
+    criteria = await tracker.read_criteria(issue_key=PARENT)
+    assert [criterion.issue_key for criterion in criteria] == [FIRST, SECOND]
+    assert tracker_writes() == writes
+    if isinstance(tracker, FakeTrackerPort):
+        assert tracker.lease_acquisitions == []
+        assert tracker.leases == {}
+    else:
+        assert server.tool_calls("save_comment") == []
+
+
 async def test_successful_empty_is_distinct_from_a_failed_parent_read(tracker):
     assert tuple(await tracker.read_criteria(issue_key=SECOND)) == ()
     with pytest.raises(CriterionReadError) as raised:

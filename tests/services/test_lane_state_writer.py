@@ -1809,6 +1809,10 @@ async def test_a_criterion_this_fire_finished_and_then_broke_is_taken_back():
     assert parse_criterion_evidence(issue.body).graded_sha == "2" * 40
     assert [event.subject_key for event in refutations(port)] == [broken]
     assert [event.graded_sha for event in refutations(port)] == ["2" * 40]
+    # The lane's own move-back is deliberately unleased: it holds no grant on
+    # the criterion it takes back, and acquires none on the way (KOD-464).
+    assert port.lease_writes == []
+    assert port.lease_acquisitions == []
     # The issue that owns them reopened by the rollup, written by nobody.
     assert not owning_closure(port).is_closed(LANE)
     # The criteria the same attempt passed again are untouched by any of it.
