@@ -1,8 +1,12 @@
 """Frozen spec partition and opaque tracker identity carriage."""
 
+import ast
+import inspect
+
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+from kodezart.types.domain import fire_spec as partition
 from kodezart.types.domain.fire_spec import (
     AuthoredSpec,
     CriterionRef,
@@ -23,6 +27,24 @@ def tracker_spec(**changes):
             **changes,
         }
     )
+
+
+def test_both_arms_are_declared_in_the_module_that_states_the_partition():
+    """The arms are declared where the union is, not re-exported into it.
+
+    A shim that imports both arms from a sibling module and rebuilds the union
+    there satisfies every other pin in this file, so the declaration is read
+    off the module itself: each arm answers for it as its home, and each name
+    is a class statement in its own source rather than an imported word.
+    """
+    declared = {
+        node.name
+        for node in ast.parse(inspect.getsource(partition)).body
+        if isinstance(node, ast.ClassDef)
+    }
+
+    assert AuthoredSpec.__module__ == TrackerSpec.__module__ == partition.__name__
+    assert {AuthoredSpec.__name__, TrackerSpec.__name__} <= declared
 
 
 @pytest.mark.parametrize(
