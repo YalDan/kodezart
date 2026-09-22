@@ -1781,3 +1781,194 @@ async def test_an_unverifiable_admission_marks_the_ticket_only_on_a_real_in_scop
         comment.issue_id for comment in escalations if MISSING_ARTIFACT in comment.body
     ] == [CLAIMED_ISSUE]
     assert len(escalations) == 1
+
+
+SECOND_SURFACE = "second-surface"
+
+
+def second_surface_regrowth(monkeypatch, *, body):
+    """A ticket stage whose fix defects a surface the round did not author.
+
+    The subject's assessment names the class on the subject while its body
+    is still the draft. The author carries any mandating sentence forward,
+    so once the fix lands the same class is named again on the criterion
+    child: a second surface, reached only by the fresh verification that
+    follows the round. Every scripted finding is recorded as
+    ``(issue_id, defect_class)``.
+    """
+    import re
+
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True,
+        phases=h.ticket_only,
+        body=body,
+        convergence_bound=2,
+    )
+    board.server.issues[SECOND_SURFACE] = FakeMcpIssue(
+        id=SECOND_SURFACE,
+        parent_id=CLAIMED_ISSUE,
+        description=h.RESTATING_BODY,
+        labels=["check"],
+    )
+    observed = []
+    original = executor.stream
+
+    def mandate_finding(issue_id):
+        observed.append((issue_id, h.REGROWTH_CLASS))
+        return {
+            "issue_id": issue_id,
+            "defect_class": h.REGROWTH_CLASS,
+            "evidence": "The surface restates the source version in its prose.",
+            "role": "mandate",
+            "mandate_text": h.MANDATE_SENTENCE,
+        }
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        parent = board.server.issues[CLAIMED_ISSUE].description
+        async for event in original(**kwargs):
+            payload = event.structured_output
+            if title == "OrganizeProposal" and payload.get("kind") == "body":
+                source = board.server.issues[payload["issue_id"]].description
+                carried = (
+                    f"{h.MANDATE_SENTENCE} " if h.MANDATE_SENTENCE in source else ""
+                )
+                event = result(
+                    structured_output={
+                        **payload,
+                        "body": f"{carried}{h.GROUNDED_BODY}",
+                    }
+                )
+            elif (
+                title == "AdmissionJudgment"
+                and keys[-1:] == [CLAIMED_ISSUE]
+                and h.DRAFT_BODY in parent
+            ):
+                event = result(
+                    structured_output={
+                        "issue_id": CLAIMED_ISSUE,
+                        "verdict": "not_buildable",
+                        "evidence": "The hand-drafted source is not prepared.",
+                        "refusal_kind": "spec_gap",
+                        "invented_decision": "Prepare the drafted source.",
+                        "findings": [mandate_finding(CLAIMED_ISSUE)],
+                    }
+                )
+            elif (
+                title == "AdmissionJudgment"
+                and keys[-1:] == [SECOND_SURFACE]
+                and h.VERIFY_OPENING in kwargs["prompt"]
+                and h.GROUNDED_BODY in parent
+            ):
+                event = result(
+                    structured_output={
+                        **payload,
+                        "findings": [mandate_finding(SECOND_SURFACE)],
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    return owner, board, executor, observed
+
+
+def subject_proposals(executor):
+    """Every author prompt spent on the subject, in order."""
+    import re
+
+    return [
+        call["prompt"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "OrganizeProposal"
+        and re.findall(r"<issue_key>(.*?)</issue_key>", call["prompt"])[-1:]
+        == [CLAIMED_ISSUE]
+    ]
+
+
+async def test_a_fix_that_defects_a_second_surface_is_worked_in_the_next_round(
+    monkeypatch,
+):
+    """Round one's fix is not taken as done: the dry round finds the class again.
+
+    The class the assessment named on the subject is repaired, and the fix
+    carries the mandating sentence that makes the criterion child restate
+    the class. Only the fresh verification after the round reaches that
+    child; its finding is worked in round two, and a mandate that keeps
+    regrowing halts at the convergence bound with its surviving finding.
+    """
+    h = owner_harness()
+    owner, board, executor, observed = second_surface_regrowth(
+        monkeypatch, body=f"{h.MANDATE_SENTENCE} {h.DRAFT_BODY}"
+    )
+    report = await h.run_owner(owner)
+    assert observed == [
+        (CLAIMED_ISSUE, h.REGROWTH_CLASS),
+        (SECOND_SURFACE, h.REGROWTH_CLASS),
+        (SECOND_SURFACE, h.REGROWTH_CLASS),
+    ]
+    later = subject_proposals(executor)[1:]
+    assert any(
+        h.REGROWTH_CLASS
+        in prompt.split("<defect_classes>", 1)[1].split("</defect_classes>", 1)[0]
+        for prompt in later
+    )
+    halt = report.halt
+    assert halt.cause == "convergence_exhausted"
+    assert halt.bound.setting == "organize.max_convergence_rounds"
+    assert halt.bound.loop == "convergence"
+    assert halt.bound.value == halt.bound.rounds_used == 2
+    assert [(f.issue_id, f.role, f.mandate_text) for f in halt.surviving_findings] == [
+        (SECOND_SURFACE, DefectRole.MANDATE, h.MANDATE_SENTENCE)
+    ]
+    assert report.completed_phases == ()
+    assert not {"body complete", "criteria complete"} & set(
+        board.server.issues[CLAIMED_ISSUE].labels
+    )
+
+
+async def test_a_round_that_writes_nothing_does_not_terminate(monkeypatch):
+    """An author round with nothing to write is not a dry verification round.
+
+    The author's proposal equals the board, so the round writes nothing;
+    the verification that follows still names the class, and the loop goes
+    round again until the bound rather than ending on the quiet round.
+    """
+    h = owner_harness()
+    body = f"{h.MANDATE_SENTENCE} {h.GROUNDED_BODY}"
+    owner, board, executor, _observed = second_surface_regrowth(monkeypatch, body=body)
+    report = await h.run_owner(owner)
+    assert subject_proposals(executor)
+    assert [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "description" in args
+    ] == []
+    assert board.server.issues[CLAIMED_ISSUE].description == body
+    assert report.halt.cause == "convergence_exhausted"
+    assert report.halt.bound.rounds_used == 2
+    assert report.completed_phases == ()
+
+
+async def test_an_empty_work_set_still_spends_its_dry_round_and_goes_round_again(
+    monkeypatch,
+):
+    """An empty gap is not convergence: the round it answers still verifies.
+
+    On the refutation entry the criteria stage's first round owes no lane.
+    That round opens no author session but verifies every lane once, and a
+    further round follows it, because the verification found the refuted
+    claim.
+    """
+    h = owner_harness()
+    spy, _board, _executor, report = await h.entry_refutation(monkeypatch)
+    rounds = spy.rounds()
+    empty = [index for index, (work, _, _) in enumerate(rounds) if not work]
+    assert empty
+    for index in empty:
+        _work, judged, authored = rounds[index]
+        assert judged == dict.fromkeys(sorted(h.LANES), 1)
+        assert authored == {}
+        assert index + 1 < len(rounds)
+    assert report.halt is None
