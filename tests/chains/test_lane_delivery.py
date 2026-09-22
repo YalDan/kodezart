@@ -61,11 +61,15 @@ SHA = "a" * 40
 REPO = "https://github.com/owner/repo.git"
 HEAD = "lane-head"
 BASE = "blocker-branch"
-#: Seconds any await on a driven coordinator is given, carried over from the
-#: bounded event wait the concurrency fixtures already used.  Named so the two
-#: fixtures' awaits are bounded by one number rather than by four literals; a
-#: whole module run of them takes about three seconds, so the bound is a
-#: deadline for a stall and not a budget for the work.
+#: Seconds every delivery driven in this module is given: the shared
+#: ``deliver()`` driver below applies it to each one, so every fixture inherits
+#: it by driving the coordinator at all, and the concurrency fixtures give
+#: their event waits the same number.  It is a WALL-CLOCK DEADLINE, not a
+#: budget for the work: a delivery here reaches its check watch within tens
+#: of milliseconds, so what it fails is a coordinator that stops making
+#: progress — the fixture that drove it reds on a TimeoutError instead
+#: of hanging the module run.  The driver reads it when it is called, so the
+#: one fixture that shows the deadline fires can shorten it for itself.
 WAIT_BOUND = 5
 
 
@@ -171,9 +175,18 @@ async def setup(*, monitor=None, git=None, repositories=(), bound=1, watches=2):
 async def deliver(parts, *, stalled=False, remediation=False):
     """Drive one delivery and hold it to its write set and its hand-off (KOD-326).
 
+    The await is BOUNDED here, in the one place every fixture's delivery goes
+    through, and not in the fixtures that happened to need it: WAIT_BOUND is
+    a wall-clock deadline, and a coordinator that stops making progress — at
+    the check watch, at a slot it never gets, after either — fails the
+    fixture that drove it with a TimeoutError instead of hanging the module
+    run at the first bare await.  Every fixture inherits the bound the same
+    way it inherits the two claims below: by driving the coordinator at all.
+
     The projection is taken before the call and compared after it on every
-    way out — a result, a refusal, a cancellation — so each fixture in this
-    module makes the claim by driving the coordinator at all.
+    way out — a result, a refusal, a cancellation, the deadline itself — so
+    each fixture in this module makes the claim by driving the coordinator at
+    all.
 
     The state dict it is handed is claimed the same way (KOD-313): the branch
     and the final sha are READ off that state, and no delivery fact goes back
@@ -192,11 +205,14 @@ async def deliver(parts, *, stalled=False, remediation=False):
     unwritten = nothing_written(tracker)
     handed = copy.deepcopy(state)
     try:
-        return await owner.deliver(
-            state=state,
-            context=context,
-            stalled=stalled,
-            remediation_available=remediation,
+        return await asyncio.wait_for(
+            owner.deliver(
+                state=state,
+                context=context,
+                stalled=stalled,
+                remediation_available=remediation,
+            ),
+            timeout=WAIT_BOUND,
         )
     finally:
         assert unwritten(), "the coordinator wrote to the tracker"
@@ -476,22 +492,57 @@ async def test_watch_bound_cancellation_releases_slot_for_next_lane():
     ci = Blocking()
     parts = await setup(monitor=ci, watches=1)
     first = asyncio.create_task(deliver(parts))
-    # Every await here is bounded, not only the event: the defect this
-    # fixture exists to catch is a watch slot never given back, and its
-    # symptom is the SECOND lane blocking forever on acquisition — one step
-    # past the event, which the first lane has already set.  A bound on the
-    # event alone would let that defect hang the module run instead of
-    # reding the fixture that saw it.
+    # Both lanes are driven through the driver, so both are bounded by it:
+    # the defect this fixture exists to catch is a watch slot never given
+    # back, and its symptom is the SECOND lane blocking forever on
+    # acquisition — one step past the event the first lane has already set —
+    # which reds here on the second lane's deadline instead of hanging the
+    # module run.  The event is the one await the driver does not make, so it
+    # carries the same deadline itself.
     await asyncio.wait_for(entered.wait(), timeout=WAIT_BOUND)
     second = asyncio.create_task(deliver(parts))
     first.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await asyncio.wait_for(first, timeout=WAIT_BOUND)
+        await first
     resume.set()
-    assert (await asyncio.wait_for(second, timeout=WAIT_BOUND)).outcome is (
-        WorkflowOutcome.ci_passed
-    )
+    assert (await second).outcome is WorkflowOutcome.ci_passed
     assert ci.peak == 1
+
+
+async def test_the_driver_s_deadline_fails_a_delivery_that_stops_progressing(
+    monkeypatch,
+):
+    """The driver's bound is shown to FIRE, on the shape it exists for.
+
+    A coordinator that reaches the check watch and never comes back is the
+    defect the deadline answers; without it the stall is indistinguishable
+    from slow work, and the fixture that drove it takes the module run with
+    it.  Here the watch never returns, and the drive — the same bare
+    ``deliver(parts)`` every other fixture makes — raises instead.
+
+    The module's deadline is shortened for this fixture alone, so that it
+    costs one second and not five: what is asked is that the driver applies
+    WAIT_BOUND to the delivery at all, not how many seconds it is set to.
+    The drive runs under the module's own deadline as an outer bound, so a
+    driver that lost its bound fails this fixture on that outer bound instead
+    of hanging it — the fixture that shows the bound fires is not a hang
+    itself.
+    """
+    entered = asyncio.Event()
+
+    class Stalling(FakeCIMonitor):
+        async def wait_for_checks(self, *, repo_url, ref):
+            entered.set()
+            await asyncio.Event().wait()
+            raise AssertionError("a stalled watch never returns")
+
+    parts = await setup(monitor=Stalling())
+    outer = WAIT_BOUND
+    monkeypatch.setitem(globals(), "WAIT_BOUND", 1)
+    async with asyncio.timeout(outer):
+        with pytest.raises(TimeoutError):
+            await deliver(parts)
+    assert entered.is_set(), "the deadline fired before the delivery reached the watch"
 
 
 def test_creator_has_no_merge_or_workflow_state_capability():
@@ -796,26 +847,20 @@ async def test_n_plus_one_lanes_share_the_configured_watch_bound(bound):
             return record.url, number
 
     owner._pr_creator = UniquePRs()
-    # These lanes are the subject, so they are driven directly rather than
-    # through the shared driver; the same claim is made once around them all.
+    # These lanes are the subject, and each is driven through the shared
+    # driver with its own state, so each carries the driver's deadline — a
+    # lane that reaches the watch and then stalls reds here rather than
+    # hanging the module run — and the driver's claims; the write-set claim
+    # is made once around them all as well.
     unwritten = nothing_written(parts[6])
     tasks = [
-        asyncio.create_task(
-            owner.deliver(
-                state=state,
-                context=context,
-                stalled=False,
-                remediation_available=False,
-            )
-        )
+        asyncio.create_task(deliver((owner, state, context, *parts[3:])))
         for state in states
     ]
     await asyncio.wait_for(entered.wait(), timeout=WAIT_BOUND)
     assert monitor.peak == bound
     release.set()
-    # Bounded for the same reason as the sibling fixture's awaits: a lane
-    # that reaches the watch and then stalls would hang the module run here.
-    results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=WAIT_BOUND)
+    results = await asyncio.gather(*tasks)
     assert {result.lane_key for result in results} == set(snapshots)
     assert all(result.outcome is WorkflowOutcome.ci_passed for result in results)
     assert monitor.peak == bound and monitor.active == 0
