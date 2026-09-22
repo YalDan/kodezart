@@ -270,7 +270,7 @@
   "tests/integration/test_scope_launch_freshness.py": 5,
   "tests/integration/test_scope_runtime.py": 494,
   "tests/integration/test_scope_union.py": 48,
-  "tests/integration/test_scope_walk_invariants.py": 15,
+  "tests/integration/test_scope_walk_invariants.py": 21,
   "tests/integration/test_self_running_chain.py": 21,
   "tests/integration/test_session_resume.py": 6,
   "tests/integration/test_stacked_scope.py": 29,
@@ -3893,7 +3893,8 @@
    "test_a_trunk_absent_from_the_remote_composes_nothing"
   ],
   "tests/integration/test_scope_walk_invariants.py": [
-   "test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_write"
+   "test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_write",
+   "test_the_union_step_timeout_an_operator_sets_changes_what_the_walk_states"
   ],
   "tests/integration/test_self_running_chain.py": [
    "test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket",
