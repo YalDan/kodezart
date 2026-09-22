@@ -82,7 +82,7 @@
   "tests/chains/test_native_prepare_cancel_peer.py": 7,
   "tests/chains/test_native_prepare_cleanup_peer.py": 7,
   "tests/chains/test_node_session_events.py": 16,
-  "tests/chains/test_organize.py": 156,
+  "tests/chains/test_organize.py": 235,
   "tests/chains/test_organize_correction.py": 6,
   "tests/chains/test_organize_delivery_independent.py": 16,
   "tests/chains/test_organize_description_authority.py": 10,
@@ -201,7 +201,7 @@
   "tests/domain/test_model_surfaces.py": 8,
   "tests/domain/test_no_ref_parsing.py": 1,
   "tests/domain/test_operation_optionality.py": 12,
-  "tests/domain/test_organize.py": 32,
+  "tests/domain/test_organize.py": 33,
   "tests/domain/test_organize_routing.py": 6,
   "tests/domain/test_outcome.py": 31,
   "tests/domain/test_owed_rulings.py": 47,
@@ -284,7 +284,7 @@
   "tests/probes/test_strict_output_enforcement.py": 12,
   "tests/probes/test_v5_orchestration_live.py": 7,
   "tests/prompts/sets.py": 1,
-  "tests/prompts/test_absence_bindings.py": 43,
+  "tests/prompts/test_absence_bindings.py": 48,
   "tests/prompts/test_amendment_prompts.py": 9,
   "tests/prompts/test_criteria_generation_prompts.py": 38,
   "tests/prompts/test_fire_record.py": 18,
@@ -1692,7 +1692,17 @@
    "test_change_stamp_detector_flags_a_gap_site_that_reads_the_field",
    "test_exactly_one_production_call_site_computes_the_organize_gap",
    "test_the_derivation_reaches_a_helper_that_hands_back_the_gaps_answer",
-   "test_the_call_site_count_reads_each_form_the_call_can_take"
+   "test_the_call_site_count_reads_each_form_the_call_can_take",
+   "test_an_unverifiable_admission_marks_the_ticket_only_on_a_real_in_scope_edge",
+   "test_a_fix_that_defects_a_second_surface_is_worked_in_the_next_round",
+   "test_a_round_that_writes_nothing_does_not_terminate",
+   "test_an_empty_work_set_still_spends_its_dry_round_and_goes_round_again",
+   "test_a_surface_held_by_another_run_leaves_the_mandate_open_and_escalated",
+   "test_a_finding_outside_the_admitted_scope_stays_a_refusal",
+   "test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read",
+   "test_both_sets_put_the_declared_environments_in_front_of_the_admission",
+   "test_an_undemonstrable_deliverable_is_refused_and_relocated_on_the_board",
+   "test_a_criterion_naming_no_demonstration_is_refused_before_it_is_created"
   ],
   "tests/chains/test_organize_correction.py": [
    "test_escalation_rechecks_approval_before_its_second_write"
@@ -3261,7 +3271,8 @@
    "test_scope_approval_gates_only_a_run_stage_and_never_marks_one",
    "test_blank_scope_label_is_not_a_resolved_gate",
    "test_normal_toml_loader_resolves_the_declared_phase_table",
-   "test_invalid_table_stops_normal_boot_before_tracker_or_dispatch"
+   "test_invalid_table_stops_normal_boot_before_tracker_or_dispatch",
+   "test_evidence_is_fillable_only_when_a_demonstration_is_named"
   ],
   "tests/domain/test_organize_routing.py": [
    "test_unverifiable_requires_both_the_real_blocked_by_edge_and_scope_membership",
@@ -3982,7 +3993,8 @@
    "test_a_team_carries_the_repository_pair_per_item",
    "test_a_principal_carries_the_forge_handle_pair_per_item",
    "test_an_unadopted_document_id_is_named_not_blank",
-   "test_a_gate_step_names_its_gatehood_instead_of_a_missing_ancestor"
+   "test_a_gate_step_names_its_gatehood_instead_of_a_missing_ancestor",
+   "test_a_repo_carries_the_runner_environment_pair_per_item"
   ],
   "tests/prompts/test_amendment_prompts.py": [
    "test_each_role_is_a_data_file_in_every_shipped_set",
