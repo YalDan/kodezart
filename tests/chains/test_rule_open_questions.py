@@ -34,6 +34,7 @@ from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import ResultEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import CriterionId
+from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -1014,15 +1015,20 @@ async def test_the_question_step_mints_a_pinned_answer_identity_and_no_criterion
 
 
 #: The mint the ruling path must never reach, and the tree it is scanned over.
-CRITERION_MINT = "criterion_ref"
+#: The word is the shipped function's own, so a rename moves the guard.
+CRITERION_MINT = fire_spec.criterion_ref.__name__
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 
-#: Both spellings a criterion identity is brought into being under: the mint
-#: function, and the identity type itself, which is constructed bare wherever
-#: a native key is captured. Read off the shipped type rather than written
-#: here, so a rename moves the guard. A path module reaching either one has
-#: minted a criterion identity, whichever word it used (KOD-639).
-CRITERION_IDENTITIES = frozenset({CRITERION_MINT, CriterionId.__name__})
+#: Every spelling a criterion identity is brought into being under, each read
+#: off the shipped object: the mint function, the native identity that mint
+#: itself returns, and the authored identity. Both identity types are
+#: ``NewType``s constructed bare wherever a key is captured, so constructing
+#: one is minting one, and the native one is what the question path would
+#: reach for. Derived from the objects rather than listed here, so neither a
+#: rename nor a hand-typed twin can leave a spelling out (KOD-639).
+CRITERION_IDENTITIES = frozenset(
+    {CRITERION_MINT, CriterionRef.__name__, CriterionId.__name__}
+)
 
 #: Every module of the pre-loop question path: the node, the component it
 #: drives, the arithmetic that component does, and the reader of what it wrote.
@@ -1040,14 +1046,81 @@ RULING_PATH = (
 MINT_CALLERS = {"domain/criterion_cross_off.py"}
 
 
-def _names_the_mint(module: Path, wanted: frozenset[str]) -> bool:
+def _source_trees() -> dict[str, ast.Module]:
+    """Every shipped module by its tree-relative path, parsed once."""
+    return {
+        str(module.relative_to(SOURCE_ROOT)): ast.parse(
+            module.read_text(encoding="utf-8")
+        )
+        for module in SOURCE_ROOT.rglob("*.py")
+    }
+
+
+def _bound_to(tree: ast.Module, known: frozenset[str]) -> set[str]:
+    """Every name this module binds to one of *known* itself.
+
+    The value rather than what it returns: ``address_one = criterion_ref``
+    hands the mint out under a second word, while ``key = criterion_ref(row)``
+    hands out the identity it minted, which is an ordinary value. An aliased
+    import is the same re-binding written as an import.
+    """
+
+    def resolves(value: ast.expr) -> bool:
+        return (isinstance(value, ast.Name) and value.id in known) or (
+            isinstance(value, ast.Attribute) and value.attr in known
+        )
+
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and resolves(node.value):
+            bound |= {
+                target.id for target in node.targets if isinstance(target, ast.Name)
+            }
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and node.value is not None
+            and isinstance(node.target, ast.Name)
+            and resolves(node.value)
+        ):
+            bound.add(node.target.id)
+        elif isinstance(node, ast.ImportFrom):
+            bound |= {
+                alias.asname
+                for alias in node.names
+                if alias.asname is not None and alias.name in known
+            }
+    return bound
+
+
+def _identity_names(trees: dict[str, ast.Module]) -> frozenset[str]:
+    """The identity spellings, plus every word the tree re-binds one to.
+
+    Pooled over the whole tree before any module is judged, because a
+    re-export lands in a module that may name the mint and is imported by one
+    that may not, and a set of names would then be answered by handing the
+    mint out under a third word. Grown hop by hop so an alias of an alias is
+    the same value again, bounded by the module count — a chain can cross a
+    module boundary at most once per module — and stopped as soon as a round
+    binds nothing new.
+    """
+    known = CRITERION_IDENTITIES
+    for _ in range(len(trees) + 1):
+        grown = known
+        for tree in trees.values():
+            grown |= _bound_to(tree, grown)
+        if grown == known:
+            break
+        known = grown
+    return known
+
+
+def _names_the_mint(tree: ast.Module, wanted: frozenset[str]) -> bool:
     """Whether this module names any of *wanted* as a value, import or definition.
 
     The name as an identifier, never as text: ``types/domain/criterion_ref.py``
     is a module path and ``CRITERION_REFUTED`` is a different name, so a
     substring search over the tree would report both and say nothing.
     """
-    tree = ast.parse(module.read_text(encoding="utf-8"))
     return any(
         (isinstance(node, ast.Name) and node.id in wanted)
         # The module-attribute form, which is the one the sentinel can see.
@@ -1065,13 +1138,9 @@ def _names_the_mint(module: Path, wanted: frozenset[str]) -> bool:
     )
 
 
-def _naming(wanted: frozenset[str]) -> set[str]:
+def _naming(trees: dict[str, ast.Module], wanted: frozenset[str]) -> set[str]:
     """Every module of the shipped tree that names any of *wanted*."""
-    return {
-        str(module.relative_to(SOURCE_ROOT))
-        for module in SOURCE_ROOT.rglob("*.py")
-        if _names_the_mint(module, wanted)
-    }
+    return {path for path, tree in trees.items() if _names_the_mint(tree, wanted)}
 
 
 def test_no_module_on_the_ruling_path_names_the_criterion_mint() -> None:
@@ -1088,32 +1157,42 @@ def test_no_module_on_the_ruling_path_names_the_criterion_mint() -> None:
     Read statically, and as a census rather than a spot check, so a new naming
     site is reported wherever it lands and however it is imported.
 
-    Two name sets, because the two assertions want different reach. The
-    path clause takes BOTH identity spellings: ``CriterionId(...)`` mints one
-    just as surely as the function does, and being a ``NewType`` it is even
-    less observable — so a path module naming either has crossed the line, and
-    none does today. The census takes the function alone, since the identity
-    type is legitimately named across ``types/``, ``chains/criteria.py`` and
-    ``domain/criteria.py`` and a total census over it would say nothing.
+    Two name sets, because the two assertions want different reach. The path
+    clause takes EVERY identity spelling, each derived from the shipped object:
+    constructing either ``NewType`` bare mints an identity just as surely as
+    calling the mint does, and being a ``NewType`` it is even less observable —
+    so a path module naming any of them has crossed the line, and none does
+    today. That set is then grown by every word the tree binds one of those
+    values to, pooled over the whole tree, so a re-export handing the mint out
+    under a second name is the mint where it is called. The census takes the
+    function alone, since the identity types are legitimately named across
+    ``types/``, ``chains/criteria.py`` and ``domain/criteria.py`` and a total
+    census over them would say nothing.
+
+    What this does not see: a value fetched by reflection, and a wrapper that
+    mints inside a function it hands back rather than binding the mint to a
+    name — both of which are reflection-shaped and neither of which any module
+    of this tree writes.
     """
-    identities = _naming(CRITERION_IDENTITIES)
-    naming = _naming(frozenset({CRITERION_MINT}))
+    trees = _source_trees()
+    identities = _naming(trees, _identity_names(trees))
+    naming = _naming(trees, frozenset({CRITERION_MINT}))
 
     # Non-vacuous: the scan finds the sites there are, and the module that
     # defines the mint is derived rather than named.
     (definer,) = {
-        str(module.relative_to(SOURCE_ROOT))
-        for module in SOURCE_ROOT.rglob("*.py")
+        path
+        for path, tree in trees.items()
         if any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name == CRITERION_MINT
-            for node in ast.walk(ast.parse(module.read_text(encoding="utf-8")))
+            for node in ast.walk(tree)
         )
     }
     assert definer == "domain/fire_spec.py"
 
     # The clause: no module of the question path names an identity mint at
-    # all, under either spelling.
+    # all, under any spelling or any word the tree binds one to.
     assert identities.isdisjoint(RULING_PATH), sorted(
         identities.intersection(RULING_PATH)
     )
