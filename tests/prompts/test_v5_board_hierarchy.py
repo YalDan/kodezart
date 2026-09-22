@@ -18,8 +18,13 @@ import pytest
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.types.domain.prompts import PromptKey
-from tests.prompts.sets import OPUS_SET, V5_SET, render_v5_case
-from tests.prompts.test_v5_fragments import fragment, prose, v5_bodies
+from tests.prompts.sets import OPUS_SET, V5_SET, render_v5_case, v5_registry
+from tests.prompts.test_v5_fragments import (
+    fragment,
+    member_files_carrying,
+    prose,
+    v5_bodies,
+)
 
 FRAGMENT_NAME = "board_hierarchy"
 
@@ -57,6 +62,18 @@ def member_files(set_name: str) -> list[str]:
     return [path.read_text(encoding="utf-8") for path in members]
 
 
+def lens_prompts() -> dict[str, str]:
+    """Every declared lens prompt of the new set, keyed by lens name.
+
+    A lens body resolves the set's fragments the way a member body does
+    and ships as an agent definition, so it is a composed prompt the
+    standard can reach and no function key names it.
+    """
+    declared = v5_registry().definitions()
+    assert declared
+    return {definition.name: definition.prompt for definition in declared}
+
+
 def test_the_board_hierarchy_is_declared_exactly_once() -> None:
     """One source: no member FILE states the standard for itself.
 
@@ -67,20 +84,36 @@ def test_the_board_hierarchy_is_declared_exactly_once() -> None:
     Every sentence is looked for, not the first line alone: a member that
     restated the last three sentences without the first would be a second,
     drifting copy that a first-line scan reports as nothing.
+
+    Scanned with the set's own file scan, which walks the whole sets root:
+    a lens body under `definitions/` is composed through the same fragment
+    seam as a member and shipped as an agent definition, so it is a file
+    the standard can be pasted into, and a directory-level glob never
+    looks there. The scan has its own reach control in the fragment
+    suite. Each carrier is reported with the sentence that found it.
     """
-    carriers = [
-        body
-        for body in member_files(V5_SET)
-        if any(sentence in body for sentence in SENTENCES)
-    ]
-    assert carriers == []
+    carriers = {
+        sentence: found
+        for sentence in SENTENCES
+        if (found := member_files_carrying(sentence))
+    }
+    assert carriers == {}
 
 
 def test_the_board_hierarchy_resolves_into_exactly_its_four_carriers() -> None:
-    """Countable carriers: the four roles that read or write placement."""
+    """Countable carriers: the four roles that read or write placement.
+
+    Counted over the composed lens bodies too, not the function keys
+    alone. A lens declared by the set resolves its fragments the same way
+    and is dispatched as an agent definition, so a `{{board_hierarchy}}`
+    placed in a lens body renders the standard into a fifth composed
+    prompt that a PromptKey census cannot see. No lens carries it.
+    """
     standard = fragment(FRAGMENT_NAME)
     carriers = {key for key, body in v5_bodies().items() if standard in body}
+    lenses = {name for name, body in lens_prompts().items() if standard in body}
     assert carriers == CARRIERS
+    assert lenses == set()
 
 
 @pytest.mark.parametrize("sentence", SENTENCES)
