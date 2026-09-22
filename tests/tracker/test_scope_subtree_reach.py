@@ -588,6 +588,13 @@ def test_every_filter_reason_is_stated_in_its_filters_own_terms() -> None:
         produced.append(entry)
 
     assert {entry.reason for entry in produced} == set(UnreachableReason)
+    # The spellings the walk's event carries on the wire, as documented.
+    assert {reason.value for reason in UnreachableReason} == {
+        "other_project",
+        "no_project",
+        "other_milestone",
+        "no_milestone",
+    }
 
 
 def test_an_issue_scope_that_omits_an_open_criterion_refuses() -> None:
