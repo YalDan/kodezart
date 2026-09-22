@@ -20,6 +20,7 @@ from fastapi.routing import APIRoute
 from pydantic import ValidationError
 
 from kodezart.config.app import AppConfig
+from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION
 from kodezart.main import create_app
 from kodezart.types.domain.agent import AgentEvent
 from tests.docs.configuration import (
@@ -32,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIGURATION_DOC = REPO_ROOT / "docs" / "configuration.md"
 API_DOC = REPO_ROOT / "docs" / "api.md"
 ARCHITECTURE_DOC = REPO_ROOT / "docs" / "architecture.md"
+MODEL_AGREEMENT_DOC = REPO_ROOT / "docs" / "model-agreement.md"
 README = REPO_ROOT / "README.md"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
@@ -323,6 +325,39 @@ def test_every_shipped_protocol_has_a_row_in_the_protocol_map() -> None:
 def test_no_documented_protocol_is_absent_from_the_port_module() -> None:
     """A row for a deleted protocol reads as a port the system still has."""
     assert _documented_protocols() - _shipped_protocols() == set()
+
+
+#: The sentence in the model agreement doc that names the semantic key a
+#: deployment maps for model membership, and the key itself as its one
+#: capture.  Anchored on both sides -- the port call it is read through and
+#: the config mapping it lives in -- so the pattern cannot drift onto some
+#: other backticked word in the document.
+_DOCUMENTED_MODEL_KEY = re.compile(
+    r"using the `([^`]+)` semantic key\s+in the existing "
+    r"`OperationConfig\.issue_labels` mapping",
+)
+
+
+def _documented_model_classification() -> str:
+    """The classification key the model agreement doc tells a deployment to map."""
+    found = _DOCUMENTED_MODEL_KEY.search(
+        MODEL_AGREEMENT_DOC.read_text(encoding="utf-8"),
+    )
+    assert found is not None, "the model agreement doc names no semantic key"
+    return found.group(1)
+
+
+def test_the_model_classification_is_the_key_the_agreement_doc_documents() -> None:
+    """The constant is the name a deployment configures, not a name of its own.
+
+    Every test and fixture derives the model marker from
+    ``MODEL_CLASSIFICATION``, so the constant respelled leaves the suite
+    green while a deployment whose operation file still maps the documented
+    key resolves no model at all and every writer leases only what it named
+    -- model scoping gone, silently.  Read off the document instead, so the
+    external name is what the constant is checked against (KOD-604).
+    """
+    assert MODEL_CLASSIFICATION == _documented_model_classification()
 
 
 # ---------------------------------------------------------------------------
