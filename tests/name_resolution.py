@@ -176,7 +176,14 @@ def resolve(
 
 
 def _binding(node: ast.AST) -> tuple[tuple[str, ...], ast.expr | None]:
-    """The names a statement binds and the value it binds them to."""
+    """The names a statement binds and the value it binds them to.
+
+    A loop target and a comprehension's own target are bound to the iterable
+    they walk, so a name taken one at a time out of a collection of values of
+    interest is one of those values; the two forms are the same binding
+    written two ways, and a comprehension covers the list, set, dict and
+    generator spellings alike.
+    """
     if isinstance(node, ast.Assign):
         return (
             tuple(target.id for target in node.targets if isinstance(target, ast.Name)),
@@ -187,6 +194,8 @@ def _binding(node: ast.AST) -> tuple[tuple[str, ...], ast.expr | None]:
             return (node.target.id,), node.value
         return (), None
     if isinstance(node, ast.For | ast.AsyncFor) and isinstance(node.target, ast.Name):
+        return (node.target.id,), node.iter
+    if isinstance(node, ast.comprehension) and isinstance(node.target, ast.Name):
         return (node.target.id,), node.iter
     if isinstance(node, ast.withitem) and isinstance(node.optional_vars, ast.Name):
         return (node.optional_vars.id,), node.context_expr
@@ -527,9 +536,10 @@ def bound_names(
 ) -> frozenset[str]:
     """Every local name bound to a value *yields* recognises, from *seeds*.
 
-    Over an assignment, an annotated assignment, a walrus, a ``for`` target
-    and a ``with ... as`` name, grown to a fixed point because a name can be
-    bound from another that is bound further down.  Module-wide: a word
+    Over an assignment, an annotated assignment, a walrus, a ``for`` target,
+    a comprehension's own target and a ``with ... as`` name, grown to a fixed
+    point because a name can be bound from another that is bound further
+    down.  Module-wide: a word
     bound to the value anywhere in the module is that value wherever the
     module reads it.  A tuple-unpacking target binds nothing here.
     """
