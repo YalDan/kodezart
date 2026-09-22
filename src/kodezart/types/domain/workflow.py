@@ -172,18 +172,22 @@ class RalphLoopContext(ExecutionContext):
     resumed from its record continues the branch the record names, and it
     adds no field to say so.  Anything that writes ``work_base_ref`` has
     to know the rule: a remediation round sets a NEW loop branch and
-    leaves this on the deliverable, so it cuts, which is correct.
+    leaves this on the deliverable, so it cuts, which is correct.  A
+    resumed lane whose record head is off its recorded loop branch is cut
+    the same way, like a new lane, from its work base, which is then the
+    head sha the record names.
     """
 
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
-    #: The remote head the lane's entry decided on, and ``None`` for a lane
-    #: that is cutting its branch rather than continuing one.  A first
-    #: iteration that checks an existing branch out gets the tree the CLONE
-    #: holds of it, so the loop compares the two before it opens a session:
-    #: a clone behind the head the entry read would carry work the criteria
-    #: the lane owes were already graded against.
+    #: The head the lane's record names, carried by a lane that entered on
+    #: a record, and ``None`` for a new lane.  A first iteration that checks
+    #: an existing branch out gets the tree the CLONE holds of it, so the
+    #: loop compares the two before it opens a session: a clone behind that
+    #: head would carry work the criteria the lane owes were already graded
+    #: against.  A lane cut from this head is cut from it and compares
+    #: nothing.
     resumed_head_sha: str | None = None
     acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
     tracker_spec: TrackerSpec | None = None

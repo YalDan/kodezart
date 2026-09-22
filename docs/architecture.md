@@ -266,15 +266,17 @@ fresh client needs no process cache, repository, trajectory or forge connection.
 `LaneEntryReader` gathers the facts one lane's entry is decided from and
 nothing else: the record, through that reader, and — only when a record exists
 — one remote head per branch that record's roles resolve. At re-entry the
-record is the only source of what the lane committed, so every branch is
-resolved through its associations before any remote is asked anything:
-`recorded_branches` resolves the loop, deliverable and base refs by ROLE, and
-`recorded_commit` names the commit the record holds as the last of its rows, on
-the branch the LOOP role resolves — never a ref composed from another ref's
-text, and never the head field read as the lane's best state. The loop level's
-remote head is read at that resolved branch and compared with that resolved
-sha; a record naming no commit act refuses, because a lane resumed against none
-has nothing to grade (KOD-705). The deliverable level is then read at the
+record is the only source of what the lane committed, so the record is
+resolved before any remote is asked anything: `recorded_lane` resolves the
+loop, deliverable and base refs by ROLE — never a ref composed from another
+ref's text — and the head as the record's last commit act, never the head field
+and never a remote reading. After a stall that last act is the landing act, so
+the head is the best iteration the landing chose. A record naming no commit act
+refuses, because a lane resumed against none has nothing to grade (KOD-705).
+The loop level's remote head is read at the branch the LOOP role resolves, and
+says whether the recorded loop branch still stands at that head; where it does
+not, the difference is logged under `lane_record_head_differs` with both shas.
+The deliverable level is then read at the
 branch the DELIVERABLE role resolves and compared with the tip of the base the
 record names: a deliverable branch that has taken nothing from its loop stands
 exactly where that base does, and one standing anywhere else carries work of
@@ -283,12 +285,14 @@ refused. Both shas reach the entry, so each level is answered by a sha of its
 own and neither stands in for the other.
 `decide_lane_entry` then decides from those facts alone. No record with an open criterion gap mints the
 lane's two names and cuts its loop branch from the base that resolves now; no
-record with an empty gap is nothing to do. A record with an open gap resumes on
-the recorded LOOP and DELIVERABLE branches at the REMOTE head, whether or not a
-pull request is recorded; a record whose gap is empty and that carries no pull
-request is a deliver-only entry, which the walker selects and dispatches for
-its delivery alone; a record carrying a pull request with an empty gap is
-nothing to do.
+record with an empty gap is nothing to do. A record with an open gap resumes at
+the record's head on its recorded DELIVERABLE branch, whether or not a pull
+request is recorded: on its recorded loop branch when the remote holds that
+branch at the head, and otherwise on a fresh loop branch cut from the head sha,
+with the old loop branch left where it stands (KOD-705, KOD-96). A record whose
+gap is empty and that carries no pull request is a deliver-only entry, which the
+walker selects and dispatches for its delivery alone; a record carrying a pull
+request with an empty gap is nothing to do.
 
 A lane the facts leave nothing to do RESTS. The walker states it by name under
 `scope_lane_nothing_to_do` and does not offer that lane again in the same
@@ -336,9 +340,11 @@ before any session and with nothing minted: an unreadable, duplicated or
 malformed record stays `LaneRecordReadError` and is never read as "no record";
 associations that settle no single deliverable or no single base, a recorded
 branch the remote no longer holds, and a recorded base that is not the base
-resolving now each raise `LaneEntryError`. A record head behind the remote head
-is NOT a refusal — the remote is the truth about what the branch contains and
-the record about which branch — and the difference is logged with both shas.
+resolving now each raise `LaneEntryError`. A loop branch the remote holds
+anywhere but the record's head is not resumed from: it is logged with both shas
+and left in place, and a lane owing nothing whose loop branch has left its head
+raises `LaneEntryError`, because delivering that branch as it stands would
+deliver a commit the record does not name.
 The subject text is read once, at the fire's entry, and compared with the
 digest the record pinned: a difference raises `SubjectAmendedError` before any
 session, and a record with no digest is not compared and is pinned by its next
@@ -347,7 +353,7 @@ every fire, so a killed process changes nothing about the next decision
 (KOD-684, KOD-433, KOD-840).
 
 `TrackerLaneStateWriter` is the write side of that same record, and of the
-criterion cross-off beside it. It has three calls. `record_commit` runs inside the
+criterion cross-off beside it. Its calls follow. `record_commit` runs inside the
 persisting phase of a native execution, between the push and the completion of
 the phase, so a commit and what it is recorded as are one operation: a record
 write that fails takes the phase with it. It reads
@@ -359,7 +365,7 @@ marker, machine authorship, the expected prior body) are what protect it. The
 first push also posts one `first_push` event under `marker_prefixes.run_event`;
 later commits post nothing, so the lane's comment count stops growing after it.
 
-`record_pull_request` is the second. The lane graph's delivering step makes it
+`record_pull_request` is another. The lane graph's delivering step makes it
 after the delivery coordinator returns, so where a completed delivery is
 retained is the record and not a graph checkpoint: it reads the record through
 the same reader, refuses a lane that has none rather than composing a first
@@ -367,7 +373,14 @@ record out of a delivery, writes nothing when the record already carries that
 pull request, and otherwise edits the one marker comment in place under the
 prior body it just read.
 
-`write_cross_offs` is the third call. `RalphLoop._evaluate_node` makes it once
+`record_landing` is the stall landing's act on that same record, through the
+same writer. The landing step makes it after it consolidated a stalled run's best
+iteration, and only when the landing put that work on the deliverable branch:
+the row names the tip the deliverable then stands at, so re-entry resumes there
+and not at the loop tip the landing was chosen over. It writes nothing when the
+record's newest act is already the landed sha.
+
+`write_cross_offs` is another call. `RalphLoop._evaluate_node` makes it once
 per iteration, after the grade and before the iteration event is emitted, so a
 consumer that sees the event for iteration n can read the tracker and find that
 iteration's cross-offs already on it. It is handed the roster the attempt was

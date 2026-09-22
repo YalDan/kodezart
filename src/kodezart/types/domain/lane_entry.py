@@ -16,11 +16,19 @@ class NewLane(CamelCaseModel):
 
 
 class ResumedLane(CamelCaseModel):
-    """A record exists and the lane still owes criteria: continue its branches.
+    """A record exists and the lane still owes criteria: resume at its head.
 
-    ``head_sha`` is the REMOTE head read at the decision, not the record's own
-    head: the remote is the truth about what the branch contains, while the
-    record is the truth about which branch.
+    ``head_sha`` is the head the RECORD names: its last commit act. After a
+    stall that is the landing act, so a lane resumes at the best iteration the
+    landing chose and never at the loop tip it was chosen over. No remote
+    reading is ever this value (KOD-705, KOD-96).
+
+    ``loop_branch`` is the recorded loop branch when the remote holds it at
+    exactly ``head_sha``, and the fire continues it. ``None`` says no recorded
+    loop branch stands there — a landing moved the lane's head off it, or a
+    commit was pushed that the record never took — and the fire cuts a fresh
+    loop branch from ``head_sha``. The old branch is left where it stands and
+    stays named by the record's associations.
 
     ``body_digest`` is the subject digest AS RECORDED, and ``None`` on a record
     written before the digest was pinned; the fire compares the text it reads
@@ -37,7 +45,7 @@ class ResumedLane(CamelCaseModel):
 
     kind: Literal["resumed"] = "resumed"
     deliverable_branch: str = Field(min_length=1)
-    loop_branch: str = Field(min_length=1)
+    loop_branch: Annotated[str, Field(min_length=1)] | None
     head_sha: str = Field(min_length=1)
     deliverable_head_sha: Annotated[str, Field(min_length=1)] | None
     body_digest: str | None
@@ -45,6 +53,12 @@ class ResumedLane(CamelCaseModel):
 
 class DeliverOnlyLane(CamelCaseModel):
     """A record exists, the lane owes no criterion and no pull request is recorded.
+
+    ``head_sha`` is the head the record names, its last commit act, and
+    ``loop_branch`` is the recorded loop branch, which the remote holds at
+    exactly that head: the decision refuses a lane owing nothing whose loop
+    branch has left its head, because delivering that branch as it stands
+    would deliver a commit the record does not name.
 
     ``deliverable_head_sha`` is read and carried exactly as a resumed lane
     carries it: the entry this one becomes is decided by the gap alone, so the

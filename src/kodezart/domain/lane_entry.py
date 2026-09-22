@@ -13,7 +13,7 @@ from kodezart.types.domain.lane_entry import (
     NewLane,
     ResumedLane,
 )
-from kodezart.types.domain.run_state import LaneRunState
+from kodezart.types.domain.run_state import LaneCommit, LaneRunState
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +23,19 @@ class RecordedBranches:
     loop_branch: str
     deliverable_branch: str
     recorded_base: str
+
+
+def _derived_from(*, record: LaneRunState, role: BranchRole, branch: str) -> set[str]:
+    """The ``derived_from`` of every association of *role* on *branch*.
+
+    Both resolutions below are this one question asked with a different role,
+    so the role is an argument and not a predicate spelled twice.
+    """
+    return {
+        item.derived_from
+        for item in record.associations
+        if item.role is role and item.branch == branch and item.derived_from is not None
+    }
 
 
 def recorded_branches(*, record: LaneRunState) -> RecordedBranches:
@@ -37,13 +50,9 @@ def recorded_branches(*, record: LaneRunState) -> RecordedBranches:
     cannot be entered: two of either would leave the resumed loop cut from a
     base, or delivered onto a branch, the record does not settle.
     """
-    deliverables = {
-        item.derived_from
-        for item in record.associations
-        if item.role is BranchRole.LOOP
-        and item.branch == record.branch
-        and item.derived_from is not None
-    }
+    deliverables = _derived_from(
+        record=record, role=BranchRole.LOOP, branch=record.branch
+    )
     if len(deliverables) != 1:
         raise LaneEntryError(
             issue_key=record.lane_key,
@@ -54,13 +63,9 @@ def recorded_branches(*, record: LaneRunState) -> RecordedBranches:
             branches=sorted(deliverables),
         )
     deliverable = deliverables.pop()
-    bases = {
-        item.derived_from
-        for item in record.associations
-        if item.role is BranchRole.DELIVERABLE
-        and item.branch == deliverable
-        and item.derived_from is not None
-    }
+    bases = _derived_from(
+        record=record, role=BranchRole.DELIVERABLE, branch=deliverable
+    )
     if len(bases) != 1:
         raise LaneEntryError(
             issue_key=record.lane_key,
@@ -76,25 +81,17 @@ def recorded_branches(*, record: LaneRunState) -> RecordedBranches:
     )
 
 
-@dataclass(frozen=True, slots=True)
-class RecordedCommit:
-    """A commit the record names, on the branch its LOOP role resolves it on."""
-
-    branch: str
-    sha: str
-
-
-def recorded_commit(
-    *, record: LaneRunState, branches: RecordedBranches
-) -> RecordedCommit:
-    """The best commit this lane recorded, resolved through the loop level.
+def recorded_commit(*, record: LaneRunState) -> LaneCommit:
+    """The commit act re-entry resumes at: the record's last row (KOD-681, KOD-705).
 
     At re-entry the record is the only source of what this lane committed.
-    The rows ARE the commit acts (KOD-681), so the last of them is the best
-    state the lane reached, and the branch it is reachable on is the one the
-    LOOP associations resolve — never a ref composed from another ref's
-    text.  A remote tip that has moved past it, or been reset behind it, does
-    not change which commit the record names.
+    The rows are the lane's commit acts in order. After a stall the last of
+    them is the landing act, written by the step that computed
+    ``landable_commit``, so this is where the best iteration reaches
+    re-entry. A record with no landing act names no best iteration, and its
+    last act is the only head it names. The head field is not read, and
+    neither is any remote: a remote tip that has moved past this commit, or
+    been reset behind it, does not change which commit the record names.
 
     A record naming no commit act refuses: a lane resumed against no
     recorded commit has nothing to grade, and guessing a sha off the head
@@ -104,9 +101,31 @@ def recorded_commit(
         raise LaneEntryError(
             issue_key=record.lane_key,
             reason="the record names no commit act",
-            branches=(branches.loop_branch,),
+            branches=(record.branch,),
         )
-    return RecordedCommit(branch=branches.loop_branch, sha=record.commits[-1].sha)
+    return record.commits[-1]
+
+
+@dataclass(frozen=True, slots=True)
+class RecordedLane:
+    """What a record alone settles about re-entering its lane, resolved once."""
+
+    record: LaneRunState
+    branches: RecordedBranches
+    head: LaneCommit
+
+
+def recorded_lane(*, record: LaneRunState) -> RecordedLane:
+    """Resolve the record's branches, then its head.
+
+    Every refusal made here — no single deliverable, no single base, no commit
+    act — is a fact of the record alone, so a caller makes it BEFORE it asks a
+    remote anything.
+    """
+    branches = recorded_branches(record=record)
+    return RecordedLane(
+        record=record, branches=branches, head=recorded_commit(record=record)
+    )
 
 
 def recorded_entry(entry: LaneEntry | None) -> ResumedLane | DeliverOnlyLane | None:
@@ -123,7 +142,7 @@ def recorded_entry(entry: LaneEntry | None) -> ResumedLane | DeliverOnlyLane | N
 def decide_lane_entry(
     *,
     issue_key: str,
-    recorded: tuple[LaneRunState, RecordedBranches] | None,
+    recorded: RecordedLane | None,
     remote_loop_head: str | None,
     remote_deliverable_head: str | None,
     open_criteria: Sequence[str],
@@ -132,9 +151,9 @@ def decide_lane_entry(
     """The one place a lane's entry is decided, from those facts alone.
 
     ``recorded`` is a record together with the branches its associations
-    resolve to, and the two travel as one value: resolving them refuses — no
-    single deliverable, no single base — and that refusal is a fact of the
-    record alone, so the caller makes it BEFORE it asks a remote anything.
+    resolve to and the head its rows name, as one value: resolving it refuses
+    on facts of the record alone, so the caller makes it BEFORE it asks a
+    remote anything.
 
     ``None`` is "nothing to do": a lane with no record and no open criterion
     was finished outside kodezart, and a lane whose record already carries a
@@ -147,11 +166,18 @@ def decide_lane_entry(
     branch was cut from a base the lane would no longer be diffed or
     delivered against.
 
-    A record head that differs from the remote head is NOT a refusal: the
-    lane resumes at the remote head, because the remote is the truth about
-    what the branch contains and the known cause is a commit pushed while its
-    record write failed. Refusing would strand exactly that lane; the next
-    commit's record write brings the record level again.
+    The head a recorded lane resumes at is the one its record names — the
+    last commit act, which after a stall is the landing act — and never a
+    remote reading (KOD-705, KOD-96). The loop level's remote reading says
+    only whether the recorded loop branch still stands at that head. When it
+    does, the lane continues that branch. When it does not — a landing moved
+    the head off it, or a commit was pushed while its record write failed —
+    the lane is not stranded and does not resume at a tip the record does not
+    name: the entry carries no loop branch and the fire cuts a fresh one from
+    the head sha, leaving the old branch where it stands. A lane owing
+    nothing whose loop branch has left its head refuses instead, because
+    delivering that branch as it stands would deliver a commit the record
+    does not name.
 
     ``remote_deliverable_head`` is the other level's own reading, and it is
     carried onto the entry rather than compared with anything here: where the
@@ -163,7 +189,7 @@ def decide_lane_entry(
     """
     if recorded is None:
         return NewLane() if open_criteria else None
-    record, branches = recorded
+    record, branches = recorded.record, recorded.branches
     if remote_loop_head is None:
         raise LaneEntryError(
             issue_key=issue_key,
@@ -179,20 +205,31 @@ def decide_lane_entry(
             ),
             branches=(branches.deliverable_branch,),
         )
+    head = recorded.head.sha
+    continued = remote_loop_head == head
     if open_criteria:
         return ResumedLane(
             deliverable_branch=branches.deliverable_branch,
-            loop_branch=branches.loop_branch,
-            head_sha=remote_loop_head,
+            loop_branch=branches.loop_branch if continued else None,
+            head_sha=head,
             deliverable_head_sha=remote_deliverable_head,
             body_digest=record.body_digest,
         )
     if record.pr is not None:
         return None
+    if not continued:
+        raise LaneEntryError(
+            issue_key=issue_key,
+            reason=(
+                "the recorded loop branch does not stand at the record's last "
+                "commit act, and a lane owing nothing would deliver it as it stands"
+            ),
+            branches=(branches.loop_branch,),
+        )
     return DeliverOnlyLane(
         deliverable_branch=branches.deliverable_branch,
         loop_branch=branches.loop_branch,
-        head_sha=remote_loop_head,
+        head_sha=head,
         deliverable_head_sha=remote_deliverable_head,
         body_digest=record.body_digest,
     )

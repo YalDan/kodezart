@@ -29,7 +29,7 @@ from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.domain.accept_gate import (
     gate_cleared,
 )
-from kodezart.domain.agent import mint_lane_branches
+from kodezart.domain.agent import generate_ralph_branch_name, mint_lane_branches
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.base_scope import scope_base
 from kodezart.domain.criteria_feasibility import (
@@ -609,9 +609,18 @@ class RalphWorkflowEngine:
         # The native arm holds no branch-generation node, so the lane's two
         # names come from its entry. A new lane draws them from its issue
         # key, and a key that could not stand inside a ref refuses here,
-        # before any node runs. A recorded lane continues the branches its
-        # record named and cuts nothing: work_base_ref IS the loop branch,
-        # which is how the loop is told the branch already exists.
+        # before any node runs. A recorded lane keeps its recorded
+        # deliverable branch and resumes at the head its record names
+        # (KOD-705), on one of two arms:
+        # * its recorded loop branch stands at that head, so the lane
+        #   continues it and cuts nothing: work_base_ref IS the loop branch,
+        #   which is how the loop is told the branch already exists;
+        # * no recorded loop branch stands there, so a fresh loop branch is
+        #   cut from the head sha, drawn the way a remediation round draws
+        #   one. The name is fresh because re-cutting the recorded one would
+        #   check out the clone's stale local copy of it instead of cutting
+        #   from the head, and could not be pushed over the remote's branch
+        #   without a force push; the old branch is left where it stands.
         feature_branch, ralph_branch = "", ""
         work_base_ref = base_spec.base_branch
         accept_verdict = AcceptVerdict.rejected
@@ -622,8 +631,11 @@ class RalphWorkflowEngine:
                     feature_branch, ralph_branch = mint_lane_branches(scope.key)
                 case ResumedLane():
                     feature_branch = entered.deliverable_branch
-                    ralph_branch = entered.loop_branch
-                    work_base_ref = entered.loop_branch
+                    if entered.loop_branch is None:
+                        ralph_branch = generate_ralph_branch_name(feature_branch)
+                        work_base_ref = entered.head_sha
+                    else:
+                        ralph_branch = work_base_ref = entered.loop_branch
                 case DeliverOnlyLane():
                     # The same two recorded branches a resumed lane
                     # continues, plus the one thing this entry asserts and
