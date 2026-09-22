@@ -1361,6 +1361,7 @@ GAP_COMPUTATION_MODULES = frozenset(
         "domain/organize.py",
         "domain/issue_tree.py",
         "chains/scope_walker.py",
+        "services/audit_terminal.py",
         "services/mandate_graph.py",
         "services/organize_owner.py",
         "services/run_shape.py",

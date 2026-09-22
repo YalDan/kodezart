@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import fields
 from inspect import signature
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -33,6 +34,7 @@ from kodezart.types.domain.agent import (
     DETECTOR_REMOVAL_SCHEMA,
 )
 from kodezart.types.domain.audit import AuditVerdict
+from kodezart.types.domain.audit_terminal import AuditTerminalRequest
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.types.domain.run_event import RunEventKind
@@ -447,6 +449,46 @@ async def test_independent_terminal_read_survives_failed_criterion(
             parent.terminal.verdict is AuditVerdict.HOLDS
             and parent.unavailable_reason is None
         )
+
+
+async def test_a_terminal_family_row_without_the_label_is_refused_as_a_read_failure(
+    setup, tracker, server, monkeypatch
+):
+    """The closure arithmetic is asked only about criterion sub-issues.
+
+    The port answers with the currently labelled direct criterion sub-issues,
+    and the terminal now reads whether that family owes anything through the
+    one arithmetic that decides it. A row arriving without the label is
+    answered as the read failure it is, rather than raising out of the
+    arithmetic as a programming error nothing catches.
+    """
+    _, _, git, cache, _, forge, _, op = setup
+    await state(tracker, server, ROOT, "In Review", WorkflowStateKind.STARTED)
+    await state(tracker, server, CHILD, "Done", WorkflowStateKind.COMPLETED)
+    reader = AuditTerminalReader(
+        tracker=tracker,
+        records=LaneRecordReader(tracker=tracker, operation=op),
+        forge=forge,
+        git=git,
+        cache=cache,
+        operation=op,
+        remote="configured-remote",
+    )
+    request = AuditTerminalRequest(issue_key=ROOT, lane_key=LANE, repo_url=REPO)
+    assert (await reader.observe(request)).verdict is AuditVerdict.HOLDS
+
+    rows = await tracker.read_criteria(issue_key=ROOT)
+    monkeypatch.setattr(
+        tracker,
+        "read_criteria",
+        AsyncMock(
+            return_value=[
+                row.model_copy(update={"issue_labels": frozenset()}) for row in rows
+            ]
+        ),
+    )
+    with pytest.raises(AuditClaimReadError, match="non-criterion"):
+        await reader.observe(request)
 
 
 async def test_criterion_only_scope_keeps_native_parent_in_mandate_set(setup):

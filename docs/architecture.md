@@ -404,7 +404,9 @@ clear over an outstanding lapse. Nothing persists that memory — the scope arm
 runs with no checkpointer — so a killed run re-enters from the board with every
 criterion its roster owes to be graded again. The owning issue's finished state is the
 tracker's own rollup over its criterion sub-issues, which `SubtreeClosure`
-reads, so the scope walker sees a lane close with no further write.
+reads, so the scope walker sees a lane close with no further write. Every
+reader of a finished state reaches that one arithmetic, the audit's terminal
+precondition among them, and nothing writes a parent's finished state.
 
 A native evaluation is graded in a workspace the loop owns, acquired at the sha
 the verdict will be stamped with. Before that workspace is released the loop
