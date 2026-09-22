@@ -2031,8 +2031,7 @@ async def test_a_lapse_is_a_state_move_back_while_a_standing_grading_stays_count
     # What a new fire over the same subject owes, read the way its entry
     # barrier reads it: the lapsed criterion is owed again, the standing one
     # is not.
-    spec = await lane.criteria.read_spec(issue_key=SUBJECT)
-    current = await lane.criteria.read_current(spec=spec)
+    _, current = await lane.criteria.read_entry(issue_key=SUBJECT)
     owed = {criterion.id for criterion in current.criteria}
     assert LAPSED in owed
     assert STANDING not in owed
