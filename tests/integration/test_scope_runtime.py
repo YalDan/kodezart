@@ -2022,6 +2022,50 @@ async def test_a_consolidated_lane_keeps_its_reaped_branch_associations():
 #: The ticks one single-criterion lane's accepted walk observes.
 TICKS_OF_A_REAPED_WALK = 2
 
+
+async def test_a_ticks_identity_resolves_to_its_evidence_row_and_its_records_commit():
+    """One tick, resolved both ways: to the board row and to the record.
+
+    For each criterion the walk finished, the identity the tick was written
+    under is a sub-issue of the lane its record is addressed under; the board
+    holds that sub-issue finished; its Evidence row carries the sha the record
+    names as this lane's head, and that sha is one of the record's own commit
+    rows; and the deliverable the record names stands at exactly that commit
+    after the consolidation. Nothing is opened under the artifact directory to
+    answer any of it — the walk over the sources keeps that directory
+    unreadable, and the tracker is what every answer here came from.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A", "B"))
+    harness = resumable(
+        port=port,
+        repos=repos,
+        lanes=("A", "B"),
+        evaluations=[*one_check_echoes("A"), *one_check_echoes("B")],
+    )
+    events = await bounded_walk(harness)
+
+    assert lane_failures(events) == ()
+    assert len(ticks_of(events)) == TICKS_OF_A_TWO_LANE_WALK
+    assert harness.artifacts.persist_calls == []
+    assert harness.artifacts.clean_calls == []
+    for lane in ("A", "B"):
+        key = f"{lane}/check"
+        criterion = port.issues[key]
+        record = await lane_record(port, lane)
+        assert criterion.parent_key == lane
+        assert criterion.state_kind is WorkflowStateKind.COMPLETED
+        assert (key, LifecycleStage.DONE) in port.workflow_writes
+        graded_sha = parse_criterion_evidence(criterion.body).graded_sha
+        assert graded_sha == record.head_sha
+        assert graded_sha in {row.sha for row in record.commits}
+        deliverable = recorded_branches(record=record).deliverable_branch
+        assert repos.head_of(deliverable) == graded_sha
+
+
+#: The ticks two single-criterion lanes' accepted walk observes.
+TICKS_OF_A_TWO_LANE_WALK = 3
+
 #: Two more criteria under lane A, so one iteration can pass some of its
 #: roster and fail the rest and the loop has somewhere left to go.
 FURTHER_CHECKS = ("A/second", "A/third")
