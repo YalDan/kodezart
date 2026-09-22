@@ -82,7 +82,7 @@
   "tests/chains/test_native_prepare_cancel_peer.py": 7,
   "tests/chains/test_native_prepare_cleanup_peer.py": 7,
   "tests/chains/test_node_session_events.py": 16,
-  "tests/chains/test_organize.py": 235,
+  "tests/chains/test_organize.py": 237,
   "tests/chains/test_organize_correction.py": 6,
   "tests/chains/test_organize_delivery_independent.py": 16,
   "tests/chains/test_organize_description_authority.py": 10,
