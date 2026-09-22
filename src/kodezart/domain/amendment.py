@@ -105,6 +105,40 @@ def upheld_reason(
     return None
 
 
+def escalation_question(
+    *,
+    reason: UpheldReason,
+    claim: AmendmentClaim,
+    judgment: AmendmentJudgment,
+) -> str:
+    """Compose the one question a refusal at an escalating reason asks a person.
+
+    Every reason is answered here, so a reason that raises no escalation is a
+    typed refusal rather than an empty question reaching a canonical write.
+    """
+    match reason:
+        case UpheldReason.COST_MEASURED_UNECONOMIC:
+            return f"Resolve the measured uneconomic departure for {claim.subject.id}"
+        case UpheldReason.ENVIRONMENT_LACKS_CAPABILITY:
+            capability = claim.claimed_capability
+            if capability is None:
+                raise NativeWriteRefusalError(
+                    "A missing-capability escalation requires the typed "
+                    "claimed capability"
+                )
+            return (
+                f"Resolve the missing capability {capability.value} for "
+                f"{claim.subject.id}: the demonstration needs "
+                f"{judgment.finding.missing_resource}, which the declared "
+                "runner environment does not provide. Declaring "
+                f"{capability.value} in the repository's runner environment "
+                "and firing again revives the criterion; otherwise a person "
+                "cancels the criterion with a supersession."
+            )
+        case _:
+            raise NativeWriteRefusalError(f"No escalation is raised at {reason.value}")
+
+
 def repeated_upheld(reports: Sequence[AmendmentReport]) -> tuple[RepeatedUpheld, ...]:
     """Count exact subjects and reasons without changing loop trajectory."""
     counts: Counter[tuple[str, str, UpheldReason]] = Counter()

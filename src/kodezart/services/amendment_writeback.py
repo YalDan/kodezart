@@ -26,6 +26,7 @@ from kodezart.core.protocols import (
 from kodezart.domain.amendment import (
     AmendmentWriteBackRefusalError,
     NativeWriteRefusalError,
+    escalation_question,
 )
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.fire_spec import (
@@ -43,6 +44,7 @@ from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.types.domain.agent import AMENDMENT_TEXT_SCHEMA, Ruling, RulingAuthor
 from kodezart.types.domain.amendment import (
+    ESCALATED_REASONS,
     AmendedAmendment,
     AmendmentClaim,
     AmendmentJudgment,
@@ -438,11 +440,12 @@ class AmendmentWriteBack:
             await authority.observe_archive(artifact=archive_result.artifact)
             if reason is not None:
                 publication = RecordedRefusal(record=archive_result)
-                if reason is UpheldReason.COST_MEASURED_UNECONOMIC:
+                if reason in ESCALATED_REASONS:
                     escalation_result = await self._escalate(
                         claim=claim,
                         judgment=judgment,
                         prior=prior,
+                        reason=reason,
                         lane_key=lane_key,
                         holder=holder,
                         occurrence=occurrence,
@@ -615,6 +618,7 @@ class AmendmentWriteBack:
         claim: AmendmentClaim,
         judgment: AmendmentJudgment,
         prior: TrackerArtifact,
+        reason: UpheldReason,
         lane_key: str,
         holder: str,
         occurrence: str,
@@ -630,7 +634,7 @@ class AmendmentWriteBack:
         surface = WritableSurface(
             kind=SurfaceKind.MARKER_COMMENT, ref=prior.surface.ref, marker=marker
         )
-        question = f"Resolve the measured uneconomic departure for {claim.subject.id}"
+        question = escalation_question(reason=reason, claim=claim, judgment=judgment)
 
         async def write(finding: WriteBackFinding | None) -> None:
             nonlocal question

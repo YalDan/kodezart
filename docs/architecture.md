@@ -415,6 +415,24 @@ not passed with one fixed reason and each cross-off carries
 `CrossOffState.undemonstrated` instead of a pass or a fail. Nothing reaches the
 tracker for such an attempt.
 
+A criterion this environment cannot demonstrate at all is a separate reading, and
+it is not a fact about the branch. A judged unverifiable finding whose claim names
+a typed capability the matched repository's configured `runner_environment` does
+not provide — that configuration alone decides it; no session observes a probe —
+upholds the existing criterion at `environment_lacks_capability`. The refusal is
+recorded where every refusal is, as the amendment marker comment on the
+criterion's own sub-issue, naming the capability, and it escalates once under the
+same refusal occurrence that keys that record, on that same sub-issue, which is
+then classified `decision`. A cost never reaches this reason: a departure resting
+on a cost claim is settled by its own measurement and returns a measured reason of
+its own. The machine moves no state, so the subtree still reads and the lane goes
+on owing that criterion until a person cancels it with a supersession; and
+`CrossOffState.undemonstrated` above keeps its own workspace-hygiene meaning and
+is not used for this. Because the plan read refuses while any open issue in a
+member's subtree carries `decision`, the scope tick after such an escalation ends
+the run naming that criterion, which is the barrier holding the walk until a
+person answers.
+
 `render_lane_record` places one readable JSON value under that marker, followed
 by fixed re-entry guidance. The record preserves three-state remote head facts,
 ordered `LaneCommit` rows — one row per commit act, not one per loop iteration:
