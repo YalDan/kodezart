@@ -5,15 +5,18 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from kodezart.types.domain.amendment import (
+    AmendedAmendment,
     AmendmentClaim,
     AmendmentJudgment,
     AmendmentReport,
     AmendmentSubject,
     RepeatedUpheld,
+    RulingSubject,
     UpheldReason,
 )
 from kodezart.types.domain.criteria import CriterionVerdict
 from kodezart.types.domain.operation import CheckPrerequisite
+from kodezart.types.domain.ruling_id import RulingId
 from kodezart.types.domain.write_back import WriteBackResult
 
 if TYPE_CHECKING:
@@ -60,6 +63,37 @@ class AmendmentWriteBackRefusalError(NativeWriteRefusalError):
         super().__init__(
             "Canonical amendment write-back exhausted its configured bound"
         )
+
+
+class AssertionWeakenedError(NativeWriteRefusalError):
+    """A harness commit loses an assertion a pinned record designates.
+
+    ``marks`` holds the keys of the criteria the loss was minted as, in the
+    order they were minted, and is empty when the refusal came before any
+    mint could be made.
+    """
+
+    def __init__(self, *, lane_key: str, marks: tuple[str, ...]) -> None:
+        self.lane_key = lane_key
+        self.marks = marks
+        super().__init__(
+            "The harness commit loses an assertion a pinned record designates; "
+            "it is not published and the lane carries the obligation"
+        )
+
+
+def amended_records(report: AmendmentReport) -> frozenset[RulingId]:
+    """The pinned records this report amended, by their own identities.
+
+    Only an applied amendment of a record exempts it: an upheld departure
+    changed nothing, and a criterion subject designates no test at all.
+    """
+    return frozenset(
+        verdict.subject.id
+        for verdict in report.verdicts
+        if isinstance(verdict, AmendedAmendment)
+        and isinstance(verdict.subject, RulingSubject)
+    )
 
 
 def upheld_reason(

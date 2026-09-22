@@ -8,8 +8,23 @@ from typing import get_type_hints
 import pytest
 from pydantic import ValidationError
 
-from kodezart.domain.rulings import parse_ruling, render_ruling, repeated_designations
+from kodezart.domain.amendment import amended_records
+from kodezart.domain.rulings import (
+    designated_tests,
+    parse_ruling,
+    render_ruling,
+    repeated_designations,
+)
 from kodezart.types.domain.agent import Ruling, RulingId, RulingProtectedTestRef
+from kodezart.types.domain.amendment import (
+    AmendedAmendment,
+    AmendmentReport,
+    RulingSubject,
+)
+from kodezart.types.domain.audit import TrackerArtifact
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from tests.domain.test_amendment import amended, record
 from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
 
 #: Two designated-test addresses whose sorted order is the reverse of the order
@@ -198,3 +213,82 @@ reference = RulingProtectedTestRef(
     assert refused.returncode == 1, refused.stdout + refused.stderr
     assert 'Argument "source_ref"' in refused.stdout
     assert 'incompatible type "str"; expected "RulingId"' in refused.stdout
+
+
+def amended_ruling(identity):
+    """An applied amendment of the pinned record *identity* designates tests with."""
+    subject = RulingSubject(id=identity)
+    surface = WritableSurface(
+        kind=SurfaceKind.MARKER_COMMENT,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=LANE),
+        marker="[fixture-pinned:lane]",
+    )
+    prior = TrackerArtifact(
+        surface=surface, native_ref="record-comment", content="[prior record bytes]"
+    )
+    return AmendedAmendment.model_validate(
+        {
+            **amended().model_dump(),
+            "claim": {**amended().claim.model_dump(), "subject": subject.model_dump()},
+            "judgment": {
+                **amended().judgment.model_dump(),
+                "subject": subject.model_dump(),
+            },
+            "prior": prior.model_dump(),
+            "archive": {
+                **amended().archive.model_dump(),
+                "artifact": prior.model_copy(
+                    update={"native_ref": "record-archive"}
+                ).model_dump(),
+            },
+            "applied": {
+                **amended().applied.model_dump(),
+                "artifact": prior.model_copy(
+                    update={"content": "[amended record bytes]"}
+                ).model_dump(),
+            },
+        }
+    )
+
+
+def designating(identity, *addresses):
+    """A record with *identity* designating each ``(path, name)`` of *addresses*."""
+    data = ruling_data()
+    data["ruling_id"] = identity
+    data["protected_tests"] = tuple(
+        RulingProtectedTestRef(source_ref=identity, path=path, qualified_name=name)
+        for path, name in addresses
+    )
+    return Ruling.model_validate(data)
+
+
+def test_designated_tests_skip_an_amended_record_and_an_undesignating_record():
+    designating_record = designating("record/one", CONTRACT)
+    silent = Ruling.model_validate(ruling_data())
+    explicitly_none = Ruling.model_validate({**ruling_data(), "protected_tests": ()})
+    roster = (designating_record, silent, explicitly_none)
+
+    assert silent.protected_tests is None
+    assert designated_tests(roster, amended=()) == designating_record.protected_tests
+    assert designated_tests(roster, amended=("record/one",)) == ()
+    assert designated_tests((), amended=()) == ()
+
+
+def test_only_the_records_a_report_amended_are_exempt():
+    first = designating("record/one", CONTRACT)
+    second = designating("record/two", BOUNDARY)
+    roster = (first, second)
+    report = AmendmentReport(verdicts=(amended_ruling("record/one"),))
+    upheld = AmendmentReport(verdicts=(record(kind="ruling", identity="record/one"),))
+    criterion = AmendmentReport(verdicts=(amended(),))
+
+    assert amended_records(report) == frozenset({"record/one"})
+    assert designated_tests(roster, amended=amended_records(report)) == (
+        second.protected_tests[0],
+    )
+    assert amended_records(upheld) == frozenset()
+    assert amended_records(criterion) == frozenset()
+    assert designated_tests(roster, amended=amended_records(upheld)) == (
+        first.protected_tests[0],
+        second.protected_tests[0],
+    )

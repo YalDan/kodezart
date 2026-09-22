@@ -7,20 +7,19 @@ the two port members that answer with a criterion family.  A second
 implementation, a call of the descent from outside the adapter, or a second
 definition that lists children by parent on the wire each redden.
 
-The mint has one declaration, one implementation and one caller: the
-criteria stage's own write step.  Its adapter method is identified by the
-surface kind the port declaration itself names for the mint and by the
-creation payload the adapter's write verifier recognises — not by a save
-method, of which the adapter has none, and not by the criterion
-classification label, which the classification writer also resolves.
-Pinned elsewhere and not repeated here: the identity value's one
-construction site, which the criterion-lifecycle conformance module asserts
-over the whole package; that the stage rules the criterion sub-issue set is
-the proposal's list, which the run-stage owner case asserts; and the two
-exact call-site registers that name the member, which are unchanged.  A
-segregated writer role for the mint, which the house port shape would
-prefer over the aggregate declaration, is for the piece that next touches
-the port.
+The mint is declared on the aggregate port and on the segregated writer
+role narrowed out of it, implemented once, and called once per holder: the
+criteria stage's own write step, and the mark one lost designated assertion
+leaves on its lane.  Its adapter method is identified by the surface kind
+the port declaration itself names for the mint and by the creation payload
+the adapter's write verifier recognises — not by a save method, of which the
+adapter has none, and not by the criterion classification label, which the
+classification writer also resolves.  Pinned elsewhere and not repeated
+here: the identity value's one construction site, which the
+criterion-lifecycle conformance module asserts over the whole package; that
+the stage rules the criterion sub-issue set is the proposal's list, which
+the run-stage owner case asserts; and the two exact call-site registers that
+name the member.
 
 Every name the guard looks for is read off an object — the members off the
 port protocols, the privates off the adapter class, the surface off the
@@ -53,8 +52,13 @@ import pytest
 
 from kodezart.adapters.linear.scope_reader import LinearScopeReader
 from kodezart.adapters.linear.tracker import _TOOL_LIST_ISSUES, LinearMcpTracker
-from kodezart.core.protocols import TrackerCriteriaReader, TrackerPort
+from kodezart.core.protocols import (
+    CriterionMinter,
+    TrackerCriteriaReader,
+    TrackerPort,
+)
 from kodezart.services.organize_owner import OrganizeOwner
+from kodezart.services.weakened_assertions import WeakenedAssertionMarks
 from kodezart.types.domain.surface import SurfaceKind
 from tests.domain.test_criterion_cross_off import (
     callers_of,
@@ -82,6 +86,7 @@ ADAPTER = module_of(LinearMcpTracker)
 ADAPTERS = ADAPTER.split("/", 1)[0]
 SCOPE_READER = module_of(LinearScopeReader)
 OWNER = module_of(OrganizeOwner)
+MARKS = module_of(WeakenedAssertionMarks)
 READ = TrackerCriteriaReader.read_criteria.__name__
 DESCENT = LinearMcpTracker._read_criteria.__name__
 FAMILY = LinearMcpTracker._read_criterion_family.__name__
@@ -400,28 +405,40 @@ def mint_surfaces(sources: dict[str, str]) -> dict[str, list[str]]:
 
 
 def test_the_criteria_stage_is_the_only_caller_of_the_criterion_mint():
-    """The mint is declared once, implemented once and called from one step.
+    """The mint is declared on two roles, implemented once, called once each.
 
-    The member, the stage class and its write step are all read off the code,
-    so renaming any of them moves the guard.  The call sits in a closure of
-    the write step; the step is what the stage holds, so the assertion is on
-    that prefix and the closure's own tail stays the code's word.  A second
-    closure in the same step would be a second calling definition and would
-    redden the count.
+    The member, the classes and their steps are all read off the code, so
+    renaming any of them moves the guard.  The port module declares the
+    aggregate and the narrow minting role; the adapter implements it once.
+    The stage's call sits in a closure of its write step, and the step is what
+    the stage holds, so that assertion is on the prefix and the closure's own
+    tail stays the code's word; a second closure in the same step would be a
+    second calling definition and would redden the count.  The mark's call
+    sits in the method's own body, and the equality over the callers is exact,
+    so a third holder of the mint still reddens.
     """
     sources = source_tree()
 
     assert by_module(sources, lambda tree: definitions_of(tree, name=MINT)) == {
         ADAPTER: [LinearMcpTracker.create_criterion_if_absent.__qualname__],
-        PORT: [TrackerPort.create_criterion_if_absent.__qualname__],
+        PORT: sorted(
+            {
+                CriterionMinter.create_criterion_if_absent.__qualname__,
+                TrackerPort.create_criterion_if_absent.__qualname__,
+            }
+        ),
     }
     callers = by_module(sources, lambda tree: callers_of(tree, name=MINT))
 
-    assert set(callers) == {OWNER}
+    assert set(callers) == {OWNER, MARKS}
     assert len(callers[OWNER]) == 1
     assert callers[OWNER][0].startswith(
         f"{OrganizeOwner.__name__}.{OrganizeOwner._author_write.__name__}."
     )
+    assert callers[MARKS] == [
+        f"{WeakenedAssertionMarks.__name__}."
+        f"{WeakenedAssertionMarks.refuse_weakening.__name__}"
+    ]
 
 
 def test_the_adapter_holds_one_minting_method():

@@ -99,12 +99,13 @@ does not exist.
 | SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
 | RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: one keyed record read and rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
 | LaneEventHistory | LinearMcpTracker | A lane's posted events read for a grading's provenance; narrowed out of the port rather than added to it, and holding no write |
+| CriterionMinter | LinearMcpTracker | Exactly the tracker calls one obligation mint makes, the lease on a lane's criterion child set and the mint under it, narrowed out of the port rather than added to it; it holds no workflow state, description edit or criterion reset, so its holder can add an obligation and change nothing the lane already carries |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
 | WriteBackStep | _EscalationStep and the per-surface step bodies of the organize, amendment and audit writers | One writing step the verifier drives: the step owns its write and names the surface re-read after it |
 | WriteBackJudge | FreshWriteBackJudge | Judges the artifact that landed, in a session that wrote none of it |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
-| NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and ruling records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication |
+| NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and ruling records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication, and refuses a commit that loses an assertion a pinned record designates, leaving the mark as a criterion on the lane |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
 | QualityGate       | RalphLoop                | LangGraph iterative execute/evaluate loop            |
 | TicketGenerator   | TicketGenerationLoop     | LangGraph draft/review loop                          |

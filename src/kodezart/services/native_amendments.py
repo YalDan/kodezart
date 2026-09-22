@@ -23,6 +23,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.amendment import (
     NativeWriteRefusalError,
+    amended_records,
     upheld_reason,
 )
 from kodezart.domain.comment_markers import configured_marker_prefix
@@ -35,7 +36,11 @@ from kodezart.domain.errors import (
     WriteBackReadError,
 )
 from kodezart.domain.fire_spec import criterion_check
-from kodezart.domain.rulings import pinned_registry, repeated_designations
+from kodezart.domain.rulings import (
+    designated_tests,
+    pinned_registry,
+    repeated_designations,
+)
 from kodezart.services.amendment_writeback import (
     AmendmentSource,
     AmendmentWriteBack,
@@ -47,6 +52,7 @@ from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.services.scope_membership import read_scope_members
 from kodezart.services.tracker_artifacts import read_tracker_artifact
+from kodezart.services.weakened_assertions import WeakenedAssertionMarks
 from kodezart.types.domain.agent import AMENDMENT_JUDGMENT_SCHEMA, Ruling
 from kodezart.types.domain.amendment import (
     AmendmentClaim,
@@ -120,6 +126,9 @@ class NativeAmendments:
         self._repositories = tuple(repositories)
         self._operation, self._gate = operation, gate
         self._max_verify_rounds, self._lease_seconds = max_verify_rounds, lease_seconds
+        self._marks = WeakenedAssertionMarks(
+            tracker=tracker, source=source, gate=gate, lease_seconds=lease_seconds
+        )
 
     def for_writer(
         self,
@@ -422,6 +431,39 @@ class _NativeWriterGuard:
         ):
             raise NativeWriteRefusalError("The resolved native base changed")
         await self._require_head(workspace_path, expected_head_sha)
+
+    async def require_unweakened(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        commit_sha: str,
+        report: AmendmentReport,
+    ) -> None:
+        """Compare the writer's own starting HEAD with the harness commit.
+
+        The starting HEAD and not the resolved base: an earlier writer on
+        this branch made its changes through the records it held, and a test
+        this branch itself created is absent at the base, so a comparison
+        against the base would refuse every publication and re-mark work
+        already accounted for.
+
+        The records this run amended are exempt. Their designations survive
+        the amendment unchanged, so only the report says which departures
+        were claimed and independently judged.
+        """
+        if self._rulings is None:
+            raise NativeWriteRefusalError("The native writer was not initialized")
+        designated = designated_tests(self._rulings, amended=amended_records(report))
+        await self._owner._marks.refuse_weakening(
+            repo_path=workspace_path,
+            lane_key=self._spec.subject,
+            start_sha=start.head_sha,
+            commit_sha=commit_sha,
+            designated=designated,
+            holder=self.holder,
+            visibility=self._visibility,
+        )
 
     async def require_unchanged_head(
         self,

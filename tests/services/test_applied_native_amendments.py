@@ -5,14 +5,22 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.domain.amendment import AmendmentWriteBackRefusalError
+from kodezart.core.errors import TrackerUnavailableError
+from kodezart.domain import gap
+from kodezart.domain.amendment import (
+    AmendmentWriteBackRefusalError,
+    AssertionWeakenedError,
+)
+from kodezart.domain.assertion_drift import protected_assertions, weakening_mark
 from kodezart.domain.errors import SurfaceLeaseError
 from kodezart.domain.fire_spec import criterion_field_bodies
+from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION
 from kodezart.domain.rulings import render_ruling
 from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.amendment_write import AmendmentRecord
+from kodezart.types.domain.assertion_drift import AssertionDeviationClaim
 from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -790,5 +798,312 @@ async def test_a_held_marked_model_refuses_the_write_backs_own_acquisition(repos
         with pytest.raises(SurfaceLeaseError):
             await drive(service, guard, repository)
         assert AMENDED_CHECK not in port.issues[DIRECT_OWED].body
+    finally:
+        await cleanup(workspace)
+
+
+async def designated_repository(repo, port):
+    """Pin a record designating the boundary test and commit it on ``main``."""
+    pinned = pinned_designation(issue_ref=SUBJECT)
+    await port.post_comment(
+        issue_key=SUBJECT,
+        body=render_ruling(
+            ruling=pinned,
+            lane_key=SUBJECT,
+            marker_prefixes={"ruling": "fixture-pinned"},
+        ),
+    )
+    designated = Path(repo, PROTECTED_PATH)
+    designated.parent.mkdir(parents=True, exist_ok=True)
+    designated.write_text(PROTECTED_BODY)
+    await git(repo, "add", ".")
+    await git(repo, "commit", "-m", "the designated boundary test")
+    return pinned
+
+
+def criterion_children(port):
+    """The lane's criterion sub-issues, by key."""
+    return {
+        key: issue
+        for key, issue in port.issues.items()
+        if issue.parent_key == SUBJECT and "criterion" in issue.issue_labels
+    }
+
+
+async def weaken(title, payload, kwargs):
+    """Rewrite the designated test's assertion, claiming no departure for it."""
+    if title != "NativeWriterOutput":
+        return
+    target = Path(kwargs["cwd"], PROTECTED_PATH)
+    assert target.read_text() == PROTECTED_BODY
+    target.write_text(WEAKENED_BODY)
+
+
+def rendered_mark(pinned):
+    """The mark the loss of this designation's only assertion renders."""
+    lost = protected_assertions(
+        source=PROTECTED_BODY.encode(),
+        path=PROTECTED_PATH,
+        qualified_name=PROTECTED_NAME,
+    )
+    return weakening_mark(
+        claim=AssertionDeviationClaim(
+            protected_test=pinned.protected_tests[0],
+            graded_sha="a" * 40,
+            head_sha="b" * 40,
+            graded_blob_sha="c" * 40,
+            head_blob_sha="d" * 40,
+            before=lost,
+            after=(),
+        ),
+        lost=lost,
+    )
+
+
+async def test_a_weakened_designated_assertion_marks_the_lane_and_is_never_pushed(
+    repository,
+):
+    """The commit exists in the workspace; the obligation exists on the lane.
+
+    No departure was claimed for the edit, so no judgment session ran and the
+    amendment arm had nothing to uphold: what refuses the publication is the
+    comparison between the writer's own starting HEAD and the harness commit.
+    The mark is one unstarted criterion sub-issue on the lane whose Check is
+    the rendered text byte for byte, and it sits in the gap read the Check
+    names, ``kodezart.domain.gap.compute_gap``.
+    """
+    repo = repository[0]
+    port = tracker()
+    pinned = await designated_repository(repo, port)
+    before = criterion_children(port)
+    executor = Executor(claim=False, mutate=weaken)
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        with pytest.raises(AssertionWeakenedError) as caught:
+            await drive(service, guard, repository)
+        # The commit really was made, in the writer's own workspace, and it
+        # carries the weakened bytes.
+        path = workspace.acquired[0][0]
+        assert await git(path, "rev-parse", "HEAD") != await git(
+            repo, "rev-parse", "main"
+        )
+        assert await git(path, "show", f"HEAD:{PROTECTED_PATH}") == (
+            WEAKENED_BODY.strip()
+        )
+        minted = {
+            key: issue
+            for key, issue in criterion_children(port).items()
+            if key not in before
+        }
+        assert len(minted) == 1
+        (key,) = minted
+        assert minted[key].parent_key == SUBJECT
+        assert "criterion" in minted[key].issue_labels
+        assert minted[key].state_kind is WorkflowStateKind.UNSTARTED
+        assert caught.value.marks == (key,)
+        assert caught.value.lane_key == SUBJECT
+        # The Check is the rendered mark, byte for byte, and it names the test,
+        # the record and the assertion that went — not the one that replaced it.
+        check = criterion_field_bodies(minted[key].body, field="Check")[0]
+        assert check == rendered_mark(pinned).check
+        assert PROTECTED_PATH in check
+        assert PROTECTED_NAME in check
+        assert pinned.ruling_id in check
+        assert "answer() == 42" in check
+        assert "answer() is not None" not in check
+        # The mark is in the gap read over the lane's own criterion sub-issues.
+        assert key in {
+            issue.issue_key
+            for issue in gap.compute_gap(
+                criteria=await port.read_criteria(issue_key=SUBJECT),
+                supersession_refs={},
+            )
+        }
+        # And nothing was published: no remote branch and no judgment session,
+        # because no departure was claimed for the edit.
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
+        assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
+            "NativeWriterOutput",
+            "CommitMessageOutput",
+        ]
+    finally:
+        await cleanup(workspace)
+
+
+async def test_the_mark_keeps_the_lane_out_of_convergence_until_it_is_done(repository):
+    """One arithmetic: with every other criterion Done the mark is the whole gap.
+
+    The subtree rollup is the reading the walk's ready set, the lane roster's
+    ``done`` and the terminal's outcome are all made of, so a lane carrying
+    this mark cannot converge, and crossing the mark off is what closes it.
+    """
+    repo = repository[0]
+    port = tracker()
+    await designated_repository(repo, port)
+    before = criterion_children(port)
+    executor = Executor(claim=False, mutate=weaken)
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        with pytest.raises(AssertionWeakenedError) as caught:
+            await drive(service, guard, repository)
+        (key,) = caught.value.marks
+        for issue_key, issue in list(port.issues.items()):
+            if "criterion" in issue.issue_labels and issue_key != key:
+                port.issues[issue_key] = issue.model_copy(
+                    update={
+                        "state_name": "Done",
+                        "state_kind": WorkflowStateKind.COMPLETED,
+                    }
+                )
+        standing = SubtreeClosure(
+            facts=port.issues, ref=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
+        )
+
+        assert [issue.issue_key for issue in standing.gap(SUBJECT)] == [key]
+        assert standing.is_closed(SUBJECT) is False
+        assert key not in before
+
+        port.issues[key] = port.issues[key].model_copy(
+            update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+        )
+        crossed = SubtreeClosure(
+            facts=port.issues, ref=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
+        )
+
+        assert crossed.gap(SUBJECT) == ()
+        assert crossed.is_closed(SUBJECT) is True
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_second_weakening_of_the_same_assertion_finds_the_same_mark(repository):
+    """The mark names no sha, so the same loss twice is the same obligation.
+
+    The second run cuts its branch afresh from the same starting point and
+    makes the same edit, so the rendered Check is the same bytes and the
+    mint's own identity — exact parent plus current Check — answers with the
+    child that already stands rather than a second one.
+    """
+    repo = repository[0]
+    port = tracker()
+    await designated_repository(repo, port)
+    first_executor = Executor(claim=False, mutate=weaken)
+    service, guard, workspace, port = await build(repository, first_executor, port=port)
+    try:
+        with pytest.raises(AssertionWeakenedError) as first:
+            await drive(service, guard, repository)
+        after_first = criterion_children(port)
+    finally:
+        await cleanup(workspace)
+    await git(repo, "branch", "-D", "native-test")
+    second_executor = Executor(claim=False, mutate=weaken)
+    service, guard, workspace, port = await build(
+        repository, second_executor, port=port
+    )
+    try:
+        with pytest.raises(AssertionWeakenedError) as second:
+            await drive(service, guard, repository)
+
+        assert criterion_children(port) == after_first
+        assert second.value.marks == first.value.marks
+        assert len(second.value.marks) == 1
+    finally:
+        await cleanup(workspace)
+
+
+async def test_an_added_assertion_in_a_designated_test_publishes_with_no_mark(
+    repository,
+):
+    """Adding a condition loses none, so the branch is published unmarked."""
+    repo = repository[0]
+    port = tracker()
+    await designated_repository(repo, port)
+    before = criterion_children(port)
+
+    async def strengthen(title, payload, kwargs):
+        if title != "NativeWriterOutput":
+            return
+        target = Path(kwargs["cwd"], PROTECTED_PATH)
+        target.write_text(PROTECTED_BODY + "    assert answer() > 0\n")
+
+    executor = Executor(claim=False, mutate=strengthen)
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        events = await drive(service, guard, repository)
+
+        assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test")
+        assert criterion_children(port) == before
+    finally:
+        await cleanup(workspace)
+
+
+async def test_an_amended_designation_lets_its_test_change_without_a_mark(repository):
+    """A record this run amended designates nothing for the rest of the run.
+
+    The departure from the record was claimed and independently reproduced,
+    and the canonical writer applied it; the designation survives that
+    amendment unchanged, so only the report can say the change was claimed.
+    """
+    repo = repository[0]
+    port = tracker()
+    pinned = await designated_repository(repo, port)
+    before = criterion_children(port)
+
+    async def answers(title, payload, kwargs):
+        await weaken(title, payload, kwargs)
+        if title == "NativeWriterOutput":
+            payload["claims"][0]["departure"] = (
+                "Change the designated boundary test's assertion."
+            )
+        if title == "AmendmentTextOutput":
+            payload["replacement"] = {
+                "kind": "ruling",
+                "subject": {"kind": "ruling", "id": pinned.ruling_id},
+                "resolution": (
+                    "The corrected answer follows the reproduced base evidence."
+                ),
+                "rejected_alternative": "The independently refuted prior reading.",
+                "repo_evidence": ["policy.py"],
+            }
+
+    executor = Executor(
+        reproduced=True,
+        subject={"kind": "ruling", "id": pinned.ruling_id},
+        mutate=answers,
+    )
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+
+        assert report.verdicts[0].verdict == "amended"
+        assert report.verdicts[0].subject.id == pinned.ruling_id
+        assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test")
+        assert criterion_children(port) == before
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_mint_the_tracker_refuses_still_refuses_the_push(repository):
+    """The board would not take the mark, so the commit is still not published."""
+    repo = repository[0]
+    port = tracker()
+    await designated_repository(repo, port)
+    before = criterion_children(port)
+
+    async def unavailable(**kwargs):
+        raise TrackerUnavailableError("the board will not take the mark")
+
+    port.create_criterion_if_absent = unavailable
+    executor = Executor(claim=False, mutate=weaken)
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        with pytest.raises(TrackerUnavailableError):
+            await drive(service, guard, repository)
+
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
+        assert criterion_children(port) == before
     finally:
         await cleanup(workspace)
