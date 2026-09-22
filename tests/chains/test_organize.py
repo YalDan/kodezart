@@ -22,6 +22,7 @@ from kodezart.types.domain.organize import (
     AdmissionResult,
     AdmissionVerdict,
     DefectRole,
+    MandateKind,
     OrganizeAdmissionRequest,
     RefusalKind,
     SpecFinding,
@@ -57,6 +58,7 @@ from tests.name_resolution import call_sites, parsed, reaches, source_tree
 from tests.prompts.sets import OPUS_SET, V5_SET
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
+from tests.tracker.conftest import ASSET_ISSUE, CLAIMED_ISSUE
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 SUBJECT = "subject/42"
@@ -1669,3 +1671,113 @@ def test_the_call_site_count_reads_each_form_the_call_can_take(form, body, expec
     assert len(planted) == expected
     assert all(relative == "services/planted.py" for relative, _line, _name in planted)
     assert all(name in callees for _relative, _line, name in planted)
+
+
+def owner_harness():
+    """The owner harness module, imported at call time.
+
+    That module imports this one for its fixtures, so the edge back cannot be
+    a module-level import. Every owner-driven case here reaches the harness
+    through this function and through nothing else.
+    """
+    from tests.chains import test_organize_owner
+
+    return test_organize_owner
+
+
+def admit_as(monkeypatch, executor, *, key, payload):
+    """Every admission judgment for *key* answers *payload*, replacing it whole.
+
+    Replaced rather than merged: the harness's own refusal payload always
+    carries fields another verdict forbids. Every other session passes
+    through untouched. Returns every answer given for *key*, in order.
+    """
+    import re
+
+    answered = []
+    original = executor.stream
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        async for event in original(**kwargs):
+            if title == "AdmissionJudgment" and keys[-1:] == [key]:
+                answer = {"issue_id": key, **payload}
+                answered.append(answer)
+                event = result(structured_output=answer)
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    return answered
+
+
+UNVERIFIABLE_EVIDENCE = (
+    "The named blocker produces the schema this issue reads; it cannot be "
+    "examined until that issue lands."
+)
+MISSING_ARTIFACT = "The schema the named blocker produces."
+
+
+@pytest.mark.parametrize("route", ["edge_in_scope", "no_edge", "out_of_scope"])
+async def test_an_unverifiable_admission_marks_the_ticket_only_on_a_real_in_scope_edge(
+    monkeypatch, route
+):
+    """The marker follows the edge and the scope, never the prose.
+
+    The three rows answer the same words; they differ only by the relation
+    planted on the subject and the blocker it names. A real ``blockedBy``
+    edge to a scope member marks the stage; a named blocker with no edge, or
+    one outside the scope, is re-authored, and the verdict survives the
+    bounded halt unchanged.
+    """
+    h = owner_harness()
+    owner, board, executor = h.two_lane_board(
+        phases=h.ticket_only, body=h.PREPARED_BODY, bound=1
+    )
+    # The out-of-scope blocker is a board issue with no parent and no edge of
+    # its own, so reading it into the graph context reaches nothing missing.
+    named = ASSET_ISSUE if route == "out_of_scope" else "second"
+    board.server.issues[CLAIMED_ISSUE].relations = (
+        [] if route == "no_edge" else [("blockedBy", named)]
+    )
+    answered = admit_as(
+        monkeypatch,
+        executor,
+        key=CLAIMED_ISSUE,
+        payload={
+            "verdict": "unverifiable",
+            "evidence": UNVERIFIABLE_EVIDENCE,
+            "missing_artifact": MISSING_ARTIFACT,
+            "pending_blocker_id": named,
+        },
+    )
+    report = await h.run_owner(owner)
+    labels = board.server.issues[CLAIMED_ISSUE].labels
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+    _assessed, _verified, authored = h.sessions(executor, 0)
+    assert answered
+    assert {answer["verdict"] for answer in answered} == {"unverifiable"}
+    if route == "edge_in_scope":
+        assert report.halt is None
+        assert report.completed_phases == (MandateKind.TICKET,)
+        assert "body complete" in labels
+        assert CLAIMED_ISSUE not in authored
+        assert escalations == []
+        return
+    assert report.halt.cause == "admission_exhausted"
+    assert report.halt.bound.setting == "organize.max_admission_rounds"
+    assert report.halt.bound.value == report.halt.bound.rounds_used == 1
+    assert [r.verdict for r in report.halt.admission_results] == [
+        AdmissionVerdict.UNVERIFIABLE
+    ]
+    assert report.halt.admission_results[0].pending_blocker_id == named
+    assert "body complete" not in labels
+    assert CLAIMED_ISSUE in authored
+    assert [
+        comment.issue_id for comment in escalations if MISSING_ARTIFACT in comment.body
+    ] == [CLAIMED_ISSUE]
+    assert len(escalations) == 1
