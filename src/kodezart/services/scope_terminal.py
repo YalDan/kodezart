@@ -3,6 +3,7 @@
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_exact
 from kodezart.core.protocols import OutboundContentGate, ScopeStatusUpdates
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.errors import LaneRecordReadError, ScopeStatusError
 from kodezart.domain.scope_terminal import (
     lane_roster,
@@ -130,6 +131,7 @@ class ScopeTerminal:
             issue=issue_key, done=done, branch=record.branch, pr=record.pr
         )
 
+    @derived_writes("post_status_update")
     async def _post(self, event: ScopeTerminalEvent) -> None:
         """Gate the rendered report and put it on the container, byte for byte.
 
@@ -154,6 +156,10 @@ class ScopeTerminal:
         The lane roster is handed to the gate as a typed value beside the
         rendered body; the surface is point-in-time, so it is admitted, and
         the same value on a durable surface is refused before any write.
+
+        Derived: the body is composed out of criterion states and each lane's recorded
+        branch and delivery, and the walk it reports on has ended, so re-reading the
+        container would compare the report with itself (KOD-806).
         """
         body = await gated_exact(
             gate=self._gate,

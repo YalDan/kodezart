@@ -34,6 +34,7 @@ from kodezart.domain.comment_markers import (
     compose_comment_marker,
     configured_marker_prefix,
 )
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.errors import DuplicateWorkRefError
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.agent import RaiseSite
@@ -90,14 +91,20 @@ class TrackerLifecycleWriter:
         self._clock: Callable[[], datetime] = clock
         self._log: BoundLogger = get_logger(__name__)
 
+    @derived_writes("set_workflow_state")
     async def on_dequeue(self, *, issue_key: str) -> None:
-        """The run started: move the issue to its in-progress state."""
+        """The run started: move the issue to its in-progress state.
+
+        Derived: the stage is the one a reader computes from the run having started, so
+        there is no authored claim for a second reader to judge (KOD-806).
+        """
         await self._tracker.set_workflow_state(
             issue_key=issue_key,
             stage=LifecycleStage.IN_PROGRESS,
         )
         await self._log.ainfo("lifecycle_in_progress", issue_key=issue_key)
 
+    @derived_writes("set_workflow_state")
     async def on_pull_request(
         self,
         *,
@@ -123,6 +130,9 @@ class TrackerLifecycleWriter:
         never replace it.  A run that did not deliver records nothing here;
         the pull request still reaches the issue, in the terminal comment
         the outcome arm posts.
+
+        Derived: the review stage follows from a pull request being open, and carries no
+        text of this writer's own (KOD-806).
         """
         await self._tracker.set_workflow_state(
             issue_key=issue_key,
@@ -143,14 +153,20 @@ class TrackerLifecycleWriter:
             )
         await self._log.ainfo("lifecycle_in_review", issue_key=issue_key)
 
+    @derived_writes("set_queue_state")
     async def on_verified_merge(self, *, issue_key: str) -> None:
-        """Retire the queue entry without asserting criterion completion."""
+        """Retire the queue entry without asserting criterion completion.
+
+        Derived: retiring the queue entry states a transition and nothing about the
+        work, so there is nothing for a second reader to judge (KOD-806).
+        """
         await self._tracker.set_queue_state(
             issue_key=issue_key,
             state=QueueState.DONE,
         )
         await self._log.ainfo("lifecycle_queue_finished", issue_key=issue_key)
 
+    @derived_writes("restore_workflow_state", "post_comment")
     async def on_run_failed(
         self,
         *,
@@ -175,6 +191,10 @@ class TrackerLifecycleWriter:
         claim is released by the watcher after every stream end the process
         survives, this arm included, so the next pass is free to re-fire as
         soon as it ticks rather than waiting a lease out.
+
+        Derived: the state goes back to the one the pass found, and the note carries a
+        job id and a failure class read off a run that has already ended, so no judged
+        commit exists to verify either against (KOD-806).
         """
         await self._tracker.restore_workflow_state(
             issue_key=issue_key,
@@ -215,6 +235,7 @@ class TrackerLifecycleWriter:
             step=step,
         )
 
+    @derived_writes("upsert_comment")
     async def on_terminal_outcome(
         self,
         *,
@@ -223,7 +244,11 @@ class TrackerLifecycleWriter:
         outcome: WorkflowOutcome,
         visibility: RepoVisibility = RepoVisibility.PUBLIC,
     ) -> None:
-        """Post the run's terminal outcome, read off the job-status surface."""
+        """Post the run's terminal outcome, read off the job-status surface.
+
+        Derived: the body is a job id and an outcome member, both readable off
+        the job-status surface, and the run it reports on has ended (KOD-843).
+        """
         # The TARGET REPOSITORY's visibility is not the question here, and
         # never was: this payload lands on the coordination surface. What
         # settles it is the posture of the BOARD the issue sits on, which
@@ -276,6 +301,7 @@ class TrackerLifecycleWriter:
             outcome=outcome.value,
         )
 
+    @derived_writes("record_work_ref")
     async def _record_deliverable(
         self,
         *,
@@ -296,6 +322,9 @@ class TrackerLifecycleWriter:
         run's lifecycle write-back over it would leave the issue in the
         in-progress stage with nothing running — the exact lie the failure
         arm exists to prevent.
+
+        Derived: the ref is a branch name and the sha the push answered with, put at a
+        role, with no authored text on any surface (KOD-843).
         """
         try:
             await self._tracker.record_work_ref(

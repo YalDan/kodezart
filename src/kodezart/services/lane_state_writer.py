@@ -23,6 +23,7 @@ from kodezart.domain.criterion_cross_off import (
     tick_anchor,
 )
 from kodezart.domain.criterion_evidence import apply_evidence
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.errors import (
     LaneRecordReadError,
     LaneRecordWriteError,
@@ -162,6 +163,7 @@ class TrackerLaneStateWriter:
         self._markers(lane.lane_key)
         self._branch_url(lane)
 
+    @derived_writes("upsert_comment", "post_run_event")
     async def record_commit(
         self, *, lane: LaneBinding, workspace_path: str, receipt: PersistResult
     ) -> LaneRunState:
@@ -175,6 +177,11 @@ class TrackerLaneStateWriter:
         base..head changeset. The prior record is parsed before the new one
         is composed, so a damaged record refuses rather than being replaced
         by a fresh one.
+
+        Derived: every fact on the record is a git observation of this commit — the head
+        the receipt names, the remote tip, the changeset counts, the subject — and the
+        event announces the same, so a second session re-reading those observations
+        would add nothing (KOD-806).
         """
         marker, _ = self._markers(lane.lane_key)
         branch_url = self._branch_url(lane)
@@ -314,6 +321,7 @@ class TrackerLaneStateWriter:
         )
         return record
 
+    @derived_writes("upsert_comment")
     async def record_pull_request(
         self, *, lane_key: str, pr: LanePR, visibility: RepoVisibility
     ) -> LaneRunState | None:
@@ -338,6 +346,9 @@ class TrackerLaneStateWriter:
         address, and a private deployment whose forge host it declares
         private would have that body admitted at the commit write and refused
         at this one if this write asked a different question of it.
+
+        Derived: a url and a number the forge answered with, put where a lane's delivery
+        is retained (KOD-843).
         """
         marker, _ = self._markers(lane_key)
         try:
@@ -637,6 +648,7 @@ class TrackerLaneStateWriter:
             )
             posted.add(event)
 
+    @derived_writes("set_workflow_state")
     async def _write_one(
         self,
         *,
@@ -706,6 +718,9 @@ class TrackerLaneStateWriter:
         take-back reads it, so a repeat of the same act at the same sha
         announces nothing, and it goes last, after the transition, because an
         announcement of a transition that never landed says something untrue.
+
+        Derived: the transition states the pass the grading already settled and carries
+        no text of its own (KOD-806).
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=issue, criterion=criterion)
@@ -742,6 +757,7 @@ class TrackerLaneStateWriter:
                 self._tracker.post_run_event(issue_key=lane.lane_key, event=crossed_off)
             )
 
+    @derived_writes("reset_criterion_pending", "post_run_event")
     async def _take_back(
         self,
         *,
@@ -805,6 +821,10 @@ class TrackerLaneStateWriter:
         grading, with no event, which is the partial state a lost stamp
         leaves. The owning issue reopens by the tracker's own rollup over its
         criteria and is written by nobody.
+
+        Derived: the state goes back to the team's unstarted name and the event names
+        the reading that ended the finished state, both read off gradings this fire
+        already holds (KOD-806).
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         if issue.state_kind is not HELD_CRITERION_STATE:
@@ -831,6 +851,7 @@ class TrackerLaneStateWriter:
                 self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
             )
 
+    @derived_writes("edit_description")
     async def _stamp(
         self,
         *,
@@ -845,6 +866,9 @@ class TrackerLaneStateWriter:
         grading of this criterion read and at which commit, so a second
         writer of it would be a second answer to that one question; the body
         it sets is composed by the one function below.
+
+        Derived: the row carries the sha a grading read and what it read there,
+        so judging a sha string again is not a second judgement (KOD-806).
         """
         body = await self._gate_exact(
             body=self._evidence_body(

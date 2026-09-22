@@ -30,6 +30,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.base_staleness import is_base_stale
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.dispatch import (
     Selection,
     blocker_keys,
@@ -357,6 +358,7 @@ class FireDispatcher:
             tied=selection.tied,
         )
 
+    @derived_writes("record_base_spec")
     async def launch(
         self,
         winner: TrackerIssue,
@@ -380,6 +382,9 @@ class FireDispatcher:
         criterion records of the subtree the lane being dispatched owns,
         which need not all be its own children.  Empty is the honest answer
         for a producer that selects whole issues.
+
+        Derived: the spec is the resolution this dispatch computed, recorded before the
+        fire it describes has run (KOD-843).
         """
         claim = await self._tracker.claim_issue(
             issue_key=winner.issue_key,

@@ -16,6 +16,7 @@ from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import DeliveryProbe, RepoCache, TrackerPort
+from kodezart.domain.derived_writes import derived_writes
 from kodezart.domain.errors import (
     BaseResolutionError,
     ScopedExecutionUnavailableError,
@@ -432,6 +433,7 @@ class ScopeWorkflowEngine:
             rested.append(last.issue_key)
         await self._log.ainfo("scope_lane_plateaued", lane=last.issue_key)
 
+    @derived_writes("restore_workflow_state")
     async def _put_back(self, *, key: str, gap: Sequence[TrackerIssue]) -> None:
         """Put the lane's issue back where the work it still owes stands.
 
@@ -446,6 +448,9 @@ class ScopeWorkflowEngine:
         state. Inventing one is not this walker's business: the lane rests
         whatever this reads, and the write not made is stated in the log by
         name rather than passed over in silence.
+
+        Derived: the state name is read off the lane's own open work on this tick, so
+        the write carries nothing authored and nothing to judge (KOD-460).
         """
         state_name = next(
             (

@@ -1,51 +1,40 @@
 """Every port write a scope run makes goes through the write-back verifier.
 
 The write surface is READ OFF the tracker-writing surface rather than listed
-here, so a surface that grows a write grows this check with it.  That surface
-is ``TrackerPort`` plus every public class in a module that names a tracker
-tool constant: a role declared beside the port and dialled over the same
-session writes the backend exactly as a port member does, and a check that
-read only the port would stop seeing such a write the moment it existed
-(KOD-829).  The naming scan is the tool roster's own, so the two cannot
-disagree about which modules dial the tracker.
+here, so a surface that grows a write grows this check with it.  That
+surface is the set of roles a dialled tracker is composed of, which is where
+their number is already stated: a role declared beside the port and dialled
+over the same session writes the backend exactly as a port member does, and
+a check that read only the port would stop seeing such a write the moment it
+existed (KOD-829).  The naming scan the tool roster keeps is still compared
+against it below, so the two cannot disagree about which classes dial the
+tracker.
 
-Two rules, both computed from that surface and stated once:
-
-*Which methods write.*  A public method whose leading name token is a
-mutating verb — create, update, upsert, edit, set, post, record, acquire,
-renew, release, reset, restore, claim, ensure.  Everything else on the port
-answers a question instead of changing an answer.
-
-*Which writes leave an artifact.*  A write whose every parameter is an
-address (``*_key``, ``surfaces``), the holder of a lease, or a lease
-duration takes no content and leaves nothing a later reader reads back:
-claim and surface-lease bookkeeping.  Every other write puts something on a
-surface a consumer will read, which is the thing the verifier exists to
-re-read and judge — so every one of them must happen inside a write-back
-window addressing that same surface, carrying that same content.
+Both rules over that surface — which methods write, and which of those
+leave an artifact a later reader reads back — now live in
+``kodezart.domain.write_adoption`` with the census that applies them, so the
+boot gate and this guard read one derivation rather than two.
 
 The run under observation is the composed one: the real Organize owner off
 ``build_organize_owner`` over its tracker (bodies, edges, criterion
 sub-issues and phase markers), and the real criterion evaluator's amendment
 write-back (a criterion's evidence, its body and its state flip).
 
-An observed run answers for the writes that run makes.  The clause is
-about CALL SITES, so the second half puts the same question to the
-production tree: every call of that derived write surface is read out of
-the source, and the function holding it must be one the verifier drives —
-a step's own body, or a writer every one of whose callers is a step body.
-Two registers stand against that, both compared exactly so a stale entry
-fails as loudly as a new bypass: the state moves the founder's ruling
-KOD-806 holds outside this seam, and the writes that still reach the port
-from processes holding no judged commit — none of which may put authored
-content on a surface.
+An observed run answers for the writes that run makes.  The clause is about
+CALL SITES, so the second half puts the same question to the production
+tree: every call of that derived write surface is read out of the source,
+and the function holding it must be one the verifier drives — a step's own
+body, or a writer every one of whose callers is a step body.  What no
+verifier drives must carry a derived-write declaration beside it, and the
+census compares the two exactly in both directions, so a declaration whose
+write is gone fails as loudly as a new bypass.  No register of addresses is
+kept here: the tree states them.
 """
 
 import ast
+import functools
 import importlib
-import inspect
 import json
-import pathlib
 import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -54,15 +43,27 @@ from typing import Protocol
 
 import pytest
 
-import kodezart
 from kodezart.adapters.linear.status_update import LinearScopeStatusUpdates
 from kodezart.chains import write_back_verifier as verifier_module
 from kodezart.chains.write_back_verifier import WriteBackVerifier
-from kodezart.core.protocols import TrackerPort, WriteBackStep
+from kodezart.composition.write_adoption import (
+    drive_entry,
+    installed_sources,
+    marker_address,
+    tracker_write_roles,
+)
+from kodezart.core.protocols import ScopeStatusUpdates, TrackerPort, WriteBackStep
+from kodezart.domain.source_resolution import SourceIndex
+from kodezart.domain.write_adoption import (
+    artifact_writes,
+    content_parameters,
+    take_census,
+    write_methods,
+)
 from kodezart.types.domain.audit import TrackerArtifact
-from kodezart.types.domain.gating import ContentClass
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.write_adoption import CallSite, Source, WriteCensus
 from kodezart.types.domain.write_back import WriteBackFinding
 from tests.chains import test_organize_owner as organize_suite
 from tests.chains.test_native_fire import DIRECT_OWED
@@ -94,44 +95,10 @@ from tests.tracker.test_linear_tool_roster import (
 
 __all__ = ["repository"]
 
-#: The token a write's name starts with.  A port method naming one of these
-#: changes what the backend holds; every other one reports what it holds.
-WRITE_VERBS = frozenset(
-    {
-        "acquire",
-        "claim",
-        "create",
-        "edit",
-        "ensure",
-        "post",
-        "record",
-        "release",
-        "renew",
-        "reset",
-        "restore",
-        "set",
-        "update",
-        "upsert",
-    }
-)
-#: What claim and lease bookkeeping is allowed to take beside an address:
-#: whose lease it is and how long it runs.  Anything else is content.
-LEASE_PARAMETERS = frozenset({"surfaces", "holder", "lease_seconds"})
-#: The parameters that say WHERE a write lands and UNDER WHAT PRECONDITION,
-#: rather than what it puts there.
-ADDRESS_PARAMETERS = frozenset(
-    {
-        "target",
-        "surface",
-        "surfaces",
-        "ref",
-        "holder",
-        "lease_seconds",
-        "expected",
-        "revalidate",
-        "authorization",
-    }
-)
+#: The roles a dialled tracker writes the backend through.
+ROLES = tracker_write_roles()
+#: The writes that leave something a later reader reads back.
+WRITES = artifact_writes(ROLES)
 
 
 def tracker_dialling_classes() -> tuple[type, ...]:
@@ -165,59 +132,28 @@ def tracker_dialling_classes() -> tuple[type, ...]:
     return tuple(found)
 
 
-#: The whole surface a tracker write can be declared on: the port, and every
-#: role dialled beside it over the same session.
-TRACKER_SURFACE: tuple[type, ...] = (TrackerPort, *tracker_dialling_classes())
+def step_members(step: type = WriteBackStep) -> frozenset[str]:
+    """What a class must define to be a step the verifier can drive.
+
+    Read off the protocol, for the reason the write surface is read off
+    the port: a step that grows an obligation grows this with it.
+    """
+    return frozenset(name for name in dir(step) if not name.startswith("_"))
 
 
-def _roles(port: type | tuple[type, ...]) -> tuple[type, ...]:
-    """A single class and a surface of several are one thing to read."""
-    return port if isinstance(port, tuple) else (port,)
+@functools.cache
+def census(*planted: tuple[str, str]) -> WriteCensus:
+    """One census of the installed tree, with any planted module beside it.
 
-
-def write_methods(
-    port: type | tuple[type, ...] = TRACKER_SURFACE,
-) -> frozenset[str]:
-    """Every write on *port*, derived from the surface's own members."""
-    return frozenset(
-        name
-        for role in _roles(port)
-        for name in dir(role)
-        if not name.startswith("_")
-        and callable(getattr(role, name, None))
-        and name.split("_")[0] in WRITE_VERBS
-    )
-
-
-def parameters(
-    method: str, port: type | tuple[type, ...] = TRACKER_SURFACE
-) -> tuple[str, ...]:
-    role = next(role for role in _roles(port) if hasattr(role, method))
-    signature = inspect.signature(getattr(role, method))
-    return tuple(name for name in signature.parameters if name != "self")
-
-
-def artifact_writes(
-    port: type | tuple[type, ...] = TRACKER_SURFACE,
-) -> frozenset[str]:
-    """The writes that leave something a later reader reads back."""
-    return frozenset(
-        method
-        for method in write_methods(port)
-        if not all(
-            name.endswith("_key") or name in LEASE_PARAMETERS
-            for name in parameters(method, port)
-        )
-    )
-
-
-def content_parameters(
-    method: str, port: type | tuple[type, ...] = TRACKER_SURFACE
-) -> tuple[str, ...]:
-    return tuple(
-        name
-        for name in parameters(method, port)
-        if not name.endswith("_key") and name not in ADDRESS_PARAMETERS
+    A planted case is censused BESIDE the real tree and never instead of it,
+    so every name in it resolves exactly as it would once installed and the
+    real tree's own answers stand under the same reading.
+    """
+    return take_census(
+        sources={**installed_sources(), **dict(planted)},
+        writes=WRITES,
+        entry=drive_entry(),
+        marker=marker_address(),
     )
 
 
@@ -225,13 +161,30 @@ def test_the_write_surface_covers_the_roles_dialled_beside_the_port():
     """Non-vacuity: the widening sees a write the port itself does not declare.
 
     The scope terminal's status update is declared on its own role and on no
-    port member, so the difference between the two derivations is exactly it.
-    A widening that found nothing here would be indistinguishable from the
-    old port-only read.
+    port member, so the difference between the two derivations is exactly
+    it.  A widening that found nothing here would be indistinguishable from
+    the old port-only read.
     """
-    assert LinearScopeStatusUpdates in tracker_dialling_classes()
-    assert write_methods() - write_methods(TrackerPort) == {"post_status_update"}
-    assert "post_status_update" in artifact_writes()
+    assert ScopeStatusUpdates in ROLES
+    assert write_methods(ROLES) - write_methods((TrackerPort,)) == {
+        "post_status_update"
+    }
+    assert "post_status_update" in WRITES
+
+
+def test_every_class_that_dials_the_tracker_writes_only_through_the_dialled_roles():
+    """The naming scan cannot find a write the dialled roles do not declare.
+
+    The surface is read off the composition, which is where the roles are
+    already counted; the roster's scan of the adapters is kept beside it as
+    a second reading of the same fact.  A class dialled over the tracker's
+    own session declaring a write no role does would be a backend write this
+    check could not see, so the two readings are compared rather than one
+    replacing the other (KOD-829).
+    """
+    dialling = tracker_dialling_classes()
+    assert LinearScopeStatusUpdates in dialling
+    assert write_methods(dialling) <= write_methods(ROLES)
 
 
 @dataclass
@@ -287,7 +240,7 @@ class RecordingTracker:
     def __init__(self, port, journal):
         self._port = port
         self._journal = journal
-        self._writes = write_methods()
+        self._writes = write_methods(ROLES)
 
     def __getattr__(self, name):
         attribute = getattr(self._port, name)
@@ -326,7 +279,7 @@ def addressed_text(write: PortWrite) -> str:
 
 
 def carried_content(write: PortWrite) -> tuple[str, ...]:
-    names = content_parameters(write.method)
+    names = content_parameters(write.method, ROLES)
     return tuple(
         value
         for name, value in write.kwargs.items()
@@ -343,9 +296,7 @@ def require_adoption(journal: Journal) -> None:
     carry is that surviving write's.
     """
     assert journal.writes, "a run that wrote nothing states nothing about adoption"
-    landed_writes = [
-        write for write in journal.writes if write.method in artifact_writes()
-    ]
+    landed_writes = [write for write in journal.writes if write.method in WRITES]
     for write in landed_writes:
         window = write.window
         assert window is not None, f"{write.method} wrote with no verifier around it"
@@ -381,13 +332,13 @@ def test_the_write_surface_is_read_off_the_port_rather_than_listed_here():
             """A lease the port grows after this test was written."""
             ...
 
-    assert write_methods(TrackerPort) < write_methods(GrownPort)
+    assert write_methods((TrackerPort,)) < write_methods((GrownPort,))
     assert {"upsert_decision_record", "claim_decision_record"} <= write_methods(
-        GrownPort
+        (GrownPort,)
     )
-    assert "upsert_decision_record" in artifact_writes(GrownPort)
-    assert "claim_decision_record" not in artifact_writes(GrownPort)
-    assert not write_methods(TrackerPort) & {
+    assert "upsert_decision_record" in artifact_writes((GrownPort,))
+    assert "claim_decision_record" not in artifact_writes((GrownPort,))
+    assert not write_methods((TrackerPort,)) & {
         name for name in dir(TrackerPort) if name.startswith("read_")
     }
 
@@ -504,7 +455,7 @@ async def test_every_organize_write_in_a_scope_run_passes_the_verifier(
     report = await run_owner(owner)
     assert report.halt is None
     require_adoption(journal)
-    written = {write.method for write in journal.writes} & artifact_writes()
+    written = {write.method for write in journal.writes} & WRITES
     assert {
         SHAPES[shape].method,
         "create_criterion_if_absent",
@@ -614,504 +565,99 @@ async def test_every_open_question_write_passes_the_verifier(repository, monkeyp
 # neither run walks, is a bypass the observed journal never sees.  So the
 # same question is put to the production tree itself — every call of the
 # derived artifact-write surface, and whether the function holding it is
-# one the verifier drives.
-
-#: The production tree the static half reads.
-PACKAGE = pathlib.Path(kodezart.__file__).parent
-#: The two shapes a function definition takes in a parsed module.
-FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+# one the verifier drives or one a declaration holds out.
 
 
-def production_sources() -> dict[str, str]:
-    """Every production module, keyed by its path inside the package."""
-    return {
-        path.relative_to(PACKAGE).as_posix(): path.read_text()
-        for path in sorted(PACKAGE.rglob("*.py"))
-    }
+def test_the_installed_tree_holds_no_unadopted_write():
+    """Every write in the tree is driven or declared, and never both.
 
-
-def step_members(step: type = WriteBackStep) -> frozenset[str]:
-    """What a class must define to be a step the verifier can drive.
-
-    Read off the protocol, for the reason the write surface is read off
-    the port: a step that grows an obligation grows this with it.
+    Each part is asserted non-empty as well as exact: a census that found no
+    driven site, no held-out site or no authored writer would pass a
+    partition of nothing and say nothing about the tree.
     """
-    return frozenset(name for name in dir(step) if not name.startswith("_"))
+    found = census()
+    assert found.sites, "a tree with no port writes states nothing about adoption"
+    assert found.unadopted == frozenset()
+    assert found.stale == frozenset()
+    assert found.driven and found.held_out and found.authored
+    assert found.driven.isdisjoint(found.held_out)
+    assert found.held_out.isdisjoint(found.authored)
 
 
-@dataclass(frozen=True)
-class Source:
-    """One production function, addressed by module and qualified name."""
-
-    module: str
-    function: str
+def declaring_holders() -> tuple[Source, ...]:
+    """The functions whose own declarations the census read off the tree."""
+    return tuple(sorted({site.holder for site in census().held_out}, key=str))
 
 
-@dataclass(frozen=True)
-class CallSite:
-    """One production call of a port write, at the function holding it."""
-
-    module: str
-    function: str
-    method: str
-
-
-def defines(node: ast.ClassDef, member: str) -> bool:
-    """Whether *node* states *member* itself, as a method or a field."""
-    return any(
-        (isinstance(item, FUNCTIONS) and item.name == member)
-        or (
-            isinstance(item, ast.AnnAssign)
-            and isinstance(item.target, ast.Name)
-            and item.target.id == member
-        )
-        for item in node.body
-    )
+def without_declaration(holder: Source) -> tuple[str, str]:
+    """*holder*'s module with the derived-write declaration on it removed."""
+    text = installed_sources()[holder.module]
+    node = SourceIndex({holder.module: text}).functions[holder]
+    lines = text.split("\n")
+    stripped = 0
+    for decorator in node.decorator_list:
+        if (
+            isinstance(decorator, ast.Call)
+            and isinstance(decorator.func, ast.Name)
+            and decorator.func.id == "derived_writes"
+        ):
+            stripped += 1
+            for number in range(decorator.lineno, (decorator.end_lineno or 0) + 1):
+                lines[number - 1] = ""
+    assert stripped == 1, f"{holder} states no one declaration to remove"
+    return holder.module, "\n".join(lines)
 
 
-def direct_calls(node: ast.AST) -> Iterator[ast.Call]:
-    """The calls this body makes itself, not the ones its nested defs make."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (*FUNCTIONS, ast.ClassDef)):
-            continue
-        if isinstance(child, ast.Call):
-            yield child
-        yield from direct_calls(child)
+@pytest.mark.parametrize("holder", declaring_holders(), ids=str)
+def test_a_derived_declaration_is_load_bearing(holder):
+    """Remove one declaration and exactly its own writes go unaccounted for.
 
-
-def called_name(call: ast.Call) -> str | None:
-    """The name a call names, whether through an object or on its own."""
-    if isinstance(call.func, ast.Attribute):
-        return call.func.attr
-    if isinstance(call.func, ast.Name):
-        return call.func.id
-    return None
-
-
-def composes_authored(node: ast.AST) -> bool:
-    """Whether this body composes content it authored rather than derived."""
-    authored = ContentClass.AUTHORED
-    return any(
-        isinstance(item, ast.Attribute)
-        and item.attr == authored.name
-        and isinstance(item.value, ast.Name)
-        and item.value.id == type(authored).__name__
-        for item in ast.walk(node)
-    )
-
-
-class Production:
-    """Production source, read as functions, their calls, and their steps."""
-
-    def __init__(self, sources: Mapping[str, str]) -> None:
-        self.trees = {module: ast.parse(text) for module, text in sources.items()}
-        self.functions: dict[Source, ast.FunctionDef | ast.AsyncFunctionDef] = {}
-        self.owner: dict[Source, ast.ClassDef | None] = {}
-        self.step_classes: set[tuple[str, str]] = set()
-        members = step_members()
-        for module, tree in self.trees.items():
-            self._index(module, tree, (), None, members)
-
-    def _index(
-        self,
-        module: str,
-        node: ast.AST,
-        quals: tuple[str, ...],
-        owner: ast.ClassDef | None,
-        members: frozenset[str],
-    ) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, FUNCTIONS):
-                source = Source(module=module, function=".".join((*quals, child.name)))
-                self.functions[source] = child
-                self.owner[source] = owner
-                self._index(module, child, (*quals, child.name), owner, members)
-            elif isinstance(child, ast.ClassDef):
-                if all(defines(child, member) for member in members):
-                    self.step_classes.add((module, child.name))
-                self._index(module, child, (*quals, child.name), child, members)
-            else:
-                self._index(module, child, quals, owner, members)
-
-    def _enclosed(self, source: Source, name: str) -> Source | None:
-        """The function *name* refers to where *source* stands."""
-        parts = source.function.split(".")
-        while True:
-            candidate = Source(module=source.module, function=".".join((*parts, name)))
-            if candidate in self.functions:
-                return candidate
-            if not parts:
-                return None
-            parts.pop()
-
-    def step_bodies(self) -> frozenset[Source]:
-        """The functions the verifier itself drives.
-
-        A step's own write is one by construction.  So is every function a
-        step is built around: the applier a writing step hands over IS the
-        write the loop re-reads, whatever the step type is called.
-        """
-        bodies = {
-            source
-            for source, node in self.functions.items()
-            if node.name == "write"
-            and (owner := self.owner[source]) is not None
-            and (source.module, owner.name) in self.step_classes
-        }
-        for source, node in self.functions.items():
-            for call in direct_calls(node):
-                if not (
-                    isinstance(call.func, ast.Name)
-                    and (source.module, call.func.id) in self.step_classes
-                ):
-                    continue
-                for argument in (*call.args, *(word.value for word in call.keywords)):
-                    if isinstance(argument, ast.Name):
-                        applier = self._enclosed(source, argument.id)
-                        if applier is not None:
-                            bodies.add(applier)
-        return frozenset(bodies)
-
-    def verified(self) -> frozenset[Source]:
-        """The functions that only ever run inside a write-back.
-
-        A step body is one by construction.  So is a function every one of
-        whose production callers is already one — which is how a writer a
-        step delegates to inherits the window it was called in, and how a
-        writer with one caller outside a step does not.
-        """
-        callers: dict[Source, set[Source]] = {
-            source: set() for source in self.functions
-        }
-        named: dict[str, set[Source]] = {}
-        for source, node in self.functions.items():
-            named.setdefault(node.name, set()).add(source)
-        for source, node in self.functions.items():
-            for call in direct_calls(node):
-                name = called_name(call)
-                for target in named.get(name, ()) if name is not None else ():
-                    callers[target].add(source)
-        verified = set(self.step_bodies())
-        while True:
-            grown = {
-                source
-                for source in self.functions
-                if source not in verified
-                and callers[source]
-                and callers[source] <= verified
-            }
-            if not grown:
-                return frozenset(verified)
-            verified |= grown
-
-    def call_sites(self, writes: frozenset[str]) -> frozenset[CallSite]:
-        """Every production call of *writes* made THROUGH the port.
-
-        A class that states one of these writes itself is the port's own
-        implementation of it; calling a sibling method there is the
-        backend seam, not a step reaching for it.
-        """
-        sites: set[CallSite] = set()
-        for source, node in self.functions.items():
-            owner = self.owner[source]
-            for call in direct_calls(node):
-                name = called_name(call)
-                if (
-                    name is None
-                    or name not in writes
-                    or not isinstance(call.func, ast.Attribute)
-                    or (owner is not None and defines(owner, name))
-                ):
-                    continue
-                sites.add(
-                    CallSite(
-                        module=source.module, function=source.function, method=name
-                    )
-                )
-        return frozenset(sites)
-
-    def outside_a_write_back(self, writes: frozenset[str]) -> frozenset[CallSite]:
-        """The call sites whose function the verifier does not drive."""
-        verified = self.verified()
-        return frozenset(
-            site
-            for site in self.call_sites(writes)
-            if Source(module=site.module, function=site.function) not in verified
-        )
-
-    def authored(self, site: CallSite) -> bool:
-        """Whether the writer holding *site* composes content it authored."""
-        owner = self.owner[Source(module=site.module, function=site.function)]
-        return composes_authored(
-            owner if owner is not None else self.trees[site.module]
-        )
-
-
-LIFECYCLE = "services/tracker_lifecycle.py"
-WALKER = "services/scope_runtime.py"
-#: The founder's ruling KOD-806 holds the lifecycle writer's state moves
-#: outside this check while the seam it covers is undecided.  They are
-#: named as call sites and compared exactly: once the ruling is lifted and
-#: the moves run inside a write-back, these entries stop matching what the
-#: tree holds and this check says so rather than quietly passing.
-KOD_806_STATE_MOVES = frozenset(
-    {
-        CallSite(
-            module=LIFECYCLE,
-            function="TrackerLifecycleWriter.on_dequeue",
-            method="set_workflow_state",
-        ),
-        CallSite(
-            module=LIFECYCLE,
-            function="TrackerLifecycleWriter.on_pull_request",
-            method="set_workflow_state",
-        ),
-        CallSite(
-            module=LIFECYCLE,
-            function="TrackerLifecycleWriter.on_verified_merge",
-            method="set_queue_state",
-        ),
-        CallSite(
-            module=LIFECYCLE,
-            function="TrackerLifecycleWriter.on_run_failed",
-            method="restore_workflow_state",
-        ),
-        # The walk's own put-back is the same kind of move under the same
-        # decision: a lane whose fire closed none of the criteria it owed goes
-        # back to the state name a reader found on its own open work, which
-        # carries no authored content and nothing to judge (KOD-460).
-        CallSite(
-            module=WALKER,
-            function="ScopeWorkflowEngine._put_back",
-            method="restore_workflow_state",
-        ),
-    }
-)
-#: The writes that still reach the port with no write-back around them,
-#: every one of them in a process that holds no judged commit to verify
-#: against: the dispatch pass that resolves a base before a run exists,
-#: the lifecycle watcher's notes about a run that has already ended,
-#: boot-time vocabulary instatement, and the supervisor's own observation
-#: of a lane's tally — the one alarm record it rewrites at that lane's
-#: address and the two transition events that announce it.  That record is
-#: arithmetic over facts the tracker already carries, so there is no
-#: authored commit to verify it against and re-judging it would be no
-#: second judgement (KOD-843).  None of them puts authored content on a
-#: surface — which is asserted below, not asserted here, so an authored
-#: write cannot be added under one of these entries.
-UNVERIFIED_WRITES = frozenset(
-    {
-        CallSite(
-            module="services/alarm_supervisor.py",
-            function="AlarmSupervisor._write_records",
-            method="record_run_alarm",
-        ),
-        CallSite(
-            module="services/alarm_supervisor.py",
-            function="AlarmSupervisor._announce",
-            method="post_run_event",
-        ),
-        CallSite(
-            module=LIFECYCLE,
-            function="TrackerLifecycleWriter.on_run_failed",
-            method="post_comment",
-        ),
-        CallSite(
-            module=LIFECYCLE,
-            function="TrackerLifecycleWriter.on_terminal_outcome",
-            method="upsert_comment",
-        ),
-        CallSite(
-            module=LIFECYCLE,
-            function="TrackerLifecycleWriter._record_deliverable",
-            method="record_work_ref",
-        ),
-        CallSite(
-            module="services/base_resolver.py",
-            function="BaseResolver._construct",
-            method="record_work_ref",
-        ),
-        CallSite(
-            module="services/fire_dispatcher.py",
-            function="FireDispatcher.launch",
-            method="record_base_spec",
-        ),
-        CallSite(
-            module="services/tracker_boot.py",
-            function="reconcile_tracker_mappings",
-            method="ensure_mappings",
-        ),
-        # The scope terminal's one write. Its body is derived from criterion
-        # states and each lane's recorded branch and pull request, and no
-        # judged commit exists to verify it against: the walk it reports on
-        # has ended, and re-reading the container would compare the report
-        # with itself. Held out by name under KOD-806, exactly as the moves
-        # above are.
-        CallSite(
-            module="services/scope_terminal.py",
-            function="ScopeTerminal._post",
-            method="post_status_update",
-        ),
-        # The mark a lost designated assertion leaves on its lane. Its whole
-        # text is arithmetic over two pinned Git objects and a pinned record,
-        # and the commit it describes is refused, so there is no judged commit
-        # to verify it against and re-judging that arithmetic would be no
-        # second judgement (KOD-843). Held out by name, exactly as the writes
-        # above are.
-        CallSite(
-            module="services/weakened_assertions.py",
-            function="WeakenedAssertionMarks.refuse_weakening",
-            method="create_criterion_if_absent",
-        ),
-        # The same writer's move of the mark the mint answered with back to
-        # unstarted, when it was crossed off. It carries no text at all, only
-        # the state the refused commit's arithmetic calls for, so there is
-        # nothing to verify it against, exactly as for the mint above.
-        CallSite(
-            module="services/weakened_assertions.py",
-            function="WeakenedAssertionMarks.refuse_weakening",
-            method="reset_criterion_pending",
-        ),
-    }
-)
-
-
-LANE_STATE = "services/lane_state_writer.py"
-#: The lane's own writes about the commit it has just made, about the best
-#: iteration a stall exit landed, about the verdict just reached on it, and
-#: about the pull request its delivery opened.
-#: Every fact they carry is DERIVED — the head
-#: sha the workspace was read at, the remote tip, the changeset counts, the
-#: commit subject, the tip a consolidation returned, a criterion's pass or its
-#: loss and the sha it was graded
-#: at — and no second session re-reading the same git observations would add
-#: anything to them.  The judgement behind a tick is the evaluation session that
-#: produced the verdict, and it is the one the Evidence row points back at;
-#: re-judging a sha string is not a second judgement (KOD-806).  The pull
-#: request is the same kind of fact: a url and a number the forge answered
-#: with, put where a lane's delivery is retained (KOD-843).  The two accounts a
-#: lane gives of a criterion it graded — crossed off, and the grading no longer
-#: standing — are the same kind again: a kind, a sub-issue key and the sha the
-#: grading was read at, and nothing authored (KOD-843).  So is a node's observed
-#: session opening: a kind, the invocation the harness declared and the session
-#: id the native stream reported (KOD-843).
-LANE_STATE_WRITES = frozenset(
-    {
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter.record_commit",
-            method="upsert_comment",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter.record_commit",
-            method="post_run_event",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter.record_landing",
-            method="upsert_comment",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter.record_pull_request",
-            method="upsert_comment",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter._stamp",
-            method="edit_description",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter._write_one",
-            method="set_workflow_state",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter._write_one",
-            method="post_run_event",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter.record_node_sessions",
-            method="post_run_event",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter._take_back",
-            method="reset_criterion_pending",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter._take_back",
-            method="post_run_event",
-        ),
-        CallSite(
-            module=LANE_STATE,
-            function="TrackerLaneStateWriter._undemonstrated",
-            method="post_run_event",
-        ),
-    }
-)
-
-
-def test_every_production_write_of_the_port_runs_inside_a_write_back():
-    production = Production(production_sources())
-    sites = production.call_sites(artifact_writes())
-    assert sites, "a tree with no port writes states nothing about adoption"
-    assert KOD_806_STATE_MOVES.isdisjoint(UNVERIFIED_WRITES)
-    assert KOD_806_STATE_MOVES.isdisjoint(LANE_STATE_WRITES)
-    assert UNVERIFIED_WRITES.isdisjoint(LANE_STATE_WRITES)
-    assert (
-        production.outside_a_write_back(artifact_writes())
-        == KOD_806_STATE_MOVES | UNVERIFIED_WRITES | LANE_STATE_WRITES
-    )
-
-
-def test_a_writer_a_step_delegates_to_is_verified_with_it():
-    """The window belongs to the write, not to the function that holds it."""
-    production = Production(production_sources())
-    delegated = CallSite(
-        module="services/lane_escalation.py",
-        function="LaneEscalationWriter.raise_escalation",
-        method="upsert_comment",
-    )
-    assert delegated in production.call_sites(artifact_writes())
-    assert delegated not in production.outside_a_write_back(artifact_writes())
-
-
-@pytest.mark.parametrize("step", ["_PinStep.write", "_EscalationStep.write"])
-def test_the_open_question_record_write_is_a_steps_own_write(step):
-    """The pre-loop writes grow neither register: each step owns its own write.
-
-    The path makes two authored writes now — the pinned answer's and the
-    raise of an answer beyond what the subject's own text states — so both
-    are named here or this stops covering the second one.
+    The declarations are read off the census rather than listed here, so a
+    declaration added later is covered by this the moment it exists.  Each
+    case strips one function's declaration and censuses the tree again: the
+    writes it held out must be refused, which is what makes the declaration
+    the thing that accounts for them rather than decoration beside them.
     """
-    production = Production(production_sources())
-    site = CallSite(
-        module="services/fire_time_rulings.py",
-        function=step,
-        method="upsert_comment",
-    )
-    assert site in production.call_sites(artifact_writes())
-    assert site not in production.outside_a_write_back(artifact_writes())
-    assert production.authored(site)
+    held = frozenset(site for site in census().held_out if site.holder == holder)
+    assert held
+    without = census(without_declaration(holder))
+    assert held <= without.unadopted
+    assert without.unadopted == held
 
 
-def test_no_write_outside_a_write_back_puts_authored_content_on_a_surface():
-    production = Production(production_sources())
-    writes = artifact_writes()
-    authored = {
-        site for site in production.call_sites(writes) if production.authored(site)
-    }
-    assert authored, "a tree that authors nothing states nothing about authorship"
-    assert authored.isdisjoint(production.outside_a_write_back(writes))
+PLANTED = {
+    "declared": """
+from kodezart.core.protocols import TrackerPort
+from kodezart.domain.derived_writes import derived_writes
 
 
-DRIVEN = """
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    @derived_writes("post_comment")
+    async def publish(self) -> None:
+        await self._tracker.post_comment(issue_key="K", body="b")
+""",
+    "stale": """
+from kodezart.core.protocols import TrackerPort
+from kodezart.domain.derived_writes import derived_writes
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    @derived_writes("post_comment")
+    async def publish(self) -> None:
+        await self._tracker.read_issue(issue_key="K")
+""",
+    "declared-but-driven": """
 from dataclasses import dataclass
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort
+from kodezart.domain.derived_writes import derived_writes
 
 
 @dataclass(frozen=True)
@@ -1124,25 +670,402 @@ class Step:
 
 
 class Writer:
+    def __init__(self, *, tracker: TrackerPort, verifier: WriteBackVerifier) -> None:
+        self._tracker, self._verifier = tracker, verifier
+
+    @derived_writes("post_comment")
+    async def publish(self) -> None:
+        async def put(finding):
+            await self._tracker.post_comment(issue_key="K", body="b")
+
+        await self._verifier.write_back(step=Step(None, put), ref="r")
+""",
+    "authored": """
+from kodezart.core.protocols import TrackerPort
+from kodezart.domain.derived_writes import derived_writes
+from kodezart.types.domain.gating import ContentClass
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    def _compose(self) -> str:
+        return ContentClass.AUTHORED.name
+
+    @derived_writes("post_comment")
+    async def publish(self) -> None:
+        await self._tracker.post_comment(issue_key="K", body=self._compose())
+""",
+}
+
+
+@pytest.mark.parametrize("bucket", sorted(PLANTED))
+def test_a_declaration_is_exact_in_both_directions(bucket):
+    """A declaration accounts for exactly the undriven writes its body makes.
+
+    Four plantings, one per reading.  A declared write is held out and boots.
+    A declaration whose body no longer makes that write is stale, and stale
+    in the same shape a reader would name it by.  A declared write the
+    verifier does drive is driven rather than held out, and its declaration
+    is then stale, so the two halves cannot both claim one write.  A
+    declaration on a writer that composes authored text shelters nothing: it
+    is refused, because a judgement is exactly what authored prose owes.
+    """
+    module = f"planted/{bucket}.py"
+    found = census((module, PLANTED[bucket]))
+    declared = CallSite(module=module, function="Writer.publish", method="post_comment")
+    site = declared
+    if bucket == "declared":
+        assert site in found.held_out
+        assert site not in found.unadopted
+        assert declared not in found.stale
+    elif bucket == "stale":
+        assert site not in found.sites
+        assert declared in found.stale
+        assert found.unadopted == frozenset()
+    elif bucket == "declared-but-driven":
+        assert site not in found.sites
+        driven = CallSite(
+            module=module, function="Writer.publish.put", method="post_comment"
+        )
+        assert driven in found.driven
+        assert driven not in found.held_out
+        assert declared in found.stale
+    else:
+        assert site in found.held_out
+        assert site in found.authored
+        assert site in found.unadopted
+        assert found.paths == (str(site),)
+
+
+IMPOSTOR = '''
+from kodezart.core.protocols import TrackerPort
+
+
+class Impostor:
+    """A class whose method shares the name of a writer the verifier drives."""
+
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def raise_escalation(self, **kwargs) -> None:
+        await self._tracker.post_comment(issue_key="K", body="b")
+'''
+UNTYPED_RECEIVER = '''
+from kodezart.core.protocols import TrackerPort
+
+
+class Loose:
+    """A caller that reaches a driven writer's name through nothing typed."""
+
+    def __init__(self, *, tracker: TrackerPort, other) -> None:
+        self._tracker, self._other = tracker, other
+
+    async def go(self) -> None:
+        await self._other.raise_escalation(lane_key="x")
+'''
+#: The real writer the two plantings above are aimed at: driven today
+#: because every caller of it is a step body.
+ESCALATION = Source(
+    module="services/lane_escalation.py",
+    function="LaneEscalationWriter.raise_escalation",
+)
+
+
+def test_a_function_sharing_a_driven_writer_name_is_not_driven():
+    """A name is never the grant: the impostor's own write is refused.
+
+    Delegation is read off resolved callees, so a second definition of a
+    driven writer's name inherits nothing from it, and the real writer keeps
+    what its own callers give it.
+    """
+    found = census(("planted/impostor.py", IMPOSTOR))
+    site = CallSite(
+        module="planted/impostor.py",
+        function="Impostor.raise_escalation",
+        method="post_comment",
+    )
+    assert found.unadopted == frozenset({site})
+    assert {entry for entry in found.driven if entry.holder == ESCALATION}
+
+
+def test_an_unresolved_reference_to_a_driven_writer_fails_closed():
+    """One untyped receiver withdraws a delegated grant rather than widening it.
+
+    The planted caller reaches the escalation writer's name through an
+    attribute nothing types.  Because a reference that does not resolve
+    might be that call, the writer stops being one every caller of which is
+    a step body, and its own writes are refused until the source says where
+    that call goes.
+    """
+    found = census(("planted/untyped.py", UNTYPED_RECEIVER))
+    moved = {site for site in census().driven if site.holder == ESCALATION}
+    assert moved
+    assert moved <= found.unadopted
+    assert moved.isdisjoint(found.driven)
+
+
+UNGROUNDED_STEP = '''
+from kodezart.core.protocols import TrackerPort
+
+
+class Step:
+    """A step nothing constructs and nothing hands to the verifier."""
+
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    @property
+    def surface(self):
+        return None
+
+    async def write(self, *, finding) -> None:
+        await self._tracker.post_comment(issue_key="K", body="b")
+'''
+
+
+def test_a_step_nothing_hands_to_the_verifier_is_not_driven():
+    """Answering the step protocol is not being driven by the verifier.
+
+    The planting states both of a step's members, so a check that read the
+    shape of a class would grant it a window.  Nothing constructs it and
+    nothing hands it over, so the verifier never drives it and its write is
+    refused.
+    """
+    found = census(("planted/ungrounded.py", UNGROUNDED_STEP))
+    site = CallSite(
+        module="planted/ungrounded.py", function="Step.write", method="post_comment"
+    )
+    assert found.unadopted == frozenset({site})
+
+
+#: The one annotation that says what the audit publisher hands the verifier.
+VERIFIER_BINDING = "        verifier: WriteBackVerifier,"
+
+
+def without_verifier_type() -> tuple[str, str]:
+    """The audit publisher with the type of its verifier no longer declared."""
+    module = "services/audit_publication.py"
+    text = installed_sources()[module]
+    assert text.count(VERIFIER_BINDING) == 1
+    return module, text.replace(VERIFIER_BINDING, "        verifier,", 1)
+
+
+def test_driven_is_proven_by_declared_types():
+    """Take away the declared type and the grant it carried goes with it.
+
+    The audit publisher reaches the verifier through an attribute its
+    constructor assigns in a tuple beside two others.  Typing that
+    attribute is the whole of why the steps it drives are driven, so with
+    the annotation gone their writes are refused rather than granted off the
+    attribute's name.  The step protocol's own member is never driven: it
+    declares the obligation and implements nothing.
+    """
+    found = census(without_verifier_type())
+    audit = {
+        site
+        for site in census().driven
+        if site.module in {"services/audit_publication.py", "services/audit_reopen.py"}
+    }
+    assert audit
+    assert audit <= found.unadopted
+    assert Source(module="core/protocols.py", function="WriteBackStep.write") not in {
+        site.holder for site in census().driven
+    }
+
+
+def test_the_census_covers_organize_and_the_evaluators_state_flips():
+    """The writes this criterion names by hand are the ones it says they are.
+
+    The census is derived, so the positive half is pinned explicitly: an
+    Organize author's four writes and its phase marker, and the evaluator's
+    own state flip, are driven; the lane writer's state moves are held out.
+    A derivation that quietly stopped seeing one of these would still
+    partition what it did see.
+    """
+    found = census()
+    author = "OrganizeOwner._author_write.apply"
+    assert {
+        CallSite(module="services/organize_owner.py", function=author, method=method)
+        for method in (
+            "edit_description",
+            "update_issue_graph",
+            "create_split_if_absent",
+            "create_criterion_if_absent",
+        )
+    } <= found.driven
+    assert (
+        CallSite(
+            module="services/organize_owner.py",
+            function="OrganizeOwner._mark.apply",
+            method="set_issue_classification",
+        )
+        in found.driven
+    )
+    assert (
+        CallSite(
+            module="services/amendment_writeback.py",
+            function="AmendmentWriteBack.apply.amend",
+            method="reset_criterion_pending",
+        )
+        in found.driven
+    )
+    assert {
+        CallSite(
+            module="services/lane_state_writer.py",
+            function="TrackerLaneStateWriter._write_one",
+            method="set_workflow_state",
+        ),
+        CallSite(
+            module="services/lane_state_writer.py",
+            function="TrackerLaneStateWriter._take_back",
+            method="reset_criterion_pending",
+        ),
+    } <= found.held_out
+
+
+def driven_methods(module: str) -> frozenset[str]:
+    """The writes the census says *module* makes inside a write-back."""
+    return frozenset(site.method for site in census().driven if site.module == module)
+
+
+@pytest.mark.parametrize("subject", [*sorted(SHAPES), "evaluator"])
+async def test_every_write_the_observed_runs_make_is_a_driven_site(
+    repository, monkeypatch, subject
+):
+    """What a run wrote and what the census read are the same set of writes.
+
+    Neither half can shrink quietly: a run that stopped making a write would
+    leave the census claiming a driven site nothing exercises, and a census
+    that stopped seeing one would leave the run's write unaccounted for.
+    The comparison is per module, which is where the two halves meet.
+    """
+    journal = observe(monkeypatch)
+    if subject == "evaluator":
+        port = RecordingTracker(native_tracker(), journal)
+        service, guard, workspace, _ = await build(
+            repository, Executor(reproduced=True), port=port
+        )
+        try:
+            await drive(service, guard, repository)
+        finally:
+            await cleanup(workspace)
+        module = "services/amendment_writeback.py"
+    else:
+        owner, _, _ = organize_run(monkeypatch, journal, shape=subject)
+        assert (await run_owner(owner)).halt is None
+        module = "services/organize_owner.py"
+    windowed = {
+        write.method for write in journal.writes if write.window is not None
+    } & WRITES
+    assert windowed
+    assert windowed <= driven_methods(module)
+
+
+DRIVEN = """
+from dataclasses import dataclass
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    apply: object
+
+    async def write(self, *, finding):
+        await self.apply(finding)
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort, verifier: WriteBackVerifier) -> None:
+        self._tracker, self._verifier = tracker, verifier
+
     async def publish(self):
         async def put(finding):
-            await self._tracker.post_comment(issue_key=self._key, body=self._body)
+            await self._tracker.post_comment(issue_key="K", body="b")
 
-        await self._verifier.write_back(step=Step(self._surface, put), ref=self._ref)
+        await self._verifier.write_back(step=Step(None, put), ref="r")
 """
 DIRECT = """
+from kodezart.core.protocols import TrackerPort
+
+
 class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
     async def publish(self):
-        await self._tracker.post_comment(issue_key=self._key, body=self._body)
+        await self._tracker.post_comment(issue_key="K", body="b")
 """
 
 
 def test_a_step_wired_straight_at_the_port_fails_the_static_check():
-    production = Production({"driven.py": DRIVEN, "direct.py": DIRECT})
-    outside = production.outside_a_write_back(artifact_writes())
-    assert outside == {
-        CallSite(module="direct.py", function="Writer.publish", method="post_comment")
-    }
-    assert CallSite(
-        module="driven.py", function="Writer.publish.put", method="post_comment"
-    ) in production.call_sites(artifact_writes())
+    """The same shape, once through the verifier and once not.
+
+    Both plantings are censused beside the real tree, so the verifier they
+    name is the real one and the difference between them is only the wiring.
+    The driven one binds its verifier under a declared type, which is the
+    whole of what makes its applier a write the loop re-reads.
+    """
+    found = census(("planted/driven.py", DRIVEN), ("planted/direct.py", DIRECT))
+    assert found.unadopted == frozenset(
+        {
+            CallSite(
+                module="planted/direct.py",
+                function="Writer.publish",
+                method="post_comment",
+            )
+        }
+    )
+    assert (
+        CallSite(
+            module="planted/driven.py",
+            function="Writer.publish.put",
+            method="post_comment",
+        )
+        in found.driven
+    )
+
+
+def test_a_writer_a_step_delegates_to_is_verified_with_it():
+    """The window belongs to the write, not to the function that holds it."""
+    delegated = CallSite(
+        module="services/lane_escalation.py",
+        function="LaneEscalationWriter.raise_escalation",
+        method="upsert_comment",
+    )
+    assert delegated in census().sites
+    assert delegated in census().driven
+
+
+@pytest.mark.parametrize("step", ["_PinStep.write", "_EscalationStep.write"])
+def test_the_open_question_record_write_is_a_steps_own_write(step):
+    """The pre-loop writes are declared nowhere: each step owns its own write.
+
+    The path makes two authored writes now — the pinned answer's and the
+    raise of an answer beyond what the subject's own text states — so both
+    are named here or this stops covering the second one.
+    """
+    site = CallSite(
+        module="services/fire_time_rulings.py",
+        function=step,
+        method="upsert_comment",
+    )
+    assert site in census().sites
+    assert site in census().driven
+    assert site in census().authored
+
+
+def test_no_write_outside_a_write_back_puts_authored_content_on_a_surface():
+    """Authored prose is never held out, whatever a declaration claims.
+
+    The scope is the writer — the class holding the call, or the module for
+    a module-level function — because the text is routinely composed by a
+    sibling of the method that puts it on the surface.
+    """
+    found = census()
+    assert found.authored, "a tree that authors nothing states nothing about authorship"
+    assert found.authored.isdisjoint(found.held_out | found.unadopted)
