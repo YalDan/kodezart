@@ -66,6 +66,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.domain.fire_spec import (
+    _criterion_rows,
     criterion_check,
     criterion_field_bodies,
     tracker_spec_from_issues,
@@ -317,8 +318,14 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
     found = body_scan_sites(sources)
 
     assert set(found) == {RULE_MODULE}
-    # Not vacuous: the owner is seen matching its own pattern.
-    assert found[RULE_MODULE]
+    # Not vacuous, and closed inside the owner too: the owner's own matching
+    # scopes are exactly the two the grammar is written as — the field reader
+    # and the row locator the amendment edit addresses rows through — read off
+    # the functions rather than spelled. A third scope inside the owner is a
+    # second statement of the grammar as much as one in another module is.
+    assert found[RULE_MODULE] == sorted(
+        {criterion_field_bodies.__name__, _criterion_rows.__name__}
+    )
 
 
 def test_the_grammar_is_reached_from_outside_by_call_and_never_re_matched():
