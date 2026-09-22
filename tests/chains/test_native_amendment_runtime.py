@@ -1,5 +1,7 @@
 """The production constructor drives real native guard/report consumers."""
 
+import asyncio
+
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -15,11 +17,13 @@ from kodezart.domain.amendment import (
     repeated_upheld,
 )
 from kodezart.domain.thread_id import ralph_thread_id
+from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import NativeAmendmentEvent, WorkflowIterationEvent
 from kodezart.types.domain.amendment import UpheldReason
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import (
+    CheckPrerequisite,
     LifecycleStage,
     OperationConfig,
     OperationMemberAbsentError,
@@ -42,6 +46,7 @@ from tests.lane_fixture import ADDED_OWED, added_criterion, criteria_echo
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_native_amendments import (
     REPO_URL,
+    UNVERIFIABLE_HERE,
     Executor,
     build,
     cleanup,
@@ -52,8 +57,21 @@ __all__ = ["repository"]
 
 
 async def make_runtime(
-    repository, executor, *, configured=True, max_iterations=2, no_operation=False
+    repository,
+    executor,
+    *,
+    configured=True,
+    max_iterations=2,
+    no_operation=False,
+    runner_environment=None,
 ):
+    """The composed engine over one repository.
+
+    *runner_environment* is that repository's declared environment facts. The
+    engine composes its own writer gate from the repositories it is handed, so
+    this is the only place a composed run can be told a capability is absent;
+    omitted, the entry carries the field's own default.
+    """
     service, _, workspace, port = await build(repository, executor)
     source = TrackerCriteria(tracker=port)
     spec, current = await source.read_entry(issue_key=SUBJECT)
@@ -87,7 +105,15 @@ async def make_runtime(
         scope_registry=InMemoryJobRegistry(),
         scope_status=FakeScopeStatusWriter(),
         criteria=source,
-        repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
+        repositories=(
+            RepoEntry(url=REPO_URL, trunk="main")
+            if runner_environment is None
+            else RepoEntry(
+                url=REPO_URL,
+                trunk="main",
+                runner_environment=dict(runner_environment),
+            ),
+        ),
         agent_service=service,
         git=workspace._git,
         cache=FakeRepoCache(str(repository[0])),
@@ -542,5 +568,105 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             for key, issue in port.issues.items()
             if issue.state_kind is WorkflowStateKind.COMPLETED
         } >= set(passed)
+    finally:
+        await cleanup(workspace)
+
+
+@pytest.mark.parametrize(
+    "max_iterations,fails_owed,verdict,settled",
+    [
+        pytest.param(
+            3,
+            False,
+            AcceptVerdict.accepted,
+            WorkflowStateKind.COMPLETED,
+            id="cleared_gate",
+        ),
+        pytest.param(
+            2,
+            True,
+            AcceptVerdict.rejected,
+            WorkflowStateKind.UNSTARTED,
+            id="iteration_ceiling",
+        ),
+    ],
+)
+async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_the_loop(
+    repository, max_iterations, fails_owed, verdict, settled
+):
+    """The refusal round grades nothing and the next round drives the criterion.
+
+    Round one's writer claims a departure resting on a capability the declared
+    runner environment lacks, so the round ends upheld at the environment reason,
+    escalated, and produces no evaluation. Nothing the refusal wrote filters the
+    driving set: round two dispatches the refused criterion like any other, and
+    the loop then ends by an ordinary stop, the cleared gate below the ceiling in
+    one row and the ceiling itself in the other. The refusal round spends its
+    seat of the iteration budget as any round does; there is no special case.
+    """
+    port = None
+    writes = 0
+    dispatched: list[list[str]] = []
+    classified_before_round_two: list[bool] = []
+
+    async def answers(title, payload, kwargs):
+        nonlocal writes
+        if title == "NativeWriterOutput":
+            writes += 1
+            if writes > 1:
+                classified_before_round_two.append(
+                    "decision" in port.issues[DIRECT_OWED].issue_labels
+                )
+                payload["claims"] = []
+        elif title == "AcceptanceCriteriaOutput":
+            keys = dispatched_keys(kwargs["prompt"], port)
+            dispatched.append(keys)
+            passed = set(keys) - ({DIRECT_OWED} if fails_owed else set())
+            payload.clear()
+            payload.update(criteria_echo(keys=keys, passed=passed))
+
+    executor = Executor(
+        reproduced=True,
+        claimed_capability="network",
+        finding=UNVERIFIABLE_HERE,
+        mutate=answers,
+    )
+    fire, spec, current, _, workspace, port = await make_runtime(
+        repository,
+        executor,
+        max_iterations=max_iterations,
+        runner_environment={CheckPrerequisite.NETWORK: False},
+    )
+    reports = []
+    last = None
+    try:
+        async with asyncio.timeout(300):
+            async for mode, value in consumer_graph(
+                fire, repository, spec, current
+            ).astream({}, stream_mode=["custom", "values"]):
+                if mode == "values":
+                    last = value
+                elif isinstance(value, NativeAmendmentEvent):
+                    reports.append(value)
+        assert writes == 2
+        assert [bool(event.report.upheld) for event in reports] == [True, False]
+        refusal = reports[0].report.upheld[0]
+        assert refusal.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+        assert refusal.publication.kind == "escalated"
+        assert classified_before_round_two == [True]
+        # One evaluation, and the refused criterion was in what it graded.
+        assert len(dispatched) == 1
+        assert DIRECT_OWED in dispatched[0]
+        assert last is not None
+        iteration = last["iteration"]
+        assert isinstance(iteration, WorkflowIterationEvent)
+        assert iteration.verdict is verdict
+        assert iteration.iteration == 2
+        # The ceiling row stops at its ceiling; the cleared row stops below it.
+        assert (iteration.iteration == max_iterations) is fails_owed
+        # The refusal round left no record of its own: the only one is round two's.
+        assert [record.iteration for record in iteration.trajectory.records] == [2]
+        assert iteration.trajectory.plateaued is False
+        assert port.issues[DIRECT_OWED].state_kind is settled
     finally:
         await cleanup(workspace)
