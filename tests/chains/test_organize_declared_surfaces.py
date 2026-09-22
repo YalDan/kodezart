@@ -293,3 +293,35 @@ async def test_a_member_the_round_mints_is_declared_by_the_next_round(monkeypatc
         )
         assert opened(board)[second] < landed
         assert "body complete" in board.server.issues[child].labels
+
+
+async def test_approval_landing_before_the_groom_marker_refuses_the_marker(monkeypatch):
+    """Approval that lands between two markers refuses the second one.
+
+    The scope is approved the moment the first member's marker lands, so the
+    pre-approval row's next write reads approval and is refused: the second
+    member keeps no marker, and the round's declared set is released with the
+    refusal.
+    """
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    owner, board, _ = factory()
+    member(board, SIBLING)
+    original = board.call_tool
+
+    async def approving(*, name, arguments):
+        response = await original(name=name, arguments=arguments)
+        if name == "save_issue" and "graph complete" in arguments.get("addLabels", []):
+            board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
+        return response
+
+    monkeypatch.setattr(board, "call_tool", approving)
+    with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
+        await run_owner(owner)
+    marked = [
+        key
+        for key in (CLAIMED_ISSUE, SIBLING)
+        if "graph complete" in board.server.issues[key].labels
+    ]
+    assert len(marked) == 1
+    assert board.grants() == []
