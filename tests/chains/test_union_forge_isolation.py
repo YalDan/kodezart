@@ -10,7 +10,8 @@ below assert the union step never reaches it either.
 import ast
 import importlib
 import inspect
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from functools import partial
 from pathlib import Path
 from types import ModuleType
 
@@ -60,16 +61,27 @@ FORGE_PORTS: tuple[type, ...] = (
 )
 
 
-def declared_surface(port: type) -> frozenset[str]:
-    """The public names *port* declares, read off the protocol object itself."""
-    return frozenset(name for name in vars(port) if not name.startswith("_"))
+def public_callables(subject: object) -> frozenset[str]:
+    """Every public name *subject* answers to that can be called.
+
+    Read across the whole MRO of whatever is handed in — a protocol object or
+    a built double — and never off ``vars``, which is one class body alone: a
+    merge capability arriving from a base class, or bound onto the instance in
+    ``__init__``, is real on the object and absent from ``vars``, so a surface
+    measured there is reopened by moving the method rather than removing it.
+    """
+    return frozenset(
+        name
+        for name in dir(subject)
+        if not name.startswith("_") and callable(getattr(subject, name, None))
+    )
 
 
 #: Every question the forge answers, across all of those ports.  A collaborator
 #: carrying any of them is a forge handle whatever the union step then did
 #: with it.
 FORGE_METHODS: frozenset[str] = frozenset().union(
-    *(declared_surface(port) for port in FORGE_PORTS)
+    *(public_callables(port) for port in FORGE_PORTS)
 )
 
 #: What must not be doable to a pull request from anywhere the union step can
@@ -117,15 +129,20 @@ UNION_MODULES: tuple[str, ...] = (
     "kodezart.services.union_identity",
 )
 
-#: Each forge READ port, its exact declared surface, its double and the
-#: double's.  The write port is pinned by the shipped base-resolution case;
+#: Each forge READ port, its exact surface, how its double is BUILT and that
+#: double's surface.  The double is built rather than named because a surface
+#: is measured off an instance across its MRO: a capability attached to a base
+#: class or bound in ``__init__`` is on the object and not in the class body.
+#: The write port is pinned by the shipped base-resolution case;
 #: these are the read halves, where a merge would be likeliest to arrive
 #: disguised as one more thing you can ask about a pull request.  ForgeQuery is
 #: the port the criterion literally names, so it is pinned here as well as
 #: scanned above.  A double's surface is wider than its port's wherever the
 #: native client answers several read questions on one object while each port
 #: declares only its own.
-QUERY_DOUBLES: tuple[tuple[type, frozenset[str], type, frozenset[str]], ...] = (
+QUERY_DOUBLES: tuple[
+    tuple[type, frozenset[str], Callable[[], object], frozenset[str]], ...
+] = (
     (
         protocols.ForgeQuery,
         frozenset({"open_pr_for_head", "branch_web_url"}),
@@ -135,7 +152,7 @@ QUERY_DOUBLES: tuple[tuple[type, frozenset[str], type, frozenset[str]], ...] = (
     (
         protocols.PRStateReader,
         frozenset({"read_pr_state"}),
-        FakePRStateReader,
+        partial(FakePRStateReader, records={}),
         frozenset({"read_pr_state"}),
     ),
     (
@@ -378,7 +395,7 @@ def test_the_scanned_forge_surface_is_derived_from_every_forge_port() -> None:
     """
     assert {port.__name__ for port in FORGE_PORTS} == set(PORT_ANCHORS)
     for port in FORGE_PORTS:
-        surface = declared_surface(port)
+        surface = public_callables(port)
         assert surface, port.__name__
         assert surface <= FORGE_METHODS, port.__name__
         assert PORT_ANCHORS[port.__name__] in surface, port.__name__
@@ -506,20 +523,26 @@ def test_the_union_steps_own_modules_name_the_merge_state_reader_nowhere() -> No
             assert forbidden not in source, (name, forbidden)
 
 
-@pytest.mark.parametrize("port, port_surface, double, double_surface", QUERY_DOUBLES)
+@pytest.mark.parametrize(
+    "port, port_surface, build_double, double_surface",
+    QUERY_DOUBLES,
+    ids=[row[0].__name__ for row in QUERY_DOUBLES],
+)
 def test_the_query_ports_and_their_doubles_expose_no_merge_capability(
     port: type,
     port_surface: frozenset[str],
-    double: type,
+    build_double: Callable[[], object],
     double_surface: frozenset[str],
 ) -> None:
-    """A merge call on either read port cannot type-check against it."""
-    assert {name for name in vars(port) if not name.startswith("_")} == port_surface
-    assert {
-        name
-        for name, value in vars(double).items()
-        if not name.startswith("_") and callable(value)
-    } == double_surface
+    """A merge call on either read port cannot type-check against it.
+
+    Both sides are measured off a real object across its MRO — the protocol
+    itself, and one double built the way the cases here build it — so a merge
+    that arrives by inheritance or is bound on during construction is inside
+    the measurement instead of behind it.
+    """
+    assert public_callables(port) == port_surface
+    assert public_callables(build_double()) == double_surface
 
 
 async def test_verifying_publishes_nothing_and_leaves_every_ref_identical(
