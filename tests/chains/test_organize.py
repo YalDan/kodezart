@@ -1473,12 +1473,12 @@ def gap_computation_sites(sources):
 
     Reached under any spelling: the imported name, an ``as`` alias, a module
     route, an assignment alias, a declaration, a bare or attribute spelling.
-    A string constant is not a route, so the terminal vocabulary's ``in_gap``
-    label stays out and the module list above stays the upper bound.
-    ``in_gap`` is the seed that keeps that negative live: the one module
-    spelling a seed name inside a string constant spells ``in_gap``, so a
-    string constant read as a route would pull it in.  Dropping the seed
-    changes no discovered module at head, and nothing here claims it would.
+    A string constant is not a route: a module whose only mention of a seed is
+    a quoted word — a vocabulary label, a message, a serialised key — reaches
+    no gap arithmetic and is no gap site, which is what keeps the module list
+    above an upper bound rather than a name search.  That negative is pinned by
+    an injected module below and not by whichever module of the tree happens to
+    quote a seed today, because none of them need to.
 
     Then the wrappers: a module that calls a helper handing back the gap's own
     answer consumes the gap without spelling any seed, so it joins too.  Those
@@ -1605,6 +1605,29 @@ def test_a_gap_site_reached_under_another_spelling_is_discovered_and_scanned(
     assert gap_sites_reading_the_change_stamp(sources) == (
         {"services/planted.py": {"updated_at"}} if reads else {}
     )
+
+
+def test_a_module_that_only_quotes_a_seed_name_is_not_a_gap_site():
+    """A quoted seed name is a value, never a route into the arithmetic.
+
+    This is what bounds the discovered surface from above: were a string
+    constant a route, every module carrying a vocabulary label, a log field or
+    a serialised key that happens to spell a seed would be scanned, and the
+    module bound would stop being a statement about what computes the gap.
+    Planted rather than read off a module of the tree, so the negative holds
+    whatever the tree's own prose happens to quote.
+    """
+    sources = source_tree()
+    sources["services/planted.py"] = (
+        "GAP_LABEL = 'in_gap'\n"
+        "COLUMNS = ('compute_gap', 'organize_gap', 'SubtreeClosure')\n"
+        "\n"
+        "def label(row):\n"
+        "    return {GAP_LABEL: row} if GAP_LABEL in COLUMNS else {}\n"
+    )
+
+    assert "services/planted.py" not in gap_computation_sites(sources)
+    assert gap_sites_reading_the_change_stamp(sources) == {}
 
 
 def test_the_gap_wrappers_at_head_are_the_helpers_that_hand_back_its_answer():
