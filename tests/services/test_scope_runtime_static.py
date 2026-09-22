@@ -16,10 +16,11 @@ through.
   it. A submodule imported through its package
   (``from kodezart.domain import lane_entry``) is followed too. A module of
   another package is not followed, and nothing it imports is scanned. A
-  relative import (``from . import x``) is not followed either; ``src`` holds
-  none. The chain modules the walker imports are deliberately OUT of the
-  set — the fire and lane graphs legitimately take a checkpointer, and the
-  scope path's is settled by composition, which
+  relative import (``from . import x``) is followed as well, its level
+  resolved against the module it is written in (KOD-585). The chain modules
+  the walker imports are deliberately OUT of the set — the fire and lane
+  graphs legitimately take a checkpointer, and the scope path's is settled
+  by composition, which
   ``tests/integration/test_scope_runtime.py::
   test_the_scoped_arm_holds_no_checkpointer_while_the_authored_arm_keeps_it``
   asserts by construction instead.
@@ -72,11 +73,43 @@ SCANNED_PACKAGES = ("kodezart.services.", "kodezart.domain.")
 CONTROL_PACKAGES = ("kodezart.chains.",)
 
 SRC = Path(__file__).resolve().parents[2] / "src"
+WALKER_MODULE = scope_runtime.__name__
 WALKER = SRC / "kodezart" / "services" / "scope_runtime.py"
 
 
+def dotted_module(node: ast.ImportFrom, *, module: str) -> str | None:
+    """The absolute module *node* imports out of, however it is spelled.
+
+    A relative import carries its package as punctuation instead of as a
+    name: inside ``kodezart.services.scope_runtime``, ``from . import x``
+    names ``kodezart.services.x`` and ``from ..domain.y import z`` names
+    ``kodezart.domain.y``, exactly as the absolute spellings do.  A scan
+    that read ``node.module`` alone followed no arm at all for either, so
+    what separated a module inside a followed package from one outside it
+    was a dot — which is a bound on punctuation and not on the import
+    (KOD-585).  ``node.level`` is therefore resolved against the scanned
+    module's own dotted name before any prefix is matched, which is why
+    every caller says which module the tree it hands over IS.
+
+    A plain ``from . import x`` resolves to the package itself, which is the
+    bare-package form under another spelling and lands in the arm that reads
+    the imported name beside it.  ``None`` is for a level that climbs past
+    the scanned module's own root: that spelling imports nothing at all, and
+    whatever name it carries is no module inside the package either.
+    """
+    if not node.level:
+        return node.module
+    package = module.split(".")[: -node.level]
+    if not package:
+        return None
+    return ".".join([*package, node.module] if node.module else package)
+
+
 def imported_modules(
-    tree: ast.AST, prefixes: tuple[str, ...] = SCANNED_PACKAGES
+    tree: ast.AST,
+    prefixes: tuple[str, ...] = SCANNED_PACKAGES,
+    *,
+    module: str,
 ) -> set[str]:
     """Every module the source imports from *prefixes*, by every spelling.
 
@@ -94,16 +127,27 @@ def imported_modules(
     package, so a from-import of the package itself adds each name that is a
     submodule's file. A name that is not is a package attribute, and is
     skipped.
+
+    All three are read relatively as well as absolutely: *module* says which
+    module *tree* is, and ``dotted_module`` resolves each ``from``'s level
+    against it, so ``from . import x``, ``from .x import y`` and ``from
+    ..pkg.x import y`` are the same three forms and land in the same arms.
+    What is not read is a module reached through no import node of this tree
+    at all — an attribute chain off a parent package another module
+    imported.
     """
     packages = tuple(prefix.rstrip(".") for prefix in prefixes)
     found: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module is not None:
-            if node.module.startswith(prefixes):
-                found.add(node.module)
-            elif node.module in packages:
+        if isinstance(node, ast.ImportFrom):
+            dotted = dotted_module(node, module=module)
+            if dotted is None:
+                continue
+            if dotted.startswith(prefixes):
+                found.add(dotted)
+            elif dotted in packages:
                 for alias in node.names:
-                    candidate = f"{node.module}.{alias.name}"
+                    candidate = f"{dotted}.{alias.name}"
                     if path_of(candidate).exists():
                         found.add(candidate)
         elif isinstance(node, ast.Import):
@@ -117,22 +161,25 @@ def path_of(module: str) -> Path:
     return SRC.joinpath(*module.split(".")).with_suffix(".py")
 
 
-def import_closure(tree: ast.AST) -> set[str]:
+def import_closure(tree: ast.AST, *, module: str) -> set[str]:
     """Every scanned-package module *tree* reaches through imports.
 
     The modules its own import nodes name, then the ones theirs name, followed
     to a fixed point: a checkpoint read two modules away is as much the walk's
-    as one in a module the walker names itself.
+    as one in a module the walker names itself. *module* says which module
+    *tree* is, and every module reached is read against its own name, so a
+    relative import is resolved where it is written.
     """
     reached: set[str] = set()
-    frontier = imported_modules(tree)
+    frontier = imported_modules(tree, module=module)
     while frontier:
         reached |= frontier
         frontier = {
             found
-            for module in frontier
+            for reached_module in frontier
             for found in imported_modules(
-                ast.parse(path_of(module).read_text(encoding="utf-8"))
+                ast.parse(path_of(reached_module).read_text(encoding="utf-8")),
+                module=reached_module,
             )
         } - reached
     return reached
@@ -206,7 +253,9 @@ def test_a_submodule_imported_through_its_package_is_followed() -> None:
     module's file and is skipped.
     """
     source = "from kodezart.domain import lane_entry, LaneEntryError"
-    assert imported_modules(ast.parse(source)) == {"kodezart.domain.lane_entry"}
+    assert imported_modules(ast.parse(source), module=WALKER_MODULE) == {
+        "kodezart.domain.lane_entry"
+    }
 
 
 #: One control per spelling the walk follows, as a one-line source and the
@@ -214,11 +263,20 @@ def test_a_submodule_imported_through_its_package_is_followed() -> None:
 #: walk claims is that a module inside a followed package is reached, and
 #: until the third row existed the bare-package spelling carried a real
 #: module straight past it while every other assertion stayed green.
+#:
+#: Each form appears twice, absolutely and relatively, because the relative
+#: spelling of a followed import is the same reach with the package written
+#: as punctuation: every row below is read as if written in the walker, which
+#: is where a hop would be written, and the three relative rows are one per
+#: level the resolution has to handle.
 GIT_OBSERVATIONS = "kodezart.services.git_observations"
 WALK_CONTROLS = (
     (f"from {GIT_OBSERVATIONS} import remote_head", GIT_OBSERVATIONS),
     (f"import {GIT_OBSERVATIONS}", GIT_OBSERVATIONS),
     ("from kodezart.services import git_observations as _go", GIT_OBSERVATIONS),
+    ("from . import git_observations as _go", GIT_OBSERVATIONS),
+    ("from .git_observations import remote_head", GIT_OBSERVATIONS),
+    ("from ..services.git_observations import remote_head", GIT_OBSERVATIONS),
 )
 
 
@@ -230,7 +288,7 @@ WALK_CONTROLS = (
 def test_the_walk_follows_each_spelling_a_module_is_imported_by(
     source, expected
 ) -> None:
-    assert imported_modules(ast.parse(source)) == {expected}
+    assert imported_modules(ast.parse(source), module=WALKER_MODULE) == {expected}
 
 
 def test_the_bare_package_spelling_yields_only_names_that_are_modules() -> None:
@@ -244,12 +302,15 @@ def test_the_bare_package_spelling_yields_only_names_that_are_modules() -> None:
     """
     source = "from kodezart.services import ScopeWorkflowEngine"
 
-    assert imported_modules(ast.parse(source)) == set()
+    assert imported_modules(ast.parse(source), module=WALKER_MODULE) == set()
 
 
 def test_the_walker_names_no_checkpoint_read() -> None:
     walker = ast.parse(WALKER.read_text(encoding="utf-8"))
-    scanned = [WALKER, *(path_of(module) for module in import_closure(walker))]
+    scanned = [
+        WALKER,
+        *(path_of(module) for module in import_closure(walker, module=WALKER_MODULE)),
+    ]
     # Derived, not hand-picked: the walker's imports, followed, decide the set,
     # and a module added to it is scanned without this test being edited.
     assert len(scanned) > 1, "the walker imports no service or domain module"
@@ -265,7 +326,8 @@ def test_the_walker_names_no_checkpoint_read() -> None:
     # graph with its checkpointer. A detector that finds nothing there is
     # indistinguishable from a clean walker.
     controls = [
-        path_of(module) for module in imported_modules(walker, CONTROL_PACKAGES)
+        path_of(module)
+        for module in imported_modules(walker, CONTROL_PACKAGES, module=WALKER_MODULE)
     ]
     assert controls, "the walker imports no chain module to control the detector on"
     assert [path.name for path in controls if named_sites(path)]
