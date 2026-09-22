@@ -28,6 +28,7 @@ from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.amendment_write import AmendmentRecord
 from kodezart.types.domain.assertion_drift import AssertionDeviationClaim
 from kodezart.types.domain.operation import CheckPrerequisite, OperationConfig
+from kodezart.types.domain.run_state import LaneEscalation
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -358,14 +359,140 @@ async def test_applied_writeback_repairs_within_bound_without_rejudging_ground(
         await cleanup(workspace)
 
 
+#: The occurrence key is the last component of an amendment or escalation marker.
+def occurrence_of(marker):
+    return marker[1:-1].rsplit(":", 1)[1]
+
+
+def escalations_on(port, key):
+    """Every escalation comment this operation's prefix owns on *key*."""
+    return [
+        comment
+        for comment in port.comments
+        if comment.issue_key == key and comment.body.startswith("[fixture-escalation:")
+    ]
+
+
+async def test_undemonstrable_refusal_escalates_once_and_a_replay_writes_nothing_new(
+    repository,
+):
+    """One escalation per refusal occurrence, on the criterion's own sub-issue.
+
+    The escalation takes the write the measured uneconomic refusal already takes:
+    the same marker keyed on the refusal occurrence, on the same sub-issue the
+    archive lands on, and the same `decision` classification after it. What it
+    carries is its own question, composed from the claim and the judgment.
+
+    The replay is the re-entry production actually makes. The occurrence is
+    computed over the sub-issue row, and the classification enters that row, so
+    the window a killed run re-enters is the one between the escalation comment
+    and the classification: restore the row to what it was when the occurrence
+    was computed, judge the same claim again, and the escalation resolves to the
+    comment already posted while the classification completes.
+    """
+    port = tracker()
+    executor = Executor(
+        reproduced=True,
+        claimed_capability="network",
+        finding=UNVERIFIABLE_HERE,
+    )
+    service, guard, workspace, _ = await build(
+        repository,
+        executor,
+        port=port,
+        runner_environment={CheckPrerequisite.NETWORK: False},
+    )
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        refusal = report.upheld[0]
+        assert refusal.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+        assert refusal.publication.kind == "escalated"
+        escalation_artifact = refusal.publication.escalation.artifact
+        assert escalation_artifact.surface.ref.key == DIRECT_OWED
+        # One escalation for this occurrence, keyed on it: the archive marker
+        # and the escalation marker name the same refusal.
+        raised = escalations_on(port, DIRECT_OWED)
+        assert len(raised) == 1
+        archives = [
+            c
+            for c in port.comments
+            if c.issue_key == DIRECT_OWED and c.body.startswith("[fixture-amendment:")
+        ]
+        assert len(archives) == 1
+        occurrence = occurrence_of(archives[0].body.partition("\n")[0])
+        posted = LaneEscalation.model_validate_json(raised[0].body.partition("\n")[2])
+        assert posted.escalation_key == occurrence
+        assert occurrence_of(raised[0].body.partition("\n")[0]) == occurrence
+        assert posted.issue_id == DIRECT_OWED
+        assert posted.raised_at_sha == repository[1]
+        assert "decision" in port.issues[DIRECT_OWED].issue_labels
+        assert port.classification_writes == [(DIRECT_OWED, "decision")]
+        # The question, read off the board rather than off the verdict: the
+        # capability, what the demonstration lacks, what would revive the
+        # criterion, and the alternative open to a person.
+        assert "network" in posted.question
+        assert UNVERIFIABLE_HERE["missing_resource"] in posted.question
+        assert "runner environment" in posted.question
+        assert "supersession" in posted.question
+        assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
+            "NativeWriterOutput",
+            "AmendmentJudgment",
+            "WriteBackFinding",
+            "WriteBackFinding",
+        ]
+        assert not any(isinstance(e, ResultEvent) for e in events)
+    finally:
+        await cleanup(workspace)
+
+    # The crash window: the escalation comment landed, the classification had
+    # not. Restoring the row restores the occurrence the next fire computes.
+    escalated = port.issues[DIRECT_OWED]
+    port.issues[DIRECT_OWED] = escalated.model_copy(
+        update={"issue_labels": escalated.issue_labels - {"decision"}}
+    )
+    comments_before = [(c.comment_key, c.body) for c in port.comments]
+    writes_before = list(port.comment_writes)
+    service, replay_guard, workspace, _ = await build(
+        repository,
+        Executor(
+            reproduced=True,
+            claimed_capability="network",
+            finding=UNVERIFIABLE_HERE,
+        ),
+        port=port,
+        frozen_spec=guard._spec,
+        runner_environment={CheckPrerequisite.NETWORK: False},
+    )
+    try:
+        events = await drive(service, replay_guard, repository, resume=True)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        replay = report.upheld[0]
+        assert replay.publication.kind == "escalated"
+        assert [(c.comment_key, c.body) for c in port.comments] == comments_before
+        assert port.comment_writes == writes_before
+        assert escalations_on(port, DIRECT_OWED) == [
+            c for c in port.comments if c.comment_key == raised[0].comment_key
+        ]
+        # The one write the replay completes is the one the crash left undone.
+        assert port.classification_writes == [
+            (DIRECT_OWED, "decision"),
+            (DIRECT_OWED, "decision"),
+        ]
+        assert not any(isinstance(e, ResultEvent) for e in events)
+    finally:
+        await cleanup(workspace)
+
+
 async def test_undemonstrable_here_upholds_at_the_environment_reason_touching_nothing(
     repository,
 ):
     """Undemonstrable here is a non-ground: the claim is refused, not actioned.
 
-    The Do's further clause — routing the claim to the parent lane's state — has
-    no production symbol at this head and is not built here; the capability is
-    named on the report and inside the recorded refusal.
+    The refusal escalates on the criterion's own sub-issue and classifies it
+    `decision`, which is the one field of the claimed record that moves; the
+    capability is named on the report, inside the recorded refusal and in the
+    escalation's question.
     """
     port = tracker()
     before = port.issues[DIRECT_DONE]
@@ -388,18 +515,22 @@ async def test_undemonstrable_here_upholds_at_the_environment_reason_touching_no
         assert refusal.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
         assert refusal.claim.claimed_capability is CheckPrerequisite.NETWORK
         assert refusal.claim.ground in AmendmentGround
-        assert refusal.publication.kind == "recorded"
+        assert refusal.publication.kind == "escalated"
         record = refusal.publication.record.artifact
         assert '"claimedCapability":"network"' in record.content
         assert record.surface.ref.key == DIRECT_DONE
         settled = port.issues[DIRECT_DONE]
-        assert settled.model_dump(exclude={"updated_at"}) == before.model_dump(
-            exclude={"updated_at"}
-        )
+        # Every field but the classification the escalation adds, and the stamp
+        # that write carries, is the record this run entered with.
+        assert settled.model_dump(
+            exclude={"updated_at", "issue_labels"}
+        ) == before.model_dump(exclude={"updated_at", "issue_labels"})
+        assert settled.issue_labels == before.issue_labels | {"decision"}
         assert settled.state_kind is WorkflowStateKind.COMPLETED
         assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
             "NativeWriterOutput",
             "AmendmentJudgment",
+            "WriteBackFinding",
             "WriteBackFinding",
         ]
         assert not any(isinstance(e, ResultEvent) for e in events)

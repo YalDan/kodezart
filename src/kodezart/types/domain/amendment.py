@@ -1,7 +1,7 @@
 """Native departure claims and independent judgments, before any write."""
 
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, Final, Literal, Self
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -198,6 +198,18 @@ class UpheldReason(StrEnum):
     COST_MEASURED_UNECONOMIC = "cost_measured_uneconomic"
 
 
+#: The reasons only a person can settle, so a refusal at one of them escalates.
+#: A measured uneconomic cost and a capability the declared runner environment
+#: lacks are both outside the branch's reach; the other two reasons are
+#: statements about the criterion itself and are answered by working on it.
+ESCALATED_REASONS: Final[frozenset[UpheldReason]] = frozenset(
+    {
+        UpheldReason.COST_MEASURED_UNECONOMIC,
+        UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+    }
+)
+
+
 class UpheldJudgment(CamelCaseModel):
     """An accepted existing subject whose proposed departure was not actioned."""
 
@@ -254,7 +266,7 @@ class RecordedRefusal(CamelCaseModel):
 
 
 class EscalatedRefusal(CamelCaseModel):
-    """The measured uneconomic arm, with both actual canonical write results."""
+    """A refusal at an escalating reason, with both actual canonical write results."""
 
     model_config = ConfigDict(frozen=True)
     kind: Literal["escalated"] = "escalated"
@@ -278,8 +290,10 @@ class UpheldAmendment(UpheldJudgment):
         escalated = isinstance(self.publication, EscalatedRefusal)
         if isinstance(self.publication, EscalatedRefusal):
             results.append(self.publication.escalation)
-        if escalated != (self.reason is UpheldReason.COST_MEASURED_UNECONOMIC):
-            raise ValueError("only measured uneconomic refusals carry escalation")
+        if escalated != (self.reason in ESCALATED_REASONS):
+            raise ValueError(
+                "only a refusal at an escalating reason carries escalation"
+            )
         if any(result.verdict is not AuditVerdict.HOLDS for result in results):
             raise ValueError("a completed refusal requires verified publications")
         if any(

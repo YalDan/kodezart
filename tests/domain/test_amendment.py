@@ -5,11 +5,17 @@ from typing import get_args
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from kodezart.domain.amendment import repeated_upheld, upheld_reason
+from kodezart.domain.amendment import (
+    NativeWriteRefusalError,
+    escalation_question,
+    repeated_upheld,
+    upheld_reason,
+)
 from kodezart.handlers.agent_handler import _queued_event_payload
 from kodezart.types.domain.agent import NativeAmendmentEvent
 from kodezart.types.domain.agent import RulingId as ExistingRulingId
 from kodezart.types.domain.amendment import (
+    ESCALATED_REASONS,
     AmendedAmendment,
     AmendmentClaim,
     AmendmentGround,
@@ -251,6 +257,95 @@ def test_the_reason_vocabulary_is_exactly_these_four():
         ("COST_MEASURED_AFFORDABLE", "cost_measured_affordable"),
         ("COST_MEASURED_UNECONOMIC", "cost_measured_uneconomic"),
     ]
+
+
+def test_the_escalating_reasons_are_the_two_a_person_must_settle():
+    """One statement of which reasons escalate, read by the rule and the routing.
+
+    The other two reasons are statements about the criterion's own text, which
+    the next iteration answers by working on it; these two are outside the
+    branch's reach, so a person is asked.
+    """
+    assert ESCALATED_REASONS == {
+        UpheldReason.COST_MEASURED_UNECONOMIC,
+        UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+    }
+
+
+#: The question the landed uneconomic escalation already carries, byte for byte.
+_UNECONOMIC_QUESTION = "Resolve the measured uneconomic departure for opaque/criterion"
+
+
+@pytest.mark.parametrize(
+    "reason,claimed,expected",
+    [
+        pytest.param(
+            UpheldReason.COST_MEASURED_UNECONOMIC,
+            None,
+            _UNECONOMIC_QUESTION,
+            id="uneconomic_keeps_its_own_question",
+        ),
+        pytest.param(
+            UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+            CheckPrerequisite.NETWORK,
+            (
+                "network",
+                "network access for the demonstration",
+                "runner environment",
+                "supersession",
+            ),
+            id="capability_names_the_revival_condition",
+        ),
+        pytest.param(
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            None,
+            NativeWriteRefusalError,
+            id="ground_raises_nothing",
+        ),
+        pytest.param(
+            UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+            None,
+            NativeWriteRefusalError,
+            id="capability_without_a_typed_claim_refuses",
+        ),
+    ],
+)
+def test_the_escalation_question_names_the_capability_and_the_revival_condition(
+    reason, claimed, expected
+):
+    """Every reason is answered, and the two that raise nothing refuse as types.
+
+    The uneconomic arm's question is the literal it already was, so admitting the
+    second reason moves no existing escalation's content. The capability arm names
+    what is absent, what the demonstration needs, the one change that would revive
+    the criterion and the alternative left to a person. A reason that raises no
+    escalation, and a missing-capability reason with no typed claim to name, refuse
+    before any backend call rather than composing an empty question.
+    """
+    value = record()
+    claim = AmendmentClaim.model_validate(
+        value.claim.model_dump() | {"claimed_capability": claimed}
+    )
+    judgment = AmendmentJudgment.model_validate(
+        value.judgment.model_dump()
+        | {
+            "finding": {
+                "verdict": "unverifiable",
+                "smallest_repair": "environment_supply",
+                "missing_resource": "network access for the demonstration",
+            }
+        }
+    )
+    if expected is NativeWriteRefusalError:
+        with pytest.raises(NativeWriteRefusalError):
+            escalation_question(reason=reason, claim=claim, judgment=judgment)
+        return
+    question = escalation_question(reason=reason, claim=claim, judgment=judgment)
+    if isinstance(expected, str):
+        assert question == expected
+        return
+    for named in expected:
+        assert named in question
 
 
 def test_a_verdict_and_its_reason_cannot_be_constructed_apart():
@@ -557,9 +652,19 @@ def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_am
         "wrong_issue",
         "duplicate",
         "uneconomic_without_escalation",
+        "environment_without_escalation",
+        "ground_with_escalation",
     ],
 )
 def test_completed_reports_refuse_missing_or_unrelated_canonical_evidence(mutation):
+    """The publication rule is a biconditional, refused from both directions.
+
+    The two environment rows are the controls the set rule needs. The one
+    withholding the escalation carries the typed claimed capability, so the
+    subject rule cannot speak first and only the publication rule can refuse;
+    the one adding an escalation leaves the reason a person is never asked
+    about, so an escalation on it is a question with no addressee.
+    """
     value = record().model_dump()
     if mutation == "missing_publication":
         del value["publication"]
@@ -571,6 +676,15 @@ def test_completed_reports_refuse_missing_or_unrelated_canonical_evidence(mutati
         )
     elif mutation == "uneconomic_without_escalation":
         value["reason"] = "cost_measured_uneconomic"
+    elif mutation == "environment_without_escalation":
+        value["reason"] = "environment_lacks_capability"
+        value["claim"]["claimed_capability"] = "network"
+    elif mutation == "ground_with_escalation":
+        value["publication"] = {
+            "kind": "escalated",
+            "record": value["publication"]["record"],
+            "escalation": value["publication"]["record"],
+        }
     with pytest.raises(ValidationError):
         AmendmentReport.model_validate(
             {"verdicts": [value, value] if mutation == "duplicate" else [value]}
