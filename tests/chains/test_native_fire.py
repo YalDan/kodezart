@@ -16,6 +16,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
 from kodezart.adapters.job_registry import InMemoryJobRegistry
+from kodezart.chains import fire_implementation, fire_review
 from kodezart.chains.criteria import (
     TrackerCriteria,
     require_current_native_snapshot,
@@ -2302,6 +2303,16 @@ class CountingSource:
         #: the entry mode it was taken in.
         self.calls: list[tuple[str, object]] = []
 
+    @property
+    def _tracker(self):
+        """The board behind the source, which composition wires beside it.
+
+        Exposed so this wrapper can stand where the source itself stands
+        when a whole engine is built on it, and "no reading was taken" is
+        then a statement about every node rather than about one call.
+        """
+        return self._source._tracker
+
     async def read_entry(self, *, issue_key: str, delivering: bool = False):
         self.calls.append(("read_entry", delivering))
         return await self._source.read_entry(issue_key=issue_key, delivering=delivering)
@@ -2345,31 +2356,86 @@ async def test_a_delivering_lane_reads_its_finished_roster_once_and_then_holds_i
     assert port.issues[DIRECT_DONE].state_kind is WorkflowStateKind.COMPLETED
 
 
-async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier():
+#: Every native barrier that states its own roster, by the node name the
+#: graph registers it under.  The entry gate is one of three, not the only
+#: one: a checkpoint resumed at the loop or at the post-merge review lands
+#: on a node that passes *held* as well, so the refusal is stated over the
+#: whole set rather than at whichever barrier a case happened to pick.
+PERSISTED_SET_BARRIERS = (
+    "revalidate_criteria",
+    "run_ralph_loop",
+    "review_against_ticket",
+)
+
+
+@pytest.mark.parametrize("barrier", PERSISTED_SET_BARRIERS)
+async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier(
+    barrier, monkeypatch
+):
     """The set is read from the tracker at the write, never carried in (KOD-652).
 
-    A persisted criteria document handed to the native entry barrier is
-    refused by type before the barrier reads anything, so a run cannot
-    enter on criteria carried in on a branch file. The sibling case above
-    is the control: a roster of the kind the tracker read produces passes
-    through the same slot.
+    A persisted criteria document reaching ANY native barrier is refused by
+    type before that barrier reads anything, so a run cannot proceed on
+    criteria carried in on a branch file -- not on entry, and not on a
+    checkpoint resumed at the loop or at the post-merge review, both of
+    which state their own roster. The delivering-lane case above is the
+    control: a roster of the kind the tracker read produces passes through
+    the same slot.
     """
     port = tracker()
-    source = TrackerCriteria(tracker=port)
-    spec, _ = await source.read_entry(issue_key=SUBJECT)
-    counting = CountingSource(source)
+    counting = CountingSource(TrackerCriteria(tracker=port))
+    spec, _ = await counting.read_entry(issue_key=SUBJECT)
+    counting.calls.clear()
+    fire = engine(criteria=counting)
+    # One state over the three barriers, holding what each reads before it
+    # asks the roster question: the entry gate reads the lane it entered
+    # on, the loop and the review read the remediation slot, and the
+    # review reads the two shas consolidation left behind.  The branch and
+    # counter slots are what the loop reads AFTER the barrier, present so
+    # that a barrier which failed to refuse is reported as a refusal that
+    # did not happen rather than as a missing key further down.
     state = {
         "issue_key": SUBJECT,
         "fire_spec": spec,
         "lane_entry": entry_of("new"),
+        "remediation_ticket": None,
+        "review_base_sha": "a" * 40,
+        "review_head_sha": "b" * 40,
+        "feature_branch": "kodezart/fire-subject",
+        "ralph_branch": "kodezart/fire-subject-loop",
+        "work_base_ref": "main",
+        "repo_visibility": RepoVisibility.PUBLIC,
+        "total_iterations": 0,
         "criterion_set": CriteriaArtifact(
             criteria=make_criteria("recorded"),
             conjunction=ConjunctionVerdict(satisfiable=True),
         ),
     }
+    config = {
+        "configurable": {
+            "prompt": "Implement the requested behavior",
+            "repo_path": "/tmp/fire",
+            "repo_url": "https://github.com/owner/repo",
+            "cache_key": "native-fire",
+            "base_spec": trunk_base("main"),
+            "permission_mode": PermissionMode.UNATTENDED,
+            "allowed_tools": ["Bash"],
+        }
+    }
+    for module in (fire_implementation, fire_review):
+        monkeypatch.setattr(module, "get_stream_writer", lambda: lambda _: None)
+    reach = {
+        "revalidate_criteria": lambda: revalidate_criteria(
+            state, config, source=counting
+        ),
+        "run_ralph_loop": lambda: fire.implementation.run_ralph_loop(state, config),
+        "review_against_ticket": lambda: fire.review.review_against_ticket(
+            state, config
+        ),
+    }
 
     with pytest.raises(PersistedCriterionSetError):
-        await revalidate_criteria(state, {}, source=counting)
+        await reach[barrier]()
 
     assert counting.calls == []
     assert port.issues[DIRECT_OWED].state_kind is WorkflowStateKind.UNSTARTED
