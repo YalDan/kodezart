@@ -6,20 +6,21 @@ eventually grows an ancestry test, a prefix match or a null case, and
 nothing red says so.  The rule therefore lives in exactly one function and
 every other reader consults it, which is what this guard keeps true.
 
-Nothing here is listed by hand that the tree can be asked for.  The identity
-a grading's revision is recorded under is read off the Evidence record's own
-fields; the rule's module and name are read off the rule itself, so renaming
-either moves the guard with it; the scanned tree is the package the rule is
-packaged in.  What IS listed is the exemptions, each with the reason it is
-one, and the table is checked against the walk in both directions, so an
-exemption for a site that no longer exists is as red as an unexempted site.
+The identity a grading's revision is recorded under is read off the Evidence
+record's own fields; the rule's module and name are read off the rule itself,
+so renaming either moves the guard with it; the scanned tree is the package
+the rule is packaged in.  Two things ARE listed by hand: the exemptions, each
+with the reason it is one, checked against the walk in both directions so an
+exemption for a site that no longer exists is as red as an unexempted site;
+and :data:`WEIGHINGS`, the calls that weigh two revisions inside themselves,
+which says below what it is named from and why it cannot be derived.
 
 The walk is textual and executes nothing, which is what lets it speak for
 the whole tree rather than for the paths a fixture happens to reach.  Its
-blind spots, which review has to read from the code instead: an ancestry
-call and any other helper that compares the two revisions inside itself
-rather than at the call site, and a revision reached by ``getattr`` or by
-any other name composed at run time.
+blind spots, which review has to read from the code instead: a helper under
+a name :data:`WEIGHINGS` does not carry that compares the two revisions
+inside itself rather than at the call site, and a revision reached by
+``getattr`` or by any other name composed at run time.
 """
 
 import ast
@@ -57,6 +58,31 @@ COMPARISONS = (ast.Eq, ast.NotEq, ast.Is, ast.IsNot, ast.In, ast.NotIn)
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 LITERALS = (ast.Tuple, ast.List, ast.Set)
 
+#: The calls that weigh two revisions against each other inside themselves,
+#: by the attribute they are called under.
+#:
+#: This set is NAMED, not derived, and it is the one hand-written surface in
+#: this guard.  There is nothing here to derive it from: the string methods
+#: belong to ``str`` and reach a revision through whatever a reader bound it
+#: to, and no port marks a method as revision-weighing anywhere a textual
+#: walk could read.  So it is listed, from two places a reader can check it
+#: against:
+#:
+#: * ``str.startswith`` and ``str.endswith`` — a prefix match, which is one of
+#:   the drifts ``domain/lapse.py``'s own docstring says the rule exists to
+#:   prevent, and which reads as a lapse test without ever comparing;
+#: * every method of the ``GitService`` port that takes two revisions and
+#:   answers about the pair: ``is_ancestor`` (whether one is reachable from
+#:   the other) and ``diff_summary`` (what moved between them).  The port's
+#:   other revision methods take one revision — ``reset_hard``, ``tree_of``,
+#:   ``create_worktree``, ``merge_scratch_head``, ``remote_branch_sha`` — and
+#:   ``commit_tree`` writes a commit from a tree and a parent rather than
+#:   weighing a pair, so none of them can be a second reading of a lapse.
+#:
+#: What naming it costs: the same arithmetic under some other name is still
+#: unseen, which is the blind spot the module docstring keeps.
+WEIGHINGS = frozenset({"startswith", "endswith", "is_ancestor", "diff_summary"})
+
 #: Every site that compares a graded sha with something and is not the rule,
 #: each with the reason it is not the rule's business.  A revision weighed
 #: against ITSELF, or against a second recorded revision, is provenance:
@@ -80,10 +106,14 @@ EXEMPT = {
         "a baseline commit against the graded commit, never against a head"
     ),
     "chains/audit_evidence.py::AuditEvidenceVerifier._head.observe": (
-        "self-resolution: a recorded revision must resolve to itself"
+        "self-resolution: a recorded revision must resolve to itself; and the "
+        "ancestry weighing beside it, which asks whether the graded commit "
+        "sits on the recorded branch at all — a miss there is a refusal to "
+        "read the record, not a reading that the grading stopped standing"
     ),
     "services/audit_sources.py::AuditSourceReader.read.resolve": (
-        "the same self-resolution, over both revisions as one loop"
+        "the same self-resolution, over both revisions as one loop, and the "
+        "same ancestry weighing of the graded commit against the branch"
     ),
     "services/assertion_drift.py::AssertionDriftDetector.compare": (
         "the same self-resolution, and the shape of the graded reference itself"
@@ -235,8 +265,42 @@ def _reads_the_graded_sha(node: ast.expr, aliases: frozenset[str]) -> bool:
     return False
 
 
+def _compares_the_graded_sha(node: ast.AST, aliases: frozenset[str]) -> bool:
+    """Whether *node* weighs the graded identity with a comparison operator."""
+    return (
+        isinstance(node, ast.Compare)
+        and any(isinstance(op, COMPARISONS) for op in node.ops)
+        and any(
+            _reads_the_graded_sha(operand, aliases)
+            for operand in (node.left, *node.comparators)
+        )
+    )
+
+
+def _weighs_the_graded_sha_in_a_call(node: ast.AST, aliases: frozenset[str]) -> bool:
+    """Whether *node* hands the graded identity to a named revision weighing.
+
+    The receiver counts alongside the arguments, positional and keyword alike:
+    ``head.startswith(graded)`` and ``graded.startswith(head)`` are one
+    reading spelled two ways, and a port called by keyword is the same call as
+    one called by position.
+    """
+    if not isinstance(node, ast.Call):
+        return False
+    called = node.func
+    if not isinstance(called, ast.Attribute) or called.attr not in WEIGHINGS:
+        return False
+    operands = (called.value, *node.args, *(word.value for word in node.keywords))
+    return any(_reads_the_graded_sha(operand, aliases) for operand in operands)
+
+
 def _sites(tree: ast.AST) -> frozenset[str]:
-    """Each scope that compares the graded identity with something, once."""
+    """Each scope that weighs the graded identity against something, once.
+
+    Two shapes, because a reader has two ways to reach the same reading: a
+    comparison operator over the two revisions, and a call that performs the
+    weighing inside itself under one of the names :data:`WEIGHINGS` lists.
+    """
     found: set[str] = set()
 
     def visit(scope: ast.AST, label: str | None, inherited: frozenset[str]) -> None:
@@ -252,14 +316,9 @@ def _sites(tree: ast.AST) -> frozenset[str]:
                         aliases,
                     )
                     continue
-                if (
-                    isinstance(child, ast.Compare)
-                    and any(isinstance(op, COMPARISONS) for op in child.ops)
-                    and any(
-                        _reads_the_graded_sha(operand, aliases)
-                        for operand in (child.left, *child.comparators)
-                    )
-                ):
+                if _compares_the_graded_sha(
+                    child, aliases
+                ) or _weighs_the_graded_sha_in_a_call(child, aliases):
                     found.add(label if label is not None else f"line {child.lineno}")
                 stack.append(child)
 
@@ -360,6 +419,29 @@ def test_every_exemption_carries_the_reason_it_is_one():
             "        return self.graded_sha != self.head_sha\n",
             id="method-operand",
         ),
+        pytest.param(
+            "def lapsed(evidence, head_sha):\n"
+            "    return not head_sha.startswith(evidence.graded_sha)\n",
+            id="prefix-match-argument",
+        ),
+        pytest.param(
+            "def lapsed(evidence, head_sha):\n"
+            "    return not evidence.graded_sha.endswith(head_sha)\n",
+            id="prefix-match-receiver",
+        ),
+        pytest.param(
+            "def lapsed(git, evidence, head_sha):\n"
+            "    return not git.is_ancestor(evidence.graded_sha, head_sha)\n",
+            id="ancestry-call",
+        ),
+        pytest.param(
+            "async def lapsed(git, repo, evidence, head_sha):\n"
+            "    moved = await git.diff_summary(\n"
+            "        cwd=repo, base_ref=evidence.graded_sha, head_ref=head_sha\n"
+            "    )\n"
+            "    return bool(moved.file_paths)\n",
+            id="digest-call-by-keyword",
+        ),
     ],
 )
 def test_every_spelling_that_compares_the_graded_sha_is_reported(body):
@@ -370,9 +452,9 @@ def test_every_spelling_that_compares_the_graded_sha_is_reported(body):
     "body",
     [
         pytest.param(
-            "def ancestry(git, evidence, head_sha):\n"
-            "    return git.is_ancestor(evidence.graded_sha, head_sha)\n",
-            id="ancestry-call",
+            "def pinned(git, repo, evidence):\n"
+            "    return git.reset_hard(cwd=repo, ref=evidence.graded_sha)\n",
+            id="one-revision-port-call",
         ),
         pytest.param(
             "def audited(evidence, head_sha):\n"
