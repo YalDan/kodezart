@@ -393,6 +393,10 @@ def build_workflow_engine(
         return RalphWorkflowEngine(
             criteria=criteria,
             rulings=rulings,
+            # The one writer of this deployment's lane records, the same object
+            # the committing loop was built with: the landing act is a row on
+            # the record those commits wrote, so it is written through it.
+            lane_state=lane_state,
             specification=FireSpecification(
                 service=agent_service,
                 ticket_generator=ticket_generator,

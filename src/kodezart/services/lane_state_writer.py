@@ -30,6 +30,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.domain.lane_record import (
+    LANDING_ROW_SUBJECT,
     RUN_STATE_PURPOSE,
     lane_record_body,
     next_lane_record,
@@ -223,6 +224,71 @@ class TrackerLaneStateWriter:
                     ),
                 )
             )
+        return record
+
+    async def record_landing(
+        self, *, lane: LaneBinding, repo_path: str, landed_sha: str
+    ) -> LaneRunState:
+        """Record the landed best iteration as this lane's next commit act.
+
+        A stall consolidates the best iteration of the run onto the
+        deliverable branch, and *landed_sha* is where that branch then
+        stands. The row is the act, so it is appended through the one
+        constructor every other row goes through, at this one site: a
+        re-entry resolving the last act would otherwise resume from the work
+        the landing was chosen over (KOD-705).
+
+        The lane's own record must already exist — a landing is no basis for
+        composing a first record, the way a delivery is not — and its head is
+        the interval's start: the changeset is ``prior head..landed_sha``,
+        read as two commits through the git port and never off a tree, because
+        the step that lands has no workspace standing anywhere. The push this
+        record last observed is carried forward untouched: the loop branch is
+        where the loop left it, and this act moved no branch of its own.
+
+        A record whose last act is already *landed_sha* writes nothing, so a
+        retried landing is not a second row and re-reads no interval.
+        """
+        marker, _ = self._markers(lane.lane_key)
+        branch_url = self._branch_url(lane)
+        try:
+            located = await self._records.find(
+                issue_key=lane.lane_key, lane_key=lane.lane_key
+            )
+        except LaneRecordReadError as exc:
+            raise self._unreadable(lane_key=lane.lane_key, exc=exc) from exc
+        if located is None:
+            raise LaneRecordWriteError(
+                lane_key=lane.lane_key,
+                reason="no record of this lane exists to carry a landing",
+            )
+        prior_comment, prior = located
+        if prior.commits and prior.commits[-1].sha == landed_sha:
+            return prior
+        changeset = await self._git.diff_summary(repo_path, prior.head_sha, landed_sha)
+        record = next_lane_record(
+            prior=prior,
+            lane=lane,
+            branch_url=branch_url,
+            head_sha=landed_sha,
+            pushed_head_sha=prior.pushed_head_sha,
+            changeset=changeset,
+            subject=LANDING_ROW_SUBJECT,
+        )
+        body = await self._gate_exact(
+            body=lane_record_body(record=record),
+            lane_key=lane.lane_key,
+            visibility=lane.visibility,
+        )
+        await settle(
+            self._tracker.upsert_comment(
+                target=lane.lane_key,
+                marker=marker,
+                body=body,
+                holder=None,
+                expected=prior_comment,
+            )
+        )
         return record
 
     async def record_pull_request(

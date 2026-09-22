@@ -55,6 +55,19 @@ class FireConsolidation:
         self._ref_publisher = ref_publisher
         self._log: BoundLogger = get_logger("kodezart.chains.ralph_workflow")
 
+    async def repo_dir(self, config: RunnableConfig) -> str:
+        """The directory this step's own git reads of the run stand in.
+
+        The checkout the run was dispatched with, or the clone this step
+        consolidates in when it was dispatched with a url alone.  Public
+        because the node that holds this step reads the run's shas from the
+        same place it does, and a second resolution beside it could answer
+        with another tree.
+        """
+        return await resolve_workflow_cwd(
+            ExecutionContext.from_configurable(config), self._cache
+        )
+
     async def merge_to_feature(
         self,
         state: WorkflowState,

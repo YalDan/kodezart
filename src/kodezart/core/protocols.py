@@ -1797,6 +1797,23 @@ class LaneStateWriter(Protocol):
         """
         ...
 
+    async def record_landing(
+        self, *, lane: LaneBinding, repo_path: str, landed_sha: str
+    ) -> LaneRunState:
+        """Record the landed best iteration as the lane's next commit act.
+
+        The stall landing puts the best iteration of the run on the
+        deliverable branch, and *landed_sha* is where that branch then
+        stands.  It is a commit act of this lane like any other, so it takes
+        a row of its own on the one record, and a re-entry reading the rows
+        resolves the landed work rather than the tip it was chosen over.
+
+        *repo_path* is only where the two shas of the changeset are read
+        from: the landing holds no workspace, so nothing here is observed
+        off a tree.  A lane with no record refuses, the way a delivery does.
+        """
+        ...
+
     async def record_pull_request(
         self, *, lane_key: str, pr: LanePR, visibility: RepoVisibility
     ) -> LaneRunState:

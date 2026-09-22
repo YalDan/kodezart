@@ -20,6 +20,11 @@ from kodezart.types.domain.run_state import (
 #: The marker purpose an operation configures this record's prefix under.
 RUN_STATE_PURPOSE = "run_state"
 
+#: The subject of the row a stall landing leaves behind. Composed here, beside
+#: the one constructor, so the act reads the same on every lane and no caller
+#: can name it something a reader of the record would not recognise.
+LANDING_ROW_SUBJECT = "land: the best iteration this run reached"
+
 REENTRY_SECTION = """## Re-entry
 
 Resume the branch identified by the LOOP role and the record's branch field.
