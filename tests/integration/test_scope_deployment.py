@@ -20,13 +20,14 @@ from kodezart.composition.tracker import criteria_stage_label_key
 from kodezart.config.organize import OrganizeSettings
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import ScopeNotApprovedError, WorkspaceError
+from kodezart.domain.organize import stage_rows
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE
 from kodezart.main import create_app, lifespan
 from kodezart.services.scope_approval import scope_approved
 from kodezart.services.tracker_boot import owned_mappings
 from kodezart.types.domain.branch import trunk_base
-from kodezart.types.domain.operation import LifecycleStage
-from kodezart.types.domain.organize import split_label_key
+from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
+from kodezart.types.domain.organize import OrganizeLabelNamespace, split_label_key
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
@@ -116,6 +117,24 @@ async def test_the_shipped_scope_config_walks_one_lane_to_a_crossed_off_criterio
         if comment.issue_key == "A"
         and comment.body.startswith(f"[{loaded.marker_prefixes['run_state']}:")
     ]
+
+
+def test_the_shipped_pre_approval_row_gates_on_the_triage_member() -> None:
+    """The shipped file's own answer to what opens the pre-approval gate.
+
+    One row runs before approval, and what admits a member to it is a scope
+    member — a property of the addressed scope and of the containers above it
+    — and not the approval member and not an issue classification. Read off
+    the file rather than restated, and read through the key's own split, so a
+    row repointed at another namespace reddens here.
+    """
+    loaded = shipped()
+    rows = stage_rows(loaded.resolve_organize_mandates(), under_approval=False)
+    assert len(rows) == 1
+    namespace, key = split_label_key(rows[0].spec.gate_label_key)
+    assert namespace is OrganizeLabelNamespace.SCOPE
+    assert key == ScopeLabel.TRIAGE.value
+    assert rows[0].gate_label == loaded.scope_labels[ScopeLabel.TRIAGE.value]
 
 
 def test_the_shipped_file_names_the_criteria_stage_the_adapter_is_built_with():
