@@ -167,6 +167,36 @@ async def test_a_record_level_with_the_remote_says_nothing():
     ] == []
 
 
+async def test_a_remote_head_at_the_last_row_says_nothing_whatever_the_head_field():
+    """What the remote head is compared WITH is the commit the rows name.
+
+    The remote stands exactly at the last commit act, and the head field names
+    an earlier one. There is nothing to report: the lane's recorded commit is
+    the one the remote holds. A comparison made against the head field instead
+    would announce a difference here — which is the whole point of the field
+    not being the thing compared.
+    """
+    stored = record(
+        rows=(
+            LaneCommit(sha=RECORDED_HEAD, subject="feat: one", issue_id=LANE),
+            LaneCommit(sha=BEST_COMMIT, subject="feat: two", issue_id=LANE),
+        )
+    )
+    port = await board(stored)
+    git = FakeGitService(
+        remote_branch_shas={LOOP: BEST_COMMIT, DELIVERABLE: BASE_TIP, BASE: BASE_TIP}
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        entry = await reader(port, git).read(
+            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+        )
+
+    assert [item for item in logs if item["event"] == "lane_record_head_differs"] == []
+    assert isinstance(entry, ResumedLane)
+    assert entry.head_sha == BEST_COMMIT != stored.head_sha
+
+
 async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
     """The record is the only source of what this lane committed (KOD-705).
 
