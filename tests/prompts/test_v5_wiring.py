@@ -92,6 +92,16 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     # it renders as plain lines rather than inside a named tag.
     "mutation_survival": (),
     "fire_time_ruling": ("issue_key", "pinned_answers", "task_md"),
+    "native_writer_contract": ("pinned_rulings",),
+    "amendment_judge": ("claim", "current_criteria", "pinned_rulings", "base_sha"),
+    "amendment_author": (
+        "claim",
+        "independent_judgment",
+        "exact_prior_artifact",
+        "write_back_finding",
+        "preserve_subject",
+    ),
+    "write_back_verify": ("base_ref", "written_artifact"),
     "post_merge_review": ("acceptance_criteria", "changeset"),
     "pr_description": ("ticket", "acceptance_criteria"),
     "remediation_ticket": ("ticket", "done_work", "failure_evidence"),

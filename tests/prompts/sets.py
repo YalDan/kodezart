@@ -13,9 +13,16 @@ from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.prompt_variables import execution_criteria_variables
-from kodezart.domain.rulings import EMPTY_REGISTRY
+from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
+from kodezart.types.domain.agent import Ruling
+from kodezart.types.domain.amendment import AmendmentClaim, AmendmentJudgment
+from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.prompts import PromptKey
-from tests.fakes import pass_render_variables
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.write_back import WriteBackFinding
+from tests.domain.test_rulings import ruling_data
+from tests.fakes import make_tracker_issue, pass_render_variables
 from tests.prompts.test_prompt_wiring import (
     CRITERIA,
     DEFAULT_SET,
@@ -58,6 +65,27 @@ ORGANIZE_CASE: dict[str, object] = {
     "defect_classes": ["Golden defect class"],
     "base_ref": "main",
 }
+
+#: The native amendment path's shared records.  Every value below is bound the
+#: way its caller binds it: the model's own JSON, never free text standing in.
+BASE_SHA = "a" * 40
+PINNED_RULING = Ruling.model_validate(ruling_data())
+AMENDMENT_CLAIM = AmendmentClaim(
+    subject={"kind": "criterion", "id": "external/check"},
+    stage="implementation",
+    ground="unsatisfiable_at_base",
+    departure="A proposed departure",
+    claimed_capability=None,
+)
+CRITERION_SURFACE = WritableSurface(
+    kind=SurfaceKind.CRITERION_SUB_ISSUE,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key="external/check"),
+)
+WRITTEN_ARTIFACT = TrackerArtifact(
+    surface=CRITERION_SURFACE,
+    native_ref="external/check",
+    content="**Check:** the observable fixture Check",
+)
 
 EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "audit_overclaim": (
@@ -135,6 +163,63 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "mutation_survival": (
         PromptKey.MUTATION_SURVIVAL,
         execution_criteria_variables(CRITERIA),
+    ),
+    #: services/native_amendments.py ``begin``: the pinned registry as read back.
+    "native_writer_contract": (
+        PromptKey.NATIVE_WRITER_CONTRACT,
+        {"pinned_rulings": pinned_registry((PINNED_RULING,))},
+    ),
+    #: services/native_amendments.py ``_judge_claim``.
+    "amendment_judge": (
+        PromptKey.AMENDMENT_JUDGE,
+        {
+            "claim": AMENDMENT_CLAIM.model_dump_json(),
+            "criteria": make_tracker_issue(
+                "external/check",
+                parent_key="external/42",
+                issue_labels=frozenset({"criterion"}),
+                body="**Check:** the observable fixture Check",
+            ).model_dump_json(),
+            "pinned_rulings": PINNED_RULING.model_dump_json(),
+            "base_sha": BASE_SHA,
+        },
+    ),
+    #: services/amendment_writeback.py ``_author``, on a repair round: the
+    #: prior write-back finding is present, so it binds the finding's JSON.
+    "amendment_author": (
+        PromptKey.AMENDMENT_AUTHOR,
+        {
+            "claim": AMENDMENT_CLAIM.model_dump_json(),
+            "judgment": AmendmentJudgment(
+                subject=AMENDMENT_CLAIM.subject,
+                base_sha=BASE_SHA,
+                ground=AMENDMENT_CLAIM.ground,
+                reproduced=True,
+                finding={
+                    "verdict": "infeasible",
+                    "smallest_repair": "criterion_text",
+                    "refutation": "No implementation at base satisfies the text.",
+                },
+                citations=({"path": "policy.py", "quote": "def answer(): return 42"},),
+                measured_by=None,
+            ).model_dump_json(),
+            "prior": WRITTEN_ARTIFACT.model_dump_json(),
+            "finding": WriteBackFinding(
+                verdict="refuted",
+                evidence="The amended Check names a test that does not exist.",
+                cited_refs=("tests/real.py",),
+            ).model_dump_json(),
+            "preserve_subject": "false",
+        },
+    ),
+    #: chains/write_back_verifier.py ``judge``: the exact commit and the
+    #: artifact re-read after the write.
+    "write_back_verify": (
+        PromptKey.WRITE_BACK_VERIFY,
+        {
+            "written_artifact": WRITTEN_ARTIFACT.model_dump_json(by_alias=True),
+            "base_ref": BASE_SHA,
+        },
     ),
 }
 
