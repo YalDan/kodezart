@@ -80,8 +80,8 @@ MERGE_STATE_NAMES: frozenset[str] = frozenset(
 
 #: The one module on the closure allowed to name that vocabulary, and what
 #: it is allowed to name: ports are DECLARED here, and a declaration is not
-#: a consumer.  The audit terminal's reader is legitimate evidence under
-#: the standing ruling; the union step simply never asks it anything.
+#: a consumer.  The audit terminal's reader is legitimate evidence elsewhere;
+#: the union step simply never asks it anything.
 DECLARED_BY: dict[str, frozenset[str]] = {
     "kodezart.core.protocols": frozenset({"PRState"}),
 }
@@ -447,7 +447,7 @@ def test_no_module_the_union_step_reaches_asks_a_pull_request_anything() -> None
 
 
 def test_the_union_steps_own_modules_name_the_merge_state_reader_nowhere() -> None:
-    """The narrow rule, where the ruling scopes it: the step itself."""
+    """The narrow rule, scoped to where it applies: the step's own modules."""
     for name in UNION_MODULES:
         source = inspect.getsource(importlib.import_module(name))
         tree = ast.parse(source)
