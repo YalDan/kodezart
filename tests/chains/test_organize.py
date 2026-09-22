@@ -1420,6 +1420,54 @@ def change_stamp_reads(tree):
     return reads
 
 
+def _hands_back(tree, statement, names):
+    """Whether *statement* returns a value that reaches one of *names*.
+
+    The returned expression alone, read beside its module's own imports so an
+    aliased or routed spelling resolves the way the whole-module walk resolves
+    it.  A definition that merely calls the arithmetic on the way to some
+    other answer hands nothing of it back and is no wrapper of it.
+    """
+    imports = [
+        node for node in tree.body if isinstance(node, ast.Import | ast.ImportFrom)
+    ]
+    for node in ast.walk(statement):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        handed = ast.Module(
+            body=[*imports, ast.Expr(value=node.value)], type_ignores=[]
+        )
+        if reaches(handed, names=names):
+            return True
+    return False
+
+
+def gap_wrappers(trees):
+    """Every top-level definition of *trees* that hands back the gap's answer.
+
+    Derived, not listed, on the standard ``gap_callees`` already sets for the
+    gap home: a helper that returns what the arithmetic returned is a gap
+    computation whatever it is named, and a module consuming the gap through
+    one spells no seed of its own.
+
+    One hop out of the arithmetic's own modules and no further.  A closure
+    over the whole call graph would make every caller of every such helper a
+    gap site, reach the adapters and readers that legitimately expose the
+    change stamp, and turn the guard red on the shape the Check explicitly
+    allows.  One hop is also why re-discovery settles at once: the enlarged
+    seed set is fixed before any module joins, so a module joining adds no
+    seed and the round after it finds nothing new.
+    """
+    return frozenset(
+        statement.name
+        for tree in trees
+        for statement in tree.body
+        if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef)
+        and statement.name not in GAP_ARITHMETIC_NAMES
+        and _hands_back(tree, statement, GAP_ARITHMETIC_NAMES)
+    )
+
+
 def gap_computation_sites(sources):
     """Every supplied module that defines or reaches the gap arithmetic.
 
@@ -1432,6 +1480,12 @@ def gap_computation_sites(sources):
     string constant read as a route would pull it in.  Dropping the seed
     changes no discovered module at head, and nothing here claims it would.
 
+    Then the wrappers: a module that calls a helper handing back the gap's own
+    answer consumes the gap without spelling any seed, so it joins too.  Those
+    helpers are derived one hop out of the modules above, and a call of one is
+    read through the resolver, so an aliased or routed call counts and a
+    parameter or a field that merely shares a helper's name does not.
+
     Two shapes are no route here, neither of them in the package at head: a
     gap consumer handed a ``SubtreeClosure`` on an unannotated parameter, whose
     root is the resolver's handed-parameter walk and is not wired into this
@@ -1439,11 +1493,14 @@ def gap_computation_sites(sources):
     ``'SubtreeClosure'``, since a string constant is not a route, while a
     parameter annotated with the type itself is discovered.
     """
-    found = {}
-    for relative, source in sources.items():
-        tree = ast.parse(source)
-        if reaches(tree, names=GAP_ARITHMETIC_NAMES):
-            found[relative] = tree
+    trees = parsed(sources)
+    found = {
+        relative: tree
+        for relative, tree in trees.items()
+        if reaches(tree, names=GAP_ARITHMETIC_NAMES)
+    }
+    for site in call_sites(trees, names=gap_wrappers(found.values())):
+        found.setdefault(site.module, trees[site.module])
     return found
 
 
@@ -1544,6 +1601,56 @@ def test_a_gap_site_reached_under_another_spelling_is_discovered_and_scanned(
     planted = body.replace("{READ}", " if c.updated_at > since" if reads else "")
     sources = {**source_tree(), "services/planted.py": planted}
 
+    assert "services/planted.py" in gap_computation_sites(sources)
+    assert gap_sites_reading_the_change_stamp(sources) == (
+        {"services/planted.py": {"updated_at"}} if reads else {}
+    )
+
+
+def test_the_gap_wrappers_at_head_are_the_helpers_that_hand_back_its_answer():
+    """The wrapper derivation is not vacuous: the tree already holds two.
+
+    Both return what the arithmetic returned — the subtree's open criteria and
+    the organize gap's emptiness — so both carry the guard to whoever calls
+    them.  A third helper written beside the arithmetic reds here, which is
+    where a new gap surface should be read rather than in the module bound.
+    """
+    discovered = gap_computation_sites(source_tree())
+
+    assert gap_wrappers(discovered.values()) == frozenset(
+        {"open_criteria", "organize_at_rest"}
+    )
+
+
+@pytest.mark.parametrize("reads", [True, False])
+def test_a_module_reaching_the_gap_through_a_wrapper_is_discovered_and_scanned(reads):
+    """A consumer of a helper that hands back the gap's answer is a gap site.
+
+    Discovery that collected the arithmetic's own names alone answered such a
+    consumer with silence: the consuming module spells no seed, nothing
+    scanned it, and a change-timestamp read behind the helper was never seen.
+    The wrapper is planted beside the arithmetic and consumed from a module of
+    its own, under a name the guard cannot have been written around.
+
+    Both rows are planted: the reading row must redden the guard, and the
+    read-free twin pins the discovery itself, so a derivation that stopped
+    resolving the helper reads as a module missing from the discovered set
+    rather than as one more green run.
+    """
+    sources = source_tree()
+    sources["domain/gap.py"] += (
+        "\n\ndef gap_since(criteria):\n"
+        "    return compute_gap(criteria, supersession_refs={})\n"
+    )
+    read = " if c.updated_at > since" if reads else ""
+    sources["services/planted.py"] = (
+        "from kodezart.domain.gap import gap_since\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        f"    return [c for c in gap_since(criteria){read}]\n"
+    )
+
+    assert "gap_since" in gap_wrappers([ast.parse(sources["domain/gap.py"])])
     assert "services/planted.py" in gap_computation_sites(sources)
     assert gap_sites_reading_the_change_stamp(sources) == (
         {"services/planted.py": {"updated_at"}} if reads else {}
