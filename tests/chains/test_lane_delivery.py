@@ -61,6 +61,12 @@ SHA = "a" * 40
 REPO = "https://github.com/owner/repo.git"
 HEAD = "lane-head"
 BASE = "blocker-branch"
+#: Seconds any await on a driven coordinator is given, carried over from the
+#: bounded event wait the concurrency fixtures already used.  Named so the two
+#: fixtures' awaits are bounded by one number rather than by four literals; a
+#: whole module run of them takes about three seconds, so the bound is a
+#: deadline for a stall and not a budget for the work.
+WAIT_BOUND = 5
 
 
 def _branch_tests(tree):
@@ -472,16 +478,21 @@ async def test_watch_bound_cancellation_releases_slot_for_next_lane():
     ci = Blocking()
     parts = await setup(monitor=ci, watches=1)
     first = asyncio.create_task(deliver(parts))
-    # Bounded, as the sibling n+1 fixture's wait is: a coordinator that
-    # refuses before the watch never sets this event, and an unbounded wait
-    # would hang the module run instead of reding the fixture that saw it.
-    await asyncio.wait_for(entered.wait(), timeout=5)
+    # Every await here is bounded, not only the event: the defect this
+    # fixture exists to catch is a watch slot never given back, and its
+    # symptom is the SECOND lane blocking forever on acquisition — one step
+    # past the event, which the first lane has already set.  A bound on the
+    # event alone would let that defect hang the module run instead of
+    # reding the fixture that saw it.
+    await asyncio.wait_for(entered.wait(), timeout=WAIT_BOUND)
     second = asyncio.create_task(deliver(parts))
     first.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await first
+        await asyncio.wait_for(first, timeout=WAIT_BOUND)
     resume.set()
-    assert (await second).outcome is WorkflowOutcome.ci_passed
+    assert (await asyncio.wait_for(second, timeout=WAIT_BOUND)).outcome is (
+        WorkflowOutcome.ci_passed
+    )
     assert ci.peak == 1
 
 
@@ -796,10 +807,12 @@ async def test_n_plus_one_lanes_share_the_configured_watch_bound(bound):
         )
         for state in states
     ]
-    await asyncio.wait_for(entered.wait(), timeout=5)
+    await asyncio.wait_for(entered.wait(), timeout=WAIT_BOUND)
     assert monitor.peak == bound
     release.set()
-    results = await asyncio.gather(*tasks)
+    # Bounded for the same reason as the sibling fixture's awaits: a lane
+    # that reaches the watch and then stalls would hang the module run here.
+    results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=WAIT_BOUND)
     assert {result.lane_key for result in results} == set(snapshots)
     assert all(result.outcome is WorkflowOutcome.ci_passed for result in results)
     assert monitor.peak == bound and monitor.active == 0
