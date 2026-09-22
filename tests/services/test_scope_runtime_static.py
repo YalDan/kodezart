@@ -70,12 +70,29 @@ WALKER = SRC / "kodezart" / "services" / "scope_runtime.py"
 def imported_modules(
     tree: ast.AST, prefixes: tuple[str, ...] = SCANNED_PACKAGES
 ) -> set[str]:
-    """Every module the source imports from *prefixes*."""
+    """Every module the source imports from *prefixes*, by every spelling.
+
+    Three forms name a module, not one, and a walk that followed a subset of
+    them would be defeated by a spelling rather than by leaving the package:
+    ``from kodezart.services.x import name`` and ``import
+    kodezart.services.x`` both carry the module in the dotted position, and
+    ``from kodezart.services import x`` carries it as the imported name
+    beside the package.  The third is read only when the dotted part is
+    exactly a followed package and the candidate module exists on disk, so
+    ``from kodezart.services import SomeClass`` out of a package's own
+    ``__init__`` yields nothing (KOD-585).
+    """
+    packages = tuple(prefix.rstrip(".") for prefix in prefixes)
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module is not None:
             if node.module.startswith(prefixes):
                 found.add(node.module)
+            elif node.module in packages:
+                for alias in node.names:
+                    candidate = f"{node.module}.{alias.name}"
+                    if path_of(candidate).exists():
+                        found.add(candidate)
         elif isinstance(node, ast.Import):
             found.update(
                 alias.name for alias in node.names if alias.name.startswith(prefixes)
@@ -144,6 +161,44 @@ def test_the_detector_sees_each_shape_a_checkpoint_is_named_by(name, source) -> 
 def test_every_forbidden_name_is_controlled() -> None:
     """A name the scan carries with no control is a name it could stop seeing."""
     assert {name for name, _ in CONTROLS} == FORBIDDEN
+
+
+#: One control per spelling the walk follows, as a one-line source and the
+#: module it has to yield. A control per FORM and not per prefix: what the
+#: walk claims is that a module inside a followed package is reached, and
+#: until the third row existed the bare-package spelling carried a real
+#: module straight past it while every other assertion stayed green.
+GIT_OBSERVATIONS = "kodezart.services.git_observations"
+WALK_CONTROLS = (
+    (f"from {GIT_OBSERVATIONS} import remote_head", GIT_OBSERVATIONS),
+    (f"import {GIT_OBSERVATIONS}", GIT_OBSERVATIONS),
+    ("from kodezart.services import git_observations as _go", GIT_OBSERVATIONS),
+)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    WALK_CONTROLS,
+    ids=[source for source, _ in WALK_CONTROLS],
+)
+def test_the_walk_follows_each_spelling_a_module_is_imported_by(
+    source, expected
+) -> None:
+    assert imported_modules(ast.parse(source)) == {expected}
+
+
+def test_the_bare_package_spelling_yields_only_names_that_are_modules() -> None:
+    """The third arm is bounded by the tree: a class is not a module.
+
+    ``from kodezart.services import <name>`` is also how a symbol is taken
+    out of a package's own ``__init__``, so the arm reads the candidate off
+    disk rather than trusting the spelling. Without this the walk would hand
+    ``path_of`` a path that is not there and the guards above would error
+    instead of reporting.
+    """
+    source = "from kodezart.services import ScopeWorkflowEngine"
+
+    assert imported_modules(ast.parse(source)) == set()
 
 
 def test_the_walker_names_no_checkpoint_read() -> None:
