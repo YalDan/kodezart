@@ -489,9 +489,38 @@ class TrackerLaneStateWriter:
         in for one. A sub-issue the board moved between the stamp and the
         transition keeps the Evidence row of the grading that reached it and
         is not finished.
+
+        The grading is then announced on the LANE's stream, at the sha the
+        row now names. That entry is what makes the stream the Evidence
+        row's own write history rather than a refutation-only subset of it:
+        a passing grading restamps the row, and a reader asking which
+        grading the row's commit came from has to find the passing ones
+        there too, or every ordinary refuted-then-passed lifecycle reads as
+        a row pointing behind its last recorded grading (KOD-506). The
+        announcement addresses the lane issue, not this criterion, so a
+        criterion sub-issue still carries no comment of any kind.
+
+        It is the LAST write of the act, and it is announced once for one
+        grading: the same verdict written again at the same head restamps
+        the same row and is the same entry, so the stream is read for that
+        entry before anything is written — the way a take-back reads it —
+        and a stream that will not parse refuses while the sub-issue still
+        reads as it did. A transition that never landed leaves the criterion
+        unfinished and re-graded by the next attempt, which announces its own
+        grading. A post that fails leaves the criterion finished and
+        unannounced, which is the same partial state a lost refutation
+        leaves and is repaired by nobody: finished, it is in no later
+        attempt's roster.
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=issue, criterion=criterion)
+        event = LaneRunEvent(
+            kind=RunEventKind.CRITERION_PASSED,
+            lane_key=lane.lane_key,
+            subject_key=criterion.id,
+            graded_sha=cross_off.evidence.graded_sha,
+        )
+        posted = event in self._events(comments=await self._board(lane), lane=lane)
         await self._stamp(
             lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
         )
@@ -502,6 +531,10 @@ class TrackerLaneStateWriter:
                 issue_key=criterion.id, stage=LifecycleStage.DONE
             )
         )
+        if not posted:
+            await settle(
+                self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
+            )
 
     async def _take_back(
         self,

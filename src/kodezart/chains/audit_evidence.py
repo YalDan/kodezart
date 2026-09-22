@@ -217,9 +217,12 @@ class AuditRestampVerifier:
         """The row's trace, or ``None`` when no grading was ever recorded.
 
         A criterion whose history holds no recorded grading was never
-        restamped and is not traced: a passing cross-off stamps the Evidence
-        row and posts no event, so reading an empty history as "no entry at
-        this commit" would refute every criterion the board ever finished.
+        restamped by this lane and is not traced. Every cross-off the lane
+        writes records its grading on the stream, so an empty history is a
+        row no lane write accounts for at all — one a person moved into the
+        finished state, or one whose announcement never landed — and reading
+        it as "no entry at this commit" would answer for a write this stream
+        never saw.
 
         The read is the lane issue's own stream, keyed to this criterion by
         ``subject_key`` — that is where a grading is posted. A failed or

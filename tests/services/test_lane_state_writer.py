@@ -1488,16 +1488,55 @@ def owning_closure(port: FakeTrackerPort) -> SubtreeClosure:
     )
 
 
-def refutations(port: FakeTrackerPort) -> list[LaneRunEvent]:
-    """The refutation events this lane's stream holds, in order."""
-    return [
-        event
-        for event in lane_run_events(
+def stream(port: FakeTrackerPort) -> list[LaneRunEvent]:
+    """Every event this lane's stream holds, as the stream's own reader reads it."""
+    return list(
+        lane_run_events(
             comments=port.comments,
             lane_key=LANE,
             marker_prefixes=lane_operation().marker_prefixes,
         )
-        if event.kind is RunEventKind.CRITERION_REFUTED
+    )
+
+
+def refutations(port: FakeTrackerPort) -> list[LaneRunEvent]:
+    """The refutation events this lane's stream holds, in order."""
+    return [
+        event for event in stream(port) if event.kind is RunEventKind.CRITERION_REFUTED
+    ]
+
+
+async def test_a_passing_cross_off_records_its_grading_on_the_lanes_stream():
+    """Every criterion an attempt finishes is one entry naming its own sha.
+
+    The write that entry answers for is the Evidence row the passing cross-off
+    restamped: the stream is read as that row's write history, so a restamp
+    with no entry naming its commit reads as a row pointing behind the last
+    grading that ran (KOD-506). The entry is addressed to the LANE, so no
+    criterion sub-issue gains a comment of any kind, and the same verdict
+    written again at the same head is the same entry and is recorded once.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+
+    await tick(lane_state, sha="7" * 40)
+
+    assert [
+        (event.kind, event.subject_key, event.graded_sha) for event in stream(port)
+    ] == [(RunEventKind.CRITERION_PASSED, key, "7" * 40) for key in CRITERIA]
+    assert {comment.issue_key for comment in port.comments} == {LANE}
+
+    at_first = len(port.comments)
+    await tick(lane_state, sha="7" * 40)
+    assert len(port.comments) == at_first
+
+    # A later head restamps every row, and each restamp is its own entry:
+    # collapsing them would leave the rows naming a commit the history does
+    # not end at.
+    await tick(lane_state, sha="8" * 40)
+    assert [event.graded_sha for event in stream(port)] == [
+        *["7" * 40] * len(CRITERIA),
+        *["8" * 40] * len(CRITERIA),
     ]
 
 

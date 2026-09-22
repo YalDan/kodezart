@@ -15,6 +15,7 @@ class RunEventKind(StrEnum):
     LANE_PLATEAUED = "lane_plateaued"
     ISSUE_CROSSED_OFF = "issue_crossed_off"
     CRITERION_REFUTED = "criterion_refuted"
+    CRITERION_PASSED = "criterion_passed"
     ESCALATION_RAISED = "escalation_raised"
     LANE_DISPATCHED = "lane_dispatched"
     CLAIM_LOST = "claim_lost"
@@ -54,6 +55,7 @@ RUN_EVENT_PUBLISHERS = {
     RunEventKind.LANE_PLATEAUED: RunEventPublisher.LANE,
     RunEventKind.ISSUE_CROSSED_OFF: RunEventPublisher.LANE,
     RunEventKind.CRITERION_REFUTED: RunEventPublisher.LANE,
+    RunEventKind.CRITERION_PASSED: RunEventPublisher.LANE,
     RunEventKind.ESCALATION_RAISED: RunEventPublisher.LANE,
     RunEventKind.LANE_DISPATCHED: RunEventPublisher.RAISER,
     RunEventKind.CLAIM_LOST: RunEventPublisher.RAISER,
@@ -75,6 +77,7 @@ DERIVED_RUN_EVENTS = frozenset(
         RunEventKind.EVALUATOR_ACCEPTED,
         RunEventKind.AUDIT_REFUTED,
         RunEventKind.CRITERION_REFUTED,
+        RunEventKind.CRITERION_PASSED,
         RunEventKind.LANDED_AND_VERIFIED,
     }
 )

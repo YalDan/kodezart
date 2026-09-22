@@ -54,6 +54,7 @@ def test_vocabulary_and_notification_partition_are_complete():
         "lane_plateaued",
         "issue_crossed_off",
         "criterion_refuted",
+        "criterion_passed",
         "escalation_raised",
         "criterion_grading_unverified",
         "criterion_check_survived_mutation",

@@ -314,13 +314,27 @@ async def test_a_continued_branch_with_no_entered_head_refuses() -> None:
 
 
 async def test_first_push_leaves_the_record_and_the_first_push_event():
+    """The record, the first-push event, and one grading entry per criterion.
+
+    The stream carries a grading entry for every criterion the iteration
+    crossed off, because that entry is what makes the stream the Evidence
+    row's own write history: a row restamped by a passing grading and no
+    entry naming it reads as a row pointing behind its last grading
+    (KOD-506). They are named here rather than filtered out, so the comment
+    count still says the lane wrote nothing besides its record and its
+    stream.
+    """
     lane = Lane(evaluations=[native_evaluation()], forge=lane_forge())
     await lane.run()
 
     assert len(lane.record_comments()) == 1
     events = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
-    assert [event.kind for event in events] == [RunEventKind.FIRST_PUSH]
-    assert len(lane.port.comments) == 2
+    assert [(event.kind, event.subject_key) for event in events] == [
+        (RunEventKind.FIRST_PUSH, None),
+        *((RunEventKind.CRITERION_PASSED, key) for key in OWED_KEYS),
+    ]
+    assert {event.graded_sha for event in events[1:]} == {lane.repo.head}
+    assert len(lane.port.comments) == 5
 
     record = await lane.record()
     assert record.lane_key == SUBJECT
@@ -460,6 +474,12 @@ async def test_a_native_iteration_with_no_workspace_provider_refuses_before_any_
 
 
 async def test_a_second_commit_edits_the_record_and_posts_no_second_event():
+    """A second commit rewrites the one record and adds no second first-push.
+
+    The stream gains what the second iteration graded and nothing else: the
+    first iteration crossed nothing off, so every grading entry here is the
+    second iteration's, one per criterion it finished (KOD-506).
+    """
     lane = Lane(
         evaluations=[native_evaluation(failed=True), native_evaluation()],
         max_iterations=2,
@@ -468,7 +488,12 @@ async def test_a_second_commit_edits_the_record_and_posts_no_second_event():
 
     assert len(lane.repo.shas) == 2
     assert len(lane.record_comments()) == 1
-    assert len(lane.port.comments) == 2
+    events = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert [(event.kind, event.subject_key) for event in events] == [
+        (RunEventKind.FIRST_PUSH, None),
+        *((RunEventKind.CRITERION_PASSED, key) for key in OWED_KEYS),
+    ]
+    assert len(lane.port.comments) == 5
     record = await lane.record()
     assert [row.sha for row in record.commits] == lane.repo.shas
     assert record.head_sha == lane.repo.head
@@ -1895,12 +1920,20 @@ def wide_evaluation(passing) -> dict:
 
 
 async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_events():
-    """Five iterations move five criteria and add no comment between them.
+    """Five iterations move five criteria and comment on none of them.
 
-    The lane's own two comments are the record it rewrites in place and the
-    one event it posts. A per-criterion state move is not an event, so eight
-    criteria over five iterations leave the comment count where the first
-    push left it, and no criterion sub-issue is commented on at all.
+    The lane's comments are the record it rewrites in place and its own
+    stream: the first push, and the grading of each criterion each iteration
+    crossed off (KOD-506). Every iteration here crosses off the whole set it
+    has passed so far and restamps each of their Evidence rows at its own
+    head, so each of those restamps is its own entry — which is the point of
+    the entry: the row a later head restamped and an entry naming only the
+    first head would read as a row pointing behind its last grading.
+
+    A per-criterion state move is still not an event, so the three criteria
+    nothing finished add nothing, the record is never duplicated, and no
+    criterion sub-issue is commented on at all — every comment on this board
+    is the lane issue's.
     """
     port = wide_board()
     lane = Lane(
@@ -1918,12 +1951,21 @@ async def test_a_long_criterion_set_over_many_iterations_posts_only_vocabulary_e
         if port.issues[key].state_kind is WorkflowStateKind.COMPLETED
     } == set(WIDE_CRITERIA[:5])
     # The count the comment count is measured against: five moves, one per
-    # criterion the five iterations passed, and two comments throughout.
+    # criterion the five iterations passed, and one comment each for the
+    # record, the first push and the fifteen gradings the five iterations
+    # recorded over them.
     assert len(port.workflow_writes) == 5
-    assert len(port.comments) == 2
+    assert len(port.comments) == 17
     assert {comment.issue_key for comment in port.comments} == {SUBJECT}
     posted = await port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
-    assert [event.kind for event in posted] == [RunEventKind.FIRST_PUSH]
+    assert [(event.kind, event.subject_key) for event in posted] == [
+        (RunEventKind.FIRST_PUSH, None),
+        *(
+            (RunEventKind.CRITERION_PASSED, key)
+            for index in range(5)
+            for key in WIDE_CRITERIA[: index + 1]
+        ),
+    ]
     # A lane's own stream carries only the kinds the lane publishes; a kind
     # some other raiser owns would be somebody else's write on this log.
     assert {RUN_EVENT_PUBLISHERS[event.kind] for event in posted} == {
@@ -1940,6 +1982,10 @@ async def test_a_regression_inside_the_loop_moves_the_criterion_back_and_says_so
     its finished state carrying the refuting grading, and the lane's stream
     gains exactly one refutation keyed to it. Nothing writes the subject
     itself, and the rollup over its criteria answers for it throughout.
+
+    The stream also carries each passing grading (KOD-506): the two the first
+    iteration crossed off, and the one the second iteration restamped at its
+    own head for the criterion it kept.
     """
     broken, kept, owed = OWED_KEYS
     lane = Lane(
@@ -1973,12 +2019,17 @@ async def test_a_regression_inside_the_loop_moves_the_criterion_back_and_says_so
         for event in posted
         if event.kind is RunEventKind.CRITERION_REFUTED
     ] == [broken]
+    assert [
+        event.subject_key
+        for event in posted
+        if event.kind is RunEventKind.CRITERION_PASSED
+    ] == [broken, kept, kept]
     assert (
         lane.port.issues[SUBJECT].state_name,
         lane.port.issues[SUBJECT].body,
     ) == subject_before
     assert SUBJECT not in {key for key, _, _ in lane.port.issue_writes}
-    assert len(lane.port.comments) == 3
+    assert len(lane.port.comments) == 6
 
 
 def losing_board() -> LosingBoard:

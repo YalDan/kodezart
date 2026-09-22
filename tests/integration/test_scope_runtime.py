@@ -1853,17 +1853,21 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
         assert parse_criterion_evidence(criterion.body).graded_sha == own_head
         assert record.head_sha == record.pushed_head_sha == own_head
         assert [
-            event.kind
+            (event.kind, event.subject_key)
             for event in await port.lane_run_events(issue_key=lane, lane_key=lane)
-        ] == [RunEventKind.FIRST_PUSH]
+        ] == [
+            (RunEventKind.FIRST_PUSH, None),
+            (RunEventKind.CRITERION_PASSED, f"{lane}/check"),
+        ]
         assert port.issues[lane].state_kind is WorkflowStateKind.UNSTARTED
 
     assert port.workflow_writes == [
         ("A/check", LifecycleStage.DONE),
         ("B/check", LifecycleStage.DONE),
     ]
-    # One record and one first-push event per lane, and nothing else.
-    assert len(port.comments) == 4
+    # One record per lane, and on each lane's stream its first push and the
+    # grading of the one criterion it crossed off — nothing else.
+    assert len(port.comments) == 6
     # Push status is per branch: a branch this walk never pushed is reported
     # as unpushed, so no lane's push is ever read off another lane's branch.
     assert await git.remote_branch_sha("/w", repos.remote, "never-pushed") is None
