@@ -1,7 +1,15 @@
 """What one organize round declares is arithmetic over its row, not a judgement."""
 
-from kodezart.domain.organize_surfaces import phase_surfaces
-from kodezart.types.domain.organize import MANDATE_PHASE_ROLES, MandateKind
+from kodezart.domain.organize_surfaces import (
+    UNDECLARED_SURFACE,
+    phase_surfaces,
+    surface_findings,
+)
+from kodezart.types.domain.organize import (
+    MANDATE_PHASE_ROLES,
+    DefectRole,
+    MandateKind,
+)
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 
@@ -42,3 +50,64 @@ def test_no_row_declares_a_container_surface():
     """The scope's own container is written by no organize row."""
     for role in MANDATE_PHASE_ROLES.values():
         assert not role.write_surfaces & CONTAINER_KINDS
+
+
+OUTSIDE = (
+    WritableSurface(
+        kind=SurfaceKind.ISSUE_GRAPH, ref=ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-9")
+    ),
+    WritableSurface(
+        kind=SurfaceKind.ISSUE_SPLIT_SET,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-1"),
+    ),
+)
+
+
+def findings(*outside):
+    return surface_findings(
+        outside=frozenset(outside),
+        phase="groom",
+        declared=MANDATE_PHASE_ROLES[MandateKind.GROOM].write_surfaces,
+    )
+
+
+def test_an_undeclared_surface_is_a_finding_on_its_own_issue():
+    """The owner is the item the address names, not the subject of the write."""
+    (record,) = findings(OUTSIDE[0])
+    assert record.issue_id == "SCOPE-9"
+    assert record.defect_class == UNDECLARED_SURFACE
+    assert record.role is DefectRole.INSTANCE
+    assert record.mandate_text is None
+    assert "issue_graph" in record.evidence
+    assert "groom" in record.evidence
+    for kind in MANDATE_PHASE_ROLES[MandateKind.GROOM].write_surfaces:
+        assert kind.value in record.evidence
+
+
+def test_no_outside_surface_is_no_finding():
+    """A write entirely inside the declared set records nothing."""
+    assert findings() == ()
+
+
+def test_the_same_refusal_composes_the_same_findings():
+    """One order for every reader: owning key, then kind."""
+    assert findings(*OUTSIDE) == findings(*reversed(OUTSIDE))
+    assert [record.issue_id for record in findings(*OUTSIDE)] == [
+        "SCOPE-1",
+        "SCOPE-9",
+    ]
+
+
+def test_two_addresses_on_one_item_are_two_findings():
+    """Each address is its own record; the class they carry is one name."""
+    graph, split = (
+        WritableSurface(kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-1"))
+        for kind in (SurfaceKind.ISSUE_GRAPH, SurfaceKind.ISSUE_SPLIT_SET)
+    )
+    assert [record.issue_id for record in findings(graph, split)] == [
+        "SCOPE-1",
+        "SCOPE-1",
+    ]
+    assert {record.defect_class for record in findings(graph, split)} == {
+        UNDECLARED_SURFACE
+    }

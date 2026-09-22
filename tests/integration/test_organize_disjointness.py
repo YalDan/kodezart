@@ -14,7 +14,6 @@ from kodezart.composition import organize as organize_composition
 from kodezart.domain.errors import OrganizeWriteRefusalError, ScopeNotApprovedError
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import ScopeLabel
-from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from tests.fakes import SUPPRESS_ALL_SKILLS, PassThroughGate, make_prompt_provider
 from tests.integration.test_scope_entry import (
     GROOM_MARKER,
@@ -27,7 +26,7 @@ from tests.integration.test_scope_entry import (
     standing_board,
     standing_operation,
 )
-from tests.integration.test_scope_runtime import SCOPE, drive
+from tests.integration.test_scope_runtime import SCOPE, bounded_walk, ticks_of
 
 LANES = ("A", "B")
 NOW = datetime(2026, 9, 22, tzinfo=UTC)
@@ -81,7 +80,7 @@ async def test_an_unapproved_scope_is_groomed_and_admits_no_run(monkeypatch):
     spent = len(harness.executor.organize_calls)
 
     with pytest.raises(ScopeNotApprovedError) as refused:
-        _ = [event async for event in drive(harness, job="unapproved-run")]
+        await bounded_walk(harness, job="unapproved-run")
     assert refused.value.ref == SCOPE
     assert len(harness.executor.organize_calls) == spent
     assert markers(port) == dict.fromkeys(LANES, frozenset({GROOM_MARKER}))
@@ -122,14 +121,16 @@ async def test_approval_during_a_grooming_session_refuses_its_write_and_frees_th
 
     assert port.leases == {}
 
-    events = [event async for event in drive(harness, job="approved-run")]
+    events = await bounded_walk(harness, job="approved-run")
     assert errors(events) == []
     assert markers(port) == {
         key: frozenset({TICKET_MARKER, STAGED})
         | (frozenset({GROOM_MARKER}) if key in groomed else frozenset())
         for key in LANES
     }
-    assert [event for event in events if isinstance(event, ScopeWalkEvent)]
+    # Three ticks: the first two fire A and then B, and the third observes
+    # both dispatched with nothing left to offer.
+    assert len(ticks_of(events)) == 3
     assert port.leases == {}
 
 
@@ -147,8 +148,11 @@ async def test_an_approved_scope_runs_its_stages_and_the_grooming_tick_takes_no_
         port, LANES, monkeypatch=monkeypatch, builds=[], operation=operation
     )
     approve(port)
-    events = [event async for event in drive(harness, job="staged-run")]
+    events = await bounded_walk(harness, job="staged-run")
     assert errors(events) == []
+    # Three ticks: the first two fire A and then B, and the third observes
+    # both dispatched with nothing left to offer.
+    assert len(ticks_of(events)) == 3
     assert markers(port) == dict.fromkeys(LANES, frozenset({TICKET_MARKER, STAGED}))
     spent = len(harness.executor.organize_calls)
     writes = len(port.classification_writes)

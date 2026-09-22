@@ -34,6 +34,7 @@ from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
     OrganizeDecisionRequiredError,
+    OrganizeSurfaceResidualError,
     OrganizeWriteRefusalError,
     OutboundContentBlockedError,
     SurfaceLeaseError,
@@ -52,7 +53,7 @@ from kodezart.domain.organize_graph import (
     graph_snapshot,
     validate_graph_change,
 )
-from kodezart.domain.organize_surfaces import phase_surfaces
+from kodezart.domain.organize_surfaces import phase_surfaces, surface_findings
 from kodezart.domain.prompt_variables import organize_variables
 from kodezart.services.lane_escalation import LaneEscalationWriter
 from kodezart.services.organize_context import OrganizeContextReader
@@ -419,6 +420,7 @@ class OrganizeOwner:
         evidence: str | None,
         visibility: RepoVisibility,
         lease: RunSurfaceLease,
+        declared: frozenset[WritableSurface],
     ) -> WriteBackResult:
         initial = await self._author.propose(request, key=key, evidence=evidence)
         initial_value = initial.proposal.root
@@ -439,6 +441,40 @@ class OrganizeOwner:
         surface = WritableSurface(
             kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=request.issue_key)
         )
+        if isinstance(initial_value, GraphProposal):
+            # Pure, and first: a peer outside the admitted scope is refused
+            # outright rather than recorded as a residual inside it.
+            validate_graph_change(
+                issue_key=request.issue_key,
+                changes=initial_value.changes,
+                issues=initial.context.issues,
+                member_keys=frozenset(initial.context.member_keys),
+            )
+        # The bound: every address this write needs, weighed against the set
+        # the round declared and holds. Before any renewal, backend call or
+        # verifier round, so an out-of-set proposal costs the board nothing.
+        # An answer that writes nothing needs no address: it keeps its own
+        # refusal or decision in ``apply``.
+        needed: frozenset[WritableSurface] = (
+            frozenset()
+            if isinstance(initial_value, UnavailableProposal | UnresolvedProposal)
+            else frozenset(
+                {
+                    surface,
+                    *(
+                        WritableSurface(
+                            kind=SurfaceKind.ISSUE_GRAPH,
+                            ref=ScopeRef(kind=ScopeKind.ISSUE, key=peer),
+                        )
+                        for peer in declared_peers
+                    ),
+                }
+            )
+        )
+        if outside := needed - declared:
+            raise OrganizeSurfaceResidualError(
+                issue_key=request.issue_key, surfaces=outside
+            )
 
         async def require_context(proposal: ProposedWrite) -> None:
             await self._require_revision(proposal.revision)
@@ -488,17 +524,7 @@ class OrganizeOwner:
                 SurfaceKind.ISSUE_GRAPH: GraphProposal,
                 SurfaceKind.ISSUE_SPLIT_SET: SplitProposal,
             }[kind]
-            if (
-                not isinstance(value, expected_type)
-                or (
-                    key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
-                    and not isinstance(value, CriteriaProposal)
-                )
-                or (
-                    key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
-                    and isinstance(value, CriteriaProposal)
-                )
-            ):
+            if not isinstance(value, expected_type):
                 raise OrganizeWriteRefusalError(
                     issue_key=request.issue_key,
                     reason="author returned another write surface",
@@ -1128,13 +1154,13 @@ class OrganizeOwner:
                 # work: every write below renews it rather than taking its
                 # own, and it is released before any halt is written.
                 declared_keys = frozenset(by_key)
+                declared = phase_surfaces(member_keys=declared_keys, role=phase.role)
+                residuals: list[SpecFinding] = []
                 try:
                     async with RunSurfaceLease(
                         tracker=self._tracker,
                         job_id=job_id,
-                        surfaces=phase_surfaces(
-                            member_keys=declared_keys, role=phase.role
-                        ),
+                        surfaces=declared,
                         lease_seconds=self._lease_seconds,
                     ) as lease:
                         work = {issue.issue_key for issue in gap}
@@ -1210,7 +1236,21 @@ class OrganizeOwner:
                                         ),
                                         visibility=visibility,
                                         lease=lease,
+                                        declared=declared,
                                     )
+                                except OrganizeSurfaceResidualError as exc:
+                                    # The round holds the residual and works
+                                    # on: the next round declares from a fresh
+                                    # snapshot, and one that survives to the
+                                    # bound is written at the halt.
+                                    residuals.extend(
+                                        surface_findings(
+                                            outside=exc.surfaces,
+                                            phase=phase.spec.kind.value,
+                                            declared=phase.role.write_surfaces,
+                                        )
+                                    )
+                                    break
                                 except OrganizeDecisionRequiredError as exc:
                                     raise _HaltRequestError(
                                         cause=StageHaltCause.HUMAN_DECISION,
@@ -1312,7 +1352,10 @@ class OrganizeOwner:
                                 is not AdmissionRoute.MARK_COMPLETE
                             ):
                                 refused.append(result)
-                        findings = tuple(f for result in fresh for f in result.findings)
+                        findings = (
+                            *residuals,
+                            *(f for result in fresh for f in result.findings),
+                        )
                         classes.update(f.defect_class for f in findings)
                         refused_keys = {r.issue_id for r in refused}
                         for result in fresh:

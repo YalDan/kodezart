@@ -122,6 +122,33 @@ class SurfaceLeaseError(Exception):
         self.current_holder: str | None = current_holder
 
 
+class OrganizeSurfaceResidualError(Exception):
+    """A write needs an address inside the scope that this round does not hold.
+
+    Raised before any backend call. The addresses are the residual the
+    caller records as findings on the items that own them. A peer outside
+    the scope is a different refusal and never reaches here, which is why
+    this is not a kind of ``OrganizeWriteRefusalError``: a handler of that
+    refusal must not absorb a residual.
+    """
+
+    def __init__(self, *, issue_key: str, surfaces: frozenset[WritableSurface]) -> None:
+        if not surfaces:
+            raise ValueError("a surface residual names at least one address")
+        self.issue_key = issue_key
+        self.surfaces = surfaces
+        addresses = ", ".join(
+            f"{surface.kind.value}:{surface.ref.key}"
+            for surface in sorted(
+                surfaces, key=lambda item: (item.ref.key, item.kind.value)
+            )
+        )
+        super().__init__(
+            f"the write authored for {issue_key} needs undeclared "
+            f"addresses: {addresses}"
+        )
+
+
 class SurfaceLeaseLostError(Exception):
     """Renewal could not confirm the run's complete declared write set.
 
