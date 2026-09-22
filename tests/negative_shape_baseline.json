@@ -264,6 +264,7 @@
   "tests/integration/test_issue_key_carriage.py": 20,
   "tests/integration/test_live_criteria_probes.py": 17,
   "tests/integration/test_one_scope_roster.py": 10,
+  "tests/integration/test_organize_authority.py": 10,
   "tests/integration/test_organize_scheduler.py": 33,
   "tests/integration/test_organize_tick_halt.py": 7,
   "tests/integration/test_pr_footer_gating.py": 10,
@@ -300,6 +301,7 @@
   "tests/prompts/test_organize_call_bindings.py": 25,
   "tests/prompts/test_organize_mandate_bindings.py": 10,
   "tests/prompts/test_organize_roles.py": 10,
+  "tests/prompts/test_organize_rubrics.py": 5,
   "tests/prompts/test_pass_roster.py": 40,
   "tests/prompts/test_principal_roles.py": 22,
   "tests/prompts/test_prompt_wiring.py": 88,
@@ -352,6 +354,7 @@
   "tests/services/test_native_amendments.py": 75,
   "tests/services/test_native_commit_receipt_independent.py": 9,
   "tests/services/test_native_execution_record.py": 13,
+  "tests/services/test_organize_gate_static.py": 9,
   "tests/services/test_parent_rollup_authority.py": 4,
   "tests/services/test_pass_delta_cancellation.py": 15,
   "tests/services/test_pass_gate.py": 91,
@@ -393,6 +396,7 @@
   "tests/test_lifespan_cleanup.py": 64,
   "tests/test_mandate_dispatch_sites.py": 9,
   "tests/test_name_resolution.py": 40,
+  "tests/test_organize_definition_sites.py": 11,
   "tests/test_organize_portability.py": 14,
   "tests/test_release.py": 4,
   "tests/test_suppression_baseline.py": 46,
@@ -3838,6 +3842,10 @@
    "test_each_pass_is_composed_from_the_one_roster",
    "test_a_retired_scope_key_is_refused_at_load_naming_the_one_table"
   ],
+  "tests/integration/test_organize_authority.py": [
+   "test_a_milestone_addressed_scope_grooms_on_its_projects_triage",
+   "test_a_port_that_swallows_the_marker_write_ends_grooming_before_the_judge"
+  ],
   "tests/integration/test_organize_scheduler.py": [
    "test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent",
    "test_partial_owner_configuration_refuses_during_preflight",
@@ -4173,6 +4181,11 @@
    "test_removing_each_organize_data_file_fails_application_prompt_boot",
    "test_each_role_renders_its_own_data_file",
    "test_organize_roles_inherit_the_existing_authorship_and_judgment_policies"
+  ],
+  "tests/prompts/test_organize_rubrics.py": [
+   "test_the_shipped_pre_approval_rubric_states_the_four_parts",
+   "test_no_pre_approval_accept_condition_names_the_dry_implementation",
+   "test_the_run_stage_rubric_states_the_implementation_test"
   ],
   "tests/prompts/test_pass_roster.py": [
    "test_no_shipped_template_names_a_team_or_repository_slot",
@@ -4939,6 +4952,15 @@
    "test_the_persist_phase_does_not_complete_when_the_record_write_raises",
    "test_the_recorded_head_equals_the_branch_head_after_each_commit"
   ],
+  "tests/services/test_organize_gate_static.py": [
+   "test_the_derivation_reaches_the_decisions_and_not_the_whole_tree",
+   "test_the_derivation_starts_at_definitions_that_exist",
+   "test_the_dispatch_predicate_names_no_principal_or_role",
+   "test_the_detector_sees_each_shape_a_role_is_named_by",
+   "test_every_forbidden_name_has_a_control",
+   "test_the_dispatch_path_names_no_scope_member_but_the_approval_cascade",
+   "test_the_detector_sees_a_planted_member"
+  ],
   "tests/services/test_parent_rollup_authority.py": [
    "test_merge_reports_delivery_without_writing_parent_or_criterion_done"
   ],
@@ -5587,6 +5609,14 @@
    "test_a_callee_is_resolved_to_the_callers_own_definition_first",
    "test_the_definition_a_node_sits_inside_is_named_in_full",
    "test_the_source_tree_is_the_package_read_off_disk"
+  ],
+  "tests/test_organize_definition_sites.py": [
+   "test_each_consumed_symbol_is_defined_exactly_once",
+   "test_the_configured_convergence_bound_is_declared_once_and_read_in_the_loop",
+   "test_the_halt_sites_live_in_the_convergence_loop_in_source_order",
+   "test_the_detector_sees_each_duplicate_shape",
+   "test_a_method_and_a_module_function_of_one_name_are_two_symbols",
+   "test_the_guard_reddens_when_a_consumed_symbol_gains_a_second_home"
   ],
   "tests/test_organize_portability.py": [
    "test_source_and_prompt_data_have_no_literal_phase_labels",
