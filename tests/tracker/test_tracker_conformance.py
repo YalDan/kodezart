@@ -11,7 +11,7 @@ workspace anywhere in this module and none may be introduced.
 
 import asyncio
 import sys
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from inspect import isawaitable
 
@@ -221,6 +221,9 @@ async def queue_aliasing_tracker(
 #: under the writing run's job id.
 JOB_A = "job-a"
 JOB_B = "job-b"
+#: A third, so a case about surfaces of ONE issue held apart has a holder
+#: per surface and never has to reuse one to make its point.
+JOB_C = "job-c"
 #: The two holder vocabularies, side by side: a deployment's process
 #: identity holds a fire claim, a run's job id holds a write lease.
 PROCESS_HOLDER = "kodezart-process"
@@ -2805,6 +2808,58 @@ class TestPrincipalAuthoredBodies:
 #: A criterion sub-issue this writer authored and still owes: the one row
 #: the addressing property reads a key off and writes back through.
 OWED_CRITERION = "FIX-6"
+#: A second criterion under the SAME parent, so "one surface per criterion
+#: sub-issue" is a statement about two addresses rather than about one.
+OTHER_CRITERION = "FIX-7"
+
+
+def criterion_sub_issue(
+    key: str,
+    *,
+    title: str,
+    status: str = "Todo",
+    status_type: str = "unstarted",
+    created_by: str | None = None,
+) -> FakeMcpIssue:
+    """One criterion sub-issue of the claimable issue, in vendor shape.
+
+    Stated once because several workspaces seed the same shape: the body
+    carries the rows the criterion family read parses, the parentage is
+    what makes the member a criterion of ``CLAIMED_ISSUE``, and the
+    classification is the configured criterion label.  ``created_by``
+    unset leaves the workspace attributing the body to the dialled
+    account, so an ordinary description edit is the ordinary write rather
+    than the principal-authorship refusal; a case about a principal's
+    words names the member that wrote them.
+    """
+    return FakeMcpIssue(
+        id=key,
+        title=title,
+        description=(
+            f"**Check:** the check {key} states\n\n"
+            f"**Do:** the build {key} names\n\n"
+            "**Evidence:**\n"
+        ),
+        parent_id=CLAIMED_ISSUE,
+        status=status,
+        status_type=status_type,
+        labels=[ISSUE_LABELS["criterion"]],
+        created_by=created_by,
+        created_at=FIXTURE_NOW - timedelta(days=2),
+        updated_at=FIXTURE_NOW,
+    )
+
+
+def criterion_surface(key: str) -> WritableSurface:
+    """The one address a criterion's body, state and labels share.
+
+    Composed rather than listed, because a case about two criteria needs
+    two of these and a subtree address exists nowhere to compose from.
+    """
+    return WritableSurface(
+        kind=SurfaceKind.CRITERION_SUB_ISSUE,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=key),
+    )
 
 
 class TestACriterionKeyReadThroughThePortAddressesItsWrites:
@@ -2829,20 +2884,8 @@ class TestACriterionKeyReadThroughThePortAddressesItsWrites:
         rather than the principal-authorship refusal.
         """
         value = fixture_server(clock=clock)
-        value.issues[OWED_CRITERION] = FakeMcpIssue(
-            id=OWED_CRITERION,
-            title="a criterion this writer owes",
-            description=(
-                "**Check:** the check FIX-6 states\n\n"
-                "**Do:** the build FIX-6 names\n\n"
-                "**Evidence:**\n"
-            ),
-            parent_id=CLAIMED_ISSUE,
-            status="Todo",
-            status_type="unstarted",
-            labels=[ISSUE_LABELS["criterion"]],
-            created_at=FIXTURE_NOW - timedelta(days=2),
-            updated_at=FIXTURE_NOW,
+        value.issues[OWED_CRITERION] = criterion_sub_issue(
+            OWED_CRITERION, title="a criterion this writer owes"
         )
         return value
 
@@ -3015,6 +3058,187 @@ class TestACriterionKeyReadThroughThePortAddressesItsWrites:
         read_back = await tracker.read_issue(issue_key=row.issue_key)
         assert read_back == finished
         assert read_back.state_kind is WorkflowStateKind.COMPLETED
+
+
+class TestIndependentlyHeldSurfaces:
+    """Addresses of one issue, and criteria of one parent, are held apart.
+
+    Two properties of the address vocabulary, each stated over holders
+    that ARE supplied: an issue's description and its two marker-keyed
+    comments are three surfaces, so three holders take them at once and
+    none of them may write the others; and two criteria under one parent
+    are two surfaces, so the holder of one moves that criterion's state
+    and is refused on its sibling's.  Nothing here acquires a subtree or
+    a parent's criterion-child set: there is no such grant to lean on.
+    """
+
+    @pytest.fixture
+    def server(self, clock: FixtureClock) -> FakeLinearMcpServer:
+        """The fixture workspace plus the two criteria these cases address.
+
+        Dialled here rather than in the shared workspace for the reason
+        the addressing property's is: a member added there would move
+        answers no case in this class is about.
+        """
+        value = fixture_server(clock=clock)
+        value.issues[OWED_CRITERION] = criterion_sub_issue(
+            OWED_CRITERION, title="a criterion this writer owes"
+        )
+        value.issues[OTHER_CRITERION] = criterion_sub_issue(
+            OTHER_CRITERION, title="a criterion of the same parent"
+        )
+        return value
+
+    async def test_one_issues_three_surfaces_are_held_apart_and_each_writes_its_own(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """Three grants over one issue, and six refusals across them.
+
+        The three acquisitions all succeed, which is what "independently
+        held" is; each holder then writes ITS surface, so the refusals
+        that follow are not vacuous.  Every holder is then tried against
+        every surface it does not hold — six attempts, the complete
+        symmetric statement — and each is refused naming the surface
+        written to and the holder that has it, with the write log
+        untouched over all six.
+        """
+        owners = {CLAIMED_DESCRIPTION: JOB_A, MARKER_A: JOB_B, MARKER_B: JOB_C}
+        for surface, owner in owners.items():
+            granted = await tracker.acquire_surfaces(
+                surfaces=frozenset({surface}),
+                holder=owner,
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert granted.surfaces == frozenset({surface})
+
+        opening = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        edited = await tracker.edit_description(
+            target=CLAIMED_ISSUE,
+            expected=opening.body,
+            replacement="a body the description's own holder replaced",
+            authorization=DescriptionWriteAuthority(
+                holder=JOB_A, surface=CLAIMED_DESCRIPTION
+            ),
+        )
+        assert edited is DescriptionEditResult.EDITED
+        for surface, owner in ((MARKER_A, JOB_B), (MARKER_B, JOB_C)):
+            assert surface.marker is not None
+            posted = await tracker.upsert_comment(
+                target=CLAIMED_ISSUE,
+                marker=surface.marker,
+                body=f"a record {owner} wrote under its own marker",
+                holder=owner,
+            )
+            assert posted.body.endswith(f"a record {owner} wrote under its own marker")
+
+        standing = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        assert standing.body == "a body the description's own holder replaced"
+        comments = {
+            comment.comment_key: comment.body
+            for comment in await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+        }
+
+        async def replace_the_body(holder: str) -> object:
+            return await tracker.edit_description(
+                target=CLAIMED_ISSUE,
+                expected=standing.body,
+                replacement=f"a body {holder} does not hold the address for",
+                authorization=DescriptionWriteAuthority(
+                    holder=holder, surface=CLAIMED_DESCRIPTION
+                ),
+            )
+
+        def replace_the_comment(marker: str) -> Callable[[str], Awaitable[object]]:
+            async def write(holder: str) -> object:
+                return await tracker.upsert_comment(
+                    target=CLAIMED_ISSUE,
+                    marker=marker,
+                    body=f"a record {holder} does not hold the address for",
+                    holder=holder,
+                )
+
+            return write
+
+        rows: tuple[tuple[WritableSurface, Callable[[str], Awaitable[object]]], ...] = (
+            (CLAIMED_DESCRIPTION, replace_the_body),
+            (MARKER_A, replace_the_comment("A")),
+            (MARKER_B, replace_the_comment("B")),
+        )
+        written = tracker_writes()
+
+        for surface, write in rows:
+            for foreign in sorted(set(owners.values()) - {owners[surface]}):
+                with pytest.raises(SurfaceLeaseError) as refused:
+                    await write(foreign)
+                assert (
+                    refused.value.surface_kind,
+                    refused.value.scope_key,
+                    refused.value.marker,
+                    refused.value.current_holder,
+                ) == (
+                    surface.kind.value,
+                    surface.ref.key,
+                    surface.marker,
+                    owners[surface],
+                )
+
+        assert tracker_writes() == written
+        after = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        assert after.body == standing.body
+        assert {
+            comment.comment_key: comment.body
+            for comment in await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+        } == comments
+
+    async def test_a_criterion_holder_moves_its_own_state_and_not_another_criterions(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """One surface per criterion, and no grant over the parent's subtree.
+
+        Both criteria are finished through the single-writer state move,
+        then each is taken by a holder of its own — both granted, because
+        two criteria of one parent are two addresses.  The holder of the
+        first moves that criterion back and is refused on the second's,
+        naming the second's key and its holder; the second's own holder
+        then moves it back, so the refusal was about the address and not
+        about the call.
+        """
+        for key in (OWED_CRITERION, OTHER_CRITERION):
+            await tracker.set_workflow_state(issue_key=key, stage=LifecycleStage.DONE)
+        owed = await tracker.read_issue(issue_key=OWED_CRITERION)
+        other = await tracker.read_issue(issue_key=OTHER_CRITERION)
+        for key, holder in ((OWED_CRITERION, JOB_A), (OTHER_CRITERION, JOB_B)):
+            granted = await tracker.acquire_surfaces(
+                surfaces=frozenset({criterion_surface(key)}),
+                holder=holder,
+                lease_seconds=LEASE_SECONDS,
+            )
+            assert granted.holder == holder
+
+        moved = await tracker.reset_criterion_pending(expected=owed, holder=JOB_A)
+        assert moved.state_kind is WorkflowStateKind.UNSTARTED
+
+        written = tracker_writes()
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.reset_criterion_pending(expected=other, holder=JOB_A)
+
+        assert (
+            refused.value.surface_kind,
+            refused.value.scope_key,
+            refused.value.current_holder,
+        ) == (SurfaceKind.CRITERION_SUB_ISSUE.value, OTHER_CRITERION, JOB_B)
+        assert tracker_writes() == written
+        assert (
+            await tracker.read_issue(issue_key=OTHER_CRITERION)
+        ).state_kind is WorkflowStateKind.COMPLETED
+
+        symmetric = await tracker.reset_criterion_pending(expected=other, holder=JOB_B)
+
+        assert symmetric.state_kind is WorkflowStateKind.UNSTARTED
 
 
 #: The criterion sub-issue the provenance property addresses, and the body
