@@ -97,6 +97,7 @@ def test_repeated_writes_by_one_holder_do_not_inflate_contention(holders):
 
 
 def test_distinct_runs_under_the_same_marker_use_the_same_signal():
+    """The cross-run widening is an arm of ``SURFACE_CONTENDED``, not a member."""
     surface = address()
     original = readings(
         surface, holders=("run-1/holder-a", "run-1/holder-a", "run-2/holder-b")
