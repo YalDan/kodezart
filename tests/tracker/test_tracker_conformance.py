@@ -3152,6 +3152,13 @@ class TestIndependentlyHeldSurfaces:
             comment.comment_key: comment.body
             for comment in await tracker.list_comments(issue_key=CLAIMED_ISSUE)
         }
+        for owner in (JOB_B, JOB_C):
+            own_records = [
+                body
+                for body in comments.values()
+                if body.endswith(f"a record {owner} wrote under its own marker")
+            ]
+            assert len(own_records) == 1, (owner, own_records)
 
         async def replace_the_body(holder: str) -> object:
             return await tracker.edit_description(
@@ -3224,6 +3231,8 @@ class TestIndependentlyHeldSurfaces:
             await tracker.set_workflow_state(issue_key=key, stage=LifecycleStage.DONE)
         owed = await tracker.read_issue(issue_key=OWED_CRITERION)
         other = await tracker.read_issue(issue_key=OTHER_CRITERION)
+        assert owed.state_kind is WorkflowStateKind.COMPLETED
+        assert other.state_kind is WorkflowStateKind.COMPLETED
         for key, holder in ((OWED_CRITERION, JOB_A), (OTHER_CRITERION, JOB_B)):
             granted = await tracker.acquire_surfaces(
                 surfaces=frozenset({criterion_surface(key)}),
@@ -3252,6 +3261,46 @@ class TestIndependentlyHeldSurfaces:
         symmetric = await tracker.reset_criterion_pending(expected=other, holder=JOB_B)
 
         assert symmetric.state_kind is WorkflowStateKind.UNSTARTED
+
+    async def test_a_parents_criterion_child_grant_moves_no_criterion_under_it(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """The parent's criterion-child grant is not a grant over its criteria.
+
+        The parent's child-set address grants creating a criterion under
+        it and nothing else: the criterion already there is its own
+        address, held by no one, so moving it back under the child-set
+        holder is refused naming that criterion and no holder, with
+        nothing written and the criterion still finished.  One surface
+        per criterion sub-issue, not one lease per subtree.
+        """
+        await tracker.set_workflow_state(
+            issue_key=OTHER_CRITERION, stage=LifecycleStage.DONE
+        )
+        other = await tracker.read_issue(issue_key=OTHER_CRITERION)
+        assert other.state_kind is WorkflowStateKind.COMPLETED
+        granted = await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_CRITERION_CHILD_SET}),
+            holder=JOB_C,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert granted.holder == JOB_C
+
+        written = tracker_writes()
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.reset_criterion_pending(expected=other, holder=JOB_C)
+
+        assert (
+            refused.value.surface_kind,
+            refused.value.scope_key,
+            refused.value.current_holder,
+        ) == (SurfaceKind.CRITERION_SUB_ISSUE.value, OTHER_CRITERION, None)
+        assert tracker_writes() == written
+        assert (
+            await tracker.read_issue(issue_key=OTHER_CRITERION)
+        ).state_kind is WorkflowStateKind.COMPLETED
 
 
 #: The two parameters through which a caller can name the holder it writes
