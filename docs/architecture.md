@@ -175,7 +175,11 @@ sessions remain a separate consumer.
 The selected tracker provides criterion-family and body-revision reads directly.
 Their required semantics are exercised by the shared native/fake conformance
 suite. Boot performs real credential and mapping checks; empty capability
-self-declarations do not prove an adapter's behavior.
+self-declarations do not prove an adapter's behavior. The scan-capability probe
+runs once, inside the boot preflight, and nothing after boot asks for or
+handles its answer: a signal the credential cannot answer aborts startup
+naming every refused signal, the passes each one gates and the backend's own
+diagnosis.
 
 `TrackerCommentReader`, `TrackerCriteriaReader` and `TrackerContextReader` expose
 only the read operations used by record readers, criterion consumers and the
