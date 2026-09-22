@@ -36,6 +36,7 @@ from tests.chains.test_union_exit_invariance import (
 )
 from tests.fakes import (
     FakeDeliveryProbe,
+    FakeForgeQuery,
     FakeGitService,
     FakePRCreator,
     FakePRStateReader,
@@ -44,20 +45,31 @@ from tests.fakes import (
 )
 from tests.services import test_union_composition as pinned
 
-#: Every question the forge answers, across the write port, the query
-#: ports and the CI ports.  A collaborator carrying any of them is a forge
-#: handle whatever the union step then did with it.
-FORGE_METHODS: frozenset[str] = frozenset(
-    {
-        "create_pr",
-        "comment_on_pr",
-        "read_pr_state",
-        "open_delivery_exists",
-        "wait_for_checks",
-        "rerun_checks",
-        "checks_declared",
-        "resolve_visibility",
-    }
+#: Every port the forge answers through: the write port, the read ports, the
+#: CI ports and the visibility port.  Named here so the surface scanned below
+#: is derived from what those ports DECLARE rather than from what was
+#: remembered while writing this file — a hand list silently shrinks whenever a
+#: port grows a method or a whole port is forgotten, and both had happened.
+FORGE_PORTS: tuple[type, ...] = (
+    protocols.PRCreator,
+    protocols.ForgeQuery,
+    protocols.PRStateReader,
+    protocols.CIMonitor,
+    protocols.DeliveryProbe,
+    protocols.RepoVisibilityResolver,
+)
+
+
+def declared_surface(port: type) -> frozenset[str]:
+    """The public names *port* declares, read off the protocol object itself."""
+    return frozenset(name for name in vars(port) if not name.startswith("_"))
+
+
+#: Every question the forge answers, across all of those ports.  A collaborator
+#: carrying any of them is a forge handle whatever the union step then did
+#: with it.
+FORGE_METHODS: frozenset[str] = frozenset().union(
+    *(declared_surface(port) for port in FORGE_PORTS)
 )
 
 #: The merge-state vocabulary the union step must not consume. The port
@@ -293,9 +305,41 @@ async def test_verifying_leaves_every_open_pull_request_open(
     assert (before, after) == (ALL_OPEN, ALL_OPEN), name
 
 
+#: One question per forge port, spelled as that port declares it.  The
+#: derivation above is computed, so nothing in it says which ports it reached;
+#: these anchors do, read off core/protocols.py at PRCreator, ForgeQuery,
+#: PRStateReader, CIMonitor, DeliveryProbe and RepoVisibilityResolver.
+PORT_ANCHORS: dict[str, str] = {
+    "PRCreator": "create_pr",
+    "ForgeQuery": "open_pr_for_head",
+    "PRStateReader": "read_pr_state",
+    "CIMonitor": "wait_for_checks",
+    "DeliveryProbe": "open_delivery_exists",
+    "RepoVisibilityResolver": "resolve_visibility",
+}
+
+
+def test_the_scanned_forge_surface_is_derived_from_every_forge_port() -> None:
+    """Guards every case below: a port left out narrows all of them at once.
+
+    FORGE_METHODS is what the predicate, the closure scan and the own-module
+    scan are all spelled in terms of, so a forge port missing from FORGE_PORTS,
+    or one whose declared surface reads as empty, would quietly make all three
+    weaker rather than fail anywhere. Each port must contribute, and must
+    contribute the question it is known to answer, so a rename is caught here.
+    """
+    assert {port.__name__ for port in FORGE_PORTS} == set(PORT_ANCHORS)
+    for port in FORGE_PORTS:
+        surface = declared_surface(port)
+        assert surface, port.__name__
+        assert surface <= FORGE_METHODS, port.__name__
+        assert PORT_ANCHORS[port.__name__] in surface, port.__name__
+
+
 def test_the_forge_predicate_recognises_every_forge_double() -> None:
     """Guards the case below: a predicate that never fires proves nothing."""
     assert is_forge_shaped(FakePRCreator())
+    assert is_forge_shaped(FakeForgeQuery())
     assert is_forge_shaped(FakePRStateReader(records={}))
     assert is_forge_shaped(FakeDeliveryProbe())
 
