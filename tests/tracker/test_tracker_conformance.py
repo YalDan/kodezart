@@ -2922,6 +2922,12 @@ class TestACriterionKeyReadThroughThePortAddressesItsWrites:
         over its own lane and consults no grant; a supplied one that nobody
         granted is refused on every implementation, with nothing written and
         the criterion left finished.
+
+        "Nothing written" is read back off the issue itself and not only off
+        the mutation calls: the refused move back has to leave the whole
+        revision the refusal found, stamp included, so a move that touched
+        the issue and then raised is a failure here rather than a refusal
+        that happens to report the state the case asks about (KOD-655).
         """
         rows = await tracker.read_criteria(issue_key=CLAIMED_ISSUE)
         row = next(r for r in rows if r.issue_key == OWED_CRITERION)
@@ -2935,9 +2941,9 @@ class TestACriterionKeyReadThroughThePortAddressesItsWrites:
             await tracker.reset_criterion_pending(expected=finished, holder=holder)
 
         assert tracker_writes() == written
-        assert (
-            await tracker.read_issue(issue_key=row.issue_key)
-        ).state_kind is WorkflowStateKind.COMPLETED
+        read_back = await tracker.read_issue(issue_key=row.issue_key)
+        assert read_back == finished
+        assert read_back.state_kind is WorkflowStateKind.COMPLETED
 
 
 #: The criterion sub-issue the provenance property addresses, and the body
