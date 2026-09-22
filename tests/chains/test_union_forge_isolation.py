@@ -272,24 +272,33 @@ async def lifecycles(
     }
 
 
-#: Both ways verifying RETURNS, and the edits that drive each one.  The step
-#: also leaves by raising, which the exit sibling's scenarios cover; a read-back
-#: around the call can only be made where there is a result to read it around,
-#: and there are two of those.  ``composed`` says which one: a chain was run and
-#: reported, or the merge refused and the chain was never reached.
-RETURN_PATHS: tuple[tuple[str, dict[str, tuple[str, str]], bool], ...] = (
-    ("independent edits", INDEPENDENT_EDITS, True),
-    ("conflicting edits", CONFLICTING_EDITS, False),
+#: Every way verifying RETURNS, and what drives each one.  The step also leaves
+#: by raising, which the exit sibling's scenarios cover; a read-back around the
+#: call can only be made where there is a result to read it around, and the step
+#: has THREE of those — a chain was composed and reported, the merge refused and
+#: the chain was never reached, or an earlier result was reused because no head
+#: had moved since it was measured.  ``composed`` says which of the first two;
+#: ``reused`` asks twice on one step and requires the second answer to be the
+#: first result OBJECT, which is the only thing that says reuse was the return
+#: taken rather than a second measurement that merely compares equal.
+RETURN_PATHS: tuple[tuple[str, dict[str, tuple[str, str]], bool, bool], ...] = (
+    ("independent edits", INDEPENDENT_EDITS, True, False),
+    ("conflicting edits", CONFLICTING_EDITS, False, False),
+    ("unchanged heads asked twice", INDEPENDENT_EDITS, True, True),
 )
 
 
 @pytest.mark.parametrize(
-    "name, edits, composed",
+    "name, edits, composed, reused",
     RETURN_PATHS,
     ids=[row[0] for row in RETURN_PATHS],
 )
 async def test_verifying_leaves_every_open_pull_request_open(
-    tmp_path, name: str, edits: dict[str, tuple[str, str]], composed: bool
+    tmp_path,
+    name: str,
+    edits: dict[str, tuple[str, str]],
+    composed: bool,
+    reused: bool,
 ) -> None:
     """Read back around the verify, not asserted of the step's own surface.
 
@@ -297,17 +306,21 @@ async def test_verifying_leaves_every_open_pull_request_open(
     lifecycle of every open request is the same fact after the union step
     returns as it was before it was called — on EACH way it returns, because a
     lifecycle write placed on the return the read-back never drives is a write
-    nothing here would see.
+    nothing here would see.  The reuse row reads back around its SECOND ask, so
+    the return under measurement is the one that composes nothing.
     """
     fixture = await build_delivery(
         tmp_path / "world", edits=edits, git=ReachableForgeGit()
     )
     forge = fixture.git.forge
+    coordinator = fixture.coordinator()
+    first = await coordinator.verify() if reused else None
     before = await lifecycles(forge)
 
-    result = await fixture.coordinator().verify()
+    result = await coordinator.verify()
 
     after = await lifecycles(forge)
+    assert (result is first) is reused, name
     assert (result.checks is not None) is composed, name
     assert (result.merge_conflict is not None) is not composed, name
     assert (before, after) == (ALL_OPEN, ALL_OPEN), name
