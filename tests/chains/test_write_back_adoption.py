@@ -997,6 +997,11 @@ LANE_STATE_WRITES = frozenset(
         ),
         CallSite(
             module=LANE_STATE,
+            function="TrackerLaneStateWriter._write_one",
+            method="post_run_event",
+        ),
+        CallSite(
+            module=LANE_STATE,
             function="TrackerLaneStateWriter._take_back",
             method="reset_criterion_pending",
         ),

@@ -1275,6 +1275,11 @@ class CountingTracker(FakeTrackerPort):
         super().__init__(
             issues=list(source.issues.values()),
             criteria_stage_label_key=STAGE_KEY,
+            # The same markers the engine writes under, as every other board
+            # in this module takes them: a lane's cross-offs record their
+            # gradings on its stream, so a board with no event identity could
+            # answer for no lane (KOD-506).
+            marker_prefixes=native_operation().marker_prefixes,
             scope_label_members=source.scope_label_members,
         )
         self.spec_reads = 0
