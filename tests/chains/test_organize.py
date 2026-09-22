@@ -51,8 +51,10 @@ from kodezart.types.domain.subagents import (
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import (
     IssuePriority,
+    IssueQuery,
     IssueRelation,
     IssueRelationKind,
+    ReviewQuery,
     TrackerIssue,
     TrackerIssueRevision,
     WorkflowStateKind,
@@ -1693,6 +1695,26 @@ def test_change_stamp_detector_flags_a_gap_site_that_reads_the_field(field, form
     }[form]
     assert change_stamp_reads(ast.parse(snippet)) == {field}
     assert change_stamp_reads(ast.parse(snippet.replace(field, "body_digest"))) == set()
+
+
+def test_the_change_stamp_surface_names_every_spelling_of_the_one_field():
+    """The scanned spellings are the field's own, and the set cannot lose one.
+
+    The detector's rows above are parametrised over this set, so a spelling
+    dropped out of it takes its own row away with it and nothing reds: the set
+    would be free to shrink and the scan with it.  It is therefore stated
+    against the places the three spellings come from — the domain issue's own
+    field, the recency parameter both domain queries state it as, and the wire
+    key the adapter sends that parameter under — and then against the three
+    words themselves, so neither a rename upstream nor a quiet deletion here
+    passes.
+    """
+    assert "updated_at" in TrackerIssue.model_fields
+    assert "updated_since" in IssueQuery.model_fields
+    assert "updated_since" in ReviewQuery.model_fields
+    assert '"updatedAt"' in source_tree()["adapters/linear/tracker.py"]
+
+    assert CHANGE_STAMP_FIELDS == {"updated_at", "updated_since", "updatedAt"}
 
 
 #: The module that defines the gap arithmetic. Its own calls of its own
