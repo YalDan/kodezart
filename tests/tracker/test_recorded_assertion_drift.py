@@ -2,6 +2,7 @@
 
 import asyncio
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 import structlog.testing
@@ -25,9 +26,12 @@ from kodezart.services.recorded_assertion_drift import (
     RecordedAssertionDriftDetector,
 )
 from kodezart.services.ruling_records import RulingRecordReader
+from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.agent import Ruling, RulingProtectedTestRef
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.tracker import TrackerComment
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
 from tests.domain.test_rulings import ruling_data
 from tests.fakes import FakeTrackerPort
 from tests.services.test_assertion_drift import (
@@ -41,7 +45,7 @@ from tests.services.test_assertion_drift import (
     repo as repo,
 )
 from tests.tracker import test_audit_evidence as fixtures
-from tests.tracker.conftest import linear_over_fake_mcp
+from tests.tracker.conftest import STATE_TYPES, linear_over_fake_mcp
 from tests.tracker.lease_fixtures import leased_comment
 
 claim_setup = fixtures.claim_setup
@@ -53,6 +57,14 @@ OPERATION = OperationConfig(
     workspace="fixture",
     marker_prefixes=PREFIXES,
     workflow_states=fixtures.WORKFLOW_STATE_NAMES,
+)
+#: The backend state name this workspace carries for the duplicate kind, read
+#: off the workspace's own state table: a board closes a condition as a
+#: duplicate under its own word for it, and the kind is what a consumer reads.
+(DUPLICATE_STATE,) = (
+    name
+    for name, kind in STATE_TYPES.items()
+    if kind == WorkflowStateKind.DUPLICATE.value
 )
 
 
@@ -106,6 +118,80 @@ async def native(claim_setup, tracker, repo, tmp_path):
         )
 
     return build, request, graded, head
+
+
+async def absorbed(tracker, *, parent=ROOT):
+    """A second criterion under *parent*, closed as a duplicate of its neighbour.
+
+    Minted through the port and closed through the port, so its key is the
+    backend's own and the case reads the same over either implementation. The
+    board is what closes a condition as a duplicate of the one that absorbed
+    it; nothing under test writes that state.
+    """
+    surfaces = frozenset(
+        {
+            WritableSurface(
+                kind=SurfaceKind.CRITERION_CHILD_SET,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent),
+            )
+        }
+    )
+    holder = uuid4().hex
+    async with RunSurfaceLease(
+        tracker=tracker, job_id=holder, surfaces=surfaces, lease_seconds=900.0
+    ):
+        made = await tracker.create_criterion_if_absent(
+            parent_key=parent,
+            title="The condition its neighbour absorbed",
+            check="The absorbed condition states this same check.",
+            do="Do what the absorbed condition names.",
+            holder=holder,
+        )
+    closed = await tracker.restore_workflow_state(
+        issue_key=made.issue_key, state_name=DUPLICATE_STATE
+    )
+    assert closed.state_kind is WorkflowStateKind.DUPLICATE
+    return closed
+
+
+async def test_a_superseded_criterion_still_supplies_its_protected_designation(
+    native, tracker, repo
+):
+    """A closed-as-duplicate identity stays resolvable, so its record still counts.
+
+    This is the one production site that reads a protected-test designation
+    back, and the family it gathers is where a superseded identity could
+    quietly stop existing. Filter the duplicate out of that read and the
+    designation carried by the absorbed condition vanishes from the comparison
+    with nothing refused — a silent loss, which is exactly what the clause
+    that a superseded identity stays resolvable forbids (KOD-622).
+
+    The request stays keyed by the surviving condition: the source read
+    requires a completed or configured-review claim, so an audit claim keyed
+    by a duplicate is refused upstream of the family read and cannot express
+    this. What the case pins is the family read, over the whole owner set.
+    """
+    build, request, graded, head = native
+    superseded = await absorbed(tracker)
+    comment, _ruling = await seed(tracker, owner=superseded.issue_key)
+    git(repo, "checkout", "--detach", graded)
+    run_protected_test(repo)
+    git(repo, "checkout", "ordinary-name")
+    run_protected_test(repo)
+
+    (claim,) = await build().compare(request)
+
+    # Non-vacuous: the designation reaching the detector is the one recorded
+    # against the superseded identity, and that identity is in the family the
+    # comparer read rather than only on the board.
+    assert claim.protected_test.source_ref == comment.comment_key
+    assert claim.protected_test.path == PATH
+    assert claim.protected_test.qualified_name == "test_contract"
+    assert claim.graded_sha == graded and claim.head_sha == head
+    assert superseded.issue_key != request.criterion_key
+    assert superseded.issue_key in {
+        row.issue_key for row in await tracker.read_criteria(issue_key=ROOT)
+    }
 
 
 @pytest.mark.parametrize("owner", [ROOT, CHILD])
