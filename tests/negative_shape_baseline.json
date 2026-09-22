@@ -397,6 +397,7 @@
   "tests/test_forge_origin_selection.py": 46,
   "tests/test_graded_sha_comparison_sites.py": 22,
   "tests/test_graded_sha_trap.py": 45,
+  "tests/test_issue_state_write_sites.py": 12,
   "tests/test_lane_verification.py": 15,
   "tests/test_lifespan_cleanup.py": 64,
   "tests/test_mandate_dispatch_sites.py": 9,
@@ -5641,6 +5642,13 @@
    "test_the_restamp_reading_compares_the_graded_sha_only_as_its_rows_say",
    "test_the_lane_state_writer_takes_a_lapsed_grading_back_without_weighing_it",
    "test_every_consultation_of_the_rule_is_driven_with_both_values_trapped"
+  ],
+  "tests/test_issue_state_write_sites.py": [
+   "test_only_the_node_side_writers_name_an_issue_state",
+   "test_the_permitted_modules_are_the_two_named_authors_per_move",
+   "test_a_state_move_from_a_chain_module_is_reported",
+   "test_a_module_that_only_states_the_method_is_not_a_move_site",
+   "test_a_restored_state_name_is_read_from_the_board_and_not_from_configuration"
   ],
   "tests/test_lane_verification.py": [
    "test_pass_templates_resolve_by_key_under_default_configuration",
