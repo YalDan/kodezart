@@ -380,6 +380,7 @@
   "tests/test_fakes_state.py": 8,
   "tests/test_forge_origin_selection.py": 46,
   "tests/test_graded_sha_comparison_sites.py": 22,
+  "tests/test_issue_state_write_sites.py": 12,
   "tests/test_lane_verification.py": 15,
   "tests/test_lifespan_cleanup.py": 64,
   "tests/test_mandate_dispatch_sites.py": 9,
@@ -5399,6 +5400,13 @@
    "test_every_reader_of_the_rule_is_named_with_the_reading_it_takes",
    "test_the_rule_is_consulted_from_one_body_in_each_package_that_reads_it",
    "test_a_second_reader_in_one_package_is_reported"
+  ],
+  "tests/test_issue_state_write_sites.py": [
+   "test_only_the_node_side_writers_name_an_issue_state",
+   "test_the_permitted_modules_are_the_two_named_authors_per_move",
+   "test_a_state_move_from_a_chain_module_is_reported",
+   "test_a_module_that_only_states_the_method_is_not_a_move_site",
+   "test_a_restored_state_name_is_read_from_the_board_and_not_from_configuration"
   ],
   "tests/test_lane_verification.py": [
    "test_pass_templates_resolve_by_key_under_default_configuration",
