@@ -479,19 +479,11 @@ class Shape:
     refusal: str
 
 
+#: What the run stages of an approved scope write: text and children.
 SHAPES = {
     # The configured author already proposes a body, so this shape installs
     # no proposal of its own and carries no refusal to provoke one.
     "bodies": Shape(method="edit_description", proposal={}, refusal=""),
-    "edges": Shape(
-        method="update_issue_graph",
-        proposal={
-            "kind": "graph",
-            "issue_id": CLAIMED_ISSUE,
-            "changes": [{"kind": "related_to", "remove": ["peer"]}],
-        },
-        refusal="The settled mandate keeps no edge to that peer.",
-    ),
     "split_children": Shape(
         method="create_split_if_absent",
         proposal={
@@ -509,6 +501,19 @@ SHAPES = {
     ),
 }
 
+#: Graph change, which only the row that runs before approval declares.
+GROOMING_SHAPES = {
+    "edges": Shape(
+        method="update_issue_graph",
+        proposal={
+            "kind": "graph",
+            "issue_id": CLAIMED_ISSUE,
+            "changes": [{"kind": "related_to", "remove": ["peer"]}],
+        },
+        refusal="The settled mandate keeps no edge to that peer.",
+    ),
+}
+
 
 def pending(shape, board):
     """Whether *shape*'s proposal still has something left to change."""
@@ -519,8 +524,15 @@ def pending(shape, board):
     )
 
 
-def organize_run(monkeypatch, journal, *, shape="bodies", gate=None):
-    """The composed Organize owner, observed at the port it writes through."""
+def organize_run(
+    monkeypatch, journal, *, shape="bodies", gate=None, under_approval=True
+):
+    """The composed Organize owner, observed at the port it writes through.
+
+    *under_approval* True drives the run stages of an approved scope; False
+    drives the row that runs before approval.
+    """
+    proposed = {**SHAPES, **GROOMING_SHAPES}[shape]
     trackers = organize_suite.tracker_over
     ports = []
 
@@ -530,7 +542,7 @@ def organize_run(monkeypatch, journal, *, shape="bodies", gate=None):
 
     monkeypatch.setattr(organize_suite, "tracker_over", recording)
     owner, board, executor = factory(
-        convergence_bound=4, bound=3, gate=gate, under_approval=True
+        convergence_bound=4, bound=3, gate=gate, under_approval=under_approval
     )
     if shape == "bodies":
         return owner, board, ports
@@ -555,13 +567,13 @@ def organize_run(monkeypatch, journal, *, shape="bodies", gate=None):
         ):
             executor.calls.append(kwargs)
             yield result(
-                structured_output=dict(SHAPES[shape].proposal)
+                structured_output=dict(proposed.proposal)
                 if title == "OrganizeProposal"
                 else {
                     "issue_id": CLAIMED_ISSUE,
                     "verdict": "not_buildable",
                     "refusal_kind": "spec_gap",
-                    "evidence": SHAPES[shape].refusal,
+                    "evidence": proposed.refusal,
                     "invented_decision": "Apply the settled mandate.",
                 }
             )
@@ -590,6 +602,63 @@ async def test_every_organize_write_in_a_scope_run_passes_the_verifier(
     } <= written
     parent = board.server.issues[CLAIMED_ISSUE]
     assert {"body complete", "criteria complete"} <= set(parent.labels)
+
+
+async def test_the_grooming_pass_graph_write_passes_the_verifier(monkeypatch):
+    """Graph change is the pre-approval row's, and it lands inside a write-back."""
+    journal = observe(monkeypatch)
+    owner, board, _ = organize_run(
+        monkeypatch, journal, shape="edges", under_approval=False
+    )
+    report = await run_owner(owner)
+    assert report.halt is None
+    require_adoption(journal)
+    written = {write.method for write in journal.writes} & WRITES
+    assert {"update_issue_graph", "set_issue_classification"} <= written
+    parent = board.server.issues[CLAIMED_ISSUE]
+    assert ("relatedTo", "peer") not in parent.relations
+    assert "graph complete" in parent.labels
+
+
+async def test_an_in_run_author_reaching_for_the_graph_writes_nothing_and_reports_it(
+    monkeypatch,
+):
+    """A run stage writes text and children: graph change is a finding, not a write.
+
+    Both graph addresses the edge needs are outside the stage's declared set,
+    so each is recorded on the item that owns it and escalated there at the
+    halt, and the port never sees a graph write.
+    """
+    journal = observe(monkeypatch)
+    owner, board, _ = organize_run(
+        monkeypatch, journal, shape="edges", under_approval=True
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "convergence_exhausted"
+    assert "update_issue_graph" not in {write.method for write in journal.writes}
+    owners = {
+        finding.issue_id
+        for finding in report.halt.surviving_findings
+        if finding.defect_class == "undeclared_surface"
+    }
+    assert owners == {CLAIMED_ISSUE, "peer"}
+    for key in owners:
+        assert "needs decision" in board.server.issues[key].labels
+        assert [
+            comment
+            for comment in board.server.comments
+            if comment.issue_id == key and "undeclared_surface" in comment.body
+        ]
+    assert ("relatedTo", "peer") in board.server.issues[CLAIMED_ISSUE].relations
+    # Every write the run did make ran inside a verification addressing its
+    # own item. The content half of ``require_adoption`` is not asked here:
+    # the halt's escalation step writes the comment and then the decision
+    # label inside the comment's one window, so its last write is never what
+    # the comment's read-back carries, on this path or any other halt.
+    for write in journal.writes:
+        if write.method in WRITES:
+            assert write.window is not None, write.method
+            assert write.window.surface.ref.key in addressed_text(write)
 
 
 @dataclass(frozen=True)
