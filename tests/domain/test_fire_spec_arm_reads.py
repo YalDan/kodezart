@@ -36,7 +36,13 @@ name, which over-includes on the red side.
 A reflective read is not a text read to this walk: ``getattr(spec, "body")``,
 ``spec.model_dump()["body"]`` and ``repr(spec)`` report nothing, because the
 field is never spelled as an attribute of a spec.  ``str(spec)``, an f-string
-over a spec and a slice of ``.body`` are read, because they are.
+over a spec and a slice of ``.body`` are read, because they are.  So is the
+formatter's own idiom: a class pattern that captures the text field into a
+local word — ``case TrackerSpec(body=text)`` — binds that word to the text, so
+every read of it is a read of the arm's text, and handed to the digest it is a
+digest like any other.  The word is seeded by the capture alone and grows no
+further: a second name assigned from it is not itself the text, because the
+read that assigned it is already the site.
 """
 
 import ast
@@ -241,6 +247,7 @@ class _Scope:
         self.module = module
         self.specs = set(module.spec_parameters)
         self.payloads: set[str] = set()
+        self.texts: set[str] = set()
         while True:
             before = set(self.specs), set(self.payloads)
             self.specs |= bound_names(
@@ -254,7 +261,37 @@ class _Scope:
                 seeds=self.payloads,
             )
             if before == (self.specs, self.payloads):
-                return
+                break
+        self.texts = self._match_captures()
+
+    def _match_captures(self) -> set[str]:
+        """The words a class pattern captures an arm's own text into.
+
+        The formatter's idiom read as the read it is: a pattern that names an
+        arm, or that stands over a subject this module holds a spec in, binds
+        the text field to a local word, and nothing else in the walk sees that
+        word as the arm's text.
+        """
+        captured: set[str] = set()
+        for statement in self.module.expressions:
+            if not isinstance(statement, ast.Match):
+                continue
+            over_a_spec = self.is_spec(statement.subject)
+            for pattern in ast.walk(statement):
+                if not isinstance(pattern, ast.MatchClass) or not (
+                    over_a_spec or _spells(pattern.cls) in SPEC_TYPES
+                ):
+                    continue
+                for field, capture in zip(
+                    pattern.kwd_attrs, pattern.kwd_patterns, strict=True
+                ):
+                    if (
+                        field in TEXT_FIELDS
+                        and isinstance(capture, ast.MatchAs)
+                        and capture.name is not None
+                    ):
+                        captured.add(capture.name)
+        return captured
 
     def is_spec(self, node: ast.expr) -> bool:
         """Whether the expression yields one of the partition's arms."""
@@ -290,7 +327,13 @@ class _Scope:
         return False
 
     def reads_text(self, node: ast.AST) -> bool:
-        """Whether this site loads an arm's own text off a spec."""
+        """Whether this site loads an arm's own text.
+
+        Off a spec, spelled as the field it is; or off the word a class
+        pattern captured that field into, which holds the same text.
+        """
+        if isinstance(node, ast.Name):
+            return node.id in self.texts and isinstance(node.ctx, ast.Load)
         return (
             isinstance(node, ast.Attribute)
             and node.attr in TEXT_FIELDS
@@ -300,7 +343,7 @@ class _Scope:
 
     def renders(self, node: ast.AST) -> bool:
         """Whether this site turns an arm into text without the formatter."""
-        if isinstance(node, ast.Attribute):
+        if isinstance(node, ast.Name | ast.Attribute):
             return self.reads_text(node)
         if isinstance(node, ast.FormattedValue):
             return self.is_payload(node.value) or self.is_spec(node.value)
@@ -519,6 +562,41 @@ def test_the_scan_catches_the_renderer_reached_under_another_name():
         "    )\n"
     )
     assert _control(control) == (2, 0)
+
+
+def test_the_scan_catches_a_class_pattern_capturing_the_arm_text():
+    """The formatter's own idiom beside the formatter is a read.
+
+    A pattern that captures the text field binds the text to a word, and the
+    word is read where the arm's own field would have been.
+    """
+    control = (
+        "from kodezart.types.domain.fire_spec import TrackerSpec\n"
+        "\n"
+        "def subject_text(spec: TrackerSpec) -> str:\n"
+        "    match spec:\n"
+        "        case TrackerSpec(body=text):\n"
+        "            return text\n"
+        "        case _:\n"
+        '            return ""\n'
+    )
+    assert _control(control) == (1, 0)
+
+
+def test_a_captured_arm_text_handed_to_the_digest_is_a_digest():
+    """The capture is text wherever it goes, so hashing it hashes the text."""
+    control = (
+        f"from {DIGEST_HOME} import {DIGEST}\n"
+        "from kodezart.types.domain.fire_spec import TrackerSpec\n"
+        "\n"
+        "def pinned(spec: TrackerSpec) -> str:\n"
+        "    match spec:\n"
+        "        case TrackerSpec(body=text):\n"
+        f"            return {DIGEST}(text)\n"
+        "        case _:\n"
+        '            return ""\n'
+    )
+    assert _control(control) == (0, 1)
 
 
 PROBE = (
