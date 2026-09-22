@@ -1304,6 +1304,12 @@ class OrganizeOwner:
                             )
                         )
                     except SurfaceLeaseError as unheld:
+                        if unheld.current_holder is None:
+                            # The port names no competing holder, so there
+                            # is no other run this surface belongs to and
+                            # no fact here to carry as a finding. The
+                            # write's own failure stands.
+                            raise
                         # Another holder owns a surface this write needs,
                         # inside the admitted scope (membership and the gate
                         # were re-asked before the write). The round repairs
