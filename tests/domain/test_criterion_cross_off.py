@@ -8,6 +8,7 @@ import pytest
 from kodezart.core.protocols import LaneStateTracker
 from kodezart.domain.criterion_cross_off import (
     CARRIED_REASON,
+    LAPSE_POINTER,
     LAPSE_REASON,
     cross_offs_for,
     declared_class,
@@ -509,12 +510,22 @@ def test_a_grading_the_reading_counts_is_returned_exactly_as_it_stands():
 
 
 def test_a_grading_the_reading_lapses_keeps_its_sha_and_says_it_lapsed():
-    """The row records the lapse beside the sha the grading was taken at."""
+    """The row records the lapse beside the sha the grading was taken at.
+
+    The pointer is read twice over, because the two halves are different
+    claims. That the builder routes through the one pointer function is the
+    equality below, and it says nothing about what that function returns: a
+    function handing its argument straight back would satisfy it. So the text
+    is also read against the constant and against the grading it came from —
+    a row saying it lapsed, still traceable to the session whose verdict did.
+    """
     standing = standing_cross_off()
     (lapsed,) = for_reading({standing.criterion: GradedState.lapsed})
     assert lapsed.state is CrossOffState.lapsed
     assert lapsed.evidence.graded_sha == STANDING_SHA
     assert lapsed.evidence.test == lapse_observation(observation=standing.evidence.test)
+    assert lapsed.evidence.test.endswith(LAPSE_POINTER)
+    assert standing.evidence.test in lapsed.evidence.test
     assert lapsed.rederivation_class is standing.rederivation_class
     assert lapsed.exercised_paths == standing.exercised_paths
 
