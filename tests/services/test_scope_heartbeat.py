@@ -226,6 +226,29 @@ async def test_an_unapproved_standing_scope_is_never_submitted() -> None:
     assert queue.submissions == []
 
 
+async def test_a_triage_only_scope_is_reported_unapproved_and_writes_nothing() -> None:
+    """The shallow pass reads members; it never sets one.
+
+    A scope carrying the triage member is a scope the organize tick grooms,
+    not a scope this pass runs, and grooming is not this pass's to start: it
+    reports the row unapproved and leaves the board exactly as it found it,
+    with the seeded member neither consumed nor added to.
+    """
+    seeded = frozenset({ScopeLabel.TRIAGE})
+    port = board(first=seeded)
+    untouched = handed_over(port)
+    queue = FakeJobQueue()
+
+    report = await heartbeat(port, queue).tick()
+
+    assert outcomes(report) == [(FIRST, HeartbeatOutcome.UNAPPROVED)]
+    assert report.ran is False
+    assert queue.submissions == []
+    assert port.classification_writes == []
+    assert port.scope_label_members[FIRST] == seeded
+    assert untouched()
+
+
 async def test_approval_above_the_scope_admits_it() -> None:
     """The label cascades the way it is granted: a container above counts.
 
