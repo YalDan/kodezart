@@ -45,9 +45,16 @@ RECORD = "LaneRunState"
 DIGEST = "e" * 64
 
 
-def binding() -> LaneBinding:
+def binding(*, lane_key: str = "lane:alpha") -> LaneBinding:
+    """The lane every case is stated over, by default the one lane.
+
+    *lane_key* is a parameter so a case about the column that carries the
+    delivered issue can be driven through a SECOND lane: with one lane in
+    the module, a row that named its lane and a row that named a constant
+    answer alike (KOD-681).
+    """
     return LaneBinding(
-        lane_key="lane:alpha",
+        lane_key=lane_key,
         body_digest=DIGEST,
         loop_branch="ordinary-name",
         deliverable_branch="has-ralph-in-its-name",
@@ -1012,7 +1019,8 @@ def test_a_head_that_returns_to_an_earlier_sha_is_recorded_as_its_own_act():
     ]
 
 
-def test_the_rows_are_the_commit_acts_and_not_the_loop_iterations():
+@pytest.mark.parametrize("lane_key", ["lane:alpha", "lane:beta"])
+def test_the_rows_are_the_commit_acts_and_not_the_loop_iterations(lane_key):
     """One row per commit act, whatever the loop's iteration count is (KOD-681).
 
     An iteration that produced no commit changed no tree, so the workspace
@@ -1021,8 +1029,13 @@ def test_the_rows_are_the_commit_acts_and_not_the_loop_iterations():
     likewise no new act. The trajectory is the witness here and nowhere in
     production: the record composes its rows from the commit receipt, and
     this test states what the two sequences may and may not have in common.
+
+    Run through two lanes, because the delivered-issue column is asserted
+    here: over one lane a row that carried its lane's key and a row that
+    carried that key as a constant are the same answer, so the column is
+    discriminating only once a second lane disagrees with the first.
     """
-    lane = binding()
+    lane = binding(lane_key=lane_key)
     iterations = (
         ("a" * 40, "First change"),
         (None, "Nothing to commit"),
