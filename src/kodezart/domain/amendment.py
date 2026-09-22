@@ -114,7 +114,7 @@ def upheld_reason(
         if (
             capability is not None
             and environment is not None
-            and not environment.get(capability, False)
+            and environment.get(capability) is False
         ):
             return UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
         return UpheldReason.GROUND_NOT_REPRODUCED

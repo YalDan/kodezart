@@ -610,9 +610,10 @@ was.
 
 A criterion this environment cannot demonstrate at all is a separate reading, and
 it is not a fact about the branch. A judged unverifiable finding whose claim names
-a typed capability the matched repository's configured `runner_environment` does
-not provide — that configuration alone decides it; no session observes a probe —
-upholds the existing criterion at `environment_lacks_capability`. The refusal is
+a typed capability the matched repository's configured `runner_environment`
+declares explicitly `false` — that configuration alone decides it; an omitted key
+is unknown and does not decide it, and no session observes a probe — upholds the
+existing criterion at `environment_lacks_capability`. The refusal is
 recorded where every refusal is, as the amendment marker comment on the
 criterion's own sub-issue, naming the capability, and it escalates once under the
 same refusal occurrence that keys that record, on that same sub-issue, which is

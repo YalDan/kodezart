@@ -690,9 +690,14 @@ def test_actual_scope_egress_roundtrips_required_nulls_and_rejects_bad_native_re
         ("network", None, "ground_not_reproduced"),
         ("network", {CheckPrerequisite.NETWORK: True}, "ground_not_reproduced"),
         ("network", {CheckPrerequisite.NETWORK: False}, "environment_lacks_capability"),
-        # A declaration that says nothing about this capability is a declaration
-        # that it is absent: the reading fails closed rather than assuming it.
-        ("network", {}, "environment_lacks_capability"),
+        # Only an explicit false declares a capability absent. A declaration that
+        # says nothing about it leaves it unknown, so the criterion stands.
+        pytest.param(
+            "network",
+            {},
+            "ground_not_reproduced",
+            id="an_undeclared_capability_is_unknown_not_absent",
+        ),
     ],
 )
 def test_missing_capability_requires_a_typed_claim_absent_from_declared_capabilities(
