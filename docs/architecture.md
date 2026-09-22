@@ -1657,6 +1657,14 @@ what it holds, keeps a comment's place across an edit by id, and deletes by
 id. It offers no conditional write, so no grant is believed from the echo of
 its own write.
 
+The holder is the writer's own identity — a run's queue job id, or a scheduled
+pass's own name — so every lane of one scope invocation writes under one
+holder. Independence between surfaces is therefore independence between
+addresses, never between the lanes of one walk: two lanes of the same
+invocation are one holder to the arbitration, and two criteria of one parent
+are two addresses because the vocabulary declares one surface per criterion
+sub-issue rather than one grant per subtree.
+
 Acquisition writes, then re-reads every target. The grant stands only where
 no other holder's live marker over a requested address was created no later
 than this one; an earlier one is an owner to name, and an equal instant is an
