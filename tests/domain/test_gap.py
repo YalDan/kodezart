@@ -84,6 +84,60 @@ def test_cancellation_requires_its_own_explicit_supersession(state):
     ) == (open_criterion,)
 
 
+#: The rows whose answer a reference cannot move, asked one call deeper at
+#: `compute_gap`. The reference-sensitive pair is left exactly where KOD-794
+#: puts it: what those two arms read is that criterion's to pin, not this one's.
+UNSUPERSEDED_CASES = [
+    (state, expected) for state, expected in CASES if state not in REFERENCE_SENSITIVE
+]
+
+
+@pytest.mark.parametrize("state,expected", UNSUPERSEDED_CASES)
+def test_a_criterion_carrying_a_reference_keeps_the_answer_of_its_arm(state, expected):
+    """A reference on the record cannot close what its arm leaves open (KOD-420).
+
+    The arm cases above ask `in_gap` at both references, but they pin the
+    arms where nothing carries one: `compute_gap` is the only production
+    path that supplies a reference at all. A criterion re-opened after a
+    cancellation still carries the reference that cancellation was given,
+    and a filter over the criteria keyed on "carries a reference" instead of
+    on the state arm drops it out of the gap silently -- the drop the arm
+    case's own docstring says must never happen.
+
+    Callers bound: `compute_gap` as the two scope-alarm services call it
+    (`services/run_shape.py`, `services/mandate_graph.py`), each of which
+    reads every criterion NOT in the returned gap back as closed, so a
+    silent drop reports owed work as discharged.
+    """
+    carrying = criterion("carrying", state)
+    computed = gap.compute_gap(
+        [carrying], supersession_refs={"carrying": "opaque-successor"}
+    )
+    assert computed == ((carrying,) if expected else ())
+
+
+@pytest.mark.parametrize("state,expected", UNSUPERSEDED_CASES)
+def test_a_reference_naming_a_live_successor_moves_neither_record(state, expected):
+    """The named successor is itself a criterion of the same reading (KOD-420).
+
+    Here the reference appears on both sides of the supplied mapping, so a
+    filter keyed on its keys drops the criterion carrying the reference and
+    one keyed on its values drops the successor. Both are the same silent
+    drop, and the arms decide neither.
+
+    Callers bound: `compute_gap` as `services/run_shape.py` and
+    `services/mandate_graph.py` call it -- they pass the references their
+    reader established for a whole subtree at once, so a successor read in
+    that subtree is present beside the criterion pointing at it.
+    """
+    carrying = criterion("carrying", state)
+    successor = criterion("successor")
+    computed = gap.compute_gap(
+        [carrying, successor], supersession_refs={"carrying": "successor"}
+    )
+    assert computed == ((carrying, successor) if expected else (successor,))
+
+
 @pytest.mark.parametrize(
     "body",
     ["", "**Evidence:** —", "**Evidence:** prior-sha\nRuling text remains exact"],
