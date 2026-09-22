@@ -313,6 +313,53 @@ def test_a_recorded_base_that_is_no_longer_the_resolved_base_refuses() -> None:
     assert caught.value.branches == (DELIVERABLE,)
 
 
+def test_associations_no_role_claims_for_this_branch_are_ignored() -> None:
+    """Each resolution reads its OWN role, on its OWN branch, and nothing else.
+
+    The record's model permits a DELIVERABLE association on the loop branch and
+    LOOP associations on branches that are not the recorded one, so "resolved
+    by ROLE" has to be the thing doing the work rather than branch equality
+    standing in for it. Three associations that would each be read if one of
+    the three conditions were dropped, and the resolution is unmoved:
+
+    * DELIVERABLE on the loop branch — read only if the deliverable side stopped
+      requiring the LOOP role;
+    * LOOP on a branch this record is not on — read only if that side stopped
+      requiring the recorded branch;
+    * LOOP on the deliverable branch — read as a second base only if the base
+      side stopped requiring the DELIVERABLE role, and as a second deliverable
+      if it stopped requiring the recorded branch.
+    """
+    resolved = recorded_branches(
+        record=record(
+            extra=(
+                BranchAssociation(
+                    branch=LOOP,
+                    role=BranchRole.DELIVERABLE,
+                    derived_from="a-base-no-role-resolves",
+                    run_id="second-job",
+                ),
+                BranchAssociation(
+                    branch="an-unrelated-branch",
+                    role=BranchRole.LOOP,
+                    derived_from="another-deliverable",
+                    run_id="third-job",
+                ),
+                BranchAssociation(
+                    branch=DELIVERABLE,
+                    role=BranchRole.LOOP,
+                    derived_from="another-base",
+                    run_id="fourth-job",
+                ),
+            )
+        )
+    )
+
+    assert resolved == RecordedBranches(
+        loop_branch=LOOP, deliverable_branch=DELIVERABLE, recorded_base=BASE
+    )
+
+
 def test_roles_are_resolved_from_associations_not_names() -> None:
     """A name is a name: the loop branch here has no ralph in it and the
     deliverable does, and the roles still resolve the other way round."""
