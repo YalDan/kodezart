@@ -784,7 +784,23 @@ TERMINAL_SEED = "kodezart.services.scope_terminal"
 #: imports the v0.2 fire event's module, whose own delivery field names a
 #: merge legitimately, and that is not a fact about this lane. The one typed
 #: module of the terminal is therefore named rather than reached.
-TERMINAL_PACKAGES = ("kodezart.services.", "kodezart.domain.")
+#:
+#: ``kodezart.chains`` and ``kodezart.composition`` ARE followed, because
+#: nothing forbids a service module from importing either and several
+#: already do: a chain module reached out of the terminal reads a remote ref
+#: as squarely as a service module would, and a bound that stopped at the
+#: service layer would have been a bound on the spelling of the hop rather
+#: than on what the terminal reaches (KOD-585). The remaining unfollowed
+#: packages are ``kodezart.types``, ``kodezart.adapters`` and
+#: ``kodezart.core``; the last two are covered instead by the detector's own
+#: arms, which see the port's name and an adapter import wherever they are
+#: written.
+TERMINAL_PACKAGES = (
+    "kodezart.services.",
+    "kodezart.domain.",
+    "kodezart.chains.",
+    "kodezart.composition.",
+)
 TERMINAL_VECTOR = "kodezart.types.domain.scope_terminal"
 
 
@@ -972,7 +988,10 @@ def test_the_pull_request_column_detector_sees_each_shape_it_claims_to(
 # ---------------------------------------------------------------------------
 
 #: The concrete adapter package, so a report that imports an implementation is
-#: seen without the port itself being named anywhere in it.
+#: seen without the port itself being named anywhere in it. Read by
+#: ``adapter_imports`` under each of the three spellings the package can be
+#: imported through, so the claim holds for the import and not for one way of
+#: writing it.
 GIT_PORT_ADAPTERS = "kodezart.adapters.git"
 
 #: One name per noun the criterion names — a ref on the remote, a ref locally,
@@ -1016,6 +1035,32 @@ def git_port_names() -> frozenset[str]:
     )
 
 
+def adapter_imports(node: ast.ImportFrom | ast.Import) -> list[str]:
+    """Every name this import node reaches the concrete git adapter through.
+
+    Three spellings, because the package is importable by all three and an
+    arm that read one of them said nothing about the others: the dotted
+    ``from kodezart.adapters.git… import x``, the plain ``import
+    kodezart.adapters.git…``, and ``from kodezart.adapters import git``,
+    where the package is the imported name beside its parent (KOD-585).
+    """
+    if isinstance(node, ast.Import):
+        return [
+            alias.name
+            for alias in node.names
+            if alias.name.startswith(GIT_PORT_ADAPTERS)
+        ]
+    if node.module is None:
+        return []
+    if node.module.startswith(GIT_PORT_ADAPTERS):
+        return [node.module]
+    return [
+        reached
+        for alias in node.names
+        if (reached := f"{node.module}.{alias.name}").startswith(GIT_PORT_ADAPTERS)
+    ]
+
+
 def git_port_sites(source: str, *, label: str) -> list[str]:
     """Every place *source* names the git port, an adapter of it, or one of
     its operations.
@@ -1028,12 +1073,10 @@ def git_port_sites(source: str, *, label: str) -> list[str]:
     names = git_port_names()
     sites: list[str] = []
     for node in ast.walk(ast.parse(source)):
-        if (
-            isinstance(node, ast.ImportFrom)
-            and node.module is not None
-            and node.module.startswith(GIT_PORT_ADAPTERS)
+        if isinstance(node, ast.ImportFrom | ast.Import) and (
+            reached := adapter_imports(node)
         ):
-            sites.append(f"{label}:{node.lineno}: {node.module}")
+            sites.extend(f"{label}:{node.lineno}: {name}" for name in reached)
         elif isinstance(node, ast.ImportFrom | ast.Import):
             sites.extend(
                 f"{label}:{node.lineno}: {alias.name}"
@@ -1102,17 +1145,28 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
     assert offenders == {}
 
 
-#: One control per arm the detector claims, because a control for an arm
-#: cannot come from the scanned surface: that surface is expected to name
-#: nothing, so until these rows existed four of the five arms could be deleted
-#: with every assertion still passing.
+#: At least one control per arm the detector claims, and one per spelling the
+#: adapter arm reads, because a control for an arm cannot come from the
+#: scanned surface: that surface is expected to name nothing, so until these
+#: rows existed arms could be deleted with every assertion still passing. The
+#: import-alias arm went uncontrolled the longest, because the two rows that
+#: look like imports are both caught elsewhere — the adapter row by the
+#: adapter arm and the annotation row by the ``Name`` arm — so the row below
+#: that carries the port's own name in an ``import`` is the only one that
+#: reaches it.
 GIT_PORT_CONTROLS = (
     ("await self._git.remote_branch_sha(cwd, remote, branch)", ".remote_branch_sha"),
     ("def __init__(self, *, git: GitService) -> None: ...", "GitService"),
+    ("from kodezart.core.protocols import GitService", "GitService"),
     (
         "from kodezart.adapters.git.service import SubprocessGitService",
         "kodezart.adapters.git.service",
     ),
+    (
+        "import kodezart.adapters.git.service as _service",
+        "kodezart.adapters.git.service",
+    ),
+    ("from kodezart.adapters import git as _git", "kodezart.adapters.git"),
     (
         "identity = await git.worktree_identity(cwd, repository_path=path)",
         ".worktree_identity",
