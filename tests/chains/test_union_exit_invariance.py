@@ -298,6 +298,29 @@ async def drive_unstable_heads(fixture) -> None:
         await fixture.coordinator().verify()
 
 
+async def drive_cached_reuse(fixture) -> None:
+    """One coordinator asked twice while no head moves, so the second ask reuses.
+
+    Reuse is a third way verifying returns and the one no scenario reached: it
+    composes nothing, so a publication placed on it sits behind every witness
+    the composing rows carry.  The record and the refs are read again
+    immediately before the second ask, so what this row measures is that ask by
+    itself rather than the pair of them.
+    """
+    coordinator = fixture.coordinator()
+    first = await coordinator.verify()
+    assert first.outcome is UnionOutcome.GREEN
+    published, before = list(fixture.git.publications), await fixture.refs()
+
+    second = await coordinator.verify()
+
+    # The SAME result object is what says the second ask took the reuse return
+    # rather than composing a second result that merely compares equal.
+    assert second is first
+    assert fixture.git.publications == published
+    assert await fixture.refs() == before
+
+
 async def drive_roster_change(fixture) -> None:
     """Membership moves once the composed chain has run, before the last check.
 
@@ -359,6 +382,7 @@ EXIT_SCENARIOS = (
     ("cancellation while composing", None, BlockedCreate, drive_cancellation),
     ("heads that will not hold still", None, MovingHeads, drive_unstable_heads),
     ("a roster that changed underneath", None, RecordingPublisher, drive_roster_change),
+    ("unchanged heads asked twice", None, RecordingPublisher, drive_cached_reuse),
 )
 
 
