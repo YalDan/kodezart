@@ -13,6 +13,7 @@ tick count is a literal observed from the run before it was written down.
 import ast
 import asyncio
 import inspect
+from pathlib import Path
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
@@ -89,7 +90,11 @@ from tests.integration.test_scope_runtime import (
     unapproved_members,
 )
 from tests.lane_fixture import ScopeForgeWire
-from tests.services.test_scope_runtime_static import imported_modules, path_of
+from tests.services.test_scope_runtime_static import (
+    dotted_module,
+    imported_modules,
+    path_of,
+)
 from tests.tracker.test_linear_tool_roster import SOURCE_ROOT
 
 #: "the caller said nothing about this" where ``None`` is itself an answer
@@ -818,7 +823,10 @@ def terminal_modules() -> set[str]:
             continue
         reached.add(module)
         tree = ast.parse(path_of(module).read_text(encoding="utf-8"))
-        pending.extend(imported_modules(tree, TERMINAL_PACKAGES))
+        # The module is handed over with its tree, because a relative import
+        # names its package as punctuation and can only be resolved against
+        # the module doing the importing (KOD-585).
+        pending.extend(imported_modules(tree, TERMINAL_PACKAGES, module=module))
     return reached | {TERMINAL_VECTOR}
 
 
@@ -983,8 +991,8 @@ def test_the_pull_request_column_detector_sees_each_shape_it_claims_to(
 #: The concrete adapter package, so a report that imports an implementation is
 #: seen without the port itself being named anywhere in it. Read by
 #: ``adapter_imports`` under each of the three spellings the package can be
-#: imported through, so the claim holds for the import and not for one way of
-#: writing it.
+#: imported through, relative as well as absolute, so the claim holds for the
+#: import and not for one way of writing it.
 GIT_PORT_ADAPTERS = "kodezart.adapters.git"
 
 #: One name per noun the criterion names — a ref on the remote, a ref locally,
@@ -1028,7 +1036,17 @@ def git_port_names() -> frozenset[str]:
     )
 
 
-def adapter_imports(node: ast.ImportFrom | ast.Import) -> list[str]:
+def module_of(path: Path) -> str:
+    """The dotted name of *path*, the inverse of ``path_of``.
+
+    Needed wherever a source is scanned by path rather than by module name:
+    a relative import in it resolves against the module it is written in, so
+    the scan cannot be handed the text alone.
+    """
+    return ".".join(path.relative_to(SOURCE_ROOT.parent).with_suffix("").parts)
+
+
+def adapter_imports(node: ast.ImportFrom | ast.Import, *, module: str) -> list[str]:
     """Every name this import node reaches the concrete git adapter through.
 
     Three spellings, because the package is importable by all three and an
@@ -1036,6 +1054,19 @@ def adapter_imports(node: ast.ImportFrom | ast.Import) -> list[str]:
     ``from kodezart.adapters.git… import x``, the plain ``import
     kodezart.adapters.git…``, and ``from kodezart.adapters import git``,
     where the package is the imported name beside its parent (KOD-585).
+
+    Each ``from`` spelling counts relatively too: ``dotted_module`` resolves
+    the node's level against *module*, the module this node is written in,
+    so ``from ..adapters.git.service import SubprocessGitService`` reaches
+    the adapter exactly as its absolute twin does.  Before that, the arm
+    returned nothing for it and the act could import the concrete adapter
+    with the whole module green — dead and alive separated by punctuation.
+
+    What this reads is import nodes of this module, and nothing else.  A
+    parent package imported here and then walked as a dotted attribute chain
+    (``import kodezart.adapters`` with ``kodezart.adapters.git.service.X``
+    below it) is NOT read: the chain resolves only once some other module
+    has imported the submodule, which is a reach no node here states.
     """
     if isinstance(node, ast.Import):
         return [
@@ -1043,31 +1074,37 @@ def adapter_imports(node: ast.ImportFrom | ast.Import) -> list[str]:
             for alias in node.names
             if alias.name.startswith(GIT_PORT_ADAPTERS)
         ]
-    if node.module is None:
+    dotted = dotted_module(node, module=module)
+    if dotted is None:
         return []
-    if node.module.startswith(GIT_PORT_ADAPTERS):
-        return [node.module]
+    if dotted.startswith(GIT_PORT_ADAPTERS):
+        return [dotted]
     return [
         reached
         for alias in node.names
-        if (reached := f"{node.module}.{alias.name}").startswith(GIT_PORT_ADAPTERS)
+        if (reached := f"{dotted}.{alias.name}").startswith(GIT_PORT_ADAPTERS)
     ]
 
 
-def git_port_sites(source: str, *, label: str) -> list[str]:
+def git_port_sites(source: str, *, label: str, module: str) -> list[str]:
     """Every place *source* names the git port, an adapter of it, or one of
     its operations.
 
+    *module* is which module *source* IS, which the adapter arm needs to
+    resolve a relative import against — a source read without it could be
+    scanned only for the spellings that carry their package as a name.
+
     Blind spots, stated rather than hidden: a reach through ``getattr`` with a
-    computed name is not seen, and a name spelled inside a larger string
+    computed name is not seen, a name spelled inside a larger string
     annotation is not seen, because the literal arm is an equality and not a
-    substring.
+    substring, and the adapter reached as a dotted attribute chain off a
+    parent package is not seen either, as ``adapter_imports`` states.
     """
     names = git_port_names()
     sites: list[str] = []
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.ImportFrom | ast.Import) and (
-            reached := adapter_imports(node)
+            reached := adapter_imports(node, module=module)
         ):
             sites.extend(f"{label}:{node.lineno}: {name}" for name in reached)
         elif isinstance(node, ast.ImportFrom | ast.Import):
@@ -1131,7 +1168,9 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
         for module in sorted(modules)
         if (
             sites := git_port_sites(
-                path_of(module).read_text(encoding="utf-8"), label=module
+                path_of(module).read_text(encoding="utf-8"),
+                label=module,
+                module=module,
             )
         )
     }
@@ -1160,6 +1199,16 @@ GIT_PORT_CONTROLS = (
         "kodezart.adapters.git.service",
     ),
     ("from kodezart.adapters import git as _git", "kodezart.adapters.git"),
+    # The same three spellings written relatively, read as if they stood in
+    # the act itself: each one reaches the adapter and each returned nothing
+    # until the level was resolved, so what separated dead from alive was a
+    # dot rather than the import.
+    (
+        "from ..adapters.git.service import SubprocessGitService",
+        "kodezart.adapters.git.service",
+    ),
+    ("from ..adapters.git import service", "kodezart.adapters.git"),
+    ("from ..adapters import git as _git", "kodezart.adapters.git"),
     (
         "identity = await git.worktree_identity(cwd, repository_path=path)",
         ".worktree_identity",
@@ -1174,7 +1223,7 @@ GIT_PORT_CONTROLS = (
     ids=[source for source, _ in GIT_PORT_CONTROLS],
 )
 def test_the_git_port_detector_sees_each_shape_it_claims_to(source, expected):
-    sites = git_port_sites(source, label="control")
+    sites = git_port_sites(source, label="control", module=TERMINAL_SEED)
     assert len(sites) == 1 and expected in sites[0], sites
 
 
@@ -1203,7 +1252,11 @@ def test_the_git_port_detector_finds_the_modules_that_do_read_a_ref():
     unseen = [
         path.name
         for path in controls
-        if not git_port_sites(path.read_text(encoding="utf-8"), label=path.name)
+        if not git_port_sites(
+            path.read_text(encoding="utf-8"),
+            label=path.name,
+            module=module_of(path),
+        )
     ]
     assert unseen == []
 
