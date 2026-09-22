@@ -199,6 +199,7 @@
   "tests/domain/test_lapse.py": 24,
   "tests/domain/test_mandate_graph.py": 27,
   "tests/domain/test_model_surfaces.py": 8,
+  "tests/domain/test_mutation_survival.py": 6,
   "tests/domain/test_no_ref_parsing.py": 1,
   "tests/domain/test_operation_optionality.py": 12,
   "tests/domain/test_organize.py": 32,
@@ -283,7 +284,6 @@
   "tests/probes/test_live_ownership.py": 49,
   "tests/probes/test_strict_output_enforcement.py": 12,
   "tests/probes/test_v5_orchestration_live.py": 7,
-  "tests/prompts/sets.py": 1,
   "tests/prompts/test_absence_bindings.py": 43,
   "tests/prompts/test_amendment_prompts.py": 9,
   "tests/prompts/test_criteria_generation_prompts.py": 38,
@@ -304,7 +304,7 @@
   "tests/prompts/test_rollback.py": 19,
   "tests/prompts/test_scope_label_bindings.py": 3,
   "tests/prompts/test_session_policy.py": 30,
-  "tests/prompts/test_set_completeness.py": 9,
+  "tests/prompts/test_set_completeness.py": 10,
   "tests/prompts/test_skills_loadouts.py": 16,
   "tests/prompts/test_supervision_adoption.py": 16,
   "tests/prompts/test_v5_board_hierarchy.py": 12,
@@ -340,6 +340,7 @@
   "tests/services/test_lane_state_writer.py": 205,
   "tests/services/test_lifecycle_watcher.py": 94,
   "tests/services/test_model_surface_lease.py": 11,
+  "tests/services/test_mutation_survival.py": 19,
   "tests/services/test_native_amendment_archive_independent.py": 6,
   "tests/services/test_native_amendment_archive_publication.py": 11,
   "tests/services/test_native_amendment_independent.py": 28,
@@ -3203,6 +3204,12 @@
    "test_an_empty_model_leaves_every_request_as_it_was",
    "test_the_classification_is_resolved_from_configuration_presence"
   ],
+  "tests/domain/test_mutation_survival.py": [
+   "test_a_check_that_passed_in_both_trees_survived",
+   "test_a_check_the_mutant_grading_failed_is_not_a_survivor",
+   "test_a_check_the_mutant_grading_does_not_answer_for_is_not_a_survivor",
+   "test_only_the_passing_criteria_can_be_withheld"
+  ],
   "tests/domain/test_no_ref_parsing.py": [
    "test_no_scope_surface_parses_a_ref_to_obtain_a_base"
   ],
@@ -3968,9 +3975,6 @@
   "tests/probes/test_v5_orchestration_live.py": [
    "test_probe_workflow_primitive_dispatches_and_counts"
   ],
-  "tests/prompts/sets.py": [
-   "test_every_registered_function_key_has_a_render_case"
-  ],
   "tests/prompts/test_absence_bindings.py": [
    "test_an_absent_field_binds_the_marker_and_no_value",
    "test_a_present_field_binds_the_value_and_no_marker",
@@ -4245,6 +4249,7 @@
   ],
   "tests/prompts/test_set_completeness.py": [
    "test_the_census_is_the_enum",
+   "test_every_registered_function_key_has_a_render_case",
    "test_at_least_the_legacy_set_is_shipped",
    "test_every_shipped_set_resolves_every_registered_key",
    "test_the_new_set_is_shipped_and_complete",
@@ -4780,6 +4785,17 @@
    "test_a_failed_acquisition_holds_nothing",
    "test_nothing_unconfigured_queries_the_marker",
    "test_a_refusal_is_typed_before_any_backend_call"
+  ],
+  "tests/services/test_mutation_survival.py": [
+   "test_no_session_opens_when_the_attempt_passed_nothing",
+   "test_the_mutant_tree_is_asked_the_clean_trees_question_unchanged",
+   "test_the_removal_session_is_told_which_criteria_to_take_apart",
+   "test_the_mutant_workspace_is_acquired_at_the_graded_sha_and_released",
+   "test_a_reading_taken_in_the_mutant_tree_withholds_the_surviving_check",
+   "test_a_removal_that_changed_nothing_takes_no_reading",
+   "test_a_removal_that_left_the_graded_sha_takes_no_reading",
+   "test_no_second_grading_runs_when_no_reading_was_taken",
+   "test_a_mutant_grading_with_no_structured_output_takes_no_reading"
   ],
   "tests/services/test_native_amendment_archive_independent.py": [
    "test_native_amendment_requires_preserved_current_history"
