@@ -88,6 +88,9 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "iteration_feedback": ("failed_criteria",),
     "knowledge_map": (),
     "fire_record": (),
+    # The criteria roster is the only thing the removal member renders, and
+    # it renders as plain lines rather than inside a named tag.
+    "mutation_survival": (),
     "fire_time_ruling": ("issue_key", "pinned_answers", "task_md"),
     "post_merge_review": ("acceptance_criteria", "changeset"),
     "pr_description": ("ticket", "acceptance_criteria"),
