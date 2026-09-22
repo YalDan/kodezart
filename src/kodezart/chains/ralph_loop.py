@@ -1119,6 +1119,12 @@ class RalphLoop:
         changed since it was taken. The lane's own base-to-head digest cannot:
         it would call a criterion's prefixes moved because of the very commit
         that graded it.
+
+        Each digest is the commit record's own reading of that interval,
+        obtained through the Git source port, and never a diff of a working
+        tree: the paths it names are the ones the commits between those two
+        revisions changed, so nothing uncommitted in any workspace can move a
+        grading, and the same two revisions read the same way whoever asks.
         """
         return {
             sha: await self._git.diff_summary(cwd=cwd, base_ref=sha, head_ref=head_sha)
