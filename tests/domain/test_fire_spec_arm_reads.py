@@ -562,6 +562,21 @@ def test_the_scan_catches_the_renderer_reached_under_another_name():
     assert _control(control) == (2, 0)
 
 
+def test_the_scan_catches_an_arm_text_read_inside_a_comprehension():
+    """A name taken one at a time out of a collection of specs is a spec.
+
+    The comprehension's own target is the loop target written another way, so
+    the read inside it is the same read the loop's body would have made.
+    """
+    control = (
+        "from kodezart.types.domain.fire_spec import TrackerSpec\n"
+        "\n"
+        "def subject_texts(specs: tuple[TrackerSpec, ...]) -> list[str]:\n"
+        "    return [one.body for one in specs]\n"
+    )
+    assert _control(control) == (1, 0)
+
+
 def test_the_scan_catches_a_class_pattern_capturing_the_arm_text():
     """The formatter's own idiom beside the formatter is a read.
 
