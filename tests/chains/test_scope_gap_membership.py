@@ -24,7 +24,7 @@ from kodezart.domain.criterion_evidence import (
 )
 from kodezart.domain.errors import ScopePlanRefusalError
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
-from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from tests.chains.test_scope_ready import PROJECT, row
 from tests.chains.test_scope_ready import ready_fixture as ready_fixture
 
@@ -195,3 +195,70 @@ async def test_the_two_ungraded_readings_are_told_apart_by_the_sha_alone(
     with pytest.raises(ValueError, match="Evidence"):
         parse_criterion_evidence(from_nothing.body)
     assert from_lapse != from_nothing
+
+
+#: A parent body shaped like a criterion checklist, naming a criterion that
+#: exists nowhere on the board. A walk that read criteria out of a parent's
+#: description would mint it; the sub-issue read cannot.
+PHANTOM_CHECKLIST = "- [ ] **Check:** phantom\nAC-9 phantom\n"
+
+
+def graded_sha_or_none(issue: TrackerIssue) -> str | None:
+    """The graded sha a criterion's own Evidence row records, or None ungraded."""
+    try:
+        return parse_criterion_evidence(issue.body).graded_sha
+    except ValueError:
+        return None
+
+
+@pytest.mark.parametrize(
+    "lane_body", [PHANTOM_CHECKLIST, ""], ids=["checklist", "no-checklist"]
+)
+async def test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body(
+    ready_fixture, monkeypatch, lane_body: str
+) -> None:
+    """Key, label, state and Evidence come off the criterion sub-issues alone.
+
+    The lane's own criterion is Done and graded, the deep one is open and was
+    never graded, and the lane's description is either a checklist naming a
+    criterion that does not exist or nothing at all. Either way the read
+    returns the same two sub-issues with the same four facts, never reads a
+    body of a row that is not a criterion, and owes only the open one.
+    """
+    rows = subtree(kind="unstarted", body=UNGRADED_BODY)
+    rows[0].description = lane_body
+    rows[1].description = graded_body(GRADED_SHA)
+    fixture = await ready_fixture(rows)
+    body_reads: list[str] = []
+    original = TrackerIssue.__getattribute__
+
+    def trapped(issue: TrackerIssue, name: str) -> object:
+        if name == "body" and "criterion" not in original(issue, "issue_labels"):
+            body_reads.append(original(issue, "issue_key"))
+        return original(issue, name)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(TrackerIssue, "__getattribute__", trapped)
+        selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+
+    assert body_reads == []
+    (lane,) = (item for item in selection.ready if item.issue.issue_key == LANE)
+    assert [
+        (
+            criterion.issue_key,
+            "criterion" in criterion.issue_labels,
+            criterion.state_kind,
+            graded_sha_or_none(criterion),
+        )
+        for criterion in lane.criteria
+    ] == [
+        ("lane-check", True, WorkflowStateKind.COMPLETED, GRADED_SHA),
+        (DEEP_CHECK, True, WorkflowStateKind.UNSTARTED, None),
+    ]
+    assert [
+        criterion.issue_key
+        for criterion in selection.criteria
+        if "phantom" in criterion.issue_key
+    ] == []
+    assert [criterion.issue_key for criterion in lane.gap] == [DEEP_CHECK]
+    fixture.assert_read_only()

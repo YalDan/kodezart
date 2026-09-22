@@ -99,7 +99,7 @@
   "tests/chains/test_remediation.py": 19,
   "tests/chains/test_retry_floor_wiring.py": 11,
   "tests/chains/test_rule_open_questions.py": 97,
-  "tests/chains/test_scope_gap_membership.py": 17,
+  "tests/chains/test_scope_gap_membership.py": 22,
   "tests/chains/test_scope_gap_selection.py": 9,
   "tests/chains/test_scope_observations.py": 14,
   "tests/chains/test_scope_ready.py": 46,
@@ -2023,7 +2023,8 @@
    "test_one_gap_arm_per_criterion_state_over_the_subtree",
    "test_a_criterion_moved_back_from_done_is_owed_again_with_its_graded_sha",
    "test_a_criterion_never_graded_is_owed_with_no_graded_sha_and_not_refuted",
-   "test_the_two_ungraded_readings_are_told_apart_by_the_sha_alone"
+   "test_the_two_ungraded_readings_are_told_apart_by_the_sha_alone",
+   "test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body"
   ],
   "tests/chains/test_scope_gap_selection.py": [
    "test_gap_alone_selects_original_ungraded_criterion_without_parent_state_reads",
