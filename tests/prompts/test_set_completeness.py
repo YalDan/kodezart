@@ -16,7 +16,7 @@ from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.core.errors import PromptResolutionError
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompt_census import PROMPT_FUNCTION_NAMES
-from tests.prompts.sets import V5_SET
+from tests.prompts.sets import ALL_CASES, V5_SET
 from tests.prompts.test_prompt_wiring import (
     DEFAULT_SET,
     complete_members,
@@ -36,6 +36,36 @@ V5_SET_DIR = default_sets_root() / V5_SET
 def test_the_census_is_the_enum() -> None:
     """The independent role names exactly match the registered enum."""
     assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
+
+
+#: The keys no render case covers yet, each one older than this census.  A case
+#: is fixture variables plus a declared artifact tag, so authoring the four is
+#: work of its own and is owed separately; they are named here so the census
+#: holds for every other key instead of not running at all.  Exact in both
+#: directions below: authoring one of these cases reds this list rather than
+#: leaving it to go stale.
+KEYS_WITHOUT_A_RENDER_CASE = frozenset(
+    {
+        PromptKey.AMENDMENT_AUTHOR,
+        PromptKey.AMENDMENT_JUDGE,
+        PromptKey.NATIVE_WRITER_CONTRACT,
+        PromptKey.WRITE_BACK_VERIFY,
+    }
+)
+
+
+def test_every_registered_function_key_has_a_render_case() -> None:
+    """The roster is a census of the keys, not a sample of them.
+
+    The one guard that catches a key dropped from the case roster and the
+    artifact tags together: each of those two rosters is otherwise pinned only
+    by the other, so a key missing from both is missing from nothing.  It lives
+    here rather than beside the roster it reads because ``sets.py`` is not a
+    module pytest collects, where this census never ran at all.
+    """
+    assert {key for key, _ in ALL_CASES.values()} == (
+        set(PromptKey) - KEYS_WITHOUT_A_RENDER_CASE
+    )
 
 
 def test_at_least_the_legacy_set_is_shipped() -> None:

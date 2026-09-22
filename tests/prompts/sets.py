@@ -177,8 +177,3 @@ def render_case_with_declared_skills(registry: InRepoPromptRegistry, case: str) 
     """Render one case with the key's DECLARED skills loadout bound."""
     key, variables = ALL_CASES[case]
     return registry.template_for(key).render(variables)
-
-
-def test_every_registered_function_key_has_a_render_case() -> None:
-    """The roster is a census of the keys, not a sample of them."""
-    assert {key for key, _ in ALL_CASES.values()} == set(PromptKey)
