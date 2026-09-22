@@ -464,14 +464,22 @@ A native evaluation whose grading did stand then runs each criterion it passed
 through that criterion's own check again, in a further tree the loop owns at the
 commit the recorded base resolves to. A check that already passes there passes
 without any of the work, so the head's pass is a reading of the base rather than
-of the branch, and that criterion carries `CrossOffState.undemonstrated` as well.
-A reading that cannot be taken at all — a base ref that names no commit, a tree
-that is refused or is not that commit, an answer nothing can be read from — claims
-no pass either, and the attempt continues with a row in the run's log naming the
-base ref and which criteria went unread. A criterion the attempt failed is never
-read at the base: a fail is unproven already. Nothing reaches the tracker for such
-a criterion, so it is not moved to the `done` stage, and the owning issue's
-finished state is the rollup over its criterion sub-issues as it always was.
+of the branch, and that criterion carries `CrossOffState.undemonstrated` as well,
+with `satisfied_at_base`. A reading that cannot be taken at all — a base ref that
+names no commit, a tree that is refused or is not that commit, an answer nothing
+can be read from — claims no pass either, and the attempt continues with a row in
+the run's log naming the base ref and which criteria went unread. Such a
+criterion, and one the reading left out or answered twice, carries
+`base_reading_unsettled` rather than `satisfied_at_base`: nothing was read at the
+base for it, so the reading that came back empty is the base reading itself, not
+a check found passing there. A criterion the attempt failed, or already withheld
+by an earlier reading, is never read at the base: a fail is unproven already.
+The base reading qualifies the cross-off and not the verdict — the evaluator did
+read the changeset, so its verdict still reaches the wire. What reaches the
+tracker for such a criterion is the one run event its reason names, as for the
+other readings; its sub-issue is not moved to the `done` stage, and the owning
+issue's finished state is the rollup over its criterion sub-issues as it always
+was.
 
 `render_lane_record` places one readable JSON value under that marker, followed
 by fixed re-entry guidance. The record preserves three-state remote head facts,

@@ -57,9 +57,9 @@ class CrossOffState(StrEnum):
 class UndemonstratedReason(StrEnum):
     """Which reading of the tree failed, when a grading proved nothing.
 
-    One member per reading the harness takes, never per cause a session
-    might name: the member is chosen by code from a fact code read, and it
-    is what the run's record carries in place of a verdict.
+    One member per way a reading the harness takes comes back empty, never
+    per cause a session might name: the member is chosen by code from a fact
+    code read, and it is what the run's record carries in place of a verdict.
     """
 
     #: The grading workspace held changes the sha does not, or its head was
@@ -69,6 +69,15 @@ class UndemonstratedReason(StrEnum):
     #: names had been removed from the tree, so passing it read nothing
     #: about that behaviour.
     check_survived_mutation = "check_survived_mutation"
+    #: The check this criterion names already passed at the commit the
+    #: lane's recorded base resolves to, where none of the work exists, so
+    #: the head's pass is a reading of the base rather than of the branch.
+    satisfied_at_base = "satisfied_at_base"
+    #: The check this criterion names was to be run at the lane's base and
+    #: no answer for it was settled there — the reading could not be taken,
+    #: left this criterion out, or answered for it twice — so what the
+    #: branch contributed to the head's pass was never read.
+    base_reading_unsettled = "base_reading_unsettled"
 
 
 #: The classes whose criteria name the path prefixes their grading exercised.

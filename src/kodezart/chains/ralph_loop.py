@@ -37,6 +37,7 @@ from kodezart.domain.amendment import NativeWriteRefusalError, repeated_upheld
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.criterion_cross_off import (
     base_answers,
+    base_reasons,
     cross_offs_for,
     evaluation_observation,
     iteration_output,
@@ -936,8 +937,16 @@ class RalphLoop:
         # withholding above has already graded every result this attempt
         # graded failed, and the carried rows ``iteration_output`` puts back
         # are the reading's, subtracted below, so it presents no passing id
-        # and the empty ``passing`` skips the reading.
+        # and the empty ``passing`` skips the reading. The same holds for a
+        # check that survived the mutation reading: it is already failed, so
+        # each criterion names the first reading that came back empty for it.
+        #
+        # What the base reading finds qualifies the cross-off and not the
+        # verdict: the evaluator did read the changeset, so its verdict still
+        # reaches the wire, and the pass it read of the base is recorded as
+        # undemonstrated, naming the base reading, beside the readings above.
         at_base: Mapping[CriterionId, bool] = {}
+        withheld: Mapping[CriterionId, UndemonstratedReason] = reasons
         if native_ref is not None:
             passing = frozenset(
                 criterion
@@ -954,6 +963,7 @@ class RalphLoop:
                     graded_sha=native_ref,
                     iteration=state["iteration"],
                 )
+            withheld = {**reasons, **base_reasons(passing=passing, at_base=at_base)}
         if native_ref is not None:
             # Before the event, so a consumer that sees iteration n can read
             # the board and find iteration n's cross-offs already on it. The
@@ -965,7 +975,7 @@ class RalphLoop:
                 dispatched=dispatched,
                 graded_sha=native_ref,
                 graded_in=graded_in,
-                reasons=reasons,
+                reasons=withheld,
                 iteration=state["iteration"],
                 standing=prior,
                 reading=reading,

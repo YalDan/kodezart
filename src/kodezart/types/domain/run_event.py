@@ -27,6 +27,8 @@ class RunEventKind(StrEnum):
     NODE_SESSION_STARTED = "node_session_started"
     CRITERION_GRADING_UNVERIFIED = "criterion_grading_unverified"
     CRITERION_CHECK_SURVIVED_MUTATION = "criterion_check_survived_mutation"
+    CRITERION_SATISFIED_AT_BASE = "criterion_satisfied_at_base"
+    CRITERION_BASE_READING_UNSETTLED = "criterion_base_reading_unsettled"
 
 
 class RunEventEffect(StrEnum):
@@ -64,6 +66,8 @@ RUN_EVENT_PUBLISHERS = {
     RunEventKind.NODE_SESSION_STARTED: RunEventPublisher.RAISER,
     RunEventKind.CRITERION_GRADING_UNVERIFIED: RunEventPublisher.LANE,
     RunEventKind.CRITERION_CHECK_SURVIVED_MUTATION: RunEventPublisher.LANE,
+    RunEventKind.CRITERION_SATISFIED_AT_BASE: RunEventPublisher.LANE,
+    RunEventKind.CRITERION_BASE_READING_UNSETTLED: RunEventPublisher.LANE,
 }
 
 DERIVED_RUN_EVENTS = frozenset(
@@ -87,6 +91,8 @@ SILENT_STATE_EVENTS = frozenset(
         RunEventKind.NODE_SESSION_STARTED,
         RunEventKind.CRITERION_GRADING_UNVERIFIED,
         RunEventKind.CRITERION_CHECK_SURVIVED_MUTATION,
+        RunEventKind.CRITERION_SATISFIED_AT_BASE,
+        RunEventKind.CRITERION_BASE_READING_UNSETTLED,
     }
 )
 
@@ -103,6 +109,10 @@ UNDEMONSTRATED_EVENT_KINDS: Mapping[UndemonstratedReason, RunEventKind] = {
     ),
     UndemonstratedReason.check_survived_mutation: (
         RunEventKind.CRITERION_CHECK_SURVIVED_MUTATION
+    ),
+    UndemonstratedReason.satisfied_at_base: RunEventKind.CRITERION_SATISFIED_AT_BASE,
+    UndemonstratedReason.base_reading_unsettled: (
+        RunEventKind.CRITERION_BASE_READING_UNSETTLED
     ),
 }
 

@@ -1400,6 +1400,8 @@ def test_the_undemonstrated_reason_members_are_exactly_these():
     assert [(member.name, member.value) for member in UndemonstratedReason] == [
         ("workspace_not_the_graded_sha", "workspace_not_the_graded_sha"),
         ("check_survived_mutation", "check_survived_mutation"),
+        ("satisfied_at_base", "satisfied_at_base"),
+        ("base_reading_unsettled", "base_reading_unsettled"),
     ]
 
 

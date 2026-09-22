@@ -71,7 +71,7 @@ DUPLICATE_RESULT_REASONING = (
 )
 
 #: What stands in for a verdict when the grading proved nothing, one
-#: sentence per reading.
+#: sentence per reason, total over the reason enum.
 #:
 #: Fixed text rather than the evaluator's own words, for the same reason the
 #: two sentences above are: the evaluator answered about a tree, and what
@@ -89,6 +89,16 @@ UNDEMONSTRATED_REASONS: Final[Mapping[UndemonstratedReason, str]] = MappingProxy
             "undemonstrated: the check this criterion names still passed after the "
             "behaviour it names had been removed from the tree, so passing it is no "
             "reading of that behaviour"
+        ),
+        UndemonstratedReason.satisfied_at_base: (
+            "undemonstrated: the check this criterion names already passed at the "
+            "lane's base, where none of the work exists, so passing it at the head is "
+            "a reading of the base and not of the branch"
+        ),
+        UndemonstratedReason.base_reading_unsettled: (
+            "undemonstrated: the check this criterion names was to be run at the "
+            "lane's base and no answer for it was settled there, so what the branch "
+            "contributed to passing it was never read"
         ),
     }
 )

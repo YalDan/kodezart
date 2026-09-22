@@ -21,6 +21,8 @@ RUN_EVENT_STATES = {
     "node_session_started": "NO_TRANSITION",
     "criterion_grading_unverified": "NO_TRANSITION",
     "criterion_check_survived_mutation": "NO_TRANSITION",
+    "criterion_satisfied_at_base": "NO_TRANSITION",
+    "criterion_base_reading_unsettled": "NO_TRANSITION",
 }
 
 RUN_EVENT_TOML = "[run_event_states]\n" + "\n".join(

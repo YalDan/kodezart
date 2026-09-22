@@ -272,30 +272,37 @@ def base_answers(output: BaseCheckOutput) -> dict[CriterionId, bool]:
     }
 
 
-def demonstrated_criteria(
+def base_reasons(
     *,
-    results: Sequence[CriterionResult],
-    graded_tree_stood: bool,
+    passing: Collection[CriterionId],
     at_base: Mapping[CriterionId, bool],
-) -> frozenset[CriterionId]:
-    """The dispatched criteria whose reading stands as this branch's.
+) -> dict[CriterionId, UndemonstratedReason]:
+    """Which of the passes read at the lane's base are no reading of the branch.
 
-    A grading read from a tree the sha does not name stands for nothing at
-    all, so no id does. Otherwise a fail stands on the graded tree alone — a
-    criterion this fire finished and has now broken is taken back whatever
-    the base says — and a pass stands only where the base reading found that
-    same check failing there. ``at_base.get(id) is False`` and never ``not
-    at_base.get(id)``: absent and false are the two answers this function
-    exists to tell apart, and absent — no reading at all, or an id the
-    reading left out — fails closed.
+    *passing* is what was sent to the base: the passes this attempt graded
+    afresh and did not already withhold. Each one stands only where the base
+    reading found that same check failing there. A check that already passed
+    there is satisfied by every implementation including the empty one, so
+    the head's pass is a reading of the base: ``satisfied_at_base``. An id
+    with no settled answer — no reading at all, an id the reading left out,
+    or one it answered twice — names no base reading to rest on, so it fails
+    closed, and it fails closed under its own name, because nothing was read
+    at the base to be satisfied there: ``base_reading_unsettled``.
+
+    ``at_base.get(id)`` is compared with ``is`` and never negated: absent and
+    false are the two answers this function exists to tell apart. A fail is
+    never passed in, because it stands on the graded tree alone — a criterion
+    this fire finished and has now broken is taken back whatever the base
+    says.
     """
-    if not graded_tree_stood:
-        return frozenset()
-    return frozenset(
-        result.criterion_id
-        for result in results
-        if not result.passed or at_base.get(result.criterion_id) is False
-    )
+    reasons: dict[CriterionId, UndemonstratedReason] = {}
+    for criterion_id in passing:
+        answer = at_base.get(criterion_id)
+        if answer is True:
+            reasons[criterion_id] = UndemonstratedReason.satisfied_at_base
+        elif answer is None:
+            reasons[criterion_id] = UndemonstratedReason.base_reading_unsettled
+    return reasons
 
 
 def cross_off_state(

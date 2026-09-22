@@ -1328,6 +1328,10 @@ async def test_a_check_the_base_already_passes_is_no_reading_of_the_branch():
     it, its sub-issue is left byte-identical to what the run found, and the
     board holds no move and no edit for it. The other two are crossed off in
     the same tuple, so this is a distinction and not a refusal to write.
+
+    What the board does get is the reason, once, on the lane's own stream:
+    one ``criterion_satisfied_at_base`` event keyed to that sub-issue at the
+    sha the verdict would have been stamped with, and no other comment.
     """
     first, *rest = OWED_KEYS
     lane = Lane(evaluations=[graded(OWED_KEYS)])
@@ -1348,10 +1352,17 @@ async def test_a_check_the_base_already_passes_is_no_reading_of_the_branch():
     assert completed(lane.port) == set(rest)
     assert first not in {key for key, _ in lane.port.workflow_writes}
     assert first not in {key for key, _, _ in lane.port.issue_writes}
-    # Nothing on the board says why, either: the lane's own record and its one
-    # vocabulary event are every comment this run wrote.
+    # The one thing on the board that says why is the reason's own event on
+    # the lane's stream: the lane's record, its first push and that event are
+    # every comment this run wrote.
     posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
-    assert [event.kind for event in posted] == [RunEventKind.FIRST_PUSH]
+    assert [event.kind for event in posted] == [
+        RunEventKind.FIRST_PUSH,
+        RunEventKind.CRITERION_SATISFIED_AT_BASE,
+    ]
+    assert survived(posted, RunEventKind.CRITERION_SATISFIED_AT_BASE) == [
+        (first, lane.repo.head)
+    ]
     assert len(posted) + len(lane.record_comments()) == len(lane.port.comments)
     assert {comment.issue_key for comment in lane.port.comments} == {SUBJECT}
 
@@ -1546,9 +1557,10 @@ async def test_a_base_reading_that_cannot_be_taken_claims_no_pass(how):
     The run returns normally and the evaluator's own verdict still reaches the
     wire — the session did read the changeset — but every criterion it passed
     is handed to the writer as having no reading of the branch, because what
-    was not read is exactly the branch's own contribution. The board is
-    untouched, and one row names the base ref, the fixed reason and the
-    criteria the reading was going to take.
+    was not read is exactly the branch's own contribution. No sub-issue is
+    touched, and one row names the base ref, the fixed reason and the
+    criteria the reading was going to take. The lane's stream names the base
+    reading as unsettled for each of them, never as satisfied at the base.
     """
     lane = Lane(evaluations=[native_evaluation()])
     states = recording(lane)
@@ -1569,6 +1581,13 @@ async def test_a_base_reading_that_cannot_be_taken_claims_no_pass(how):
         (entry["base_ref"], entry["reason"], tuple(entry["criterion_ids"]))
         for entry in rows
     ] == [("main", UNAVAILABLE_BASE[how], OWED_KEYS)]
+    # Each criterion names the base reading as unsettled — nothing was read at
+    # the base for it — and none is reported as satisfied there.
+    posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
+    assert sorted(survived(posted, RunEventKind.CRITERION_BASE_READING_UNSETTLED)) == [
+        (key, lane.repo.head) for key in sorted(OWED_KEYS)
+    ]
+    assert survived(posted, RunEventKind.CRITERION_SATISFIED_AT_BASE) == []
 
 
 async def test_a_regression_is_still_taken_back_when_no_base_reading_could_be_taken():

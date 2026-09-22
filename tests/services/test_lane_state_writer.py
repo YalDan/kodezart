@@ -58,7 +58,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.privacy import PrivateSurface
-from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_event import UNDEMONSTRATED_EVENT_KINDS, RunEventKind
 from kodezart.types.domain.run_state import LaneBinding, LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
@@ -1808,6 +1808,39 @@ async def test_an_undemonstrated_criterion_is_recorded_on_the_stream_and_nowhere
         (event.subject_key, event.graded_sha, event.lane_key)
         for event in unverified(port)
     ] == [(key, "8" * 40, LANE) for key in CRITERIA]
+
+
+@pytest.mark.parametrize("reason", list(UndemonstratedReason))
+async def test_every_reading_that_came_back_empty_is_recorded_under_its_own_kind(
+    reason,
+):
+    """Whichever reading failed, the stream names that one and the board is still.
+
+    The base readings go through the same act as the workspace reading: one
+    event of the kind the reason joins to, keyed to the criterion's sub-issue
+    at the sha the verdict would have been stamped with, and no state, no
+    Evidence row and no event of any other reading's kind.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    before = board_shape(port)
+    unread = CRITERIA[0]
+
+    await tick(
+        lane_state, sha="8" * 40, keys=[unread], reasons=withheld([unread], reason)
+    )
+
+    posted = lane_run_events(
+        comments=port.comments,
+        lane_key=LANE,
+        marker_prefixes=lane_operation().marker_prefixes,
+    )
+    assert board_shape(port) == before
+    assert port.workflow_writes == []
+    assert port.issue_writes == []
+    assert [(event.kind, event.subject_key, event.graded_sha) for event in posted] == [
+        (UNDEMONSTRATED_EVENT_KINDS[reason], unread, "8" * 40)
+    ]
 
 
 async def test_a_refutation_and_an_unverified_reading_share_one_board_read():

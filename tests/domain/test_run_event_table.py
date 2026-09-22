@@ -57,6 +57,8 @@ def test_vocabulary_and_notification_partition_are_complete():
         "escalation_raised",
         "criterion_grading_unverified",
         "criterion_check_survived_mutation",
+        "criterion_satisfied_at_base",
+        "criterion_base_reading_unsettled",
     }
     operation().require_run_event_table()
 

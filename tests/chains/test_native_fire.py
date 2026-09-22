@@ -1351,10 +1351,14 @@ class NativeExecutor(FakeAgentExecutor):
 class CountingTracker(FakeTrackerPort):
     def __init__(self):
         source = tracker()
+        # The source board's markers too: a lane this board serves posts on
+        # its run-event stream whenever a reading comes back empty, and a
+        # port with no prefixes could render no such event.
         super().__init__(
             issues=list(source.issues.values()),
             criteria_stage_label_key=STAGE_KEY,
             scope_label_members=source.scope_label_members,
+            marker_prefixes=source.marker_prefixes,
         )
         self.spec_reads = 0
         #: Every resolve of a scope this board answered: the walk the subtree

@@ -10,14 +10,16 @@ from kodezart.domain.criterion_cross_off import (
     CARRIED_REASON,
     LAPSE_REASON,
     base_answers,
+    base_reasons,
     cross_offs_for,
     declared_class,
-    demonstrated_criteria,
     evaluation_observation,
     iteration_output,
     lapse_observation,
+    passed_ids,
     require_tickable,
     tick_anchor,
+    undemonstrated_reasons,
 )
 from kodezart.domain.criterion_evidence import apply_evidence, parse_criterion_evidence
 from kodezart.domain.errors import StaleWriteError
@@ -36,6 +38,7 @@ from kodezart.types.domain.criterion_lifecycle import (
     CriterionCrossOff,
     CrossOffState,
     RederivationClass,
+    UndemonstratedReason,
 )
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -398,20 +401,37 @@ def base_result(*, key: str = KEY, satisfied: bool) -> BaseCheckResult:
     )
 
 
-def state_of(
+def resolved(
     *, passed: bool, at_base: dict[CriterionId, bool], graded_tree_stood: bool
-) -> CrossOffState:
-    """What one result is worth, through the fold the evaluator step uses."""
+) -> CriterionCrossOff:
+    """One result's cross-off, through the folds the evaluator step uses.
+
+    In the evaluator step's order: the workspace reading first, whose
+    withholding grades the result failed, then the base reading over the
+    passes that are left — so a criterion names the first reading that came
+    back empty for it, and only that one.
+    """
     results = [result(passed=passed)]
+    reasons = undemonstrated_reasons(
+        results=results, workspace_stood=graded_tree_stood, surviving_checks=()
+    )
+    passing = passed_ids([one for one in results if one.criterion_id not in reasons])
     crossed = cross_offs_for(
         results=results,
         graded_sha=GRADED_SHA,
         observation=evaluation_observation(session_id="session-7", iteration=1),
-        demonstrated=demonstrated_criteria(
-            results=results, graded_tree_stood=graded_tree_stood, at_base=at_base
-        ),
+        reasons={**reasons, **base_reasons(passing=passing, at_base=at_base)},
     )
-    return crossed[0].state
+    return crossed[0]
+
+
+def state_of(
+    *, passed: bool, at_base: dict[CriterionId, bool], graded_tree_stood: bool
+) -> CrossOffState:
+    """What one result is worth, through the fold the evaluator step uses."""
+    return resolved(
+        passed=passed, at_base=at_base, graded_tree_stood=graded_tree_stood
+    ).state
 
 
 @pytest.mark.parametrize(
@@ -487,6 +507,96 @@ def test_a_pass_stands_only_when_the_base_reading_found_the_check_failing_there(
     )
 
 
+@pytest.mark.parametrize(
+    "passed,at_base,graded_tree_stood,reason",
+    [
+        pytest.param(
+            True,
+            {CriterionId(KEY): False},
+            True,
+            None,
+            id="pass-failing-at-base",
+        ),
+        pytest.param(
+            True,
+            {CriterionId(KEY): True},
+            True,
+            UndemonstratedReason.satisfied_at_base,
+            id="pass-passing-at-base",
+        ),
+        pytest.param(
+            True,
+            {},
+            True,
+            UndemonstratedReason.base_reading_unsettled,
+            id="pass-unread-at-base",
+        ),
+        pytest.param(
+            False, {CriterionId(KEY): True}, True, None, id="fail-passing-at-base"
+        ),
+        pytest.param(False, {}, True, None, id="fail-unread-at-base"),
+        pytest.param(
+            True,
+            {CriterionId(KEY): True},
+            False,
+            UndemonstratedReason.workspace_not_the_graded_sha,
+            id="tree-fell-over-under-a-pass",
+        ),
+        pytest.param(
+            False,
+            {},
+            False,
+            UndemonstratedReason.workspace_not_the_graded_sha,
+            id="tree-fell-over-under-a-fail",
+        ),
+    ],
+)
+def test_an_undemonstrated_resolution_names_the_reading_that_came_back_empty(
+    passed, at_base, graded_tree_stood, reason
+):
+    """The same table, read for the reason the cross-off carries.
+
+    A pass whose check already passed at the base names that base reading:
+    the check was run there and found passing. A pass with no settled answer
+    at the base names the base reading as unsettled instead — nothing was
+    read there, so reporting it as satisfied at the base would misreport
+    which reading came back empty. A tree the sha does not name is the first
+    reading to fail, so it is the one named, whatever the base would have
+    said. A verdict that stands names nothing.
+    """
+    assert (
+        resolved(
+            passed=passed, at_base=at_base, graded_tree_stood=graded_tree_stood
+        ).undemonstrated_reason
+        is reason
+    )
+
+
+def test_the_base_reasons_tell_a_check_passing_at_base_from_one_never_read_there():
+    """Present-and-true, present-and-false and absent are three answers.
+
+    Only the passes sent to the base are read; an id the reading answered
+    that was not sent decides nothing, exactly as ``base_answers`` carries it.
+    """
+    satisfied, standing, unread = (
+        CriterionId(KEY),
+        CriterionId(OTHER),
+        CriterionId("lane/third"),
+    )
+
+    assert base_reasons(
+        passing=(satisfied, standing, unread),
+        at_base={
+            satisfied: True,
+            standing: False,
+            CriterionId("lane/never-sent"): True,
+        },
+    ) == {
+        satisfied: UndemonstratedReason.satisfied_at_base,
+        unread: UndemonstratedReason.base_reading_unsettled,
+    }
+
+
 def test_an_id_answered_twice_at_base_has_no_answer():
     """A reading contradicting itself settled nothing about that id.
 
@@ -552,12 +662,16 @@ def test_the_cross_offs_carry_what_the_fold_decided():
         results=results,
         graded_sha=GRADED_SHA,
         observation=evaluation_observation(session_id="session-7", iteration=3),
-        demonstrated=frozenset({CriterionId(OTHER)}),
+        reasons={CriterionId(KEY): UndemonstratedReason.satisfied_at_base},
     )
 
     assert [cross_off.state for cross_off in crossed] == [
         CrossOffState.undemonstrated,
         CrossOffState.passed,
+    ]
+    assert [cross_off.undemonstrated_reason for cross_off in crossed] == [
+        UndemonstratedReason.satisfied_at_base,
+        None,
     ]
     assert len({cross_off.evidence for cross_off in crossed}) == 1
     assert [cross_off.criterion for cross_off in crossed] == [KEY, OTHER]
