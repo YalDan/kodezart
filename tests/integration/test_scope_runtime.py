@@ -1,6 +1,7 @@
 """Real request composition, controller and native graphs with external doubles."""
 
 import asyncio
+import dataclasses
 import hashlib
 import json
 import re
@@ -41,6 +42,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.lane_entry import recorded_branches
+from kodezart.domain.lane_record import associated_branches
 from kodezart.domain.organize import stage_rows
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services import scope_runtime
@@ -58,6 +60,7 @@ from kodezart.types.domain.agent import (
     WorkflowScopeBaseEvent,
 )
 from kodezart.types.domain.branch import (
+    BackupBranchName,
     BranchRole,
     WorkRef,
     WorkRefRole,
@@ -1874,6 +1877,151 @@ async def test_a_scoped_walk_finishes_every_criterion_at_its_head_with_a_record(
     assert observations[-1].dispatched == ("A", "B")
 
 
+class RecoveringPersister(WalkPersister):
+    """A persist that recovered a divergence, as the git persister's does.
+
+    Its first persist pushes a backup ref holding the divergent commit before
+    it lands the loop branch, and returns a receipt naming that ref with the
+    divergence-replay source: the acts of ``_recover_from_divergence``
+    (``adapters/git/change_persister.py:224-233`` pushes the backup, and the
+    two returns at ``:279-308`` name it). Every later persist is a plain one.
+    """
+
+    #: The workspace id prefix the backup ref's name ends in.
+    WORKSPACE_ID_PREFIX = "0a1b2c3d"
+
+    def __init__(self, repos: WalkRepos) -> None:
+        super().__init__(repos)
+        self.backups: list[str] = []
+
+    async def persist(self, *, workspace_path, branch, **rest):
+        receipt = await super().persist(
+            workspace_path=workspace_path, branch=branch, **rest
+        )
+        if self.backups:
+            return receipt
+        backup = str(
+            BackupBranchName(
+                source_branch=branch, workspace_id_prefix=self.WORKSPACE_ID_PREFIX
+            )
+        )
+        committing = self.repos.current
+        held = self.repos.of(backup)
+        held.head = receipt.commit_sha
+        held.shas = [receipt.commit_sha]
+        held.publish()
+        self.repos.committing = committing
+        self.backups.append(backup)
+        return dataclasses.replace(
+            receipt, source=PersistSource.DIVERGENCE_REPLAY, recovery_ref=backup
+        )
+
+
+class ReapingMerger(WalkMerger):
+    """Consolidation deletes the loop branch and cleanup reaps the backups.
+
+    The production acts, in the walk's repositories: a fast-forward that
+    landed the source tip the remote still holds deletes the source branch
+    (``adapters/git/branch_merger.py:124-128`` and ``:285-311``), and backup
+    cleanup deletes every remote branch under the prefix whose name is a
+    backup's (``:146-193``). Those acts are the adapter's own tests'
+    (``tests/adapters/test_git_branch_merger.py:128`` and ``:467``); what this
+    double adds is that the refs are really gone from the walk's remote.
+    """
+
+    def __init__(self, repos: WalkRepos, *, before_reap=None) -> None:
+        super().__init__(repos)
+        self.reaped: list[str] = []
+        self.before_reap = before_reap
+
+    async def _reap(self, branch: str) -> None:
+        if self.before_reap is not None:
+            await self.before_reap()
+        del self.repos.branches[branch]
+        self.reaped.append(branch)
+
+    async def consolidate(self, *, source_branch, **rest):
+        outcome = await super().consolidate(source_branch=source_branch, **rest)
+        source = self.repos.branches.get(source_branch)
+        if (
+            outcome.status is ConsolidationStatus.FAST_FORWARDED
+            and source is not None
+            and source.pushed == outcome.feature_tip_sha
+        ):
+            await self._reap(source_branch)
+        return outcome
+
+    async def cleanup_backup_branches(self, *, prefix, **rest):
+        await super().cleanup_backup_branches(prefix=prefix, **rest)
+        for branch in sorted(self.repos.branches):
+            if branch.startswith(prefix) and BackupBranchName.is_backup(branch):
+                await self._reap(branch)
+
+
+def run_state_comments(port, key: str):
+    """The lane record comments on one issue, as the board holds them now."""
+    prefix = native_operation().marker_prefixes["run_state"]
+    return [
+        comment.body
+        for comment in port.comments
+        if comment.issue_key == key and comment.body.startswith(f"[{prefix}:")
+    ]
+
+
+async def test_a_consolidated_lane_keeps_its_reaped_branch_associations():
+    """The loop branch and the recovery ref are deleted; both stay recorded.
+
+    One lane, one criterion, one accepted iteration. The persist recovered a
+    divergence, so its backup ref is recorded beside the loop branch; the
+    consolidation then deletes the loop branch and the backup cleanup reaps
+    the backup ref. The association query over the record read back
+    afterwards still names both, the recovery row still names the loop branch
+    as its parent, the record was not written after the reap, and the remote
+    read is what reports both absent.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",))
+    persister = RecoveringPersister(repos)
+    snapshots: list[list[str]] = []
+
+    async def snapshot() -> None:
+        snapshots.append(run_state_comments(port, "A"))
+
+    merger = ReapingMerger(repos, before_reap=snapshot)
+    harness = resumable(
+        port=port,
+        repos=repos,
+        persister=persister,
+        merger=merger,
+        max_iterations=1,
+        evaluations=one_check_echoes("A"),
+    )
+    events = await bounded_walk(harness)
+
+    assert lane_failures(events) == ()
+    assert len(ticks_of(events)) == TICKS_OF_A_REAPED_WALK
+    assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+    record = await lane_record(port, "A")
+    loop, [backup] = record.branch, persister.backups
+    assert sorted(merger.reaped) == sorted([loop, backup])
+    assert repos.head_of(loop) is None
+    assert repos.head_of(backup) is None
+    associated = associated_branches(record=record)
+    assert {loop, backup} <= associated
+    assert (backup, BranchRole.RECOVERY, loop) in {
+        (item.branch, item.role, item.derived_from) for item in record.associations
+    }
+    # No write of the record follows the reap: the body the board holds is
+    # the one it held the instant before the first ref was deleted.
+    assert snapshots
+    assert run_state_comments(port, "A") == snapshots[0]
+    for branch in (loop, backup):
+        assert await harness.git.remote_branch_sha("/w", repos.remote, branch) is None
+
+
+#: The ticks one single-criterion lane's accepted walk observes.
+TICKS_OF_A_REAPED_WALK = 2
+
 #: Two more criteria under lane A, so one iteration can pass some of its
 #: roster and fail the rest and the loop has somewhere left to go.
 FURTHER_CHECKS = ("A/second", "A/third")
@@ -2000,7 +2148,15 @@ def echoes(*, passed, rounds: int = 6):
     return [criteria_echo(keys=A_KEYS, passed=passed) for _ in range(rounds)]
 
 
-def resumable(*, repos: WalkRepos, merger=None, ref_publisher=None, git=None, **rest):
+def resumable(
+    *,
+    repos: WalkRepos,
+    merger=None,
+    ref_publisher=None,
+    git=None,
+    persister=None,
+    **rest,
+):
     """A runtime over one repository family that commits as a real lane does.
 
     Two runtimes built over the SAME family are two processes against one
@@ -2011,6 +2167,9 @@ def resumable(*, repos: WalkRepos, merger=None, ref_publisher=None, git=None, **
     about a consolidation that answers something else, or one that reads what
     was published, supplies its own and keeps the reference.
 
+    *persister* defaults to the family's own committing double; a test about
+    what a persist's receipt carries supplies a subclass of it.
+
     *git* defaults to the family's own service. A test whose scratch tree is
     really used supplies a subclass that makes the directory the port is asked
     for, because this family's service records the acquisition without making
@@ -2018,7 +2177,7 @@ def resumable(*, repos: WalkRepos, merger=None, ref_publisher=None, git=None, **
     """
     git = WalkGit(repos) if git is None else git
     return runtime(
-        persister=WalkPersister(repos),
+        persister=WalkPersister(repos) if persister is None else persister,
         git=git,
         source=WalkSource(repos),
         workspace=WalkWorkspaces(repos, git=git),
@@ -4138,10 +4297,13 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
         # from a branch standing anywhere else carries other work whatever the
         # consolidation was asked for.
         assert repos.head_of(deliverable) == landed[0]
+        # Consolidations only: the same double is asked to reap the backups of
+        # a lane that was accepted and merged, and a reap names a prefix rather
+        # than a feature branch.
         assert [
             call["source_branch"]
             for call in merger.calls
-            if call["feature_branch"] == deliverable
+            if call["method"] == "consolidate" and call["feature_branch"] == deliverable
         ] == [best_iteration_ref(deliverable)]
         # The walk went on: B closed its own criterion in this same invocation.
         assert port.issues["B/check"].state_kind is WorkflowStateKind.COMPLETED

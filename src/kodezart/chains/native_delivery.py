@@ -7,7 +7,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from kodezart.chains.criteria import require_current_native_snapshot
 from kodezart.chains.lane_delivery import LaneDeliveryCoordinator
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.ralph_workflow import RalphWorkflowEngine, fire_terminal
 from kodezart.core.protocols import LaneStateWriter
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.outcome import classify_outcome
@@ -196,5 +196,10 @@ class NativeLaneWorkflow:
             )
         else:
             await require_current_native_snapshot(state, reader=self.fire.criteria)
+        # The lane is the native fire's caller, so reaping the fire's backups
+        # after its terminal is the lane's act, as it is the engine's and the
+        # authored delivery's on theirs; the method's own guard reaps only
+        # after an accepted fire that consolidated.
+        await self.fire.consolidation.cleanup_backups(fire_terminal(state), config)
         get_stream_writer()(LaneDeliveryEvent(delivery=phase))
         return {}

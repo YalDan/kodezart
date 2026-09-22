@@ -48,6 +48,17 @@ def lane_record_body(*, record: LaneRunState) -> str:
     )
 
 
+def associated_branches(*, record: LaneRunState) -> frozenset[str]:
+    """Every branch the record associates with the lane, across every run.
+
+    The answer is a function of the record alone: a ref that consolidation
+    deleted or cleanup reaped is still associated, because deleting a ref
+    writes nothing to the record. Whether a branch exists now is a separate
+    remote read, never a fact this query or the record carries.
+    """
+    return frozenset(item.branch for item in record.associations)
+
+
 def render_lane_record(
     *, record: LaneRunState, marker_prefixes: Mapping[str, str]
 ) -> str:
@@ -67,6 +78,7 @@ def next_lane_record(
     pushed_head_sha: str | None,
     changeset: ChangesetDigest,
     subject: str,
+    recovery_ref: str | None = None,
 ) -> LaneRunState:
     """The record this commit leaves behind, from the prior one and this receipt.
 
@@ -76,7 +88,9 @@ def next_lane_record(
     arithmetic over the prior record and the observed commit. A commit whose
     head is already the last recorded row appends no second row; the rows are
     the commit acts this lane recorded, so a head that returns to an earlier
-    sha is a new act and takes a row of its own.
+    sha is a new act and takes a row of its own. A divergence recovery's
+    backup ref (``recovery_ref``) is recorded with its own role and parent,
+    the loop branch, and reaping it later changes no recorded fact.
 
     Composing the value is the boundary that types what the model refuses of
     it: the record's own invariants — the current branch carrying a LOOP
@@ -93,7 +107,7 @@ def next_lane_record(
         )
     associations = list(prior.associations) if prior is not None else []
     try:
-        for association in (
+        candidates = [
             BranchAssociation(
                 branch=lane.deliverable_branch,
                 role=BranchRole.DELIVERABLE,
@@ -106,7 +120,17 @@ def next_lane_record(
                 derived_from=lane.deliverable_branch,
                 run_id=lane.run_id,
             ),
-        ):
+        ]
+        if recovery_ref is not None:
+            candidates.append(
+                BranchAssociation(
+                    branch=recovery_ref,
+                    role=BranchRole.RECOVERY,
+                    derived_from=lane.loop_branch,
+                    run_id=lane.run_id,
+                )
+            )
+        for association in candidates:
             if association not in associations:
                 associations.append(association)
         return LaneRunState(

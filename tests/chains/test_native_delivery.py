@@ -402,6 +402,43 @@ async def test_a_stalled_lane_opens_and_watches_its_pull_request_like_any_other(
         await forge.close()
 
 
+@pytest.mark.parametrize("accepted", [True, False])
+async def test_a_native_lane_reaps_its_fire_backups_after_an_accepted_merge(accepted):
+    """The lane reaps the fire's divergence backups, under the same guard.
+
+    A native lane composes the fire graph, so the fire's own caller never
+    runs and the cleanup after its terminal is the lane's act. It reaps once,
+    after the terminal, under the prefix the consolidated deliverable carries
+    — not the loop branch the backups are named after — and an unaccepted
+    fire, whose loop exit landed a best iteration instead of merging, reaps
+    nothing.
+    """
+    lane, state, config, _, forge, *_ = composed(
+        loop=None if accepted else stalled_loop()
+    )
+    merger = lane.fire.consolidation._merger
+    try:
+        _, events, final = await run(lane, state, config)
+        terminal = next(
+            event for event in events if isinstance(event, WorkflowCompleteEvent)
+        )
+        assert (terminal.accepted, terminal.merged) == (accepted, accepted)
+        reaps = [
+            call
+            for call in merger.calls
+            if call.get("method") == "cleanup_backup_branches"
+        ]
+        assert [call["prefix"] for call in reaps] == (
+            [final["feature_branch"]] if accepted else []
+        )
+        assert final["feature_branch"] != final["ralph_branch"]
+        # The reap is the last thing the merger was asked for: it follows the
+        # consolidation whose backups it removes.
+        assert accepted is (merger.calls[-1].get("method") == "cleanup_backup_branches")
+    finally:
+        await forge.close()
+
+
 async def test_a_loop_exit_with_nothing_to_land_opens_no_pull_request():
     """The other half of the partition: a loop exit that committed nothing.
 

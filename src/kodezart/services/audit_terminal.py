@@ -3,6 +3,7 @@
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import GitService, PRStateReader, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.lane_record import associated_branches
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import AuditVerdict
@@ -93,7 +94,7 @@ class AuditTerminalReader:
                 raise AuditClaimReadError(
                     "PR reader returned another recorded identity"
                 )
-            associated = {item.branch for item in record.associations}
+            associated = associated_branches(record=record)
             pr_head = await self._head(repository, pr.head_branch)
             if pr.head_branch not in associated or pr_head is None:
                 discrepancies.append(TerminalDiscrepancy.UNRESOLVED_ASSOCIATION)

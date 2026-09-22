@@ -1,6 +1,7 @@
 """The lane record retains branch facts without another satisfaction carrier."""
 
 import dataclasses
+import inspect
 import json
 from collections import Counter
 from pathlib import Path
@@ -19,6 +20,7 @@ from pydantic import BaseModel, ValidationError, create_model
 
 from kodezart.domain.errors import LaneRecordWriteError
 from kodezart.domain.lane_record import (
+    associated_branches,
     lane_record_body,
     next_lane_record,
     render_lane_record,
@@ -1133,6 +1135,105 @@ def test_a_later_run_adds_its_own_association_pair_beside_the_first():
         ("second-loop", BranchRole.LOOP, "run-later"),
     ]
     assert [row.sha for row in later.commits] == ["a" * 40, "c" * 40]
+
+
+#: The backup ref a divergence recovery pushed before it reset the loop branch.
+RECOVERY_REF = "ordinary-name-backup-0a1b2c3d"
+
+
+def recovered_commit(
+    *, prior: LaneRunState | None, recovery_ref: str | None
+) -> LaneRunState:
+    """One commit of the current run whose receipt names ``recovery_ref``."""
+    return next_lane_record(
+        prior=prior,
+        lane=binding(),
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        changeset=changeset(commits=1, files=1),
+        subject="Recovered change",
+        recovery_ref=recovery_ref,
+    )
+
+
+def test_a_divergence_recovery_ref_is_recorded_with_its_own_role_and_parent():
+    """The backup ref is a RECOVERY association derived from the loop branch.
+
+    Recorded beside the run's deliverable and loop pair, under this run's id,
+    so a later reap of the ref leaves a recorded association behind rather
+    than a ref nothing names.
+    """
+    lane = binding()
+    record = recovered_commit(prior=None, recovery_ref=RECOVERY_REF)
+    assert association_chains(record) == [
+        (lane.deliverable_branch, BranchRole.DELIVERABLE, lane.base_ref, lane.run_id),
+        (lane.loop_branch, BranchRole.LOOP, lane.deliverable_branch, lane.run_id),
+        (RECOVERY_REF, BranchRole.RECOVERY, lane.loop_branch, lane.run_id),
+    ]
+
+
+def test_a_repeated_recovery_receipt_adds_no_second_association():
+    first = recovered_commit(prior=None, recovery_ref=RECOVERY_REF)
+    again = next_lane_record(
+        prior=first,
+        lane=binding(),
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="b" * 40,
+        pushed_head_sha="b" * 40,
+        changeset=changeset(commits=2, files=1),
+        subject="Recovered again",
+        recovery_ref=RECOVERY_REF,
+    )
+    assert again.associations == first.associations
+    assert role_counts(again, run_id=binding().run_id) == {
+        BranchRole.DELIVERABLE: 1,
+        BranchRole.LOOP: 1,
+        BranchRole.RECOVERY: 1,
+    }
+
+
+def test_a_commit_that_recovered_nothing_records_no_recovery_association():
+    record = recovered_commit(prior=None, recovery_ref=None)
+    assert BranchRole.RECOVERY not in {item.role for item in record.associations}
+    assert record == next_lane_record(
+        prior=None,
+        lane=binding(),
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="a" * 40,
+        pushed_head_sha="a" * 40,
+        changeset=changeset(commits=1, files=1),
+        subject="Recovered change",
+    )
+
+
+def test_the_association_query_returns_reaped_and_prior_run_refs():
+    """Membership is read off the record, whatever the remote holds now.
+
+    The fixture's recovery ref and the earlier run's deliverable are the refs
+    a reap and a finished run leave behind; the query names both, and so does
+    the query over the record a later run's commit composes from it.
+    """
+    record = LaneRunState.model_validate(record_data())
+    every_branch = frozenset(chain[0] for chain in RECORD_CHAINS)
+    assert associated_branches(record=record) == every_branch
+    assert {"reaped-ref", "earlier-deliverable"} <= associated_branches(record=record)
+    later = next_lane_record(
+        prior=record,
+        lane=later_run(),
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="c" * 40,
+        pushed_head_sha="c" * 40,
+        changeset=changeset(commits=3, files=1),
+        subject="Later change",
+    )
+    assert associated_branches(record=later) == every_branch
+    assert association_chains(later)[: len(RECORD_CHAINS)] == RECORD_CHAINS
+
+
+def test_the_association_query_takes_the_record_alone():
+    """Nothing but the record reaches the answer: no remote, no liveness."""
+    assert set(inspect.signature(associated_branches).parameters) == {"record"}
 
 
 def declared_fields(owner: type) -> dict[str, tuple[object, ...]]:

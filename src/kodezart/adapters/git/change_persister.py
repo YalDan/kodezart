@@ -281,6 +281,7 @@ class GitChangePersister:
                 branch=branch,
                 message=remote_tip_message,
                 source=PersistSource.DIVERGENCE_REPLAY,
+                recovery_ref=backup_name,
             )
 
         # Step 4: replay as a single commit whose parent IS remote_tip.
@@ -305,6 +306,7 @@ class GitChangePersister:
             branch=branch,
             message=head_message_divergent,
             source=PersistSource.DIVERGENCE_REPLAY,
+            recovery_ref=backup_name,
         )
 
     async def _gated_message(

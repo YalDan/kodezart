@@ -415,8 +415,8 @@ not passed with one fixed reason and each cross-off carries
 `CrossOffState.undemonstrated` instead of a pass or a fail. Nothing reaches the
 tracker for such an attempt.
 
-`render_lane_record` places one readable JSON value under that marker, followed
-by fixed re-entry guidance. The record preserves three-state remote head facts,
+`lane_record_body` places one readable JSON value under the configured record
+marker, followed by fixed re-entry guidance. The record preserves three-state remote head facts,
 ordered `LaneCommit` rows — one row per commit act, not one per loop iteration:
 a head already recorded appends no second row, and a head that returns to an
 earlier sha is a new act with a row of its own (KOD-681) — `LanePR` and
@@ -434,7 +434,14 @@ each read returns freshly decoded values rather than a shared cached collection.
 Counts remain independently recorded observations, so the consistency signal
 can still detect disagreement with commit rows. The re-entry text directs
 checkout or recovery of existing work and treats absent or reaped remote refs
-explicitly. Satisfaction and Evidence remain on the criterion issues.
+explicitly. A divergence recovery's backup ref is recorded as a `RECOVERY`
+association derived from the loop branch, so a ref the persister pushed to
+recover is a recorded fact of the run. Associations stay recorded when
+consolidation deletes the loop branch and when cleanup reaps the backups after
+an accepted, consolidated fire: deleting a ref writes nothing to the record.
+`associated_branches` answers membership from the record alone, and whether a
+branch exists now is a separate remote read. Satisfaction and Evidence remain
+on the criterion issues.
 
 The reader recognizes this declared format; old free-form manual comments need
 an explicit migration. A formatter and cold tracker read do not implement the
