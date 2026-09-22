@@ -8,6 +8,7 @@ merely both read off one expression.
 import pytest
 
 from kodezart.domain.errors import RunShapeReadError
+from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import COMMITS_WITHOUT_CLOSURE_BOUND, tally_unmoved
 from kodezart.domain.tally_record import (
@@ -30,6 +31,7 @@ from kodezart.types.domain.run_alarm import (
 )
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneCommit, LaneRunState
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import make_tracker_issue
 
@@ -42,15 +44,27 @@ FIRST = "c-one"
 SECOND = "c-two"
 
 
-def criterion(key, *, closed=False, parent=LANE.lane_key):
+def criterion(key, *, closed=False, review=False, parent=LANE.lane_key):
+    """One criterion record of the lane's subtree, in one of three states.
+
+    ``review`` is the move a lane makes when it hands a criterion on for
+    grading. The deployment spells that state by NAME and the workflow kind
+    beneath it is the ordinary open ``STARTED`` one — there is no review kind
+    to match on — so a criterion in review is open exactly as a Todo one is
+    and closes nothing.
+    """
+    if review:
+        state_name, state_kind = "In Review", WorkflowStateKind.STARTED
+    elif closed:
+        state_name, state_kind = "Done", WorkflowStateKind.COMPLETED
+    else:
+        state_name, state_kind = "Todo", WorkflowStateKind.UNSTARTED
     return make_tracker_issue(
         key,
         parent_key=parent,
         issue_labels=frozenset({"criterion"}),
-        state_name="Done" if closed else "Todo",
-        state_kind=WorkflowStateKind.COMPLETED
-        if closed
-        else WorkflowStateKind.UNSTARTED,
+        state_name=state_name,
+        state_kind=state_kind,
     )
 
 
@@ -134,6 +148,10 @@ ROSTER = (criterion(SECOND), criterion(FIRST))
 BOTH_OPEN = (criterion(FIRST), criterion(SECOND))
 ONE_OPEN = (criterion(FIRST),)
 
+#: The same two criteria, the second of them handed on for grading. Nothing
+#: about the lane's gap changed: a criterion in review is still owed.
+ONE_IN_REVIEW = (criterion(FIRST), criterion(SECOND, review=True))
+
 #: The record already at the address for each row of the table below.
 NOTHING_STORED = None
 QUIET_STORED = stored_record(anchor=tally((FIRST, SECOND)), latest=tally((FIRST,)))
@@ -184,6 +202,14 @@ def test_the_stored_fixtures_are_the_two_states_the_table_names():
             "quiet/not moved, over the bound, work open",
             QUIET_STORED,
             BOTH_OPEN,
+            ("sha-one", "sha-two"),
+            True,
+            True,
+        ),
+        (
+            "quiet/only move is into review, over the bound",
+            QUIET_STORED,
+            ONE_IN_REVIEW,
             ("sha-one", "sha-two"),
             True,
             True,
@@ -369,6 +395,44 @@ def test_a_closure_under_a_deliverable_child_is_movement():
     assert desired is not None
     assert not is_raised(desired)
     assert desired.readings[2].value.value == ("c-nested",)
+
+
+#: The lane's own address, for the walk that assembles its subtree readings.
+LANE_REF = ScopeRef(kind=ScopeKind.ISSUE, key=LANE.lane_key)
+
+
+def test_a_criterion_moved_to_in_review_closes_nothing_so_the_stall_raises():
+    """A move into review is not a closure, read through the walk that decides it.
+
+    The table above hands the gap over ready-made, so it pins what the record
+    does with a gap and not what puts a criterion in one. Here the two
+    readings come off the same subtree walk the ticker reads a lane's gap
+    with, so the answer passes through the membership predicate: the criterion
+    in review is still in the gap, nothing closed since the earlier reading,
+    and the lane's recorded commits are past the bound, so the stall raises.
+    """
+    in_review = criterion(SECOND, review=True)
+    rows = (make_tracker_issue(LANE.lane_key), criterion(FIRST), in_review)
+    closure = SubtreeClosure(facts={row.issue_key: row for row in rows}, ref=LANE_REF)
+    gap = closure.gap(LANE.lane_key)
+    roster = closure.roster(LANE.lane_key)
+
+    assert in_review in gap
+
+    desired = next_tally_record(
+        subject=LANE,
+        stored=None,
+        roster=roster,
+        gap=gap,
+        criteria=roster,
+        record=lane_record(commits=("sha-one", "sha-two")),
+        max_commits_without_closure=BOUND,
+        raised_by=HOLDER,
+    )
+
+    assert desired is not None
+    assert is_raised(desired)
+    assert desired.readings[2].value.value == ()
 
 
 def test_a_stored_record_whose_replay_disagrees_with_its_bound_refuses():
