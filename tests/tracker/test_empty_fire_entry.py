@@ -39,6 +39,11 @@ def server():
         "No checklist heading was authored.",
         "## Acceptance criteria\n\nNo lines.",
         "## Acceptance criteria\n\n- [x] A parent checkbox cannot mint a child.",
+        # The subject's own body carries the criterion template's own rows, the
+        # shape a fallback that hands a PARENT's body to the sanctioned field
+        # reader would mint the subject out of. Membership is a sub-issue fact,
+        # so this body reads empty and refuses like every other one here.
+        "**Check:** A parent's own row cannot mint a child.\n\n**Evidence:** —",
         "",
     ],
 )

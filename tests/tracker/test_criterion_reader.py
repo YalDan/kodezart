@@ -65,11 +65,18 @@ async def test_successful_empty_is_distinct_from_a_failed_parent_read(tracker):
     assert raised.value.issue_key == "absent/1"
 
 
-async def test_parent_text_cannot_mint_criterion_membership(tracker):
-    await tracker.update_issue(
-        issue_key=SECOND,
-        body="- [x] parent/42-AC-1 (hard) · This looks like a checked criterion.",
-    )
+@pytest.mark.parametrize(
+    "body",
+    [
+        "- [x] parent/42-AC-1 (hard) · This looks like a checked criterion.",
+        # The criterion template's own rows in a parent's body: the shape a
+        # reader that handed a parent's body to the field reader would mint a
+        # child out of. The reader answers the same empty family for it.
+        "**Check:** A parent's own row cannot mint a child.\n\n**Evidence:** —",
+    ],
+)
+async def test_parent_text_cannot_mint_criterion_membership(tracker, body):
+    await tracker.update_issue(issue_key=SECOND, body=body)
     assert tuple(await tracker.read_criteria(issue_key=SECOND)) == ()
 
 
