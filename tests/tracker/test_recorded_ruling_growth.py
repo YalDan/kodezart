@@ -61,7 +61,6 @@ async def observe(tracker, baseline, **changes):
         "previous_open": AlarmReading(
             source_ref=SOURCE, value=ReferencesEvidence(value=("criterion/open",))
         ),
-        "supersession_refs": {},
         "raised_at_sha": "supervisor-sha",
         "raised_by": "supervisor-holder",
     }

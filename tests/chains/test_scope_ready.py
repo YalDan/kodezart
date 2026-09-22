@@ -17,7 +17,6 @@ from kodezart.domain.errors import (
     ScopedExecutionUnavailableError,
     ScopePlanRefusalError,
     ScopeReadError,
-    ScopeSupersessionReadError,
 )
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationMemberAbsentError, ScopeLabel
@@ -272,14 +271,18 @@ async def test_approval_is_current_self_or_ancestor_not_parent_state(
 
 
 @pytest.mark.parametrize("kind", ["canceled", "duplicate"])
-async def test_unreadable_supersession_is_explicit_never_silent_closure(
+async def test_a_canceled_or_duplicate_criterion_is_excluded_and_named_beside_the_gap(
     ready_fixture, kind
 ):
+    """It leaves the gap on its state alone, and the read says so by key."""
     fixture = await ready_fixture(pair())
     fixture.state("blocker-check", kind)
-    with pytest.raises(ScopeSupersessionReadError) as caught:
-        await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
-    assert caught.value.criterion_keys == ("blocker-check",)
+
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+
+    assert selection.excluded == ("blocker-check",)
+    assert "blocker-check" not in selection.unresolved
+    assert [issue.issue_key for issue in selection.closed] == ["blocker"]
     fixture.assert_read_only()
 
 
@@ -288,7 +291,9 @@ async def test_unapproved_canceled_lane_does_not_require_an_unused_reference(
 ):
     fixture = await ready_fixture(pair(), approved=False)
     fixture.state("blocker-check", "canceled")
-    assert (await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)).ready == ()
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+    assert selection.ready == ()
+    assert selection.excluded == ("blocker-check",)
 
 
 @pytest.mark.parametrize("label", ["tracker", "decision"])

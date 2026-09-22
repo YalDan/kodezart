@@ -39,6 +39,12 @@ class ScopeReadySet:
     is on the read rather than recomputed by a reporter, because a second
     reading of what a criterion's workflow state means would be a second
     arithmetic free to disagree with the one the lanes were selected by.
+
+    ``excluded`` carries the keys of the criteria that count for nothing on
+    their state alone. They are returned beside the gap so nothing leaves the
+    reading silently: a caller that saw neither the key in ``unresolved`` nor
+    a statement about it could not tell a set-aside obligation from one that
+    was never there (KOD-794).
     """
 
     scope: ResolvedScope
@@ -48,3 +54,4 @@ class ScopeReadySet:
     criteria: tuple[TrackerIssue, ...] = ()
     closed: tuple[TrackerIssue, ...] = ()
     unresolved: tuple[str, ...] = ()
+    excluded: tuple[str, ...] = ()

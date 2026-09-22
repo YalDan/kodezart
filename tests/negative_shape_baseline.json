@@ -363,6 +363,7 @@
   "tests/services/test_scope_runtime.py": 55,
   "tests/services/test_scope_runtime_static.py": 10,
   "tests/services/test_scope_terminal.py": 80,
+  "tests/services/test_scope_walk_invariants.py": 6,
   "tests/services/test_session_grant_threading.py": 13,
   "tests/services/test_structured_run_records.py": 55,
   "tests/services/test_supervisor_pass.py": 18,
@@ -2006,7 +2007,6 @@
    "test_deliverable_grandchildren_outside_membership_are_owed_and_dispatched",
    "test_a_graded_lane_over_an_out_of_filter_open_child_is_not_at_rest",
    "test_approval_is_current_self_or_ancestor_not_parent_state",
-   "test_unreadable_supersession_is_explicit_never_silent_closure",
    "test_unapproved_canceled_lane_does_not_require_an_unused_reference",
    "test_record_issues_have_no_gap_and_never_become_candidates",
    "test_approved_deliverable_without_criteria_refuses",
@@ -3027,7 +3027,6 @@
   ],
   "tests/domain/test_gap.py": [
    "test_one_membership_arm_per_tracker_state",
-   "test_cancellation_requires_its_own_explicit_supersession",
    "test_open_record_is_retained_without_rewriting_evidence",
    "test_moved_back_from_done_reenters_without_parent_state_input",
    "test_empty_gap_and_noncriterion_or_duplicate_inputs",
@@ -5023,7 +5022,6 @@
    "test_walker_modules_resolve_no_lane_marker_and_parse_no_prose",
    "test_a_lane_is_dispatched_for_the_criterion_its_filter_cannot_reach",
    "test_the_same_lane_reads_at_rest_once_that_criterion_is_graded",
-   "test_a_cancelled_unreachable_criterion_refuses_rather_than_resting",
    "test_the_identical_shape_inside_the_filter_dispatches_the_child_itself",
    "test_the_report_names_the_open_criterion_the_filter_cannot_reach",
    "test_an_out_of_milestone_criterion_is_named_in_the_milestones_own_terms",
@@ -5128,6 +5126,9 @@
    "test_an_unreadable_status_surface_leaves_no_event",
    "test_the_heading_the_filter_reads_is_the_one_the_rendering_writes",
    "test_a_body_that_quotes_the_heading_mid_sentence_is_not_a_report"
+  ],
+  "tests/services/test_scope_walk_invariants.py": [
+   "test_the_walk_lists_the_excluded_criteria_beside_each_gap"
   ],
   "tests/services/test_session_grant_threading.py": [
    "test_stream_carries_the_session_type_to_the_executor",
@@ -5717,20 +5718,17 @@
   ],
   "tests/tracker/test_barren_record_collector.py": [
    "test_native_counters_bounds_and_replay",
-   "test_actual_closure_requires_prior_identity_and_explicit_supersession",
    "test_absence_of_previous_work_does_not_invent_progress",
    "test_cold_clients_read_current_native_bytes",
    "test_unreadable_lane_never_produces_a_quiet_result",
    "test_source_changes_refuse_alarm_and_quiet_results",
    "test_every_native_read_propagates_failure_or_cancellation",
-   "test_supersession_input_is_captured_before_native_reads",
    "test_native_pagination_is_complete_for_both_record_reads",
    "test_collector_calls_only_record_read_closure_and_local_construction"
   ],
   "tests/tracker/test_barren_tick.py": [
    "test_current_tracker_closure_and_actual_config_feed_each_arm",
    "test_current_done_state_closes_the_same_previously_open_key",
-   "test_cancellation_closes_only_with_an_established_supersession",
    "test_disappearing_from_current_criteria_never_manufactures_closure",
    "test_failed_criterion_read_is_never_an_empty_or_closed_set",
    "test_observer_has_one_tracker_read_and_no_version_control_dependency"
@@ -6226,7 +6224,6 @@
   "tests/tracker/test_mandate_graph.py": [
    "test_ruling_service_uses_current_criterion_state_and_actual_config",
    "test_disappearing_obligation_never_manufactures_closure",
-   "test_supersession_is_required_for_canceled_criterion_closure",
    "test_closure_on_another_declared_lane_issue_is_observed",
    "test_real_membership_collector_detects_structural_addition",
    "test_collector_state_only_reopening_stays_quiet",
@@ -6544,7 +6541,6 @@
   "tests/tracker/test_scope_subtree_reach.py": [
    "test_the_lane_is_not_at_rest_while_the_hidden_descendant_is_open",
    "test_the_same_lane_reads_at_rest_once_that_descendant_is_done",
-   "test_a_cancelled_hidden_descendant_refuses_instead_of_reading_at_rest",
    "test_the_identical_shape_inside_the_filter_carries_the_child_as_a_member",
    "test_the_lane_owes_the_criterion_its_scope_cannot_reach",
    "test_the_same_shape_inside_the_filter_names_no_unreachable_descendant"

@@ -1353,7 +1353,7 @@ def test_gap_has_no_amendment_input_or_body_judgment_branch():
 
 CHANGE_STAMP_FIELDS = frozenset({"updated_at", "updated_since", "updatedAt"})
 GAP_ARITHMETIC_NAMES = frozenset(
-    {"compute_gap", "in_gap", "organize_gap", "SubtreeClosure"}
+    {"compute_gap", "gap_membership", "organize_gap", "SubtreeClosure"}
 )
 GAP_COMPUTATION_MODULES = frozenset(
     {
@@ -1392,12 +1392,9 @@ def gap_computation_sites(sources):
 
     Reached under any spelling: the imported name, an ``as`` alias, a module
     route, an assignment alias, a declaration, a bare or attribute spelling.
-    A string constant is not a route, so the terminal vocabulary's ``in_gap``
-    label stays out and the module list above stays the upper bound.
-    ``in_gap`` is the seed that keeps that negative live: the one module
-    spelling a seed name inside a string constant spells ``in_gap``, so a
-    string constant read as a route would pull it in.  Dropping the seed
-    changes no discovered module at head, and nothing here claims it would.
+    A string constant is not a route, so a module naming one of these words
+    inside a string constant stays out and the module list above stays the
+    upper bound.
 
     Two shapes are no route here, neither of them in the package at head: a
     gap consumer handed a ``SubtreeClosure`` on an unannotated parameter, whose
@@ -1453,17 +1450,17 @@ def test_the_discovered_gap_sites_are_the_upper_bound_exactly():
     [
         (
             "domain/gap.py",
-            "    return tuple(\n",
+            "    return CriterionGap(\n",
             "    if any(criterion.updated_at for criterion in criteria):\n"
             '        raise ValueError("a criterion changed")\n'
-            "    return tuple(\n",
+            "    return CriterionGap(\n",
         ),
         (
             "services/run_shape.py",
-            "    open_keys = {\n",
+            "    open_keys = {criterion.issue_key",
             "    if any(criterion.updated_at for criterion in criteria):\n"
             '        raise ValueError("a criterion changed")\n'
-            "    open_keys = {\n",
+            "    open_keys = {criterion.issue_key",
         ),
     ],
 )

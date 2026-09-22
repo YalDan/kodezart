@@ -101,6 +101,7 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
     for key, was_approved in approved.items():
         if await tracker.execution_approved(issue_key=key) != was_approved:
             raise ScopeReadError("scope approval changed during readiness", ref=ref)
+    scope_gap = closure.scope_gap()
     return ScopeReadySet(
         scope=plan.scope,
         ready=tuple(
@@ -121,7 +122,8 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
         # What the scope still owes, from the closure that computed the gaps.
         # A reporter asking a criterion's state kind again would be a second
         # reading of the same question, answerable differently.
-        unresolved=closure.open_criterion_keys(),
+        unresolved=tuple(issue.issue_key for issue in scope_gap.owed),
+        excluded=scope_gap.excluded,
     )
 
 

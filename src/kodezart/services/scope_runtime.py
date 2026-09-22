@@ -775,6 +775,7 @@ def _observation(
             # module is scanned whole for the vocabulary such a reading is
             # spelled in (KOD-725).
             unresolved_criteria=ready.unresolved,
+            excluded_criteria=ready.excluded,
             unapproved_lanes=ready.unapproved,
             exclusions=tuple(exclusions),
         )

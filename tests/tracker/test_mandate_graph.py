@@ -68,7 +68,6 @@ def arguments():
             RulingsEvidence(value=LaneRulingSnapshot.model_validate(current))
         ),
         "previous_open": reading(ReferencesEvidence(value=("criterion/open",))),
-        "supersession_refs": {},
         "raised_at_sha": "head",
         "raised_by": "holder",
     }
@@ -115,12 +114,11 @@ async def test_disappearing_obligation_never_manufactures_closure(
 
 
 @pytest.mark.parametrize("state", ["Canceled", "Duplicate"])
-async def test_supersession_is_required_for_canceled_criterion_closure(tracker, state):
+async def test_a_canceled_criterion_closes_on_state_alone(tracker, state):
+    """No reference is supplied and none is wanted: the state is the answer."""
     await tracker.restore_workflow_state(issue_key="criterion/open", state_name=state)
-    assert await observe_ruling_growth(tracker=tracker, **arguments()) is not None
-    kwargs = arguments()
-    kwargs["supersession_refs"] = {"criterion/open": "recorded/successor"}
-    assert await observe_ruling_growth(tracker=tracker, **kwargs) is None
+    assert (await tracker.read_issue(issue_key="criterion/open")).state_name == state
+    assert await observe_ruling_growth(tracker=tracker, **arguments()) is None
 
 
 async def test_closure_on_another_declared_lane_issue_is_observed(tracker, server):

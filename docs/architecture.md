@@ -247,13 +247,11 @@ next call recomputes from tracker reads. Scope membership, complete child trees
 and approval are checked again before returning; this is an optimistic read,
 not transactional exclusion from concurrent tracker writers.
 
-Canceled or duplicate criteria that need supersession resolution currently raise
-`ScopeSupersessionReadError`: the existing gap function accepts established
-references, but the native tracker has no declared reader for the historical
-supersession prose. No inferred reference or merge observation substitutes for
-that missing read. Full walker dispatch and pre-loop revalidation remain separate;
-valid scoped entries still raise the explicit unavailable-walker error after
-recording the current ready and blocked keys.
+A canceled or duplicate criterion counts for nothing on its state alone. It
+leaves every gap and leaves `unresolved`, and it is named by key in the ready
+read's `excluded` and in each walk observation's `excluded_criteria`, so a
+reader tells an obligation the board set aside from one that was never there
+(KOD-794).
 
 `LaneRecordReader` reads the owning issue's complete comment listing through
 `TrackerPort`, locates the exact configured `marker_prefixes.run_state` marker,
@@ -968,8 +966,8 @@ are ten files and five commits; both are configurable nonnegative counts.
 
 The read-only `observe_barren_tick` service uses `read_criteria` and the shared
 criterion gap arithmetic to obtain current closure. Done closes a criterion;
-cancellation or duplication needs an established supersession reference
-supplied by its owning reader. It retains the returned closure projection
+cancellation or duplication is excluded on state alone. It retains the returned
+closure projection
 for replay and makes no tracker writes or version-control calls. Its shared
 `read_barren_tick` assembly also retains the exact criterion snapshot used
 for that observation. `observe_recorded_barren_tick` supplies both growth
@@ -980,8 +978,8 @@ refuses both an alarm and a quiet result. It reads the declared counters
 without inferring them from commit rows or checking their agreement, which
 belongs to the separate record-consistency signal.
 
-The previous tick's open identities and established supersession references
-still require explicit supplied provenance. Their collectors remain separate
+The previous tick's open identities still require explicit supplied
+provenance. Their collectors remain separate
 work and no tick reaches them; leased alarm persistence exists, and only the
 lane tally arm writes through it. These bounded record reads do not provide
 an atomic tracker transaction or an execution event stream.
