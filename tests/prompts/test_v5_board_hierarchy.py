@@ -19,7 +19,7 @@ import pytest
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.sets import OPUS_SET, V5_SET, render_v5_case
-from tests.prompts.test_v5_fragments import fragment, v5_bodies
+from tests.prompts.test_v5_fragments import fragment, prose, v5_bodies
 
 FRAGMENT_NAME = "board_hierarchy"
 
@@ -98,9 +98,20 @@ def test_the_judge_names_misplacement_as_a_repairable_gap() -> None:
 
     Without this sentence a misplaced but implementable issue is marked
     complete and no repair ever runs.
+
+    The refusal kind is asserted with the verdict, because the two words
+    after it are the whole difference between a repair and a halt: a
+    human_decision refusal routes to ESCALATE and every other
+    ``not_buildable`` result to REAUTHOR (``domain/organize.py``), so a
+    misplacement classed as a human decision stops the stage instead of
+    reaching the author. Read off the prose, so rewrapping the member is
+    not a change to what it says.
     """
-    rendered = render_v5_case(PromptKey.ORGANIZE_ASSESS.value)
-    assert "An issue outside that tree is not_buildable" in rendered
+    rendered = prose(render_v5_case(PromptKey.ORGANIZE_ASSESS.value))
+    assert (
+        "An issue outside that tree is not_buildable with a repairable spec_gap"
+        in rendered
+    )
     assert "name the misplacement and the field that carries it" in rendered
 
 
