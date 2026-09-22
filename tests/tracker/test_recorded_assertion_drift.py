@@ -31,7 +31,11 @@ from kodezart.types.domain.agent import Ruling, RulingProtectedTestRef
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
-from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
+from kodezart.types.domain.tracker import (
+    TrackerComment,
+    WorkflowStateKind,
+    is_open,
+)
 from tests.domain.test_rulings import ruling_data
 from tests.fakes import FakeTrackerPort
 from tests.services.test_assertion_drift import (
@@ -58,14 +62,24 @@ OPERATION = OperationConfig(
     marker_prefixes=PREFIXES,
     workflow_states=fixtures.WORKFLOW_STATE_NAMES,
 )
-#: The backend state name this workspace carries for the duplicate kind, read
-#: off the workspace's own state table: a board closes a condition as a
-#: duplicate under its own word for it, and the kind is what a consumer reads.
-(DUPLICATE_STATE,) = (
-    name
-    for name, kind in STATE_TYPES.items()
-    if kind == WorkflowStateKind.DUPLICATE.value
-)
+#: Every kind a condition can be closed INTO while its neighbour carries the
+#: delivery, against the backend state name this workspace carries it under.
+#:
+#: The kinds are read off the shipped predicate — a kind is closed when
+#: ``is_open`` refuses it — rather than listed here, so a fourth closed kind
+#: arrives as a case rather than as a silent gap. Completion is left out
+#: because the claim's own criterion must carry it: dropping THAT kind from the
+#: family read is refused where the baseline is compared, which is loud, while
+#: dropping any of these loses a designation with nothing raised. The state
+#: name comes from the workspace's own state table, because a board closes a
+#: condition under its own word for the kind.
+ABSORBING_STATES = {
+    kind.name: name
+    for kind in WorkflowStateKind
+    if not is_open(kind) and kind is not WorkflowStateKind.COMPLETED
+    for name, value in STATE_TYPES.items()
+    if value == kind.value
+}
 
 
 async def seed(
@@ -120,13 +134,13 @@ async def native(claim_setup, tracker, repo, tmp_path):
     return build, request, graded, head
 
 
-async def absorbed(tracker, *, parent=ROOT):
-    """A second criterion under *parent*, closed as a duplicate of its neighbour.
+async def absorbed(tracker, *, kind, parent=ROOT):
+    """A second criterion under *parent*, closed into *kind* by its neighbour.
 
     Minted through the port and closed through the port, so its key is the
     backend's own and the case reads the same over either implementation. The
-    board is what closes a condition as a duplicate of the one that absorbed
-    it; nothing under test writes that state.
+    board is what closes a condition once another carries its delivery;
+    nothing under test writes that state.
     """
     surfaces = frozenset(
         {
@@ -148,31 +162,46 @@ async def absorbed(tracker, *, parent=ROOT):
             holder=holder,
         )
     closed = await tracker.restore_workflow_state(
-        issue_key=made.issue_key, state_name=DUPLICATE_STATE
+        issue_key=made.issue_key, state_name=ABSORBING_STATES[kind]
     )
-    assert closed.state_kind is WorkflowStateKind.DUPLICATE
+    # The board's own word landed as the kind the case asked for, and that kind
+    # is closed by the shipped reading of it.
+    assert closed.state_kind is WorkflowStateKind[kind]
+    assert not is_open(closed.state_kind)
     return closed
 
 
+@pytest.mark.parametrize("kind", sorted(ABSORBING_STATES))
 async def test_a_superseded_criterion_still_supplies_its_protected_designation(
-    native, tracker, repo
+    native, tracker, repo, kind
 ):
-    """A closed-as-duplicate identity stays resolvable, so its record still counts.
+    """A closed identity stays resolvable, so its record still counts.
 
     This is the one production site that reads a protected-test designation
     back, and the family it gathers is where a superseded identity could
-    quietly stop existing. Filter the duplicate out of that read and the
-    designation carried by the absorbed condition vanishes from the comparison
-    with nothing refused — a silent loss, which is exactly what the clause
-    that a superseded identity stays resolvable forbids (KOD-622).
+    quietly stop existing. Filter a closed condition out of that read and the
+    designation it carries vanishes from the comparison with nothing refused —
+    a silent loss, which is exactly what the clause that a superseded identity
+    stays resolvable forbids (KOD-622).
+
+    One case per closed kind another condition can absorb a condition into, so
+    the family read is pinned against any of them rather than against the one
+    kind a report happened to name.
 
     The request stays keyed by the surviving condition: the source read
     requires a completed or configured-review claim, so an audit claim keyed
-    by a duplicate is refused upstream of the family read and cannot express
-    this. What the case pins is the family read, over the whole owner set.
+    by a closed criterion is refused upstream of the family read and cannot
+    express this. What the case pins is the family read, over the whole owner
+    set.
     """
+    # Every closed kind but completion has a case: a kind the workspace's state
+    # table carries no state for would otherwise drop out of the parametrization.
+    assert {member.name for member in WorkflowStateKind if not is_open(member)} == {
+        WorkflowStateKind.COMPLETED.name,
+        *ABSORBING_STATES,
+    }
     build, request, graded, head = native
-    superseded = await absorbed(tracker)
+    superseded = await absorbed(tracker, kind=kind)
     comment, _ruling = await seed(tracker, owner=superseded.issue_key)
     git(repo, "checkout", "--detach", graded)
     run_protected_test(repo)
