@@ -1373,3 +1373,48 @@ async def test_an_entry_after_an_attempt_with_no_terminal_event_reports_from_tra
         dead.status.posts[0][1].splitlines()[0] == "Scope outcome: scope_stopped_short"
     )
     assert lane_failures(events) == ()
+
+
+async def test_a_lane_finished_before_the_entry_reports_done_from_the_tracker():
+    """A lane the dead attempt finished reads done on the next entry unfired.
+
+    Run one fires lane A, finishes its whole roster, records it, and dies
+    before its exit. Run two fires nothing: A has nothing left to offer and B
+    is not approved. So A's done column can only come from the lane vector
+    this entry read off the tracker, never from a fire of its own invocation.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A", "B"), checks=TWO_CHECKS)
+    del port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key="B")]
+
+    dead, before = await first_fire(port, repos, passed=A_KEYS)
+
+    # The dead attempt posted nothing, finished A, and never recorded B.
+    assert dead.status.posts == []
+    assert port.issues["A/second"].state_kind is WorkflowStateKind.COMPLETED
+    assert await recorded_so_far(port, "B") is None
+
+    second = resumable(
+        port=port,
+        repos=repos,
+        evaluations=echoes(passed=set(A_KEYS)),
+        status=dead.status,
+    )
+    events = await bounded_walk(second, job="second-job")
+
+    # This entry fired no lane at all.
+    assert all(tick.dispatched == () for tick in ticks_of(events))
+    reports = terminals(events)
+    assert len(reports) == 1
+    assert events[-1] is reports[0]
+    report = reports[0]
+
+    assert report.lanes[0] == ScopeLaneEntry(
+        issue="A", done=True, branch=before.branch, pr=None
+    )
+    assert before.branch == (await lane_record(port, "A")).branch
+    assert report.lanes[1] == ScopeLaneEntry(
+        issue="B", done=False, branch=None, pr=None
+    )
+    assert report.outcome is WorkflowOutcome.scope_stopped_short
+    assert dead.status.posts == [(SCOPE, render_scope_status(report))]
