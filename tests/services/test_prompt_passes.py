@@ -604,6 +604,44 @@ async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(
     )
 
 
+async def test_two_refused_signals_are_named_in_one_abort(tmp_path: Path) -> None:
+    """Every refused signal is named at once, with its pass and its reason.
+
+    An operator fixing one scope at a time pays a boot cycle per signal, so
+    the probe asks for every signal the schedule declares and the abort names
+    each refusal it came back with, the pass that refusal leaves ungated, and
+    the diagnosis the backend gave for it.
+    """
+    second = "auth_insufficient_scope: nor those"
+    tracker = FakeTrackerPort(
+        scan_refusals={
+            PassSignal.issues_changed: DIAGNOSIS,
+            PassSignal.reviews_changed: second,
+        }
+    )
+
+    with pytest.raises(PassGateCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=FakeAgentRunner(events=[]),
+            fire_prep_pass_gate_signals=[
+                PassSignal.issues_changed,
+                PassSignal.reviews_changed,
+            ],
+        )
+
+    named = str(caught.value)
+    assert PassSignal.issues_changed.value in named
+    assert PassSignal.reviews_changed.value in named
+    assert DIAGNOSIS in named and second in named
+    assert named.count(PromptKey.FIRE_PREP_PASS.value) == 2
+    # One abort carries both: the probe asked for both signals in one call.
+    assert tracker.capability_probes == [
+        (PassSignal.issues_changed, PassSignal.reviews_changed)
+    ]
+
+
 async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
     """The other arm, end to end: what ships boots, and the pass it wired works.
 
