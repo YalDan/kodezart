@@ -367,12 +367,18 @@ def evidence_row(graded_sha: str) -> CriterionEvidence:
     return CriterionEvidence(graded_sha=graded_sha, test="tests/example.py::case")
 
 
-async def record_grading(tracker, *, graded_sha, subject_key=CHILD):
+async def record_grading(
+    tracker,
+    *,
+    graded_sha,
+    subject_key=CHILD,
+    kind=RunEventKind.CRITERION_REFUTED,
+):
     """Post one grading through the port's own append, never a hand-built body."""
     return await tracker.post_run_event(
         issue_key=ISSUE,
         event=LaneRunEvent(
-            kind=RunEventKind.CRITERION_REFUTED,
+            kind=kind,
             lane_key=LANE,
             subject_key=subject_key,
             graded_sha=graded_sha,
@@ -380,28 +386,54 @@ async def record_grading(tracker, *, graded_sha, subject_key=CHILD):
     )
 
 
+#: One recorded grading, as the arms below name them: the kind the lane posted
+#: and the commit it was read at.
+REFUTED_LATER = (RunEventKind.CRITERION_REFUTED, LATER_GRADING)
+REFUTED_AT_THE_ROW = (RunEventKind.CRITERION_REFUTED, RESTAMPED_AT)
+PASSED_AT_THE_ROW = (RunEventKind.CRITERION_PASSED, RESTAMPED_AT)
+
+
 @pytest.mark.parametrize(
-    ("recorded_at", "verdict"),
-    [(LATER_GRADING, AuditVerdict.REFUTED), (RESTAMPED_AT, AuditVerdict.HOLDS)],
+    ("recorded", "verdict"),
+    [
+        pytest.param((REFUTED_LATER,), AuditVerdict.REFUTED, id="forged-restamp"),
+        pytest.param(
+            (REFUTED_AT_THE_ROW,), AuditVerdict.HOLDS, id="refuted-at-the-row"
+        ),
+        pytest.param(
+            (REFUTED_LATER, PASSED_AT_THE_ROW),
+            AuditVerdict.HOLDS,
+            id="refuted-then-passed",
+        ),
+    ],
 )
 async def test_a_restamp_holds_only_when_the_last_recorded_grading_names_its_commit(
-    tracker, recorded_at, verdict
+    tracker, recorded, verdict
 ):
-    """One fixture, two arms: the row is restamped at the same commit in both.
+    """One fixture, three arms: the row is restamped at the same commit in all.
 
     The first arm reds against an implementation that grades whether the
     restamped verdict happens to be true at head, because nothing here is
-    read at head at all — only the stream the lane itself posted.
+    read at head at all — only the stream the lane itself posted. It is also
+    the forged restamp: a row naming a commit this lane recorded no grading
+    at.
+
+    The third arm is the ordinary lifecycle — refuted at one commit, then
+    passed at the one the row now names — which a lane leaves as two entries
+    because a passing cross-off records its grading too (KOD-506). An
+    implementation reading only refutations answers REFUTED for it, which is
+    the very state the first arm pins as forged.
     """
-    await record_grading(tracker, graded_sha=recorded_at)
+    for kind, graded_sha in recorded:
+        await record_grading(tracker, kind=kind, graded_sha=graded_sha)
     trace = await AuditRestampVerifier(events=tracker).observe(
         request=restamp_request(), evidence=evidence_row(RESTAMPED_AT)
     )
     assert trace is not None
     assert trace.verdict is verdict
     assert trace.criterion_key == CHILD
-    # The arm names what it refused against, not just that it refused.
-    assert trace.history == (recorded_at,)
+    # The arm names what it answered against, not just what it answered.
+    assert trace.history == tuple(graded_sha for _, graded_sha in recorded)
 
 
 async def test_a_restamp_is_traced_to_the_last_grading_and_not_to_any_earlier_one(
@@ -432,10 +464,12 @@ async def test_another_criterions_grading_at_the_same_commit_traces_nothing(trac
 
 
 async def test_a_criterion_with_no_recorded_grading_is_not_traced(tracker):
-    """A passing cross-off posts no event, so an empty history is not a refusal.
+    """An empty history is a row no lane write accounts for, not a refusal.
 
-    Reading it as "no entry at this commit" would refute every criterion the
-    board ever finished.
+    Every cross-off a lane writes records its grading, so a row with no entry
+    at all is one a person moved into the finished state or one whose
+    announcement never landed. Reading it as "no entry at this commit" would
+    answer for a write this stream never saw.
     """
     assert (
         await AuditRestampVerifier(events=tracker).observe(
