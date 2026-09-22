@@ -1392,7 +1392,9 @@ def test_gap_has_no_amendment_input_or_body_judgment_branch():
     }
 
 
-CHANGE_STAMP_FIELDS = frozenset({"updated_at", "updated_since", "updatedAt"})
+CHANGE_STAMP_FIELDS = frozenset(
+    {"updated_at", "updatedAt", "updated_since", "updatedSince"}
+)
 GAP_ARITHMETIC_NAMES = frozenset(
     {"compute_gap", "in_gap", "organize_gap", "SubtreeClosure"}
 )
@@ -1768,24 +1770,35 @@ def test_change_stamp_detector_flags_a_gap_site_that_reads_the_field(field, form
     assert change_stamp_reads(ast.parse(snippet.replace(field, "body_digest"))) == set()
 
 
+#: Where the change stamp is stated: the domain issue's own field, and the
+#: recency parameter both domain queries state it as.  Each is spelled twice —
+#: under its field name and under the alias the model reads and writes it by.
+CHANGE_STAMP_HOMES = (
+    (TrackerIssue, "updated_at"),
+    (IssueQuery, "updated_since"),
+    (ReviewQuery, "updated_since"),
+)
+
+
 def test_the_change_stamp_surface_names_every_spelling_of_the_one_field():
-    """The scanned spellings are the field's own, and the set cannot lose one.
+    """The scanned spellings are exactly the ones the models state.
 
     The detector's rows above are parametrised over this set, so a spelling
-    dropped out of it takes its own row away with it and nothing reds: the set
-    would be free to shrink and the scan with it.  It is therefore stated
-    against the places the three spellings come from — the domain issue's own
-    field, the recency parameter both domain queries state it as, and the wire
-    key the adapter sends that parameter under — and then against the three
-    words themselves, so neither a rename upstream nor a quiet deletion here
-    passes.
+    dropped out of it takes its own row away with it and nothing reds, and a
+    spelling the models gain is never scanned.  The set is therefore derived
+    from the models themselves — each home's field name, which a rename turns
+    into a lookup that fails, and the alias the model carries it under — and
+    the constant must equal that derivation, so it can neither lose a spelling
+    nor miss one.
     """
-    assert "updated_at" in TrackerIssue.model_fields
-    assert "updated_since" in IssueQuery.model_fields
-    assert "updated_since" in ReviewQuery.model_fields
-    assert '"updatedAt"' in source_tree()["adapters/linear/tracker.py"]
+    derived = {
+        spelling
+        for model, field in CHANGE_STAMP_HOMES
+        for spelling in (field, model.model_fields[field].alias)
+    }
 
-    assert CHANGE_STAMP_FIELDS == {"updated_at", "updated_since", "updatedAt"}
+    assert None not in derived
+    assert CHANGE_STAMP_FIELDS == derived
 
 
 #: The module that defines the gap arithmetic. Its own calls of its own
