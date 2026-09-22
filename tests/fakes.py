@@ -5212,10 +5212,13 @@ def tracker_state(port: FakeTrackerPort) -> dict[str, object]:
 #: locks back instead of the attempt.
 #:
 #: The set is not trusted to be complete either: the census beside this
-#: module derives the port's own write surface and drives EVERY write on it,
-#: so a write that lands in no journal here fails there, naming the method,
-#: and a journal nothing fills fails there too.  That is the one failure a
-#: list of journals cannot report about itself.
+#: module drives EVERY member the port declares, read off its class line with
+#: no list of verbs, each through a case that runs it — a write case naming
+#: the journals it fills, a read case shown to fill none — so a write that
+#: lands in no journal here fails there, naming the method, a member of any
+#: name without a case fails there, and a journal nothing fills fails there
+#: too.  That is the one failure a list of journals cannot report about
+#: itself.
 TRACKER_WRITE_JOURNALS = frozenset(
     {
         "issue_writes",
@@ -5273,16 +5276,19 @@ def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
 
     The surface is the journal list above, and NO write on the port is
     outside it.  That is a measured claim, not an intention: the census
-    beside this module derives the write surface off the port itself and
-    drives every method on it, so a write landing in no journal here is a
-    failure there, naming the method.  A write that ADDRESSES an issue is
-    reached whichever attribute it fills — the identity map under
-    ``upsert_issue``, say — because it stamps the issue through ``_wrote``
-    and that stamp lands in ``self_writes``.  The writes that address no
-    issue carry a journal of their own so they are reached too: the two
-    unlock attempts, a work ref recorded against an issue no board holds, a
-    graph write, and each mapping ensure that instates — a scope label or one
-    of the other instatable kinds — all of which address the workspace.
+    beside this module drives EVERY member the port declares — read off the
+    port's class line, whatever each is called, with no verb list deciding
+    which are writes — through a case that runs it, so a write landing in no
+    journal here is a failure there, naming the method, a member with no case
+    is a failure there, and a read that fills a journal is one too.  A write
+    that ADDRESSES an issue is reached whichever attribute it fills — the
+    identity map under ``upsert_issue``, say — because it stamps the issue
+    through ``_wrote`` and that stamp lands in ``self_writes``.  The writes
+    that address no issue carry a journal of their own so they are reached
+    too: the two unlock attempts, a work ref recorded against an issue no
+    board holds, a graph write, and each mapping ensure that instates — a
+    scope label or one of the other instatable kinds — all of which address
+    the workspace.
 
     An ensure that ADOPTS a value the workspace already defines is the one
     ensure this answers True for, because it writes nothing: it returns the
