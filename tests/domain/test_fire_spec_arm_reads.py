@@ -37,12 +37,22 @@ A reflective read is not a text read to this walk: ``getattr(spec, "body")``,
 ``spec.model_dump()["body"]`` and ``repr(spec)`` report nothing, because the
 field is never spelled as an attribute of a spec.  ``str(spec)``, an f-string
 over a spec and a slice of ``.body`` are read, because they are.  So is the
-formatter's own idiom: a class pattern that captures the text field into a
-local word — ``case TrackerSpec(body=text)`` — binds that word to the text, so
-every read of it is a read of the arm's text, and handed to the digest it is a
-digest like any other.  The word is seeded by the capture alone and grows no
-further: a second name assigned from it is not itself the text, because the
-read that assigned it is already the site.
+formatter's own idiom, in both of its spellings.  A class pattern that
+captures the text *field* into a local word — ``case TrackerSpec(body=text)``
+— binds that word to the text, so every read of it is a read of the arm's
+text, and handed to the digest it is a digest like any other; the word is
+seeded by the capture alone and grows no further, because the read that
+assigned a second name from it is already the site.  A pattern that captures
+the *subject* instead — ``case TrackerSpec() as arm``, an alternation of arms
+captured the same way, or a bare word under a match whose subject the module
+holds a spec in — binds that word to the arm, so the word is a spec and each
+field read off it is that field's own read, ``.body`` included.  Only a
+pattern standing over the subject captures it.  A word bound under a class
+pattern's text field is the text capture above and no arm; a word bound under
+any other keyword field — ``case AuthoredSpec(ticket=draft)`` — or under a
+sequence's items or a mapping's keys binds nothing at all here, so it is never
+mistaken for the subject, and rendering it is a blind spot rather than a
+catch.
 """
 
 import ast
@@ -142,6 +152,51 @@ def _spells(node: ast.expr) -> str | None:
     if isinstance(node, ast.Name):
         return node.id
     return node.attr if isinstance(node, ast.Attribute) else None
+
+
+def _names_an_arm(pattern: ast.pattern | None) -> bool:
+    """Whether a pattern standing over a subject names one of the arms.
+
+    A class pattern names what it matches.  An ``|`` names an arm when one of
+    its alternatives does, and an ``as`` capture names whatever it wraps, so
+    ``(TrackerSpec() | AuthoredSpec()) as arm`` is as plain a statement of the
+    subject's type as ``TrackerSpec() as arm`` is.
+    """
+    if isinstance(pattern, ast.MatchClass):
+        return _spells(pattern.cls) in SPEC_TYPES
+    if isinstance(pattern, ast.MatchOr):
+        return any(_names_an_arm(one) for one in pattern.patterns)
+    if isinstance(pattern, ast.MatchAs):
+        return _names_an_arm(pattern.pattern)
+    return False
+
+
+def _subject_captures(pattern: ast.pattern, *, an_arm: bool) -> set[str]:
+    """The words a case binds the whole subject to, when that subject is an arm.
+
+    Only a pattern standing over the subject captures the subject: the case's
+    own pattern, each alternative of an ``|``, and the pattern an ``as``
+    capture wraps.  The walk stops at every other pattern, so no word bound
+    under a class pattern's keyword field, a sequence's items or a mapping's
+    keys is mistaken for the arm; the text field's capture is seeded
+    separately, and every other such word binds nothing here.
+    """
+    if isinstance(pattern, ast.MatchOr):
+        return {
+            name
+            for one in pattern.patterns
+            for name in _subject_captures(one, an_arm=an_arm or _names_an_arm(one))
+        }
+    if not isinstance(pattern, ast.MatchAs):
+        return set()
+    captured = (
+        _subject_captures(pattern.pattern, an_arm=an_arm)
+        if pattern.pattern is not None
+        else set()
+    )
+    if pattern.name is not None and (an_arm or _names_an_arm(pattern.pattern)):
+        captured.add(pattern.name)
+    return captured
 
 
 class _Module:
@@ -250,6 +305,7 @@ class _Scope:
         self.texts: set[str] = set()
         while True:
             before = set(self.specs), set(self.payloads)
+            self.specs |= self._captured_arms()
             self.specs |= bound_names(
                 module.tree,
                 yields=lambda value, _names: self.is_spec(value),
@@ -263,6 +319,25 @@ class _Scope:
             if before == (self.specs, self.payloads):
                 break
         self.texts = self._match_captures()
+
+    def _captured_arms(self) -> set[str]:
+        """The words a class pattern captures a whole arm into.
+
+        ``case TrackerSpec() as arm`` states what ``arm`` is as plainly as an
+        annotation states it, so the captured word *is* the subject and every
+        field read off it is that field's read.  A match standing over a
+        subject this module already holds a spec in captures an arm whatever
+        its patterns spell, so a bare ``case other`` beside the class patterns
+        is a capture too.
+        """
+        captured: set[str] = set()
+        for statement in self.module.expressions:
+            if not isinstance(statement, ast.Match):
+                continue
+            over_a_spec = self.is_spec(statement.subject)
+            for case in statement.cases:
+                captured |= _subject_captures(case.pattern, an_arm=over_a_spec)
+        return captured
 
     def _match_captures(self) -> set[str]:
         """The words a class pattern captures an arm's own text into.
@@ -612,6 +687,58 @@ def test_the_scan_catches_a_class_pattern_capturing_the_arm_text():
         '            return ""\n'
     )
     assert _control(control) == (1, 0)
+
+
+@pytest.mark.parametrize(
+    ("cases", "expected"),
+    [
+        (
+            "        case TrackerSpec() as arm:\n"
+            "            return arm.body\n"
+            "        case _:\n"
+            '            return ""\n',
+            (1, 0),
+        ),
+        (
+            "        case (TrackerSpec() | AuthoredSpec()) as arm:\n"
+            "            return arm.body\n"
+            "        case _:\n"
+            '            return ""\n',
+            (1, 0),
+        ),
+        ("        case other:\n            return other.body\n", (1, 0)),
+        (
+            "        case TrackerSpec() as arm:\n"
+            "            return arm.subject\n"
+            "        case _:\n"
+            '            return ""\n',
+            (0, 0),
+        ),
+    ],
+    ids=[
+        "the_arm_captured_by_as",
+        "the_arm_captured_over_an_alternation",
+        "the_subject_captured_by_a_bare_word",
+        "a_field_of_the_capture_that_is_not_the_text",
+    ],
+)
+def test_a_class_pattern_capturing_the_whole_arm_captures_the_arm(cases, expected):
+    """The capture beside the keyword one, one token away and the same read.
+
+    A case that binds the subject rather than a field of it holds the arm, so
+    ``.body`` off the captured word loads the arm's own text exactly where the
+    field read would have; an alternation and a bare word bind the subject the
+    same way.  A field that is not the text is no read off the capture either,
+    so the capture reports the field it is asked about rather than itself.
+    """
+    control = (
+        "from kodezart.types.domain.fire_spec import AuthoredSpec, TrackerSpec\n"
+        "\n"
+        "def subject_text(spec: TrackerSpec) -> str:\n"
+        "    match spec:\n"
+        f"{cases}"
+    )
+    assert _control(control) == expected
 
 
 def test_a_captured_arm_text_handed_to_the_digest_is_a_digest():
