@@ -1,7 +1,6 @@
 """Live scope readiness; execution ownership and the walking loop follow it."""
 
-from collections.abc import Container, Sequence
-from dataclasses import dataclass
+from collections.abc import Container
 
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.dispatch import blocker_keys
@@ -14,7 +13,12 @@ from kodezart.domain.issue_tree import (
 from kodezart.domain.topology import plan_topology
 from kodezart.services.scope_planning import read_scope_plan
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
+from kodezart.types.domain.scope_ready import (
+    ScopeReadyLane,
+    ScopeReadySet,
+    UnreachableCriterion,
+    UnreachableReason,
+)
 from kodezart.types.domain.tracker import TrackerIssue
 
 
@@ -31,6 +35,65 @@ async def _read_tree(
         root=root,
         rows=tree.scope.issues,
         ref=ref,
+    )
+
+
+def _filter_reason(issue: TrackerIssue, *, ref: ScopeRef) -> UnreachableCriterion:
+    """Why *issue* is out of reach, in the terms its scope's filter is stated in.
+
+    A project or initiative scope filters on the project an issue belongs to
+    and a milestone scope on the milestone, so each kind reads the field its
+    own filter reads and never the other: the two are independent, and an
+    issue of the addressed project can still sit under another milestone.
+    """
+    match ref.kind:
+        case ScopeKind.PROJECT | ScopeKind.INITIATIVE:
+            return UnreachableCriterion(
+                issue_key=issue.issue_key,
+                reason=(
+                    UnreachableReason.NO_PROJECT
+                    if issue.project_id is None
+                    else UnreachableReason.OTHER_PROJECT
+                ),
+                container=issue.project_id,
+            )
+        case ScopeKind.MILESTONE:
+            return UnreachableCriterion(
+                issue_key=issue.issue_key,
+                reason=(
+                    UnreachableReason.NO_MILESTONE
+                    if issue.milestone_key is None
+                    else UnreachableReason.OTHER_MILESTONE
+                ),
+                container=issue.milestone_key,
+            )
+        case ScopeKind.ISSUE:
+            # An issue scope's members ARE its subtree: the same read produced
+            # both, so a criterion missing from the members is an inconsistent
+            # read and not a filter's answer.
+            raise ScopeReadError(
+                "an issue scope left an open criterion outside its own subtree",
+                ref=ref,
+            )
+
+
+def _unreachable_criteria(
+    *, closure: SubtreeClosure, members: Container[str]
+) -> tuple[UnreachableCriterion, ...]:
+    """The open criteria of *closure* whose own issues *members* never carried.
+
+    The same open reading ``unresolved`` is, asked of membership: a scope
+    family carries every criterion child of every member its filter resolved,
+    so an open criterion that is not a member sits under a deliverable the
+    filter never reached. In the closure's own order, and declared rather than
+    left to be inferred from a silence — a reader that sees neither the
+    criterion nor a statement about it cannot tell an unreachable obligation
+    from none.
+    """
+    return tuple(
+        _filter_reason(closure.facts[key], ref=closure.ref)
+        for key in closure.open_criterion_keys()
+        if key not in members
     )
 
 
@@ -122,66 +185,6 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
         # A reporter asking a criterion's state kind again would be a second
         # reading of the same question, answerable differently.
         unresolved=closure.open_criterion_keys(),
+        # The same unresolved reading, asked of the filter's own membership.
+        unreachable=_unreachable_criteria(closure=closure, members=members),
     )
-
-
-@dataclass(frozen=True, slots=True)
-class UnreachableCriterion:
-    """One criterion a lane owes whose own issue the scope's filter misses.
-
-    Unreachability is not ownership: the criterion sits inside the lane's
-    subtree, so it is the lane's work and the lane is fired for it.  What
-    the filter decides is only whether the scope can ADDRESS that issue in
-    its own right, which is what ``reason`` records.
-    """
-
-    issue_key: str
-    lane_key: str
-    reason: str
-
-
-def _filter_reason(issue: TrackerIssue, *, kind: ScopeKind) -> str:
-    """Why *issue* is out of reach, in the terms the filter is itself stated in."""
-    match kind:
-        case ScopeKind.PROJECT | ScopeKind.INITIATIVE:
-            return (
-                issue.project_id
-                if issue.project_id is not None
-                else "the issue belongs to no project"
-            )
-        case ScopeKind.MILESTONE:
-            return (
-                issue.milestone_key
-                if issue.milestone_key is not None
-                else "the issue belongs to no milestone"
-            )
-        case ScopeKind.ISSUE:
-            return "the issue is outside the addressed subtree"
-
-
-def unreachable_criteria(
-    *,
-    ref: ScopeRef,
-    members: Container[str],
-    lanes: Sequence[ScopeReadyLane],
-) -> tuple[UnreachableCriterion, ...]:
-    """The lanes' open criteria whose own issues the scope family never carried.
-
-    A scope family carries every criterion child of every member its filter
-    resolved, so a criterion reached only through a member's SUBTREE is one
-    the scope cannot address on its own.  Declared here rather than left to
-    be inferred from a silence: a reader that sees neither the criterion nor
-    a statement about it cannot tell an unreachable obligation from none.
-    Each is named once, under the first lane that owes it.
-    """
-    named: dict[str, UnreachableCriterion] = {}
-    for lane in lanes:
-        for criterion in lane.gap:
-            if criterion.issue_key in members or criterion.issue_key in named:
-                continue
-            named[criterion.issue_key] = UnreachableCriterion(
-                issue_key=criterion.issue_key,
-                lane_key=lane.issue.issue_key,
-                reason=_filter_reason(criterion, kind=ref.kind),
-            )
-    return tuple(named.values())

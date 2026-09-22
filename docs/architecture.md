@@ -238,7 +238,10 @@ candidate selection, not the fire entry's reading, which measures membership
 over the whole subtree (see the native arm below). Deliverable
 workflow state does not decide either gap or subtree closure. An in-scope blocker
 closes only when all its criterion children and every deliverable child's full
-subtree close, including children outside a container's membership filter.
+subtree close, including children outside a container's membership filter. An
+open criterion under such a child is named on the read's `unreachable` with its
+key and the reason the filter missed it, computed from the same closure as the
+unresolved keys, and the walk copies it into every observation.
 Each consulted complete issue subtree passes the same `read_scope_plan` barriers;
 an outside-filter open decision is refused by key, never closed by its empty
 criterion set. Record classification does not waive those stage barriers.
