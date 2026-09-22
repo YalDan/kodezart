@@ -8,7 +8,11 @@ from datetime import datetime
 
 from kodezart.chains.audit_sweep import AuditReadObservation, AuditReadSweep
 from kodezart.core.logging import get_logger
-from kodezart.core.protocols import GitService, RepoCache, TrackerPort
+from kodezart.core.protocols import (
+    GitService,
+    RepoCache,
+    TrackerArtifactReader,
+)
 from kodezart.domain.audit_claims import (
     audit_deferral,
     mandate_escalation_key,
@@ -291,7 +295,7 @@ class AuditScheduledPass:
         *,
         targets: Sequence[AuditTarget],
         coverage: AuditCoverage,
-        tracker: TrackerPort,
+        tracker: TrackerArtifactReader,
         operation: OperationConfig,
         git: GitService,
         cache: RepoCache,

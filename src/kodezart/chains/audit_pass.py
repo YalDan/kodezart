@@ -8,7 +8,7 @@ from kodezart.core.protocols import (
     GitService,
     PromptSetProvider,
     RepoCache,
-    TrackerPort,
+    TrackerArtifactReader,
     WorkspaceProvider,
 )
 from kodezart.domain.errors import AuditClaimReadError, CriterionResolutionError
@@ -185,7 +185,7 @@ class AuditMandateHunt:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: TrackerArtifactReader,
         runner: AgentRunner,
         workspace: WorkspaceProvider,
         git: GitService,

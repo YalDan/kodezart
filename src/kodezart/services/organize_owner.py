@@ -25,9 +25,9 @@ from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import (
+    OrganizeOwnerTracker,
     OutboundContentGate,
     PromptSetProvider,
-    TrackerPort,
     WriteBackJudge,
 )
 from kodezart.domain.comment_markers import compose_comment_marker
@@ -139,7 +139,7 @@ class OrganizeOwner:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: OrganizeOwnerTracker,
         context: OrganizeContextReader,
         admission: OrganizeAdmission,
         author: OrganizeAuthor,

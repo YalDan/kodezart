@@ -62,7 +62,9 @@ async def test_squash_and_merge_commit_read_the_same_observer_fact(tracker, tmp_
         )
     )
     adapter = ObservedGit()
-    resolver = BaseResolver(tracker=tracker, git=adapter, remote="upstream")
+    resolver = BaseResolver(
+        tracker=tracker, git=adapter, remote="upstream", refs=tracker
+    )
     resolved = []
     for strategy in ("trunk-squash", "trunk-merge"):
         await git(repo, "update-ref", "refs/heads/scope-trunk", strategy)

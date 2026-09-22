@@ -76,7 +76,7 @@ def ref(
 
 
 def resolver(tracker: FakeTrackerPort, git: FakeGitService) -> BaseResolver:
-    return BaseResolver(tracker=tracker, git=git, remote=REMOTE)
+    return BaseResolver(tracker=tracker, git=git, remote=REMOTE, refs=tracker)
 
 
 async def resolve(tracker: FakeTrackerPort, git: FakeGitService) -> object:

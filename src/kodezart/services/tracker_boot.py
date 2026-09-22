@@ -21,7 +21,7 @@ them is the adapter's business.
 from collections.abc import Callable, Sequence
 
 from kodezart.core.errors import TrackerBootValidationError, TrackerEnsureConflictError
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import TrackerVocabulary
 from kodezart.types.domain.operation import (
     FIELD_OWNERSHIP,
     ConfigOwnership,
@@ -253,7 +253,7 @@ def owned_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
 
 async def validate_tracker_mappings(
     *,
-    tracker: TrackerPort,
+    tracker: TrackerVocabulary,
     config: OperationConfig,
 ) -> None:
     """Resolve every configured mapping; raise naming EVERY failure at once."""
@@ -299,7 +299,7 @@ def adopt_mappings(
 
 async def reconcile_tracker_mappings(
     *,
-    tracker: TrackerPort,
+    tracker: TrackerVocabulary,
     config: OperationConfig,
 ) -> MappingReconciliation:
     """Instate what the operation owns, then resolve everything.

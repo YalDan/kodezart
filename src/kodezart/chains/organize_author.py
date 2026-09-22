@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 from kodezart.core.protocols import (
     AgentRunner,
+    OrganizeAuthorReader,
     PromptSetProvider,
-    TrackerPort,
     WorkspaceProvider,
 )
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
@@ -34,7 +34,7 @@ class OrganizeAuthor:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: OrganizeAuthorReader,
         context: OrganizeContextReader,
         runner: AgentRunner,
         workspace: WorkspaceProvider,

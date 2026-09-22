@@ -7,7 +7,11 @@ from kodezart.chains.audit_evidence import AuditEvidenceVerifier, AuditRestampVe
 from kodezart.chains.audit_forge import AuditForgeVerifier
 from kodezart.chains.audit_overclaim import AuditOverclaimVerifier
 from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
-from kodezart.core.protocols import GitService, RepoCache, TrackerPort
+from kodezart.core.protocols import (
+    GitService,
+    RepoCache,
+    RequestRecordReader,
+)
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_issues
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES
@@ -146,7 +150,7 @@ class AuditReadSweep:
         self,
         *,
         scope: ScopeRef,
-        tracker: TrackerPort,
+        tracker: RequestRecordReader,
         operation: OperationConfig,
         claims: AuditClaimVerifier,
         evidence: AuditEvidenceVerifier,

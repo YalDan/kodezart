@@ -2,14 +2,14 @@
 
 The rule lives in :mod:`kodezart.domain.base_resolution` and is pure.  This
 service is the I/O half: it reads the ``blockedBy`` edges through
-``TrackerPort`` and a blocker's recorded work refs through ``WorkRefReader``,
+``BaseResolutionTracker`` and a blocker's recorded work refs through ``WorkRefReader``,
 asks ``GitService`` which refs contain which, hands the resolved values to
 the rule, and — on the combined arm only — constructs the integration ref
 the rule named.
 
 The ref read is its own role because the two passes answer it from
 different carriers: the per-issue pass from the refs recorded on the issue
-(the port satisfies the role, so it is also the default), the scope path
+(the composition hands the tracker itself as the reader), the scope path
 from the blocker's lane run-state record (KOD-842).  Nothing here knows
 which, and nothing here derives a role or an issue from a branch name.
 
@@ -26,7 +26,11 @@ from datetime import datetime
 from typing import assert_never
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import GitService, TrackerPort, WorkRefReader
+from kodezart.core.protocols import (
+    BaseResolutionTracker,
+    GitService,
+    WorkRefReader,
+)
 from kodezart.domain.base_resolution import BasePlan, resolve_base
 from kodezart.domain.errors import (
     BaseIntegrationConflictError,
@@ -49,18 +53,19 @@ class BaseResolver:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: BaseResolutionTracker,
         git: GitService,
         remote: str,
-        refs: WorkRefReader | None = None,
+        refs: WorkRefReader,
     ) -> None:
-        self._tracker: TrackerPort = tracker
+        self._tracker: BaseResolutionTracker = tracker
         self._git: GitService = git
         self._remote: str = remote
-        # The port answers the ref read unless a caller names another
-        # carrier for it, so every composition that has one collaborator
-        # keeps one and the scope path substitutes the record.
-        self._refs: WorkRefReader = refs if refs is not None else tracker
+        # The ref read is stated by the caller, never defaulted to the
+        # tracker: the per-issue pass reads the refs recorded on the issue
+        # and the scope path reads the lane's own record, and which one a
+        # composition means is its own to say (KOD-842).
+        self._refs: WorkRefReader = refs
         self._log: BoundLogger = get_logger(__name__)
 
     async def resolve(

@@ -231,6 +231,7 @@ def walk(tracker, *, delivered=(), git=None, ref=PROJECT):
             tracker=tracker,
             git=remote_of(tracker) if git is None else git,
             remote=REMOTE,
+            refs=tracker,
         ),
         cache=FakeRepoCache(),
         trunk=TRUNK,

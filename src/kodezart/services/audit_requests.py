@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from urllib.parse import unquote
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import RequestRecordReader
 from kodezart.domain.comment_markers import (
     compose_comment_marker,
     configured_marker_prefix,
@@ -57,7 +57,9 @@ class AuditRequestSnapshot:
 class AuditRequestReader:
     """Discover exact native addresses; never choose a latest or inferred lane."""
 
-    def __init__(self, *, tracker: TrackerPort, operation: OperationConfig) -> None:
+    def __init__(
+        self, *, tracker: RequestRecordReader, operation: OperationConfig
+    ) -> None:
         self._tracker = tracker
         self._operation = operation.model_copy(deep=True)
         self._records = LaneRecordReader(tracker=tracker, operation=self._operation)

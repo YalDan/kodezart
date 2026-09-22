@@ -2,7 +2,10 @@
 
 from collections.abc import Awaitable, Callable
 
-from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.core.protocols import (
+    LaneEscalationTracker,
+    OutboundContentGate,
+)
 from kodezart.domain.audit_claims import mandate_escalation_key
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import AuditClaimReadError
@@ -41,7 +44,7 @@ class AuditEscalations:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: LaneEscalationTracker,
         gate: OutboundContentGate,
         operation: OperationConfig,
         lease_seconds: float,

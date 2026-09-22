@@ -41,6 +41,7 @@ from kodezart.core.protocols import (
     PromptSetProvider,
     PRStateReader,
     RepoCache,
+    ScanCapabilityReader,
     TrackerPort,
     WorkspaceProvider,
 )
@@ -475,7 +476,9 @@ async def build_dispatch_passes(
         max_bytes=config.tracker_asset_max_bytes,
         fetch_timeout_seconds=config.tracker_asset_fetch_timeout_seconds,
     )
-    resolver = BaseResolver(tracker=tracker, git=git, remote=config.git.remote)
+    resolver = BaseResolver(
+        tracker=tracker, git=git, remote=config.git.remote, refs=tracker
+    )
     # ONE cooldown for the whole operation: its dispatchers are one per
     # repository over a single provider account, so the limit one of them
     # meets is the limit all of them would meet next.
@@ -562,7 +565,7 @@ async def _verify_wired_gates(
     *,
     config: AppConfig,
     operation: OperationConfig | None,
-    tracker: TrackerPort | None,
+    tracker: ScanCapabilityReader | None,
     github_api: DeliveryProbe | None,
 ) -> None:
     """Refuse to boot when the credential cannot answer a signal that is wired.

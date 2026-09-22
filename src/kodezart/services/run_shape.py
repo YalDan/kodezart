@@ -3,7 +3,10 @@
 from collections.abc import Mapping
 
 from kodezart.config.app import AppConfig
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import (
+    EscalationResolutionReader,
+    TrackerCriteriaReader,
+)
 from kodezart.domain.gap import compute_gap
 from kodezart.domain.run_shape import (
     BARREN_COMMITS_BOUND,
@@ -64,7 +67,7 @@ def observe_surface_contention(
 
 async def observe_escalation_ageing(
     *,
-    tracker: TrackerPort,
+    tracker: EscalationResolutionReader,
     config: AppConfig,
     scope_key: str,
     lane_key: str,
@@ -91,7 +94,7 @@ async def observe_escalation_ageing(
 
 async def read_escalation_ageing(
     *,
-    tracker: TrackerPort,
+    tracker: EscalationResolutionReader,
     config: AppConfig,
     scope_key: str,
     lane_key: str,
@@ -151,7 +154,7 @@ async def read_escalation_ageing(
 
 async def observe_barren_tick(
     *,
-    tracker: TrackerPort,
+    tracker: TrackerCriteriaReader,
     config: AppConfig,
     scope_key: str,
     lane_key: str,
@@ -182,7 +185,7 @@ async def observe_barren_tick(
 
 async def read_barren_tick(
     *,
-    tracker: TrackerPort,
+    tracker: TrackerCriteriaReader,
     config: AppConfig,
     scope_key: str,
     lane_key: str,

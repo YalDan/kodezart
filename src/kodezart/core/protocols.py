@@ -1500,8 +1500,8 @@ class SubjectCriteriaReader(
 
 @runtime_checkable
 class ScopeMemberReader(
-    ScopeFamilyReader,
     TrackerCriteriaReader,
+    ScopeFamilyReader,
     Protocol,
 ):
     """The scope family and each member's criteria, which is what membership is."""
@@ -1565,8 +1565,8 @@ class OrganizeAuthorReader(
 @runtime_checkable
 class OrganizeContextTracker(
     IssueReader,
-    ScopeFamilyReader,
     TrackerCommentReader,
+    ScopeFamilyReader,
     Protocol,
 ):
     """The issues, milestones and records an organize context is assembled from."""
@@ -1781,6 +1781,7 @@ class OrganizeOwnerTracker(
     CriterionMintWriter,
     DescriptionWriter,
     IssueRevisionReader,
+    ScopeFamilyReader,
     SurfaceLeaseTracker,
     Protocol,
 ):
@@ -1825,6 +1826,7 @@ class OrganizeOwnerTracker(
 class FireRulingTracker(
     SubjectCriteriaReader,
     TrackerArtifactReader,
+    CommentRecordWriter,
     SurfaceLeaseTracker,
     Protocol,
 ):

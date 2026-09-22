@@ -1080,7 +1080,8 @@ the blocker's issue. `WorkRefReader` is the one read role base resolution makes
 them through, and the scoped composition serves it from the blocker's own lane
 run-state record: one ref per record, at the DELIVERABLE branch the record's
 associations name, and no landing, so it reads unknown and keeps the existing
-resolution path (KOD-776, KOD-842). The per-issue pass keeps the port itself.
+resolution path (KOD-776, KOD-842). The per-issue pass hands the tracker itself
+as that reader, stated at its composition rather than defaulted (KOD-834).
 
 The assumed-landed arm — a closed blocker carrying no deliverable ref anywhere
 on its ancestor chain contributes no input, because its work reached the trunk

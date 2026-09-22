@@ -3,7 +3,7 @@
 from collections.abc import Container, Sequence
 from dataclasses import dataclass
 
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import ScopeReadyReader
 from kodezart.domain.dispatch import blocker_keys
 from kodezart.domain.errors import ScopeReadError
 from kodezart.domain.issue_tree import (
@@ -19,7 +19,7 @@ from kodezart.types.domain.tracker import TrackerIssue
 
 
 async def _read_tree(
-    *, root: str, tracker: TrackerPort, ref: ScopeRef
+    *, root: str, tracker: ScopeReadyReader, ref: ScopeRef
 ) -> dict[str, TrackerIssue]:
     # A consulted descendant tree is an issue scope in its own right. Apply
     # the same named stage barriers there: an outside-filter open decision
@@ -34,7 +34,9 @@ async def _read_tree(
     )
 
 
-async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReadySet:
+async def read_scope_ready(
+    *, ref: ScopeRef, tracker: ScopeReadyReader
+) -> ScopeReadySet:
     """Recompute one ready set without dispatch, writes or merge observations.
 
     Candidate identity stays native scope membership. The complete

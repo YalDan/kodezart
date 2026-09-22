@@ -29,7 +29,10 @@ from datetime import UTC, datetime
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.owned_tasks import settle
-from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.core.protocols import (
+    LifecycleStateWriter,
+    OutboundContentGate,
+)
 from kodezart.domain.comment_markers import (
     compose_comment_marker,
     configured_marker_prefix,
@@ -76,14 +79,14 @@ class TrackerLifecycleWriter:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: LifecycleStateWriter,
         gate: OutboundContentGate,
         marker_prefixes: Mapping[str, str],
         surface_lease_seconds: float,
         clock: Callable[[], datetime] = _now,
     ) -> None:
         configured_marker_prefix(marker_prefixes, purpose="run_outcome")
-        self._tracker: TrackerPort = tracker
+        self._tracker: LifecycleStateWriter = tracker
         self._gate: OutboundContentGate = gate
         self._marker_prefixes = dict(marker_prefixes)
         self._surface_lease_seconds = surface_lease_seconds

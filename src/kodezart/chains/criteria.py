@@ -10,7 +10,11 @@ from kodezart.core.errors import (
     TrackerUnavailableError,
 )
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import FireCriteriaReader, FireCriteriaSource, TrackerPort
+from kodezart.core.protocols import (
+    FireCriteriaReader,
+    FireCriteriaSource,
+    FireSubjectReader,
+)
 from kodezart.domain.criterion_cross_off import HELD_CRITERION_STATE
 from kodezart.domain.errors import (
     CriterionReadError,
@@ -114,7 +118,7 @@ class TrackerCriteria:
     entered is in no roster, so it stays outside both readings.
     """
 
-    def __init__(self, *, tracker: TrackerPort) -> None:
+    def __init__(self, *, tracker: FireSubjectReader) -> None:
         self._tracker = tracker
         self._log: BoundLogger = get_logger(__name__)
 

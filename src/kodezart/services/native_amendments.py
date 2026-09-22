@@ -15,10 +15,10 @@ from kodezart.core.protocols import (
     FireCriteriaReader,
     GitService,
     GitSourceReader,
+    NativeAmendmentTracker,
     NativeWriteGuard,
     OutboundContentGate,
     PromptSetProvider,
-    TrackerPort,
     WorkspaceProvider,
 )
 from kodezart.domain.amendment import (
@@ -94,7 +94,7 @@ class NativeAmendments:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: NativeAmendmentTracker,
         operation: OperationConfig,
         criteria: FireCriteriaReader,
         git: GitService,

@@ -15,7 +15,11 @@ from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import DeliveryProbe, RepoCache, TrackerPort
+from kodezart.core.protocols import (
+    DeliveryProbe,
+    RepoCache,
+    ScopeWalkTracker,
+)
 from kodezart.domain.errors import (
     BaseResolutionError,
     ScopedExecutionUnavailableError,
@@ -133,7 +137,7 @@ class ScopeWorkflowEngine:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: ScopeWalkTracker,
         lane_for: Callable[[str], NativeLaneWorkflow],
         probe_for: Callable[[str], DeliveryProbe | None],
         union_for: ScopeUnionFor,

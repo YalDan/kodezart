@@ -20,7 +20,7 @@ from kodezart.core.protocols import (
     AgentRunner,
     GitService,
     PromptSetProvider,
-    TrackerPort,
+    TrackerArtifactReader,
     WorkspaceProvider,
     WriteBackJudge,
     WriteBackStep,
@@ -57,7 +57,7 @@ class WriteBackVerifier:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: TrackerArtifactReader,
         judge: WriteBackJudge,
         max_rounds: int,
     ) -> None:

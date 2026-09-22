@@ -1,4 +1,4 @@
-"""The tracker port as role interfaces named by consumer (KOD-833, KOD-836).
+"""The tracker port as role interfaces named by consumer (KOD-833, KOD-834, KOD-836).
 
 Every member of the tracker surface is declared on exactly one role, the
 aggregate declares none of its own, and no role declares a member one of the
@@ -17,8 +17,20 @@ issue writes that had no caller are gone from every tree, tests included,
 because the type gate reads ``src/`` only and a deleted member surviving in
 test scaffolding would otherwise pass it.
 
+The third half is the dependency question. Every service and chain names
+the roles it takes in its annotations and nothing wider: the whole port is
+named only by the entry point and the composition root, which hold one
+adapter and hand it to role-typed parameters; a role a module takes is one
+it calls a member of or hands on as an argument; no role-typed parameter
+has a default or a union beside it; no module outside the adapters and the
+root imports a vendor adapter; and every role is taken, itself or composed
+into another, by a module the entry point reaches, but for the authorship
+read KOD-390 wires and the roles only an unwired consumer takes.
+
 What it does not see: a member reached by reflection or by a name built at
-runtime, which reads here as uncalled and is a finding in its own right.
+runtime, which reads here as uncalled and is a finding in its own right; and
+a call that type-checks against a role it does not carry, which the type
+gate over ``src/`` refuses already.
 """
 
 import re
@@ -26,6 +38,7 @@ from collections.abc import Mapping
 
 import pytest
 
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from tests.domain.test_criterion_cross_off import source_tree
 from tests.tracker.role_register import (
     ADAPTERS,
@@ -33,9 +46,16 @@ from tests.tracker.role_register import (
     EXEMPT_UNTIL_KOD_390,
     PORT_MODULE,
     RUN_RECORD_EXEMPTION,
+    UNWIRED_CONSUMER_ROLES,
+    adapter_importers,
+    aggregate_annotations,
+    annotation_names,
     call_pattern,
     composed,
     declaring_roles,
+    defaulted_role_parameters,
+    first_party_closure,
+    members_declared,
     own_declarations,
     port_members,
     port_module_text,
@@ -43,6 +63,8 @@ from tests.tracker.role_register import (
     roles,
     tree_under_tests,
     twice_declared,
+    uncredited_roles,
+    unreached_roles,
     zero_callers,
 )
 
@@ -187,3 +209,121 @@ def test_a_member_off_its_one_role_is_reported(form):
         assert "SecondPlace" in str(twice_declared(grown)) or "Shadowing" in str(
             redeclared_from_a_base(grown)
         )
+
+
+def kod_390_role() -> str:
+    """The role that declares the exempted authorship read."""
+    text = port_module_text()
+    (owner,) = (
+        name
+        for name in roles(text)
+        if own_declarations(text)[name] & EXEMPT_UNTIL_KOD_390
+    )
+    return owner
+
+
+def test_no_module_outside_the_allowlist_annotates_the_whole_port():
+    assert aggregate_annotations(source_tree()) == ()
+
+
+def test_every_role_a_module_takes_is_called_or_handed_on():
+    assert uncredited_roles(source_tree()) == {}
+
+
+def test_no_role_dependency_outside_the_allowlist_is_defaulted():
+    assert defaulted_role_parameters(source_tree()) == {}
+
+
+def test_no_module_outside_the_adapters_and_the_root_imports_a_vendor_adapter():
+    assert adapter_importers(source_tree()) == ()
+
+
+def test_every_role_is_taken_by_a_module_the_run_reaches():
+    sources = source_tree()
+
+    assert unreached_roles(sources, port_module_text()) == (
+        UNWIRED_CONSUMER_ROLES | {kod_390_role()}
+    )
+
+
+def test_every_unwired_role_is_a_role_a_module_outside_the_run_takes():
+    """An entry naming no role, or one the run already reaches, hides nothing."""
+    sources = source_tree()
+    text = port_module_text()
+    outside = set(sources) - first_party_closure(sources)
+    taken = {
+        name for path in outside for name in annotation_names(sources[path])
+    } & roles(text)
+
+    assert UNWIRED_CONSUMER_ROLES <= taken
+    assert "services/scope_runtime.py" in first_party_closure(sources)
+
+
+#: One planted consumer per clause, each naming a role the way a module would.
+PLANTED_CONSUMERS = {
+    "the whole port": "def hold(port: {aggregate}) -> None:\n    print(port)\n",
+    "a role it never uses": "def hold(reader: {role}) -> None:\n    return None\n",
+    "a defaulted role": (
+        "def hold(reader: {role} | None = None) -> None:\n    print(reader)\n"
+    ),
+    "a vendor adapter import": "from {adapter} import {adapter_class}\n",
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_CONSUMERS))
+def test_a_consumer_that_takes_more_than_it_calls_is_reported(form):
+    sources = source_tree()
+    text = port_module_text()
+    role = min(roles(text))
+    assert not members_declared(text, role) & {"print"}
+    planted_path = "services/overreaching.py"
+    sources[planted_path] = PLANTED_CONSUMERS[form].format(
+        aggregate=AGGREGATE,
+        role=role,
+        adapter=LinearMcpTracker.__module__,
+        adapter_class=LinearMcpTracker.__name__,
+    )
+
+    reports = (
+        aggregate_annotations(sources),
+        tuple(uncredited_roles(sources)),
+        tuple(defaulted_role_parameters(sources)),
+        adapter_importers(sources),
+    )
+
+    assert [planted_path in report for report in reports].count(True) == 1
+
+
+def test_a_role_nothing_in_the_run_takes_is_reported():
+    sources = source_tree()
+    text = port_module_text()
+    base = min(declaring_roles(text))
+    grown = text + (
+        f"\n\n@runtime_checkable\nclass Untaken({base}, Protocol):\n    ...\n"
+    )
+
+    assert "Untaken" in roles(grown)
+    assert "Untaken" in unreached_roles(sources, grown)
+
+
+def test_wiring_an_unwired_consumer_takes_its_role_off_the_list():
+    """The exemption reddens the day one of those consumers is wired."""
+    sources = source_tree()
+    text = port_module_text()
+    role = min(UNWIRED_CONSUMER_ROLES)
+    (module,) = (
+        path
+        for path, source in sorted(sources.items())
+        if role in annotation_names(source)
+        and path.startswith("services/")
+        and not any(
+            other in annotation_names(source)
+            for other in UNWIRED_CONSUMER_ROLES - {role}
+        )
+    )
+    dotted = module.removesuffix(".py").replace("/", ".")
+    sources["main.py"] += (
+        f"\nimport {LinearMcpTracker.__module__.split('.')[0]}.{dotted}\n"
+    )
+
+    assert role not in unreached_roles(sources, text)

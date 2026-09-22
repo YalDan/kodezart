@@ -17,10 +17,10 @@ from kodezart.core.outbound_write import gated_exact
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import (
     AgentRunner,
+    AmendmentWriteTracker,
     GitService,
     OutboundContentGate,
     PromptSetProvider,
-    TrackerPort,
     WorkspaceProvider,
 )
 from kodezart.domain.amendment import (
@@ -171,7 +171,7 @@ class AmendmentWriteBack:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: AmendmentWriteTracker,
         runner: AgentRunner,
         workspace: WorkspaceProvider,
         git: GitService,

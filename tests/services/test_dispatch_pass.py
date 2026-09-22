@@ -244,6 +244,7 @@ def fire_dispatcher(
             tracker=tracker,
             git=FakeGitService(),
             remote=REMOTE,
+            refs=tracker,
         ),
         cache=FakeRepoCache(),
         trunk=TRUNK,

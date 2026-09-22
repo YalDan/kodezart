@@ -3,8 +3,8 @@
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
+    OrganizeAuthorReader,
     PromptSetProvider,
-    TrackerPort,
     WorkspaceProvider,
 )
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
@@ -35,7 +35,7 @@ class OrganizeAdmission:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: OrganizeAuthorReader,
         context: OrganizeContextReader,
         runner: AgentRunner,
         workspace: WorkspaceProvider,

@@ -1,7 +1,12 @@
 """Read actual tracker/forge terminal facts without requiring a merge."""
 
 from kodezart.core.owned_tasks import settle
-from kodezart.core.protocols import GitService, PRStateReader, RepoCache, TrackerPort
+from kodezart.core.protocols import (
+    GitService,
+    PRStateReader,
+    RepoCache,
+    SubjectCriteriaReader,
+)
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
@@ -26,7 +31,7 @@ class AuditTerminalReader:
     def __init__(
         self,
         *,
-        tracker: TrackerPort,
+        tracker: SubjectCriteriaReader,
         records: LaneRecordReader,
         forge: PRStateReader,
         git: GitService,

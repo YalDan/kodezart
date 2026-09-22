@@ -1,7 +1,7 @@
 """Collect escalation age from the recorded occurrence and its lane history."""
 
 from kodezart.config.app import AppConfig
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import EscalationSignalReader
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.lane_records import LaneRecordReader
@@ -18,7 +18,7 @@ from kodezart.types.domain.run_alarm import (
 
 async def observe_recorded_escalation_ageing(
     *,
-    tracker: TrackerPort,
+    tracker: EscalationSignalReader,
     operation: OperationConfig,
     config: AppConfig,
     scope_key: str,
