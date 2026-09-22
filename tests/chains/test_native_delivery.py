@@ -1,13 +1,17 @@
 """The production native constructor runs the actual fire/delivery graph."""
 
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from kodezart.chains.criteria import TrackerCriteria
+from kodezart.chains import native_delivery, ralph_workflow
+from kodezart.chains.criteria import TrackerCriteria, require_current_native_snapshot
+from kodezart.chains.lane_delivery import LaneDeliveryCoordinator
 from kodezart.chains.native_delivery import NativeLaneWorkflow
+from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.config.app import AppConfig
 from kodezart.domain.agent import best_iteration_ref
@@ -15,6 +19,7 @@ from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     FireSpecEntryError,
     ForgeAPIError,
+    PersistedCriterionSetError,
     PRStateReadError,
     TransientAPIError,
 )
@@ -23,9 +28,15 @@ from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     WorkflowCompleteEvent,
 )
+from kodezart.types.domain.check_observation import ObservedChecks
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
+)
+from kodezart.types.domain.delivery import (
+    CheckRedClass,
+    LaneDelivery,
+    classify_lane_delivery,
 )
 from kodezart.types.domain.gating import OutboundDestination, RepoVisibility
 from kodezart.types.domain.native_delivery import (
@@ -37,6 +48,7 @@ from kodezart.types.domain.native_delivery import (
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_state import LanePR
+from kodezart.types.domain.workflow import ExecutionContext
 from tests.adapters.test_ci_watch_evidence import check
 from tests.adapters.test_github_api import _make_client
 from tests.chains.test_native_fire import (
@@ -45,9 +57,12 @@ from tests.chains.test_native_fire import (
     CountingTracker,
     NativeExecutor,
     NativeSourceReader,
+    callers_of,
     change_tracker,
     engine,
     native_evaluation,
+    node_of,
+    persisted_artifact,
 )
 from tests.chains.test_native_fresh_boundaries import prepare
 from tests.fakes import (
@@ -580,5 +595,157 @@ async def test_paused_terminal_requires_current_pr_without_repeating_delivery(da
             len(executor.execution_prompts),
             len(executor.evaluation_prompts),
         )
+    finally:
+        await forge.close()
+
+
+# ---------------------------------------------------------------------------
+# Every node that permits a judgment's effect goes through the snapshot
+# barrier, and a persisted criteria document reaching one is refused there.
+# ---------------------------------------------------------------------------
+
+#: Every node whose effect waits on the snapshot barrier, derived from the
+#: shipped tree: every function that calls it, however it is spelled.  A
+#: node that goes through a helper is recorded as the helper, which is what
+#: the other nodes call (KOD-652).
+SNAPSHOT_GATED_NODES = callers_of(require_current_native_snapshot)
+
+#: The lane's open pull request, as a delivery that opened it records it.
+GATED_PR = LanePR(url="https://github.com/owner/repo/pull/17", number=17, state="open")
+
+
+def work_defect_delivery() -> LaneDelivery:
+    """A completed delivery whose red checks await one work-defect round."""
+    observation = ObservedChecks(
+        commit_sha=SHA,
+        checks_passed=False,
+        check_names=frozenset({"test"}),
+        failed_check_names=frozenset({"test"}),
+        summary="test failed on the lane head",
+    )
+    facts = {
+        "observation": observation,
+        "red_class": CheckRedClass.WORK_DEFECT,
+        "no_run_at_ref": False,
+        "stalled": False,
+        "remediation_pending": True,
+    }
+    return LaneDelivery(
+        lane_key=SUBJECT,
+        issue_id=SUBJECT,
+        head_branch="kodezart/fire-subject",
+        base_branch="main",
+        final_commit_sha=SHA,
+        pr=GATED_PR,
+        checks_passed=False,
+        checks_summary=observation.summary,
+        outcome=classify_lane_delivery(**facts),
+        **facts,
+    )
+
+
+#: How each gated node is driven, one hand-written line per node.  Which
+#: nodes exist is read off the tree; requiring the two to agree is what
+#: makes the refusal below a statement about every gated node.
+SNAPSHOT_GATED_REACH = {
+    node_of(RalphWorkflowEngine._merge_to_feature): lambda at: (
+        at.lane.fire._merge_to_feature(at.state, at.config)
+    ),
+    node_of(RalphWorkflowEngine._land_best_iteration): lambda at: (
+        at.lane.fire._land_best_iteration(at.state, at.config)
+    ),
+    node_of(RalphWorkflowEngine._complete_node): lambda at: at.lane.fire._complete_node(
+        at.state, at.config
+    ),
+    node_of(NativeLaneWorkflow._deliver): lambda at: at.lane._deliver(
+        at.state, at.config
+    ),
+    node_of(NativeLaneWorkflow._remediate): lambda at: at.lane._remediate(
+        {**at.state, "delivery": CompletedLaneDelivery(result=work_defect_delivery())},
+        at.config,
+    ),
+    node_of(NativeLaneWorkflow._complete): lambda at: at.lane._complete(
+        {
+            **at.state,
+            "delivery": SkippedLaneDelivery(
+                outcome=WorkflowOutcome.zero_commit_no_pr,
+                reason="The fire stopped before delivery",
+            ),
+        },
+        at.config,
+    ),
+    node_of(LaneDeliveryCoordinator.deliver): lambda at: at.lane._delivery.deliver(
+        state=at.state,
+        context=at.context,
+        stalled=False,
+        remediation_available=True,
+    ),
+    node_of(LaneDeliveryCoordinator._require_current): lambda at: (
+        at.lane._delivery._require_current(at.state, at.context, GATED_PR)
+    ),
+    node_of(LaneDeliveryCoordinator._open_pr): lambda at: at.lane._delivery._open_pr(
+        at.state, at.context
+    ),
+}
+
+
+def test_every_derived_gated_node_has_a_reach_and_every_reach_a_node():
+    """The derived gated nodes are the reach table's keys, and never empty.
+
+    Not parametrised: a derivation that found nothing would collect no case
+    at all, and the refusal below would then be stated over no node while
+    reporting green.  Here an empty list fails outright (KOD-652).
+    """
+    assert SNAPSHOT_GATED_NODES, "the tree derived no snapshot-gated node"
+    assert set(SNAPSHOT_GATED_NODES) == set(SNAPSHOT_GATED_REACH)
+
+
+@pytest.mark.parametrize("node", sorted(SNAPSHOT_GATED_REACH), ids=":".join)
+async def test_a_persisted_set_is_refused_at_every_snapshot_gated_node(
+    node, monkeypatch
+):
+    """No gated node lands, delivers or writes on a carried-in set (KOD-652).
+
+    Each node is driven with the lane's own prepared state, holding the
+    subject's tracker spec and, as its criterion set, a persisted criteria
+    document. The node raises the persisted-set refusal, and nothing outward
+    has happened by then: no consolidation or landed ref, no forge request,
+    no lane record, no remediation draft, no terminal event, and neither a
+    tracker read nor a tracker write.
+    """
+    lane, state, config, wire, forge, executor, tracker, lane_state = composed(rounds=1)
+    try:
+        spec, _ = await lane.fire.criteria.read_entry(issue_key=SUBJECT)
+        state = {
+            **state,
+            "issue_key": SUBJECT,
+            "fire_spec": spec,
+            "feature_tip_sha": SHA,
+            "criterion_set": persisted_artifact(),
+        }
+        events = []
+        for module in (native_delivery, ralph_workflow):
+            monkeypatch.setattr(module, "get_stream_writer", lambda: events.append)
+        issues = dict(tracker.issues)
+        reads = (tracker.spec_reads, tracker.subtree_reads)
+        at = SimpleNamespace(
+            lane=lane,
+            state=state,
+            config=config,
+            context=ExecutionContext.from_configurable(config),
+        )
+
+        with pytest.raises(PersistedCriterionSetError):
+            await SNAPSHOT_GATED_REACH[node](at)
+
+        assert lane.fire.consolidation._merger.calls == []
+        assert lane.fire.consolidation._ref_publisher.calls == []
+        assert wire.requests == []
+        assert lane._delivery._git.calls == []
+        assert lane_state.pull_requests == []
+        assert executor.remediation_prompts == []
+        assert events == []
+        assert tracker.issues == issues
+        assert (tracker.spec_reads, tracker.subtree_reads) == reads
     finally:
         await forge.close()
