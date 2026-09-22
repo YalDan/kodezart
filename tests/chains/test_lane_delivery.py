@@ -4,6 +4,7 @@ import ast
 import asyncio
 import copy
 import inspect
+import signal
 from types import UnionType
 from typing import Union, get_args, get_origin
 
@@ -71,6 +72,46 @@ BASE = "blocker-branch"
 #: of hanging the module run.  The driver reads it when it is called, so the
 #: one fixture that shows the deadline fires can shorten it for itself.
 WAIT_BOUND = 5
+#: Seconds any one test in this module may run before it is STOPPED, whatever
+#: it is awaiting.  The driver's deadline above is a ``wait_for``, and a
+#: ``wait_for`` ends by cancelling what it waits on: a coordinator that
+#: catches that cancellation and waits again defeats it, and the fixture
+#: would hang the module run after all.  This stop depends on no
+#: cancellation — a real-time interval timer interrupts the event loop from
+#: outside.  Twice the driver's deadline, so a delivery that merely stalls is
+#: reported by the driver's TimeoutError as before, including the one fixture
+#: that runs a second bounded lane after a first one has timed out.
+HARD_STOP = 2 * WAIT_BOUND
+
+
+class HardStopError(BaseException):
+    """A test in this module outlived its hard stop.
+
+    A ``BaseException``, so the ``except Exception`` a coordinator may carry
+    does not take it for one of its own failures and carry on.
+    """
+
+
+@pytest.fixture(autouse=True)
+def hard_stop(request):
+    """Stop the test on a timer no swallowed cancellation can outlast.
+
+    Set for each test and cleared after it, with the handler that was
+    installed before put back, so nothing outside this module is timed.
+    """
+
+    def stop(signum, frame):
+        raise HardStopError(
+            f"{request.node.nodeid} ran past its {HARD_STOP}s hard stop"
+        )
+
+    previous = signal.signal(signal.SIGALRM, stop)
+    signal.setitimer(signal.ITIMER_REAL, HARD_STOP)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def _branch_tests(tree):
@@ -496,7 +537,21 @@ async def test_current_checks_are_revalidated_after_the_awaited_description():
     assert creator.calls == []
 
 
-async def test_watch_bound_cancellation_releases_slot_for_next_lane():
+async def test_watch_bound_cancellation_releases_slot_for_next_lane(monkeypatch):
+    """A lane the driver's deadline cancels at the watch gives its slot back.
+
+    The first lane blocks at the check watch until the driver's deadline
+    cancels it, and must end in that deadline's TimeoutError — not in a
+    cancellation this fixture sent it — and the second lane, queued on the
+    one watch slot, must then get the slot and pass.  The first lane's
+    deadline is shortened to one second for that lane alone (the driver reads
+    it when the lane first runs), so the second lane, driven on the module's
+    full deadline, has the rest of it to take the slot and finish.  A slot
+    the cancelled lane never gives back leaves the second lane waiting on
+    acquisition until its own deadline fails it; a coordinator that absorbs
+    the cancellation and keeps its slot hangs past the driver's deadline and
+    is ended by the module's hard stop.
+    """
     entered = asyncio.Event()
     resume = asyncio.Event()
 
@@ -517,18 +572,16 @@ async def test_watch_bound_cancellation_releases_slot_for_next_lane():
 
     ci = Blocking()
     parts = await setup(monitor=ci, watches=1)
+    full = WAIT_BOUND
+    monkeypatch.setitem(globals(), "WAIT_BOUND", 1)
     first = asyncio.create_task(deliver(parts))
-    # Both lanes are driven through the driver, so both are bounded by it:
-    # the defect this fixture exists to catch is a watch slot never given
-    # back, and its symptom is the SECOND lane blocking forever on
-    # acquisition — one step past the event the first lane has already set —
-    # which reds here on the second lane's deadline instead of hanging the
-    # module run.  The event is the one await the driver does not make, so it
-    # carries the same deadline itself.
-    await asyncio.wait_for(entered.wait(), timeout=WAIT_BOUND)
+    # The event is the one await the driver does not make, so it carries the
+    # module's deadline itself; by the time it is set the first lane has read
+    # its shortened deadline, and the second lane is driven on the full one.
+    await asyncio.wait_for(entered.wait(), timeout=full)
+    monkeypatch.setitem(globals(), "WAIT_BOUND", full)
     second = asyncio.create_task(deliver(parts))
-    first.cancel()
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(TimeoutError):
         await first
     resume.set()
     assert (await second).outcome is WorkflowOutcome.ci_passed
