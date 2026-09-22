@@ -6,8 +6,14 @@ from pathlib import Path
 import pytest
 
 from kodezart.domain.amendment import AmendmentWriteBackRefusalError
+from kodezart.domain.criterion_cross_off import (
+    evaluation_observation,
+    lapse_observation,
+)
+from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import SurfaceLeaseError
 from kodezart.domain.fire_spec import criterion_field_bodies
+from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION
 from kodezart.domain.rulings import render_ruling
 from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent
@@ -19,7 +25,14 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
-from tests.chains.test_native_fire import DIRECT_DONE, DIRECT_OWED, SUBJECT, tracker
+from tests.chains.test_native_fire import (
+    DIRECT_DONE,
+    DIRECT_OWED,
+    NESTED_DONE,
+    SUBJECT,
+    tracker,
+)
+from tests.services.test_lane_state_writer import lane_repo, lapse, writer
 from tests.services.test_native_amendments import (
     AMENDED_CHECK,
     PROTECTED_BODY,
@@ -564,6 +577,86 @@ async def test_undemonstrability_conjoins_the_typed_claim_and_the_declared_envir
         assert not any(isinstance(e, ResultEvent) for e in events)
     finally:
         await cleanup(workspace)
+
+
+async def test_an_undemonstrable_criterion_stays_owed_while_a_lapsed_one_is_owed_again(
+    repository,
+):
+    """Two arms over one board, so collapsing either into the other fails here.
+
+    The undemonstrable arm is recorded, not moved: its refusal is the marker
+    comment on the criterion's own sub-issue naming the missing capability, the
+    machine writes no state, and the criterion is still in the gap its subtree
+    owes until a person cancels it with a supersession. The lapsed arm is moved:
+    a criterion finished at one sha whose grading lapsed at the next goes back
+    to the unstarted state, keeping the sha it was graded at, and is in the same
+    gap again. A criterion finished and touched by neither arm is the control
+    that the gap read is the open reading and not the roster.
+    """
+    port = tracker()
+    before = port.issues[DIRECT_OWED]
+    executor = Executor(
+        reproduced=True, claimed_capability="network", finding=UNVERIFIABLE_HERE
+    )
+    service, guard, workspace, _ = await build(
+        repository,
+        executor,
+        port=port,
+        runner_environment={CheckPrerequisite.NETWORK: False},
+    )
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        assert report.upheld[0].reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+        assert not any(isinstance(e, ResultEvent) for e in events)
+    finally:
+        await cleanup(workspace)
+
+    # The lapsed arm, over the same board, through the landed take-back.
+    await lapse(
+        writer(port, lane_repo()),
+        key=NESTED_DONE,
+        standing_sha="1" * 40,
+        head_sha="2" * 40,
+    )
+
+    # Undemonstrable: recorded where every refusal is, naming the capability.
+    archives = [
+        c
+        for c in port.comments
+        if c.issue_key == DIRECT_OWED and c.body.startswith("[fixture-amendment:")
+    ]
+    assert len(archives) == 1
+    assert '"claimedCapability":"network"' in archives[0].body
+    # ... and nothing about the criterion itself moved but its classification.
+    recorded = port.issues[DIRECT_OWED]
+    unmoved = {"issue_labels", "updated_at"}
+    assert recorded.model_dump(exclude=unmoved) == before.model_dump(exclude=unmoved)
+    assert recorded.state_kind is WorkflowStateKind.UNSTARTED
+    assert recorded.issue_labels == before.issue_labels | {"decision"}
+    assert all(key != DIRECT_OWED for key, _ in port.workflow_writes)
+    assert all(key != DIRECT_OWED for key, _ in port.restored_states)
+
+    # Lapsed: moved back, keeping the sha its grading was taken at.
+    lapsed = port.issues[NESTED_DONE]
+    assert lapsed.state_kind is WorkflowStateKind.UNSTARTED
+    evidence = parse_criterion_evidence(lapsed.body)
+    assert evidence.graded_sha == "1" * 40
+    assert evidence.test == lapse_observation(
+        observation=evaluation_observation(session_id="eval-session", iteration=1)
+    )
+
+    # Both are owed, read off one subtree that still reads; the untouched
+    # finished criterion is not.
+    owed = {
+        issue.issue_key
+        for issue in SubtreeClosure(
+            facts=dict(port.issues), ref=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
+        ).gap(SUBJECT)
+    }
+    assert {DIRECT_OWED, NESTED_DONE} <= owed
+    assert DIRECT_DONE not in owed
+    assert port.issues[DIRECT_DONE].state_kind is WorkflowStateKind.COMPLETED
 
 
 @pytest.mark.parametrize("fault", ["criterion", "environment"])
