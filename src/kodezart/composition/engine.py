@@ -342,6 +342,7 @@ def build_workflow_engine(
                     prompts=prompts,
                     skills=skills,
                     repositories=repositories,
+                    git_base_url=config.git.base_url,
                     gate=gate,
                     max_verify_rounds=native_writes[3].max_verify_rounds,
                     lease_seconds=config.tracker.surface_lease_seconds,

@@ -36,6 +36,7 @@ from kodezart.domain.errors import (
     WriteBackReadError,
 )
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.rulings import (
     designated_tests,
     pinned_registry,
@@ -110,6 +111,7 @@ class NativeAmendments:
         prompts: PromptSetProvider,
         skills: SkillsSelection,
         repositories: Sequence[RepoEntry],
+        git_base_url: str,
         gate: OutboundContentGate,
         max_verify_rounds: int,
         lease_seconds: float,
@@ -124,6 +126,7 @@ class NativeAmendments:
         self._prompts = prompts
         self._skills = skills
         self._repositories = tuple(repositories)
+        self._git_base_url = git_base_url
         self._operation, self._gate = operation, gate
         self._max_verify_rounds, self._lease_seconds = max_verify_rounds, lease_seconds
         self._marks = WeakenedAssertionMarks(
@@ -157,7 +160,18 @@ class NativeAmendments:
                 missing="issue_labels['decision']",
                 stops="native amendment escalation is unavailable",
             )
-        matches = [repo for repo in self._repositories if repo.url == repo_url]
+        # The loop hands the clone URL already resolved against the configured
+        # base, so both sides are resolved before they are compared, as every
+        # sibling repository matcher does.
+        canonical = (
+            None if repo_url is None else resolve_repo_url(repo_url, self._git_base_url)
+        )
+        matches = [
+            repo
+            for repo in self._repositories
+            if canonical is not None
+            and resolve_repo_url(repo.url, self._git_base_url) == canonical
+        ]
         if len(matches) > 1:
             raise NativeWriteRefusalError("The repository declaration is ambiguous")
         environment = None if not matches else matches[0].runner_environment
