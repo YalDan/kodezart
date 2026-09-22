@@ -452,6 +452,7 @@
   "tests/tracker/test_escalation_resolution.py": 15,
   "tests/tracker/test_escalation_resolution_boundary.py": 16,
   "tests/tracker/test_escalation_resolution_drift.py": 4,
+  "tests/tracker/test_fake_roles.py": 13,
   "tests/tracker/test_fire_spec_approval.py": 16,
   "tests/tracker/test_fire_spec_approval_ancestry.py": 6,
   "tests/tracker/test_fire_spec_reader.py": 28,
@@ -5970,6 +5971,13 @@
    "test_resolution_change_after_its_read_refuses_old_alarm_or_clear",
    "test_final_resolution_is_a_required_read",
    "test_collector_retains_typed_projection_and_preserves_native_record"
+  ],
+  "tests/tracker/test_fake_roles.py": [
+   "test_every_class_of_the_double_answers_for_exactly_one_role",
+   "test_the_composed_double_declares_nothing_and_composes_every_role_class",
+   "test_each_role_class_constructs_alone_and_satisfies_its_role",
+   "test_a_consumer_of_one_role_runs_over_that_role_class_alone",
+   "test_a_double_that_leaves_its_roles_is_reported"
   ],
   "tests/tracker/test_fire_spec_approval.py": [
    "test_either_missing_fact_refuses_actual_spec_read",

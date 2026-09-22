@@ -3487,13 +3487,12 @@ _STAGE_KIND: Mapping[LifecycleStage, WorkflowStateKind] = {
 }
 
 
-class FakeTrackerPort:
-    """In-process ``TrackerPort`` — the double every port CONSUMER is tested on.
+class _FakeTrackerState:
+    """The one store every role of the double reads and writes.
 
-    Holds domain objects directly, so a consumer test states its fixture in
-    the same vocabulary the consumer reads.  The claim is genuinely
-    first-writer-wins: concurrent claimants on one issue produce exactly one
-    ``GRANTED``.
+    Seeds, journals, leases and the clock live here, so each role class below
+    answers over the same board and a double composed of any of them is one
+    tracker, not several.
     """
 
     def __init__(
@@ -3685,305 +3684,6 @@ class FakeTrackerPort:
         self.issues[issue_key] = issue.model_copy(update={"updated_at": stamp})
         self.self_writes.record(issue_key=issue_key, updated_at=stamp)
 
-    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
-        issue = await self.read_issue(issue_key=issue_key)
-        comments = tuple(await self.list_comments(issue_key=issue_key))
-        repeated_comments = tuple(await self.list_comments(issue_key=issue_key))
-        final_issue = await self.read_issue(issue_key=issue_key)
-        if (
-            issue != final_issue
-            or comments != repeated_comments
-            or len({comment.comment_key for comment in comments}) != len(comments)
-        ):
-            raise TrackerProtocolError(
-                "issue movement changed or comments repeat",
-                tool="read_issue_movement",
-                detail=issue_key,
-            )
-        return IssueMovementSnapshot(
-            issue_key=issue_key,
-            updated_at=issue.updated_at,
-            fields=field_values(issue.model_dump(mode="json", exclude={"updated_at"})),
-            comments=tuple(
-                sorted(
-                    (comment.comment_key, field_values(comment.model_dump(mode="json")))
-                    for comment in comments
-                )
-            ),
-        )
-
-    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
-        await asyncio.sleep(0)
-        self.scans.append(query)
-        matched = [
-            issue
-            for issue in self.issues.values()
-            if (query.queue_state is None or query.queue_state in issue.queue_states)
-            and (query.team_key is None or issue.team_key == query.team_key)
-            and (query.updated_since is None or issue.updated_at > query.updated_since)
-        ]
-        return tuple(matched[: query.page_size])
-
-    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
-        await asyncio.sleep(0)
-        self.review_scans.append(query)
-        pools = (
-            list(self.reviews.values())
-            if query.repo_url is None
-            else [self.reviews.get(query.repo_url, [])]
-        )
-        matched = [
-            review
-            for pool in pools
-            for review in pool
-            if query.updated_since is None or review.updated_at > query.updated_since
-        ]
-        # Newest first, which is the port's contract rather than this
-        # double's convenience: a consumer that reads only the head of the
-        # page must get the same answer here as it does from an adapter.
-        matched.sort(key=lambda review: review.updated_at, reverse=True)
-        return tuple(matched[: query.page_size])
-
-    async def verify_scan_capability(
-        self,
-        *,
-        signals: Sequence[PassSignal],
-    ) -> Mapping[PassSignal, str]:
-        await asyncio.sleep(0)
-        self.capability_probes.append(tuple(signals))
-        return {
-            signal: diagnosis
-            for signal in signals
-            if (diagnosis := self.scan_refusals.get(signal)) is not None
-        }
-
-    async def writer_identity(self) -> frozenset[str]:
-        await asyncio.sleep(0)
-        return self.writer_identities
-
-    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
-        await asyncio.sleep(0)
-        self.issue_reads.append(issue_key)
-        issue = self.issues[issue_key]
-        if self.stamp_moves_on_read:
-            issue = issue.model_copy(
-                update={"updated_at": issue.updated_at + FIXTURE_WRITE_STEP}
-            )
-            self.issues[issue_key] = issue
-        return issue
-
-    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
-        return await self.read_issue(issue_key=issue_key)
-
-    async def read_labeled_issues(
-        self, *, classification: str
-    ) -> Sequence[TrackerIssue]:
-        keys = sorted(
-            key
-            for key, issue in self.issues.items()
-            if classification in issue.issue_labels
-        )
-        members = []
-        for key in keys:
-            try:
-                issue = await self.read_planning_issue(issue_key=key)
-            except KeyError as exc:
-                raise IssueLabelReadError(
-                    classification=classification,
-                    reason=f"listed issue {key!r} is absent",
-                ) from exc
-            if issue.issue_key != key or classification not in issue.issue_labels:
-                raise IssueLabelReadError(
-                    classification=classification,
-                    reason=f"listed identity or label changed for {key!r}",
-                )
-            members.append(issue)
-        return tuple(members)
-
-    def require_scope_plan_reads(self) -> None:
-        """Supported: fixture issues retain their semantic label keys."""
-
-    def require_issue_classification_reads(
-        self, *, additional_keys: frozenset[str] = frozenset()
-    ) -> None:
-        """Supported: criterion and record classifications are explicit facts."""
-
-    async def read_issue_state_change(
-        self, *, issue_key: str
-    ) -> TrackerIssueStateChange:
-        issue = await self.read_issue(issue_key=issue_key)
-        return TrackerIssueStateChange(
-            issue=issue, state_changed_at=self.issue_state_changes[issue_key]
-        )
-
-    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
-        issue = await self.read_issue(issue_key=issue_key)
-        return TrackerIssueRevision(
-            issue=issue,
-            body_digest=sha256(issue.body.encode("utf-8")).hexdigest(),
-        )
-
-    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
-        if ref.kind is ScopeKind.ISSUE:
-            keys = [ref.key]
-            selected: dict[str, TrackerIssue] = {}
-            for key in keys:
-                if key in selected:
-                    continue
-                if key not in self.issues:
-                    raise ScopeReadError("issue is missing", ref=ref)
-                selected[key] = await self.read_issue(issue_key=key)
-                keys.extend(
-                    issue.issue_key
-                    for issue in self.issues.values()
-                    if issue.parent_key == key
-                )
-        else:
-            if ref not in self.scope_containers and ref not in self.scope_memberships:
-                raise ScopeReadError("container is missing", ref=ref)
-            selected = {}
-            for key in self.scope_memberships.get(ref, ()):
-                if key not in self.issues:
-                    raise ScopeReadError("scope member is missing", ref=ref)
-                if key not in selected:
-                    selected[key] = await self.read_issue(issue_key=key)
-        for start in selected:
-            path: set[str] = set()
-            current: str | None = start
-            while current is not None and current in selected:
-                if current in path:
-                    raise ScopeReadError("issue parent cycle", ref=ref)
-                path.add(current)
-                current = selected[current].parent_key
-        return tuple(selected.values())
-
-    async def project_milestones(
-        self, *, project_key: str
-    ) -> tuple[ScopeContainer, ...]:
-        ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
-        project = await self.container_metadata(ref=ref)
-        if project.ref != ref:
-            raise ScopeReadError("project identity changed", ref=ref)
-        return tuple(
-            sorted(
-                [
-                    await self.container_metadata(ref=key)
-                    for key, value in self.scope_containers.items()
-                    if key.kind is ScopeKind.MILESTONE and value.parent == ref
-                ],
-                key=lambda value: value.ref.key,
-            )
-        )
-
-    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
-        if ref.kind is ScopeKind.ISSUE:
-            raise ScopeReadError(
-                "issue metadata must be read through read_issue", ref=ref
-            )
-        if ref not in self.scope_containers:
-            raise ScopeReadError("container metadata is missing", ref=ref)
-        seen: set[ScopeRef] = set()
-        ancestor: ScopeRef | None = ref
-        while ancestor is not None:
-            if ancestor in seen:
-                raise ScopeReadError("container parent cycle", ref=ref)
-            seen.add(ancestor)
-            if ancestor not in self.scope_containers:
-                raise ScopeReadError("container parent is missing", ref=ref)
-            ancestor = self.scope_containers[ancestor].parent
-        container = self.scope_containers[ref]
-        if ref.kind is ScopeKind.MILESTONE:
-            return container.model_copy(update={"url": None})
-        if not container.url:
-            raise ScopeReadError("container URL was not reported", ref=ref)
-        return container
-
-    async def execution_approved(self, *, issue_key: str) -> bool:
-        _, approved = await self._read_execution_approval(issue_key=issue_key)
-        return approved
-
-    async def _read_execution_approval(
-        self, *, issue_key: str
-    ) -> tuple[TrackerIssue, bool]:
-        async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
-            ref = ScopeRef(kind=ScopeKind.ISSUE, key=key)
-            if key not in self.issues:
-                raise ScopeReadError("issue is missing", ref=ref)
-            return (
-                await self.read_issue(issue_key=key),
-                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
-            )
-
-        subject = await hydrate(issue_key)
-
-        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
-            return subject if key == issue_key else await hydrate(key)
-
-        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
-            await asyncio.sleep(0)
-            if ref not in self.scope_containers:
-                raise ScopeReadError("container is missing", ref=ref)
-            container = self.scope_containers[ref]
-            if container.ref != ref:
-                raise ScopeReadError("container approval identity changed", ref=ref)
-            return (
-                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
-                container.parent,
-            )
-
-        approved = await resolve_execution_approval(
-            issue_key=issue_key,
-            read_issue=read_issue,
-            read_container=read_container,
-        )
-        return subject[0], approved
-
-    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
-        if ref.kind is ScopeKind.ISSUE:
-            issue = await self.read_issue(issue_key=ref.key)
-            if issue.issue_key != ref.key:
-                raise ScopeReadError("scope label identity changed", ref=ref)
-        else:
-            await self.container_metadata(ref=ref)
-            if ref.kind is ScopeKind.MILESTONE:
-                # No native object of this kind carries a label, so no read of
-                # one can answer with members whatever the backing data holds.
-                return frozenset()
-        return self.scope_label_members.get(ref, frozenset())
-
-    async def update_issue_graph(
-        self,
-        *,
-        issue_key: str,
-        expected: tuple[IssueGraphSnapshot, ...],
-        changes: tuple[GraphChange, ...],
-        holder: str,
-        revalidate: WriteRevalidation | None = None,
-    ) -> TrackerIssue:
-        if revalidate is not None:
-            await revalidate()
-        current = tuple(
-            [await self.read_issue(issue_key=row.issue_key) for row in expected]
-        )
-        if tuple(graph_snapshot(issue) for issue in current) != expected:
-            raise OrganizeWriteRefusalError(
-                issue_key=issue_key, reason="native graph changed"
-            )
-        candidate, peers = validate_graph_change(
-            issue_key=issue_key,
-            changes=changes,
-            issues=current,
-            member_keys=frozenset(row.issue_key for row in expected),
-        )
-        for peer in peers:
-            self._require_graph_holder(
-                kind=SurfaceKind.ISSUE_GRAPH, issue_key=peer, holder=holder
-            )
-        self.issues[issue_key] = candidate
-        for peer in changed_peers(issue_key=issue_key, changes=changes, issues=current):
-            self.issues[peer.issue_key] = peer
-        return candidate
-
     def _require_graph_holder(
         self, *, kind: SurfaceKind, issue_key: str, holder: str
     ) -> None:
@@ -4002,194 +3702,6 @@ class FakeTrackerPort:
                 surface=surface,
                 current_holder=owner,
             )
-
-    async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
-        scope = ScopeRef(kind=ScopeKind.ISSUE, key=source_key)
-        children: dict[str, TrackerIssue] = {}
-        for issue in self.issues.values():
-            identity = await self.read_issue_identity(issue_key=issue.issue_key)
-            if identity is None or identity.scope_key != scope:
-                continue
-            if identity.deliverable_key in children:
-                raise DuplicateIssueIdentityError(
-                    scope_key=scope,
-                    deliverable_key=identity.deliverable_key,
-                    issue_keys=[
-                        children[identity.deliverable_key].issue_key,
-                        issue.issue_key,
-                    ],
-                )
-            if (
-                issue.parent_key != source_key
-                or {"criterion", "decision"} & issue.issue_labels
-            ):
-                raise OrganizeWriteRefusalError(
-                    issue_key=source_key, reason="split identity is misplaced"
-                )
-            children[identity.deliverable_key] = issue
-        return tuple(sorted(children.values(), key=lambda child: child.issue_key))
-
-    async def create_split_if_absent(
-        self,
-        *,
-        source_key: str,
-        deliverable_key: str,
-        title: str,
-        body: str,
-        holder: str,
-        expected: tuple[IssueGraphSnapshot, ...],
-        revalidate: WriteRevalidation | None = None,
-    ) -> TrackerIssue:
-        if revalidate is not None:
-            await revalidate()
-        identity = IssueIdentity(
-            scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key),
-            deliverable_key=deliverable_key,
-        )
-        for child in await self.read_split_children(source_key=source_key):
-            if await self.read_issue_identity(issue_key=child.issue_key) == identity:
-                return child
-        self._require_graph_holder(
-            kind=SurfaceKind.ISSUE_SPLIT_SET, issue_key=source_key, holder=holder
-        )
-        current = tuple(
-            [await self.read_issue(issue_key=row.issue_key) for row in expected]
-        )
-        if (
-            not expected
-            or tuple(graph_snapshot(issue) for issue in current) != expected
-        ):
-            raise OrganizeWriteRefusalError(
-                issue_key=source_key, reason="split source graph changed"
-            )
-        source = await self.read_issue(issue_key=source_key)
-        if source.team_key is None or not all(
-            value.strip() for value in (deliverable_key, title, body)
-        ):
-            raise OrganizeWriteRefusalError(
-                issue_key=source_key,
-                reason="split creation requires a team, identity and specification",
-            )
-        created = await self._upsert_issue(
-            scope_key=identity.scope_key,
-            deliverable_key=deliverable_key,
-            title=title,
-            body=body,
-            team_key=source.team_key,
-            priority=IssuePriority.NONE,
-        )
-        child = TrackerIssue.model_validate(
-            {
-                **created.model_dump(),
-                "parent_key": source_key,
-                "project_id": source.project_id,
-                "state_name": "Todo",
-                "state_kind": WorkflowStateKind.UNSTARTED,
-            }
-        )
-        self.issues[child.issue_key] = child
-        return child
-
-    async def create_criterion_if_absent(
-        self,
-        *,
-        parent_key: str,
-        title: str,
-        check: str,
-        do: str,
-        holder: str,
-        revalidate: WriteRevalidation | None = None,
-    ) -> TrackerIssue:
-        if revalidate is not None:
-            await revalidate()
-        body = criterion_body(parent_key=parent_key, check=check, do=do)
-        children = await self.read_criteria(issue_key=parent_key)
-        existing = existing_criterion(
-            parent_key=parent_key, check=check, children=children
-        )
-        if existing is not None:
-            return existing
-        surface = WritableSurface(
-            kind=SurfaceKind.CRITERION_CHILD_SET,
-            ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),
-        )
-        lease = self.leases.get(surface)
-        owner = (
-            lease.holder
-            if lease is not None and lease.expires_at > self._clock()
-            else None
-        )
-        if holder != owner:
-            raise SurfaceLeaseError(
-                "criterion creation requires its child-set grant",
-                surface=surface,
-                current_holder=owner,
-            )
-        parent = await self.read_issue(issue_key=parent_key)
-        if parent.team_key is None or not title.strip():
-            raise CriterionReadError(
-                issue_key=parent_key,
-                reason="criterion creation requires title and declared team",
-            )
-        created = await self._create_issue(
-            title=title,
-            body=body,
-            team_key=parent.team_key,
-            priority=IssuePriority.NONE,
-        )
-        child = created.model_copy(
-            update={
-                "parent_key": parent_key,
-                "issue_labels": frozenset({"criterion"}),
-                "state_name": "Todo",
-                "state_kind": WorkflowStateKind.UNSTARTED,
-            }
-        )
-        self.issues[child.issue_key] = child
-        return child
-
-    async def reset_criterion_pending(
-        self, *, expected: TrackerIssue, holder: str | None = None
-    ) -> TrackerIssue:
-        current = await self.read_issue(issue_key=expected.issue_key)
-        require_criterion_source(
-            expected=expected, current=current, pending_replay=True
-        )
-        surface = WritableSurface(
-            kind=SurfaceKind.CRITERION_SUB_ISSUE,
-            ref=ScopeRef(kind=ScopeKind.ISSUE, key=expected.issue_key),
-        )
-        grant = self.leases.get(surface)
-        owner = (
-            grant.holder
-            if grant is not None and grant.expires_at > self._clock()
-            else None
-        )
-        # An absent holder is the single-writer write, not an unheld one.
-        if holder is not None and (not holder.strip() or holder != owner):
-            raise SurfaceLeaseError(
-                "native criterion amendment requires its grant",
-                surface=surface,
-                current_holder=owner,
-            )
-        if current.state_kind is WorkflowStateKind.UNSTARTED:
-            return current
-        pending = [
-            name
-            for name, kind in self._state_kinds.items()
-            if kind is WorkflowStateKind.UNSTARTED
-        ]
-        if len(pending) != 1:
-            raise CriterionReadError(
-                issue_key=expected.issue_key,
-                reason="reset requires exactly one unstarted team state",
-            )
-        updated = current.model_copy(
-            update={"state_name": pending[0], "state_kind": WorkflowStateKind.UNSTARTED}
-        )
-        self.issues[expected.issue_key] = updated
-        self._wrote(expected.issue_key)
-        return self.issues[expected.issue_key]
 
     async def _create_issue(
         self,
@@ -4219,89 +3731,6 @@ class FakeTrackerPort:
         self.issue_creations.append(issue.issue_key)
         self.issue_state_changes[issue.issue_key] = issue.created_at
         return issue
-
-    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
-        _, criteria = await self._read_criterion_family(issue_key=issue_key)
-        return criteria
-
-    async def read_fire_subject(self, *, issue_key: str) -> TrackerIssue:
-        if issue_key not in self.issues:
-            raise CriterionReadError(
-                issue_key=issue_key, reason="parent issue is absent"
-            )
-        subject, approved = await self._read_execution_approval(issue_key=issue_key)
-        require_fire_entry(
-            subject=subject,
-            approved=approved,
-            criteria_stage_label_key=self.criteria_stage_label_key,
-        )
-        return subject
-
-    async def _read_criterion_family(
-        self, *, issue_key: str
-    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
-        if issue_key not in self.issues:
-            raise CriterionReadError(
-                issue_key=issue_key, reason="parent issue is absent"
-            )
-        parent = await self.read_issue(issue_key=issue_key)
-        return parent, tuple(
-            sorted(
-                (
-                    issue
-                    for issue in self.issues.values()
-                    if issue.parent_key == parent.issue_key
-                    and "criterion" in issue.issue_labels
-                ),
-                key=lambda issue: issue.issue_key,
-            )
-        )
-
-    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
-        await self.read_issue(issue_key=issue_key)
-        return self.issue_identities.get(issue_key)
-
-    async def _upsert_issue(
-        self,
-        *,
-        scope_key: ScopeRef,
-        deliverable_key: str,
-        title: str,
-        body: str,
-        team_key: str,
-        priority: IssuePriority,
-    ) -> TrackerIssue:
-        identity = IssueIdentity(scope_key=scope_key, deliverable_key=deliverable_key)
-        keys = [
-            key for key, value in self.issue_identities.items() if value == identity
-        ]
-        if len(keys) > 1:
-            raise DuplicateIssueIdentityError(
-                scope_key=scope_key, deliverable_key=deliverable_key, issue_keys=keys
-            )
-        if not keys:
-            created = await self._create_issue(
-                title=title, body=body, team_key=team_key, priority=priority
-            )
-            self.issue_identities[created.issue_key] = identity
-            return created
-        current = await self.read_issue(issue_key=keys[0])
-        if current.body != body:
-            await self.edit_description(
-                target=current.issue_key, expected=current.body, replacement=body
-            )
-        if current.title != title:
-            await self._patch_issue(issue_key=current.issue_key, title=title)
-        return await self.read_issue(issue_key=current.issue_key)
-
-    async def read_surface_authorship(
-        self, *, surface: WritableSurface
-    ) -> SurfaceProvenance:
-        require_body_authorship_surface(surface)
-        return SurfaceProvenance(
-            authorship=self._body_authorship(surface.ref.key),
-            holders=ordered_holders(self.body_write_holders.get(surface, ())),
-        )
 
     def _body_authorship(self, issue_key: str) -> SurfaceAuthorship:
         return self.body_authorship.get(issue_key, SurfaceAuthorship.MACHINE_AUTHORED)
@@ -4339,124 +3768,181 @@ class FakeTrackerPort:
         self._wrote(issue_key)
         return self.issues[issue_key]
 
-    async def edit_description(
-        self,
-        *,
-        target: str,
-        expected: str,
-        replacement: str,
-        authorization: DescriptionWriteAuthority | None = None,
-    ) -> DescriptionEditResult:
-        if authorization is not None and authorization.revalidate is not None:
-            await authorization.revalidate()
-        if authorization is not None and authorization.surface.ref.key != target:
-            raise ValueError("description authority addresses another target")
-        current = await self.read_issue(issue_key=target)
-        if authorization is not None:
-            surface = authorization.surface
-            if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
-                require_criterion_source(expected=current, current=current)
-            elif "criterion" in current.issue_labels:
-                raise ValueError(
-                    "description authority must match the target's "
-                    "current native surface"
-                )
-            grant = self.leases.get(surface)
-            owner = (
-                grant.holder
-                if grant is not None and grant.expires_at > self._clock()
-                else None
-            )
-            if authorization.holder != owner:
-                raise SurfaceLeaseError(
-                    "native criterion amendment requires its grant",
-                    surface=surface,
-                    current_holder=owner,
-                )
-        body = description_replacement(
-            target=target, body=current.body, expected=expected, replacement=replacement
+    async def _post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        """Append one comment; the marked upsert and the run event post through it."""
+        self._sequence += 1
+        comment = TrackerComment(
+            comment_key=f"comment-{self._sequence:04d}",
+            issue_key=issue_key,
+            author_key=min(self.writer_identities, default=None),
+            body=body,
+            created_at=self._clock(),
         )
-        if body is None:
-            return DescriptionEditResult.UNCHANGED
-        self._require_machine_authored(
-            surface=authorization.surface
-            if authorization is not None
-            else WritableSurface(
-                kind=SurfaceKind.ISSUE_DESCRIPTION,
-                ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
-            ),
-        )
-        await self._patch_issue(issue_key=target, body=body)
-        if authorization is not None:
-            self.body_write_holders.setdefault(authorization.surface, []).append(
-                authorization.holder
-            )
-        return DescriptionEditResult.EDITED
+        self.comments.append(comment)
+        self.comment_writes.append((comment.comment_key, body))
+        self._wrote(issue_key)
+        return comment
 
-    async def set_workflow_state(
+    def _parse_alarm_comment(
+        self, *, stored: TrackerComment, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm:
+        """Decode one actual native snapshot, preserving a typed protocol refusal."""
+        try:
+            return parse_run_alarm(
+                body=stored.body,
+                subject=subject,
+                signal=signal,
+                marker_prefixes=self.marker_prefixes,
+            )
+        except ValueError as exc:
+            raise TrackerProtocolError(
+                "run-alarm record does not match its declared shape",
+                tool="list_comments",
+                detail=stored.comment_key,
+            ) from exc
+
+    def _ensure_scope_label(self, ref: MappingRef) -> MappingOutcome:
+        identifier = ref.identifier
+        if identifier is None or ref.scope is not None:
+            raise TrackerEnsureConflictError(
+                "a scope label requires its configured identifier and workspace scope",
+                entry=ref.describe(),
+            )
+        held = sorted(
+            repr(container)
+            for container in self.mapping_containers.get(identifier, set())
+            if container is not None
+        )
+        if held:
+            raise TrackerEnsureConflictError(
+                "a workspace scope label conflicts with an existing team label; "
+                f"found {', '.join(held)}",
+                entry=ref.describe(),
+            )
+        action = (
+            EnsureAction.ADOPTED
+            if identifier in self.scope_label_identifiers
+            else EnsureAction.CREATED
+        )
+        self.scope_label_identifiers.add(identifier)
+        self.known_identifiers.add(identifier)
+        self.mapping_containers.setdefault(identifier, set()).add(None)
+        return MappingOutcome(ref=ref, action=action, identifier=identifier)
+
+    def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
+        """The document arm of the ensure contract, held identically here.
+
+        Same four refusals as the adapter, for the same reasons: an id the
+        workspace does not hold, an id whose document carries another
+        title, a title two documents share, and a create with no declared
+        container (the backend files every document in one; KOD-166).
+        """
+        if ref.identifier is not None:
+            title = self.document_titles.get(ref.identifier)
+            if title is None:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds no document with this identifier",
+                    entry=ref.describe(),
+                )
+            if title != ref.name:
+                raise TrackerEnsureConflictError(
+                    "the workspace holds this document under another title; "
+                    f"declared {ref.name!r}, found {title!r}",
+                    entry=ref.describe(),
+                )
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=ref.identifier,
+            )
+        held = sorted(
+            identifier
+            for identifier, title in self.document_titles.items()
+            if title == ref.name
+        )
+        if len(held) > 1:
+            raise TrackerEnsureConflictError(
+                "the workspace holds several documents under this title",
+                entry=ref.describe(),
+            )
+        if held:
+            return MappingOutcome(
+                ref=ref,
+                action=EnsureAction.ADOPTED,
+                identifier=held[0],
+            )
+        if ref.scope is None:
+            raise TrackerEnsureConflictError(
+                "creating this document needs a container: the backend files "
+                "every document in one and refuses a create naming none "
+                "(KOD-166); declare the entry's container (a declared team) "
+                "or pre-create the document and declare its id",
+                entry=ref.describe(),
+            )
+        self._sequence += 1
+        identifier = f"fake-document-{self._sequence:04d}"
+        self.document_titles[identifier] = ref.name
+        self._documents[identifier] = ""
+        self.known_identifiers.add(identifier)
+        return MappingOutcome(
+            ref=ref,
+            action=EnsureAction.CREATED,
+            identifier=identifier,
+        )
+
+
+class FakeClaimHolder(_FakeTrackerState):
+    """The ``ClaimHolder`` role of this double."""
+
+    async def renew_claim(
         self,
         *,
         issue_key: str,
-        stage: LifecycleStage,
-    ) -> TrackerIssue:
-        issue = await self.read_issue(issue_key=issue_key)
-        if issue.state_name == stage.value:
-            return issue
-        self.workflow_writes.append((issue_key, stage))
-        self._state_kinds[issue.state_name] = issue.state_kind
-        self._state_kinds[stage.value] = _STAGE_KIND[stage]
-        updated = issue.model_copy(
+        holder: str,
+        lease_seconds: float,
+    ) -> ClaimResult | None:
+        await asyncio.sleep(0)
+        self.renewals.append((issue_key, holder))
+        held = self.claims.get(issue_key)
+        if held is None or held.holder != holder or held.expires_at <= self._clock():
+            return None
+        renewed = held.model_copy(
             update={
-                "state_name": stage.value,
-                "state_kind": _STAGE_KIND[stage],
+                "expires_at": max(
+                    self._clock() + timedelta(seconds=lease_seconds),
+                    held.expires_at,
+                ),
             },
         )
-        self.issues[issue_key] = updated
+        self.claims[issue_key] = renewed
         self._wrote(issue_key)
-        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
-        return updated
+        return renewed
 
-    async def restore_workflow_state(
-        self,
-        *,
-        issue_key: str,
-        state_name: str,
-    ) -> TrackerIssue:
-        issue = await self.read_issue(issue_key=issue_key)
-        if issue.state_name == state_name:
-            return issue
-        # A backend knows the kind of every state it defines, so the fake
-        # does too: seeded from the fixture's issues and extended by every
-        # write. An unknown name is a state no backend defined, and it
-        # raises rather than inventing a kind for it.
-        kind = self._state_kinds[state_name]
-        self.restored_states.append((issue_key, state_name))
-        updated = issue.model_copy(
-            update={"state_name": state_name, "state_kind": kind},
-        )
-        self.issues[issue_key] = updated
-        self._wrote(issue_key)
-        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
-        return updated
+    async def release_claim(self, *, issue_key: str, holder: str) -> None:
+        self.claim_releases.append((issue_key, holder))
+        held = self.claims.get(issue_key)
+        if held is not None and held.holder == holder:
+            del self.claims[issue_key]
+            self._wrote(issue_key)
 
-    async def set_queue_state(
-        self,
-        *,
-        issue_key: str,
-        state: QueueState,
-    ) -> TrackerIssue:
-        if state in self.approval_queue_states:
-            raise ApprovalLabelWriteError(
-                issue_key=issue_key, classification=state.value
+
+class FakeIssueReader(_FakeTrackerState):
+    """The ``IssueReader`` role of this double."""
+
+    async def read_issue(self, *, issue_key: str) -> TrackerIssue:
+        await asyncio.sleep(0)
+        self.issue_reads.append(issue_key)
+        issue = self.issues[issue_key]
+        if self.stamp_moves_on_read:
+            issue = issue.model_copy(
+                update={"updated_at": issue.updated_at + FIXTURE_WRITE_STEP}
             )
-        issue = await self.read_issue(issue_key=issue_key)
-        if issue.queue_states == frozenset({state}):
-            return issue
-        self.queue_writes.append((issue_key, state))
-        updated = issue.model_copy(update={"queue_states": frozenset({state})})
-        self.issues[issue_key] = updated
-        self._wrote(issue_key)
-        return updated
+            self.issues[issue_key] = issue
+        return issue
+
+
+class FakeClassificationWriter(FakeIssueReader):
+    """The ``ClassificationWriter`` role of this double."""
 
     async def set_issue_classification(
         self, *, issue_key: str, classification: str, holder: str | None = None
@@ -4490,19 +3976,24 @@ class FakeTrackerPort:
         self._wrote(issue_key)
         return updated
 
-    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
-        self._sequence += 1
-        comment = TrackerComment(
-            comment_key=f"comment-{self._sequence:04d}",
-            issue_key=issue_key,
-            author_key=min(self.writer_identities, default=None),
-            body=body,
-            created_at=self._clock(),
-        )
-        self.comments.append(comment)
-        self.comment_writes.append((comment.comment_key, body))
-        self._wrote(issue_key)
-        return comment
+
+class FakeTrackerCommentReader(_FakeTrackerState):
+    """The ``TrackerCommentReader`` role of this double."""
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        return tuple(c for c in self.comments if c.issue_key == issue_key)
+
+
+class FakeWriterIdentityReader(_FakeTrackerState):
+    """The ``WriterIdentityReader`` role of this double."""
+
+    async def writer_identity(self) -> frozenset[str]:
+        await asyncio.sleep(0)
+        return self.writer_identities
+
+
+class FakeCommentRecordWriter(FakeWriterIdentityReader, FakeTrackerCommentReader):
+    """The ``CommentRecordWriter`` role of this double."""
 
     async def upsert_comment(
         self,
@@ -4584,7 +4075,7 @@ class FakeTrackerPort:
                     surface=surface, author=existing.author_key
                 )
         if existing is None:
-            return await self.post_comment(issue_key=target, body=content)
+            return await self._post_comment(issue_key=target, body=content)
         if existing.body == content:
             return existing
         updated = existing.model_copy(update={"body": content})
@@ -4593,87 +4084,231 @@ class FakeTrackerPort:
         self._wrote(target)
         return updated
 
-    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
-        return tuple(c for c in self.comments if c.issue_key == issue_key)
 
-    async def record_run_alarm(
-        self, *, issue_key: str, alarm: RunAlarm, holder: str
-    ) -> None:
-        """Keep one whole-subject record under the existing leased upsert policy."""
-        marker = run_alarm_marker(
-            subject=alarm.subject,
-            signal=alarm.signal,
-            marker_prefixes=self.marker_prefixes,
-        )
-        require_alarm_holder(issue_key=issue_key, marker=marker, holder=holder)
-        await self.read_run_alarm(
-            issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
-        )
+class FakeContainerMetadataReader(_FakeTrackerState):
+    """The ``ContainerMetadataReader`` role of this double."""
 
-        def validate_existing(stored: TrackerComment) -> None:
-            self._parse_alarm_comment(
-                stored=stored, subject=alarm.subject, signal=alarm.signal
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        if ref.kind is ScopeKind.ISSUE:
+            raise ScopeReadError(
+                "issue metadata must be read through read_issue", ref=ref
             )
+        if ref not in self.scope_containers:
+            raise ScopeReadError("container metadata is missing", ref=ref)
+        seen: set[ScopeRef] = set()
+        ancestor: ScopeRef | None = ref
+        while ancestor is not None:
+            if ancestor in seen:
+                raise ScopeReadError("container parent cycle", ref=ref)
+            seen.add(ancestor)
+            if ancestor not in self.scope_containers:
+                raise ScopeReadError("container parent is missing", ref=ref)
+            ancestor = self.scope_containers[ancestor].parent
+        container = self.scope_containers[ref]
+        if ref.kind is ScopeKind.MILESTONE:
+            return container.model_copy(update={"url": None})
+        if not container.url:
+            raise ScopeReadError("container URL was not reported", ref=ref)
+        return container
 
-        await self._upsert_comment(
-            target=issue_key,
-            marker=marker,
-            body=render_run_alarm(alarm=alarm),
-            holder=holder,
-            validate_existing=validate_existing,
-        )
 
-    async def read_run_alarm(
-        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
-    ) -> RunAlarm | None:
-        """Resolve the full subject and signal across the native comment log."""
-        marker = run_alarm_marker(
-            subject=subject, signal=signal, marker_prefixes=self.marker_prefixes
-        )
-        stored = comment_under_marker(
-            target=issue_key,
-            marker=marker,
-            comments=await self.list_comments(issue_key=issue_key),
-        )
-        if stored is None:
-            return None
-        return self._parse_alarm_comment(stored=stored, subject=subject, signal=signal)
+class FakeTrackerCriteriaReader(FakeIssueReader):
+    """The ``TrackerCriteriaReader`` role of this double."""
 
-    def _parse_alarm_comment(
-        self, *, stored: TrackerComment, subject: AlarmSubject, signal: AlarmSignal
-    ) -> RunAlarm:
-        """Decode one actual native snapshot, preserving a typed protocol refusal."""
-        try:
-            return parse_run_alarm(
-                body=stored.body,
-                subject=subject,
-                signal=signal,
-                marker_prefixes=self.marker_prefixes,
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        _, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return criteria
+
+    async def _read_criterion_family(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
+        if issue_key not in self.issues:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="parent issue is absent"
             )
-        except ValueError as exc:
-            raise TrackerProtocolError(
-                "run-alarm record does not match its declared shape",
-                tool="list_comments",
-                detail=stored.comment_key,
-            ) from exc
-
-    async def post_run_event(
-        self, *, issue_key: str, event: LaneRunEvent
-    ) -> LaneRunEvent:
-        await self.post_comment(
-            issue_key=issue_key,
-            body=render_run_event(event=event, marker_prefixes=self.marker_prefixes),
+        parent = await self.read_issue(issue_key=issue_key)
+        return parent, tuple(
+            sorted(
+                (
+                    issue
+                    for issue in self.issues.values()
+                    if issue.parent_key == parent.issue_key
+                    and "criterion" in issue.issue_labels
+                ),
+                key=lambda issue: issue.issue_key,
+            )
         )
-        return event
 
-    async def lane_run_events(
-        self, *, issue_key: str, lane_key: str
-    ) -> Sequence[LaneRunEvent]:
-        return lane_run_events(
-            comments=await self.list_comments(issue_key=issue_key),
-            lane_key=lane_key,
-            marker_prefixes=self.marker_prefixes,
+
+class FakeCriterionMintWriter(FakeTrackerCriteriaReader):
+    """The ``CriterionMintWriter`` role of this double."""
+
+    async def create_criterion_if_absent(
+        self,
+        *,
+        parent_key: str,
+        title: str,
+        check: str,
+        do: str,
+        holder: str,
+        revalidate: WriteRevalidation | None = None,
+    ) -> TrackerIssue:
+        if revalidate is not None:
+            await revalidate()
+        body = criterion_body(parent_key=parent_key, check=check, do=do)
+        children = await self.read_criteria(issue_key=parent_key)
+        existing = existing_criterion(
+            parent_key=parent_key, check=check, children=children
         )
+        if existing is not None:
+            return existing
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_CHILD_SET,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),
+        )
+        lease = self.leases.get(surface)
+        owner = (
+            lease.holder
+            if lease is not None and lease.expires_at > self._clock()
+            else None
+        )
+        if holder != owner:
+            raise SurfaceLeaseError(
+                "criterion creation requires its child-set grant",
+                surface=surface,
+                current_holder=owner,
+            )
+        parent = await self.read_issue(issue_key=parent_key)
+        if parent.team_key is None or not title.strip():
+            raise CriterionReadError(
+                issue_key=parent_key,
+                reason="criterion creation requires title and declared team",
+            )
+        created = await self._create_issue(
+            title=title,
+            body=body,
+            team_key=parent.team_key,
+            priority=IssuePriority.NONE,
+        )
+        child = created.model_copy(
+            update={
+                "parent_key": parent_key,
+                "issue_labels": frozenset({"criterion"}),
+                "state_name": "Todo",
+                "state_kind": WorkflowStateKind.UNSTARTED,
+            }
+        )
+        self.issues[child.issue_key] = child
+        return child
+
+
+class FakeCriterionReopener(FakeIssueReader):
+    """The ``CriterionReopener`` role of this double."""
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str | None = None
+    ) -> TrackerIssue:
+        current = await self.read_issue(issue_key=expected.issue_key)
+        require_criterion_source(
+            expected=expected, current=current, pending_replay=True
+        )
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_SUB_ISSUE,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=expected.issue_key),
+        )
+        grant = self.leases.get(surface)
+        owner = (
+            grant.holder
+            if grant is not None and grant.expires_at > self._clock()
+            else None
+        )
+        # An absent holder is the single-writer write, not an unheld one.
+        if holder is not None and (not holder.strip() or holder != owner):
+            raise SurfaceLeaseError(
+                "native criterion amendment requires its grant",
+                surface=surface,
+                current_holder=owner,
+            )
+        if current.state_kind is WorkflowStateKind.UNSTARTED:
+            return current
+        pending = [
+            name
+            for name, kind in self._state_kinds.items()
+            if kind is WorkflowStateKind.UNSTARTED
+        ]
+        if len(pending) != 1:
+            raise CriterionReadError(
+                issue_key=expected.issue_key,
+                reason="reset requires exactly one unstarted team state",
+            )
+        updated = current.model_copy(
+            update={"state_name": pending[0], "state_kind": WorkflowStateKind.UNSTARTED}
+        )
+        self.issues[expected.issue_key] = updated
+        self._wrote(expected.issue_key)
+        return self.issues[expected.issue_key]
+
+
+class FakeDescriptionWriter(FakeIssueReader):
+    """The ``DescriptionWriter`` role of this double."""
+
+    async def edit_description(
+        self,
+        *,
+        target: str,
+        expected: str,
+        replacement: str,
+        authorization: DescriptionWriteAuthority | None = None,
+    ) -> DescriptionEditResult:
+        if authorization is not None and authorization.revalidate is not None:
+            await authorization.revalidate()
+        if authorization is not None and authorization.surface.ref.key != target:
+            raise ValueError("description authority addresses another target")
+        current = await self.read_issue(issue_key=target)
+        if authorization is not None:
+            surface = authorization.surface
+            if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                require_criterion_source(expected=current, current=current)
+            elif "criterion" in current.issue_labels:
+                raise ValueError(
+                    "description authority must match the target's "
+                    "current native surface"
+                )
+            grant = self.leases.get(surface)
+            owner = (
+                grant.holder
+                if grant is not None and grant.expires_at > self._clock()
+                else None
+            )
+            if authorization.holder != owner:
+                raise SurfaceLeaseError(
+                    "native criterion amendment requires its grant",
+                    surface=surface,
+                    current_holder=owner,
+                )
+        body = description_replacement(
+            target=target, body=current.body, expected=expected, replacement=replacement
+        )
+        if body is None:
+            return DescriptionEditResult.UNCHANGED
+        self._require_machine_authored(
+            surface=authorization.surface
+            if authorization is not None
+            else WritableSurface(
+                kind=SurfaceKind.ISSUE_DESCRIPTION,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
+            ),
+        )
+        await self._patch_issue(issue_key=target, body=body)
+        if authorization is not None:
+            self.body_write_holders.setdefault(authorization.surface, []).append(
+                authorization.holder
+            )
+        return DescriptionEditResult.EDITED
+
+
+class FakeEscalationResolutionReader(FakeTrackerCommentReader):
+    """The ``EscalationResolutionReader`` role of this double."""
 
     async def read_escalation_resolution(
         self, *, issue_key: str, lane_key: str, escalation_key: str
@@ -4692,6 +4327,80 @@ class FakeTrackerPort:
             prefixes=self.marker_prefixes,
             comments=await self.list_comments(issue_key=issue_key),
         )
+
+
+class FakeExecutionApprovalReader(FakeIssueReader):
+    """The ``ExecutionApprovalReader`` role of this double."""
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        _, approved = await self._read_execution_approval(issue_key=issue_key)
+        return approved
+
+    async def _read_execution_approval(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, bool]:
+        async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
+            ref = ScopeRef(kind=ScopeKind.ISSUE, key=key)
+            if key not in self.issues:
+                raise ScopeReadError("issue is missing", ref=ref)
+            return (
+                await self.read_issue(issue_key=key),
+                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
+            )
+
+        subject = await hydrate(issue_key)
+
+        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+            return subject if key == issue_key else await hydrate(key)
+
+        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
+            await asyncio.sleep(0)
+            if ref not in self.scope_containers:
+                raise ScopeReadError("container is missing", ref=ref)
+            container = self.scope_containers[ref]
+            if container.ref != ref:
+                raise ScopeReadError("container approval identity changed", ref=ref)
+            return (
+                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
+                container.parent,
+            )
+
+        approved = await resolve_execution_approval(
+            issue_key=issue_key,
+            read_issue=read_issue,
+            read_container=read_container,
+        )
+        return subject[0], approved
+
+
+class FakeIssueScanReader(_FakeTrackerState):
+    """The ``IssueScanReader`` role of this double."""
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        await asyncio.sleep(0)
+        self.scans.append(query)
+        matched = [
+            issue
+            for issue in self.issues.values()
+            if (query.queue_state is None or query.queue_state in issue.queue_states)
+            and (query.team_key is None or issue.team_key == query.team_key)
+            and (query.updated_since is None or issue.updated_at > query.updated_since)
+        ]
+        return tuple(matched[: query.page_size])
+
+
+class FakeRecordedRepositoryReader(_FakeTrackerState):
+    """The ``RecordedRepositoryReader`` role of this double."""
+
+    async def recorded_repository(self, *, issue_key: str) -> str | None:
+        await asyncio.sleep(0)
+        return self.recorded_repositories.get(issue_key)
+
+
+class FakeFireDispatchTracker(
+    FakeRecordedRepositoryReader, FakeClaimHolder, FakeIssueReader, FakeIssueScanReader
+):
+    """The ``FireDispatchTracker`` role of this double."""
 
     async def claim_issue(
         self,
@@ -4738,36 +4447,206 @@ class FakeTrackerPort:
         self._wrote(issue_key)
         return granted
 
-    async def renew_claim(
+    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+        await asyncio.sleep(0)
+        held = self.claims.get(issue_key)
+        if held is None or held.expires_at <= self._clock():
+            return None
+        return held
+
+    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
+        await asyncio.sleep(0)
+        self.recorded_base_specs[issue_key] = spec
+        self._wrote(issue_key)
+
+    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
+        await asyncio.sleep(0)
+        return self.recorded_base_specs.get(issue_key)
+
+    async def initiative_identifiers(self, *, project_id: str) -> frozenset[str]:
+        await asyncio.sleep(0)
+        return self.initiative_identifiers_by_project.get(project_id, frozenset())
+
+
+class FakeScopeFamilyReader(FakeIssueReader):
+    """The ``ScopeFamilyReader`` role of this double."""
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        if ref.kind is ScopeKind.ISSUE:
+            keys = [ref.key]
+            selected: dict[str, TrackerIssue] = {}
+            for key in keys:
+                if key in selected:
+                    continue
+                if key not in self.issues:
+                    raise ScopeReadError("issue is missing", ref=ref)
+                selected[key] = await self.read_issue(issue_key=key)
+                keys.extend(
+                    issue.issue_key
+                    for issue in self.issues.values()
+                    if issue.parent_key == key
+                )
+        else:
+            if ref not in self.scope_containers and ref not in self.scope_memberships:
+                raise ScopeReadError("container is missing", ref=ref)
+            selected = {}
+            for key in self.scope_memberships.get(ref, ()):
+                if key not in self.issues:
+                    raise ScopeReadError("scope member is missing", ref=ref)
+                if key not in selected:
+                    selected[key] = await self.read_issue(issue_key=key)
+        for start in selected:
+            path: set[str] = set()
+            current: str | None = start
+            while current is not None and current in selected:
+                if current in path:
+                    raise ScopeReadError("issue parent cycle", ref=ref)
+                path.add(current)
+                current = selected[current].parent_key
+        return tuple(selected.values())
+
+
+class FakeFireSubjectReader(
+    FakeExecutionApprovalReader, FakeTrackerCriteriaReader, FakeScopeFamilyReader
+):
+    """The ``FireSubjectReader`` role of this double."""
+
+    async def read_fire_subject(self, *, issue_key: str) -> TrackerIssue:
+        if issue_key not in self.issues:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="parent issue is absent"
+            )
+        subject, approved = await self._read_execution_approval(issue_key=issue_key)
+        require_fire_entry(
+            subject=subject,
+            approved=approved,
+            criteria_stage_label_key=self.criteria_stage_label_key,
+        )
+        return subject
+
+
+class FakeIssueRevisionReader(FakeIssueReader):
+    """The ``IssueRevisionReader`` role of this double."""
+
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueRevision(
+            issue=issue,
+            body_digest=sha256(issue.body.encode("utf-8")).hexdigest(),
+        )
+
+
+class FakeLaneEventHistory(FakeTrackerCommentReader):
+    """The ``LaneEventHistory`` role of this double."""
+
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]:
+        return lane_run_events(
+            comments=await self.list_comments(issue_key=issue_key),
+            lane_key=lane_key,
+            marker_prefixes=self.marker_prefixes,
+        )
+
+
+class FakeLaneEventWriter(_FakeTrackerState):
+    """The ``LaneEventWriter`` role of this double."""
+
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent:
+        await self._post_comment(
+            issue_key=issue_key,
+            body=render_run_event(event=event, marker_prefixes=self.marker_prefixes),
+        )
+        return event
+
+
+class FakeStateRestorer(FakeIssueReader):
+    """The ``StateRestorer`` role of this double."""
+
+    async def restore_workflow_state(
         self,
         *,
         issue_key: str,
-        holder: str,
-        lease_seconds: float,
-    ) -> ClaimResult | None:
+        state_name: str,
+    ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.state_name == state_name:
+            return issue
+        # A backend knows the kind of every state it defines, so the fake
+        # does too: seeded from the fixture's issues and extended by every
+        # write. An unknown name is a state no backend defined, and it
+        # raises rather than inventing a kind for it.
+        kind = self._state_kinds[state_name]
+        self.restored_states.append((issue_key, state_name))
+        updated = issue.model_copy(
+            update={"state_name": state_name, "state_kind": kind},
+        )
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
+        return updated
+
+
+class FakeWorkRefReader(_FakeTrackerState):
+    """The ``WorkRefReader`` role of this double."""
+
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
         await asyncio.sleep(0)
-        self.renewals.append((issue_key, holder))
-        held = self.claims.get(issue_key)
-        if held is None or held.holder != holder or held.expires_at <= self._clock():
-            return None
-        renewed = held.model_copy(
+        return tuple(self.recorded_work_refs.get(issue_key, ()))
+
+
+class FakeWorkRefRecorder(FakeWorkRefReader):
+    """The ``WorkRefRecorder`` role of this double."""
+
+    async def record_work_ref(self, *, ref: WorkRef) -> None:
+        await asyncio.sleep(0)
+        held = self.recorded_work_refs.setdefault(ref.issue_id, [])
+        for existing in held:
+            if existing.identity() == ref.identity():
+                return
+            if existing.role is WorkRefRole.DELIVERABLE is ref.role:
+                raise DuplicateWorkRefError(
+                    "an issue carries at most one deliverable ref",
+                    issue_id=ref.issue_id,
+                    role=ref.role.value,
+                    existing_branch=existing.branch,
+                    offered_branch=ref.branch,
+                )
+        held.append(ref)
+        self._wrote(ref.issue_id)
+
+
+class FakeWorkflowStateWriter(FakeIssueReader):
+    """The ``WorkflowStateWriter`` role of this double."""
+
+    async def set_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        stage: LifecycleStage,
+    ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.state_name == stage.value:
+            return issue
+        self.workflow_writes.append((issue_key, stage))
+        self._state_kinds[issue.state_name] = issue.state_kind
+        self._state_kinds[stage.value] = _STAGE_KIND[stage]
+        updated = issue.model_copy(
             update={
-                "expires_at": max(
-                    self._clock() + timedelta(seconds=lease_seconds),
-                    held.expires_at,
-                ),
+                "state_name": stage.value,
+                "state_kind": _STAGE_KIND[stage],
             },
         )
-        self.claims[issue_key] = renewed
+        self.issues[issue_key] = updated
         self._wrote(issue_key)
-        return renewed
+        self.issue_state_changes[issue_key] = self.issues[issue_key].updated_at
+        return updated
 
-    async def release_claim(self, *, issue_key: str, holder: str) -> None:
-        self.claim_releases.append((issue_key, holder))
-        held = self.claims.get(issue_key)
-        if held is not None and held.holder == holder:
-            del self.claims[issue_key]
-            self._wrote(issue_key)
+
+class FakeSurfaceLeaseTracker(_FakeTrackerState):
+    """The ``SurfaceLeaseTracker`` role of this double."""
 
     async def acquire_surfaces(
         self,
@@ -4845,12 +4724,460 @@ class FakeTrackerPort:
             if lease is not None and lease.holder == holder:
                 del self.leases[surface]
 
-    async def active_claim(self, *, issue_key: str) -> ClaimResult | None:
+
+class FakeLifecycleStateWriter(
+    FakeCommentRecordWriter,
+    FakeWorkflowStateWriter,
+    FakeWorkRefRecorder,
+    FakeStateRestorer,
+    FakeSurfaceLeaseTracker,
+):
+    """The ``LifecycleStateWriter`` role of this double."""
+
+    async def set_queue_state(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> TrackerIssue:
+        if state in self.approval_queue_states:
+            raise ApprovalLabelWriteError(
+                issue_key=issue_key, classification=state.value
+            )
+        issue = await self.read_issue(issue_key=issue_key)
+        if issue.queue_states == frozenset({state}):
+            return issue
+        self.queue_writes.append((issue_key, state))
+        updated = issue.model_copy(update={"queue_states": frozenset({state})})
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        return await self._post_comment(issue_key=issue_key, body=body)
+
+
+class FakePlanningIssueReader(FakeIssueReader):
+    """The ``PlanningIssueReader`` role of this double."""
+
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        return await self.read_issue(issue_key=issue_key)
+
+
+class FakeModelMemberReader(FakeTrackerCriteriaReader, FakePlanningIssueReader):
+    """The ``ModelMemberReader`` role of this double."""
+
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        keys = sorted(
+            key
+            for key, issue in self.issues.items()
+            if classification in issue.issue_labels
+        )
+        members = []
+        for key in keys:
+            try:
+                issue = await self.read_planning_issue(issue_key=key)
+            except KeyError as exc:
+                raise IssueLabelReadError(
+                    classification=classification,
+                    reason=f"listed issue {key!r} is absent",
+                ) from exc
+            if issue.issue_key != key or classification not in issue.issue_labels:
+                raise IssueLabelReadError(
+                    classification=classification,
+                    reason=f"listed identity or label changed for {key!r}",
+                )
+            members.append(issue)
+        return tuple(members)
+
+
+class FakeOrganizeContextTracker(
+    FakeContainerMetadataReader, FakeTrackerCommentReader, FakeScopeFamilyReader
+):
+    """The ``OrganizeContextTracker`` role of this double."""
+
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
+        project = await self.container_metadata(ref=ref)
+        if project.ref != ref:
+            raise ScopeReadError("project identity changed", ref=ref)
+        return tuple(
+            sorted(
+                [
+                    await self.container_metadata(ref=key)
+                    for key, value in self.scope_containers.items()
+                    if key.kind is ScopeKind.MILESTONE and value.parent == ref
+                ],
+                key=lambda value: value.ref.key,
+            )
+        )
+
+
+class FakeTrackerArtifactReader(
+    FakeContainerMetadataReader,
+    FakeTrackerCommentReader,
+    FakeTrackerCriteriaReader,
+    FakePlanningIssueReader,
+):
+    """The ``TrackerArtifactReader`` role of this double."""
+
+    async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+        scope = ScopeRef(kind=ScopeKind.ISSUE, key=source_key)
+        children: dict[str, TrackerIssue] = {}
+        for issue in self.issues.values():
+            identity = await self.read_issue_identity(issue_key=issue.issue_key)
+            if identity is None or identity.scope_key != scope:
+                continue
+            if identity.deliverable_key in children:
+                raise DuplicateIssueIdentityError(
+                    scope_key=scope,
+                    deliverable_key=identity.deliverable_key,
+                    issue_keys=[
+                        children[identity.deliverable_key].issue_key,
+                        issue.issue_key,
+                    ],
+                )
+            if (
+                issue.parent_key != source_key
+                or {"criterion", "decision"} & issue.issue_labels
+            ):
+                raise OrganizeWriteRefusalError(
+                    issue_key=source_key, reason="split identity is misplaced"
+                )
+            children[identity.deliverable_key] = issue
+        return tuple(sorted(children.values(), key=lambda child: child.issue_key))
+
+    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
+        await self.read_issue(issue_key=issue_key)
+        return self.issue_identities.get(issue_key)
+
+
+class FakeTrackerScopeApprovalReader(
+    FakeContainerMetadataReader, FakeExecutionApprovalReader
+):
+    """The ``TrackerScopeApprovalReader`` role of this double."""
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        if ref.kind is ScopeKind.ISSUE:
+            issue = await self.read_issue(issue_key=ref.key)
+            if issue.issue_key != ref.key:
+                raise ScopeReadError("scope label identity changed", ref=ref)
+        else:
+            await self.container_metadata(ref=ref)
+            if ref.kind is ScopeKind.MILESTONE:
+                # No native object of this kind carries a label, so no read of
+                # one can answer with members whatever the backing data holds.
+                return frozenset()
+        return self.scope_label_members.get(ref, frozenset())
+
+
+class FakeScopeReadPreflight(_FakeTrackerState):
+    """The ``ScopeReadPreflight`` role of this double."""
+
+    def require_scope_plan_reads(self) -> None:
+        """Supported: fixture issues retain their semantic label keys."""
+
+    def require_issue_classification_reads(
+        self, *, additional_keys: frozenset[str] = frozenset()
+    ) -> None:
+        """Supported: criterion and record classifications are explicit facts."""
+
+
+class FakeOrganizeOwnerTracker(
+    FakeDescriptionWriter,
+    FakeClassificationWriter,
+    FakeTrackerArtifactReader,
+    FakeTrackerScopeApprovalReader,
+    FakeCriterionMintWriter,
+    FakeScopeReadPreflight,
+    FakeCommentRecordWriter,
+    FakeIssueRevisionReader,
+    FakeScopeFamilyReader,
+    FakeSurfaceLeaseTracker,
+):
+    """The ``OrganizeOwnerTracker`` role of this double."""
+
+    async def update_issue_graph(
+        self,
+        *,
+        issue_key: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        changes: tuple[GraphChange, ...],
+        holder: str,
+        revalidate: WriteRevalidation | None = None,
+    ) -> TrackerIssue:
+        if revalidate is not None:
+            await revalidate()
+        current = tuple(
+            [await self.read_issue(issue_key=row.issue_key) for row in expected]
+        )
+        if tuple(graph_snapshot(issue) for issue in current) != expected:
+            raise OrganizeWriteRefusalError(
+                issue_key=issue_key, reason="native graph changed"
+            )
+        candidate, peers = validate_graph_change(
+            issue_key=issue_key,
+            changes=changes,
+            issues=current,
+            member_keys=frozenset(row.issue_key for row in expected),
+        )
+        for peer in peers:
+            self._require_graph_holder(
+                kind=SurfaceKind.ISSUE_GRAPH, issue_key=peer, holder=holder
+            )
+        self.issues[issue_key] = candidate
+        for peer in changed_peers(issue_key=issue_key, changes=changes, issues=current):
+            self.issues[peer.issue_key] = peer
+        return candidate
+
+    async def create_split_if_absent(
+        self,
+        *,
+        source_key: str,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        holder: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        revalidate: WriteRevalidation | None = None,
+    ) -> TrackerIssue:
+        if revalidate is not None:
+            await revalidate()
+        identity = IssueIdentity(
+            scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key),
+            deliverable_key=deliverable_key,
+        )
+        for child in await self.read_split_children(source_key=source_key):
+            if await self.read_issue_identity(issue_key=child.issue_key) == identity:
+                return child
+        self._require_graph_holder(
+            kind=SurfaceKind.ISSUE_SPLIT_SET, issue_key=source_key, holder=holder
+        )
+        current = tuple(
+            [await self.read_issue(issue_key=row.issue_key) for row in expected]
+        )
+        if (
+            not expected
+            or tuple(graph_snapshot(issue) for issue in current) != expected
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=source_key, reason="split source graph changed"
+            )
+        source = await self.read_issue(issue_key=source_key)
+        if source.team_key is None or not all(
+            value.strip() for value in (deliverable_key, title, body)
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=source_key,
+                reason="split creation requires a team, identity and specification",
+            )
+        created = await self._upsert_issue(
+            scope_key=identity.scope_key,
+            deliverable_key=deliverable_key,
+            title=title,
+            body=body,
+            team_key=source.team_key,
+            priority=IssuePriority.NONE,
+        )
+        child = TrackerIssue.model_validate(
+            {
+                **created.model_dump(),
+                "parent_key": source_key,
+                "project_id": source.project_id,
+                "state_name": "Todo",
+                "state_kind": WorkflowStateKind.UNSTARTED,
+            }
+        )
+        self.issues[child.issue_key] = child
+        return child
+
+    async def _upsert_issue(
+        self,
+        *,
+        scope_key: ScopeRef,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        identity = IssueIdentity(scope_key=scope_key, deliverable_key=deliverable_key)
+        keys = [
+            key for key, value in self.issue_identities.items() if value == identity
+        ]
+        if len(keys) > 1:
+            raise DuplicateIssueIdentityError(
+                scope_key=scope_key, deliverable_key=deliverable_key, issue_keys=keys
+            )
+        if not keys:
+            created = await self._create_issue(
+                title=title, body=body, team_key=team_key, priority=priority
+            )
+            self.issue_identities[created.issue_key] = identity
+            return created
+        current = await self.read_issue(issue_key=keys[0])
+        if current.body != body:
+            await self.edit_description(
+                target=current.issue_key, expected=current.body, replacement=body
+            )
+        if current.title != title:
+            await self._patch_issue(issue_key=current.issue_key, title=title)
+        return await self.read_issue(issue_key=current.issue_key)
+
+
+class FakePassGateReader(
+    FakeTrackerCommentReader, FakeIssueReader, FakeIssueScanReader
+):
+    """The ``PassGateReader`` role of this double."""
+
+    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
+        issue = await self.read_issue(issue_key=issue_key)
+        comments = tuple(await self.list_comments(issue_key=issue_key))
+        repeated_comments = tuple(await self.list_comments(issue_key=issue_key))
+        final_issue = await self.read_issue(issue_key=issue_key)
+        if (
+            issue != final_issue
+            or comments != repeated_comments
+            or len({comment.comment_key for comment in comments}) != len(comments)
+        ):
+            raise TrackerProtocolError(
+                "issue movement changed or comments repeat",
+                tool="read_issue_movement",
+                detail=issue_key,
+            )
+        return IssueMovementSnapshot(
+            issue_key=issue_key,
+            updated_at=issue.updated_at,
+            fields=field_values(issue.model_dump(mode="json", exclude={"updated_at"})),
+            comments=tuple(
+                sorted(
+                    (comment.comment_key, field_values(comment.model_dump(mode="json")))
+                    for comment in comments
+                )
+            ),
+        )
+
+    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
         await asyncio.sleep(0)
-        held = self.claims.get(issue_key)
-        if held is None or held.expires_at <= self._clock():
+        self.review_scans.append(query)
+        pools = (
+            list(self.reviews.values())
+            if query.repo_url is None
+            else [self.reviews.get(query.repo_url, [])]
+        )
+        matched = [
+            review
+            for pool in pools
+            for review in pool
+            if query.updated_since is None or review.updated_at > query.updated_since
+        ]
+        # Newest first, which is the port's contract rather than this
+        # double's convenience: a consumer that reads only the head of the
+        # page must get the same answer here as it does from an adapter.
+        matched.sort(key=lambda review: review.updated_at, reverse=True)
+        return tuple(matched[: query.page_size])
+
+
+class FakeRunAlarmTracker(
+    FakeCommentRecordWriter,
+    FakeLaneEventWriter,
+    FakeLaneEventHistory,
+    FakeSurfaceLeaseTracker,
+):
+    """The ``RunAlarmTracker`` role of this double."""
+
+    async def record_run_alarm(
+        self, *, issue_key: str, alarm: RunAlarm, holder: str
+    ) -> None:
+        """Keep one whole-subject record under the existing leased upsert policy."""
+        marker = run_alarm_marker(
+            subject=alarm.subject,
+            signal=alarm.signal,
+            marker_prefixes=self.marker_prefixes,
+        )
+        require_alarm_holder(issue_key=issue_key, marker=marker, holder=holder)
+        await self.read_run_alarm(
+            issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
+        )
+
+        def validate_existing(stored: TrackerComment) -> None:
+            self._parse_alarm_comment(
+                stored=stored, subject=alarm.subject, signal=alarm.signal
+            )
+
+        await self._upsert_comment(
+            target=issue_key,
+            marker=marker,
+            body=render_run_alarm(alarm=alarm),
+            holder=holder,
+            validate_existing=validate_existing,
+        )
+
+    async def read_run_alarm(
+        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm | None:
+        """Resolve the full subject and signal across the native comment log."""
+        marker = run_alarm_marker(
+            subject=subject, signal=signal, marker_prefixes=self.marker_prefixes
+        )
+        stored = comment_under_marker(
+            target=issue_key,
+            marker=marker,
+            comments=await self.list_comments(issue_key=issue_key),
+        )
+        if stored is None:
             return None
-        return held
+        return self._parse_alarm_comment(stored=stored, subject=subject, signal=signal)
+
+
+class FakeScanCapabilityReader(_FakeTrackerState):
+    """The ``ScanCapabilityReader`` role of this double."""
+
+    async def verify_scan_capability(
+        self,
+        *,
+        signals: Sequence[PassSignal],
+    ) -> Mapping[PassSignal, str]:
+        await asyncio.sleep(0)
+        self.capability_probes.append(tuple(signals))
+        return {
+            signal: diagnosis
+            for signal in signals
+            if (diagnosis := self.scan_refusals.get(signal)) is not None
+        }
+
+
+class FakeStateHistoryReader(FakeIssueReader):
+    """The ``StateHistoryReader`` role of this double."""
+
+    async def read_issue_state_change(
+        self, *, issue_key: str
+    ) -> TrackerIssueStateChange:
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueStateChange(
+            issue=issue, state_changed_at=self.issue_state_changes[issue_key]
+        )
+
+
+class FakeSurfaceAuthorshipReader(_FakeTrackerState):
+    """The ``SurfaceAuthorshipReader`` role of this double."""
+
+    async def read_surface_authorship(
+        self, *, surface: WritableSurface
+    ) -> SurfaceProvenance:
+        require_body_authorship_surface(surface)
+        return SurfaceProvenance(
+            authorship=self._body_authorship(surface.ref.key),
+            holders=ordered_holders(self.body_write_holders.get(surface, ())),
+        )
+
+
+class FakeTrackerContextReader(_FakeTrackerState):
+    """The ``TrackerContextReader`` role of this double."""
 
     async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
         return self._assets.get(issue_key, ())
@@ -4858,43 +5185,9 @@ class FakeTrackerPort:
     async def read_document(self, *, document_key: str) -> str:
         return self._documents[document_key]
 
-    async def record_work_ref(self, *, ref: WorkRef) -> None:
-        await asyncio.sleep(0)
-        held = self.recorded_work_refs.setdefault(ref.issue_id, [])
-        for existing in held:
-            if existing.identity() == ref.identity():
-                return
-            if existing.role is WorkRefRole.DELIVERABLE is ref.role:
-                raise DuplicateWorkRefError(
-                    "an issue carries at most one deliverable ref",
-                    issue_id=ref.issue_id,
-                    role=ref.role.value,
-                    existing_branch=existing.branch,
-                    offered_branch=ref.branch,
-                )
-        held.append(ref)
-        self._wrote(ref.issue_id)
 
-    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
-        await asyncio.sleep(0)
-        return tuple(self.recorded_work_refs.get(issue_key, ()))
-
-    async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:
-        await asyncio.sleep(0)
-        self.recorded_base_specs[issue_key] = spec
-        self._wrote(issue_key)
-
-    async def read_base_spec(self, *, issue_key: str) -> BaseSpec | None:
-        await asyncio.sleep(0)
-        return self.recorded_base_specs.get(issue_key)
-
-    async def recorded_repository(self, *, issue_key: str) -> str | None:
-        await asyncio.sleep(0)
-        return self.recorded_repositories.get(issue_key)
-
-    async def initiative_identifiers(self, *, project_id: str) -> frozenset[str]:
-        await asyncio.sleep(0)
-        return self.initiative_identifiers_by_project.get(project_id, frozenset())
+class FakeTrackerVocabulary(_FakeTrackerState):
+    """The ``TrackerVocabulary`` role of this double."""
 
     async def resolve_mappings(
         self,
@@ -4993,94 +5286,31 @@ class FakeTrackerPort:
             )
         return tuple(outcomes)
 
-    def _ensure_scope_label(self, ref: MappingRef) -> MappingOutcome:
-        identifier = ref.identifier
-        if identifier is None or ref.scope is not None:
-            raise TrackerEnsureConflictError(
-                "a scope label requires its configured identifier and workspace scope",
-                entry=ref.describe(),
-            )
-        held = sorted(
-            repr(container)
-            for container in self.mapping_containers.get(identifier, set())
-            if container is not None
-        )
-        if held:
-            raise TrackerEnsureConflictError(
-                "a workspace scope label conflicts with an existing team label; "
-                f"found {', '.join(held)}",
-                entry=ref.describe(),
-            )
-        action = (
-            EnsureAction.ADOPTED
-            if identifier in self.scope_label_identifiers
-            else EnsureAction.CREATED
-        )
-        self.scope_label_identifiers.add(identifier)
-        self.known_identifiers.add(identifier)
-        self.mapping_containers.setdefault(identifier, set()).add(None)
-        return MappingOutcome(ref=ref, action=action, identifier=identifier)
 
-    def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
-        """The document arm of the ensure contract, held identically here.
+class FakeTrackerPort(
+    FakeOrganizeOwnerTracker,
+    FakeLifecycleStateWriter,
+    FakeScanCapabilityReader,
+    FakeFireDispatchTracker,
+    FakeOrganizeContextTracker,
+    FakeFireSubjectReader,
+    FakeEscalationResolutionReader,
+    FakeModelMemberReader,
+    FakeRunAlarmTracker,
+    FakePassGateReader,
+    FakeTrackerVocabulary,
+    FakeStateHistoryReader,
+    FakeSurfaceAuthorshipReader,
+    FakeCriterionReopener,
+    FakeTrackerContextReader,
+):
+    """In-process ``TrackerPort`` — the double every port CONSUMER is tested on.
 
-        Same four refusals as the adapter, for the same reasons: an id the
-        workspace does not hold, an id whose document carries another
-        title, a title two documents share, and a create with no declared
-        container (the backend files every document in one; KOD-166).
-        """
-        if ref.identifier is not None:
-            title = self.document_titles.get(ref.identifier)
-            if title is None:
-                raise TrackerEnsureConflictError(
-                    "the workspace holds no document with this identifier",
-                    entry=ref.describe(),
-                )
-            if title != ref.name:
-                raise TrackerEnsureConflictError(
-                    "the workspace holds this document under another title; "
-                    f"declared {ref.name!r}, found {title!r}",
-                    entry=ref.describe(),
-                )
-            return MappingOutcome(
-                ref=ref,
-                action=EnsureAction.ADOPTED,
-                identifier=ref.identifier,
-            )
-        held = sorted(
-            identifier
-            for identifier, title in self.document_titles.items()
-            if title == ref.name
-        )
-        if len(held) > 1:
-            raise TrackerEnsureConflictError(
-                "the workspace holds several documents under this title",
-                entry=ref.describe(),
-            )
-        if held:
-            return MappingOutcome(
-                ref=ref,
-                action=EnsureAction.ADOPTED,
-                identifier=held[0],
-            )
-        if ref.scope is None:
-            raise TrackerEnsureConflictError(
-                "creating this document needs a container: the backend files "
-                "every document in one and refuses a create naming none "
-                "(KOD-166); declare the entry's container (a declared team) "
-                "or pre-create the document and declare its id",
-                entry=ref.describe(),
-            )
-        self._sequence += 1
-        identifier = f"fake-document-{self._sequence:04d}"
-        self.document_titles[identifier] = ref.name
-        self._documents[identifier] = ""
-        self.known_identifiers.add(identifier)
-        return MappingOutcome(
-            ref=ref,
-            action=EnsureAction.CREATED,
-            identifier=identifier,
-        )
+    Holds domain objects directly, so a consumer test states its fixture in
+    the same vocabulary the consumer reads.  The claim is genuinely
+    first-writer-wins: concurrent claimants on one issue produce exactly one
+    ``GRANTED``.
+    """
 
 
 class FakeScopeStatusWriter:

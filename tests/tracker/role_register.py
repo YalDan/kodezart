@@ -471,3 +471,90 @@ def unreached_roles(sources: Mapping[str, str], register: str) -> frozenset[str]
     }
     reached = named.union(*(composed(register, name) for name in named))
     return frozenset(known - reached)
+
+
+def implementation_classes(
+    text: str, *, state: str, whole: str
+) -> dict[str, frozenset[str]]:
+    """Every class *text* builds over *state*, with the public members it declares.
+
+    The state class itself and the class composing the whole surface are
+    left out: the first declares no member by construction and the second is
+    asserted empty on its own. What remains are the classes that must each
+    answer for exactly one role.
+    """
+    classes = {
+        node.name: node
+        for node in ast.parse(text).body
+        if isinstance(node, ast.ClassDef)
+    }
+    bases = {
+        name: {base.id for base in node.bases if isinstance(base, ast.Name)}
+        for name, node in classes.items()
+    }
+
+    def built_over(name: str, seen: frozenset[str] = frozenset()) -> bool:
+        return any(
+            base == state or (base not in seen and built_over(base, seen | {name}))
+            for base in bases.get(name, ())
+        )
+
+    return {
+        name: frozenset(
+            item.name
+            for item in node.body
+            if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+            and not item.name.startswith("_")
+        )
+        for name, node in classes.items()
+        if name not in {state, whole} and built_over(name)
+    }
+
+
+def declared_by_role() -> dict[str, frozenset[str]]:
+    """Each role that declares members, with the members it declares."""
+    text = port_module_text()
+    own = own_declarations(text)
+    return {name: own[name] for name in declaring_roles(text)}
+
+
+def classes_outside_one_role(
+    classes: Mapping[str, frozenset[str]],
+) -> dict[str, tuple[str, ...]]:
+    """Every class whose declared members are not exactly one role's."""
+    registers = set(declared_by_role().values())
+    return {
+        name: tuple(sorted(members))
+        for name, members in sorted(classes.items())
+        if members not in registers
+    }
+
+
+def roles_implemented_twice(
+    classes: Mapping[str, frozenset[str]],
+) -> dict[str, tuple[str, ...]]:
+    """Every role more than one class declares exactly the members of."""
+    report: dict[str, tuple[str, ...]] = {}
+    for role, members in sorted(declared_by_role().items()):
+        holders = tuple(sorted(name for name, own in classes.items() if own == members))
+        if len(holders) > 1:
+            report[role] = holders
+    return report
+
+
+def roles_implemented_nowhere(classes: Mapping[str, frozenset[str]]) -> frozenset[str]:
+    """Every role no class declares exactly the members of."""
+    held = set(classes.values())
+    return frozenset(
+        role for role, members in declared_by_role().items() if members not in held
+    )
+
+
+def class_per_role(classes: Mapping[str, frozenset[str]]) -> dict[str, str]:
+    """The one class that answers for each role, by role name."""
+    return {
+        role: name
+        for role, members in declared_by_role().items()
+        for name, own in classes.items()
+        if own == members
+    }
