@@ -40,7 +40,11 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
-from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
+from kodezart.types.domain.criteria import (
+    CriterionFeasibility,
+    CriterionVerdict,
+    ValidatedCriterion,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
@@ -1603,6 +1607,40 @@ async def test_the_three_stops_stay_distinct_and_none_shadows_another() -> None:
     assert stalled[-1].verdict is AcceptVerdict.rejected
     assert stalled[-1].iteration == 3 < 5
     assert stalled[-1].trajectory.plateaued is True
+
+    # The fourth stop: a criterion the sweep judged unverifiable takes no seat,
+    # so the two graded ones clear the gate on the first round, well below the
+    # ceiling, and the verdict is clamped to ship_with_flags rather than held
+    # open by the one demonstration that was never possible.
+    flagged_criteria = [
+        *_THREE_CRITERIA[:2],
+        _THREE_CRITERIA[2].model_copy(
+            update={
+                "feasibility": CriterionFeasibility(
+                    criterion_id=_THREE_CRITERIA[2].id,
+                    verdict=CriterionVerdict.unverifiable,
+                    missing_resource="network access for the demonstration",
+                )
+            }
+        ),
+    ]
+    flagged_loop = _make_loop(
+        executor=_ScriptedLoopExecutor(flagged_criteria, [[True, True, False]]),
+        max_iterations=5,
+    )
+    flagged = [
+        e
+        async for e in flagged_loop.run(
+            **_run_kwargs(acceptance_criteria=flagged_criteria)
+        )
+        if isinstance(e, WorkflowIterationEvent)
+    ]
+    assert flagged[-1].verdict is AcceptVerdict.ship_with_flags
+    assert flagged[-1].iteration == 1 < 5
+    assert flagged[-1].trajectory.plateaued is False
+    assert len(flagged[-1].evaluation.criteria_results) == 3
+    assert flagged[-1].trajectory.records[-1].passed_count == 2
+    assert flagged[-1].trajectory.records[-1].failing_criterion_ids == []
 
 
 # ---------------------------------------------------------------------------
