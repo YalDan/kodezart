@@ -52,6 +52,18 @@ already carries, `tests/` left outside the type checker's reach, is a
 decision of record (KOD-140) written in that file's own comment rather than
 counted here.
 
+The runner reads one configuration file and inherits nothing from any
+other.  The version the gate runs looks, from each path on its command line
+upwards, for `pytest.toml`, `.pytest.toml`, `pytest.ini`, `.pytest.ini`,
+`pyproject.toml`, `tox.ini` and `setup.cfg`, in that order, and takes the
+first of them that carries a table of its own -- or, for the four names
+ahead of the project file, the first that exists at all, empty or not -- as
+the whole of its configuration.  That order is the basis of the foreign
+configuration roster below: the four names ahead of `pyproject.toml` are
+rows there because any one of them shadows `[tool.pytest.ini_options]`
+entire, and the roster is not to be read as a list of files that carry
+suppressions.
+
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
 that needs it, with its reason written there.
@@ -370,21 +382,25 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
 #: is a row here because a second copy of it under a walked tree is read the
 #: same way; the pinned one at the root is not a hit.
 #:
-#: ``.pytest.ini`` is a row for the runner rather than the linter: the
-#: version the gate runs searches ``pytest.ini``, ``.pytest.ini`` and then
-#: ``pyproject.toml``, and takes the first it finds as the whole of its
-#: configuration even when that file is empty.  One of those beside the
-#: project file therefore shadows ``[tool.pytest.ini_options]`` entire --
-#: the error-on-warning setting and the declared marks with it -- while
-#: every table pinned above goes on reading exactly as it does now.
+#: Four of these names -- ``pytest.toml``, ``.pytest.toml``, ``pytest.ini``
+#: and ``.pytest.ini`` -- are rows for the runner rather than the linter,
+#: and are here because the search order stated at the top of this module
+#: puts them ahead of the project file and takes the first one it finds as
+#: the whole of the runner's configuration even when that file is empty.
+#: One of the four beside the project file therefore shadows
+#: ``[tool.pytest.ini_options]`` entire -- the error-on-warning setting and
+#: the declared marks with it -- while every table pinned above goes on
+#: reading exactly as it does now.
 FOREIGN_TOOL_FILES: tuple[str, ...] = (
     ".flake8",
     ".mypy.ini",
     ".pytest.ini",
+    ".pytest.toml",
     ".ruff.toml",
     "mypy.ini",
     "pyproject.toml",
     "pytest.ini",
+    "pytest.toml",
     "ruff.toml",
     "setup.cfg",
     "tox.ini",
@@ -699,10 +715,11 @@ def test_the_configuration_scan_reads_every_directory_the_walk_reaches(
 ) -> None:
     """A file nested under a walked tree is the same hole as one beside the root.
 
-    Three hits over a fake tree: one the linter reads, one the runner reads
-    ahead of the project file, and one a second copy of the project file
-    itself.  The pinned file at the root is not a hit, and the same tree
-    without them is clean.
+    Five hits over a fake tree: one the linter reads, three the runner reads
+    ahead of the project file -- both of its ``.toml`` spellings and one of
+    its ``.ini`` ones -- and one a second copy of the project file itself.
+    The pinned file at the root is not a hit, and the same tree without them
+    is clean.
     """
     walked = ("src/kodezart/services/agent_service.py", "tests/domain/test_a.py")
     project = tmp_path / "pyproject.toml"
@@ -715,6 +732,8 @@ def test_the_configuration_scan_reads_every_directory_the_walk_reaches(
     )
 
     (nested / ".pytest.ini").write_text("", encoding="utf-8")
+    (nested / ".pytest.toml").write_text("", encoding="utf-8")
+    (nested / "pytest.toml").write_text("", encoding="utf-8")
     (nested / "ruff.toml").write_text("", encoding="utf-8")
     (tmp_path / "src" / "pyproject.toml").write_text("", encoding="utf-8")
 
@@ -722,6 +741,8 @@ def test_the_configuration_scan_reads_every_directory_the_walk_reaches(
         project, walked, FOREIGN_TOOL_FILES
     ) == [
         "src/kodezart/services/.pytest.ini",
+        "src/kodezart/services/.pytest.toml",
+        "src/kodezart/services/pytest.toml",
         "src/kodezart/services/ruff.toml",
         "src/pyproject.toml",
     ]
