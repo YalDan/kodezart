@@ -121,6 +121,18 @@ class _WriteStep:
         await self.apply(finding)
 
 
+@dataclass(frozen=True, slots=True)
+class _PhaseRounds:
+    """What one phase's convergence loop settled.
+
+    *report* is a report the caller returns at once; *active* says the phase
+    admitted somebody and therefore owes the barrier.
+    """
+
+    report: OrganizeReport | None = None
+    active: bool = False
+
+
 def _created_context(context: OrganizeContext, child: TrackerIssue) -> OrganizeContext:
     if child.issue_key in context.member_keys:
         return context
@@ -1054,6 +1066,370 @@ class OrganizeOwner:
             ),
         )
 
+    async def _converge(
+        self,
+        *,
+        phase: ResolvedMandateSpec,
+        marker: str,
+        scope: ScopeRef,
+        repo_url: str,
+        base_ref: str,
+        job_id: str,
+        visibility: RepoVisibility,
+        completed: Sequence[MandateKind],
+    ) -> _PhaseRounds:
+        """Run one phase's convergence rounds to their settlement.
+
+        The bound is the configured one and it is read here, once. A round
+        that admits nobody, or that finds no subject, leaves the phase idle;
+        a round that settles writes the phase marker onto every admitted
+        subject and stops. Every other exit is a report the caller returns
+        at once, including the exhaustion of the bound.
+        """
+        admissions = self._admissions.setdefault(phase.spec.kind, {})
+        classes: set[str] = set()
+        findings: tuple[SpecFinding, ...] = ()
+        active = False
+        for _convergence_round in range(self._policy.max_convergence_rounds):
+            snapshot = await self._snapshot(scope)
+            issues = [r.issue for r in snapshot]
+            by_key = {issue.issue_key: issue for issue in issues}
+            members = set(by_key)
+            scope_labels = await self._tracker.read_scope_labels(ref=scope)
+            unlabelled = stage_unlabelled(issues=issues, marker=marker)
+            finding_keys = {f.issue_id for f in findings}
+            admitted = await self._admissions_for(
+                keys=self._roster(
+                    phase=phase,
+                    issues=issues,
+                    unlabelled=unlabelled,
+                    finding_keys=finding_keys & members,
+                ),
+                by_key=by_key,
+                phase=phase,
+                scope_labels=scope_labels,
+            )
+            pending = stage_pending(
+                unlabelled=unlabelled,
+                admitted=admitted,
+                under_approval=phase.role.runs_under_approval,
+            )
+            if pending is None:
+                # Nobody is admitted here: an approved scope on the
+                # pre-approval row, or one whose gate is absent. No work,
+                # no completion, no halt.
+                break
+            active = True
+            blocked = tuple(
+                key
+                for key in pending
+                if not admitted.get(key, False) or not is_organize_subject(by_key[key])
+            )
+            if blocked:
+                # Counted, named and free, before any session opens.
+                return _PhaseRounds(
+                    report=self._stage_incomplete(
+                        completed=completed, phase=phase, owed=blocked
+                    )
+                )
+            gap = organize_gap(
+                revisions=snapshot,
+                admissions=tuple(
+                    [
+                        result
+                        for result in admissions.values()
+                        if await self._admission.is_live(result)
+                    ]
+                ),
+                open_findings=findings,
+                body_marker_key=self._body_marker,
+            )
+            # A member already carrying the marker is out of the roster
+            # unless a finding of this run names it: the label is the
+            # durable record of the admission test that set it.
+            subjects = [
+                issue
+                for issue in issues
+                if is_organize_subject(issue)
+                and admitted.get(issue.issue_key, False)
+                and (issue.issue_key in pending or issue.issue_key in finding_keys)
+            ]
+            if not subjects:
+                break
+            work = {issue.issue_key for issue in gap}
+            for issue in subjects:
+                if issue.issue_key not in work:
+                    continue
+                request = await self._request(
+                    issue,
+                    phase,
+                    repo_url=repo_url,
+                    base_ref=base_ref,
+                    job_id=job_id,
+                    classes=classes,
+                    scope=scope,
+                )
+                result = await self._admission.assess(request)
+                pending_findings = tuple(
+                    f
+                    for f in findings
+                    if f.issue_id == issue.issue_key
+                    or any(
+                        r.issue.issue_key == f.issue_id
+                        and r.issue.parent_key == issue.issue_key
+                        for r in snapshot
+                    )
+                )
+                key = phase.role.author_prompt_key
+                for _admission_round in range(self._policy.max_admission_rounds):
+                    route = await self._route(
+                        result, issue=issue, scope_issue_keys=frozenset(members)
+                    )
+                    if route is AdmissionRoute.ESCALATE:
+                        halt = await self._halt(
+                            cause=StageHaltCause.HUMAN_DECISION,
+                            results=(result,),
+                            findings=(),
+                            phase=phase,
+                            scope=scope,
+                            job_id=job_id,
+                            base_ref=base_ref,
+                            visibility=visibility,
+                        )
+                        return _PhaseRounds(
+                            report=OrganizeReport(
+                                completed_phases=tuple(completed), halt=halt
+                            )
+                        )
+                    children = await self._tracker.read_criteria(
+                        issue_key=issue.issue_key
+                    )
+                    needs_criteria = (
+                        key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                        and not any(
+                            c.state_kind is not WorkflowStateKind.CANCELED
+                            for c in children
+                        )
+                    )
+                    if (
+                        route is AdmissionRoute.MARK_COMPLETE
+                        and not result.findings
+                        and not pending_findings
+                        and not needs_criteria
+                    ):
+                        break
+                    try:
+                        verified_write = await self._author_write(
+                            request,
+                            key=key,
+                            phase=phase,
+                            scope=scope,
+                            job_id=job_id,
+                            evidence="\n".join(
+                                (
+                                    result.evidence,
+                                    *(f.model_dump_json() for f in pending_findings),
+                                )
+                            ),
+                            visibility=visibility,
+                        )
+                    except OrganizeDecisionRequiredError as exc:
+                        halt = await self._halt(
+                            cause=StageHaltCause.HUMAN_DECISION,
+                            results=(),
+                            findings=(),
+                            questions=(
+                                UnresolvedProposal(
+                                    kind="unresolved",
+                                    issue_id=exc.issue_key,
+                                    question=exc.question,
+                                    evidence=exc.evidence,
+                                ),
+                            ),
+                            phase=phase,
+                            scope=scope,
+                            job_id=job_id,
+                            base_ref=base_ref,
+                            visibility=visibility,
+                        )
+                        return _PhaseRounds(
+                            report=OrganizeReport(
+                                completed_phases=tuple(completed), halt=halt
+                            )
+                        )
+                    if verified_write.verdict is not AuditVerdict.HOLDS:
+                        halt = await self._halt(
+                            cause=StageHaltCause.ADMISSION_EXHAUSTED,
+                            bound=OrganizeBoundEvidence(
+                                setting="write_back.max_verify_rounds",
+                                value=self._write_back_max_rounds,
+                                rounds_used=len(verified_write.rounds),
+                                loop="write_back",
+                            ),
+                            write_back_results=(verified_write,),
+                            results=(result,),
+                            findings=(),
+                            phase=phase,
+                            scope=scope,
+                            job_id=job_id,
+                            base_ref=base_ref,
+                            visibility=visibility,
+                        )
+                        return _PhaseRounds(
+                            report=OrganizeReport(
+                                completed_phases=tuple(completed), halt=halt
+                            )
+                        )
+                    # Parent edits may remove this subject; splits may add
+                    # newly minted members. Continue on the actual membership.
+                    refreshed = await self._snapshot(scope)
+                    members = {revision.issue.issue_key for revision in refreshed}
+                    if request.issue_key not in members:
+                        admissions.pop(request.issue_key, None)
+                        break
+                    result = await self._admission.verify(request)
+                    route = await self._route(
+                        result, issue=issue, scope_issue_keys=frozenset(members)
+                    )
+                    children = await self._tracker.read_criteria(
+                        issue_key=issue.issue_key
+                    )
+                    if (
+                        route is AdmissionRoute.MARK_COMPLETE
+                        and not result.findings
+                        and (
+                            key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                            or any(
+                                c.state_kind is not WorkflowStateKind.CANCELED
+                                for c in children
+                            )
+                        )
+                    ):
+                        break
+                else:
+                    halt = await self._halt(
+                        cause=StageHaltCause.ADMISSION_EXHAUSTED,
+                        bound=OrganizeBoundEvidence(
+                            setting="organize.max_admission_rounds",
+                            value=self._policy.max_admission_rounds,
+                            rounds_used=_admission_round + 1,
+                            loop="admission",
+                        ),
+                        results=(result,),
+                        findings=(),
+                        phase=phase,
+                        scope=scope,
+                        job_id=job_id,
+                        base_ref=base_ref,
+                        visibility=visibility,
+                    )
+                    return _PhaseRounds(
+                        report=OrganizeReport(
+                            completed_phases=tuple(completed), halt=halt
+                        )
+                    )
+            # A dry round is a new verification of the whole scope,
+            # including surfaces untouched by this round's author.
+            current = await self._snapshot(scope)
+            members = {r.issue.issue_key for r in current}
+            fresh: list[AdmissionResult] = []
+            refused: list[AdmissionResult] = []
+            for revision in current:
+                issue = revision.issue
+                if (
+                    not is_organize_subject(issue)
+                    and "criterion" not in issue.issue_labels
+                ):
+                    continue
+                request = await self._request(
+                    issue,
+                    phase,
+                    repo_url=repo_url,
+                    base_ref=base_ref,
+                    job_id=job_id,
+                    classes=classes,
+                    scope=scope,
+                )
+                result = await self._admission.verify(request)
+                fresh.append(result)
+                if (
+                    await self._route(
+                        result, issue=issue, scope_issue_keys=frozenset(members)
+                    )
+                    is not AdmissionRoute.MARK_COMPLETE
+                ):
+                    refused.append(result)
+            findings = tuple(f for result in fresh for f in result.findings)
+            classes.update(f.defect_class for f in findings)
+            refused_keys = {r.issue_id for r in refused}
+            for result in fresh:
+                if result.issue_id in refused_keys or result.findings:
+                    admissions.pop(result.issue_id, None)
+                else:
+                    admissions[result.issue_id] = result
+            latest_members = {r.issue.issue_key for r in await self._snapshot(scope)}
+            if (
+                latest_members == members
+                and not refused
+                and not findings
+                and all([await self._admission.is_live(result) for result in fresh])
+            ):
+                # Newly prepared split children belong to this same phase;
+                # removed members no longer receive its marker.
+                current_labels = await self._tracker.read_scope_labels(ref=scope)
+                marker_subjects = [
+                    revision.issue
+                    for revision in current
+                    if is_organize_subject(revision.issue)
+                    and await self._admitted(
+                        revision.issue, phase=phase, scope_labels=current_labels
+                    )
+                ]
+                for issue in marker_subjects:
+                    request = await self._request(
+                        issue,
+                        phase,
+                        repo_url=repo_url,
+                        base_ref=base_ref,
+                        job_id=job_id,
+                        classes=classes,
+                        scope=scope,
+                    )
+                    if not await self._mark(
+                        request,
+                        phase=phase,
+                        job_id=job_id,
+                        judgments=fresh,
+                        scope=scope,
+                        visibility=visibility,
+                    ):
+                        raise OrganizeWriteRefusalError(
+                            issue_key=issue.issue_key,
+                            reason="phase marker remains unverified",
+                        )
+                break
+        else:
+            halt = await self._halt(
+                cause=StageHaltCause.CONVERGENCE_EXHAUSTED,
+                bound=OrganizeBoundEvidence(
+                    setting="organize.max_convergence_rounds",
+                    value=self._policy.max_convergence_rounds,
+                    rounds_used=_convergence_round + 1,
+                    loop="convergence",
+                ),
+                results=refused,
+                findings=findings,
+                phase=phase,
+                scope=scope,
+                job_id=job_id,
+                base_ref=base_ref,
+                visibility=visibility,
+            )
+            return _PhaseRounds(
+                report=OrganizeReport(completed_phases=tuple(completed), halt=halt)
+            )
+        return _PhaseRounds(active=active)
+
     async def run(
         self,
         *,
@@ -1065,344 +1441,20 @@ class OrganizeOwner:
     ) -> OrganizeReport:
         completed: list[MandateKind] = []
         for phase in self._phases:
-            admissions = self._admissions.setdefault(phase.spec.kind, {})
-            classes: set[str] = set()
-            findings: tuple[SpecFinding, ...] = ()
             marker = split_label_key(phase.spec.terminal_marker_key)[1]
-            active = False
-            for _convergence_round in range(self._policy.max_convergence_rounds):
-                snapshot = await self._snapshot(scope)
-                issues = [r.issue for r in snapshot]
-                by_key = {issue.issue_key: issue for issue in issues}
-                members = set(by_key)
-                scope_labels = await self._tracker.read_scope_labels(ref=scope)
-                unlabelled = stage_unlabelled(issues=issues, marker=marker)
-                finding_keys = {f.issue_id for f in findings}
-                admitted = await self._admissions_for(
-                    keys=self._roster(
-                        phase=phase,
-                        issues=issues,
-                        unlabelled=unlabelled,
-                        finding_keys=finding_keys & members,
-                    ),
-                    by_key=by_key,
-                    phase=phase,
-                    scope_labels=scope_labels,
-                )
-                pending = stage_pending(
-                    unlabelled=unlabelled,
-                    admitted=admitted,
-                    under_approval=phase.role.runs_under_approval,
-                )
-                if pending is None:
-                    # Nobody is admitted here: an approved scope on the
-                    # pre-approval row, or one whose gate is absent. No work,
-                    # no completion, no halt.
-                    break
-                active = True
-                blocked = tuple(
-                    key
-                    for key in pending
-                    if not admitted.get(key, False)
-                    or not is_organize_subject(by_key[key])
-                )
-                if blocked:
-                    # Counted, named and free, before any session opens.
-                    return self._stage_incomplete(
-                        completed=completed, phase=phase, owed=blocked
-                    )
-                gap = organize_gap(
-                    revisions=snapshot,
-                    admissions=tuple(
-                        [
-                            result
-                            for result in admissions.values()
-                            if await self._admission.is_live(result)
-                        ]
-                    ),
-                    open_findings=findings,
-                    body_marker_key=self._body_marker,
-                )
-                # A member already carrying the marker is out of the roster
-                # unless a finding of this run names it: the label is the
-                # durable record of the admission test that set it.
-                subjects = [
-                    issue
-                    for issue in issues
-                    if is_organize_subject(issue)
-                    and admitted.get(issue.issue_key, False)
-                    and (issue.issue_key in pending or issue.issue_key in finding_keys)
-                ]
-                if not subjects:
-                    break
-                work = {issue.issue_key for issue in gap}
-                for issue in subjects:
-                    if issue.issue_key not in work:
-                        continue
-                    request = await self._request(
-                        issue,
-                        phase,
-                        repo_url=repo_url,
-                        base_ref=base_ref,
-                        job_id=job_id,
-                        classes=classes,
-                        scope=scope,
-                    )
-                    result = await self._admission.assess(request)
-                    pending_findings = tuple(
-                        f
-                        for f in findings
-                        if f.issue_id == issue.issue_key
-                        or any(
-                            r.issue.issue_key == f.issue_id
-                            and r.issue.parent_key == issue.issue_key
-                            for r in snapshot
-                        )
-                    )
-                    key = phase.role.author_prompt_key
-                    for _admission_round in range(self._policy.max_admission_rounds):
-                        route = await self._route(
-                            result, issue=issue, scope_issue_keys=frozenset(members)
-                        )
-                        if route is AdmissionRoute.ESCALATE:
-                            halt = await self._halt(
-                                cause=StageHaltCause.HUMAN_DECISION,
-                                results=(result,),
-                                findings=(),
-                                phase=phase,
-                                scope=scope,
-                                job_id=job_id,
-                                base_ref=base_ref,
-                                visibility=visibility,
-                            )
-                            return OrganizeReport(
-                                completed_phases=tuple(completed), halt=halt
-                            )
-                        children = await self._tracker.read_criteria(
-                            issue_key=issue.issue_key
-                        )
-                        needs_criteria = (
-                            key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
-                            and not any(
-                                c.state_kind is not WorkflowStateKind.CANCELED
-                                for c in children
-                            )
-                        )
-                        if (
-                            route is AdmissionRoute.MARK_COMPLETE
-                            and not result.findings
-                            and not pending_findings
-                            and not needs_criteria
-                        ):
-                            break
-                        try:
-                            verified_write = await self._author_write(
-                                request,
-                                key=key,
-                                phase=phase,
-                                scope=scope,
-                                job_id=job_id,
-                                evidence="\n".join(
-                                    (
-                                        result.evidence,
-                                        *(
-                                            f.model_dump_json()
-                                            for f in pending_findings
-                                        ),
-                                    )
-                                ),
-                                visibility=visibility,
-                            )
-                        except OrganizeDecisionRequiredError as exc:
-                            halt = await self._halt(
-                                cause=StageHaltCause.HUMAN_DECISION,
-                                results=(),
-                                findings=(),
-                                questions=(
-                                    UnresolvedProposal(
-                                        kind="unresolved",
-                                        issue_id=exc.issue_key,
-                                        question=exc.question,
-                                        evidence=exc.evidence,
-                                    ),
-                                ),
-                                phase=phase,
-                                scope=scope,
-                                job_id=job_id,
-                                base_ref=base_ref,
-                                visibility=visibility,
-                            )
-                            return OrganizeReport(
-                                completed_phases=tuple(completed), halt=halt
-                            )
-                        if verified_write.verdict is not AuditVerdict.HOLDS:
-                            halt = await self._halt(
-                                cause=StageHaltCause.ADMISSION_EXHAUSTED,
-                                bound=OrganizeBoundEvidence(
-                                    setting="write_back.max_verify_rounds",
-                                    value=self._write_back_max_rounds,
-                                    rounds_used=len(verified_write.rounds),
-                                    loop="write_back",
-                                ),
-                                write_back_results=(verified_write,),
-                                results=(result,),
-                                findings=(),
-                                phase=phase,
-                                scope=scope,
-                                job_id=job_id,
-                                base_ref=base_ref,
-                                visibility=visibility,
-                            )
-                            return OrganizeReport(
-                                completed_phases=tuple(completed), halt=halt
-                            )
-                        # Parent edits may remove this subject; splits may add
-                        # newly minted members. Continue on the actual membership.
-                        refreshed = await self._snapshot(scope)
-                        members = {revision.issue.issue_key for revision in refreshed}
-                        if request.issue_key not in members:
-                            admissions.pop(request.issue_key, None)
-                            break
-                        result = await self._admission.verify(request)
-                        route = await self._route(
-                            result, issue=issue, scope_issue_keys=frozenset(members)
-                        )
-                        children = await self._tracker.read_criteria(
-                            issue_key=issue.issue_key
-                        )
-                        if (
-                            route is AdmissionRoute.MARK_COMPLETE
-                            and not result.findings
-                            and (
-                                key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
-                                or any(
-                                    c.state_kind is not WorkflowStateKind.CANCELED
-                                    for c in children
-                                )
-                            )
-                        ):
-                            break
-                    else:
-                        halt = await self._halt(
-                            cause=StageHaltCause.ADMISSION_EXHAUSTED,
-                            bound=OrganizeBoundEvidence(
-                                setting="organize.max_admission_rounds",
-                                value=self._policy.max_admission_rounds,
-                                rounds_used=_admission_round + 1,
-                                loop="admission",
-                            ),
-                            results=(result,),
-                            findings=(),
-                            phase=phase,
-                            scope=scope,
-                            job_id=job_id,
-                            base_ref=base_ref,
-                            visibility=visibility,
-                        )
-                        return OrganizeReport(
-                            completed_phases=tuple(completed), halt=halt
-                        )
-                # A dry round is a new verification of the whole scope,
-                # including surfaces untouched by this round's author.
-                current = await self._snapshot(scope)
-                members = {r.issue.issue_key for r in current}
-                fresh: list[AdmissionResult] = []
-                refused: list[AdmissionResult] = []
-                for revision in current:
-                    issue = revision.issue
-                    if (
-                        not is_organize_subject(issue)
-                        and "criterion" not in issue.issue_labels
-                    ):
-                        continue
-                    request = await self._request(
-                        issue,
-                        phase,
-                        repo_url=repo_url,
-                        base_ref=base_ref,
-                        job_id=job_id,
-                        classes=classes,
-                        scope=scope,
-                    )
-                    result = await self._admission.verify(request)
-                    fresh.append(result)
-                    if (
-                        await self._route(
-                            result, issue=issue, scope_issue_keys=frozenset(members)
-                        )
-                        is not AdmissionRoute.MARK_COMPLETE
-                    ):
-                        refused.append(result)
-                findings = tuple(f for result in fresh for f in result.findings)
-                classes.update(f.defect_class for f in findings)
-                refused_keys = {r.issue_id for r in refused}
-                for result in fresh:
-                    if result.issue_id in refused_keys or result.findings:
-                        admissions.pop(result.issue_id, None)
-                    else:
-                        admissions[result.issue_id] = result
-                latest_members = {
-                    r.issue.issue_key for r in await self._snapshot(scope)
-                }
-                if (
-                    latest_members == members
-                    and not refused
-                    and not findings
-                    and all([await self._admission.is_live(result) for result in fresh])
-                ):
-                    # Newly prepared split children belong to this same phase;
-                    # removed members no longer receive its marker.
-                    current_labels = await self._tracker.read_scope_labels(ref=scope)
-                    marker_subjects = [
-                        revision.issue
-                        for revision in current
-                        if is_organize_subject(revision.issue)
-                        and await self._admitted(
-                            revision.issue, phase=phase, scope_labels=current_labels
-                        )
-                    ]
-                    for issue in marker_subjects:
-                        request = await self._request(
-                            issue,
-                            phase,
-                            repo_url=repo_url,
-                            base_ref=base_ref,
-                            job_id=job_id,
-                            classes=classes,
-                            scope=scope,
-                        )
-                        if not await self._mark(
-                            request,
-                            phase=phase,
-                            job_id=job_id,
-                            judgments=fresh,
-                            scope=scope,
-                            visibility=visibility,
-                        ):
-                            raise OrganizeWriteRefusalError(
-                                issue_key=issue.issue_key,
-                                reason="phase marker remains unverified",
-                            )
-                    break
-            else:
-                halt = await self._halt(
-                    cause=StageHaltCause.CONVERGENCE_EXHAUSTED,
-                    bound=OrganizeBoundEvidence(
-                        setting="organize.max_convergence_rounds",
-                        value=self._policy.max_convergence_rounds,
-                        rounds_used=_convergence_round + 1,
-                        loop="convergence",
-                    ),
-                    results=refused,
-                    findings=findings,
-                    phase=phase,
-                    scope=scope,
-                    job_id=job_id,
-                    base_ref=base_ref,
-                    visibility=visibility,
-                )
-                return OrganizeReport(completed_phases=tuple(completed), halt=halt)
-            if not active:
+            rounds = await self._converge(
+                phase=phase,
+                marker=marker,
+                scope=scope,
+                repo_url=repo_url,
+                base_ref=base_ref,
+                job_id=job_id,
+                visibility=visibility,
+                completed=completed,
+            )
+            if rounds.report is not None:
+                return rounds.report
+            if not rounds.active:
                 continue
             # The barrier: read the board again and require the marker on
             # every member that owes it, whatever its admission now.
