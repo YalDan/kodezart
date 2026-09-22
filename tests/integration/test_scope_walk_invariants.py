@@ -16,12 +16,15 @@ about a criterion would pass this scan by having nothing to write.
 import json
 import re
 
+import pytest
 import structlog.testing
 
 from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.types.domain.operation import CheckStep
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import TRACKER_WRITE_JOURNALS, tracker_state
 from tests.integration.test_scope_runtime import (
+    FORGE_ORIGIN,
     SCOPE,
     WalkRepos,
     board,
@@ -31,6 +34,7 @@ from tests.integration.test_scope_runtime import (
     resumable,
     ticks_of,
 )
+from tests.integration.test_scope_union import armed, delivered_scope, stated
 
 #: Both lanes owe two criteria, so a leaked key list has more than one key in
 #: it and the scan below can tell a list from a single key an ordinary record
@@ -170,3 +174,67 @@ async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_
     assert criterion_key_lists(port, harness.status, keys=keys) == [
         '["A/check", "B/check"]'
     ]
+
+
+#: The operator's own spelling of the union step bound: ``AppConfig`` reads it
+#: from the environment, and the harness passes no such keyword of its own.
+STEP_TIMEOUT = "KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS"
+
+
+@pytest.mark.parametrize(
+    ("bound", "composition", "remediation", "executed"),
+    [
+        pytest.param(None, "green", None, b"x", id="default"),
+        pytest.param(
+            "0.05",
+            "red",
+            "Repair union check roots: union-gate. Cascading checks: none.",
+            b"",
+            id="bounded",
+        ),
+    ],
+)
+async def test_the_union_step_timeout_an_operator_sets_changes_what_the_walk_states(
+    tmp_path, monkeypatch, bound, composition, remediation, executed
+):
+    """A non-default step bound changes the composed walker's statement, only that.
+
+    The declared step sleeps past the bounded arm's wall clock before it leaves
+    its mark, so the shipped default lets it finish green and the operator's
+    bound kills it red, naming the step whose clock ran out, before the mark is
+    written. The walk itself is the same walk in both arms: the same ticks, the
+    same lanes offered and rested, no lane failed. How many fires in a row may
+    close nothing before a lane rests is not a setting at all; that bound stays
+    the walker's own constant.
+    """
+    counter = tmp_path / "executions"
+    port, repos, forge = await delivered_scope()
+    if bound is None:
+        monkeypatch.delenv(STEP_TIMEOUT, raising=False)
+    else:
+        monkeypatch.setenv(STEP_TIMEOUT, bound)
+    try:
+        walk = armed(
+            port,
+            repos,
+            forge,
+            chain=(
+                CheckStep(
+                    name="union-gate", command=f"sleep 0.3; printf x >> {counter}"
+                ),
+            ),
+        )
+        with structlog.testing.capture_logs() as logs:
+            events = await bounded_walk(walk, job="second-job", origin=FORGE_ORIGIN)
+    finally:
+        await forge.close()
+
+    observed = stated(logs, "scope_union_observed")
+    assert len(observed) == 3
+    assert {line["composition"] for line in observed} == {composition}
+    assert {line["remediation"] for line in observed} == {remediation}
+    assert (counter.read_bytes() if counter.exists() else b"") == executed
+    assert lane_failures(events) == ()
+    assert [
+        (tick.tick, tick.dispatched, tick.rested_lanes) for tick in ticks_of(events)
+    ] == [(1, (), ()), (2, (), ("A",)), (3, (), ("A", "B"))]
