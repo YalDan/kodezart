@@ -9,6 +9,7 @@ carried alongside that read stands in for it.
 
 import inspect
 import re
+from collections.abc import Awaitable, Callable
 from unittest.mock import Mock
 
 import pytest
@@ -965,47 +966,129 @@ async def test_a_refused_scope_read_inside_the_subtree_read_stays_a_typed_error(
     assert port.issue_creations == []
 
 
-async def test_a_criterion_the_port_read_disowns_never_joins_the_subtree_roster(
-    monkeypatch: pytest.MonkeyPatch,
+#: The scope the subject is read as, and the refusal the cross-check raises.
+SUBJECT_SCOPE = ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
+MEMBERSHIP_REFUSAL = "scope criterion membership changed"
+
+
+async def subtree_outcome(source: TrackerCriteria) -> tuple[str, ...]:
+    """What one subtree read answers: the roster it admits, or its refusal.
+
+    One value either way, so a case expecting a refusal that is handed a
+    roster instead fails on the membership it was given rather than on a
+    missing exception, and a case expecting a roster names the keys in it.
+    """
+    try:
+        roster = await source._read_subtree(SUBJECT)
+    except ScopeReadError as refusal:
+        return ("refused", str(refusal))
+    return ("admitted", *sorted(roster))
+
+
+def refused(reason: str) -> tuple[str, str]:
+    """The outcome a refusal reads as, spelled by the shipped error itself."""
+    return ("refused", str(ScopeReadError(reason, ref=SUBJECT_SCOPE)))
+
+
+#: One member's criterion read, as the port answers it.
+CriterionRead = Callable[..., Awaitable[tuple[TrackerIssue, ...]]]
+
+
+def disagreeing_read(case: str, read: CriterionRead) -> CriterionRead:
+    """A criterion read that disagrees with the listing in exactly one way."""
+
+    async def disowned(*, issue_key: str) -> tuple[TrackerIssue, ...]:
+        """Every criterion answers under the subject, not under its parent."""
+        return tuple(
+            criterion.model_copy(update={"parent_key": SUBJECT})
+            for criterion in await read(issue_key=issue_key)
+        )
+
+    async def answered_by_another_member(*, issue_key: str) -> tuple[TrackerIssue, ...]:
+        """The subject's read answers the child's criterion, record unchanged."""
+        asked = DELIVERABLE_CHILD if issue_key == SUBJECT else issue_key
+        return tuple(await read(issue_key=asked))
+
+    async def restated_under_its_own_parent(
+        *, issue_key: str
+    ) -> tuple[TrackerIssue, ...]:
+        """The owning parent answers it under a body the listing never carried."""
+        return tuple(
+            criterion.model_copy(update={"body": criterion.body + "\n**Do:** restated"})
+            for criterion in await read(issue_key=issue_key)
+        )
+
+    async def omitted(*, issue_key: str) -> tuple[TrackerIssue, ...]:
+        """The criterion read answers nothing, for any member."""
+        return ()
+
+    return {
+        "disowned": disowned,
+        "answered by another member": answered_by_another_member,
+        "restated under its own parent": restated_under_its_own_parent,
+        "omitted": omitted,
+    }[case]
+
+
+#: What each disagreement between the listing and the port's criterion read
+#: earns.  A contradiction is refused: the criterion answered under a parent
+#: that is not the member asked (both halves at once, then the ownership half
+#: alone with the record left identical), and the criterion answered under its
+#: own parent with a record the listing never carried (the contradiction half
+#: alone).  An omission is not a contradiction and stays admitted from the
+#: listing, which is the source of membership.
+PORT_READ_DISAGREEMENTS = {
+    "disowned": refused(MEMBERSHIP_REFUSAL),
+    "answered by another member": refused(MEMBERSHIP_REFUSAL),
+    "restated under its own parent": refused(MEMBERSHIP_REFUSAL),
+    "omitted": ("admitted", NESTED_OWED),
+}
+
+
+@pytest.mark.parametrize("case", sorted(PORT_READ_DISAGREEMENTS))
+async def test_the_port_criterion_read_cross_reads_the_listed_membership(
+    monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
     """Membership is the listing, and the port's criterion read cross-reads it.
 
     The extent is taken over the listing the scope read answers, which carries
     every child of the subject whatever its label, and the port's criterion
     read is then consulted for each member that listing holds (KOD-710's
-    extent, KOD-618's cross-read).  A criterion the listing carries under one
-    parent that the parent's OWN criterion read does not answer for is a
-    membership that moved between the two reads, and the roster refuses
-    instead of admitting it.
+    extent, KOD-618's cross-read).  A criterion that read answers under a
+    parent other than the member asked, or answers under the right parent with
+    a record the listing never carried, is a membership that moved between the
+    two reads, and the roster refuses instead of admitting it.
 
-    Asserted on the roster and not on the words of the refusal: the same board
-    answers the criterion while both reads agree, and answers no roster at all
-    once they disagree.  A cross-read that stopped happening would be read
-    here as an admitted criterion rather than as a different error text.
+    One row per disagreement, so each half of the refusal is pinned by a row
+    that reds it alone: the first row trips both halves at once, the second
+    leaves the record identical so only ownership decides, and the third
+    leaves the parent right so only the contradiction does.  A cross-check
+    reduced to either half keeps the first row green and loses one of the
+    others.
+
+    The fourth row is the tolerance the Check states: a child the port read
+    merely omits stays admitted from the listing.  It is asserted as a roster
+    that IS answered, so the tolerance is a recorded reading rather than an
+    unwritten case.
+
+    Asserted on the roster, not on the words of the refusal: the same board
+    answers the criterion while both reads agree, and each disagreeing row
+    reads as an admitted roster if its refusal stops happening.
     """
     port = nested_only_board()
     source = TrackerCriteria(tracker=port)
 
-    admitted = await source._read_subtree(SUBJECT)
-    assert set(admitted) == {NESTED_OWED}
+    assert await subtree_outcome(source) == ("admitted", NESTED_OWED)
 
-    family = port.read_criteria
+    monkeypatch.setattr(
+        port, "read_criteria", disagreeing_read(case, port.read_criteria)
+    )
+    expected = PORT_READ_DISAGREEMENTS[case]
 
-    async def disowned(*, issue_key: str) -> tuple[TrackerIssue, ...]:
-        """Every criterion answers under the subject, not under its parent."""
-        return tuple(
-            criterion.model_copy(update={"parent_key": SUBJECT})
-            for criterion in await family(issue_key=issue_key)
-        )
-
-    monkeypatch.setattr(port, "read_criteria", disowned)
-
-    rosters: list[dict[str, TrackerIssue]] = []
-    with pytest.raises(ScopeReadError, match="scope criterion membership changed"):
-        rosters.append(await source._read_subtree(SUBJECT))
-    assert rosters == []
-    with pytest.raises(ScopeReadError, match="scope criterion membership changed"):
-        await source.read_entry(issue_key=SUBJECT)
+    assert await subtree_outcome(source) == expected
+    if expected[0] == "refused":
+        with pytest.raises(ScopeReadError, match=MEMBERSHIP_REFUSAL):
+            await source.read_entry(issue_key=SUBJECT)
 
     assert port.issue_writes == []
     assert port.issue_creations == []

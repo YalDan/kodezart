@@ -65,7 +65,9 @@ from pathlib import Path
 
 import pytest
 
+from kodezart.domain import fire_spec
 from kodezart.domain.fire_spec import (
+    _CRITERION_ROW,
     _criterion_rows,
     criterion_check,
     criterion_field_bodies,
@@ -326,6 +328,18 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
     assert found[RULE_MODULE] == sorted(
         {criterion_field_bodies.__name__, _criterion_rows.__name__}
     )
+    # A scope name is not enough to close the owner, because a second
+    # statement of the grammar matched inside one of those two scopes adds no
+    # third name.  So what the owner binds to a criterion-shaped pattern is
+    # pinned as well: exactly the names that denote the one grammar object the
+    # readers read, so a second compiled row pattern reds here wherever in the
+    # module it is used, and a rename of the grammar moves both sides at once.
+    # What this does not see is a criterion-shaped literal matched inline,
+    # bound to nothing, inside one of those same two scopes; the behavioural
+    # floor named in the module docstring is where that dies.
+    assert _pattern_names(ast.parse(sources[RULE_MODULE])) == {
+        name for name, value in vars(fire_spec).items() if value is _CRITERION_ROW
+    }
 
 
 def test_the_grammar_is_reached_from_outside_by_call_and_never_re_matched():
