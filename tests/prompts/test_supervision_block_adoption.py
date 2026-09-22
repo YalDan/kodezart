@@ -3,7 +3,8 @@
 ``docs/supervision-block.md`` is the block's text of record (KOD-872).  Both
 the block and the grooming template are read from disk here, so no text is
 copied into this module except the re-pointed references, which are the one
-place the template is allowed to differ from the block.
+place the template is allowed to differ from the block, and the three
+prohibitions the one amended base rule no longer states.
 
 * Seven self-contained sections occur in the template byte for byte, heading
   and body, exactly once each.
@@ -16,6 +17,10 @@ place the template is allowed to differ from the block.
 * Every adopted section sits between the base's top-level ``<tag>`` sections
   and never inside one, so adopting a section cannot edit a base section;
   the file is never replaced by the block.
+* One base rule is amended, and only that one (KOD-573): Supervision
+  Boundaries allows verification branches, commits and pushes, so the
+  ``<authority>`` GitHub prohibition points at it by its heading and no
+  sentence of the template still forbids them outright.
 """
 
 import re
@@ -38,8 +43,12 @@ VERBATIM: tuple[str, ...] = (
     "Supervision Record",
 )
 
+#: The by-effect section whose verification branches the base GitHub rule
+#: now defers to.
+BOUNDARIES = "Supervision Boundaries"
+
 #: The two sections KOD-566 adopts by effect.
-BY_EFFECT: tuple[str, ...] = ("Writer Discipline", "Supervision Boundaries")
+BY_EFFECT: tuple[str, ...] = ("Writer Discipline", BOUNDARIES)
 
 ADOPTED: tuple[str, ...] = VERBATIM + BY_EFFECT
 
@@ -86,6 +95,14 @@ REPOINTED: dict[str, str] = {
     "prompt already defines — the replies <process> allows, one status update "
     "per initiative, and the single checkpoint advance <process> defines.",
 }
+
+#: The three prohibitions removed from the base GitHub rule, because
+#: Supervision Boundaries allows what they forbade (KOD-573).
+REMOVED: tuple[str, ...] = (
+    "no commits or pushes",
+    "no branches",
+    "GitHub is read-only for you",
+)
 
 _HEADING = re.compile(r"^(?=## )", re.MULTILINE)
 _TOP_LEVEL_HEADING = re.compile(r"^## ", re.MULTILINE)
@@ -223,3 +240,27 @@ def test_the_opus_grooming_prompt_renders_with_every_adopted_section():
     rendered = render_case(operation_registry(), "grooming_pass")
     for name in ADOPTED:
         assert template_section(text, name) in rendered, name
+
+
+def test_the_authority_github_rule_points_at_supervision_boundaries():
+    """KOD-573: the amended base rule defers to the adopted section by name."""
+    text = template_text()
+    authority = [
+        text[open_:close]
+        for name, open_, close in top_level_spans(text)
+        if name == "authority"
+    ]
+    assert len(authority) == 1
+    assert BOUNDARIES in authority[0]
+    section_bounds(text, BOUNDARIES)
+
+
+def test_no_sentence_of_the_template_forbids_commits_pushes_or_branches():
+    """KOD-573: no base sentence contradicts what Supervision Boundaries allows."""
+    removed = [phrase.casefold() for phrase in REMOVED]
+    forbidding = [
+        sentence
+        for sentence in _SENTENCE_END.split(template_text())
+        if any(phrase in sentence.casefold() for phrase in removed)
+    ]
+    assert forbidding == []
