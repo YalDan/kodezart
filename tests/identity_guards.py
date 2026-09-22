@@ -3,6 +3,8 @@
 import ast
 from collections.abc import Iterator
 
+from tests.name_resolution import _module_routes
+
 #: The model methods that make a value without naming its class.  A guard
 #: counting only the class call would miss every one of them, and the copy
 #: is the house idiom, so it is the shape a second writer would take.
@@ -157,18 +159,40 @@ def value_holders(sources: dict[str, str], *, identity: str) -> dict[str, ast.Mo
     type.  Carriers and holders are grown together until neither changes, so
     the scanned surface is derived from the tree and never listed here.
 
-    The attribute route reaches the identity only: a carrier reached as an
-    attribute of an imported module (``lane_records.LaneRecordReader``) is
-    matched by no import name, so such a module is not scanned.
+    A carrier is counted by two routes.  By name, when a ``from`` import binds
+    it.  By its module, when an import binds as a module one that declares a
+    carrier or the identity at its own top level: ``import a.b [as m]`` and
+    ``from a import b`` where ``a.b`` is a module of the tree, resolved by the
+    shared name resolver, so ``m.AuthoredSpec.model_validate(...)`` holds the
+    value whatever the local word is.
+
+    Not counted, each a module this walk does not scan: a carrier reached as
+    an attribute when the import itself routes to no carrier's module —
+    ``import kodezart``, a package's ``__init__`` or a relative import, which
+    the resolver maps to no module of the tree — and a carrier a module only
+    re-exports by importing it, because re-exporting is not declaring.  The
+    attribute leg below matches the identity's own name only; matching every
+    carrier's name there would also scan modules that spell a carrier method
+    as an attribute of an unrelated value.
     """
     trees = {path: ast.parse(source) for path, source in sources.items()}
+    routed = {
+        path: {
+            name
+            for home in _module_routes(tree, trees).values()
+            for name in _declared(trees[home])
+        }
+        for path, tree in trees.items()
+    }
     carried = {identity}
     holders: dict[str, ast.Module] = {}
     changed = True
     while changed:
         changed = False
         for path, tree in trees.items():
-            if path not in holders and _holds(tree, carried, identity=identity):
+            if path not in holders and _holds(
+                tree, carried, identity=identity, routed=routed[path]
+            ):
                 holders[path] = tree
                 changed = True
         for tree in holders.values():
@@ -179,8 +203,24 @@ def value_holders(sources: dict[str, str], *, identity: str) -> dict[str, ast.Mo
     return holders
 
 
-def _holds(tree: ast.AST, carried: set[str], *, identity: str) -> bool:
-    return any(
+def _declared(tree: ast.Module) -> set[str]:
+    """The names a module declares at its own top level: what ``m.name`` reaches."""
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+
+
+def _holds(
+    tree: ast.AST, carried: set[str], *, identity: str, routed: set[str]
+) -> bool:
+    """Whether *tree* can hold the value, given what its module imports declare.
+
+    *routed* is every name declared by a module this one imports as a module;
+    one of them being carried is the module route to a carrier.
+    """
+    return not routed.isdisjoint(carried) or any(
         (
             isinstance(node, ast.ImportFrom)
             and any(alias.name in carried for alias in node.names)
