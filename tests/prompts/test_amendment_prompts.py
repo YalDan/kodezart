@@ -16,33 +16,9 @@ import pytest
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.core.prompt_rendering import free_binding_names
-from kodezart.domain.rulings import EMPTY_REGISTRY
-from kodezart.types.domain.agent import Ruling
-from kodezart.types.domain.amendment import AmendmentClaim
 from kodezart.types.domain.prompts import PromptKey
-from tests.domain.test_rulings import ruling_data
-from tests.fakes import make_tracker_issue
-from tests.prompts.sets import OPUS_SET, V5_SET, operation_registry
+from tests.prompts.sets import ALL_CASES, OPUS_SET, V5_SET, operation_registry
 from tests.prompts.test_set_completeness import shipped_sets
-
-#: What the guard binds the judge member with (services/native_amendments.py:451-460).
-CASE_JUDGE: dict[str, str] = {
-    "claim": AmendmentClaim(
-        subject={"kind": "criterion", "id": "external/check"},
-        stage="implementation",
-        ground="unsatisfiable_at_base",
-        departure="A proposed departure",
-        claimed_capability=None,
-    ).model_dump_json(),
-    "criteria": make_tracker_issue(
-        "external/check",
-        parent_key="external/42",
-        issue_labels=frozenset({"criterion"}),
-        body="**Check:** the observable fixture Check",
-    ).model_dump_json(),
-    "pinned_rulings": Ruling.model_validate(ruling_data()).model_dump_json(),
-    "base_sha": "a" * 40,
-}
 
 #: The exact clause every shipped writer contract must state, whitespace-normalized
 #: because the member wraps its own lines.
@@ -55,7 +31,7 @@ DESIGNATION_CLAUSE = (
 #: carries paired with the bound name rendered inside it, in the member's own
 #: order, and the case that binds them. The bound set and the tag census are
 #: derived from those pairs rather than restated.
-ROLES: dict[PromptKey, tuple[str, tuple[tuple[str, str], ...], dict[str, str]]] = {
+ROLES: dict[PromptKey, tuple[str, tuple[tuple[str, str], ...], dict[str, object]]] = {
     PromptKey.AMENDMENT_JUDGE: (
         "<{tag}>{value}</{tag}>",
         (
@@ -64,12 +40,12 @@ ROLES: dict[PromptKey, tuple[str, tuple[tuple[str, str], ...], dict[str, str]]] 
             ("pinned_rulings", "pinned_rulings"),
             ("base_sha", "base_sha"),
         ),
-        CASE_JUDGE,
+        ALL_CASES["amendment_judge"][1],
     ),
     PromptKey.NATIVE_WRITER_CONTRACT: (
         "<{tag}>\n{value}\n</{tag}>",
         (("pinned_rulings", "pinned_rulings"),),
-        {"pinned_rulings": EMPTY_REGISTRY},
+        ALL_CASES["native_writer_contract"][1],
     ),
 }
 
