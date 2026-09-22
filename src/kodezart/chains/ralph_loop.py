@@ -24,6 +24,7 @@ from kodezart.core.protocols import (
     GitService,
     GitSourceReader,
     LaneStateWriter,
+    NodeSessionRecorder,
     PromptSetProvider,
     RepoCache,
     WorkspaceProvider,
@@ -60,6 +61,7 @@ from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     AgentEvent,
     NativeAmendmentEvent,
+    NodeSessionStartedEvent,
     ResultEvent,
     WorkflowIterationEvent,
 )
@@ -129,8 +131,10 @@ class RalphLoop:
         source: GitSourceReader | None = None,
         lane_state: LaneStateWriter | None = None,
         workspace: WorkspaceProvider | None = None,
+        node_sessions: NodeSessionRecorder | None = None,
     ) -> None:
         self._service = service
+        self._node_sessions = node_sessions
         self._criteria_reader = criteria_reader
         self._amendments = amendments
         self._source = source
@@ -666,6 +670,16 @@ class RalphLoop:
             nonlocal evaluation_attempt
             evaluation_attempt += 1
             observer = None
+            # Every opening the observer sees goes to the graph's stream as
+            # before, and is kept: what a node opened is also put on the
+            # lane's own stream once the drain is over, which is where a
+            # reader of the run counts it against what the node declared.
+            started: list[NodeSessionStartedEvent] = []
+
+            def emit(event: NodeSessionStartedEvent) -> None:
+                writer(event)
+                started.append(event)
+
             if ctx.run_identity is not None:
                 observer = NodeSessionObserver(
                     invocation=NodeInvocation(
@@ -682,7 +696,7 @@ class RalphLoop:
                         ),
                         declared_sessions=1,
                     ),
-                    emit=writer,
+                    emit=emit,
                 )
             skills = self._prompts.session_skills(PromptKey.EVALUATION, self._skills)
             policy = self._prompts.session_policy(PromptKey.EVALUATION)
@@ -748,6 +762,10 @@ class RalphLoop:
                         git=self._git, workspace=graded_in_path
                     ) == (native_ref, False)
             if observer is not None:
+                if self._node_sessions is not None:
+                    await self._node_sessions.record_node_sessions(
+                        lane=self._lane_binding(ctx), started=tuple(started)
+                    )
                 observer.require_valid()
 
             if result_event is None or result_event.structured_output is None:

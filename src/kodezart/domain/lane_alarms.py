@@ -30,6 +30,7 @@ from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import tally_unmoved
 from kodezart.domain.stream_signals import (
     ACCOUNT_KINDS,
+    composition_substituted,
     lapse_undischarged,
     tally_regressed,
 )
@@ -59,6 +60,7 @@ OBSERVED_ALARMS = frozenset(
         AlarmSignal.TALLY_UNMOVED,
         AlarmSignal.TALLY_REGRESSED,
         AlarmSignal.LAPSE_UNDISCHARGED,
+        AlarmSignal.COMPOSITION_SUBSTITUTED,
     }
 )
 
@@ -101,11 +103,12 @@ type LaneStanding = Ready | Waiting | Finished
 #: The fold each observed signal is answered by, which is also how a stored
 #: record is replayed: whether a record IS an alarm is decided by the same
 #: arithmetic the raise was made by, never by asking whether it carries a
-#: bound — two of these three raise with no bound at all.
+#: bound — most of these raise with no bound at all.
 _OBSERVED_FOLDS = {
     AlarmSignal.TALLY_UNMOVED: tally_unmoved,
     AlarmSignal.TALLY_REGRESSED: tally_regressed,
     AlarmSignal.LAPSE_UNDISCHARGED: lapse_undischarged,
+    AlarmSignal.COMPOSITION_SUBSTITUTED: composition_substituted,
 }
 
 
@@ -168,6 +171,11 @@ def lane_alarm_records(
     observation was made at, and it is the same one the tally's clock is
     measured in, so a record and the run state it was composed from can
     always be lined up.
+
+    Whether a node was substituted is read off the stream alone and composed
+    at every standing: the openings a lane's evaluations made are facts of
+    runs already over, whether or not anything will run the lane again. Its
+    raise never clears, because a posted opening is never taken back.
     """
     written: list[RunAlarm] = []
     subject = LaneSubject(scope_key=scope_key, lane_key=lane_key)
@@ -182,6 +190,34 @@ def lane_alarm_records(
     )
     if tally is not None:
         written.append(tally)
+    substituted = next_alarm_record(
+        stored=stored_alarm(
+            stored, subject=subject, signal=AlarmSignal.COMPOSITION_SUBSTITUTED
+        ),
+        observed=_composed(
+            signal=AlarmSignal.COMPOSITION_SUBSTITUTED,
+            subject=subject,
+            readings=(
+                _reading(
+                    lane_key,
+                    RunEventsEvidence(
+                        value=tuple(
+                            RunEventProjection(
+                                kind=event.kind, subject_key=event.subject_key
+                            )
+                            for event in events
+                            if event.kind is RunEventKind.NODE_SESSION_STARTED
+                        )
+                    ),
+                    record.head_sha,
+                ),
+            ),
+            raised_at_sha=record.head_sha,
+            raised_by=raised_by,
+        ),
+    )
+    if substituted is not None:
+        written.append(substituted)
     written.extend(
         _criterion_alarms(
             scope_key=scope_key,
@@ -355,8 +391,8 @@ def _raised(record: RunAlarm | None) -> bool:
     Absence is not raised, and neither is a record kept only so the address
     says the condition has ended. The replay is the answer because it is the
     same arithmetic the raise was made by; asking whether the record carries
-    a bound would answer a different question, since two of the three signals
-    here raise with none.
+    a bound would answer a different question, since most of the signals here
+    raise with none.
 
     The bound is still read, as a consistency check rather than the answer: a
     record whose replay does not reproduce the bound it carries was written by

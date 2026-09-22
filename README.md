@@ -517,8 +517,9 @@ as JSON, cache answers, write comments or change labels. Consuming this read
 in an alarm computation is still owed; the supervisor tick that exists reads
 the scope's ready set of every scope the operation declares, observes the lane
 tally arm for each ready lane and each finished member, and observes every
-member's own stream for a criterion moved back that nobody reported and a lapse
-nothing will re-derive.
+member's own stream for a criterion moved back that nobody reported, a lapse
+nothing will re-derive, and an evaluation that opened more sessions than it
+declared.
 
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the

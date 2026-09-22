@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 import pytest
 
@@ -36,7 +37,7 @@ from kodezart.domain.run_event_stream import (
 )
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
-from kodezart.types.domain.agent import CriterionResult
+from kodezart.types.domain.agent import CriterionResult, NodeSessionStartedEvent
 from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
@@ -49,14 +50,17 @@ from kodezart.types.domain.gating import (
     TrackerAggregate,
     WriterShape,
 )
+from kodezart.types.domain.node_session import NodeInvocation, NodeSessionKey
 from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationConfig,
     OperationMemberAbsentError,
+    RunKind,
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.privacy import PrivateSurface
 from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.run_state import LaneBinding, LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
@@ -2003,3 +2007,74 @@ async def test_a_lapse_is_announced_as_a_lapse_and_never_as_a_refutation():
     await tick(lane_state, sha="2" * 40, keys=[broken], failed=[broken])
     assert port.listings == 1
     assert [event.subject_key for event in refutations(port)] == [broken]
+
+
+# ---------------------------------------------------------------------------
+# A node's observed session openings, on the lane's own stream.
+# ---------------------------------------------------------------------------
+
+OPENED_BY = RunIdentity(
+    kind=RunKind.FIRE, name=LANE, started_at=datetime(2026, 1, 1, tzinfo=UTC)
+)
+
+
+def opening(session_id: str, *, invocation_key: str = "evaluation-1"):
+    return NodeSessionStartedEvent(
+        invocation=NodeInvocation(
+            run=OPENED_BY,
+            node_key="evaluation",
+            invocation_key=invocation_key,
+            declared_sessions=1,
+        ),
+        session_id=session_id,
+    )
+
+
+def openings_on(port: FakeTrackerPort) -> list[NodeSessionKey]:
+    """The session openings this lane's stream holds, read back as their keys."""
+    return [
+        NodeSessionKey.model_validate_json(event.subject_key or "")
+        for event in lane_run_events(
+            comments=port.comments,
+            lane_key=LANE,
+            marker_prefixes=lane_operation().marker_prefixes,
+        )
+        if event.kind is RunEventKind.NODE_SESSION_STARTED
+    ]
+
+
+async def test_node_sessions_are_posted_once_each_under_their_invocation():
+    """Each opening once, keyed to its whole invocation and its session.
+
+    Two openings of one invocation are two events; the same two handed over
+    again — a resumed lane, or a retried post — add nothing; a third opening
+    later is posted on its own. What is posted names no body text.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    first, second = opening("session-a"), opening("session-b")
+
+    await lane_state.record_node_sessions(lane=binding(), started=(first, second))
+    await lane_state.record_node_sessions(lane=binding(), started=(first, second))
+    third = opening("session-c", invocation_key="evaluation-2")
+    await lane_state.record_node_sessions(lane=binding(), started=(third,))
+
+    assert openings_on(port) == [
+        NodeSessionKey(invocation=event.invocation, session_id=event.session_id)
+        for event in (first, second, third)
+    ]
+    assert len(event_comments(port)) == 3
+
+
+async def test_an_evaluation_that_observed_no_opening_reads_and_writes_nothing():
+    port = CountingBoard(
+        issues=[make_tracker_issue(LANE, body="the lane's own text")],
+        marker_prefixes=lane_operation().marker_prefixes,
+    )
+    lane_state = writer(port, lane_repo())
+    port.count_the_next_write()
+
+    await lane_state.record_node_sessions(lane=binding(), started=())
+
+    assert port.listings == 0
+    assert port.comments == []

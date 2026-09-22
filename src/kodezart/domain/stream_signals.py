@@ -1,17 +1,21 @@
-"""Signals a criterion's own state and its lane's account of it, together.
+"""Signals read off a lane's own event stream.
 
-Neither fact answers on its own. A criterion out of its finished state says
-nothing about who moved it or why; a lane's stream says what the lane did and
-nothing about where the criterion stands now. Each signal here is one reading of
-the pair, and both readings come from the lane that graded the criterion:
-the state from the criterion's own record, the account from the stream of
-the lane whose subtree it sits in.
+Two of them read a criterion's own state and its lane's account of it
+together, because neither fact answers on its own. A criterion out of its
+finished state says nothing about who moved it or why; a lane's stream says
+what the lane did and nothing about where the criterion stands now. Both
+readings come from the lane that graded the criterion: the state from the
+criterion's own record, the account from the stream of the lane whose
+subtree it sits in.
 
 The account is the LAST of the three things a lane can say about a
 criterion it graded — it crossed it off, it refuted it, or it found the
 grading lapsed — so a criterion graded twice is read by what the lane said
 the second time. A criterion its lane never accounted for is quiet
 everywhere here: nothing in this module infers an account from a state.
+
+The third reads the stream alone: the session openings the harness observed
+each node invocation make, counted against what that invocation declared.
 """
 
 from collections.abc import Sequence
@@ -21,11 +25,13 @@ from kodezart.domain.run_shape import (
     read_alarm_value,
     unreadable_reading,
 )
+from kodezart.types.domain.node_session import NodeInvocation, NodeSessionKey
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
     AlarmSubject,
     CriterionSubject,
+    LaneSubject,
     PresenceEvidence,
     RunAlarm,
     RunEventProjection,
@@ -214,6 +220,72 @@ def lapse_undischarged(
         return None
     return RunAlarm(
         subject=criterion,
+        signal=signal,
+        readings=readings,
+        bound=None,
+        raised_at_sha=raised_at_sha,
+        raised_by=raised_by,
+    )
+
+
+def composition_substituted(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """A node invocation that opened more sessions than it declared.
+
+    One reading: the lane's own stream, projected to its node-session
+    openings. Each opening is keyed to the whole invocation it belongs to
+    and the session it opened, so the count per invocation and the count
+    that invocation declared are both read off the same reading — the
+    record replays from itself and no literal is compared against. A node
+    declared as a fan-out of n that opened n is quiet; one declared as a
+    single session that opened two was substituted by something else.
+
+    No bound: the declared count is a fact of the invocation, not a
+    configured threshold, so there is no configuration field to name.
+    """
+    signal = AlarmSignal.COMPOSITION_SUBSTITUTED
+    try:
+        (stream,) = readings
+    except ValueError as exc:
+        raise unreadable_reading(
+            signal, subject.scope_key, "incomplete session readings"
+        ) from exc
+    if not isinstance(subject, LaneSubject):
+        raise unreadable_reading(
+            signal, subject.scope_key, "a substitution is observed on a lane"
+        )
+    if stream.source_ref != subject.lane_key:
+        raise unreadable_reading(
+            signal, stream.source_ref, "the session reading names another lane"
+        )
+    opened: dict[NodeInvocation, set[str]] = {}
+    for projection in read_alarm_value(stream, RunEventsEvidence, signal):
+        if (
+            projection.kind is not RunEventKind.NODE_SESSION_STARTED
+            or projection.subject_key is None
+        ):
+            raise unreadable_reading(
+                signal, stream.source_ref, "a session reading carries another event"
+            )
+        try:
+            key = NodeSessionKey.model_validate_json(projection.subject_key)
+        except ValueError as exc:
+            raise unreadable_reading(
+                signal, stream.source_ref, "a session opening names no invocation"
+            ) from exc
+        opened.setdefault(key.invocation, set()).add(key.session_id)
+    if not any(
+        len(sessions) > invocation.declared_sessions
+        for invocation, sessions in opened.items()
+    ):
+        return None
+    return RunAlarm(
+        subject=subject,
         signal=signal,
         readings=readings,
         bound=None,

@@ -35,6 +35,7 @@ from kodezart.core.protocols import (
     FireCriteriaSource,
     GitService,
     JobRegistry,
+    NodeSessionRecorder,
     OutboundContentGate,
     PromptSetProvider,
     RefPublisher,
@@ -279,12 +280,18 @@ def build_workflow_engine(
         else None
     )
 
-    def loop(saver: BaseCheckpointSaver[str] | None) -> RalphLoop:
+    def loop(
+        saver: BaseCheckpointSaver[str] | None,
+        *,
+        node_sessions: NodeSessionRecorder | None = None,
+    ) -> RalphLoop:
         """The quality gate, with whatever the arm it serves persists to.
 
         The scoped arm persists nothing: its state is the tracker, so its loop
         is built with no saver at all rather than given one it must not write
-        to (KOD-840).
+        to (KOD-840). It is also the arm whose lanes have a stream, so it is
+        the one handed the writer that puts a node's observed session
+        openings there.
         """
         return RalphLoop(
             source=native_source,
@@ -322,6 +329,7 @@ def build_workflow_engine(
             retry_initial_interval=config.retry_initial_interval,
             delay_floor_for=delay_floor_for,
             fan_in_max_attempts=config.fan_in_max_attempts,
+            node_sessions=node_sessions,
         )
 
     authored_loop = loop(checkpointer)
@@ -454,7 +462,7 @@ def build_workflow_engine(
         # The scoped arm's own engines, with no saver anywhere: the lane's
         # state is its tracker record, so nothing here writes a checkpoint
         # and nothing reads one (KOD-840).
-        native_loop = loop(None)
+        native_loop = loop(None, node_sessions=lane_state)
         entry = build_scope_entry(
             config=config,
             operation=operation,

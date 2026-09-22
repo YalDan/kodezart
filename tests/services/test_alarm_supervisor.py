@@ -1,17 +1,22 @@
 """One record and transition-only events, over the in-process tracker double."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.lane_alarms import Finished, Ready
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_surface
-from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
+from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE, LaneRunEvent
 from kodezart.domain.tally_record import is_raised
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.run_surface_lease import RunSurfaceLease
-from kodezart.types.domain.operation import OperationMemberAbsentError
+from kodezart.types.domain.node_session import NodeInvocation, NodeSessionKey
+from kodezart.types.domain.operation import OperationMemberAbsentError, RunKind
+from kodezart.types.domain.run_alarm import AlarmSignal
 from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_records import RunIdentity
 from tests.fakes import FakeTrackerPort, make_tracker_issue
 from tests.services.lane_tally_fixtures import (
     HEAD,
@@ -371,3 +376,51 @@ async def test_a_tick_in_which_an_alarm_fires_moves_no_state_and_posts_no_halt()
         RunEventKind.RUN_ALARM_RAISED,
         RunEventKind.RUN_ALARM_CLEARED,
     }
+
+
+async def test_a_substituted_evaluation_is_recorded_once_announced_once_and_left():
+    """Two openings under one single-session invocation, on the lane's stream.
+
+    One tick writes the lane's substitution record and announces the raise
+    once, keyed to its own signal. Later ticks over the same stream write and post nothing more: an opening
+    is never taken back, so the raise stands.
+    """
+    port = await one_lane(commits=())
+    tally = supervisor(port)
+    invocation = NodeInvocation(
+        run=RunIdentity(
+            kind=RunKind.FIRE, name=LANE, started_at=datetime(2026, 1, 1, tzinfo=UTC)
+        ),
+        node_key="evaluation",
+        invocation_key="evaluation-1",
+        declared_sessions=1,
+    )
+    for session_id in ("session-a", "session-b"):
+        await port.post_run_event(
+            issue_key=LANE,
+            event=LaneRunEvent(
+                kind=RunEventKind.NODE_SESSION_STARTED,
+                lane_key=LANE,
+                subject_key=NodeSessionKey(
+                    invocation=invocation, session_id=session_id
+                ).model_dump_json(by_alias=True),
+            ),
+        )
+
+    await observe(tally)
+    after_first = snapshot(port)
+    for _ in range(2):
+        await observe(tally)
+        assert snapshot(port) == after_first
+
+    stored = await stored_on(port, LANE, signal=AlarmSignal.COMPOSITION_SUBSTITUTED)
+    assert stored is not None
+    assert stored.bound is None
+    raised = [
+        event.subject_key
+        for event in await events_on(port, LANE)
+        if event.kind is RunEventKind.RUN_ALARM_RAISED
+    ]
+    assert raised == [AlarmSignal.COMPOSITION_SUBSTITUTED.value]
+    # The lane had recorded no commit, so its tally had nothing to say.
+    assert await stored_on(port, LANE) is None

@@ -6,6 +6,8 @@ case writes out the one fact it turns on; everything else is the same lane
 with the same two criteria.
 """
 
+from datetime import UTC, datetime
+
 import pytest
 
 from kodezart.domain.lane_alarms import (
@@ -19,12 +21,15 @@ from kodezart.domain.lane_alarms import (
     stored_alarm,
 )
 from kodezart.domain.run_event_stream import LaneRunEvent
+from kodezart.types.domain.node_session import NodeInvocation, NodeSessionKey
+from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     CriterionSubject,
     LaneSubject,
 )
 from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_records import RunIdentity
 from tests.domain.test_tally_record import (
     FIRST,
     HEAD,
@@ -84,6 +89,7 @@ def test_the_observation_folds_exactly_the_lane_and_criterion_signals():
         AlarmSignal.TALLY_UNMOVED,
         AlarmSignal.TALLY_REGRESSED,
         AlarmSignal.LAPSE_UNDISCHARGED,
+        AlarmSignal.COMPOSITION_SUBSTITUTED,
     }
 
 
@@ -296,3 +302,67 @@ def test_only_a_lane_subject_record_owes_an_event():
 
     with pytest.raises(ValueError, match="keyed to a lane"):
         alarm_event_due(record=regression, events=())
+
+
+def opening(session_id, *, key="evaluation-1"):
+    """One node-session opening on the lane's stream, as its writer posts it."""
+    return LaneRunEvent(
+        kind=RunEventKind.NODE_SESSION_STARTED,
+        lane_key=LANE.lane_key,
+        subject_key=NodeSessionKey(
+            invocation=NodeInvocation(
+                run=RunIdentity(
+                    kind=RunKind.FIRE,
+                    name=LANE.lane_key,
+                    started_at=datetime(2026, 1, 1, tzinfo=UTC),
+                ),
+                node_key="evaluation",
+                invocation_key=key,
+                declared_sessions=1,
+            ),
+            session_id=session_id,
+        ).model_dump_json(by_alias=True),
+    )
+
+
+def test_a_substituted_node_is_one_lane_record_at_every_standing_and_is_announced():
+    """Read off the stream alone, so a waiting lane is read for it too.
+
+    Written once, and then left: the openings cannot be taken back, so the
+    raise stands and a second tick over the same stream writes nothing. It
+    is a lane-subject record, so its transition is announced on the stream.
+    """
+    twice = (opening("session-a"), opening("session-b"))
+
+    for standing in (
+        Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        Waiting(),
+        Finished(),
+    ):
+        records = compose(standing=standing, criteria=MOVED_BACK, events=twice)
+        assert [(r.subject, r.signal) for r in records] == [
+            (LANE, AlarmSignal.COMPOSITION_SUBSTITUTED)
+        ], standing
+        assert (
+            compose(
+                standing=standing, criteria=MOVED_BACK, events=twice, stored=records
+            )
+            == ()
+        ), standing
+
+    due = alarm_event_due(record=records[0], events=twice)
+    assert due is not None
+    assert (due.kind, due.subject_key) == (
+        RunEventKind.RUN_ALARM_RAISED,
+        AlarmSignal.COMPOSITION_SUBSTITUTED.value,
+    )
+
+
+def test_one_opening_per_invocation_writes_nothing():
+    records = compose(
+        standing=Waiting(),
+        criteria=MOVED_BACK,
+        events=(opening("session-a"), opening("session-b", key="evaluation-2")),
+    )
+
+    assert records == ()

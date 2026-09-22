@@ -1,15 +1,23 @@
-"""A criterion's own state and its lane's account of it, read together.
+"""The signals read off a lane's own stream.
 
-Every reading here is built by hand from the three things the signals read:
-the criterion's workflow kind, the lane's projected stream, and whether the
-walk re-derives the lane. The folds are pure, so what a case asserts is the
+Every reading here is built by hand from the things the signals read: the
+criterion's workflow kind, the lane's projected stream, and whether the walk
+re-derives the lane. The folds are pure, so what a case asserts is the
 whole of what the fold answers.
 """
+
+from datetime import UTC, datetime
 
 import pytest
 
 from kodezart.domain.errors import RunShapeReadError
-from kodezart.domain.stream_signals import lapse_undischarged, tally_regressed
+from kodezart.domain.stream_signals import (
+    composition_substituted,
+    lapse_undischarged,
+    tally_regressed,
+)
+from kodezart.types.domain.node_session import NodeInvocation, NodeSessionKey
+from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
@@ -22,6 +30,7 @@ from kodezart.types.domain.run_alarm import (
     StateEvidence,
 )
 from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.tracker import WorkflowStateKind
 
 SCOPE = "scope-under-watch"
@@ -342,3 +351,148 @@ def test_a_raise_replays_to_itself_from_its_own_readings(fold, pair):
     )
 
     assert replayed == alarm
+
+
+# ---------------------------------------------------------------------------
+# A node that opened more sessions than it declared.
+# ---------------------------------------------------------------------------
+
+RUN = RunIdentity(
+    kind=RunKind.FIRE, name=LANE, started_at=datetime(2026, 1, 1, tzinfo=UTC)
+)
+
+
+def invocation(key="evaluation-1", *, declared=1, run=RUN):
+    return NodeInvocation(
+        run=run, node_key="evaluation", invocation_key=key, declared_sessions=declared
+    )
+
+
+def opened(*sessions, source=LANE):
+    """The lane's stream, projected to the openings each invocation made."""
+    return (
+        AlarmReading(
+            source_ref=source,
+            value=RunEventsEvidence(
+                value=tuple(
+                    RunEventProjection(
+                        kind=RunEventKind.NODE_SESSION_STARTED,
+                        subject_key=NodeSessionKey(
+                            invocation=node, session_id=session_id
+                        ).model_dump_json(by_alias=True),
+                    )
+                    for node, session_id in sessions
+                )
+            ),
+            at_sha=HEAD,
+        ),
+    )
+
+
+def substituted(readings, *, on=None):
+    return composition_substituted(
+        subject=LaneSubject(scope_key=SCOPE, lane_key=LANE) if on is None else on,
+        readings=readings,
+        raised_at_sha=HEAD,
+        raised_by=HOLDER,
+    )
+
+
+SINGLE = invocation()
+SUBSTITUTED_PAIR = (
+    LaneSubject(scope_key=SCOPE, lane_key=LANE),
+    opened((SINGLE, "session-a"), (SINGLE, "session-b")),
+    opened((SINGLE, "session-a")),
+)
+
+
+def test_a_single_session_node_carrying_two_sessions_is_substituted():
+    on, firing, _ = SUBSTITUTED_PAIR
+
+    alarm = substituted(firing, on=on)
+
+    assert alarm is not None
+    assert alarm.signal is AlarmSignal.COMPOSITION_SUBSTITUTED
+    assert alarm.subject == on
+    assert alarm.readings == firing
+    # The declared count is the invocation's own, not a configured threshold.
+    assert alarm.bound is None
+
+
+def test_a_single_session_node_carrying_one_session_is_not_substituted():
+    on, _, clean = SUBSTITUTED_PAIR
+
+    assert substituted(clean, on=on) is None
+
+
+def test_a_fan_out_of_n_carrying_n_sessions_is_not_substituted():
+    fan_out = invocation(declared=3)
+    sessions = tuple((fan_out, f"session-{index}") for index in range(3))
+
+    assert substituted(opened(*sessions)) is None
+    assert substituted(opened(*sessions, (fan_out, "session-3"))) is not None
+
+
+def test_one_session_per_invocation_across_many_invocations_is_not_substituted():
+    """Counted per invocation: two evaluations of one session each are two."""
+    later_run = RunIdentity(
+        kind=RunKind.FIRE, name=LANE, started_at=datetime(2026, 1, 2, tzinfo=UTC)
+    )
+
+    assert (
+        substituted(
+            opened(
+                (invocation("evaluation-1"), "session-a"),
+                (invocation("evaluation-2"), "session-b"),
+                # The same invocation key in a later run is another invocation.
+                (invocation("evaluation-1", run=later_run), "session-c"),
+            )
+        )
+        is None
+    )
+
+
+def test_a_repeated_opening_of_one_session_is_one_session():
+    assert substituted(opened((SINGLE, "session-a"), (SINGLE, "session-a"))) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "another lane's stream",
+        "another kind",
+        "an opening keyed to nothing",
+        "a key that is not an opening",
+        "a criterion subject",
+        "no reading",
+    ],
+)
+def test_a_session_reading_about_something_else_refuses(name):
+    readings, on = opened((SINGLE, "session-a")), None
+    if name == "another lane's stream":
+        readings = opened((SINGLE, "session-a"), source="LANE-8")
+    elif name == "another kind":
+        readings = (account(CROSSED_OFF),)
+    elif name in {"an opening keyed to nothing", "a key that is not an opening"}:
+        readings = (
+            AlarmReading(
+                source_ref=LANE,
+                value=RunEventsEvidence(
+                    value=(
+                        RunEventProjection(
+                            kind=RunEventKind.NODE_SESSION_STARTED,
+                            subject_key=None
+                            if name == "an opening keyed to nothing"
+                            else CRITERION,
+                        ),
+                    )
+                ),
+            ),
+        )
+    elif name == "a criterion subject":
+        on = subject()
+    else:
+        readings = ()
+
+    with pytest.raises(RunShapeReadError):
+        substituted(readings, on=on)

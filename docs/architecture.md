@@ -6,11 +6,16 @@ carries the existing fire identity and explicit node invocation; each
 iteration, corrective dispatch and graph-level retry is a separate invocation. A repeated native
 opening frame is not a second session. Missing or malformed opening evidence
 is refused after draining the executor, preserving its cleanup. Generic calls
-without a fire identity retain their existing stream. No node-session
-occurrence is published to the tracker and nothing reads one back, so these
-stream occurrences are not a claim of persisted run history; the durable
-event stream that is read back carries the lane's own posted events. The frozen alarm subject vocabulary also does not
-yet provide a per-node subject identity, which this producer does not invent.
+without a fire identity retain their existing stream. On the scoped arm each
+evaluation's observed openings are also posted on the lane's own stream once
+the drain is over and before malformed evidence is refused — one
+`node_session_started` event per opening the stream does not already hold,
+keyed to the whole invocation and the session it opened
+(`TrackerLaneStateWriter.record_node_sessions`, through the
+`NodeSessionRecorder` role the loop is handed). The authored arm has no lane
+stream and posts none. The alarm subject vocabulary does not provide a
+per-node subject identity, which this producer does not invent: a
+substitution is observed on the lane.
 
 ## Overview
 
@@ -100,6 +105,7 @@ does not exist.
 | RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: every alarm record on one issue, read in one listing, one keyed record rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
 | LaneEventHistory | LinearMcpTracker | A lane's posted events read for a grading's provenance; narrowed out of the port rather than added to it, and holding no write |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
+| NodeSessionRecorder | TrackerLaneStateWriter | A node's observed session openings, put on its lane's stream once each |
 | WriteBackStep | _EscalationStep and the per-surface step bodies of the organize, amendment and audit writers | One writing step the verifier drives: the step owns its write and names the surface re-read after it |
 | WriteBackJudge | FreshWriteBackJudge | Judges the artifact that landed, in a session that wrote none of it |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
@@ -902,6 +908,15 @@ says differs from what the tick observed, where absence says not raised, so a
 healthy walk writes none; and it is never announced on the stream, whose
 transitions are the lane's.
 
+`domain.stream_signals.composition_substituted` reads the lane's stream alone:
+its `node_session_started` events, grouped by the invocation each is keyed to,
+raise at `(LaneSubject(scope, lane), COMPOSITION_SUBSTITUTED)` when any
+invocation opened more distinct sessions than it declared. Both counts come off
+the one reading, so the record replays and no bound is configured. It is
+composed at every standing, because the openings are facts of runs already
+over, and announced like the tally; it never clears, because a posted opening
+is never taken back.
+
 `services.alarm_supervisor.AlarmSupervisor` is the writer the tick observes
 through.
 Per lane it reads the run-state record, every alarm record on that lane's issue
@@ -1124,7 +1139,7 @@ The service performs no repository read or tracker write and does not turn
 an unreadable record into an empty lane. The signal's whole-record-staleness
 limit remains unchanged. Event-to-target collection for skipped writes remains separate work, and
 nothing observes this signal: the leased writer that exists observes the lane
-tally arm and the criterion signals read off a lane's stream only.
+tally arm and the signals read off a lane's stream only.
 
 `record_superseded` compares explicit assertions about the same field in the
 same lane. Its three raw readings contain the record's `LaneFieldValue`, an
@@ -1142,7 +1157,7 @@ order. The alarm retains all original readings and has no threshold bound.
 The field projection is an observation input, not a new run-event vocabulary;
 the event/record readers must supply those assertions and the commit order.
 Their collectors remain separate work, and nothing observes this signal: the
-leased writer that exists observes the lane tally arm and the criterion signals
+leased writer that exists observes the lane tally arm and the signals
 read off a lane's stream only.
 
 `rulings_outpace_closures` counts distinct machine-authored ruling identities
@@ -1224,7 +1239,7 @@ existing member changing only state does not. No derived crossed flag or vendor 
 timestamp replaces this graph comparison. Both signals preserve their raw
 readings for replay; the structural signal has no threshold. Retaining prior
 snapshots remains separate work, and nothing observes either signal: the
-leased writer that exists observes the lane tally arm and the criterion signals
+leased writer that exists observes the lane tally arm and the signals
 read off a lane's stream only.
 ## Audit coverage selection
 

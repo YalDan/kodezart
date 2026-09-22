@@ -5,7 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.run_event_stream import LaneRunEvent
-from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.agent import AgentEvent, NodeSessionStartedEvent
 from kodezart.types.domain.amendment import (
     AmendmentReport,
     NativeWriterOutput,
@@ -1801,12 +1801,30 @@ class LaneStateWriter(Protocol):
         is a reading of the roster it was graded against, and a partial
         one is no reading of it. A criterion this attempt passed gets its
         graded sha on its Evidence row and is then moved to
-        ``LifecycleStage.DONE``, in that order. A criterion whose earlier
-        grading has lapsed goes the other way — back to the team's unstarted
-        state, keeping the sha it was graded at with its pointer saying that
-        grading lapsed — and nothing is announced for it, because a lapse is
-        the criterion being owed again and not a regression.
+        ``LifecycleStage.DONE``, in that order, and the lane's stream then
+        says it crossed that criterion off at that sha. A criterion whose
+        earlier grading has lapsed goes the other way — back to the team's
+        unstarted state, keeping the sha it was graded at with its pointer
+        saying that grading lapsed — and is announced as a lapse, under its
+        own kind, because a lapse is the criterion being owed again and not
+        the regression a refutation reports.
         Nothing else is written anywhere, least of all a parent's state.
+        """
+        ...
+
+
+@runtime_checkable
+class NodeSessionRecorder(Protocol):
+    """Put a node's observed session openings on its lane's stream, once each."""
+
+    async def record_node_sessions(
+        self, *, lane: LaneBinding, started: Sequence[NodeSessionStartedEvent]
+    ) -> None:
+        """Post one event per opening *started* holds that the stream lacks.
+
+        Keyed to the whole invocation and the session it opened, so a reader
+        can count what each invocation opened against what it declared, and
+        a repeat of the same opening posts nothing.
         """
         ...
 
