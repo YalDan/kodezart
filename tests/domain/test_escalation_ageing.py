@@ -14,6 +14,7 @@ from kodezart.domain import (
     lane_alarms,
     mandate_graph,
     run_alarm_record,
+    run_alarm_table,
     run_shape,
     stream_signals,
     tally_record,
@@ -319,8 +320,8 @@ SIGNAL_MODULES = [
         tally_record,
         {
             "collections.abc",
-            "kodezart.domain.errors",
             "kodezart.domain.fire_plateau",
+            "kodezart.domain.run_alarm_table",
             "kodezart.domain.run_shape",
             "kodezart.types.domain.run_alarm",
             "kodezart.types.domain.run_state",
@@ -350,15 +351,30 @@ SIGNAL_MODULES = [
         {
             "collections.abc",
             "dataclasses",
-            "kodezart.domain.errors",
+            "kodezart.domain.run_alarm_table",
             "kodezart.domain.run_event_stream",
-            "kodezart.domain.run_shape",
             "kodezart.domain.stream_signals",
             "kodezart.domain.tally_record",
             "kodezart.types.domain.run_alarm",
             "kodezart.types.domain.run_event",
             "kodezart.types.domain.run_state",
             "kodezart.types.domain.tracker",
+        },
+    ),
+    # The table every fold is reached through, and the one replay of a stored
+    # record: it holds the folds and their declared scans, and no count.
+    (
+        run_alarm_table,
+        {
+            "collections.abc",
+            "dataclasses",
+            "typing",
+            "kodezart.domain.errors",
+            "kodezart.domain.mandate_graph",
+            "kodezart.domain.run_shape",
+            "kodezart.domain.stream_signals",
+            "kodezart.types.domain.dispatch",
+            "kodezart.types.domain.run_alarm",
         },
     ),
     # The two landed folds over a lane's rulings and its milestone graph: the

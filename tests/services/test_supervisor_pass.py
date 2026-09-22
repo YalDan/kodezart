@@ -6,9 +6,9 @@ import pytest
 import structlog.testing
 
 from kodezart.domain.lane_alarms import stored_alarm
+from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.stream_signals import lapse_undischarged
-from kodezart.domain.tally_record import is_raised
 from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.supervisor_pass import (
@@ -117,7 +117,7 @@ async def test_one_unobservable_lane_is_reported_and_the_others_are_still_observ
     assert caught.value.failed == ("LANE-B",)
     stored = await stored_on(port, "LANE-C")
     assert stored is not None
-    assert is_raised(stored)
+    assert alarm_raised(stored)
     assert [event.kind.value for event in await events_on(port, "LANE-C")] == [
         "run_alarm_raised"
     ]
@@ -162,7 +162,7 @@ async def test_a_finished_member_is_observed_so_a_standing_raise_is_cleared():
     ]
     stored = await stored_on(port, "LANE-B")
     assert stored is not None
-    assert not is_raised(stored)
+    assert not alarm_raised(stored)
     # What the lane closed is read off the SCOPE's criteria: a finished member is
     # observed with no roster at all, so a tick handing the lane's own roster on
     # in their place would leave a cleared record saying it closed nothing.
@@ -215,7 +215,7 @@ async def test_a_blocked_members_tally_raise_stands(monkeypatch):
     ]
     stored = await stored_on(port, "LANE-B")
     assert stored is not None
-    assert is_raised(stored)
+    assert alarm_raised(stored)
     assert await events_on(port, "LANE-B") == events
     assert [event.kind.value for event in events] == ["run_alarm_raised"]
 

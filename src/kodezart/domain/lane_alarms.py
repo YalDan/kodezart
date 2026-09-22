@@ -25,15 +25,9 @@ written and nothing refuses.
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from kodezart.domain.errors import RunShapeReadError
+from kodezart.domain.run_alarm_table import ALARM_TABLE, alarm_raised
 from kodezart.domain.run_event_stream import LaneRunEvent
-from kodezart.domain.run_shape import tally_unmoved
-from kodezart.domain.stream_signals import (
-    ACCOUNT_KINDS,
-    composition_substituted,
-    lapse_undischarged,
-    tally_regressed,
-)
+from kodezart.domain.stream_signals import ACCOUNT_KINDS
 from kodezart.domain.tally_record import next_tally_record
 from kodezart.types.domain.run_alarm import (
     AlarmEvidence,
@@ -100,17 +94,6 @@ class Finished:
 
 type LaneStanding = Ready | Waiting | Finished
 
-#: The fold each observed signal is answered by, which is also how a stored
-#: record is replayed: whether a record IS an alarm is decided by the same
-#: arithmetic the raise was made by, never by asking whether it carries a
-#: bound — most of these raise with no bound at all.
-_OBSERVED_FOLDS = {
-    AlarmSignal.TALLY_UNMOVED: tally_unmoved,
-    AlarmSignal.TALLY_REGRESSED: tally_regressed,
-    AlarmSignal.LAPSE_UNDISCHARGED: lapse_undischarged,
-    AlarmSignal.COMPOSITION_SUBSTITUTED: composition_substituted,
-}
-
 
 def stored_alarm(
     records: Sequence[RunAlarm], *, subject: AlarmSubject, signal: AlarmSignal
@@ -144,7 +127,7 @@ def next_alarm_record(
     reading so its clock restarts. That write is not a transition and this
     rule could not express it.
     """
-    if _raised(stored) == _raised(observed):
+    if alarm_raised(stored) == alarm_raised(observed):
         return None
     return observed
 
@@ -363,8 +346,7 @@ def _composed(
     address can say "observed, and not raised" in the same terms it says the
     other thing — and replaying either reaches the same answer again.
     """
-    fold = _OBSERVED_FOLDS[signal]
-    raised = fold(
+    raised = ALARM_TABLE[signal].fold(
         subject=subject,
         readings=readings,
         raised_at_sha=raised_at_sha,
@@ -383,37 +365,6 @@ def _composed(
 def _reading(source_ref: str, value: AlarmEvidence, at_sha: str) -> AlarmReading:
     """One reading of this observation, all of them read at the lane's own head."""
     return AlarmReading(source_ref=source_ref, value=value, at_sha=at_sha)
-
-
-def _raised(record: RunAlarm | None) -> bool:
-    """Whether *record*'s own readings still replay to an alarm.
-
-    Absence is not raised, and neither is a record kept only so the address
-    says the condition has ended. The replay is the answer because it is the
-    same arithmetic the raise was made by; asking whether the record carries
-    a bound would answer a different question, since most of the signals here
-    raise with none.
-
-    The bound is still read, as a consistency check rather than the answer: a
-    record whose replay does not reproduce the bound it carries was written by
-    something other than this arithmetic, and reading it either way would
-    report a threshold nobody measured.
-    """
-    if record is None:
-        return False
-    replayed = _OBSERVED_FOLDS[record.signal](
-        subject=record.subject,
-        readings=record.readings,
-        raised_at_sha=record.raised_at_sha,
-        raised_by=record.raised_by,
-    )
-    if record.bound != (None if replayed is None else replayed.bound):
-        raise RunShapeReadError(
-            signal=record.signal.value,
-            source_ref=record.raised_at_sha,
-            reason="the stored record replays to a bound it does not carry",
-        )
-    return replayed is not None
 
 
 def alarm_event_due(
@@ -443,7 +394,7 @@ def alarm_event_due(
         for event in events
         if event.kind in _TRANSITION_KINDS and event.subject_key == record.signal.value
     ]
-    raised = _raised(record)
+    raised = alarm_raised(record)
     last = spoken[-1] if spoken else None
     if last is None:
         # A stream that has never spoken for this signal owes a raise and

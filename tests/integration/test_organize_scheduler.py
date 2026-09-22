@@ -5,8 +5,11 @@ import structlog.testing
 
 from kodezart.composition.passes import build_dispatch_runtime, verify_pass_preflight
 from kodezart.composition.tracker import DialledTracker
+from kodezart.core.errors import PassGateCapabilityError
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import operation_bindings
+from kodezart.domain.lane_alarms import OBSERVED_ALARMS
+from kodezart.domain.run_alarm_table import alarm_scans
 from kodezart.services.agent_service import AgentService
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.dispatch import PassRun, PassSignal, SelfWriteLedger
@@ -369,10 +372,22 @@ async def test_the_same_operation_without_organize_scopes_keeps_the_per_issue_pa
 
 
 class _RefusingScanner(FakeTrackerPort):
-    """A port that fails the test if a gate signal is probed at all."""
+    """A port that answers only the scans the supervisor's alarms declare.
+
+    Any other signal is a pass this deployment withholds asking for a
+    capability it will never use, and fails the test.
+    """
+
+    def __init__(self, **rest):
+        super().__init__(**rest)
+        self.asked: list[PassSignal] = []
 
     async def verify_scan_capability(self, *, signals):
-        raise AssertionError(f"a withheld pass asked for {signals}")
+        declared = set(alarm_scans(OBSERVED_ALARMS))
+        if not set(signals) <= declared:
+            raise AssertionError(f"a withheld pass asked for {signals}")
+        self.asked.extend(signals)
+        return {}
 
 
 class _RefusingPrompts:
@@ -394,20 +409,66 @@ async def test_preflight_asks_nothing_of_a_pass_a_scope_deployment_withholds(tmp
     doubles raise rather than answer, so a preflight that asked would fail here
     instead of silently holding a scope deployment hostage to a knob nothing
     reads.
+
+    The one pass a scope deployment does schedule is the supervisor tick, and
+    what it is asked is exactly the scans that tick's alarms declare. The
+    withheld fire-prep pass is configured with a signal no alarm declares, so
+    a leak from it is still a signal the scanner refuses to answer.
     """
     _, operation, _board, _tracker, _prompts, _ledger = dependencies(tmp_path)
     config = _config(
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
-        fire_prep_pass_gate_signals=[PassSignal.issues_changed],
+        fire_prep_pass_gate_signals=[PassSignal.reviews_changed],
         dispatch_pass_gate_signals=[PassSignal.approved_changed],
         ticket_review_mode="reviewed",
     )
+    scanner = _RefusingScanner()
     await verify_pass_preflight(
         config=config,
         operation=operation,
-        tracker=_RefusingScanner(),
+        tracker=scanner,
         github_api=FakeDeliveryProbe(),
         prompts=_RefusingPrompts(),
     )
+
+    assert set(scanner.asked) == {PassSignal.issues_changed}
+
+
+async def test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused(
+    tmp_path,
+):
+    """The supervisor's alarms read the issue listing, so boot asks for it.
+
+    A credential that cannot answer it would leave every one of those alarms
+    reading nothing, forever, on a tick that reports it ran. Boot refuses
+    instead, naming the refused scan with every alarm that declares it and
+    the backend's own reason, before anything is built.
+    """
+    _, operation, _board, _tracker, _prompts, _ledger = dependencies(tmp_path)
+    config = _config(
+        tmp_path,
+        organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
+        write_back={"max_verify_rounds": 2},
+        ticket_review_mode="reviewed",
+    )
+    tracker = FakeTrackerPort(
+        scan_refusals={PassSignal.issues_changed: "listing is not granted"}
+    )
+
+    with pytest.raises(PassGateCapabilityError) as caught:
+        await verify_pass_preflight(
+            config=config,
+            operation=operation,
+            tracker=tracker,
+            github_api=FakeDeliveryProbe(),
+            prompts=_RefusingPrompts(),
+        )
+
+    assert caught.value.refusals == (
+        "issues_changed gates supervisor/lapse_undischarged, "
+        "supervisor/tally_regressed, supervisor/tally_unmoved: "
+        "listing is not granted",
+    )
+    assert tracker.capability_probes == [(PassSignal.issues_changed,)]

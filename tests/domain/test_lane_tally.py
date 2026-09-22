@@ -3,8 +3,8 @@
 import pytest
 
 from kodezart.domain.errors import RunShapeReadError
+from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_shape import COMMITS_WITHOUT_CLOSURE_BOUND, tally_unmoved
-from kodezart.domain.tally_record import is_raised
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
@@ -131,7 +131,7 @@ def test_a_raised_alarm_replays_to_itself_and_a_quiet_record_replays_to_nothing(
     alarm = observe(firing())
     assert alarm is not None
     assert observe(alarm.readings) == alarm
-    assert is_raised(alarm)
+    assert alarm_raised(alarm)
 
     quiet = RunAlarm(
         subject=LANE,
@@ -142,7 +142,7 @@ def test_a_raised_alarm_replays_to_itself_and_a_quiet_record_replays_to_nothing(
         raised_by=HOLDER,
     )
     assert observe(quiet.readings) is None
-    assert not is_raised(quiet)
+    assert not alarm_raised(quiet)
 
     # The other arm of the same signal raises with no bound at all, so a
     # bound's absence is no answer to "is this raised?".
@@ -154,7 +154,7 @@ def test_a_raised_alarm_replays_to_itself_and_a_quiet_record_replays_to_nothing(
     )
     assert scope is not None
     assert scope.bound is None
-    assert is_raised(scope)
+    assert alarm_raised(scope)
 
 
 def test_a_stored_record_whose_replay_disagrees_with_its_bound_refuses():
@@ -163,7 +163,7 @@ def test_a_stored_record_whose_replay_disagrees_with_its_bound_refuses():
     claimed = alarm.model_copy(update={"bound": None})
 
     with pytest.raises(RunShapeReadError, match="replays to a bound"):
-        is_raised(claimed)
+        alarm_raised(claimed)
 
 
 @pytest.mark.parametrize(

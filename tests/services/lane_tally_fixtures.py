@@ -348,9 +348,9 @@ def declared_pairs(entry):
     own signals when the board configures an alarm prefix. Each is keyed by the
     scope the lane is a member of, as the board recorded it, so a board
     holding lanes under two scopes declares each lane's own address and neither
-    lane's address covers the other. The lane record's own marker is not among them — the
-    supervisor holds no surface there — so a write under it is outside the set
-    unless a test named it.
+    lane's address covers the other. The lane record's own marker is not among
+    them — the supervisor holds no surface there — so a write under it is
+    outside the set unless a test named it.
 
     Each of the lane's own criteria has an address per criterion signal on the
     lane's issue, keyed to the lane that owns it, and those are declared one by
