@@ -11,15 +11,16 @@ agree with the write they exist to catch, and none of them would report it —
 the failure is silent by construction, because a check that always answers
 "untouched" looks exactly like a consumer that touched nothing.
 
-So the answer is exercised here directly, and the set of writes it is
-exercised over is DERIVED FROM THE PORT rather than listed: every write the
-tracker port declares — the same derivation the write-back adoption check
-reads its surface off — is driven below through the port's own method, and
-each is asked to come back ``False``. A write the double reaches through no
-journal fails here naming its method, and a journal no write fills fails here
-too; neither can hide in a list that drifted from the port. The journals each
-write fills are declared per case and compared exactly, so a case whose write
-landed somewhere else is not mistaken for a case that covered its journal.
+So the answer is exercised here directly, over EVERY MEMBER THE PORT
+DECLARES, read off the port's whole class line — the port and the reader
+roles it extends — with no list of verbs deciding which of them count as
+writes.  Each member is classified by a case that RUNS it: a write case
+declares the journals its write fills and they are compared exactly, and a
+read case declares none and is shown to fill none.  A member added to the
+port under any name arrives with no case and fails here, naming it; a write
+the double reaches through no journal fails its case; a read whose double
+writes a journal fails its case; and a journal no write fills fails here too.
+None of that can hide in a list that drifted from the port.
 
 The one write that answers ``True`` is a mapping ensure that ADOPTS what the
 workspace already defines, and it answers True because it writes nothing:
@@ -32,12 +33,14 @@ from dataclasses import dataclass
 import pytest
 
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_creation import criterion_body
 from kodezart.domain.organize_graph import graph_snapshot
 from kodezart.domain.run_alarm_record import run_alarm_marker, run_alarm_surface
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
-from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLabel
 from kodezart.types.domain.organize_graph import PriorityChange
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
@@ -47,15 +50,16 @@ from kodezart.types.domain.run_alarm import (
     ScopeSubject,
 )
 from kodezart.types.domain.run_event import RunEventKind
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import (
     IssuePriority,
+    IssueQuery,
     MappingKind,
     MappingRef,
+    ReviewQuery,
     WorkflowStateKind,
 )
-from tests.chains.test_write_back_adoption import write_methods
 from tests.fakes import (
     FIXTURE_EPOCH,
     FIXTURE_TEAM_KEY,
@@ -83,10 +87,17 @@ STARTED_STATE = "In Progress"
 HOLDER = "fixture-holder"
 LEASE_SECONDS = 60.0
 CONTAINER = "fixture-container"
-#: The marker deployment the two record writes compose their markers from.
-#: Declared here rather than borrowed, because the only thing asked of it is
-#: that a record HAS an address on this board.
-PREFIXES = {"run_event": "fixture-runevent", "run_alarm": "fixture-alarm"}
+#: The marker deployment the record writes and the reads of records compose
+#: their markers from.  Declared here rather than borrowed, because the only
+#: thing asked of it is that a record HAS an address on this board.
+PREFIXES = {
+    "run_event": "fixture-runevent",
+    "run_alarm": "fixture-alarm",
+    "escalation": "fixture-escalation",
+    "decision": "fixture-decision",
+}
+#: The page the two scans ask for: any positive size is a valid scan.
+PAGE = 10
 #: The alarm the record case keeps, in its smallest valid shape: what is asked
 #: of it is where the record lands, not what it says.
 ALARM = RunAlarm(
@@ -381,174 +392,564 @@ async def write_queue_state_mapping(port: FakeTrackerPort) -> None:
     )
 
 
+#: The project the two container reads address, seeded before the handover.
+PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="fixture-project")
+#: The label that marks a subject's criteria stage complete, for the one read
+#: that refuses a subject without it.
+CRITERIA_STAGED = "criteria-staged"
+LANE = "lane-alpha"
+ESCALATION = "fixture-escalation"
+
+
+async def hold_project(port: FakeTrackerPort) -> None:
+    port.scope_containers[PROJECT] = ScopeContainer(
+        ref=PROJECT,
+        name="a project",
+        description="a project body",
+        url="https://example.invalid/project/fixture-project",
+    )
+
+
+async def hold_fire_entry(port: FakeTrackerPort) -> None:
+    # The two facts a fire subject is refused without: the criteria stage
+    # marked complete on the subject, and an approval covering it.
+    port.criteria_stage_label_key = CRITERIA_STAGED
+    issue = port.issues[ISSUE]
+    port.issues[ISSUE] = issue.model_copy(
+        update={"issue_labels": issue.issue_labels | {CRITERIA_STAGED}}
+    )
+    port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key=ISSUE)] = frozenset(
+        {ScopeLabel.APPROVED}
+    )
+
+
+async def hold_escalation(port: FakeTrackerPort) -> None:
+    # The one escalation record the resolution read requires, with no
+    # decision under it yet.
+    marker = compose_comment_marker(
+        prefixes=PREFIXES, purpose="escalation", lane=LANE, occurrence_key=ESCALATION
+    )
+    await port.post_comment(issue_key=ISSUE, body=f"{marker}\nan escalation")
+
+
+async def read_active_claim(port: FakeTrackerPort) -> None:
+    await port.active_claim(issue_key=ISSUE)
+
+
+async def read_container(port: FakeTrackerPort) -> None:
+    await port.container_metadata(ref=PROJECT)
+
+
+async def read_execution_approval(port: FakeTrackerPort) -> None:
+    await port.execution_approved(issue_key=ISSUE)
+
+
+async def read_initiatives(port: FakeTrackerPort) -> None:
+    await port.initiative_identifiers(project_id=PROJECT.key)
+
+
+async def read_lane_events(port: FakeTrackerPort) -> None:
+    await port.lane_run_events(issue_key=ISSUE, lane_key=LANE)
+
+
+async def read_comments(port: FakeTrackerPort) -> None:
+    await port.list_comments(issue_key=ISSUE)
+
+
+async def read_assets(port: FakeTrackerPort) -> None:
+    await port.list_issue_assets(issue_key=ISSUE)
+
+
+async def read_milestones(port: FakeTrackerPort) -> None:
+    await port.project_milestones(project_key=PROJECT.key)
+
+
+async def read_recorded_base_spec(port: FakeTrackerPort) -> None:
+    await port.read_base_spec(issue_key=ISSUE)
+
+
+async def read_criterion_family(port: FakeTrackerPort) -> None:
+    await port.read_criteria(issue_key=ISSUE)
+
+
+async def read_ensured_document(port: FakeTrackerPort) -> None:
+    # The document the setup's ensure created, read back by its key.
+    (document_key,) = port.document_titles
+    await port.read_document(document_key=document_key)
+
+
+async def read_escalation(port: FakeTrackerPort) -> None:
+    await port.read_escalation_resolution(
+        issue_key=ISSUE, lane_key=LANE, escalation_key=ESCALATION
+    )
+
+
+async def read_subject(port: FakeTrackerPort) -> None:
+    await port.read_fire_subject(issue_key=ISSUE)
+
+
+async def read_one_issue(port: FakeTrackerPort) -> None:
+    await port.read_issue(issue_key=ISSUE)
+
+
+async def read_identity(port: FakeTrackerPort) -> None:
+    await port.read_issue_identity(issue_key=ISSUE)
+
+
+async def read_movement(port: FakeTrackerPort) -> None:
+    await port.read_issue_movement(issue_key=ISSUE)
+
+
+async def read_revision(port: FakeTrackerPort) -> None:
+    await port.read_issue_revision(issue_key=ISSUE)
+
+
+async def read_state_change(port: FakeTrackerPort) -> None:
+    await port.read_issue_state_change(issue_key=ISSUE)
+
+
+async def read_labelled(port: FakeTrackerPort) -> None:
+    await port.read_labeled_issues(classification="criterion")
+
+
+async def read_planning_issue(port: FakeTrackerPort) -> None:
+    await port.read_planning_issue(issue_key=ISSUE)
+
+
+async def read_alarm(port: FakeTrackerPort) -> None:
+    await port.read_run_alarm(
+        issue_key=ISSUE, subject=ALARM.subject, signal=ALARM.signal
+    )
+
+
+async def read_scope_labels(port: FakeTrackerPort) -> None:
+    await port.read_scope_labels(ref=ScopeRef(kind=ScopeKind.ISSUE, key=ISSUE))
+
+
+async def read_split_children(port: FakeTrackerPort) -> None:
+    await port.read_split_children(source_key=ISSUE)
+
+
+async def read_authorship(port: FakeTrackerPort) -> None:
+    await port.read_surface_authorship(surface=leased_surface())
+
+
+async def read_repository(port: FakeTrackerPort) -> None:
+    await port.recorded_repository(issue_key=ISSUE)
+
+
+async def require_classification_reads(port: FakeTrackerPort) -> None:
+    port.require_issue_classification_reads()
+
+
+async def require_plan_reads(port: FakeTrackerPort) -> None:
+    port.require_scope_plan_reads()
+
+
+async def read_unresolved_mappings(port: FakeTrackerPort) -> None:
+    await port.resolve_mappings(
+        refs=[
+            MappingRef(
+                kind=MappingKind.QUEUE_STATE,
+                name="approved",
+                identifier="fixture-queue-state",
+                scope=FIXTURE_TEAM_KEY,
+            ),
+        ],
+    )
+
+
+async def read_issue_scan(port: FakeTrackerPort) -> None:
+    await port.scan_issues(query=IssueQuery(page_size=PAGE))
+
+
+async def read_review_scan(port: FakeTrackerPort) -> None:
+    await port.scan_reviews(query=ReviewQuery(page_size=PAGE))
+
+
+async def read_scope(port: FakeTrackerPort) -> None:
+    await port.scope_issues(ref=ScopeRef(kind=ScopeKind.ISSUE, key=ISSUE))
+
+
+async def read_scan_capability(port: FakeTrackerPort) -> None:
+    await port.verify_scan_capability(signals=tuple(PassSignal))
+
+
+async def read_work_refs(port: FakeTrackerPort) -> None:
+    await port.work_refs(issue_key=ISSUE)
+
+
+async def read_writer_identity(port: FakeTrackerPort) -> None:
+    await port.writer_identity()
+
+
 @dataclass(frozen=True)
 class Case:
-    """One write: the port method it goes through, and where it lands."""
+    """One port member, run: the method, how it is called, and where it lands.
+
+    A write declares the journals it fills; a read declares none, and that
+    empty set is what classifies it.
+    """
 
     method: str
-    write: Callable[[FakeTrackerPort], Awaitable[None]]
+    call: Callable[[FakeTrackerPort], Awaitable[None]]
     journals: frozenset[str]
     setup: Callable[[FakeTrackerPort], Awaitable[None]] | None = None
 
 
-#: One case per write the port declares, through the method that makes it,
-#: with the journals that write fills.  Several cases may name one method —
-#: the mapping ensure has an arm per kind and each lands somewhere else — and
-#: every method the port declares must be named by one, which the derivation
-#: below is what enforces.
+#: One case per member the port declares, through the method itself: each
+#: write with the journals it fills, each read with none.  Several cases may
+#: name one method — the mapping ensure has an arm per kind and each lands
+#: somewhere else — and every member the port declares must be named by one,
+#: which the census below is what enforces.
 CASES: Mapping[str, Case] = {
     "an issue retitled": Case(
         method="update_issue",
-        write=write_issue,
+        call=write_issue,
         journals=frozenset({"issue_writes", "self_writes"}),
     ),
     "a description replaced": Case(
         method="edit_description",
-        write=write_description,
+        call=write_description,
         journals=frozenset({"issue_writes", "self_writes"}),
     ),
     "a classification set": Case(
         method="set_issue_classification",
-        write=write_classification,
+        call=write_classification,
         journals=frozenset({"classification_writes", "self_writes"}),
     ),
     "a comment posted": Case(
         method="post_comment",
-        write=write_comment,
+        call=write_comment,
         journals=frozenset({"comment_writes", "self_writes"}),
     ),
     "a marked comment upserted": Case(
         method="upsert_comment",
-        write=write_marked_comment,
+        call=write_marked_comment,
         journals=frozenset({"comment_writes", "self_writes"}),
     ),
     "a run event posted": Case(
         method="post_run_event",
-        write=write_run_event,
+        call=write_run_event,
         journals=frozenset({"comment_writes", "self_writes"}),
     ),
     "a run alarm recorded": Case(
         method="record_run_alarm",
-        write=write_run_alarm,
+        call=write_run_alarm,
         journals=frozenset({"comment_writes", "self_writes"}),
         setup=hold_alarm_record,
     ),
     "a workflow state set": Case(
         method="set_workflow_state",
-        write=write_workflow_state,
+        call=write_workflow_state,
         journals=frozenset({"workflow_writes", "self_writes"}),
     ),
     "a queue state set": Case(
         method="set_queue_state",
-        write=write_queue_state,
+        call=write_queue_state,
         journals=frozenset({"queue_writes", "self_writes"}),
     ),
     "a workflow state put back": Case(
         method="restore_workflow_state",
-        write=write_restored_state,
+        call=write_restored_state,
         journals=frozenset({"restored_states", "self_writes"}),
     ),
     "a claim taken": Case(
         method="claim_issue",
-        write=write_claim,
+        call=write_claim,
         journals=frozenset({"claim_writes", "self_writes"}),
     ),
     "a claim renewed": Case(
         method="renew_claim",
-        write=write_renewal,
+        call=write_renewal,
         journals=frozenset({"renewals"}),
     ),
     "a claim released": Case(
         method="release_claim",
-        write=write_claim_release,
+        call=write_claim_release,
         journals=frozenset({"claim_releases"}),
     ),
     "a surface set leased": Case(
         method="acquire_surfaces",
-        write=write_surface_lease,
+        call=write_surface_lease,
         journals=frozenset({"lease_writes"}),
     ),
     "a surface lease renewed": Case(
         method="renew_surfaces",
-        write=write_surface_renewal,
+        call=write_surface_renewal,
         journals=frozenset({"lease_writes"}),
         setup=hold_description,
     ),
     "a surface set released": Case(
         method="release_surfaces",
-        write=write_lease_release,
+        call=write_lease_release,
         journals=frozenset({"lease_releases"}),
     ),
     "an issue created": Case(
         method="create_issue",
-        write=write_issue_creation,
+        call=write_issue_creation,
         journals=frozenset({"issue_creations"}),
     ),
     "an identified issue upserted": Case(
         method="upsert_issue",
-        write=write_identified_issue,
+        call=write_identified_issue,
         journals=frozenset({"issue_creations"}),
     ),
     "a split child created": Case(
         method="create_split_if_absent",
-        write=write_split,
+        call=write_split,
         journals=frozenset({"issue_creations"}),
         setup=hold_split_set,
     ),
     "a criterion created": Case(
         method="create_criterion_if_absent",
-        write=write_criterion,
+        call=write_criterion,
         journals=frozenset({"issue_creations"}),
         setup=hold_child_set,
     ),
     "a criterion put back to pending": Case(
         method="reset_criterion_pending",
-        write=write_criterion_reset,
+        call=write_criterion_reset,
         journals=frozenset({"self_writes"}),
     ),
     "a graph changed": Case(
         method="update_issue_graph",
-        write=write_graph,
+        call=write_graph,
         journals=frozenset({"graph_writes"}),
         setup=hold_graph,
     ),
     "a base spec recorded": Case(
         method="record_base_spec",
-        write=write_base_spec,
+        call=write_base_spec,
         journals=frozenset({"recorded_base_specs", "self_writes"}),
     ),
     "a work ref recorded": Case(
         method="record_work_ref",
-        write=write_work_ref,
+        call=write_work_ref,
         journals=frozenset({"recorded_work_refs"}),
     ),
     "a document ensured": Case(
         method="ensure_mappings",
-        write=write_document,
+        call=write_document,
         journals=frozenset({"_documents", "document_titles"}),
     ),
     "a scope label ensured": Case(
         method="ensure_mappings",
-        write=write_scope_label,
+        call=write_scope_label,
         journals=frozenset({"label_writes"}),
     ),
     "a queue state instated": Case(
         method="ensure_mappings",
-        write=write_queue_state_mapping,
+        call=write_queue_state_mapping,
         journals=frozenset({"mapping_instatements"}),
+    ),
+    "an active claim read": Case(
+        method="active_claim",
+        call=read_active_claim,
+        journals=frozenset(),
+    ),
+    "a container read": Case(
+        method="container_metadata",
+        call=read_container,
+        journals=frozenset(),
+        setup=hold_project,
+    ),
+    "an execution approval read": Case(
+        method="execution_approved",
+        call=read_execution_approval,
+        journals=frozenset(),
+    ),
+    "a project's initiatives read": Case(
+        method="initiative_identifiers",
+        call=read_initiatives,
+        journals=frozenset(),
+    ),
+    "a lane's run events read": Case(
+        method="lane_run_events",
+        call=read_lane_events,
+        journals=frozenset(),
+    ),
+    "the comments read": Case(
+        method="list_comments",
+        call=read_comments,
+        journals=frozenset(),
+    ),
+    "the assets read": Case(
+        method="list_issue_assets",
+        call=read_assets,
+        journals=frozenset(),
+    ),
+    "a project's milestones read": Case(
+        method="project_milestones",
+        call=read_milestones,
+        journals=frozenset(),
+        setup=hold_project,
+    ),
+    "a base spec read": Case(
+        method="read_base_spec",
+        call=read_recorded_base_spec,
+        journals=frozenset(),
+    ),
+    "a criterion family read": Case(
+        method="read_criteria",
+        call=read_criterion_family,
+        journals=frozenset(),
+    ),
+    "a document read": Case(
+        method="read_document",
+        call=read_ensured_document,
+        journals=frozenset(),
+        setup=write_document,
+    ),
+    "an escalation read": Case(
+        method="read_escalation_resolution",
+        call=read_escalation,
+        journals=frozenset(),
+        setup=hold_escalation,
+    ),
+    "a fire subject read": Case(
+        method="read_fire_subject",
+        call=read_subject,
+        journals=frozenset(),
+        setup=hold_fire_entry,
+    ),
+    "an issue read": Case(
+        method="read_issue",
+        call=read_one_issue,
+        journals=frozenset(),
+    ),
+    "an issue identity read": Case(
+        method="read_issue_identity",
+        call=read_identity,
+        journals=frozenset(),
+    ),
+    "an issue's movement read": Case(
+        method="read_issue_movement",
+        call=read_movement,
+        journals=frozenset(),
+    ),
+    "an issue revision read": Case(
+        method="read_issue_revision",
+        call=read_revision,
+        journals=frozenset(),
+    ),
+    "an issue state change read": Case(
+        method="read_issue_state_change",
+        call=read_state_change,
+        journals=frozenset(),
+    ),
+    "the labelled issues read": Case(
+        method="read_labeled_issues",
+        call=read_labelled,
+        journals=frozenset(),
+    ),
+    "a planning issue read": Case(
+        method="read_planning_issue",
+        call=read_planning_issue,
+        journals=frozenset(),
+    ),
+    "a run alarm read": Case(
+        method="read_run_alarm",
+        call=read_alarm,
+        journals=frozenset(),
+    ),
+    "the scope labels read": Case(
+        method="read_scope_labels",
+        call=read_scope_labels,
+        journals=frozenset(),
+    ),
+    "the split children read": Case(
+        method="read_split_children",
+        call=read_split_children,
+        journals=frozenset(),
+    ),
+    "a body's authorship read": Case(
+        method="read_surface_authorship",
+        call=read_authorship,
+        journals=frozenset(),
+    ),
+    "a recorded repository read": Case(
+        method="recorded_repository",
+        call=read_repository,
+        journals=frozenset(),
+    ),
+    "the classification reads required": Case(
+        method="require_issue_classification_reads",
+        call=require_classification_reads,
+        journals=frozenset(),
+    ),
+    "the scope plan reads required": Case(
+        method="require_scope_plan_reads",
+        call=require_plan_reads,
+        journals=frozenset(),
+    ),
+    "the unresolved mappings read": Case(
+        method="resolve_mappings",
+        call=read_unresolved_mappings,
+        journals=frozenset(),
+    ),
+    "an issue scan": Case(
+        method="scan_issues",
+        call=read_issue_scan,
+        journals=frozenset(),
+    ),
+    "a review scan": Case(
+        method="scan_reviews",
+        call=read_review_scan,
+        journals=frozenset(),
+    ),
+    "a scope's issues read": Case(
+        method="scope_issues",
+        call=read_scope,
+        journals=frozenset(),
+    ),
+    "the scan capability verified": Case(
+        method="verify_scan_capability",
+        call=read_scan_capability,
+        journals=frozenset(),
+    ),
+    "the work refs read": Case(
+        method="work_refs",
+        call=read_work_refs,
+        journals=frozenset(),
+    ),
+    "the writer identity read": Case(
+        method="writer_identity",
+        call=read_writer_identity,
+        journals=frozenset(),
     ),
 }
 
 
-def test_every_write_the_port_declares_is_driven_here() -> None:
-    """The set of writes is the PORT's, not a list this module keeps.
+def port_members() -> frozenset[str]:
+    """Every public member the port declares, read off its whole class line.
+
+    The port and each reader role it extends, ``object`` left out; bounded by
+    the line.  A name is counted whatever it is and whatever it is called:
+    nothing here asks whether it starts with a verb.
+    """
+    return frozenset(
+        name
+        for role in TrackerPort.__mro__
+        if role is not object
+        for name in vars(role)
+        if not name.startswith("_")
+    )
+
+
+def test_every_member_the_port_declares_is_driven_here() -> None:
+    """The census is the PORT's whole surface, not a list this module keeps.
 
     Read off ``TrackerPort`` alone, because this double is what stands in for
     that port: the roles dialled beside it in the shipped tree write the same
     backend through doubles of their own, and a case here could not drive one.
-    A write added to the port arrives with no case, and that is this test.
+    Every member counts, read or write, so a member added under ANY name
+    arrives with no case, and that is this test.  It does not use
+    ``write_methods`` or ``WRITE_VERBS``: those still serve the other register
+    checks in the write-back adoption module, and a write named with a verb
+    they do not list is exactly what they would miss.
     """
-    assert {case.method for case in CASES.values()} == write_methods(TrackerPort)
+    assert {case.method for case in CASES.values()} == port_members()
 
 
 def test_every_journal_the_check_reaches_is_filled_by_one_of_these_writes() -> None:
@@ -562,7 +963,9 @@ def test_every_journal_the_check_reaches_is_filled_by_one_of_these_writes() -> N
     assert filled == TRACKER_WRITE_JOURNALS
 
 
-@pytest.mark.parametrize("case", sorted(CASES))
+@pytest.mark.parametrize(
+    "case", sorted(name for name, row in CASES.items() if row.journals)
+)
 async def test_a_write_through_any_port_method_answers_that_the_board_was_touched(
     case: str,
 ) -> None:
@@ -575,7 +978,7 @@ async def test_a_write_through_any_port_method_answers_that_the_board_was_touche
     unwritten = nothing_written(port)
     before = tracker_state(port)
 
-    await row.write(port)
+    await row.call(port)
 
     # The write landed in the journals this case declares and in no others,
     # so a False answer below is this case's coverage rather than some other
@@ -586,6 +989,32 @@ async def test_a_write_through_any_port_method_answers_that_the_board_was_touche
     assert untouched() is False
     # The projection reaches those journals too: a narrowed one would agree.
     assert unwritten() is False
+
+
+@pytest.mark.parametrize(
+    "case", sorted(name for name, row in CASES.items() if not row.journals)
+)
+async def test_a_read_through_any_port_method_moves_no_journal(case: str) -> None:
+    """One read, through one port method, and the write set stands still.
+
+    A read declares no journal, and that is checked by running it: a double
+    whose read fills a journal would make every write-set claim over a
+    consumer that reads the board answer False for a write nobody made, and
+    it fails here instead, naming the read.
+    """
+    row = CASES[case]
+    port = board()
+    if row.setup is not None:
+        await row.setup(port)
+    unwritten = nothing_written(port)
+    before = tracker_state(port)
+
+    await row.call(port)
+
+    after = tracker_state(port)
+    moved = {name for name, value in after.items() if before[name] != value}
+    assert moved & TRACKER_WRITE_JOURNALS == frozenset()
+    assert unwritten() is True
 
 
 async def test_an_ensure_that_adopts_a_defined_value_writes_nothing() -> None:
