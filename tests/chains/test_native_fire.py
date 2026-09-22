@@ -7,7 +7,9 @@ fire owes over that subject's whole subtree, in one reading, and nothing
 carried alongside that read stands in for it.
 """
 
+import ast
 import inspect
+import pathlib
 import re
 from unittest.mock import Mock
 
@@ -15,6 +17,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
+import kodezart
 from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.chains import fire_implementation, fire_review
 from kodezart.chains.criteria import (
@@ -42,7 +45,10 @@ from kodezart.domain.errors import (
     ScopeReadError,
 )
 from kodezart.domain.thread_id import workflow_thread_id
-from kodezart.domain.workflow_state import validated_criteria
+from kodezart.domain.workflow_state import (
+    recorded_native_roster,
+    validated_criteria,
+)
 from kodezart.services.agent_service import AgentService
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.lane_lapse_escalation import LaneLapseEscalations
@@ -2446,16 +2452,62 @@ async def test_a_delivering_lane_reads_its_finished_roster_once_and_then_holds_i
     assert port.issues[DIRECT_DONE].state_kind is WorkflowStateKind.COMPLETED
 
 
-#: Every native barrier that states its own roster, by the node name the
-#: graph registers it under.  The entry gate is one of three, not the only
-#: one: a checkpoint resumed at the loop or at the post-merge review lands
-#: on a node that passes *held* as well, so the refusal is stated over the
-#: whole set rather than at whichever barrier a case happened to pick.
-PERSISTED_SET_BARRIERS = (
-    "revalidate_criteria",
-    "run_ralph_loop",
-    "review_against_ticket",
-)
+def _asking_barriers(tree, *, refusal):
+    """Each outermost function in *tree* whose body reaches *refusal*.
+
+    The name recorded is the outermost function the call sits inside -- the
+    barrier a caller reaches -- so a call written in a closure defined
+    inside a node is that node's asking.  A call at module level belongs to
+    no barrier and is recorded as its own line, which no barrier name can
+    equal, so it is reported rather than folded into one.
+    """
+    found = set()
+
+    def walk(parent, outer):
+        for child in ast.iter_child_nodes(parent):
+            here = outer
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                here = outer or child.name
+            if isinstance(child, ast.Call):
+                called = child.func
+                reached = (
+                    called.id
+                    if isinstance(called, ast.Name)
+                    else getattr(called, "attr", None)
+                )
+                if reached == refusal:
+                    found.add(here or f"module line {child.lineno}")
+            walk(child, here)
+
+    walk(tree, None)
+    return found
+
+
+def native_roster_barriers():
+    """The barrier roster the shipped tree states, not a hand-kept twin.
+
+    Every module under the package is parsed once -- a bounded walk per
+    file -- and every call to the persisted-set refusal is attributed to
+    the function that holds it, by the refusal's own name.
+    """
+    root = pathlib.Path(kodezart.__file__).resolve().parent
+    refusal = recorded_native_roster.__name__
+    asking = set()
+    for path in sorted(root.rglob("*.py")):
+        asking |= _asking_barriers(
+            ast.parse(path.read_text(encoding="utf-8")), refusal=refusal
+        )
+    return tuple(sorted(asking))
+
+
+#: Every native barrier that states its own roster, derived from the shipped
+#: tree instead of named by hand.  The entry gate is one of four, not the
+#: only one: a checkpoint resumed at the loop or at the post-merge review
+#: lands on a node that passes *held* as well, and the snapshot barrier the
+#: delivery and loop-gate nodes go through asks the same question without
+#: being a node itself.  Derived, a fifth barrier is covered the day it is
+#: written and a barrier that stops asking reds the case below (KOD-652).
+PERSISTED_SET_BARRIERS = native_roster_barriers()
 
 
 @pytest.mark.parametrize("barrier", PERSISTED_SET_BARRIERS)
@@ -2466,11 +2518,12 @@ async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier(
 
     A persisted criteria document reaching ANY native barrier is refused by
     type before that barrier reads anything, so a run cannot proceed on
-    criteria carried in on a branch file -- not on entry, and not on a
+    criteria carried in on a branch file -- not on entry, not on a
     checkpoint resumed at the loop or at the post-merge review, both of
-    which state their own roster. The delivering-lane case above is the
-    control: a roster of the kind the tracker read produces passes through
-    the same slot.
+    which state their own roster, and not at the snapshot barrier the
+    delivery and loop-gate nodes go through. The delivering-lane case above
+    is the control: a roster of the kind the tracker read produces passes
+    through the same slot.
     """
     port = tracker()
     counting = CountingSource(TrackerCriteria(tracker=port))
@@ -2518,11 +2571,19 @@ async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier(
         "revalidate_criteria": lambda: revalidate_criteria(
             state, config, source=counting
         ),
+        "require_current_native_snapshot": lambda: require_current_native_snapshot(
+            state, reader=counting
+        ),
         "run_ralph_loop": lambda: fire.implementation.run_ralph_loop(state, config),
         "review_against_ticket": lambda: fire.review.review_against_ticket(
             state, config
         ),
     }
+    # How to reach a barrier is written here; WHICH barriers exist is read
+    # off the tree.  Requiring the two to agree is what makes the refusal a
+    # statement about the whole set: a new asking site arrives here without
+    # a way to reach it, and a site that stops asking leaves one behind.
+    assert set(reach) == set(PERSISTED_SET_BARRIERS)
 
     with pytest.raises(PersistedCriterionSetError):
         await reach[barrier]()
