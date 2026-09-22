@@ -600,8 +600,8 @@ other readings; its sub-issue is not moved to the `done` stage, and the owning
 issue's finished state is the rollup over its criterion sub-issues as it always
 was.
 
-`render_lane_record` places one readable JSON value under that marker, followed
-by fixed re-entry guidance. The record preserves three-state remote head facts,
+`lane_record_body` places one readable JSON value under the configured record
+marker, followed by fixed re-entry guidance. The record preserves three-state remote head facts,
 ordered `LaneCommit` rows — one row per commit act, not one per loop iteration:
 a head already recorded appends no second row, and a head that returns to an
 earlier sha is a new act with a row of its own (KOD-681) — `LanePR` and
@@ -625,7 +625,14 @@ fresh loop branch from the record's last commit act beside the kept
 association, and a lane that owes nothing and carries no pull request is
 refused rather than delivered from a branch standing elsewhere. A branch the
 remote no longer holds is recovered rather than replaced. It treats absent or
-reaped remote refs explicitly. Satisfaction and Evidence remain on the criterion issues.
+reaped remote refs explicitly. A divergence recovery's backup ref is recorded
+as a `RECOVERY` association derived from the loop branch, so a ref the
+persister pushed to recover is a recorded fact of the run. Associations stay
+recorded when consolidation deletes the loop branch and when cleanup reaps the
+backups after an accepted, consolidated fire: deleting a ref writes nothing to
+the record. `associated_branches` answers membership from the record alone, and
+whether a branch exists now is a separate remote read. Satisfaction and
+Evidence remain on the criterion issues.
 
 The reader recognizes this declared format; old free-form manual comments need
 an explicit migration. The fixed re-entry section is read as the current text

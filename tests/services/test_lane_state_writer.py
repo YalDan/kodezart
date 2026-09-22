@@ -1083,6 +1083,41 @@ async def test_pushed_head_behind_head_is_kept_as_its_own_value():
     assert record.pushed_head_sha != record.head_sha
 
 
+async def test_a_recovery_receipt_records_the_backup_ref_beside_the_loop_branch():
+    """A persist that recovered a divergence leaves its backup ref recorded.
+
+    The receipt names the ref the persister pushed before it reset the loop
+    branch; the record read back carries it as a RECOVERY association derived
+    from the loop branch, under this run's id, so a later reap of the ref
+    leaves the association on the board.
+    """
+    port, repo = board(), lane_repo()
+    lane = binding()
+    backup = f"{lane.loop_branch}-backup-0a1b2c3d"
+    sha = repo.commit()
+    repo.publish()
+    await writer(port, repo).record_commit(
+        lane=lane,
+        workspace_path="/workspace/lane",
+        receipt=PersistResult(
+            commit_sha=sha,
+            branch=lane.loop_branch,
+            message="feat: recovered commit",
+            source=PersistSource.DIVERGENCE_REPLAY,
+            recovery_ref=backup,
+        ),
+    )
+    stored = await stored_record(port)
+    assert [
+        (item.branch, item.role, item.derived_from, item.run_id)
+        for item in stored.associations
+    ] == [
+        (lane.deliverable_branch, BranchRole.DELIVERABLE, lane.base_ref, lane.run_id),
+        (lane.loop_branch, BranchRole.LOOP, lane.deliverable_branch, lane.run_id),
+        (backup, BranchRole.RECOVERY, lane.loop_branch, lane.run_id),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # The tick: one criterion's state and the sha it was graded at, in one act.
 # ---------------------------------------------------------------------------

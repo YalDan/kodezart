@@ -16,7 +16,7 @@ from kodezart.domain.errors import (
     AuditEvidenceReadError,
     PRStateReadError,
 )
-from kodezart.domain.lane_record import render_lane_record
+from kodezart.domain.lane_record import associated_branches, render_lane_record
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.services.audit_terminal import AuditTerminalReader
 from kodezart.services.lane_records import LaneRecordReader
@@ -244,6 +244,37 @@ async def test_reaped_and_prior_associations_do_not_need_live_refs(setup):
     result = await reader.observe(REQUEST)
     assert result.verdict is AuditVerdict.HOLDS
     assert all(call[-1] == BRANCH for call in git.calls)
+
+
+async def test_a_reaped_branch_is_enumerated_and_reported_absent_by_the_remote_read(
+    setup, server, tracker_writes
+):
+    """Absence is the remote read's answer; the record keeps the association.
+
+    Every recorded branch is gone from the remote, as consolidation and the
+    backup reaper leave them. The association query still names each one,
+    and the only calls that name any of them are the remote-branch reads that
+    report the branch absent; nothing asks the tracker about them.
+    """
+    reader, git, record, _ = setup
+    recorded = associated_branches(record=record)
+    for branch in recorded:
+        git._remote_branch_shas[branch] = None
+    before, asked = tracker_writes(), len(server.calls)
+    result = await reader.observe(REQUEST)
+    assert associated_branches(record=record) == recorded
+    assert {"reaped-ref", BRANCH} <= recorded
+    assert TerminalDiscrepancy.NO_BRANCH in result.discrepancies
+    assert result.branch_head is None
+    naming = [call for call in git.calls if set(call) & recorded]
+    assert naming
+    assert {call[0] for call in naming} == {"remote_branch_sha"}
+    assert tracker_writes() == before
+    assert not [
+        call
+        for call in server.calls[asked:]
+        if any(branch in str(call[1]) for branch in recorded)
+    ]
 
 
 async def test_current_pr_may_use_a_recorded_deliverable_branch(setup, forge):

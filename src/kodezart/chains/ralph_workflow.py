@@ -72,6 +72,27 @@ from kodezart.types.domain.workflow import (
 FireGraph = CompiledStateGraph[WorkflowState, None, WorkflowState, WorkflowState]
 
 
+def fire_terminal(state: WorkflowState) -> WorkflowCompleteEvent:
+    """The fire's delivery-free terminal, read off its final state.
+
+    One construction for the terminal the fire graph emits and for the one a
+    lane composing that graph hands to its backup cleanup, so both read the
+    same accepted, merged and feature-branch facts.
+    """
+    return WorkflowCompleteEvent(
+        feature_branch=state["feature_branch"],
+        ralph_branch=state["ralph_branch"],
+        total_iterations=state["total_iterations"],
+        accepted=gate_cleared(state["accept_verdict"]),
+        outcome=classify_outcome(state),
+        merged=state["merged"],
+        final_commit_sha=state["feature_tip_sha"],
+        merge_error=state["merge_error"],
+        trajectory=state["trajectory"],
+        criteria_validation=state["criteria_validation"],
+    )
+
+
 class RalphWorkflowEngine:
     """One node set, two compositions, over one shared run state.
 
@@ -532,20 +553,7 @@ class RalphWorkflowEngine:
         await require_current_native_snapshot(state, reader=self.criteria)
         _ = config
         writer = get_stream_writer()
-        writer(
-            WorkflowCompleteEvent(
-                feature_branch=state["feature_branch"],
-                ralph_branch=state["ralph_branch"],
-                total_iterations=state["total_iterations"],
-                accepted=gate_cleared(state["accept_verdict"]),
-                outcome=classify_outcome(state),
-                merged=state["merged"],
-                final_commit_sha=state["feature_tip_sha"],
-                merge_error=state["merge_error"],
-                trajectory=state["trajectory"],
-                criteria_validation=state["criteria_validation"],
-            )
-        )
+        writer(fire_terminal(state))
 
         return {}
 

@@ -207,6 +207,7 @@ class TrackerLaneStateWriter:
             pushed_head_sha=pushed_head_sha,
             changeset=changeset,
             subject=receipt.message.partition("\n")[0],
+            recovery_ref=receipt.recovery_ref,
         )
         body = await self._gate_exact(
             body=lane_record_body(record=record),

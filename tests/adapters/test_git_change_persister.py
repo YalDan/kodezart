@@ -112,6 +112,41 @@ async def test_persist_returns_working_tree_commit_source(
     assert "Adds functionality." in result.message
 
 
+async def test_a_persist_that_recovered_nothing_names_no_recovery_ref(
+    persister: GitChangePersister, git_repo: Path
+) -> None:
+    """A working-tree commit pushed no backup, so its receipt names none."""
+    await _run_git(["git", "checkout", "-b", "wt-branch"], cwd=git_repo)
+    (git_repo / "new.txt").write_text("content")
+    executor = FakeAgentExecutor(
+        events=[
+            ResultEvent(
+                subtype="result",
+                duration_ms=10,
+                duration_api_ms=5,
+                is_error=False,
+                num_turns=1,
+                session_id="s1",
+                structured_output={
+                    "title": "feat: add new file",
+                    "body": "Adds functionality.",
+                },
+            ),
+        ]
+    )
+    result = await persister.persist(
+        skills=SUPPRESS_ALL_SKILLS,
+        workspace_path=str(git_repo),
+        branch="wt-branch",
+        executor=executor,
+        visibility=RepoVisibility.UNKNOWN,
+        backup_ref_id_prefix="deadbeef",
+    )
+    assert result is not None
+    assert result.source is PersistSource.WORKING_TREE_COMMIT
+    assert result.recovery_ref is None
+
+
 async def test_persist_returns_agent_direct_commit_source_with_real_head_message(
     persister: GitChangePersister, git_repo: Path
 ) -> None:
@@ -240,6 +275,9 @@ async def test_persist_diverged_tree_equal_skips_replay(git_repo: Path) -> None:
     assert ("push", str(git_repo), "feat-backup-deadbeef") in fake_git.calls
     assert ("reset_hard", str(git_repo), "b" * 40) in fake_git.calls
     assert not any(c[0] == "commit_tree" for c in fake_git.calls)
+    backups_pushed = [c[2] for c in fake_git.calls if c[0] == "push"]
+    assert backups_pushed == ["feat-backup-deadbeef"]
+    assert result.recovery_ref == backups_pushed[0]
 
 
 async def test_persist_diverged_tree_differ_replays_in_order(git_repo: Path) -> None:
@@ -281,6 +319,8 @@ async def test_persist_diverged_tree_differ_replays_in_order(git_repo: Path) -> 
         ("reset_hard", str(git_repo), "c" * 40),
         ("push", str(git_repo), "feat"),
     ]
+    # The first push is the backup; the receipt names exactly that ref.
+    assert result.recovery_ref == relevant[0][2] == "feat-backup-deadbeef"
 
 
 async def test_persist_returns_none_when_remote_in_sync(
