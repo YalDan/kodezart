@@ -286,6 +286,21 @@ ENGINEERING_PRINCIPLE_LABELS: frozenset[str] = frozenset(
     },
 )
 
+#: What the standard puts between a principle's name and its reading.
+DASH = " — "
+
+#: Exact. Every sentence of the append OUTSIDE the standard's own paragraph
+#: that uses that separator — measured, not assumed: the closing paragraph
+#: states one, and the other three paragraphs state none. The register is
+#: this shape rather than an empty list because that one sentence is real,
+#: and pinning it by its text is what keeps a ninth principle from arriving
+#: behind it.
+DASHED_OUTSIDE_THE_STANDARD: tuple[str, ...] = (
+    "Your turn is complete only when you have produced the required structured "
+    "output — if you notice yourself ending with a plan or a promise about work "
+    "not yet done, do that work now.",
+)
+
 
 def house_rules_paragraphs() -> list[str]:
     """The append's paragraphs, in the order the fragment states them."""
@@ -303,23 +318,39 @@ def engineering_standard() -> str:
     return prose(paragraphs[0])
 
 
-def opens_with_a_named_reading(paragraph: str) -> bool:
-    """Whether *paragraph* opens the way a named principle opens.
+def sentences(text: str) -> tuple[str, ...]:
+    """*text*'s sentences, each terminated, blank pieces dropped."""
+    return tuple(
+        piece if piece.endswith(".") else f"{piece}."
+        for piece in (part.strip() for part in text.split(". "))
+        if piece
+    )
 
-    The first line is enough: a principle arrives as ``Name — reading.``,
-    and the name it is read under sits on the first line of the paragraph
-    it opens.
+
+def dashed_sentences(paragraph: str) -> tuple[str, ...]:
+    """Every sentence of *paragraph* that uses the standard's own separator.
+
+    Read off the paragraph's PROSE, so where the wrapping happens to fall
+    is not part of the question: a name on the paragraph's second line
+    reads a principle to the session exactly as a name on its first line
+    does, and a first-line scan never sees it.
+
+    This says what shape a sentence has, not which principle it names; the
+    label equality above is what decides that. A sentence that uses the
+    separator for anything else is registered by its own text rather than
+    excused by this function.
     """
-    first_line = next((line for line in paragraph.splitlines() if line.strip()), "")
-    return " — " in first_line
+    return tuple(
+        sentence for sentence in sentences(prose(paragraph)) if DASH in sentence
+    )
 
 
 def principle_labels(paragraph: str) -> frozenset[str]:
     """Every name *paragraph* puts in front of a reading, one per sentence."""
     return frozenset(
-        sentence.split(" — ")[0]
+        sentence.split(DASH)[0]
         for sentence in paragraph.split(". ")
-        if " — " in sentence
+        if DASH in sentence
     )
 
 
@@ -344,21 +375,30 @@ def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
     declared name is found, so an eighth cannot be dropped silently; the names
     put in front of a reading are exactly the declared labels, so a ninth
     cannot arrive as a label; the paragraph is CLOSED, so a ninth cannot
-    arrive as a bare sentence either; and neither paragraph beside the
-    standard opens with a named reading, so a ninth cannot arrive as its own
-    paragraph next to the eight. A ninth smuggled into the opening sentence's
-    list instead breaks that sentence's own reading pin.
+    arrive as a bare sentence either; and EVERY other paragraph of the append
+    is registered sentence by sentence, so a ninth cannot arrive as its own
+    paragraph anywhere in the text every session carries. A ninth smuggled
+    into the opening sentence's list instead breaks that sentence's own
+    reading pin.
 
     The closure halves are the ones that need saying. Counting the declared
     names found in the text detects a name going missing and never a name
     arriving: the list it counts is this module's own. Requiring every
     sentence to be a declared reading closes the paragraph itself — but the
     paragraph is only the block starting `Engineering standard:`, so a
-    labelled principle in the block after it is read by every session inside
-    the same append while being neither counted nor refused. The adjacency
-    half is what makes the closure hold for that placement too; it carries
-    its own controls, because a shape test that recognises nothing would
-    pass it silently.
+    labelled principle anywhere else in the append is read by every session
+    inside the same text while being neither counted nor refused.
+
+    That last half is stated over every paragraph and every line, with no
+    index arithmetic: the two paragraphs flanking the standard are not the
+    only ones the append has, and a name on a paragraph's second line reads
+    the same as a name on its first. What it compares is the register of
+    sentences outside the standard that use the standard's own separator,
+    which the shipped fragment satisfies with exactly one — the closing
+    paragraph's early-stopping clause, pinned by its text. It carries its own
+    controls, because a shape test that recognises nothing would pass it
+    silently, and the positive one puts the separator on a later line so the
+    control exercises the shape that would otherwise escape.
     """
     paragraph = engineering_standard()
     named = [
@@ -370,27 +410,31 @@ def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
     assert principle_labels(paragraph) == ENGINEERING_PRINCIPLE_LABELS
 
     body = paragraph.removeprefix("Engineering standard: ")
-    for part in (piece.strip() for piece in body.split(". ")):
-        if not part:
-            continue
-        sentence = part if part.endswith(".") else f"{part}."
-        assert sentence.split(" — ", 1)[-1] in ENGINEERING_READINGS, sentence
+    for sentence in sentences(body):
+        assert sentence.split(DASH, 1)[-1] in ENGINEERING_READINGS, sentence
 
-    assert opens_with_a_named_reading("YAGNI — Build nothing until it is asked for.")
-    assert not opens_with_a_named_reading("A paragraph that names no principle.")
+    assert dashed_sentences(
+        "Also required of every change:\nYAGNI — Build nothing until it is asked for.",
+    ) == (
+        "Also required of every change: YAGNI — Build nothing until it is asked for.",
+    )
+    assert dashed_sentences("A paragraph that names no principle.") == ()
     blocks = house_rules_paragraphs()
     standard = next(
         index
         for index, block in enumerate(blocks)
         if block.startswith("Engineering standard:")
     )
-    adjacent = [
-        blocks[index]
-        for index in (standard - 1, standard + 1)
-        if 0 <= index < len(blocks)
-    ]
-    assert adjacent
-    assert [block for block in adjacent if opens_with_a_named_reading(block)] == []
+    assert dashed_sentences(blocks[standard])
+    assert (
+        tuple(
+            sentence
+            for index, block in enumerate(blocks)
+            if index != standard
+            for sentence in dashed_sentences(block)
+        )
+        == DASHED_OUTSIDE_THE_STANDARD
+    )
 
 
 @pytest.mark.parametrize("reading", ENGINEERING_READINGS)
