@@ -1,4 +1,4 @@
-"""One body in the shipped sources compares a graded sha with a head sha (KOD-413).
+"""Every body that reads a graded sha is named, so one body weighs it (KOD-413).
 
 Two readers weighing the same two revisions is how a lapse comes to mean one
 thing on a compliance mark and another on a lane check: one of them
@@ -6,21 +6,39 @@ eventually grows an ancestry test, a prefix match or a null case, and
 nothing red says so.  The rule therefore lives in exactly one function and
 every other reader consults it, which is what this guard keeps true.
 
+What is scanned is the OPERAND, not the operator.  You cannot compare a
+value you do not read, so this guard censuses the bodies that read the
+graded identity at all — an attribute, a serialised key, a parameter, an
+unpack, a comprehension target, a name bound from any of those to a fixed
+point, a value handed to a call — and requires every one of them to be
+registered with the reason it reads it.  A comparison is then reachable only
+from a body this file names, whichever way it is spelled: an operator, a
+comparison dunder, the ``operator`` module, a prefix match, a helper called
+through a receiver or under a bare name, a port that weighs the pair inside
+itself.  None of those spellings appears in this file, which is the point:
+there is no list of them to walk past.
+
 The identity a grading's revision is recorded under is read off the Evidence
 record's own fields; the rule's module and name are read off the rule itself,
 so renaming either moves the guard with it; the scanned tree is the package
-the rule is packaged in.  Two things ARE listed by hand: the exemptions, each
-with the reason it is one, checked against the walk in both directions so an
-exemption for a site that no longer exists is as red as an unexempted site;
-and :data:`WEIGHINGS`, the calls that weigh two revisions inside themselves,
-which says below what it is named from and why it cannot be derived.
+the rule is packaged in.  One thing IS listed by hand: the register, each row
+with the reason that body reads the identity, checked against the census in
+both directions so a row for a body that no longer reads it is as red as a
+body that reads it and is not registered.
 
 The walk is textual and executes nothing, which is what lets it speak for
 the whole tree rather than for the paths a fixture happens to reach.  Its
-blind spots, which review has to read from the code instead: a helper under
-a name :data:`WEIGHINGS` does not carry that compares the two revisions
-inside itself rather than at the call site, and a revision reached by
-``getattr`` or by any other name composed at run time.
+boundaries, which review has to read from the code instead:
+
+* a revision reached by ``getattr`` or by any other name composed at run
+  time is invisible, here as anywhere a textual walk is used;
+* a body that takes the identity as a parameter spelled otherwise reads no
+  identity of its own — its CALLER hands it over and is censused, which is
+  what makes "reachable only from a named body" the claim this guard keeps,
+  and it is read from both sides below;
+* a read at class or module level is where the identity is DECLARED (a field
+  on a record, a key in a template) rather than a body that weighs it, so
+  the census is over function and method bodies only.
 """
 
 import ast
@@ -53,42 +71,23 @@ GRADED_IDENTITIES = frozenset(CriterionEvidence.model_fields) & frozenset(
 )
 GRADED = min(GRADED_IDENTITIES, default="")
 
-#: The comparisons a reader can weigh two revisions with.
-COMPARISONS = (ast.Eq, ast.NotEq, ast.Is, ast.IsNot, ast.In, ast.NotIn)
+#: The bodies the census is over, and the scopes a body's name is built from.
+BODIES = (ast.FunctionDef, ast.AsyncFunctionDef)
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+#: Containers that hold their elements without changing them.
 LITERALS = (ast.Tuple, ast.List, ast.Set)
+COMPREHENSIONS = (ast.SetComp, ast.ListComp, ast.GeneratorExp)
 
-#: The calls that weigh two revisions against each other inside themselves,
-#: by the attribute they are called under.
+#: Every body in the sources that reads the graded identity, and what it
+#: reads it FOR.  The rule is not here: weighing the pair is its whole job.
 #:
-#: This set is NAMED, not derived, and it is the one hand-written surface in
-#: this guard.  There is nothing here to derive it from: the string methods
-#: belong to ``str`` and reach a revision through whatever a reader bound it
-#: to, and no port marks a method as revision-weighing anywhere a textual
-#: walk could read.  So it is listed, from two places a reader can check it
-#: against:
-#:
-#: * ``str.startswith`` and ``str.endswith`` — a prefix match, which is one of
-#:   the drifts ``domain/lapse.py``'s own docstring says the rule exists to
-#:   prevent, and which reads as a lapse test without ever comparing;
-#: * every method of the ``GitService`` port that takes two revisions and
-#:   answers about the pair: ``is_ancestor`` (whether one is reachable from
-#:   the other) and ``diff_summary`` (what moved between them).  The port's
-#:   other revision methods take one revision — ``reset_hard``, ``tree_of``,
-#:   ``create_worktree``, ``merge_scratch_head``, ``remote_branch_sha`` — and
-#:   ``commit_tree`` writes a commit from a tree and a parent rather than
-#:   weighing a pair, so none of them can be a second reading of a lapse.
-#:
-#: What naming it costs: the same arithmetic under some other name is still
-#: unseen, which is the blind spot the module docstring keeps.
-WEIGHINGS = frozenset({"startswith", "endswith", "is_ancestor", "diff_summary"})
-
-#: Every site that compares a graded sha with something and is not the rule,
-#: each with the reason it is not the rule's business.  A revision weighed
-#: against ITSELF, or against a second recorded revision, is provenance:
-#: it answers whether a reading is about the commit it says it is, which is
-#: a different question from whether that reading still stands.
-EXEMPT = {
+#: A revision recorded against ITSELF, or against a second recorded
+#: revision, is provenance: it answers whether a reading is about the commit
+#: it says it is, which is a different question from whether that reading
+#: still stands.  A revision handed to a port as a ref, quoted into a
+#: session's prompt, recorded onto a row or carried into the rule's own
+#: arguments weighs nothing at all.
+REGISTERED = {
     "types/domain/audit_runtime.py::AuditForgePublication."
     "_recorded_revision_matches_report": (
         "head against head: the forge report's own provenance, not the head now"
@@ -101,9 +100,22 @@ EXEMPT = {
     "chains/audit_forge.py::AuditForgeVerifier._checked_snapshot": (
         "the same provenance reading, where the observation is assembled"
     ),
+    "chains/audit_forge.py::AuditForgeVerifier._forge": (
+        "a ref, not an operand: the forge checks are awaited AT the recorded "
+        "commit, and what comes back is read against the roster, never "
+        "against a head"
+    ),
+    "chains/audit_forge.py::AuditForgeVerifier._forge.result": (
+        "the same body's reply, with the recorded commit quoted into the "
+        "reason it reports"
+    ),
     "chains/audit_detection_removal.py::DetectorRemovalVerifier."
     "_require_removed_quote": (
         "a baseline commit against the graded commit, never against a head"
+    ),
+    "chains/audit_detection_removal.py::DetectorRemovalVerifier.observe": (
+        "quoted into the session's prompt and recorded onto the observation: "
+        "prose and a record, neither of them a reading of the pair"
     ),
     "chains/audit_evidence.py::AuditEvidenceVerifier._head.observe": (
         "self-resolution: a recorded revision must resolve to itself; and the "
@@ -111,15 +123,35 @@ EXEMPT = {
         "sits on the recorded branch at all — a miss there is a refusal to "
         "read the record, not a reading that the grading stopped standing"
     ),
-    "services/audit_sources.py::AuditSourceReader.read.resolve": (
-        "the same self-resolution, over both revisions as one loop, and the "
-        "same ancestry weighing of the graded commit against the branch"
+    "chains/audit_evidence.py::AuditEvidenceVerifier._observe": (
+        "the audit lane's one consultation of the rule: both revisions are "
+        "handed over and the answer is read, which is the registered way to "
+        "ask this question"
     ),
-    "services/assertion_drift.py::AssertionDriftDetector.compare": (
-        "the same self-resolution, and the shape of the graded reference itself"
+    "chains/audit_evidence.py::AuditRestampVerifier.observe": (
+        "the recorded commit handed to the restamp reading over the row "
+        "history, and quoted into the trace's reason beside the last grading"
     ),
     "chains/audit_overclaim.py::AuditOverclaimVerifier._adoption": (
         "membership: whether an adopted source sha is one of the audited pair"
+    ),
+    "chains/audit_overclaim.py::AuditOverclaimVerifier.observe": (
+        "the same prompt-and-record shape: quoted into the session and "
+        "recorded onto the observation"
+    ),
+    "chains/audit_sweep.py::AuditReadSweep._observe_forge": (
+        "the recorded commit of a historical forge observation, carried onto "
+        "the claim the mandate is asked about so the mandate reads the commit "
+        "the observation was taken at"
+    ),
+    "chains/ralph_loop.py::RalphLoop._cross_off": (
+        "the sha this attempt graded at, carried to the builder that records "
+        "it on each row"
+    ),
+    "chains/ralph_loop.py::RalphLoop._moved_since": (
+        "the interval's base, not an operand: each distinct graded sha is "
+        "handed to the Git service port as one end of the digest the rule "
+        "consumes, and this body decides nothing about the pair"
     ),
     "domain/audit_claims.py::evidence_row_history": (
         "not a revision comparison at all: an event is selected by the subject "
@@ -130,31 +162,43 @@ EXEMPT = {
         "whether a restamp names the grading that actually last ran, never the "
         "head now"
     ),
+    "domain/criterion_cross_off.py::cross_offs_for": (
+        "the row builder: the sha this attempt graded at is recorded, and a "
+        "lapsed grading keeps the sha it was taken at unchanged"
+    ),
+    "domain/lapse.py::held_standing": (
+        "the lane arm's one consultation of the rule: it hands both revisions "
+        "over, keys the digest map by the recorded one, and reads the answer"
+    ),
+    "services/assertion_drift.py::AssertionDriftDetector.compare": (
+        "the same self-resolution, and the shape of the graded reference itself"
+    ),
+    "services/audit_runtime.py::_reports": (
+        "the recorded commit carried onto the publication, whose own "
+        "construction does the provenance reading"
+    ),
+    "services/audit_sources.py::AuditSourceReader.read.resolve": (
+        "the same self-resolution, over both revisions as one loop, and the "
+        "same ancestry weighing of the graded commit against the branch"
+    ),
+    "services/lane_state_writer.py::TrackerLaneStateWriter.write_cross_offs": (
+        "the sha the cross-off already carries, written onto the tracker row "
+        "and onto the run event that records the take-back"
+    ),
+    "services/recorded_assertion_drift.py::RecordedAssertionDriftDetector.compare": (
+        "a ref again: the revision the recorded assertions are read AT, handed "
+        "to the detector beside the head it reads them against"
+    ),
+    "types/domain/audit_evidence.py::AuditEvidenceObservation.is_lapse": (
+        "the audit lane's observation of a finished claim's recorded grading, "
+        "which hands both revisions to the rule rather than weighing them"
+    ),
     "types/domain/audit_evidence.py::AuditRestampTrace."
     "verdict_follows_the_recorded_history": (
         "the same reading, refused at construction so the wrong verdict cannot "
         "be published; still recorded against recorded"
     ),
 }
-
-
-def _is_rule_call(node: ast.AST) -> bool:
-    """Whether this expression is the rule being consulted.
-
-    A reader comparing the rule's ANSWER with a member of its reading is
-    doing what this guard exists to make it do, so the arguments it hands
-    the rule are not a comparison of its own.
-    """
-    if not isinstance(node, ast.Call):
-        return False
-    called = node.func
-    if isinstance(called, ast.Attribute):
-        return called.attr == RULE
-    return isinstance(called, ast.Name) and called.id == RULE
-
-
-def _strip(node: ast.expr) -> ast.expr:
-    return node.value if isinstance(node, ast.Await) else node
 
 
 def _is_graded_key(node: ast.Subscript) -> bool:
@@ -169,47 +213,69 @@ def _is_graded_key(node: ast.Subscript) -> bool:
     return isinstance(key, ast.Constant) and key.value == GRADED
 
 
-def _names_the_graded_sha(node: ast.AST) -> bool:
-    """Whether this expression spells the graded identity itself."""
-    stack: list[ast.AST] = [node]
-    while stack:
-        current = stack.pop()
-        if _is_rule_call(current):
-            continue
-        if isinstance(current, ast.Attribute) and current.attr == GRADED:
-            return True
-        if isinstance(current, ast.Name) and current.id == GRADED:
-            return True
-        if isinstance(current, ast.Subscript) and _is_graded_key(current):
-            return True
-        stack.extend(ast.iter_child_nodes(current))
-    return False
-
-
-def _is_direct_read(node: ast.expr, aliases: frozenset[str] = frozenset()) -> bool:
-    """Whether *node* IS the graded identity, or a literal collecting it.
+def _carries(node: ast.expr, aliases: frozenset[str]) -> bool:
+    """Whether evaluating *node* reads the graded identity.
 
     The identity itself, the same field read off a serialised record, a name
-    that already stands for it, or a container literal collecting any of
-    those. What is deliberately NOT followed is a local the identity was
-    handed to as one argument among many: that local carries a value of some
-    other kind, and following it would make the walk report every reader
-    downstream of a prompt or a report that happens to quote the sha.
+    that already stands for it, and anything built out of one of those: a
+    container literal, a comprehension, a conditional, an interpolation, or a
+    call handed one of them.  A call is followed because the walk cannot know
+    what a call does to its argument, and a wrapper that hands the revision
+    back — ``str``, ``sorted``, a strip — is the ordinary way a reader loses
+    the spelling without losing the value.  Every arm recurses on a strictly
+    smaller expression, so the descent is bounded by the node's depth.
     """
-    value = _strip(node)
+    value = node.value if isinstance(node, ast.Await) else node
     if isinstance(value, ast.Attribute):
-        return value.attr == GRADED
+        return value.attr == GRADED or _carries(value.value, aliases)
     if isinstance(value, ast.Name):
         return value.id == GRADED or value.id in aliases
     if isinstance(value, ast.Subscript):
-        return _is_graded_key(value)
+        return _is_graded_key(value) or _carries(value.value, aliases)
     if isinstance(value, LITERALS):
-        return any(_is_direct_read(element, aliases) for element in value.elts)
+        return any(_carries(element, aliases) for element in value.elts)
+    if isinstance(value, ast.Dict):
+        return any(
+            item is not None and _carries(item, aliases)
+            for item in (*value.keys, *value.values)
+        )
+    if isinstance(value, ast.Call):
+        return any(
+            _carries(operand, aliases)
+            for operand in (
+                value.func,
+                *value.args,
+                *(word.value for word in value.keywords),
+            )
+        )
+    if isinstance(value, COMPREHENSIONS):
+        return _carries(value.elt, aliases) or any(
+            _carries(clause.iter, aliases) for clause in value.generators
+        )
+    if isinstance(value, ast.DictComp):
+        return (
+            _carries(value.key, aliases)
+            or _carries(value.value, aliases)
+            or any(_carries(clause.iter, aliases) for clause in value.generators)
+        )
+    if isinstance(value, ast.IfExp):
+        return _carries(value.body, aliases) or _carries(value.orelse, aliases)
+    if isinstance(value, ast.JoinedStr):
+        return any(_carries(part, aliases) for part in value.values)
+    if isinstance(value, ast.FormattedValue):
+        return _carries(value.value, aliases)
+    if isinstance(value, ast.Starred):
+        return _carries(value.value, aliases)
     return False
 
 
 def _bindings(scope: ast.AST) -> list[tuple[list[ast.expr], ast.expr]]:
-    """Every name this scope binds, with what it binds it from."""
+    """Every name this scope binds, with what it binds it from.
+
+    Assignment and annotated assignment, an unpack (the targets are walked
+    for their names), a loop or comprehension target bound from its iterable,
+    a context manager's ``as``, and a walrus.
+    """
     found: list[tuple[list[ast.expr], ast.expr]] = []
     stack: list[ast.AST] = [scope]
     while stack:
@@ -222,6 +288,11 @@ def _bindings(scope: ast.AST) -> list[tuple[list[ast.expr], ast.expr]]:
                     found.append(([child.target], child.value))
             elif isinstance(child, (ast.For, ast.AsyncFor, ast.comprehension)):
                 found.append(([child.target], child.iter))
+            elif isinstance(child, ast.withitem):
+                if child.optional_vars is not None:
+                    found.append(([child.optional_vars], child.context_expr))
+            elif isinstance(child, ast.NamedExpr):
+                found.append(([child.target], child.value))
             if not isinstance(child, SCOPES):
                 stack.append(child)
     return found
@@ -230,81 +301,57 @@ def _bindings(scope: ast.AST) -> list[tuple[list[ast.expr], ast.expr]]:
 def _aliases(scope: ast.AST, inherited: frozenset[str]) -> frozenset[str]:
     """The names that stand for the graded identity inside *scope*.
 
-    Grown to a fixed point: a name bound from another name that already
-    stands for the identity stands for it too, because a plain rebinding
-    carries the same value rather than a value of another kind. A single pass
-    would also miss an alias bound before the name it is bound from.
+    Grown to a fixed point, because an alias can be bound before the name it
+    is bound from is: each pass can only add names, and there are no more
+    names to add than there are bindings, so the loop is bounded by that
+    count and leaves early as soon as a pass adds nothing.
     """
     aliases = set(inherited)
     bindings = _bindings(scope)
-    changed = True
-    while changed:
+    for _ in range(len(bindings) + 1):
         previous = set(aliases)
         for targets, value in bindings:
-            if not _is_direct_read(value, frozenset(aliases)):
+            if not _carries(value, frozenset(aliases)):
                 continue
             for target in targets:
                 aliases.update(
                     node.id for node in ast.walk(target) if isinstance(node, ast.Name)
                 )
-        changed = aliases != previous
+        if aliases == previous:
+            break
     return frozenset(aliases)
 
 
-def _reads_the_graded_sha(node: ast.expr, aliases: frozenset[str]) -> bool:
-    if _names_the_graded_sha(node):
-        return True
-    stack: list[ast.AST] = [node]
+def _reads(scope: ast.AST, aliases: frozenset[str]) -> bool:
+    """Whether the graded identity is read in *scope* itself.
+
+    A nested body is its own row in the census and is not walked here, so a
+    reading is attributed to the body that performs it.
+    """
+    stack: list[ast.AST] = [scope]
     while stack:
         current = stack.pop()
-        if _is_rule_call(current):
-            continue
-        if isinstance(current, ast.Name) and current.id in aliases:
-            return True
-        stack.extend(ast.iter_child_nodes(current))
+        for child in ast.iter_child_nodes(current):
+            if isinstance(child, SCOPES):
+                continue
+            if isinstance(child, ast.expr) and _carries(child, aliases):
+                return True
+            stack.append(child)
     return False
 
 
-def _compares_the_graded_sha(node: ast.AST, aliases: frozenset[str]) -> bool:
-    """Whether *node* weighs the graded identity with a comparison operator."""
-    return (
-        isinstance(node, ast.Compare)
-        and any(isinstance(op, COMPARISONS) for op in node.ops)
-        and any(
-            _reads_the_graded_sha(operand, aliases)
-            for operand in (node.left, *node.comparators)
-        )
-    )
+def _readers(tree: ast.AST) -> frozenset[str]:
+    """Every body in *tree* that reads the graded identity, once each.
 
-
-def _weighs_the_graded_sha_in_a_call(node: ast.AST, aliases: frozenset[str]) -> bool:
-    """Whether *node* hands the graded identity to a named revision weighing.
-
-    The receiver counts alongside the arguments, positional and keyword alike:
-    ``head.startswith(graded)`` and ``graded.startswith(head)`` are one
-    reading spelled two ways, and a port called by keyword is the same call as
-    one called by position.
-    """
-    if not isinstance(node, ast.Call):
-        return False
-    called = node.func
-    if not isinstance(called, ast.Attribute) or called.attr not in WEIGHINGS:
-        return False
-    operands = (called.value, *node.args, *(word.value for word in node.keywords))
-    return any(_reads_the_graded_sha(operand, aliases) for operand in operands)
-
-
-def _sites(tree: ast.AST) -> frozenset[str]:
-    """Each scope that weighs the graded identity against something, once.
-
-    Two shapes, because a reader has two ways to reach the same reading: a
-    comparison operator over the two revisions, and a call that performs the
-    weighing inside itself under one of the names :data:`WEIGHINGS` lists.
+    Names that stand for the identity are inherited by the bodies nested in
+    the scope that bound them, because a closure reads what it closes over.
     """
     found: set[str] = set()
 
     def visit(scope: ast.AST, label: str | None, inherited: frozenset[str]) -> None:
         aliases = _aliases(scope, inherited)
+        if label is not None and isinstance(scope, BODIES) and _reads(scope, aliases):
+            found.add(label)
         stack: list[ast.AST] = [scope]
         while stack:
             current = stack.pop()
@@ -316,23 +363,19 @@ def _sites(tree: ast.AST) -> frozenset[str]:
                         aliases,
                     )
                     continue
-                if _compares_the_graded_sha(
-                    child, aliases
-                ) or _weighs_the_graded_sha_in_a_call(child, aliases):
-                    found.add(label if label is not None else f"line {child.lineno}")
                 stack.append(child)
 
     visit(tree, None, frozenset())
     return frozenset(found)
 
 
-def surface(root: Path) -> frozenset[str]:
-    """Every site in *root* that compares a graded sha, as module::qualname."""
+def census(root: Path) -> frozenset[str]:
+    """Every body in *root* that reads a graded sha, as module::qualname."""
     found: set[str] = set()
     for path in sorted(root.rglob("*.py")):
         module = path.relative_to(root).as_posix()
         found.update(
-            f"{module}::{site}" for site in _sites(ast.parse(path.read_text()))
+            f"{module}::{site}" for site in _readers(ast.parse(path.read_text()))
         )
     return frozenset(found)
 
@@ -351,23 +394,24 @@ def test_the_rule_the_guard_permits_is_the_one_the_sources_import():
     assert RULE in (SOURCE / RULE_MODULE).read_text()
 
 
-def test_the_sources_compare_a_graded_sha_with_a_head_sha_in_one_body_only():
-    found = surface(SOURCE)
-    assert found - frozenset(EXEMPT) == frozenset({RULE_SITE}), sorted(
-        found - frozenset(EXEMPT)
+def test_every_body_that_reads_a_graded_sha_is_the_rule_or_is_registered():
+    """A body nobody registered reading the identity is the finding."""
+    found = census(SOURCE)
+    assert found - frozenset(REGISTERED) == frozenset({RULE_SITE}), sorted(
+        found - frozenset(REGISTERED)
     )
 
 
-def test_every_exemption_names_a_site_the_walk_actually_reports():
-    """A stale exemption reds: the table cannot outlive the site it excuses."""
-    assert frozenset(EXEMPT) <= surface(SOURCE), sorted(
-        frozenset(EXEMPT) - surface(SOURCE)
+def test_every_registration_names_a_body_the_census_reports():
+    """A stale row reds: the register cannot outlive the reading it explains."""
+    assert frozenset(REGISTERED) <= census(SOURCE), sorted(
+        frozenset(REGISTERED) - census(SOURCE)
     )
 
 
-def test_every_exemption_carries_the_reason_it_is_one():
-    assert all(reason.strip() for reason in EXEMPT.values())
-    assert RULE_SITE not in EXEMPT
+def test_every_registration_carries_the_reason_it_reads_the_identity():
+    assert all(reason.strip() for reason in REGISTERED.values())
+    assert RULE_SITE not in REGISTERED
 
 
 @pytest.mark.parametrize(
@@ -376,24 +420,24 @@ def test_every_exemption_carries_the_reason_it_is_one():
         pytest.param(
             "def lapsed(evidence, head_sha):\n"
             "    return evidence.graded_sha != head_sha\n",
-            id="attribute-operand",
+            id="attribute-read",
         ),
         pytest.param(
             "def lapsed(graded_sha, head_sha):\n    return graded_sha == head_sha\n",
-            id="parameter-operand",
+            id="parameter-read",
         ),
         pytest.param(
             "def lapsed(evidence, head_sha):\n"
             "    taken = evidence.graded_sha\n"
             "    return taken is not head_sha\n",
-            id="aliased-operand",
+            id="aliased-read",
         ),
         pytest.param(
             "def lapsed(evidence, head_sha):\n"
             f"    recorded = evidence.{GRADED}\n"
             "    taken = recorded\n"
             "    return taken is not head_sha\n",
-            id="twice-aliased-operand",
+            id="twice-aliased-read",
         ),
         pytest.param(
             "def lapsed(evidence, head_sha):\n"
@@ -406,18 +450,18 @@ def test_every_exemption_carries_the_reason_it_is_one():
             "        if resolve(sha) != sha:\n"
             "            return True\n"
             "    return False\n",
-            id="loop-bound-operand",
+            id="loop-bound-read",
         ),
         pytest.param(
             "def lapsed(pair, evidence, head_sha):\n"
             "    return pair.source_sha in {evidence.graded_sha, head_sha}\n",
-            id="container-literal-operand",
+            id="container-literal-read",
         ),
         pytest.param(
             "class Record:\n"
             "    def lapsed(self):\n"
             "        return self.graded_sha != self.head_sha\n",
-            id="method-operand",
+            id="method-read",
         ),
         pytest.param(
             "def lapsed(evidence, head_sha):\n"
@@ -430,9 +474,30 @@ def test_every_exemption_carries_the_reason_it_is_one():
             id="prefix-match-receiver",
         ),
         pytest.param(
+            "def lapsed(evidence, head_sha):\n"
+            "    return bool(head_sha.partition(evidence.graded_sha)[1])\n",
+            id="prefix-arithmetic-under-another-name",
+        ),
+        pytest.param(
+            "import operator\n"
+            "def lapsed(evidence, head_sha):\n"
+            "    return operator.ne(evidence.graded_sha, head_sha)\n",
+            id="operator-module",
+        ),
+        pytest.param(
+            "def lapsed(evidence, head_sha):\n"
+            "    return not evidence.graded_sha.__eq__(head_sha)\n",
+            id="comparison-dunder",
+        ),
+        pytest.param(
+            "def lapsed(is_ancestor, evidence, head_sha):\n"
+            "    return not is_ancestor(evidence.graded_sha, head_sha)\n",
+            id="bare-name-ancestry",
+        ),
+        pytest.param(
             "def lapsed(git, evidence, head_sha):\n"
             "    return not git.is_ancestor(evidence.graded_sha, head_sha)\n",
-            id="ancestry-call",
+            id="ancestry-call-through-a-receiver",
         ),
         pytest.param(
             "async def lapsed(git, repo, evidence, head_sha):\n"
@@ -442,15 +507,45 @@ def test_every_exemption_carries_the_reason_it_is_one():
             "    return bool(moved.file_paths)\n",
             id="digest-call-by-keyword",
         ),
-    ],
-)
-def test_every_spelling_that_compares_the_graded_sha_is_reported(body):
-    assert _sites(ast.parse(body))
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
+        pytest.param(
+            "def lapsed(evidence, head_sha):\n"
+            "    recorded = str(evidence.graded_sha)\n"
+            "    return recorded != head_sha\n",
+            id="wrapped-in-a-call",
+        ),
+        pytest.param(
+            "def lapsed(git, prior, head_sha):\n"
+            "    shas = sorted({row.evidence.graded_sha for row in prior})\n"
+            "    return any(not git.is_ancestor(sha, head_sha) for sha in shas)\n",
+            id="comprehension-bound-read",
+        ),
+        pytest.param(
+            "async def lapsed(git, cwd, prior, head_sha):\n"
+            "    digests = {\n"
+            "        sha: await git.diff_summary(\n"
+            "            cwd=cwd, base_ref=sha, head_ref=head_sha\n"
+            "        )\n"
+            "        for sha in sorted({row.evidence.graded_sha for row in prior})\n"
+            "    }\n"
+            "    return any(digest.file_paths for digest in digests.values())\n",
+            id="comprehension-bound-port-call",
+        ),
+        pytest.param(
+            "def lapsed(prior, head_sha):\n"
+            "    return any(\n"
+            "        not head_sha.startswith(sha)\n"
+            "        for sha in {row.evidence.graded_sha for row in prior}\n"
+            "    )\n",
+            id="comprehension-bound-prefix-match",
+        ),
+        pytest.param(
+            "def outer(evidence, head_sha):\n"
+            "    recorded = evidence.graded_sha\n"
+            "    def inner():\n"
+            "        return recorded != head_sha\n"
+            "    return inner\n",
+            id="closure-over-the-alias",
+        ),
         pytest.param(
             "def pinned(git, repo, evidence):\n"
             "    return git.reset_hard(cwd=repo, ref=evidence.graded_sha)\n",
@@ -472,38 +567,79 @@ def test_every_spelling_that_compares_the_graded_sha_is_reported(body):
             id="record-construction",
         ),
         pytest.param(
-            "def other(evidence):\n"
-            "    return evidence.recorded_sha != evidence.checked_sha\n",
-            id="two-other-revisions",
-        ),
-        pytest.param(
             "def reported(prompts, evidence, head_sha, judge):\n"
             "    prompt = prompts.render({'graded_sha': evidence.graded_sha})\n"
             "    judgment = judge(prompt=prompt, head_sha=head_sha)\n"
             "    return judgment.criterion_key != evidence.criterion_key\n",
             id="quoted-into-a-session",
         ),
+        pytest.param(
+            "def consulted(evidence, head_sha):\n"
+            f"    return {RULE}("
+            f"{GRADED}=evidence.{GRADED}, head_sha=head_sha)\n",
+            id="handed-to-the-rule",
+        ),
     ],
 )
-def test_naming_the_graded_sha_without_comparing_it_is_not_a_site(body):
-    assert _sites(ast.parse(body)) == frozenset()
+def test_every_body_that_reads_the_graded_identity_is_censused(body):
+    """The last six read it without weighing it, and are censused all the same.
+
+    The census is a reading question, not a weighing one: a body that quotes
+    the revision into a prompt or hands it to a port is named here and
+    answers for it in the register, which is why no spelling of a comparison
+    needs to be listed anywhere in this file.
+    """
+    assert _readers(ast.parse(body))
 
 
-def test_a_reader_consulting_the_rule_is_not_a_site_and_its_own_arithmetic_is():
-    """Reading the rule's answer is the point; comparing the shas is not."""
-    consumer = (
-        "def is_lapse(evidence, head_sha):\n"
-        f"    return {RULE}("
-        f"{GRADED}=evidence.{GRADED}, head_sha=head_sha) is GradedState.lapsed\n"
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            "def other(evidence):\n"
+            "    return evidence.recorded_sha != evidence.checked_sha\n",
+            id="two-other-revisions",
+        ),
+        pytest.param(
+            "def moved(head_sha, other_head_sha):\n"
+            "    return head_sha != other_head_sha\n",
+            id="two-heads",
+        ),
+        pytest.param(
+            "def pointed(evidence, pointer):\n"
+            "    return evidence.test.endswith(pointer)\n",
+            id="another-field-of-the-record",
+        ),
+        pytest.param(
+            "def dumped(record, head_sha):\n"
+            "    return record['head_sha'] != head_sha\n",
+            id="another-serialised-key",
+        ),
+    ],
+)
+def test_a_body_that_reads_no_graded_sha_is_not_censused(body):
+    assert _readers(ast.parse(body)) == frozenset()
+
+
+def test_the_identity_under_another_name_is_reached_from_a_censused_caller():
+    """The boundary, read from both sides.
+
+    A body handed the revision under some other parameter name reads no
+    identity and is not censused — that is what a textual walk can do. What
+    keeps the claim is the other side: the body that HANDS it over reads it,
+    is censused, and answers in the register for what it handed the revision
+    to. So a second weighing is reachable only from a named body.
+    """
+    taken = "def lapsed(recorded, head_sha):\n    return recorded != head_sha\n"
+    assert _readers(ast.parse(taken)) == frozenset()
+    handing = taken + (
+        "def asks(evidence, head_sha):\n"
+        f"    return lapsed(evidence.{GRADED}, head_sha)\n"
     )
-    assert _sites(ast.parse(consumer)) == frozenset()
-    rolled = consumer + (
-        f"def also(evidence, head_sha):\n    return evidence.{GRADED} != head_sha\n"
-    )
-    assert _sites(ast.parse(rolled)) == frozenset({"also"})
+    assert _readers(ast.parse(handing)) == frozenset({"asks"})
 
 
-def test_one_body_comparing_twice_is_one_site_and_two_bodies_are_two():
+def test_one_body_reading_twice_is_one_row_and_two_bodies_are_two():
     source = (
         "def lapsed(evidence, head_sha, other_head_sha):\n"
         "    if evidence.graded_sha == head_sha:\n"
@@ -512,21 +648,62 @@ def test_one_body_comparing_twice_is_one_site_and_two_bodies_are_two():
         "def stale(evidence, head_sha):\n"
         "    return evidence.graded_sha != head_sha\n"
     )
-    assert _sites(ast.parse(source)) == frozenset({"lapsed", "stale"})
+    assert _readers(ast.parse(source)) == frozenset({"lapsed", "stale"})
 
 
-def test_a_second_module_performing_the_comparison_is_reported(tmp_path):
-    """The injected reader is reported, and no exemption covers it."""
+@pytest.mark.parametrize(
+    "reader",
+    [
+        pytest.param(
+            "import operator\n"
+            "def lapsed(evidence, head_sha):\n"
+            "    return operator.ne(evidence.graded_sha, head_sha)\n",
+            id="operator-module",
+        ),
+        pytest.param(
+            "def lapsed(evidence, head_sha):\n"
+            "    return not evidence.graded_sha.__eq__(head_sha)\n",
+            id="comparison-dunder",
+        ),
+        pytest.param(
+            "def lapsed(is_ancestor, evidence, head_sha):\n"
+            "    return not is_ancestor(evidence.graded_sha, head_sha)\n",
+            id="bare-name-ancestry",
+        ),
+        pytest.param(
+            "def lapsed(evidence, head_sha):\n"
+            "    recorded = str(evidence.graded_sha)\n"
+            "    return recorded != head_sha\n",
+            id="local-then-compared",
+        ),
+        pytest.param(
+            "def lapsed(git, prior, head_sha):\n"
+            "    shas = sorted({row.evidence.graded_sha for row in prior})\n"
+            "    return any(not git.is_ancestor(sha, head_sha) for sha in shas)\n",
+            id="comprehension-bound",
+        ),
+    ],
+)
+def test_a_second_module_performing_the_comparison_is_reported(tmp_path, reader):
+    """Each spelling the sweep found, planted as a second module, reds here."""
     rule = tmp_path / RULE_MODULE
     rule.parent.mkdir(parents=True, exist_ok=True)
     rule.write_text((SOURCE / RULE_MODULE).read_text())
-    assert surface(tmp_path) == frozenset({RULE_SITE})
+    assert census(tmp_path) - frozenset(REGISTERED) == frozenset({RULE_SITE})
 
-    (tmp_path / "reader.py").write_text(
-        "def lapsed(evidence, head_sha):\n    return evidence.graded_sha != head_sha\n"
-    )
-    found = surface(tmp_path)
-    assert found - frozenset(EXEMPT) == frozenset({RULE_SITE, "reader.py::lapsed"})
+    (tmp_path / "reader.py").write_text(reader)
+    found = census(tmp_path)
+    assert found - frozenset(REGISTERED) == frozenset({RULE_SITE, "reader.py::lapsed"})
+
+
+def _is_rule_call(node: ast.AST) -> bool:
+    """Whether this expression is the rule being consulted."""
+    if not isinstance(node, ast.Call):
+        return False
+    called = node.func
+    if isinstance(called, ast.Attribute):
+        return called.attr == RULE
+    return isinstance(called, ast.Name) and called.id == RULE
 
 
 #: Every body that consults the rule, each with the reading it takes from it.
@@ -582,6 +759,12 @@ def test_every_reader_of_the_rule_is_named_with_the_reading_it_takes():
         callers(SOURCE) ^ frozenset(CALLERS)
     )
     assert all(reason.strip() for reason in CALLERS.values())
+
+
+def test_every_reader_of_the_rule_is_registered_as_a_body_that_reads_it():
+    """Consulting the rule is reading the identity, so both tables see it."""
+    assert frozenset(CALLERS) <= census(SOURCE)
+    assert frozenset(CALLERS) <= frozenset(REGISTERED)
 
 
 def test_the_rule_is_consulted_from_one_body_in_each_package_that_reads_it():
