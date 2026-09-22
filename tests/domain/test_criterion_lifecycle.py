@@ -99,6 +99,7 @@ MODEL_INVARIANTS = {
     "run event state table": "kodezart.types.domain.operation",
     "vendor freedom": "kodezart.types.domain.tracker",
     "graded sha lapse reading": "kodezart.domain.lapse",
+    "base staleness lapse": "kodezart.domain.base_staleness",
     "cross-lane pointer resolution": None,
     "model value naming": None,
 }
@@ -120,6 +121,9 @@ INVARIANTS = {
     "vendor freedom": "test_the_invariant_modules_and_their_values_name_no_vendor",
     "graded sha lapse reading": (
         "test_a_grading_behind_head_counts_or_lapses_by_what_its_own_paths_did"
+    ),
+    "base staleness lapse": (
+        "test_a_stale_recorded_base_lapses_the_gradings_a_live_base_leaves_counted"
     ),
 }
 
