@@ -3085,7 +3085,6 @@
    "test_each_row_of_the_entry_table",
    "test_a_record_written_before_the_pin_carries_no_digest_to_compare",
    "test_a_digest_less_record_is_entered_without_a_comparison",
-   "test_a_resumed_lane_carries_the_remote_head_not_the_recorded_one",
    "test_the_recorded_commit_is_the_last_row_on_the_role_resolved_branch",
    "test_a_record_naming_no_commit_act_refuses_at_re_entry",
    "test_a_recorded_branch_absent_from_the_remote_refuses_and_mints_nothing",
@@ -4704,7 +4703,6 @@
    "test_unknown_missing_names_the_typed_refusal_and_never_dispatches"
   ],
   "tests/services/test_lane_entry.py": [
-   "test_a_remote_head_past_the_record_resumes_there_and_says_so",
    "test_a_record_level_with_the_remote_says_nothing",
    "test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha",
    "test_associations_that_settle_nothing_refuse_before_the_remote_read"

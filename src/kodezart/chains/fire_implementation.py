@@ -179,9 +179,9 @@ class FireImplementation:
             ralph_branch=state["ralph_branch"],
             base_spec=ctx.base_spec,
             work_base_ref=state["work_base_ref"],
-            # A lane that entered on a record continues its branch, and the
-            # head that entry read is what the loop requires its tree to
-            # stand at before it opens a session.
+            # A lane that entered on a record resumes at the head its record
+            # names: a continued branch must stand there before the loop
+            # opens a session, and a cut branch is cut from it.
             resumed_head_sha=(
                 entered.head_sha
                 if (entered := recorded_entry(state["lane_entry"])) is not None

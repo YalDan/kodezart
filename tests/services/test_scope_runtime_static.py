@@ -2,15 +2,19 @@
 
 A read that RETURNS the same values the tracker would is invisible to every
 behavioural assertion by construction, so the absence is asserted over the
-syntax tree instead: the walker and the service and domain modules it imports
-name none of the four things a checkpoint is read or addressed through.
+syntax tree instead: the walker and every service and domain module it reaches
+through imports name none of the four things a checkpoint is read or addressed
+through.
 
 **Blind spots, stated rather than hidden.**
 
-* The scanned set is the walker plus the ``kodezart.services`` and
-  ``kodezart.domain`` modules its own import nodes name, and nothing deeper.
-  Their imports are not followed: a checkpoint read two modules away is not
-  seen here. The chain modules the walker imports are deliberately OUT of the
+* The scanned set is the walker plus its import closure over
+  ``kodezart.services`` and ``kodezart.domain``: every module of those two
+  packages its import nodes name, then every such module THEIR import nodes
+  name, followed until no new module appears. So the entry decision the walker
+  reaches through its entry reader is scanned although the walker never names
+  it. A module of another package is not followed, and nothing it imports is
+  scanned. The chain modules the walker imports are deliberately OUT of the
   set — the fire and lane graphs legitimately take a checkpointer, and the
   scope path's is settled by composition, which
   ``tests/integration/test_scope_runtime.py::
@@ -49,6 +53,7 @@ from pathlib import Path
 
 import pytest
 
+from kodezart.domain.lane_entry import decide_lane_entry
 from kodezart.services import scope_runtime
 
 #: How a checkpoint is read, and how one is addressed.
@@ -85,6 +90,27 @@ def imported_modules(
 
 def path_of(module: str) -> Path:
     return SRC.joinpath(*module.split(".")).with_suffix(".py")
+
+
+def import_closure(tree: ast.AST) -> set[str]:
+    """Every scanned-package module *tree* reaches through imports.
+
+    The modules its own import nodes name, then the ones theirs name, followed
+    to a fixed point: a checkpoint read two modules away is as much the walk's
+    as one in a module the walker names itself.
+    """
+    reached: set[str] = set()
+    frontier = imported_modules(tree)
+    while frontier:
+        reached |= frontier
+        frontier = {
+            found
+            for module in frontier
+            for found in imported_modules(
+                ast.parse(path_of(module).read_text(encoding="utf-8"))
+            )
+        } - reached
+    return reached
 
 
 def named_sites(path: Path) -> list[str]:
@@ -148,11 +174,17 @@ def test_every_forbidden_name_is_controlled() -> None:
 
 def test_the_walker_names_no_checkpoint_read() -> None:
     walker = ast.parse(WALKER.read_text(encoding="utf-8"))
-    scanned = [WALKER, *(path_of(module) for module in imported_modules(walker))]
-    # Derived, not hand-picked: the walker's own imports decide the set, and a
-    # module added to it is scanned without this test being edited.
+    scanned = [WALKER, *(path_of(module) for module in import_closure(walker))]
+    # Derived, not hand-picked: the walker's imports, followed, decide the set,
+    # and a module added to it is scanned without this test being edited.
     assert len(scanned) > 1, "the walker imports no service or domain module"
     assert all(path.exists() for path in scanned)
+    # The closure reaches past the walker's own import nodes: the entry
+    # decision, which the walker names nowhere, is in it. The path is the
+    # function's own source file, derived from the function and not listed.
+    decision = inspect.getsourcefile(decide_lane_entry)
+    assert decision is not None
+    assert Path(decision).resolve() in {path.resolve() for path in scanned}
     # The detector's own control, derived from the code and not picked: the
     # chain modules the walker's import nodes name, one of which compiles a
     # graph with its checkpointer. A detector that finds nothing there is

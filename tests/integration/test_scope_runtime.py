@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import re
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -2303,10 +2304,12 @@ def loop_name_spy(monkeypatch) -> list[str]:
     recorded lane on a freshly cut loop branch could pass a count of lane mints
     and lose the work the record names (KOD-684).
 
-    Patched at the definition and at both aliases a caller holds, so a draw
-    through any of the three is recorded. The definition is where minting a
-    lane's pair draws its loop name too, which makes this spy demonstrably
-    live in the same walk: a fire that minted a pair shows one draw here.
+    Patched at every name that holds the function: each attribute of every
+    loaded ``kodezart`` module that IS the definition, found rather than
+    listed, so a caller that imports it later is recorded the day it does and
+    a draw through no name escapes. The definition is where minting a lane's
+    pair draws its loop name too, which makes this spy demonstrably live in
+    the same walk: a fire that minted a pair shows one draw here.
     """
     calls: list[str] = []
 
@@ -2314,12 +2317,20 @@ def loop_name_spy(monkeypatch) -> list[str]:
         calls.append(feature_branch)
         return generate_ralph_branch_name(feature_branch)
 
-    for name in (
-        "kodezart.domain.agent.generate_ralph_branch_name",
-        "kodezart.chains.fire_remediation.generate_ralph_branch_name",
-        "kodezart.chains.fire_specification.generate_ralph_branch_name",
-    ):
-        monkeypatch.setattr(name, recording)
+    holders = [
+        (module, attribute)
+        for name, module in list(sys.modules.items())
+        if module is not None and (name == "kodezart" or name.startswith("kodezart."))
+        for attribute, value in list(vars(module).items())
+        if value is generate_ralph_branch_name
+    ]
+    # Not vacuous: the entry's own arm that cuts a resumed lane fresh holds
+    # the function too, and a spy that missed it would count that draw as none.
+    assert "kodezart.chains.ralph_workflow" in {
+        module.__name__ for module, _ in holders
+    }
+    for module, attribute in holders:
+        monkeypatch.setattr(module, attribute, recording)
     return calls
 
 
@@ -4219,6 +4230,11 @@ STALLED_FIRE_GRADINGS = 2
 #: earlier of them.
 STALLED_TWO_ITERATION_GRADINGS = 4
 
+#: The ticks of a walk over lane A alone whose fire stalls, and of the walk
+#: that re-enters it and finishes it: each observed before it was written.
+TICKS_OF_RUN_ONE = 2
+TICKS_OF_RUN_TWO = 3
+
 
 async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_on():
     """Lane A closes nothing, gives up its turn, and lane B still runs (KOD-460).
@@ -4496,6 +4512,131 @@ async def test_a_halted_lane_the_board_closes_before_the_exit_reads_done():
         ("A", True),
         ("B", True),
     ]
+
+
+async def test_a_lane_that_landed_its_best_re_enters_from_it_on_a_fresh_loop_branch(
+    monkeypatch,
+):
+    """A second process resumes a stalled lane at the commit its landing chose.
+
+    Run one stalls lane A over two iterations of equal grading, so the best of
+    its two commits is the first and not the loop branch's tip; the stall exit
+    publishes that commit, consolidates it onto the deliverable branch, and
+    records the landing as the lane's next act. Run two shares only the board
+    and the remote. Its entry resolves the head from the record — the landed
+    commit — and finds the loop branch standing past it, so it cuts a fresh
+    loop branch FROM THAT COMMIT, drawn from the recorded deliverable, and
+    leaves the old loop branch where it stands (KOD-705, KOD-96). Driven
+    through the real composition, so the cut arm is observed and not read off
+    the code (KOD-875).
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A",))
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    try:
+        publisher = WalkRefPublisher(repos)
+        first = resumable(
+            port=port,
+            repos=repos,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            merger=WalkMerger(repos),
+            ref_publisher=publisher,
+            max_iterations=2,
+            evaluations=[
+                criteria_echo(keys=("A/check",), passed=set())
+                for _ in range(STALLED_TWO_ITERATION_GRADINGS)
+            ],
+        )
+        stalled = await bounded_walk(first, job="first-job", origin=FORGE_ORIGIN)
+
+        assert len(ticks_of(stalled)) == TICKS_OF_RUN_ONE
+        assert lane_failures(stalled) == ()
+        before = await lane_record(port, "A")
+        loop = before.branch
+        shas = repos.branches[loop].shas
+        deliverable = recorded_branches(record=before).deliverable_branch
+        # The premise, by sha: what the landing published is the loop's first
+        # commit and not its tip, the record's last act is that commit, and
+        # the deliverable branch stands at it. The red first grading takes a
+        # remediation round, so the rows begin with the first round's loop
+        # branch, which the record still names beside the one it stands on.
+        landed = publisher.calls[0]["commit_sha"]
+        assert landed == shas[0] != shas[-1]
+        earlier = [
+            item.branch
+            for item in before.associations
+            if item.role is BranchRole.LOOP and item.branch != loop
+        ]
+        assert len(earlier) == 1
+        assert [row.sha for row in before.commits] == [
+            *repos.branches[earlier[0]].shas,
+            shas[0],
+            shas[1],
+            landed,
+        ]
+        assert repos.head_of(deliverable) == landed
+
+        minted = mint_spy(monkeypatch)
+        loop_names = loop_name_spy(monkeypatch)
+        second = resumable(
+            port=port,
+            repos=repos,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("A", rounds=4),
+        )
+
+        async def mark() -> TickMark:
+            return TickMark(
+                acquisitions=len(second.workspace.acquisitions),
+                prompts=len(second.executor.execution_prompts),
+                lane_mints=len(minted),
+                loop_names=len(loop_names),
+                record=await recorded_so_far(port, "A"),
+            )
+
+        events, marks = await walk_marking(
+            second, job="second-job", origin=FORGE_ORIGIN, mark=mark
+        )
+
+        assert len(ticks_of(events)) == TICKS_OF_RUN_TWO
+        assert lane_failures(events) == ()
+        entered = marks[0]
+        assert entered.record == before
+        # The loop's first acquisition in run two is a CUT, from the landed
+        # commit, onto a name that is not the recorded loop branch.
+        opened = opened_branch(
+            second.workspace.acquisitions, after=entered.acquisitions
+        )
+        assert opened["create_branch"] is True
+        assert opened["ref"] == landed
+        assert opened["branch_name"] != loop
+        # One loop name drawn, from the recorded deliverable, and no lane mint.
+        assert loop_names == [deliverable]
+        assert minted == []
+        # The record now stands on the fresh branch, still names the old one,
+        # and its next act follows the landing act.
+        after = await lane_record(port, "A")
+        fresh = opened["branch_name"]
+        assert after.branch == fresh
+        assert (loop, BranchRole.LOOP) in {
+            (item.branch, item.role) for item in after.associations
+        }
+        assert [row.sha for row in after.commits] == [
+            *repos.branches[earlier[0]].shas,
+            shas[0],
+            shas[1],
+            landed,
+            repos.branches[fresh].shas[0],
+        ]
+        # The old loop branch did not move: nothing rewound or deleted it.
+        assert repos.branches[loop].head == shas[-1]
+    finally:
+        await forge.close()
 
 
 async def test_a_put_back_that_cannot_be_written_rests_that_lane_and_the_walk_goes_on(

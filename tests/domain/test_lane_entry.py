@@ -11,10 +11,11 @@ from kodezart.domain.errors import LaneEntryError, SubjectAmendedError
 from kodezart.domain.fire_spec import body_digest
 from kodezart.domain.lane_entry import (
     RecordedBranches,
-    RecordedCommit,
+    RecordedLane,
     decide_lane_entry,
     recorded_branches,
     recorded_commit,
+    recorded_lane,
     require_unamended_subject,
 )
 from kodezart.domain.lane_record import LANDING_ROW_SUBJECT, next_lane_record
@@ -94,13 +95,13 @@ def record(
     )
 
 
-def recorded(source: LaneRunState) -> tuple[LaneRunState, RecordedBranches]:
-    """A record with the branches its associations resolve to.
+def recorded(source: LaneRunState) -> RecordedLane:
+    """A record with the branches its associations resolve to and its head.
 
-    The reader pairs them before it reads the remote, because resolving them
-    refuses and that refusal is a fact of the record alone.
+    The reader resolves them before it reads the remote, because resolving
+    them refuses and that refusal is a fact of the record alone.
     """
-    return (source, recorded_branches(record=source))
+    return recorded_lane(record=source)
 
 
 def decide(**overrides):
@@ -118,11 +119,29 @@ def decide(**overrides):
 PR = LanePR(url="https://forge.invalid/pull/7", number=7, state="open")
 
 #: Every row of the re-entry rule, with the value it decides written out.
+#: "level" is the remote holding the recorded loop branch at the record's head;
+#: "past" is the remote holding it anywhere else. The head is the record's in
+#: every row, and only a level loop branch is carried to be continued.
 ROWS = (
     ("no record, gap open", {"open_criteria": ("KOD-684/check",)}, NewLane()),
     ("no record, gap empty", {}, None),
     (
-        "record, gap open",
+        "record, gap open, level",
+        {
+            "recorded": recorded(record()),
+            "remote_loop_head": RECORDED_HEAD,
+            "open_criteria": ("KOD-684/check",),
+        },
+        ResumedLane(
+            deliverable_branch=DELIVERABLE,
+            loop_branch=LOOP,
+            head_sha=RECORDED_HEAD,
+            deliverable_head_sha=DELIVERABLE_HEAD,
+            body_digest=DIGEST,
+        ),
+    ),
+    (
+        "record, gap open, loop branch past the head",
         {
             "recorded": recorded(record()),
             "remote_loop_head": REMOTE_HEAD,
@@ -130,40 +149,45 @@ ROWS = (
         },
         ResumedLane(
             deliverable_branch=DELIVERABLE,
-            loop_branch=LOOP,
-            head_sha=REMOTE_HEAD,
+            loop_branch=None,
+            head_sha=RECORDED_HEAD,
             deliverable_head_sha=DELIVERABLE_HEAD,
             body_digest=DIGEST,
         ),
     ),
     (
-        "record with a pull request, gap open",
+        "record with a pull request, gap open, level",
         {
             "recorded": recorded(record(pr=PR)),
-            "remote_loop_head": REMOTE_HEAD,
+            "remote_loop_head": RECORDED_HEAD,
             "open_criteria": ("KOD-684/check",),
         },
         ResumedLane(
             deliverable_branch=DELIVERABLE,
             loop_branch=LOOP,
-            head_sha=REMOTE_HEAD,
+            head_sha=RECORDED_HEAD,
             deliverable_head_sha=DELIVERABLE_HEAD,
             body_digest=DIGEST,
         ),
     ),
     (
-        "record, gap empty, no pull request",
-        {"recorded": recorded(record()), "remote_loop_head": REMOTE_HEAD},
+        "record, gap empty, no pull request, level",
+        {"recorded": recorded(record()), "remote_loop_head": RECORDED_HEAD},
         DeliverOnlyLane(
             deliverable_branch=DELIVERABLE,
             loop_branch=LOOP,
-            head_sha=REMOTE_HEAD,
+            head_sha=RECORDED_HEAD,
             deliverable_head_sha=DELIVERABLE_HEAD,
             body_digest=DIGEST,
         ),
     ),
     (
-        "record, gap empty, pull request recorded",
+        "record, gap empty, pull request recorded, level",
+        {"recorded": recorded(record(pr=PR)), "remote_loop_head": RECORDED_HEAD},
+        None,
+    ),
+    (
+        "record, gap empty, pull request recorded, loop branch past the head",
         {"recorded": recorded(record(pr=PR)), "remote_loop_head": REMOTE_HEAD},
         None,
     ),
@@ -233,12 +257,14 @@ def test_a_digest_less_record_is_entered_without_a_comparison() -> None:
     assert caught.value.current_digest == body_digest("any text at all")
 
 
-def test_a_resumed_lane_carries_the_remote_head_not_the_recorded_one() -> None:
-    """The remote is the truth about what the branch contains.
+def test_a_resumed_lane_carries_the_recorded_head_not_the_remote_one() -> None:
+    """The record is the truth about where the lane stands (KOD-705, KOD-96).
 
-    A commit pushed while its record write failed leaves the record behind;
-    refusing would strand exactly that lane, so the entry takes the remote
-    head and the next record write brings the record level again.
+    A loop branch the remote holds past the record's head — a landing chose an
+    earlier commit, or a commit was pushed while its record write failed — is
+    not resumed from: the entry carries the head the record names and no loop
+    branch, so the fire cuts a fresh one from that head instead of resuming at
+    a tip the record does not name, and the lane is not stranded either.
     """
     entry = decide(
         recorded=recorded(record()),
@@ -246,7 +272,28 @@ def test_a_resumed_lane_carries_the_remote_head_not_the_recorded_one() -> None:
         open_criteria=("KOD-684/check",),
     )
     assert isinstance(entry, ResumedLane)
-    assert entry.head_sha == REMOTE_HEAD != RECORDED_HEAD
+    assert entry.head_sha == RECORDED_HEAD != REMOTE_HEAD
+    assert entry.loop_branch is None
+
+
+def test_a_lane_owing_nothing_whose_loop_branch_left_its_head_refuses() -> None:
+    """Delivering a loop branch off the record's head delivers an unnamed commit.
+
+    A lane owing no criterion and holding no pull request is dispatched to
+    deliver its loop branch as it stands; where that branch is not at the head
+    the record names, what it would deliver is a commit the record does not
+    name, so the entry refuses before any backend call, naming the branch.
+    Not vacuous: the same record with the loop branch level is delivered.
+    """
+    with pytest.raises(
+        LaneEntryError, match="does not stand at the record's last"
+    ) as caught:
+        decide(recorded=recorded(record()), remote_loop_head=REMOTE_HEAD)
+    assert caught.value.branches == (LOOP,)
+
+    level = decide(recorded=recorded(record()), remote_loop_head=RECORDED_HEAD)
+    assert isinstance(level, DeliverOnlyLane)
+    assert level.head_sha == RECORDED_HEAD
 
 
 def test_a_deliverable_branch_the_remote_does_not_hold_is_carried_as_absent() -> None:
@@ -264,7 +311,7 @@ def test_a_deliverable_branch_the_remote_does_not_hold_is_carried_as_absent() ->
     )
     assert isinstance(entry, ResumedLane)
     assert entry.deliverable_head_sha is None
-    assert entry.head_sha == REMOTE_HEAD
+    assert entry.head_sha == RECORDED_HEAD
 
 
 #: The commit acts of a run that did not converge, in the order it made them:
@@ -334,33 +381,47 @@ def test_the_landed_best_is_the_commit_a_re_entry_resolves() -> None:
     The record is composed act by act through the one constructor, which is why
     it is the pin: this is the record a stalled lane's own writer leaves, so the
     reading holds for lanes rather than only for a fixture. The run's three acts
-    are followed by the landing, and what re-entry resolves is that act — on the
-    branch the LOOP associations resolve, by sha. The tip the run slipped back
-    to is a row of this record too, and it is not the answer.
+    are followed by the landing, and what re-entry resolves is that act, by
+    sha. The tip the run slipped back to is a row of this record too, and it is
+    not the answer — and the entry over a remote whose loop branch still stands
+    at that tip resumes at the landed act, on no loop branch.
     """
     source = composed(*ACTS, landed=LANDED)
-    branches = recorded_branches(record=source)
 
-    resolved = recorded_commit(record=source, branches=branches)
+    resolved = recorded_lane(record=source)
 
-    assert resolved == RecordedCommit(branch=LOOP, sha=LANDED)
+    assert resolved.head.sha == LANDED
     assert [row.sha for row in source.commits] == [*ACTS, LANDED]
-    assert resolved.sha != PRE_LANDING_TIP
-    assert resolved.sha != source.commits[0].sha
-    assert source.commits[-1].subject == LANDING_ROW_SUBJECT
+    assert resolved.head.sha != PRE_LANDING_TIP
+    assert resolved.head.sha != source.commits[0].sha
+    assert resolved.head.subject == LANDING_ROW_SUBJECT
     # The loop branch is still where the loop left it: the landing consolidated
     # onto the other level and moved no branch of this lane's own.
     assert source.pushed_head_sha == PRE_LANDING_TIP
-    assert resolved.branch == branches.loop_branch != branches.deliverable_branch
+    assert resolved.branches.loop_branch == LOOP != resolved.branches.deliverable_branch
+
+    entry = decide(
+        recorded=resolved,
+        remote_loop_head=PRE_LANDING_TIP,
+        remote_deliverable_head=LANDED,
+        open_criteria=("KOD-684/check",),
+    )
+    assert entry == ResumedLane(
+        deliverable_branch=DELIVERABLE,
+        loop_branch=None,
+        head_sha=LANDED,
+        deliverable_head_sha=LANDED,
+        body_digest=DIGEST,
+    )
 
 
 def test_the_recorded_commit_is_the_last_row_on_the_role_resolved_branch() -> None:
     """At re-entry the record names the commit, and the roles name the branch.
 
-    The rows are the commit acts, so the last of them is the best state the
-    lane reached — not the head field, which a record may disagree with, and
-    not a ref composed from another ref's text. Asserted by sha, and the
-    branch by what the LOOP associations resolve.
+    The rows are the commit acts, so the last of them is where the lane
+    stands — not the head field, which a record may disagree with, and not a
+    ref composed from another ref's text. Asserted by sha, and the branch by
+    what the LOOP associations resolve.
 
     Kept on a hand-built record deliberately: every row the one constructor
     composes carries the head it was written at, so no record production writes
@@ -373,13 +434,14 @@ def test_the_recorded_commit_is_the_last_row_on_the_role_resolved_branch() -> No
             LaneCommit(sha=BEST_COMMIT, subject="feat: two", issue_id=LANE),
         )
     )
-    branches = recorded_branches(record=source)
 
-    resolved = recorded_commit(record=source, branches=branches)
+    resolved = recorded_lane(record=source)
 
-    assert resolved == RecordedCommit(branch=LOOP, sha=BEST_COMMIT)
-    assert resolved.sha != source.head_sha
-    assert resolved.branch == branches.loop_branch != branches.deliverable_branch
+    assert resolved.head == LaneCommit(
+        sha=BEST_COMMIT, subject="feat: two", issue_id=LANE
+    )
+    assert resolved.head.sha != source.head_sha
+    assert resolved.branches.loop_branch == LOOP != resolved.branches.deliverable_branch
 
 
 def test_a_record_naming_no_commit_act_refuses_at_re_entry() -> None:
@@ -390,8 +452,10 @@ def test_a_record_naming_no_commit_act_refuses_at_re_entry() -> None:
     """
     source = record(rows=())
     with pytest.raises(LaneEntryError, match="names no commit act") as caught:
-        recorded_commit(record=source, branches=recorded_branches(record=source))
+        recorded_commit(record=source)
     assert caught.value.branches == (LOOP,)
+    with pytest.raises(LaneEntryError, match="names no commit act"):
+        recorded_lane(record=source)
 
 
 def test_a_recorded_branch_absent_from_the_remote_refuses_and_mints_nothing() -> None:
@@ -411,6 +475,65 @@ def test_a_recorded_base_that_is_no_longer_the_resolved_base_refuses() -> None:
     assert caught.value.branches == (DELIVERABLE,)
 
 
+def role_decoys() -> list[tuple[BranchAssociation, BranchAssociation, str]]:
+    """Every association a role resolution must ignore, each with its control.
+
+    The roles are derived from ``BranchRole`` itself, so a role added later is
+    a decoy here the day it exists. Each row is a decoy, the same association
+    with its role (or branch) changed to the one the resolution keys on, and
+    the refusal that control provokes — so each decoy is shown to be one the
+    resolution WOULD read if it keyed on anything but that role on that branch.
+
+    * on the loop branch, every role but LOOP, naming another deliverable;
+    * on the deliverable branch, every role but DELIVERABLE, naming another
+      base;
+    * DELIVERABLE on a third branch, naming another base: read only if the
+      base side keyed on "not the loop branch" rather than on the deliverable
+      branch the LOOP association names.
+    """
+    third = "a-third-branch"
+    rows: list[tuple[BranchAssociation, BranchAssociation, str]] = []
+    for role in BranchRole:
+        if role is not BranchRole.LOOP:
+            decoy = BranchAssociation(
+                branch=LOOP,
+                role=role,
+                derived_from="another-deliverable",
+                run_id=f"loop-{role}",
+            )
+            rows.append(
+                (
+                    decoy,
+                    decoy.model_copy(update={"role": BranchRole.LOOP}),
+                    "deliverable branches, not one",
+                )
+            )
+        if role is not BranchRole.DELIVERABLE:
+            decoy = BranchAssociation(
+                branch=DELIVERABLE,
+                role=role,
+                derived_from="another-base",
+                run_id=f"deliverable-{role}",
+            )
+            rows.append(
+                (
+                    decoy,
+                    decoy.model_copy(update={"role": BranchRole.DELIVERABLE}),
+                    "bases, not one",
+                )
+            )
+    decoy = BranchAssociation(
+        branch=third,
+        role=BranchRole.DELIVERABLE,
+        derived_from="another-base",
+        run_id="third-branch",
+    )
+    rows.append(
+        (decoy, decoy.model_copy(update={"branch": DELIVERABLE}), "bases, not one")
+    )
+    return rows
+
+
 def test_associations_no_role_claims_for_this_branch_are_ignored() -> None:
     """Each resolution reads its OWN role, on its OWN branch, and nothing else.
 
@@ -427,7 +550,16 @@ def test_associations_no_role_claims_for_this_branch_are_ignored() -> None:
     * LOOP on the deliverable branch — read as a second base only if the base
       side stopped requiring the DELIVERABLE role, and as a second deliverable
       if it stopped requiring the recorded branch.
+
+    Then every decoy ``role_decoys`` derives from the enum, together and each
+    alone, leaves the resolution unmoved, and each one's control refuses. So a
+    resolution that keys on "not the other role" rather than on its own role
+    reads the RECOVERY decoy, and one that keys on "not the loop branch" rather
+    than on the deliverable branch reads the third-branch decoy — both refuse.
     """
+    unmoved = RecordedBranches(
+        loop_branch=LOOP, deliverable_branch=DELIVERABLE, recorded_base=BASE
+    )
     resolved = recorded_branches(
         record=record(
             extra=(
@@ -453,9 +585,18 @@ def test_associations_no_role_claims_for_this_branch_are_ignored() -> None:
         )
     )
 
-    assert resolved == RecordedBranches(
-        loop_branch=LOOP, deliverable_branch=DELIVERABLE, recorded_base=BASE
+    assert resolved == unmoved
+
+    decoys = role_decoys()
+    assert {decoy.role for decoy, _, _ in decoys} == set(BranchRole)
+    assert (
+        recorded_branches(record=record(extra=tuple(d for d, _, _ in decoys)))
+        == unmoved
     )
+    for decoy, control, reason in decoys:
+        assert recorded_branches(record=record(extra=(decoy,))) == unmoved, decoy
+        with pytest.raises(LaneEntryError, match=reason):
+            recorded_branches(record=record(extra=(control,)))
 
 
 def test_roles_are_resolved_from_associations_not_names() -> None:

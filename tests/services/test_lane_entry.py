@@ -4,14 +4,15 @@ The decision itself is pure and is covered row by row in
 ``tests/domain/test_lane_entry.py``.  What can only be seen here is the order:
 which refusals are made from the record alone, before a remote is asked
 anything, and what the reader says out loud when the record and the remote
-disagree about the head (KOD-684).
+disagree about the head (KOD-684), and which head a resumed lane is handed:
+always the one its record names, never a remote reading (KOD-705).
 """
 
 import pytest
 import structlog.testing
 
 from kodezart.domain.errors import LaneEntryError
-from kodezart.domain.lane_entry import recorded_branches, recorded_commit
+from kodezart.domain.lane_entry import recorded_commit
 from kodezart.domain.lane_record import (
     LANDING_ROW_SUBJECT,
     next_lane_record,
@@ -184,12 +185,15 @@ def reader(port: FakeTrackerPort, git: FakeGitService) -> LaneEntryReader:
     )
 
 
-async def test_a_remote_head_past_the_record_resumes_there_and_says_so():
-    """The remote is the truth about what the branch contains.
+async def test_a_loop_branch_past_the_record_is_not_resumed_from_and_is_said_out_loud():
+    """The record is the truth about where the lane stands (KOD-705, KOD-96).
 
-    The known cause is a commit pushed while its record write failed, so the
-    lane resumes at the remote head and both shas are logged: a lane whose
-    record is behind is a lane somebody has to be able to see.
+    A loop branch the remote holds past the record's head — the known cause is
+    a commit pushed while its record write failed — is not resumed from: the
+    entry carries the head the record names and no loop branch, so the fire
+    cuts a fresh loop branch from that head and the unrecorded commit stays on
+    the old branch, where it stands. Both shas are logged: a lane whose record
+    is behind is a lane somebody has to be able to see.
     """
     port = await board(record())
     git = FakeGitService(
@@ -203,8 +207,8 @@ async def test_a_remote_head_past_the_record_resumes_there_and_says_so():
 
     assert entry == ResumedLane(
         deliverable_branch=DELIVERABLE,
-        loop_branch=LOOP,
-        head_sha=REMOTE_HEAD,
+        loop_branch=None,
+        head_sha=RECORDED_HEAD,
         deliverable_head_sha=BASE_TIP,
         body_digest=DIGEST,
     )
@@ -230,6 +234,7 @@ async def test_a_record_level_with_the_remote_says_nothing():
 
     assert isinstance(entry, ResumedLane)
     assert entry.head_sha == RECORDED_HEAD
+    assert entry.loop_branch == LOOP
     assert [item for item in logs if item["event"] == "lane_record_head_differs"] == []
     # Level at both levels: the deliverable branch stands where its base does,
     # so that reading says nothing either.
@@ -266,22 +271,26 @@ async def test_a_remote_head_at_the_last_row_says_nothing_whatever_the_head_fiel
     assert [item for item in logs if item["event"] == "lane_record_head_differs"] == []
     assert isinstance(entry, ResumedLane)
     assert entry.head_sha == BEST_COMMIT != stored.head_sha
+    assert entry.loop_branch == LOOP
 
 
-async def test_a_non_convergent_lane_resolves_the_landed_best_by_sha():
-    """The record is the only source of what this lane committed (KOD-705).
+async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
+    """The landed case: re-entry resumes at the landed best, by sha (KOD-705).
 
     The run did not converge, and the stall landing consolidated the best of
-    its acts onto the deliverable branch. The record is composed act by act
-    through the one constructor, so this is a record production writes — which
-    is the whole reason it is the pin: a hand-built record whose rows the writer
-    never composes would put the reader in a state no lane is ever in, and a
-    reading that only held there would say nothing about any lane.
+    its acts onto the deliverable branch, so this case's premise is the
+    deliverable branch standing at the landed sha. The record is composed act
+    by act through the one constructor, so this is a record production writes
+    — which is the whole reason it is the pin: a hand-built record whose rows
+    the writer never composes would put the reader in a state no lane is ever
+    in, and a reading that only held there would say nothing about any lane.
 
-    Re-entry resolves the landing act through the loop level and reports it,
-    and the tip the run slipped back to is not the answer: resuming there would
-    be resuming from the work the landing was chosen over. Every fact by sha,
-    none by branch name.
+    Re-entry resolves the landing act through the loop level and resumes the
+    lane there. The loop branch still stands at the tip the run slipped back
+    to, which is not the answer: resuming there would be resuming from the
+    work the landing was chosen over, so the entry carries no loop branch and
+    the fire cuts a fresh one from the landed sha. Every fact by sha, none by
+    branch name.
     """
     stored = composed(*ACTS, landed=LANDED)
     port = await board(stored)
@@ -305,38 +314,70 @@ async def test_a_non_convergent_lane_resolves_the_landed_best_by_sha():
     # compared against. Every conjunct of this case is therefore answered by a
     # sha somebody read, not by a fixture value nothing addresses.
     assert git.calls == reads(LOOP, DELIVERABLE, BASE)
+    assert entry == ResumedLane(
+        deliverable_branch=DELIVERABLE,
+        loop_branch=None,
+        head_sha=LANDED,
+        deliverable_head_sha=LANDED,
+        body_digest=DIGEST,
+    )
+    assert entry.head_sha != PRE_LANDING_TIP
     # The domain function is called once, for the expected value only: the
     # record it answers over is the one this test built, while the reader
-    # answered over the one it parsed back out of the comment, so every
-    # assertion below is on the reader's output and none restates the
-    # function beside itself.
-    expected = recorded_commit(
-        record=stored, branches=recorded_branches(record=stored)
-    ).sha
-    differs = [item for item in logs if item["event"] == "lane_record_head_differs"]
-    assert len(differs) == 1
-    assert differs[0]["recorded_head"] == expected
-    assert differs[0]["recorded_head"] == LANDED
-    assert differs[0]["remote_head"] == PRE_LANDING_TIP
-    # And the commit the reader reports is neither the base tip nor the loop
-    # tip the remote holds — by sha, read off the reader's own output rather
-    # than off the fixture's dict.
-    assert differs[0]["recorded_head"] not in (BASE_TIP, PRE_LANDING_TIP)
+    # answered over the one it parsed back out of the comment.
+    assert entry.head_sha == recorded_commit(record=stored).sha
     # The landed act is a row of this record and not its first: the resolution
     # answers with the last act, and the act the run opened with is not it.
     assert [row.sha for row in stored.commits] == [*ACTS, LANDED]
-    assert differs[0]["recorded_head"] != stored.commits[0].sha
-    assert isinstance(entry, ResumedLane)
-    assert entry.head_sha == PRE_LANDING_TIP
-    assert entry.deliverable_branch != entry.loop_branch
-    # The other level, read off the entry by sha: the branch the DELIVERABLE
-    # role resolves now holds what the landing put there, so it stands off the
-    # base it was cut from and the reader says so.
-    assert entry.deliverable_head_sha == LANDED
-    assert entry.deliverable_head_sha not in (BASE_TIP, PRE_LANDING_TIP)
+    differs = [item for item in logs if item["event"] == "lane_record_head_differs"]
+    assert len(differs) == 1
+    assert (
+        differs[0]["branch"],
+        differs[0]["recorded_head"],
+        differs[0]["remote_head"],
+    ) == (LOOP, LANDED, PRE_LANDING_TIP)
+    # The other level: the branch the DELIVERABLE role resolves now holds what
+    # the landing put there, so it stands off the base it was cut from and the
+    # reader says so.
     moved = [item for item in logs if item["event"] == "lane_deliverable_head_differs"]
     assert len(moved) == 1
     assert (moved[0]["base_head"], moved[0]["deliverable_head"]) == (BASE_TIP, LANDED)
+
+
+async def test_a_stall_landing_nothing_resumes_its_last_act_deliverable_at_base_tip():
+    """The stall case: the deliverable at its base tip is this case's premise.
+
+    Observed by sha, at the branch the DELIVERABLE role resolves. Nothing was
+    landed, so the record names no best iteration and re-entry resolves its
+    last act, on its loop branch, which the remote holds exactly there. The
+    best iteration is resolved in the landed case, whose premise is the
+    deliverable at the landed sha: no record the writer composes holds a
+    landing act and a deliverable at its base tip at once, so the two premises
+    are two fixtures.
+    """
+    stored = composed(*ACTS)
+    port = await board(stored)
+    git = FakeGitService(
+        remote_branch_shas={LOOP: ACTS[-1], DELIVERABLE: BASE_TIP, BASE: BASE_TIP}
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        entry = await reader(port, git).read(
+            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+        )
+
+    assert git.calls == reads(LOOP, DELIVERABLE, BASE)
+    assert entry == ResumedLane(
+        deliverable_branch=DELIVERABLE,
+        loop_branch=LOOP,
+        head_sha=ACTS[-1],
+        deliverable_head_sha=BASE_TIP,
+        body_digest=DIGEST,
+    )
+    assert [item for item in logs if item["event"] == "lane_record_head_differs"] == []
+    assert [
+        item for item in logs if item["event"] == "lane_deliverable_head_differs"
+    ] == []
 
 
 async def test_a_deliverable_branch_at_its_base_tip_is_reported_by_sha():

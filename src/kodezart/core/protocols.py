@@ -2183,9 +2183,9 @@ class QualityGate(Protocol):
     second is what the work is diffed against.  A round built on top of
     an earlier round's consolidated work has them name different refs.
 
-    ``resumed_head_sha`` is the third: the head a lane that CONTINUES its
-    branch was entered on, which the loop requires the tree it works in to
-    stand at.
+    ``resumed_head_sha`` is the third: the head the lane's record names,
+    which a CONTINUED branch must stand at before the loop works in it; a
+    branch cut from that head needs no comparison.
     """
 
     def run(

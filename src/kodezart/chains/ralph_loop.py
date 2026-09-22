@@ -508,12 +508,15 @@ class RalphLoop:
         """Refuse a continued branch whose local copy is not the head entered on.
 
         A first iteration that continues an existing branch gets a tree cut
-        from the CLONE's copy of it, while the entry that chose the branch
-        read the head from the remote. A clone behind that head hands the
-        session commits the criteria this lane owes were already graded
-        against, and the lane would then record a head it never worked at.
-        Both readings are one git read, made here: before the session, before
-        any commit, and before the record write that commit carries.
+        from the CLONE's copy of it, while the head it must stand at is the
+        head the lane's record names; the entry continued the branch only
+        after seeing the remote hold it there. A lane whose branch is cut
+        from that head never reaches this check. A clone behind that head
+        hands the session commits the criteria this lane owes were already
+        graded against, and the lane would then record a head it never
+        worked at. Both readings are one git read, made here: before the
+        session, before any commit, and before the record write that commit
+        carries.
         """
         expected = ctx.resumed_head_sha
         if expected is None:

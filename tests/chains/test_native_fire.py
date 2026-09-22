@@ -2135,15 +2135,29 @@ ALL_CRITERIA = (
 )
 
 
-def entry_of(kind: str):
-    """One of the three ways a lane enters, named by kind."""
+def entry_of(
+    kind: str, *, loop_branch: str | None = RECORDED_LOOP, head_sha: str = RECORDED_HEAD
+):
+    """One of the three ways a lane enters, named by kind.
+
+    *loop_branch* is passed through to a resumed entry, where ``None`` is the
+    recorded loop branch standing off the record's head; a deliver-only entry
+    always carries the recorded one, because its decision refuses otherwise.
+    """
     if kind == "new":
         return NewLane()
-    shape = ResumedLane if kind == "resumed" else DeliverOnlyLane
-    return shape(
+    if kind == "resumed":
+        return ResumedLane(
+            deliverable_branch=RECORDED_DELIVERABLE,
+            loop_branch=loop_branch,
+            head_sha=head_sha,
+            deliverable_head_sha=RECORDED_DELIVERABLE_HEAD,
+            body_digest=None,
+        )
+    return DeliverOnlyLane(
         deliverable_branch=RECORDED_DELIVERABLE,
         loop_branch=RECORDED_LOOP,
-        head_sha=RECORDED_HEAD,
+        head_sha=head_sha,
         deliverable_head_sha=RECORDED_DELIVERABLE_HEAD,
         body_digest=None,
     )
@@ -2367,6 +2381,29 @@ def test_only_a_lane_entered_to_deliver_is_prepared_already_accepted(kind) -> No
         assert state["work_base_ref"] == RECORDED_LOOP
     # A fire prepared without a walker is a new lane, and earns its verdict.
     assert prepared(fire, entry=None)["accept_verdict"] is AcceptVerdict.rejected
+
+
+def test_a_resumed_lane_whose_loop_branch_left_its_head_is_cut_fresh_from_that_head():
+    """No recorded loop branch stands at the record's head, so one is cut there.
+
+    The lane keeps its recorded deliverable branch and resumes at the head its
+    record names (KOD-705). Its loop branch is a fresh name drawn from that
+    deliverable, never the recorded one: re-cutting the recorded name would
+    check out the clone's stale copy of it rather than the head. And the work
+    base is the head sha itself, which is not the loop branch, so the loop's
+    first iteration cuts rather than continues.
+    """
+    fire = engine(criteria=TrackerCriteria(tracker=tracker()))
+
+    state = prepared(
+        fire, entry=entry_of("resumed", loop_branch=None, head_sha=RECORDED_HEAD)
+    )
+
+    assert state["feature_branch"] == RECORDED_DELIVERABLE
+    assert state["ralph_branch"].startswith(f"{RECORDED_DELIVERABLE}-ralph-")
+    assert state["ralph_branch"] != RECORDED_LOOP
+    assert state["work_base_ref"] == RECORDED_HEAD
+    assert state["accept_verdict"] is AcceptVerdict.rejected
 
 
 @pytest.mark.parametrize(

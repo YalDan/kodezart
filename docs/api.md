@@ -305,7 +305,7 @@ same report is posted as one status update on the container; a milestone or
 issue scope has no status surface and ends with the event alone. Scheduled
 configured-scope lookup, concurrent lane marks and cross-job branch recovery are
 separate requirements. A lane re-enters from its own tracker record and the
-remote head of the branch that record names; no graph state is persisted for the
+head that record names; no graph state is persisted for the
 scope path, so nothing is replayed and a killed process changes nothing about
 the next decision (KOD-684, KOD-840). Re-entering is posting the same request
 again; the HTTP API exposes no request to resume an existing job.

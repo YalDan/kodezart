@@ -26,7 +26,7 @@ from kodezart.domain.errors import (
     WorkspaceError,
 )
 from kodezart.domain.issue_tree import SubtreeClosure
-from kodezart.domain.lane_entry import recorded_branches, recorded_commit
+from kodezart.domain.lane_entry import recorded_commit
 from kodezart.domain.lane_record import (
     LANDING_ROW_SUBJECT,
     RUN_STATE_PURPOSE,
@@ -37,6 +37,10 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import ResultEvent, WorkflowIterationEvent
 from kodezart.types.domain.branch import BranchRole, trunk_base
+from kodezart.types.domain.consolidation import (
+    ConsolidationOutcome,
+    ConsolidationStatus,
+)
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import (
     CrossOffState,
@@ -3105,7 +3109,110 @@ async def test_a_stall_landing_records_the_consolidated_tip_as_this_lanes_next_a
     # And what a re-entry resolves off this record, through the LOOP role, is
     # the landed tip — by sha, the reader's own function over the record the
     # landing left.
-    assert (
-        recorded_commit(record=record, branches=recorded_branches(record=record)).sha
-        == LANDED_TIP
+    assert recorded_commit(record=record).sha == LANDED_TIP
+
+
+#: Where a consolidation that could not integrate reports the deliverable
+#: branch standing: a sha of the merger's own, which nothing landed.
+UNMOVED_TIP = "8" * 40
+
+
+async def stalled_twice(*, merger=None, ref_publisher=None):
+    """A native fire whose two iterations grade the same, run to its terminal.
+
+    The earlier of two equal gradings is the best, so the best iteration is
+    not the loop's last commit: an act recorded at it would be a row of its
+    own after the loop's two, and so would be visible here.
+    """
+    port = tracker()
+    repo = LaneRepo(branch="unnamed")
+    fire = engine(
+        criteria=CountingCriteria(tracker=port),
+        real_loop=True,
+        max_iterations=2,
+        executor=NativeExecutor(
+            [native_evaluation(failed=True), native_evaluation(failed=True)]
+        ),
+        git=LaneGit(repo),
+        source=LaneSource(repo),
+        persister=LanePersister(repo),
+        forge=lane_forge(),
+        merger=merger,
+        ref_publisher=ref_publisher,
     )
+    state, config = fire.prepare(
+        prompt="Implement the current Checks.",
+        issue_key=None,
+        repo_path="/tmp/fire",
+        repo_url=REPO_URL,
+        base_spec=trunk_base("main"),
+        scope=SCOPE_OF_SUBJECT,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=["Bash"],
+        cache_key=JOB,
+        surface_holder=JOB,
+    )
+    repo.branch = state["ralph_branch"]
+
+    async for _ in fire.native_graph.astream(
+        state, config=config, stream_mode="custom"
+    ):
+        pass
+
+    _, record = await LaneRecordReader(tracker=port, operation=native_operation()).read(
+        issue_key=SUBJECT, lane_key=SUBJECT
+    )
+    return repo, record
+
+
+async def test_a_landing_that_does_not_integrate_records_no_act():
+    """A best iteration the deliverable could not take is no act of this lane.
+
+    The landing publishes the best iteration under a ref of its own and the
+    consolidation reports it divergent, so the deliverable branch did not
+    move and nothing was landed on a branch this record names. The record's
+    rows stay the loop's own commits, its last act is the loop's last commit,
+    and no landing row follows — so re-entry is the stall case: it continues
+    the loop at its last act (KOD-705, KOD-875).
+    """
+    publisher = FakeRefPublisher()
+    repo, record = await stalled_twice(
+        merger=FakeBranchMerger(
+            consolidation_outcomes=[
+                ConsolidationOutcome(
+                    status=ConsolidationStatus.DIVERGENT, feature_tip_sha=UNMOVED_TIP
+                )
+            ]
+        ),
+        ref_publisher=publisher,
+    )
+
+    assert len(publisher.calls) == 1
+    published = publisher.calls[0]["commit_sha"]
+    assert len(repo.shas) == 2
+    assert [row.sha for row in record.commits] == repo.shas
+    assert published == repo.shas[0] != record.commits[-1].sha
+    assert recorded_commit(record=record).sha == repo.shas[-1]
+    assert [row for row in record.commits if row.subject == LANDING_ROW_SUBJECT] == []
+    assert UNMOVED_TIP not in {row.sha for row in record.commits}
+
+
+async def test_a_forge_less_stall_lands_nothing_and_records_no_act():
+    """With the publisher withheld, as the forge-less composition does, nothing lands.
+
+    Nothing is published and nothing consolidated, so the record names no
+    best iteration: its rows are the loop's own commits and its last act is
+    the loop's last commit, which is where re-entry continues the loop. That
+    this arm re-enters at its last act and not at its best iteration is
+    stated here, not built (KOD-875).
+    """
+    merger = FakeBranchMerger()
+    repo, record = await stalled_twice(merger=merger)
+
+    # No publisher exists to call, and the consolidation that would follow a
+    # publish was never asked: the landing returned before either.
+    assert merger.calls == []
+    assert len(repo.shas) == 2
+    assert [row.sha for row in record.commits] == repo.shas
+    assert recorded_commit(record=record).sha == repo.shas[-1]
+    assert [row for row in record.commits if row.subject == LANDING_ROW_SUBJECT] == []
