@@ -16,20 +16,57 @@ def criterion(key="criterion-key", state=WorkflowStateKind.UNSTARTED, body=""):
     )
 
 
-@pytest.mark.parametrize(
-    "state,expected",
-    [
-        (WorkflowStateKind.TRIAGE, True),
-        (WorkflowStateKind.BACKLOG, True),
-        (WorkflowStateKind.UNSTARTED, True),
-        (WorkflowStateKind.STARTED, True),
-        (WorkflowStateKind.COMPLETED, False),
-        (WorkflowStateKind.CANCELED, True),
-        (WorkflowStateKind.DUPLICATE, True),
-    ],
+#: Every tracker state with the membership answer its arm gives at no
+#: supersession reference, held as one list so the arm case below and the
+#: exhaustiveness check read the same source instead of two hand-kept
+#: lists that can drift apart.
+CASES = [
+    (WorkflowStateKind.TRIAGE, True),
+    (WorkflowStateKind.BACKLOG, True),
+    (WorkflowStateKind.UNSTARTED, True),
+    (WorkflowStateKind.STARTED, True),
+    (WorkflowStateKind.COMPLETED, False),
+    (WorkflowStateKind.CANCELED, True),
+    (WorkflowStateKind.DUPLICATE, True),
+]
+
+#: The two states whose answer is itself a question about the supersession
+#: reference. What they read is KOD-794's to pin, so they are asked here at
+#: no reference only.
+REFERENCE_SENSITIVE = frozenset(
+    {WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE}
 )
-def test_one_membership_arm_per_tracker_state(state, expected):
-    assert gap.in_gap(criterion(state=state), supersession_ref=None) is expected
+
+#: Each row of CASES at every reference its answer has to survive: the open
+#: states and COMPLETED at both, the reference-sensitive pair at none.
+REFERENCE_CASES = [
+    (state, expected, supersession_ref)
+    for state, expected in CASES
+    for supersession_ref in (
+        (None,) if state in REFERENCE_SENSITIVE else (None, "opaque-successor")
+    )
+]
+
+
+@pytest.mark.parametrize("state,expected,supersession_ref", REFERENCE_CASES)
+def test_one_membership_arm_per_tracker_state(state, expected, supersession_ref):
+    """One arm per state, and for most of them the reference cannot move it.
+
+    A criterion re-opened after a cancellation still carries the reference
+    that cancellation was given, and the caller passes whatever reference it
+    holds. An open arm that answered "in the gap only while no reference is
+    present" would drop such a criterion out of the gap silently, so every
+    arm outside REFERENCE_SENSITIVE is asked at both references (KOD-420).
+    """
+    assert (
+        gap.in_gap(criterion(state=state), supersession_ref=supersession_ref)
+        is expected
+    )
+
+
+def test_the_membership_cases_name_every_tracker_state() -> None:
+    """A new state has to gain a row here, not just an arm in the source."""
+    assert {state for state, _ in CASES} == set(WorkflowStateKind)
 
 
 @pytest.mark.parametrize(
