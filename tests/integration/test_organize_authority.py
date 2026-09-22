@@ -5,11 +5,14 @@ side of approval — so the authority these cases exercise is the one a
 scheduled tick reaches and not a second wiring written here.
 """
 
+import pytest
+
 from kodezart.composition.organize import build_scope_organizer
 from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.config.write_back import WriteBackSettings
 from kodezart.core.prompt_namespaces import operation_bindings
+from kodezart.domain.errors import OrganizeWriteRefusalError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.organize import MandateKind
@@ -111,3 +114,51 @@ async def test_a_milestone_addressed_scope_grooms_on_its_projects_triage():
     # One admission session per lane, and no member gained a scope member.
     assert sorted({key for key, _, _ in executor.admissions}) == list(lanes)
     assert port.scope_label_members == seeded
+
+
+def swallow_marker_writes(port, executor):
+    """The board accepts the marker write, answers with it, and does not keep it.
+
+    The write lands in the ordered journal with the number of sessions opened
+    before it, and its answer carries the marker, while the stored member
+    keeps the labels it had. A pass that trusted the write's own answer could
+    not tell this board from one that kept the label; only a cold read can.
+    """
+    journal = []
+
+    async def swallowing(*, issue_key, classification, holder=None):
+        port.classification_writes.append((issue_key, classification))
+        journal.append(len(executor.organize_calls))
+        issue = await port.read_issue(issue_key=issue_key)
+        return issue.model_copy(
+            update={"issue_labels": issue.issue_labels | {classification}}
+        )
+
+    port.set_issue_classification = swallowing
+    return journal
+
+
+async def test_a_port_that_swallows_the_marker_write_ends_grooming_before_the_judge():
+    """The marker the board does not report is no marker at all.
+
+    The pass's own read-back is what refuses: the write answered with the
+    marker, so a comparison over that answer would pass, and the refusal comes
+    before the write-back judge is asked about the member at all.
+    """
+    lanes = ("A",)
+    port = under_milestone(board(lanes=lanes, approved=False))
+    port.scope_label_members[SCOPE] = frozenset({ScopeLabel.TRIAGE})
+    organizer, operation, executor = groomer(port, lanes=lanes)
+    journal = swallow_marker_writes(port, executor)
+
+    with pytest.raises(OrganizeWriteRefusalError, match="did not read back"):
+        await organizer.run(
+            scope=MILESTONE, repository=operation.repos[0], job_id="groom-job"
+        )
+
+    assert port.classification_writes == [("A", GROOM_MARKER)]
+    assert GROOM_MARKER not in port.issues["A"].issue_labels
+    # Observed, then written: the lane's assessment and its independent
+    # verification both ran before the write; nothing was opened after it.
+    assert [key for key, _, _ in executor.admissions] == ["A", "A"]
+    assert executor.organize_calls[journal[0] :] == []
