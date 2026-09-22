@@ -379,6 +379,7 @@
   "tests/test_audit_lane_placement.py": 13,
   "tests/test_composition_root.py": 35,
   "tests/test_criterion_resolution_boundary.py": 14,
+  "tests/test_default_run_isolation.py": 3,
   "tests/test_fakes_state.py": 8,
   "tests/test_forge_origin_selection.py": 46,
   "tests/test_graded_sha_comparison_sites.py": 22,
@@ -5374,6 +5375,10 @@
    "test_a_protocol_declaration_is_not_an_implementation",
    "test_each_spelling_of_a_checkbox_scan_is_reported",
    "test_a_criterion_text_comparison_on_a_key_addressed_target_is_not_reported"
+  ],
+  "tests/test_default_run_isolation.py": [
+   "test_a_default_run_item_cannot_reach_a_non_loopback_address",
+   "test_a_default_run_item_still_reaches_loopback"
   ],
   "tests/test_fakes_state.py": [
    "test_every_journal_the_check_reaches_is_written_to_here",

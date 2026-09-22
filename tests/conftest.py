@@ -1,8 +1,10 @@
 """Shared async test fixtures — no mocking, full chain exercised."""
 
+import ipaddress
 import logging
 import os
-from collections.abc import AsyncGenerator, Iterator
+import socket
+from collections.abc import AsyncGenerator, Callable, Iterator
 
 import pytest
 import structlog
@@ -74,6 +76,61 @@ GATED_MARKERS: dict[str, str] = {
         "(run with: pytest -m postgres)"
     ),
 }
+
+
+class LiveReachError(Exception):
+    """A default-run test opened a connection to an address off this machine."""
+
+    def __init__(self, address: object) -> None:
+        super().__init__(
+            f"a default-run test reached the non-loopback address {address!r}"
+        )
+        self.address = address
+
+
+def _loopback(address: object) -> bool:
+    """Whether an internet socket *address* names this machine and no other."""
+    if not isinstance(address, tuple) or not address:
+        return False
+    host = str(address[0]).split("%", 1)[0]
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _guarded[R](
+    original: Callable[[socket.socket, object], R],
+) -> Callable[[socket.socket, object], R]:
+    """*original*, refusing before any packet an address off this machine."""
+
+    def connect(self: socket.socket, address: object) -> R:
+        if self.family != socket.AF_UNIX and not _loopback(address):
+            raise LiveReachError(address)
+        return original(self, address)
+
+    return connect
+
+
+@pytest.fixture(autouse=True)
+def _no_live_reach(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Keep every default-run test on this machine: the fakes, never a workspace.
+
+    A test carrying one of the gated marks is the one kind allowed to leave
+    it, and that set is ``GATED_MARKERS`` itself, read here rather than
+    listed again. Everything else may reach a Unix socket or a loopback
+    address; a connect anywhere else raises ``LiveReachError`` before the
+    call is made (KOD-469).
+    """
+    if any(request.node.get_closest_marker(name) for name in GATED_MARKERS):
+        yield
+        return
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(socket.socket, "connect", _guarded(socket.socket.connect))
+        patch.setattr(socket.socket, "connect_ex", _guarded(socket.socket.connect_ex))
+        yield
 
 
 def pytest_collection_modifyitems(
