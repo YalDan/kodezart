@@ -37,26 +37,39 @@ the natural nested route a tracker-arm bypass would take, and what stops it at
 head is a side effect rather than this ban, at each of the three places the
 arm has a tracker body in hand.  In ``domain/fire_spec.py`` and in
 ``adapters/linear/tracker.py`` it is the floor below: neither module holds the
-draft at head, so the carrier import the nested parse needs reds the floor's
-two statements of that.  In ``chains/criteria.py``, which holds the draft
-already, it is the arm-reads guard (KOD-410), because there the body is read
-off a spec.  The adapter's entry read is the site no second stop covers: what
-it returns is a tracker issue rather than a spec, so there is no read of a
-spec's text for that guard to see, and the floor line naming the adapter is
-the whole of what reds a body parsed into a draft there.  Nothing at head
-writes either form.  Closing the string-constant one means running the code
-rather than reading it; closing the carrier one means registering construction
-over every holder class of the draft on the arm, which needs a decision about
-the holder construction the arm may legitimately do (KOD-105).
+draft at head, so an import that reaches a carrier reds the floor's two
+statements of that.  Two import routes are counted: the carrier imported by
+name, and the module declaring it imported as a module — ``import
+kodezart.types.domain.fire_spec as m`` or ``from kodezart.types.domain import
+fire_spec`` — whatever the local word.  Three are not, and a carrier reached
+through one of them leaves either module off the surface: ``import kodezart``
+followed by the whole dotted path, a package's ``__init__`` or a relative
+import, and a module that only re-exports the carrier.  In
+``chains/criteria.py``, which holds the draft already, the stop is the
+arm-reads guard (KOD-410), because there the body is read off a spec.  The
+adapter's entry read is the site no second stop covers: what it returns is a
+tracker issue rather than a spec, so there is no read of a spec's text for
+that guard to see, and the floor line naming the adapter is the whole of what
+reds a body parsed into a draft there, by the two counted routes only.
+Nothing at head writes either form.  Closing the string-constant one means
+running the code rather than reading it; closing the carrier one means
+registering construction over every holder class of the draft on the arm,
+which needs a decision about the holder construction the arm may legitimately
+do (KOD-105).
 """
 
 import pytest
 
 from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.fire_spec import AuthoredSpec
 from tests.identity_guards import model_value_sites, value_holders
 from tests.name_resolution import source_tree
 
 DRAFT = TicketDraftOutput.__name__
+#: The partition's carrier of the draft and the module declaring it, read off
+#: the class so a moved or renamed carrier moves the planted routes with it.
+CARRIER = AuthoredSpec.__name__
+CARRIER_HOME = AuthoredSpec.__module__
 
 #: The two authored drafting sites: the only places the package makes a draft.
 CONSTRUCTIONS = {
@@ -117,6 +130,7 @@ CRITERIA_ANCHOR = (
 #: is its one caller — so the point where the arm holds a tracker body is the
 #: subject it returns from the entry read.
 TRACKER_ANCHOR = "        return subject\n"
+TRACKER_MODULE = "adapters/linear/tracker.py"
 
 #: Where a tracker body is in hand, the name holding it, and the function the
 #: report would name.  Each anchor is asserted unique before it is replaced.
@@ -127,7 +141,7 @@ PLANT_SITES = (
         "subject",
         "tracker_spec_from_issues",
     ),
-    ("adapters/linear/tracker.py", TRACKER_ANCHOR, "subject", "read_fire_subject"),
+    (TRACKER_MODULE, TRACKER_ANCHOR, "subject", "read_fire_subject"),
     ("chains/criteria.py", CRITERIA_ANCHOR, "spec", "revalidate_criteria"),
 )
 
@@ -179,13 +193,51 @@ def test_the_tracker_arm_modules_are_on_the_scanned_surface():
     them, and their message is what tells a reader who adds a legitimate one
     that the surface moved.  The adapter's does more than that, being the one
     thing that reds a tracker body parsed into a draft through a carrier at
-    the arm's own entry read.
+    the arm's own entry read, by the two import routes the module docstring
+    counts.
     """
     holders = value_holders(source_tree(), identity=DRAFT)
 
     assert holders.keys() >= TRACKER_ARM_MODULES
     assert "domain/fire_spec.py" not in holders
-    assert "adapters/linear/tracker.py" not in holders
+    assert TRACKER_MODULE not in holders
+
+
+#: Each spelling of the module route to the carrier: the module bound under an
+#: alias, a submodule bound by a ``from`` import, and the bare dotted import.
+CARRIER_PACKAGE, _, CARRIER_LEAF = CARRIER_HOME.rpartition(".")
+CARRIER_ROUTES = {
+    "aliased_module": (f"import {CARRIER_HOME} as routed\n", f"routed.{CARRIER}"),
+    "submodule_from_its_package": (
+        f"from {CARRIER_PACKAGE} import {CARRIER_LEAF}\n",
+        f"{CARRIER_LEAF}.{CARRIER}",
+    ),
+    "dotted_module": (f"import {CARRIER_HOME}\n", f"{CARRIER_HOME}.{CARRIER}"),
+}
+
+
+@pytest.mark.parametrize("route", sorted(CARRIER_ROUTES))
+def test_a_carrier_reached_through_its_module_puts_the_adapter_on_the_surface(
+    route,
+):
+    """The adapter's floor line reds a carrier parse however its module is bound.
+
+    The nested parse names no draft, so the floor is what stops it at the
+    entry read, and the floor rested on the carrier's own name: binding the
+    carrier's module instead and reading the carrier off it walked past.  Each
+    route plants the parse of the subject's body into the carrier before the
+    entry read returns, and the adapter must join the scanned surface.
+    """
+    sources = source_tree()
+    assert sources[TRACKER_MODULE].count(TRACKER_ANCHOR) == 1
+    imports, carrier = CARRIER_ROUTES[route]
+    sources[TRACKER_MODULE] = imports + sources[TRACKER_MODULE].replace(
+        TRACKER_ANCHOR,
+        f"        draft = {carrier}.model_validate("
+        "{'ticket': {'title': subject.body}})\n" + TRACKER_ANCHOR,
+    )
+
+    assert TRACKER_MODULE in value_holders(sources, identity=DRAFT)
 
 
 @pytest.mark.parametrize("form", FORMS)
