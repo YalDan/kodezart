@@ -9,7 +9,7 @@ carried alongside that read stands in for it.
 
 import ast
 import functools
-import importlib
+import importlib.util
 import inspect
 import pathlib
 import re
@@ -2408,6 +2408,28 @@ def _callers_in(module, tree, function):
         for name, value in namespace.items()
         if isinstance(value, types.ModuleType)
     }
+    # An import made inside a function binds nothing at module level, so it
+    # is read from the tree and resolved the same way: the name it binds
+    # counts when the object it imports IS the function (or a module).
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            source = importlib.import_module(
+                importlib.util.resolve_name(
+                    "." * node.level + (node.module or ""), module.__package__
+                )
+                if node.level
+                else node.module
+            )
+            for alias in node.names:
+                value = getattr(source, alias.name, None)
+                if value is function:
+                    names.add(alias.asname or alias.name)
+                elif isinstance(value, types.ModuleType):
+                    modules[alias.asname or alias.name] = value
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    modules[alias.asname] = importlib.import_module(alias.name)
     # A local rebinding exists only in the tree: every plain name assigned
     # from a name already known is the function too, to a fixed point.  Each
     # pass adds a name or ends the loop, so it runs at most once per
@@ -2467,9 +2489,10 @@ def callers_of(function):
     its own line, which no reach table can hold, so it is reported rather
     than folded in.
 
-    Not seen: a name bound by an import made inside a function, and a
-    function reached through any other object (an instance, a mapping, a
-    ``functools.partial``).
+    An import made inside a function is read from the tree and resolved the
+    same way, so a local ``from ... import recorded_native_roster as x``
+    counts too.  Not seen: a function reached through any other object (an
+    instance, a mapping, a ``functools.partial``).
     """
     return tuple(
         sorted(
