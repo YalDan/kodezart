@@ -16,6 +16,7 @@ from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.errors import (
     OrganizeAdmissionIdentityError,
+    OrganizeWriteRefusalError,
     SurfaceLeaseError,
 )
 from kodezart.domain.organize import stage_rows
@@ -796,6 +797,104 @@ async def test_the_marker_write_is_keyed_on_the_member_and_the_marker(monkeypatc
     report = await run_owner(owner)
     assert report.halt is None
     assert writes == []
+
+
+def swallow_marker_writes(board, executor, monkeypatch):
+    """A board that accepts the marker write and does not keep it.
+
+    The replacement records the call and the number of sessions opened before
+    it, and answers with the member exactly as the board still holds it: the
+    write raised nothing, and the label set is unchanged.
+    """
+    port = board.built_tracker
+    writes = []
+
+    async def swallowing(*, issue_key, classification, holder=None):
+        writes.append((issue_key, classification, len(executor.calls)))
+        return await port.read_planning_issue(issue_key=issue_key)
+
+    monkeypatch.setattr(port, "set_issue_classification", swallowing)
+    return writes
+
+
+def session_titles(calls):
+    return [call["output_format"]["schema"].get("title") for call in calls]
+
+
+async def test_a_marker_the_board_does_not_report_halts_the_mandate(monkeypatch):
+    """The pass reads the member back itself, and before any judge is asked.
+
+    The refusal is the typed write refusal, raised inside the leased write:
+    no completed phase is reported, the marker is absent from the board, and
+    no write-back judgment is opened for the member after the write although
+    admission judgments did run before it.
+    """
+    owner, board, executor = factory()
+    writes = swallow_marker_writes(board, executor, monkeypatch)
+    with pytest.raises(OrganizeWriteRefusalError, match="did not read back"):
+        await run_owner(owner)
+    assert [(key, marker) for key, marker, _ in writes] == [(CLAIMED_ISSUE, "groomed")]
+    assert "graph complete" not in board.server.issues[CLAIMED_ISSUE].labels
+    opened_before = writes[0][2]
+    assert "AdmissionJudgment" in session_titles(executor.calls[:opened_before])
+    assert session_titles(executor.calls[opened_before:]) == []
+
+
+async def test_the_marker_gate_is_not_the_judges_verdict(monkeypatch):
+    """Every judgment the pass did ask for held, and the pass still refused.
+
+    The judge double answers ``holds`` for any artifact it is shown, so a
+    verdict cannot be what stopped the phase: the read-back is a gate of its
+    own, not a verification round the judge can pass.
+    """
+    owner, board, executor = factory()
+    swallow_marker_writes(board, executor, monkeypatch)
+    with pytest.raises(OrganizeWriteRefusalError, match="did not read back"):
+        await run_owner(owner)
+    judged = [
+        call
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "WriteBackFinding"
+    ]
+    # Observed, then written: the author write's one verification round.
+    assert len(judged) == 1
+    assert "graph complete" not in board.server.issues[CLAIMED_ISSUE].labels
+
+
+async def test_a_marker_that_reads_back_completes_the_phase(monkeypatch):
+    """The green control: the same pass, over a board that keeps the write.
+
+    The member is read back after the marker write and before its write-back
+    judgment, and the phase completes on the label the board reports.
+    """
+    owner, board, executor = factory()
+    port = board.built_tracker
+    original_write = port.set_issue_classification
+    original_read = port.read_planning_issue
+    events = []
+
+    async def writing(*, issue_key, classification, holder=None):
+        events.append(("write", issue_key, len(executor.calls)))
+        return await original_write(
+            issue_key=issue_key, classification=classification, holder=holder
+        )
+
+    async def reading(*, issue_key):
+        events.append(("read", issue_key, len(executor.calls)))
+        return await original_read(issue_key=issue_key)
+
+    monkeypatch.setattr(port, "set_issue_classification", writing)
+    monkeypatch.setattr(port, "read_planning_issue", reading)
+    report = await run_owner(owner)
+    assert report.halt is None
+    assert [phase.value for phase in report.completed_phases] == ["groom"]
+    assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
+    written = next(i for i, event in enumerate(events) if event[0] == "write")
+    read_back = next(
+        event for event in events[written + 1 :] if event[:2] == ("read", CLAIMED_ISSUE)
+    )
+    # The marker's own judgment is opened only after the pass read it back.
+    assert "WriteBackFinding" in session_titles(executor.calls[read_back[2] :])
 
 
 async def test_full_scope_finding_exhausts_the_actual_convergence_bound(monkeypatch):

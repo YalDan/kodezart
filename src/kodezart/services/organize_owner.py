@@ -859,6 +859,21 @@ class OrganizeOwner:
                         holder=job_id,
                     )
                 )
+                # Read back before any judge runs: this body returns before the
+                # verifier re-reads the artifact and before it opens a session,
+                # so a write the board accepted and does not report is a refusal
+                # here and never a verification round.
+                confirmed = await self._tracker.read_planning_issue(
+                    issue_key=request.issue_key
+                )
+                if (
+                    confirmed.issue_key != request.issue_key
+                    or classification not in confirmed.issue_labels
+                ):
+                    raise OrganizeWriteRefusalError(
+                        issue_key=request.issue_key,
+                        reason="the phase marker did not read back after the write",
+                    )
 
         result = await self._verifier.write_back(
             step=_WriteStep(surface, apply), ref=request.base_ref
