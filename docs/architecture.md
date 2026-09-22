@@ -253,6 +253,16 @@ read's `excluded` and in each walk observation's `excluded_criteria`, so a
 reader tells an obligation the board set aside from one that was never there
 (KOD-794).
 
+Each ready lane's gap is measured on the walk observation, as `gaps`: one
+`GapMeasurement` per ready lane naming its open subtree criteria at that read,
+built fresh every tick and on no durable write the run makes — not the lane
+record, not a criterion's Evidence write, not the status update (KOD-461). An
+open criterion inside a ready lane's subtree that the scope's own filter cannot
+address in its own right is named among the observation's exclusions as
+`out_of_scope`, with the reason the filter gives; one under a blocked or
+unapproved member stays on `unresolved_criteria` and is named when its lane is
+ready.
+
 `LaneRecordReader` reads the owning issue's complete comment listing through
 `TrackerPort`, locates the exact configured `marker_prefixes.run_state` marker,
 and returns the native comment and decoded `LaneRunState` from that same read.

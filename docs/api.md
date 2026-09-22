@@ -267,7 +267,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `delivered` |
 | `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
-| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed/rested lane keys, unresolved criterion keys, excluded criterion keys, unapproved lane keys and exclusions |
+| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed/rested lane keys, each ready lane's gap (gaps: lane key and open criterion keys), unresolved criterion keys, excluded criterion keys, unapproved lane keys and exclusions, including out_of_scope exclusions naming open criteria the scope's filter cannot reach, with the reason |
 | `scope_lane`                   | `laneKey`, `event`: the complete typed inner event, including its discriminator |
 | `scope_terminal`               | `scope`; `lanes`: one entry per lane of the reading, carrying its issue, whether it is done, its recorded branch and its recorded pull request; `outcome`: scope_converged when every lane is done, else scope_stopped_short |
 
@@ -283,6 +283,9 @@ and emits none. A lane is done when no criterion under it is open, and the
 outcome reads that column and nothing else — not a pull request, not a merge.
 Unapproved and skipped lanes, unresolved criterion keys and the excluded
 criterion keys the board set aside remain explicit in `scope_walk.observation`.
+Each ready lane's gap is measured there, fresh on every tick, and on no durable
+write the run makes: not the lane record, not a criterion's Evidence write and
+not the status update.
 
 This request route executes eligible lanes serially, and a lane is fired again in
 the same invocation while its last fire closed a previously open criterion of its

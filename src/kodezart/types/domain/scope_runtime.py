@@ -25,6 +25,21 @@ class LaneFailure(CamelCaseModel):
     error: ErrorEvent
 
 
+class GapMeasurement(CamelCaseModel):
+    """One ready lane's open subtree criteria, as one read of the board saw them.
+
+    Point-in-time only: the keys are what that lane owed at that read, built
+    fresh on every tick from the ready set and kept nowhere. Nothing durable
+    carries it, because a criterion key list written down is a claim about a
+    board that has since moved.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    lane_key: str = Field(min_length=1)
+    criterion_keys: tuple[str, ...]
+
+
 class ScopeWalkObservation(CamelCaseModel):
     """Facts from a fresh walk, including obligations selection cannot discharge.
 
@@ -42,6 +57,15 @@ class ScopeWalkObservation(CamelCaseModel):
     one the facts left nothing to do, one whose own work raised — so an empty
     ready set beside entries here says which lanes stopped being offered and
     which of them were never offered at all.
+
+    ``gaps`` carries one entry per ready lane, in the same order, naming the
+    criteria that lane owed at this read. The measurement lives here and on no
+    durable write the run makes.
+
+    An open criterion the scope's own filter cannot address in its own right
+    is named among ``exclusions`` with the reason the filter gives, for READY
+    lanes only: one under a blocked or unapproved member stays on
+    ``unresolved_criteria`` and is named when its lane becomes ready.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -49,6 +73,7 @@ class ScopeWalkObservation(CamelCaseModel):
     scope: ScopeRef
     tick: int = Field(ge=1)
     ready: tuple[str, ...]
+    gaps: tuple[GapMeasurement, ...] = ()
     dispatched: tuple[str, ...]
     skipped_lanes: tuple[str, ...] = ()
     failed_lanes: tuple[LaneFailure, ...] = ()
