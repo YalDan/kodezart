@@ -26,7 +26,7 @@ from kodezart.domain.fire_spec import (
     criterion_ref,
     replace_criterion_fields,
 )
-from kodezart.domain.issue_tree import SubtreeClosure
+from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE
 from kodezart.domain.lapse import GradedState
 from kodezart.domain.run_event_stream import (
@@ -916,13 +916,36 @@ def criterion_body(key: str) -> str:
     return f"**Check:** {check_of(key)}\n**Do:** the build {key} names\n**Evidence:** —"
 
 
-def criteria_board(*, bodies: dict[str, str] | None = None) -> FakeTrackerPort:
-    """The lane, its criterion sub-issues, and one issue that is not a criterion."""
+CHILD = f"{LANE}/child"
+#: A criterion sub-issue of the deliverable child, below the fire's own family.
+CHILD_CRITERION = f"{CHILD}/criterion"
+
+
+def criteria_board(
+    *, bodies: dict[str, str] | None = None, descendant: bool = False
+) -> FakeTrackerPort:
+    """The lane, its criterion sub-issues, and one issue that is not a criterion.
+
+    With *descendant*, that child owns a criterion sub-issue of its own, so
+    the board carries a subtree below the fire's direct family.
+    """
     overrides = bodies or {}
+    below = (
+        [
+            make_tracker_issue(
+                CHILD_CRITERION,
+                parent_key=CHILD,
+                issue_labels=frozenset({"criterion"}),
+                body=criterion_body(CHILD_CRITERION),
+            )
+        ]
+        if descendant
+        else []
+    )
     return FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, body="the lane's own text"),
-            make_tracker_issue(f"{LANE}/child", parent_key=LANE, body="a plain child"),
+            make_tracker_issue(CHILD, parent_key=LANE, body="a plain child"),
             *(
                 make_tracker_issue(
                     key,
@@ -932,6 +955,7 @@ def criteria_board(*, bodies: dict[str, str] | None = None) -> FakeTrackerPort:
                 )
                 for key in CRITERIA
             ),
+            *below,
         ],
         marker_prefixes=lane_operation().marker_prefixes,
     )
@@ -1393,15 +1417,19 @@ async def test_a_tick_on_a_sub_issue_with_no_evidence_row_writes_one():
     )
 
 
-def owning_closure(port: FakeTrackerPort) -> SubtreeClosure:
+def owning_closure(
+    port: FakeTrackerPort, *, below: Sequence[str] = ()
+) -> SubtreeClosure:
     """The rollup a reader of the owning issue answers its state from.
 
     Over the lane and the criteria under it: the plain child beside them
     carries no criterion of its own, which the rollup reads as a subtree
-    nothing could finish rather than as this lane's gap.
+    nothing could finish rather than as this lane's gap.  *below* names the
+    descendants to read as well, for a board whose child owns a criterion,
+    because the rollup is over the whole subtree and not the direct family.
     """
     return SubtreeClosure(
-        facts={key: port.issues[key] for key in (LANE, *CRITERIA)},
+        facts={key: port.issues[key] for key in (LANE, *CRITERIA, *below)},
         ref=ScopeRef(kind=ScopeKind.ISSUE, key=LANE),
     )
 
@@ -1948,3 +1976,105 @@ async def test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra():
     await tick(lane_state, sha="2" * 40, keys=[broken], failed=[broken])
     assert port.listings == 1
     assert [event.subject_key for event in refutations(port)] == [broken]
+
+
+# ---------------------------------------------------------------------------
+# The rollup: one lane check, four answers, over the board the writer left.
+# ---------------------------------------------------------------------------
+
+#: The lane check of this fire: a criterion sub-issue like its siblings.
+LANE_CHECK = CRITERIA[2]
+STANDING_SHA = "1" * 40
+LATER_SHA = "2" * 40
+
+
+async def rollup_board(arm: str) -> tuple[FakeTrackerPort, SubtreeClosure]:
+    """The board the real writer leaves after one of the four arms."""
+    port = criteria_board(descendant=arm == "descendant")
+    lane_state = writer(port, lane_repo())
+    await tick(lane_state, sha=STANDING_SHA)
+    match arm:
+        case "refuted":
+            await tick(lane_state, sha=LATER_SHA, failed=[LANE_CHECK])
+        case "lapsed":
+            await lapse(
+                lane_state,
+                key=LANE_CHECK,
+                standing_sha=STANDING_SHA,
+                head_sha=LATER_SHA,
+            )
+        case "met" | "descendant":
+            pass
+    below = (CHILD, CHILD_CRITERION) if arm == "descendant" else ()
+    return port, owning_closure(port, below=below)
+
+
+@pytest.mark.parametrize(
+    ("arm", "gap", "graded_at", "refuted"),
+    [
+        pytest.param("refuted", (LANE_CHECK,), LATER_SHA, [LANE_CHECK], id="refuted"),
+        pytest.param("met", (), STANDING_SHA, [], id="met"),
+        pytest.param("lapsed", (LANE_CHECK,), STANDING_SHA, [], id="lapsed"),
+        pytest.param(
+            "descendant", (CHILD_CRITERION,), STANDING_SHA, [], id="descendant"
+        ),
+    ],
+)
+async def test_the_rollup_over_the_subtree_answers_one_lane_check_four_ways(
+    arm, gap, graded_at, refuted
+):
+    """A fire's Done is the rollup over every criterion sub-issue beneath it.
+
+    The lane check is ``LANE/third``.  That a fire's lane checks are criterion
+    sub-issues of the fire is shown by structure, not by wording: it carries
+    the same label, is written by the same ``write_cross_offs``, makes the
+    same state move, keeps the same Evidence row and is read by the same gap
+    arm as its siblings.  Every row reads a board the writer left, so no
+    fact the rollup answers from was authored by this fixture.
+
+    The gap attaches no verdict: each member is the board row itself.  On the
+    descendant row the fire's own family is all finished, so a reading that
+    stopped at the direct family would call the fire done (KOD-790).
+    """
+    port, closure = await rollup_board(arm)
+
+    found = closure.gap(LANE)
+    assert tuple(row.issue_key for row in found) == gap
+    assert all(row is port.issues[row.issue_key] for row in found)
+    assert closure.is_closed(LANE) is (gap == ())
+    assert parse_criterion_evidence(port.issues[LANE_CHECK].body).graded_sha == (
+        graded_at
+    )
+    assert [event.subject_key for event in refutations(port)] == refuted
+    if arm == "descendant":
+        assert open_criteria(closure.criteria(LANE), ref=closure.ref) == ()
+
+
+async def test_a_lapsed_and_a_refuted_lane_check_leave_one_board_and_two_streams():
+    """Ungraded rather than failed is a fact the writer leaves, not one authored.
+
+    Both arms leave the lane check in the same state, with a body identical
+    outside its Evidence row and an Evidence row of the same shape, and both
+    reopen the fire by the rollup; only the stream tells them apart, with one
+    refutation for the failed grading and none for the lapsed one.  The two
+    Evidence rows are not byte-equal: each carries the sha its own arm
+    graded at, which the four-way rollup test asserts row by row.  The
+    writer's own side of the distinction is pinned by
+    ``test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra``.
+    """
+    refuted_port, refuted_closure = await rollup_board("refuted")
+    lapsed_port, lapsed_closure = await rollup_board("lapsed")
+    refuted_row = refuted_port.issues[LANE_CHECK]
+    lapsed_row = lapsed_port.issues[LANE_CHECK]
+
+    assert refuted_row.state_kind is lapsed_row.state_kind
+    assert refuted_row.state_name == lapsed_row.state_name
+    assert type(parse_criterion_evidence(refuted_row.body)) is type(
+        parse_criterion_evidence(lapsed_row.body)
+    )
+    assert without_evidence(refuted_row.body) == without_evidence(lapsed_row.body)
+    assert [row.issue_key for row in refuted_closure.gap(LANE)] == [
+        row.issue_key for row in lapsed_closure.gap(LANE)
+    ]
+    assert [event.subject_key for event in refutations(refuted_port)] == [LANE_CHECK]
+    assert refutations(lapsed_port) == []
