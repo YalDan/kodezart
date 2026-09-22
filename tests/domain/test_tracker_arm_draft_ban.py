@@ -34,13 +34,20 @@ A draft parsed through a carrier model is the other blind spot:
 ``AuthoredSpec.model_validate({"ticket": {...}})`` makes the draft in a nested
 parse and names its class nowhere, so the register reports it nowhere.  It is
 the natural nested route a tracker-arm bypass would take, and what stops it at
-head is two side effects rather than this ban — the floor below reds on any
-carrier or class import into ``domain/fire_spec.py``, and the arm-reads guard
-(KOD-410) reds when the body read is off a spec.  Nothing at head writes
-either form.  Closing the string-constant one means running the code rather
-than reading it; closing the carrier one means registering construction over
-every holder class of the draft on the arm, which needs a decision about the
-holder construction the arm may legitimately do.
+head is a side effect rather than this ban, at each of the three places the
+arm has a tracker body in hand.  In ``domain/fire_spec.py`` and in
+``adapters/linear/tracker.py`` it is the floor below: neither module holds the
+draft at head, so the carrier import the nested parse needs reds the floor's
+two statements of that.  In ``chains/criteria.py``, which holds the draft
+already, it is the arm-reads guard (KOD-410), because there the body is read
+off a spec.  The adapter's entry read is the site no second stop covers: what
+it returns is a tracker issue rather than a spec, so there is no read of a
+spec's text for that guard to see, and the floor line naming the adapter is
+the whole of what reds a body parsed into a draft there.  Nothing at head
+writes either form.  Closing the string-constant one means running the code
+rather than reading it; closing the carrier one means registering construction
+over every holder class of the draft on the arm, which needs a decision about
+the holder construction the arm may legitimately do (KOD-105).
 """
 
 import pytest
@@ -165,16 +172,20 @@ def test_the_tracker_arm_modules_are_on_the_scanned_surface():
     """The ban is not vacuous: the arm's own modules are scanned.
 
     ``domain/fire_spec.py`` is not a holder at head — it captures a subject
-    and names no draft — so the reddening plant below imports the class,
-    which is the natural form a bypass would take.  That second assertion is a
-    statement of head rather than a ban: any carrier or class import into that
-    module reds it, and its message is what tells a reader who adds a
-    legitimate one that the surface moved.
+    and names no draft — and neither is the adapter the subject is read
+    through, so the reddening plants below import the class, which is the
+    natural form a bypass would take.  Those two assertions are statements of
+    head rather than bans: any carrier or class import into either module reds
+    them, and their message is what tells a reader who adds a legitimate one
+    that the surface moved.  The adapter's does more than that, being the one
+    thing that reds a tracker body parsed into a draft through a carrier at
+    the arm's own entry read.
     """
     holders = value_holders(source_tree(), identity=DRAFT)
 
     assert holders.keys() >= TRACKER_ARM_MODULES
     assert "domain/fire_spec.py" not in holders
+    assert "adapters/linear/tracker.py" not in holders
 
 
 @pytest.mark.parametrize("form", FORMS)
