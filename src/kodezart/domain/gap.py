@@ -2,63 +2,51 @@
 
 The tracker owns the criterion-state vocabulary. This module preserves
 the actual records; it neither decodes Evidence text nor
-invents a second state or grading vocabulary. Supersession references must
-already have been established by the owning tracker/lifecycle reader.
+invents a second state or grading vocabulary. Canceled and Duplicate
+criteria are excluded on state alone and named beside the gap (KOD-794).
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
+from kodezart.types.domain.gap import CriterionGap, GapMembership
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 
-def in_gap(criterion: TrackerIssue, *, supersession_ref: str | None) -> bool:
-    """Completion closes work; cancellation needs a supersession."""
+def gap_membership(criterion: TrackerIssue) -> GapMembership:
+    """What one criterion record contributes, from its own state alone."""
     if "criterion" not in criterion.issue_labels:
         raise ValueError("gap membership requires a criterion sub-issue")
-    return open_state_kind(criterion.state_kind, supersession_ref=supersession_ref)
-
-
-def open_state_kind(
-    state_kind: WorkflowStateKind, *, supersession_ref: str | None
-) -> bool:
-    """Whether a record in *state_kind* still owes the work it names.
-
-    The whole of what a workflow kind says about owing, asked of the kind
-    alone. A consumer holding a criterion asks it through :func:`in_gap`,
-    which adds that record's own preconditions; a consumer holding only the
-    kind a reading carried asks it here. One arithmetic, two askings: a
-    second reading of what a kind means could answer a lane and a signal
-    differently about the same record.
-    """
-    if supersession_ref is not None and not supersession_ref.strip():
-        raise ValueError("a supersession reference must be nonempty")
-    match state_kind:
+    match criterion.state_kind:
         case WorkflowStateKind.COMPLETED:
-            return False
+            return GapMembership.DISCHARGED
         case WorkflowStateKind.CANCELED:
-            return supersession_ref is None
+            return GapMembership.EXCLUDED
         case WorkflowStateKind.DUPLICATE:
-            return supersession_ref is None
+            return GapMembership.EXCLUDED
         case WorkflowStateKind.TRIAGE:
-            return True
+            return GapMembership.OWED
         case WorkflowStateKind.BACKLOG:
-            return True
+            return GapMembership.OWED
         case WorkflowStateKind.UNSTARTED:
-            return True
+            return GapMembership.OWED
         case WorkflowStateKind.STARTED:
-            return True
+            return GapMembership.OWED
 
 
-def compute_gap(
-    criteria: Sequence[TrackerIssue], *, supersession_refs: Mapping[str, str]
-) -> tuple[TrackerIssue, ...]:
+def compute_gap(criteria: Sequence[TrackerIssue]) -> CriterionGap:
     """Retain open criterion records in their supplied order, unchanged."""
     if len({criterion.issue_key for criterion in criteria}) != len(criteria):
         raise ValueError("a criterion identity appears more than once")
-    return tuple(
-        criterion
-        for criterion in criteria
-        if in_gap(
-            criterion, supersession_ref=supersession_refs.get(criterion.issue_key)
-        )
+    memberships = [(criterion, gap_membership(criterion)) for criterion in criteria]
+    return CriterionGap(
+        owed=tuple(
+            criterion
+            for criterion, membership in memberships
+            if membership is GapMembership.OWED
+        ),
+        excluded=tuple(
+            criterion.issue_key
+            for criterion, membership in memberships
+            if membership is GapMembership.EXCLUDED
+        ),
     )

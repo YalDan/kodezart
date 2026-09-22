@@ -777,6 +777,7 @@ def _observation(
             # vocabulary such a reading is spelled in (KOD-725).
             unresolved_criteria=ready.unresolved,
             unreachable_criteria=ready.unreachable,
+            excluded_criteria=ready.excluded,
             unapproved_lanes=ready.unapproved,
             exclusions=tuple(exclusions),
         )

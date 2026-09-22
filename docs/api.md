@@ -267,7 +267,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `delivered` |
 | `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
-| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed/rested lane keys, unresolved criterion keys, unreachable criteria (key, the reason the scope's filter misses it, and, where it sits in one, the project or milestone), unapproved lane keys and exclusions |
+| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped/failed/rested lane keys, unresolved criterion keys, unreachable criteria (key, the reason the scope's filter misses it, and, where it sits in one, the project or milestone), excluded criterion keys, unapproved lane keys and exclusions |
 | `scope_lane`                   | `laneKey`, `event`: the complete typed inner event, including its discriminator |
 | `scope_terminal`               | `scope`; `lanes`: one entry per lane of the reading, carrying its issue, whether it is done, its recorded branch and its recorded pull request; `outcome`: scope_converged when every lane is done, else scope_stopped_short |
 
@@ -281,8 +281,9 @@ When this controller invocation finishes cleanly it emits one `scope_terminal`
 event and the job's outcome is that event's; a run that raised is `engine_error`
 and emits none. A lane is done when no criterion under it is open, and the
 outcome reads that column and nothing else — not a pull request, not a merge.
-Unapproved and skipped lanes, unresolved criterion keys and unreachable
-criteria remain explicit in `scope_walk.observation`. An unreachable criterion
+Unapproved and skipped lanes, unresolved criterion keys, unreachable criteria
+and the excluded criterion keys the board set aside remain explicit in
+`scope_walk.observation`. An unreachable criterion
 is an open criterion whose own issue the scope's filter never carried. It is
 named under any member, approved or not, blocked or not, and only a lane that is
 ready (approved and unblocked) is fired for it. Its reason is `other_project` or

@@ -2,14 +2,11 @@
 
 from collections.abc import Mapping, Sequence
 
-from kodezart.domain.errors import (
-    EmptyFireCriteriaError,
-    ScopeReadError,
-    ScopeSupersessionReadError,
-)
-from kodezart.domain.gap import compute_gap, in_gap
+from kodezart.domain.errors import EmptyFireCriteriaError, ScopeReadError
+from kodezart.domain.gap import compute_gap
+from kodezart.types.domain.gap import CriterionGap
 from kodezart.types.domain.scope import ScopeRef
-from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+from kodezart.types.domain.tracker import TrackerIssue
 
 RECORD_KINDS = frozenset({"tracker", "decision"})
 
@@ -43,27 +40,6 @@ def index_issue_tree(
     if facts[root].parent_key in facts:
         raise ScopeReadError("subtree root has an internal parent", ref=ref)
     return facts
-
-
-def open_criteria(
-    criteria: Sequence[TrackerIssue], *, ref: ScopeRef
-) -> tuple[TrackerIssue, ...]:
-    """The still-open records of one criterion family, in order.
-
-    The leaf the subtree gap is assembled from, never a reading of
-    finishedness on its own: what an issue owes is what its whole subtree
-    owes, so no caller may take one family for the answer.
-    """
-    unresolved = tuple(
-        issue.issue_key
-        for issue in criteria
-        if issue.state_kind in {WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE}
-    )
-    if unresolved:
-        raise ScopeSupersessionReadError(ref=ref, criterion_keys=unresolved)
-    # No criterion in this input needs a supersession reference. Do not turn
-    # an absent native reference reader into a guessed cancellation policy.
-    return compute_gap(criteria=criteria, supersession_refs={})
 
 
 class SubtreeClosure:
@@ -129,7 +105,7 @@ class SubtreeClosure:
                 if children:
                     raise ScopeReadError("criterion has child issues", ref=self.ref)
                 self.rosters[current] = (issue,)
-                self.gaps[current] = open_criteria((issue,), ref=self.ref)
+                self.gaps[current] = compute_gap((issue,)).owed
             elif issue.issue_labels & RECORD_KINDS:
                 if children:
                     raise ScopeReadError("record issue has child issues", ref=self.ref)
@@ -151,8 +127,8 @@ class SubtreeClosure:
         """Finished is owing nothing: the same read, asked the other way."""
         return not self.gap(key)
 
-    def open_criterion_keys(self) -> tuple[str, ...]:
-        """Every still-open criterion anywhere in the subtree, by key, in order.
+    def scope_gap(self) -> CriterionGap:
+        """The whole tree's gap: what it still owes, and the keys set aside.
 
         What the whole tree still owes, for a caller that REPORTS the remaining
         work rather than fires anything for it. The reading is the gap
@@ -163,13 +139,14 @@ class SubtreeClosure:
 
         Every criterion the tree carries, and not only those beneath a
         candidate: an obligation under a member nobody approved is one the scope
-        has not discharged either. A criterion closed as canceled with no
-        supersession reference established still counts as owed, which is the
-        same answer the reading gives a lane that owes one.
+        has not discharged either. A criterion that counts for nothing on its
+        state alone is named in the excluded half rather than silently
+        discharged, so nothing leaves the reading unsaid.
         """
-        return tuple(
-            key
-            for key, issue in self.facts.items()
-            if "criterion" in issue.issue_labels
-            and in_gap(issue, supersession_ref=None)
+        return compute_gap(
+            tuple(
+                issue
+                for issue in self.facts.values()
+                if "criterion" in issue.issue_labels
+            )
         )

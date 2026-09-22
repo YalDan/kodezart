@@ -15,9 +15,8 @@ import inspect
 import pytest
 
 from kodezart.domain import issue_tree
-from kodezart.domain.errors import ScopeSupersessionReadError
 from kodezart.domain.gap import compute_gap
-from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
+from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from tests.fakes import make_tracker_issue
@@ -106,31 +105,18 @@ def a_cancellation_without_a_supersession() -> tuple[
 
 
 @pytest.mark.parametrize(
-    "row,open_keys,unresolved,subtree_closed",
+    "row,open_keys,subtree_closed",
     [
-        (all_but_one_criterion_moved_back, ("lane-AC-3",), False, False),
-        (closed_child_with_an_open_lane_check, ("lane-AC-1",), False, False),
-        (every_criterion_completed, (), False, True),
-        (
-            a_met_lane_check_over_an_open_child_deliverable,
-            ("child-AC-1",),
-            False,
-            False,
-        ),
-        (a_cancellation_without_a_supersession, (), True, False),
+        (all_but_one_criterion_moved_back, ("lane-AC-3",), False),
+        (closed_child_with_an_open_lane_check, ("lane-AC-1",), False),
+        (every_criterion_completed, (), True),
+        (a_met_lane_check_over_an_open_child_deliverable, ("child-AC-1",), False),
+        (a_cancellation_without_a_supersession, (), True),
     ],
 )
-def test_gap_is_empty_iff_the_subtree_rollup_is_done(
-    row, open_keys, unresolved, subtree_closed
-):
+def test_gap_is_empty_iff_the_subtree_rollup_is_done(row, open_keys, subtree_closed):
     facts, _ = row()
     closure = SubtreeClosure(facts=facts, ref=REF)
-    if unresolved:
-        with pytest.raises(ScopeSupersessionReadError):
-            closure.gap("lane")
-        with pytest.raises(ScopeSupersessionReadError):
-            closure.is_closed("lane")
-        return
     gap = closure.gap("lane")
     assert tuple(issue.issue_key for issue in gap) == open_keys
     assert closure.is_closed("lane") is subtree_closed
@@ -152,7 +138,7 @@ def test_the_lane_gap_and_the_blocker_closure_are_one_read():
     assert tuple(issue.issue_key for issue in closure.gap("child")) == offending
     assert closure.is_closed("lane") is False
     assert closure.is_closed("child") is False
-    assert open_criteria(closure.criteria("lane"), ref=REF) == ()
+    assert compute_gap(closure.criteria("lane")).owed == ()
 
 
 def test_a_closure_over_a_narrower_criterion_set_disagrees_with_the_gap():
@@ -163,7 +149,7 @@ def test_a_closure_over_a_narrower_criterion_set_disagrees_with_the_gap():
         for issue in facts.values()
         if "criterion" in issue.issue_labels and issue.issue_key not in offending
     )
-    narrow_gap = compute_gap(criteria=narrower, supersession_refs={})
+    narrow_gap = compute_gap(narrower).owed
     assert narrow_gap == ()
     assert closure.is_closed("lane") is False
     assert (narrow_gap == ()) is not closure.is_closed("lane")
@@ -202,7 +188,7 @@ def test_a_record_issue_beside_a_criterion_joins_neither_the_gap_nor_the_roster(
     assert closure.is_closed("lane") is lane_closed
     assert closure.gap("lane-REC-1") == ()
     assert closure.roster("lane-REC-1") == ()
-    assert closure.open_criterion_keys() == open_keys
+    assert tuple(i.issue_key for i in closure.scope_gap().owed) == open_keys
 
 
 @pytest.mark.parametrize("label", sorted(issue_tree.RECORD_KINDS))
@@ -232,7 +218,7 @@ def test_a_criterion_carrying_a_record_label_is_still_read_as_a_criterion(label)
     assert tuple(i.issue_key for i in closure.roster("lane")) == ("lane-AC-1",)
     assert tuple(i.issue_key for i in closure.gap("lane")) == ("lane-AC-1",)
     assert closure.is_closed("lane") is False
-    assert closure.open_criterion_keys() == ("lane-AC-1",)
+    assert tuple(i.issue_key for i in closure.scope_gap().owed) == ("lane-AC-1",)
 
 
 def test_issue_tree_module_imports_no_adapters_and_does_no_io():
@@ -244,6 +230,7 @@ def test_issue_tree_module_imports_no_adapters_and_does_no_io():
         "collections.abc",
         "kodezart.domain.errors",
         "kodezart.domain.gap",
+        "kodezart.types.domain.gap",
         "kodezart.types.domain.scope",
         "kodezart.types.domain.tracker",
     }

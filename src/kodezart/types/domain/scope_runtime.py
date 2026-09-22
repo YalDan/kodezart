@@ -61,6 +61,7 @@ class ScopeWalkObservation(CamelCaseModel):
     rested_lanes: tuple[str, ...] = ()
     unresolved_criteria: tuple[str, ...]
     unreachable_criteria: tuple[UnreachableCriterion, ...]
+    excluded_criteria: tuple[str, ...] = ()
     unapproved_lanes: tuple[str, ...]
     exclusions: tuple[IssueExclusion, ...]
 

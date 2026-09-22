@@ -22,7 +22,7 @@ from kodezart.domain.criterion_evidence import (
     parse_criterion_evidence,
     render_evidence_field,
 )
-from kodezart.domain.errors import ScopePlanRefusalError, ScopeSupersessionReadError
+from kodezart.domain.errors import ScopePlanRefusalError
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_scope_ready import PROJECT, row
@@ -38,7 +38,7 @@ GRADED_TEST = "tests/chains/test_scope_gap_membership.py::test_case"
 #: What the subtree read does with the one criterion under test.
 OWED = "owed"
 DISCHARGED = "discharged"
-REFUSED_UNSUPERSEDED = "refused_unsuperseded"
+EXCLUDED = "excluded"
 REFUSED_BACKLOG = "refused_backlog"
 
 #: One arm per tracker state, and nothing else may be written here: the
@@ -52,8 +52,8 @@ MEMBERSHIP: dict[WorkflowStateKind, str] = {
     WorkflowStateKind.UNSTARTED: OWED,
     WorkflowStateKind.STARTED: OWED,
     WorkflowStateKind.COMPLETED: DISCHARGED,
-    WorkflowStateKind.CANCELED: REFUSED_UNSUPERSEDED,
-    WorkflowStateKind.DUPLICATE: REFUSED_UNSUPERSEDED,
+    WorkflowStateKind.CANCELED: EXCLUDED,
+    WorkflowStateKind.DUPLICATE: EXCLUDED,
 }
 
 
@@ -91,7 +91,7 @@ def test_the_membership_table_carries_one_arm_per_tracker_state():
     assert set(MEMBERSHIP.values()) == {
         OWED,
         DISCHARGED,
-        REFUSED_UNSUPERSEDED,
+        EXCLUDED,
         REFUSED_BACKLOG,
     }
 
@@ -109,12 +109,6 @@ async def test_one_gap_arm_per_criterion_state_over_the_subtree(
             await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
         assert backlog.value.backlog_criteria == (DEEP_CHECK,)
         return
-    if expected == REFUSED_UNSUPERSEDED:
-        with pytest.raises(ScopeSupersessionReadError) as unsuperseded:
-            await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
-        assert unsuperseded.value.criterion_keys == (DEEP_CHECK,)
-        return
-
     selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
 
     owed = {
@@ -125,6 +119,10 @@ async def test_one_gap_arm_per_criterion_state_over_the_subtree(
         assert owed == {LANE: [DEEP_CHECK], NESTED: [DEEP_CHECK]}
     else:
         assert owed == {}
+    if expected == EXCLUDED:
+        assert selection.excluded == (DEEP_CHECK,)
+    else:
+        assert selection.excluded == ()
     fixture.assert_read_only()
 
 
@@ -153,8 +151,8 @@ async def test_a_criterion_never_graded_is_owed_with_no_graded_sha_and_not_refut
     """No grading on record is a criterion still owed, never one knocked down.
 
     The record reaches the gap exactly as the tracker holds it — no verdict
-    is attached to it, and the only state that makes the read demand
-    something more of a criterion is a cancellation, which this is not.
+    is attached to it, and no state of it is read as anything but the state
+    the board holds.
     """
     fixture = await ready_fixture(subtree(kind="unstarted", body=UNGRADED_BODY))
 

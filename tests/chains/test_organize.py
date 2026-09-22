@@ -3039,17 +3039,17 @@ def test_a_call_site_answers_alike_whatever_the_change_stamp_holds(case, variant
     [
         (
             "domain/gap.py",
-            "    return tuple(\n",
+            "    return CriterionGap(\n",
             "    if any(criterion.updated_at for criterion in criteria):\n"
             '        raise ValueError("a criterion changed")\n'
-            "    return tuple(\n",
+            "    return CriterionGap(\n",
         ),
         (
             "services/run_shape.py",
-            "    open_keys = {\n",
+            "    open_keys = {criterion.issue_key",
             "    if any(criterion.updated_at for criterion in criteria):\n"
             '        raise ValueError("a criterion changed")\n'
-            "    open_keys = {\n",
+            "    open_keys = {criterion.issue_key",
         ),
     ],
 )

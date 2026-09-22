@@ -24,7 +24,7 @@ from kodezart.chains import scope_walker
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import ScopeReadError, ScopeSupersessionReadError
+from kodezart.domain.errors import ScopeReadError
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.handlers.agent_handler import _queued_event_payload
 from kodezart.types.domain.dispatch import SelfWriteLedger
@@ -394,24 +394,26 @@ async def test_the_same_lane_reads_at_rest_once_that_descendant_is_done(
     assert ready.unreachable == ()
 
 
-async def test_a_cancelled_hidden_descendant_refuses_instead_of_reading_at_rest(
+async def test_a_cancelled_hidden_descendant_is_excluded_and_named_not_silent(
     implementation: str,
 ) -> None:
     """The graded-away arm the filtered reading cannot tell from silence.
 
     The lane owes nothing OPEN in either arithmetic here, so at-rest alone
-    cannot separate them.  A cancellation with no supersession on record is
-    not a closure, and the subtree read says so by name.  A reading taken
-    over the filtered members never sees this criterion at all and reports
-    the same restful nothing it reports for a graded one.
+    cannot separate them.  A cancellation counts for nothing on its state
+    alone, and the subtree read names the key it set aside rather than
+    letting it leave in silence.  A reading taken over the filtered members
+    never sees this criterion at all and reports the same restful nothing it
+    reports for a graded one.
     """
     tracker = board(implementation, child_state="cancelled", out_of_filter=True)
 
-    with pytest.raises(ScopeSupersessionReadError) as caught:
-        await read_scope_ready(ref=PROJECT, tracker=tracker)
+    ready = await read_scope_ready(ref=PROJECT, tracker=tracker)
 
-    assert caught.value.criterion_keys == (CHILD_CHECK,)
-    assert caught.value.ref == PROJECT
+    assert ready.excluded == (CHILD_CHECK,)
+    assert CHILD_CHECK not in ready.unresolved
+    assert [issue.issue_key for issue in ready.closed] == [LANE]
+    assert ready.ready == ()
 
 
 async def test_the_identical_shape_inside_the_filter_carries_the_child_as_a_member(
@@ -744,7 +746,9 @@ def test_the_unreachable_criteria_are_the_unresolved_ones_the_members_omit() -> 
     produced = scope_walker._unreachable_criteria(closure=closure, members=members)
 
     assert [entry.issue_key for entry in produced] == [
-        key for key in closure.open_criterion_keys() if key not in members
+        criterion.issue_key
+        for criterion in closure.scope_gap().owed
+        if criterion.issue_key not in members
     ]
     assert produced == (
         UnreachableCriterion(

@@ -87,6 +87,12 @@ class ScopeReadySet:
     ``unreachable`` is the part of ``unresolved`` whose own issues the
     scope's members do not include, each with the reason the scope's filter
     missed it. It is on the read for the same reason ``unresolved`` is.
+
+    ``excluded`` carries the keys of the criteria that count for nothing on
+    their state alone. They are returned beside the gap so nothing leaves the
+    reading silently: a caller that saw neither the key in ``unresolved`` nor
+    a statement about it could not tell a set-aside obligation from one that
+    was never there (KOD-794).
     """
 
     scope: ResolvedScope
@@ -97,3 +103,4 @@ class ScopeReadySet:
     closed: tuple[TrackerIssue, ...] = ()
     unresolved: tuple[str, ...] = ()
     unreachable: tuple[UnreachableCriterion, ...] = ()
+    excluded: tuple[str, ...] = ()

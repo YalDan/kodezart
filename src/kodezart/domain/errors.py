@@ -532,18 +532,6 @@ class ScopePlanRefusalError(ScopeReadError):
         super().__init__("scope plan refused; " + "; ".join(details), ref=ref)
 
 
-class ScopeSupersessionReadError(ScopeReadError):
-    """Readiness needs a cancellation reference without an established reader."""
-
-    def __init__(self, *, ref: ScopeRef, criterion_keys: Sequence[str]) -> None:
-        self.criterion_keys = tuple(criterion_keys)
-        super().__init__(
-            "criterion supersession resolution is unavailable: "
-            + ", ".join(self.criterion_keys),
-            ref=ref,
-        )
-
-
 class ScopeNotApprovedError(ScopeReadError):
     """The addressed scope carries no approval, on it or above it.
 
