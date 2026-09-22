@@ -859,17 +859,36 @@ async def test_a_criterion_added_after_the_last_evaluation_refuses_the_lane():
     assert lane.port.issues[ADDED_OWED].state_kind is WorkflowStateKind.UNSTARTED
 
 
-def recording(lane) -> list[tuple[CrossOffState, ...]]:
-    """Every whole verdict handed to the lane's writer, as its states."""
-    states: list[tuple[CrossOffState, ...]] = []
+def _spying_on_cross_offs(lane, record) -> None:
+    """Install one observer over the lane writer's cross-off act.
+
+    *record* is handed the whole verdict once per act and the act then runs
+    for real, so what each projection below reads is what the writer received
+    rather than what a replaced writer was scripted with.
+    """
     writer = lane.loop._lane_state
     written = writer.write_cross_offs
 
     async def observed(*, lane, dispatched, cross_offs):
-        states.append(tuple(cross_off.state for cross_off in cross_offs))
+        record(cross_offs)
         await written(lane=lane, dispatched=dispatched, cross_offs=cross_offs)
 
     writer.write_cross_offs = observed
+
+
+def recording(lane) -> list[tuple[CrossOffState, ...]]:
+    """Every whole verdict handed to the lane's writer, as its states.
+
+    Per act: one tuple appended per call, because a state dropped from one
+    verdict and a whole verdict never written are not the same defect.
+    """
+    states: list[tuple[CrossOffState, ...]] = []
+    _spying_on_cross_offs(
+        lane,
+        lambda cross_offs: states.append(
+            tuple(cross_off.state for cross_off in cross_offs)
+        ),
+    )
     return states
 
 
@@ -1570,19 +1589,20 @@ VACUOUS = {MUTATION_UNWIRED: "unwired"}
 
 
 def reasons_given(lane) -> list[tuple[CrossOffState, UndemonstratedReason | None]]:
-    """Every cross-off the lane's writer received, as state and reading."""
-    received: list[tuple[CrossOffState, UndemonstratedReason | None]] = []
-    writer = lane.loop._lane_state
-    written = writer.write_cross_offs
+    """Every cross-off the lane's writer received, as state and reading.
 
-    async def observed(*, lane, dispatched, cross_offs):
-        received.extend(
+    Flat across acts, where `recording` is per act: this projection is about
+    which reading each cross-off carries and not about how the verdicts were
+    grouped into writes.
+    """
+    received: list[tuple[CrossOffState, UndemonstratedReason | None]] = []
+    _spying_on_cross_offs(
+        lane,
+        lambda cross_offs: received.extend(
             (cross_off.state, cross_off.undemonstrated_reason)
             for cross_off in cross_offs
-        )
-        await written(lane=lane, dispatched=dispatched, cross_offs=cross_offs)
-
-    writer.write_cross_offs = observed
+        ),
+    )
     return received
 
 
