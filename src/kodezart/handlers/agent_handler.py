@@ -37,6 +37,11 @@ def _queued_event_payload(event: AgentEvent) -> dict[str, object]:
     )
 
 
+def _streamed_event_payload(event: AgentEvent) -> dict[str, object]:
+    """Render one event for the live stream: aliased, every ``None`` left off."""
+    return event.model_dump(by_alias=True, exclude_none=True)
+
+
 class AgentHandler:
     """Request handler for agent endpoints.
 
@@ -91,7 +96,7 @@ class AgentHandler:
             stderr_tail=event.stderr_tail,
             exc_info=sys.exc_info(),
         )
-        return event.model_dump(by_alias=True, exclude_none=True)
+        return _streamed_event_payload(event)
 
     async def stream_query(
         self,
@@ -122,7 +127,7 @@ class AgentHandler:
                 output_format=output_format,
                 cache_key=cache_key,
             ):
-                yield event.model_dump(by_alias=True, exclude_none=True)
+                yield _streamed_event_payload(event)
         except Exception as exc:
             yield await self._egress_error(exc)
 
