@@ -4,6 +4,7 @@ from typing import Self
 
 from pydantic import ConfigDict, Field, model_validator
 
+from kodezart.domain.check_chain import counted_checks
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.check_observation import ObservedChecks
@@ -31,6 +32,7 @@ class AuditForgeObservation(CamelCaseModel):
     criterion: TrackerIssue
     recorded_evidence: CriterionEvidence
     required_check_names: frozenset[str]
+    excluded_check_names: frozenset[str] = frozenset()
     checks: ObservedChecks | None
     red: CheckRedObservation | None
     verdict: AuditVerdict
@@ -42,6 +44,22 @@ class AuditForgeObservation(CamelCaseModel):
             self.checks.commit_sha != self.recorded_evidence.graded_sha
         ):
             raise ValueError("the checks belong to another grading SHA")
+        counted = counted_checks(
+            reported=frozenset() if self.checks is None else self.checks.check_names,
+            failed=(
+                frozenset() if self.checks is None else self.checks.failed_check_names
+            ),
+            rostered=self.required_check_names,
+        )
+        if self.checks is None:
+            if self.excluded_check_names:
+                raise ValueError(
+                    "an excluded check requires the roster it was reported in"
+                )
+        elif self.excluded_check_names != counted.excluded:
+            raise ValueError(
+                "the excluded checks are not the ones this roster leaves out"
+            )
         if self.verdict is AuditVerdict.UNVERIFIABLE:
             return self
         if self.checks is None or not self.checks.check_names:
@@ -51,7 +69,7 @@ class AuditForgeObservation(CamelCaseModel):
                 raise ValueError(
                     "a clean verdict requires the complete declared roster"
                 )
-            if not self.checks.checks_passed or (
+            if counted.failures or (
                 self.red is not None
                 and (
                     self.red.red_class is not CheckRedClass.RUNNER_FLAKE
@@ -60,7 +78,7 @@ class AuditForgeObservation(CamelCaseModel):
             ):
                 raise ValueError("a clean forge claim requires a green exact-SHA run")
         elif (
-            self.checks.checks_passed
+            not counted.failures
             or self.red is None
             or self.red.red_class is not CheckRedClass.WORK_DEFECT
             or self.red.checks_passed is not False
