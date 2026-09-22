@@ -13,6 +13,8 @@ from kodezart.core.protocols import LaneStateWriter
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.criterion_cross_off import (
     CARRIED_REASON,
+    LAPSE_POINTER,
+    LAPSE_REASON,
     UNDEMONSTRATED_REASON,
     evaluation_observation,
 )
@@ -1539,14 +1541,19 @@ UNTOUCHED_PREFIX = "docs/"
 TOUCHED_PREFIX = "lane-1.py"
 
 
-def declaring(prefix: str) -> dict:
-    """The first grading's echo: one criterion passes and declares its cost."""
+def declaring(prefix: str, rederivation_class: str = "expensive") -> dict:
+    """The first grading's echo: one criterion passes and declares its cost.
+
+    The class is the second variable, because what a moved prefix costs the
+    loop depends on it: an expensive grading goes back to the session and an
+    observed one cannot, and both readings start from this one echo.
+    """
     return criteria_echo(
         keys=OWED_KEYS,
         passed={CARRIED},
         declared={
             CARRIED: {
-                "rederivationClass": "expensive",
+                "rederivationClass": rederivation_class,
                 "exercisedPaths": [prefix],
             }
         },
@@ -1711,3 +1718,71 @@ async def test_an_expensive_grading_whose_paths_moved_is_dispatched_again():
     # The re-derived grading declares nothing this time, so it is cheap again:
     # the later declaration wins, exactly as the model's own reading says.
     assert rows[CARRIED].rederivation_class is RederivationClass.cheap
+
+
+async def test_an_observed_grading_whose_paths_moved_is_taken_back_as_lapsed():
+    """The same prefix, one class later: the loop takes the grading back instead.
+
+    The declared class rests on an observation somebody performed, so the loop
+    cannot re-derive it: when the commit record between its own sha and the new
+    head reaches beneath a prefix it exercised, the verdict stops standing and
+    there is nothing this loop can do to reach it again. The criterion is
+    therefore neither asked again nor left finished — it goes back out of its
+    finished state, owed to whoever can observe it.
+
+    This is the loop-side join the writer's take-back hangs off (KOD-413,
+    KOD-698): the lapsed reading the standing partition produces has to reach
+    the write, or the sub-issue sits finished at a sha whose tree has moved on
+    and nothing on the board says so. So every hop is read here from the board
+    and from the iteration the gate saw:
+
+    - the session is not asked about it, because a lapse is not re-derivable;
+    - its sub-issue is back out of the finished state;
+    - its Evidence row keeps the sha it WAS graded at — not the new head — and
+      carries the pointer that says the grading it names has lapsed, which is
+      the only pair that shows the gap between what was graded and where the
+      branch went;
+    - the subject reads open through the rollup over its criteria, while the
+      two criteria this iteration did finish stay finished, so the openness is
+      this one criterion's and not the whole roster going back;
+    - the roster the gate read carries it as not passing, with the harness's
+      own lapse reason rather than a session's prose, so the denominator never
+      shrinks to the two the session was handed.
+    """
+    lane = Lane(
+        evaluations=[
+            declaring(TOUCHED_PREFIX, rederivation_class="observed"),
+            criteria_echo(keys=OWED_KEYS[1:], passed=set(OWED_KEYS[1:])),
+        ],
+        max_iterations=2,
+    )
+    events = await lane.run()
+
+    assert len(lane.executor.evaluation_prompts) == 2
+    assert check_of(CARRIED) in lane.executor.evaluation_prompts[0]
+    assert check_of(CARRIED) not in lane.executor.evaluation_prompts[1]
+
+    assert lane.port.issues[CARRIED].state_kind is WorkflowStateKind.UNSTARTED
+    lapsed = evidence_of(lane, CARRIED)
+    assert lapsed.graded_sha == lane.repo.shas[0]
+    assert lane.repo.shas[0] != lane.repo.head
+    assert LAPSE_POINTER in lapsed.test
+
+    assert closure(lane.port).is_closed(SUBJECT) is False
+    assert all(
+        lane.port.issues[key].state_kind is WorkflowStateKind.COMPLETED
+        for key in OWED_KEYS[1:]
+    )
+
+    iterations = [
+        event for event in events if isinstance(event, WorkflowIterationEvent)
+    ]
+    assert len(iterations) == 2
+    rows = {
+        result.criterion_id: result
+        for result in iterations[1].evaluation.criteria_results
+    }
+    assert set(rows) == set(OWED_KEYS)
+    assert (rows[CARRIED].passed, rows[CARRIED].reasoning) == (False, LAPSE_REASON)
+    assert rows[CARRIED].rederivation_class is RederivationClass.observed
+    assert rows[CARRIED].exercised_paths == (TOUCHED_PREFIX,)
