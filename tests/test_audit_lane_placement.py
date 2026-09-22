@@ -14,6 +14,12 @@ package, derived by walking it, not a hand-listed set of audit modules —
 a copy planted in a module no list names is exactly the copy a list
 misses.  The walk is textual and executes nothing; the controls at the
 bottom plant each shape the guard is for and prove it reds.
+
+A second statement of an owned symbol has three spellings, not two, and
+all three are read: a ``class`` under the owned name, an assignment onto
+it, and an import alias onto it.  The third used to pass every assertion
+here — the type checker the gate runs refuses it, so the tree could not
+carry one, but a guard that says it sees rebinds has to see that one too.
 """
 
 import ast
@@ -143,13 +149,52 @@ def _is_protocol(node: ast.ClassDef, names: frozenset[str]) -> bool:
     return any(isinstance(base, ast.Name) and base.id in names for base in node.bases)
 
 
+def _source_module(node: ast.ImportFrom | ast.Import, alias: ast.alias) -> str | None:
+    """Which module *alias* is imported out of, as a path inside the package.
+
+    ``None`` when the import names nothing under ``kodezart``, which is a
+    source no owning module can be and therefore never the owner.
+    """
+    dotted = node.module if isinstance(node, ast.ImportFrom) else alias.name
+    if dotted is None or not dotted.startswith("kodezart."):
+        return None
+    return "/".join(dotted.split(".")[1:]) + ".py"
+
+
+def _import_rebindings(node: ast.ImportFrom | ast.Import) -> set[str]:
+    """Each owned name this import node binds to another module's symbol.
+
+    ``import ... as`` binds a word exactly as ``=`` does, so the two are one
+    evasion under two spellings: ``from elsewhere import Other as
+    SpecFinding`` hands the rest of the module another lane's class under
+    the owned name with no assignment and no ``class`` statement in the
+    file at all.
+
+    What is compared is the module the name comes OUT of against the module
+    that owns it, so importing an owned symbol from its owner is not a
+    rebind however it is spelled, and only a source other than the owner is
+    reported.
+    """
+    names: set[str] = set()
+    for alias in node.names:
+        bound = alias.asname
+        if bound is None or bound not in OWNERS:
+            continue
+        if _source_module(node, alias) != OWNERS[bound]:
+            names.add(bound)
+    return names
+
+
 def _rebindings(tree: ast.Module) -> frozenset[str]:
-    """Each owned name this module binds at its top level by assignment.
+    """Each owned name this module binds at its top level, and not by class.
 
     A ``class`` is not the only way to state a symbol a second time:
     ``SpecFinding = _LocalStub`` leaves the ``ImportFrom`` in place for the
     import assertion to find and hands the rest of the module a local stub
-    under the owned name, which is the same evasion in one line.
+    under the owned name, which is the same evasion in one line.  An import
+    alias onto the owned name is the third spelling of it, read by
+    ``_import_rebindings``, because the binding is what matters and not the
+    statement that does it (KOD-540).
 
     Only a binding at the module's own top level shadows the name the
     module reads, so the scan stops there: a local variable inside a
@@ -161,6 +206,9 @@ def _rebindings(tree: ast.Module) -> frozenset[str]:
             targets: list[ast.expr] = list(node.targets)
         elif isinstance(node, ast.AnnAssign):
             targets = [node.target]
+        elif isinstance(node, ast.ImportFrom | ast.Import):
+            names.update(_import_rebindings(node))
+            continue
         else:
             continue
         names.update(
@@ -371,6 +419,42 @@ def test_a_stub_rebound_to_the_owned_name_reds_the_single_declaration_assertion(
         "SpecFinding = _LocalSpecFinding\n"
     )
     assert _redeclarations(tmp_path) == {"rebind.py": [SpecFinding.__name__]}
+
+
+def test_an_import_alias_onto_the_owned_name_reds_the_single_declaration_assertion(
+    tmp_path: Path,
+) -> None:
+    """The third spelling of the rebind, and the one that needs no statement.
+
+    No assignment and no ``class`` anywhere in the module: the import itself
+    binds the owned word to another lane's class, and every read below it
+    reaches that class.  A scan over the two assignment forms alone reported
+    a module of this shape clean.  Planted on this control's own tree rather
+    than on an authored module, so what is demonstrated is the detector
+    answering and not the real tree happening to stay clean.
+    """
+    (tmp_path / "alias.py").write_text(
+        "from kodezart.types.domain.write_back import (\n"
+        "    WriteBackFinding as SpecFinding,\n"
+        ")\n"
+    )
+    assert _redeclarations(tmp_path) == {"alias.py": [SpecFinding.__name__]}
+
+
+def test_an_import_of_an_owned_symbol_from_its_owner_is_not_a_rebind(
+    tmp_path: Path,
+) -> None:
+    """The alias arm reads the source module, so a re-export is not a rebind.
+
+    Without this the arm could report every aliased import and still pass
+    the control above, which would red the shipped tree the moment a module
+    imported an owned symbol under a shorter word from the module that owns
+    it.
+    """
+    (tmp_path / "consumer.py").write_text(
+        "from kodezart.types.domain.organize import SpecFinding as SpecFinding\n"
+    )
+    assert _redeclarations(tmp_path) == {}
 
 
 def test_a_planted_role_copy_under_another_name_reds_the_shape_assertion(
