@@ -46,6 +46,7 @@ from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.lane_entry import recorded_branches
 from kodezart.domain.lane_record import associated_branches
 from kodezart.domain.organize import stage_rows
+from kodezart.domain.stall_report import DO_NOT_MERGE_PREFIX
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services import scope_runtime
 from kodezart.services.agent_service import AgentService
@@ -53,6 +54,8 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.agent import (
+    GENERATED_CRITERIA_SCHEMA,
+    TICKET_DRAFT_SCHEMA,
     ResultEvent,
     SystemEvent,
     TicketDraftOutput,
@@ -4498,6 +4501,8 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
     not the branch's tip, and the delivered head therefore tells the best
     iteration from the latest one by content.
     """
+    from kodezart.types.domain.native_delivery import CompletedLaneDelivery
+
     repos = WalkRepos(url=FORGE_ORIGIN)
     port = board(lanes=("A", "B"))
     # Somebody moved A's own issue while it was being worked. The put-back is
@@ -4631,6 +4636,41 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
             for call in merger.calls
             if call["method"] == "consolidate" and call["feature_branch"] == deliverable
         ] == [best_iteration_ref(deliverable)]
+        # The loop branch was never consolidated, and it is associated all the
+        # same: the record carries it beside the deliverable the stall exit
+        # landed on, so re-entry and cleanup have both names to work over.
+        assert record.branch not in [
+            call["source_branch"]
+            for call in merger.calls
+            if call["method"] == "consolidate"
+        ]
+        assert {record.branch, deliverable} <= associated_branches(record=record)
+        # Nothing wrote or removed an artifact directory on either branch: no
+        # persist and no clean is reached on this arm at all, and the walk over
+        # the sources is what keeps any other module from writing one.
+        assert harness.artifacts.persist_calls == []
+        assert harness.artifacts.clean_calls == []
+        # The stall's own pull request is the do-not-merge one, and it says so
+        # through the delivery's outcome, the marker a tool reads, rather than
+        # through its title: the title prefix belongs to the authored arm and
+        # reaches nothing the forge saw here (KOD-327).
+        stalled = [
+            event.event.delivery.result
+            for event in events
+            if isinstance(event, ScopeLaneEvent)
+            and isinstance(event.event, LaneDeliveryEvent)
+            and event.lane_key == "A"
+            and isinstance(event.event.delivery, CompletedLaneDelivery)
+        ]
+        assert [result.stalled for result in stalled] == [True]
+        assert [result.outcome for result in stalled] == [
+            WorkflowOutcome.stalled_pr_opened
+        ]
+        assert [result.pr.number for result in stalled] == [record.pr.number]
+        assert all(
+            DO_NOT_MERGE_PREFIX not in wire.creates[0][field]
+            for field in ("title", "body", "head", "base")
+        )
         # The walk went on: B closed its own criterion in this same invocation.
         assert port.issues["B/check"].state_kind is WorkflowStateKind.COMPLETED
 
@@ -5143,6 +5183,18 @@ async def test_a_closed_lane_whose_record_cannot_be_read_is_not_offered_again(
 ACCEPTANCE_PRIORITIES = {"A": IssuePriority.URGENT, "C": IssuePriority.HIGH}
 
 
+#: The two wire shapes a run that GENERATED its subject or its criteria would
+#: have asked for, read off the schemas the production sites dispatch. A
+#: re-entering lane asks for neither, because both are already on the tracker.
+GENERATING_SHAPES: dict[str, frozenset[str]] = {
+    name: frozenset(schema["properties"])
+    for name, schema in (
+        ("TICKET_DRAFT_SCHEMA", TICKET_DRAFT_SCHEMA),
+        ("GENERATED_CRITERIA_SCHEMA", GENERATED_CRITERIA_SCHEMA),
+    )
+}
+
+
 async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
     """Two processes over one board, one remote and one origin (KOD-832).
 
@@ -5239,7 +5291,33 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
                 *one_check_echoes("B"),
             ],
         )
-        events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+        with structlog.testing.capture_logs() as second_logs:
+            events = await bounded_walk(second, job="second-job", origin=FORGE_ORIGIN)
+
+        # Nothing under the artifact directory took part in either process: no
+        # persist and no clean was reached, so what run two entered on is the
+        # board, the repositories and the origin and nothing on a branch. The
+        # walk over the sources is what keeps any module from reading one.
+        for harness in (first, second):
+            assert harness.artifacts.persist_calls == []
+            assert harness.artifacts.clean_calls == []
+        # Re-entry is the ordinary path, not a recovered one: nothing in the
+        # second process reported at warning or above.
+        assert [
+            record
+            for record in second_logs
+            if record.get("log_level") in ("warning", "error", "critical")
+        ] == []
+        # And nothing was generated to re-enter with: no session asked for the
+        # ticket-draft shape or the criteria-generation shape, read off the
+        # wire schemas themselves rather than named here.
+        assert [
+            name
+            for name, shape in GENERATING_SHAPES.items()
+            if any(
+                shape <= set(properties) for properties in second.executor.schema_calls
+            )
+        ] == []
 
         # Six ticks, bounded and observed: A offered for a delivery its record
         # already carries and rested, C fired, C offered for the delivery that
