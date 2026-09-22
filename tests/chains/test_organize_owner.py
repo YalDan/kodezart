@@ -520,6 +520,9 @@ async def test_human_approval_arriving_during_authorship_ends_organize_before_wr
     with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
         await run_owner(owner)
     assert not [(name, args) for name, args in board.calls if name == "save_issue"]
+    # The approval reading precedes every write, so the refusal leaves the
+    # round's declared set released and nothing held.
+    assert board.grants() == []
 
 
 async def test_cancelled_author_never_reaches_a_tracker_mutation(monkeypatch):
@@ -739,6 +742,9 @@ async def test_an_approved_scope_admits_nobody_to_grooming_and_opens_no_session(
     assert report.halt is None
     assert executor.calls == []
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+    # The reading precedes the round's lease, so an approved scope costs the
+    # pre-approval row not even a lease record.
+    assert board.lease_creations() == []
 
 
 @pytest.mark.parametrize(

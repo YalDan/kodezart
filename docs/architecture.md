@@ -825,6 +825,13 @@ by approval and by its gate, a pre-approval phase by its gate while approval
 is absent. The same predicate decides the work roster, the marker roster and
 every author write, so a member that was never admitted is never written to
 and an approval withdrawn mid-session refuses the write it was about to make.
+That reading precedes the round's lease, so an approved scope costs the
+pre-approval row no lease at all, and it precedes every write, so approval
+landing during one of its sessions refuses the write that follows and releases
+the round's declared set with it. Those two readings — no pre-approval write
+after approval, no act of a run before it — are the whole of the boundary: no
+member is both under a live run and under the pre-approval row's lease, and
+neither side reads a mark of the other.
 
 ## Workflow Pipeline
 
