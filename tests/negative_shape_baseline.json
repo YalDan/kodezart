@@ -183,6 +183,7 @@
   "tests/domain/test_dispatch_decision.py": 14,
   "tests/domain/test_dispatch_predicate.py": 36,
   "tests/domain/test_dispatch_rank_inputs.py": 48,
+  "tests/domain/test_done_arithmetic_sites.py": 23,
   "tests/domain/test_escalation_ageing.py": 26,
   "tests/domain/test_fire_plateau.py": 16,
   "tests/domain/test_fire_spec.py": 5,
@@ -3020,6 +3021,19 @@
    "test_every_estimate_word_is_controlled",
    "test_the_guard_reddens_on_a_size_derived_rank_input",
    "test_the_plateau_bound_is_a_tick_count_and_not_a_rank_input"
+  ],
+  "tests/domain/test_done_arithmetic_sites.py": [
+   "test_the_scanned_vocabulary_is_the_rules_own_terminal_set",
+   "test_a_name_bound_to_a_comparison_is_not_an_alias_of_the_member",
+   "test_the_closure_arithmetic_is_declared_once_and_only_there",
+   "test_every_closure_reader_imports_the_arithmetic_from_its_owner",
+   "test_a_re_exported_arithmetic_name_is_reported",
+   "test_one_body_decides_finishedness_from_a_criterion_state",
+   "test_every_exemption_names_a_site_the_walk_reports",
+   "test_every_exemption_carries_the_reason_it_is_one",
+   "test_a_second_body_deciding_finishedness_is_reported",
+   "test_the_finished_state_is_written_only_onto_a_criterion_identity",
+   "test_what_a_planted_move_addresses_is_read_off_its_own_parameter"
   ],
   "tests/domain/test_escalation_ageing.py": [
    "test_each_count_arm_names_its_actual_limit",

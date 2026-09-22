@@ -3,6 +3,7 @@
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import GitService, PRStateReader, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.gap import compute_gap
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import AuditVerdict
@@ -13,7 +14,10 @@ from kodezart.types.domain.audit_terminal import (
 )
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.pr_state import PRLifecycle
-from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+from kodezart.types.domain.tracker import TrackerIssue
+
+#: The label the criterion sub-issues of a fire carry.
+CRITERION_LABEL = "criterion"
 
 
 class AuditTerminalReader:
@@ -21,6 +25,11 @@ class AuditTerminalReader:
 
     The full sweep's selection, claim execution and publication remain separate.
     Read failures or changing observations raise; none is a healthy terminal.
+
+    Whether the family owes anything is the subtree arithmetic's own reading,
+    consulted here rather than restated: a criterion the board closed without
+    an established supersession is owed, which is the answer every other
+    reader of a finished state gets (KOD-443).
     """
 
     def __init__(
@@ -50,6 +59,15 @@ class AuditTerminalReader:
             )
         if any(row.parent_key != issue_key for row in rows):
             raise AuditClaimReadError("terminal criterion family has another parent")
+        # The gap arithmetic refuses a row that is not a criterion sub-issue,
+        # and that refusal is a programming error rather than a read failure.
+        # The port documents that it returns the currently labelled direct
+        # criterion sub-issues; this is where that is checked, so a family
+        # holding anything else is answered as the read failure it is.
+        if any(CRITERION_LABEL not in row.issue_labels for row in rows):
+            raise AuditClaimReadError(
+                "terminal criterion family holds a non-criterion row"
+            )
         return tuple(sorted(rows, key=lambda row: row.issue_key))
 
     async def _head(self, repository: str, branch: str) -> str | None:
@@ -65,8 +83,8 @@ class AuditTerminalReader:
         if issue.issue_key != request.issue_key:
             raise AuditClaimReadError("terminal read returned another issue")
         criteria = await self._criteria(request.issue_key)
-        if issue.state_name != self._review_state or any(
-            row.state_kind is not WorkflowStateKind.COMPLETED for row in criteria
+        if issue.state_name != self._review_state or compute_gap(
+            criteria=criteria, supersession_refs={}
         ):
             raise AuditClaimReadError("the expected review terminal is not established")
         comment, record = await self._records.read(

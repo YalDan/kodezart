@@ -1517,6 +1517,7 @@ GAP_COMPUTATION_MODULES = frozenset(
         "domain/tally_record.py",
         "main.py",
         "services/alarm_supervisor.py",
+        "services/audit_terminal.py",
         "services/barren_record_signals.py",
         "services/escalation_signals.py",
         "services/mandate_graph.py",
