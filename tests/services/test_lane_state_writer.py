@@ -2,8 +2,9 @@
 
 import dataclasses
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
+from typing import NamedTuple
 
 import pytest
 import structlog
@@ -51,7 +52,11 @@ from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
-from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
+from kodezart.types.domain.criterion_lifecycle import (
+    CriterionCrossOff,
+    CrossOffState,
+    UndemonstratedReason,
+)
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -3019,3 +3024,139 @@ async def test_a_lapsed_and_a_refuted_lane_check_share_a_state_not_a_stream():
     ]
     assert [event.subject_key for event in refutations(refuted_port)] == [LANE_CHECK]
     assert refutations(lapsed_port) == []
+
+
+# ---------------------------------------------------------------------------
+# Every member of the state: what it leaves on the board, and at which sha.
+# ---------------------------------------------------------------------------
+
+#: The sha the criterion was first finished at is ``STANDING_SHA`` above; this
+#: is the sha of the attempt whose verdict is under test: forty hex digits,
+#: every one of them used, so a row that lost, reordered or recased a byte
+#: reads back as another commit.
+ATTEMPT_SHA = "0123456789abcdef" * 2 + "01234567"
+
+
+def standing_cross_offs(key: str) -> tuple[CriterionCrossOff, ...]:
+    """The grading that finished *key* first, as the loop hands it back."""
+    return cross_offs_for(
+        results=graded([key]),
+        graded_sha=STANDING_SHA,
+        observation=evaluation_observation(session_id="eval-session", iteration=1),
+        reasons=NO_WITHDRAWALS,
+    )
+
+
+def attempt_cross_offs(
+    key: str, *, failed: bool = False, demonstrated: bool = True, lapsed: bool = False
+) -> tuple[CriterionCrossOff, ...]:
+    """The later attempt's verdict on *key*, built by the one construction site."""
+    return cross_offs_for(
+        results=graded([key], failed=[key] if failed else []),
+        graded_sha=ATTEMPT_SHA,
+        observation=evaluation_observation(session_id="eval-session", iteration=2),
+        reasons=NO_WITHDRAWALS if demonstrated else withheld([key]),
+        standing=standing_cross_offs(key) if lapsed else (),
+        reading=(
+            {criterion_ref(CriterionId(key)): GradedState.lapsed} if lapsed else {}
+        ),
+    )
+
+
+class BoardEffect(NamedTuple):
+    """What one state's write leaves on its criterion and on the lane's stream.
+
+    ``evidence`` says whether the Evidence row now reads back as the written
+    grading (True) or the body is byte-identical to before (False); ``state``
+    is the state the board then holds the criterion in, None for unchanged;
+    ``refutations`` is how many refutation events the stream carries.
+    """
+
+    build: Callable[[str], tuple[CriterionCrossOff, ...]]
+    evidence: bool
+    state: WorkflowStateKind | None
+    refutations: int
+
+
+#: Keyed by member, so a member added to the state raises here rather than
+#: passing over a table that never said what it leaves behind.
+CROSS_OFF_EFFECTS: dict[CrossOffState, BoardEffect] = {
+    CrossOffState.passed: BoardEffect(
+        build=attempt_cross_offs,
+        evidence=True,
+        state=WorkflowStateKind.COMPLETED,
+        refutations=0,
+    ),
+    CrossOffState.failed: BoardEffect(
+        build=lambda key: attempt_cross_offs(key, failed=True),
+        evidence=True,
+        state=WorkflowStateKind.UNSTARTED,
+        refutations=1,
+    ),
+    CrossOffState.lapsed: BoardEffect(
+        build=lambda key: attempt_cross_offs(key, lapsed=True),
+        evidence=True,
+        state=WorkflowStateKind.UNSTARTED,
+        refutations=0,
+    ),
+    CrossOffState.undemonstrated: BoardEffect(
+        build=lambda key: attempt_cross_offs(key, demonstrated=False),
+        evidence=False,
+        state=None,
+        refutations=0,
+    ),
+}
+
+
+@pytest.mark.parametrize("member", list(CrossOffState), ids=lambda m: m.value)
+async def test_each_cross_off_state_leaves_its_graded_sha_or_writes_nothing(member):
+    """Each state, written through the writer, is read back off the board.
+
+    The criterion is first finished at one commit, then an attempt at another
+    commit writes a verdict in the state under test. What the board holds
+    afterwards is the read-back of that state: its Evidence row parses back
+    to the grading the verdict carried, sha byte for byte and forty hex, and
+    its state and the lane's stream say which member it was. A grading that
+    demonstrated nothing leaves the sub-issue byte-identical and in the state
+    it was in, and the verdict it did not write is on one log line instead.
+    """
+    effect = CROSS_OFF_EFFECTS[member]
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    key = CRITERIA[0]
+    await tick(lane_state, sha=STANDING_SHA, keys=[key])
+    before = port.issues[key]
+    assert before.state_kind is WorkflowStateKind.COMPLETED
+    cross_offs = effect.build(key)
+    assert [cross_off.state for cross_off in cross_offs] == [member]
+
+    with structlog.testing.capture_logs() as logs:
+        await lane_state.write_cross_offs(
+            lane=binding(), dispatched=dispatched([key]), cross_offs=cross_offs
+        )
+
+    after = port.issues[key]
+    written = cross_offs[0].evidence
+    if effect.evidence:
+        read_back = parse_criterion_evidence(after.body)
+        assert read_back == written
+        assert read_back.graded_sha == written.graded_sha
+        assert len(read_back.graded_sha) == 40
+        assert set(read_back.graded_sha) <= set("0123456789abcdef")
+        assert without_evidence(after.body) == without_evidence(before.body)
+    else:
+        assert after.body == before.body
+    assert after.state_kind is (effect.state or before.state_kind)
+    assert [event.graded_sha for event in refutations(port)] == (
+        [written.graded_sha] * effect.refutations
+    )
+    unwritten = [
+        (record["state"], record["graded_sha"])
+        for record in logs
+        if record.get("event") == "criterion_not_crossed_off"
+    ]
+    # A verdict that is not a pass is named, with its sha, on one log line.
+    if member is CrossOffState.passed:
+        assert unwritten == []
+    else:
+        assert unwritten == [(member.value, written.graded_sha)]
