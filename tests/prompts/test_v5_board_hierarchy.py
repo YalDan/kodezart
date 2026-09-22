@@ -17,6 +17,7 @@ import tomllib
 import pytest
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
+from kodezart.types.domain.organize import RefusalKind
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.sets import OPUS_SET, V5_SET, render_v5_case, v5_registry
 from tests.prompts.test_v5_fragments import (
@@ -53,6 +54,32 @@ SENTENCES = (
 #: the board misplaces, so declaring it no reorganisation contradicts the
 #: standard it now states.
 RETIRED_CLAIM = "not a reorganisation"
+
+#: The two refusal kinds, spelled by the roster the routing switch reads
+#: rather than typed a second time here: the words below are load-bearing
+#: because ``domain/organize.py`` routes on them, so they are taken from
+#: the declaration and not from a copy of it.
+SPEC_GAP = RefusalKind.SPEC_GAP.value
+HUMAN_DECISION = RefusalKind.HUMAN_DECISION.value
+
+#: The sentence that tells the judge how to CLASSIFY a refusal at all.
+#: Pinned whole, because reporting every repairable gap AS a human decision
+#: is a rewrite of this one sentence that routes every refusal to ESCALATE —
+#: strictly more than a misplacement misrouted, and nothing else states it.
+CLASSIFYING_SENTENCE = (
+    "A not_buildable result names the invented decision and distinguishes a "
+    f"repairable {SPEC_GAP} from a {HUMAN_DECISION}."
+)
+
+#: The sentence that APPLIES that classification to a misplacement, up to
+#: its terminator. The colon is part of the pin: without it the sentence is
+#: only required to START this way, and an appended alternative — "or a
+#: human_decision, whichever you judge it to be" — leaves a containment
+#: check satisfied while licensing the halt this criterion exists to
+#: prevent.
+MISPLACEMENT_SENTENCE = (
+    f"An issue outside that tree is not_buildable with a repairable {SPEC_GAP}:"
+)
 
 
 def member_files(set_name: str) -> list[str]:
@@ -139,13 +166,22 @@ def test_the_judge_names_misplacement_as_a_repairable_gap() -> None:
     misplacement classed as a human decision stops the stage instead of
     reaching the author. Read off the prose, so rewrapping the member is
     not a change to what it says.
+
+    Both sentences that decide that route are pinned, and the applying one
+    is pinned CLOSED. A sentence required only to be CONTAINED can be
+    extended: offering the judge the other refusal kind as an alternative
+    leaves the words up to the gap in place and hands back the halt. So the
+    pin runs to the terminator, and the other kind is required to be
+    mentioned exactly once in the whole rendered member — in the sentence
+    that keeps the two kinds apart, which is asserted here beside it,
+    because collapsing THAT sentence routes every refusal to ESCALATE and
+    no other member states it.
     """
     rendered = prose(render_v5_case(PromptKey.ORGANIZE_ASSESS.value))
-    assert (
-        "An issue outside that tree is not_buildable with a repairable spec_gap"
-        in rendered
-    )
+    assert MISPLACEMENT_SENTENCE in rendered
     assert "name the misplacement and the field that carries it" in rendered
+    assert CLASSIFYING_SENTENCE in rendered
+    assert rendered.count(HUMAN_DECISION) == 1
 
 
 def test_grooming_is_no_longer_declared_a_non_reorganisation() -> None:
