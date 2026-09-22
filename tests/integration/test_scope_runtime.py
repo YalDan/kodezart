@@ -78,7 +78,7 @@ from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
-from kodezart.types.domain.scope_terminal import ScopeLaneEntry
+from kodezart.types.domain.scope_terminal import ScopeLaneEntry, ScopeTerminalEvent
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
@@ -4098,6 +4098,23 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
         # And the stall exit's pull request is on A's record, from A's own head.
         record = await lane_record(port, "A")
         assert record.pr is not None
+        # The walk's own terminal event, read at last: the lane that halted on
+        # the bound is reported as a lane that is not done, so the scope cannot
+        # derive the finished outcome from it, while B — which closed its own
+        # criterion in this same invocation — is done in the same report. The
+        # two recorded columns of A's row are re-read from the board at the
+        # exit, so they are compared with A's record as the board holds it now
+        # and not with anything the walk carried.
+        terminal = events[-1]
+        assert isinstance(terminal, ScopeTerminalEvent)
+        assert terminal.outcome is WorkflowOutcome.scope_stopped_short
+        assert [(entry.issue, entry.done) for entry in terminal.lanes] == [
+            ("A", False),
+            ("B", True),
+        ]
+        assert terminal.lanes[0] == ScopeLaneEntry(
+            issue="A", done=False, branch=record.branch, pr=record.pr
+        )
         deliverable = recorded_branches(record=record).deliverable_branch
         assert [create["head"] for create in wire.creates] == [
             deliverable,

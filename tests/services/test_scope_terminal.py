@@ -9,12 +9,16 @@ handed.
 
 import ast
 import inspect
+import sys
+import textwrap
 from collections.abc import Callable
+from typing import get_type_hints
 
 import pytest
 import structlog.testing
 
 from kodezart.core.errors import LaneRosterArityError, TrackerUnavailableError
+from kodezart.core.protocols import OutboundContentGate, ScopeStatusUpdates
 from kodezart.domain.errors import (
     LaneRecordReadError,
     OutboundContentBlockedError,
@@ -29,6 +33,7 @@ from kodezart.domain.scope_terminal import (
 from kodezart.services import lane_reports
 from kodezart.services import scope_terminal as terminal_module
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.scope_runtime import ScopeWorkflowEngine
 from kodezart.services.scope_terminal import ScopeTerminal
 from kodezart.types.domain import scope_terminal as scope_terminal_types
 from kodezart.types.domain.branch import BranchRole
@@ -64,6 +69,7 @@ from tests.fakes import (
     PassThroughGate,
     make_tracker_issue,
 )
+from tests.name_resolution import parameters_of
 from tests.services.test_scope_runtime import OPERATION
 
 PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
@@ -865,3 +871,69 @@ def test_a_body_that_quotes_the_heading_mid_sentence_is_not_a_report() -> None:
     extra post over a container whose report had not changed.
     """
     assert latest_scope_report([f"see {SCOPE_STATUS_HEADING}..."]) is None
+
+
+def _terminal_attribute() -> str:
+    """The engine's own name for the collaborator it hands the ready read to.
+
+    Read off the engine rather than spelled: the parameter whose annotation is
+    this class, and then the attribute that parameter is stored on.
+    """
+    built = ast.parse(textwrap.dedent(inspect.getsource(ScopeWorkflowEngine.__init__)))
+    (definition,) = built.body
+    assert isinstance(definition, ast.FunctionDef)
+    parameter = next(
+        argument.arg
+        for argument in parameters_of(definition)
+        if argument.annotation is not None
+        and ast.unparse(argument.annotation) == ScopeTerminal.__name__
+    )
+    return next(
+        target.attr
+        for node in ast.walk(definition)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == parameter
+        for target in node.targets
+        if isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+    )
+
+
+def test_the_terminal_is_handed_the_ready_read_and_nothing_else():
+    """Nothing the invocation remembered reaches here, asserted over the seam.
+
+    The class docstring's claim is invisible to every behavioural test: a
+    value the walk carried would normally equal the value the tick's reading
+    carries, so a terminal handed the walk's memory as a second argument would
+    report exactly what this one reports. So the seam is read instead — the
+    two signatures, whose every name is read off the objects they belong to,
+    and the walker's one call of it, which hands the tick's ready read by
+    keyword and hands nothing else.
+    """
+    assert get_type_hints(ScopeTerminal.report) == {
+        "ready": ScopeReadySet,
+        "return": ScopeTerminalEvent,
+    }
+    assert get_type_hints(ScopeTerminal.__init__) == {
+        "records": LaneRecordReader,
+        "status": ScopeStatusUpdates,
+        "gate": OutboundContentGate,
+        "return": type(None),
+    }
+    receiver = f"self.{_terminal_attribute()}"
+    walker = ast.parse(inspect.getsource(sys.modules[ScopeWorkflowEngine.__module__]))
+    calls = [
+        node
+        for node in ast.walk(walker)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == ScopeTerminal.report.__name__
+        and ast.unparse(node.func.value) == receiver
+    ]
+
+    assert len(calls) == 1
+    (call,) = calls
+    assert call.args == []
+    assert [keyword.arg for keyword in call.keywords] == ["ready"]
