@@ -248,16 +248,27 @@ def _family_dependents(root: Path) -> dict[str, list[str]]:
     return found
 
 
-#: A checkbox once written, and the character class a pattern spells one with.
-CHECKBOX = re.compile(r"\[[ xX]{1,4}\]")
+#: A checkbox once written, and the two ways a pattern spells the marks it
+#: accepts: a character class, and an alternation group. Both, because the
+#: predecessor detector this clause replaced was caught on the alternation
+#: spelling — a pattern reading `\[( |x)\]` scans for a checkbox exactly as
+#: one reading `\[[ x]\]` does, and a walk that knew only the class would
+#: have reported the second and stayed silent on the first (KOD-651).
+CHECKBOX = re.compile(r"\[(?:[ xX]{1,4}\]|\(\s*[ xX]\s*\|\s*[ xX]\s*\)\\?\])")
 
 
 def checkbox_shapes(text: str) -> list[str]:
-    """Each complete checkbox shape in *text*: `[ ]`, `[x]`, or a class naming both."""
+    """Each complete checkbox shape in *text*: `[ ]`, `[x]`, or a pair of marks.
+
+    A pair of marks rather than one: `[X]` on its own is also a one-letter
+    subscript, so a three-character hit counts and a longer one counts when it
+    names both marks — spelled as a class containing the blank, or as an
+    alternation, which is what the pipe reads.
+    """
     return [
         found.group(0)
         for found in CHECKBOX.finditer(text)
-        if len(found.group(0)) == 3 or " " in found.group(0)
+        if len(found.group(0)) == 3 or " " in found.group(0) or "|" in found.group(0)
     ]
 
 
@@ -315,6 +326,9 @@ def test_no_module_scans_for_checkbox_syntax() -> None:
     this is STRICTER than the clause it keeps, and it is a lint approximation
     rather than a decision procedure: `[X]` is also a one-letter subscript,
     which is why only literals are read and never code.
+
+    Both spellings of the marks a pattern accepts are read, the class and the
+    alternation, so the shape of the pattern is no cover.
     """
     assert _checkbox_scans(SOURCE) == {}
 
@@ -430,13 +444,21 @@ def test_a_protocol_declaration_is_not_an_implementation() -> None:
     "spelling",
     [
         'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s+\\[[ xX]\\]\\s+")\n',
+        # The same pattern spelling its two marks as an alternation instead of
+        # a class: the spelling the predecessor detector was caught on.
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[( |x)\\]\\s*(?P<label>.+)$")\n',
         'def ticked(line):\n    return "- [x] " in line\n',
         'def ticked(line):\n    return line.startswith("- [ ]")\n',
         'ROW = "- [X] {key}: {check}"\n',
     ],
 )
 def test_each_spelling_of_a_checkbox_scan_is_reported(spelling: str) -> None:
-    """Compiled pattern, substring test, prefix test and format template alike."""
+    """Compiled pattern, substring test, prefix test and format template alike.
+
+    Compiled twice over, because how a pattern spells the marks it accepts is
+    no part of what it scans for: a class and an alternation read the same
+    lines and are the same clause breach.
+    """
     assert _checkbox_constants(ast.parse(spelling))
 
 
