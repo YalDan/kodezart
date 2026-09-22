@@ -445,6 +445,54 @@ _FAULT_OUTSIDE = {
             UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
             id="fault_outside_criterion_asked_before_reproduction",
         ),
+        pytest.param(
+            {
+                "finding": _FAULT_OUTSIDE
+                | {
+                    "cost_claim": {
+                        "assertion": "The demonstration costs too much to run.",
+                        "measurement": {
+                            "observed": "Executed once at base; 9 hours observed",
+                            "affordable": False,
+                        },
+                    }
+                },
+                "measured_by": "Reproduced recorded command at base",
+            },
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            UpheldReason.COST_MEASURED_UNECONOMIC,
+            id="cost_uneconomic_decides_before_the_fault_line",
+        ),
+        pytest.param(
+            {
+                "finding": _FAULT_OUTSIDE
+                | {
+                    "cost_claim": {
+                        "assertion": "The demonstration costs what it costs.",
+                        "measurement": {
+                            "observed": "Executed once at base; 2 seconds observed",
+                            "affordable": True,
+                        },
+                    }
+                },
+                "measured_by": "Reproduced recorded command at base",
+            },
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            UpheldReason.COST_MEASURED_AFFORDABLE,
+            id="cost_affordable_with_capability_claimed",
+        ),
+        pytest.param(
+            {
+                "finding": _FAULT_OUTSIDE
+                | {"cost_claim": {"assertion": "The demonstration is expensive."}},
+            },
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="cost_unmeasured_is_not_undemonstrability",
+        ),
     ],
 )
 def test_the_fault_line_is_asked_after_cost_and_before_reproduction(
@@ -460,6 +508,12 @@ def test_the_fault_line_is_asked_after_cost_and_before_reproduction(
     it never does. Cost is not one of the four grounds, so deciding it above the
     fault line still asks the fault line before any ground, and that landed
     order is pinned here, the reproduction half by the unreproduced row.
+
+    The three cost rows each claim a capability the declared environment lacks,
+    so only the cost can decide them: a departure resting on a cost claim
+    returns its own measured reason, or the ground when nothing was measured,
+    and never the environment reason, which the capability rows beside them
+    reach.
     """
     value = amended()
     claim = AmendmentClaim.model_validate(
