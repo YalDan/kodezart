@@ -11,11 +11,15 @@ from pydantic import ValidationError
 
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
-from kodezart.domain.errors import OrganizeAdmissionIdentityError
+from kodezart.domain.errors import (
+    OrganizeAdmissionIdentityError,
+    OrganizeWriteRefusalError,
+)
 from kodezart.domain.organize import organize_at_rest, organize_gap
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.organize_context import OrganizeContextReader
+from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
 from kodezart.types.domain.organize import (
     AdmissionJudgment,
@@ -38,6 +42,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import (
     IssuePriority,
     IssueRelation,
@@ -58,7 +63,7 @@ from tests.name_resolution import call_sites, parsed, reaches, source_tree
 from tests.prompts.sets import OPUS_SET, V5_SET
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
-from tests.tracker.conftest import ASSET_ISSUE, CLAIMED_ISSUE
+from tests.tracker.conftest import APPROVED_ISSUE, ASSET_ISSUE, CLAIMED_ISSUE
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 SUBJECT = "subject/42"
@@ -1972,3 +1977,126 @@ async def test_an_empty_work_set_still_spends_its_dry_round_and_goes_round_again
         assert authored == {}
         assert index + 1 < len(rounds)
     assert report.halt is None
+
+
+def description_surface(key):
+    return WritableSurface(
+        kind=SurfaceKind.ISSUE_DESCRIPTION,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=key),
+    )
+
+
+async def test_a_surface_held_by_another_run_leaves_the_mandate_open_and_escalated(
+    monkeypatch,
+):
+    """An unheld in-scope surface stops the round and keeps the finding open.
+
+    Another pass holds the subject's description through the same adapter,
+    so the stage's own write cannot be made. The round writes nothing
+    there, the verification that follows names the mandate class again, and
+    the convergence bound reports the surviving finding and escalates it on
+    the issue that owns it. Nothing is marked complete.
+    """
+    h = owner_harness()
+    owner, board, _executor, _observed = h.regrowth(monkeypatch, mandate=True)
+    with structlog.testing.capture_logs() as logs:
+        async with RunSurfaceLease(
+            tracker=board.tracker(),
+            job_id="another-pass",
+            surfaces=frozenset({description_surface(CLAIMED_ISSUE)}),
+            lease_seconds=60.0,
+        ):
+            report = await h.run_owner(owner)
+    halt = report.halt
+    assert report.completed_phases == ()
+    assert not {"body complete", "criteria complete"} & set(
+        board.server.issues[CLAIMED_ISSUE].labels
+    )
+    assert halt.cause == "convergence_exhausted"
+    assert halt.bound.rounds_used == 2
+    assert [(f.issue_id, f.role, f.mandate_text) for f in halt.surviving_findings] == [
+        ("restating-criterion", DefectRole.MANDATE, h.MANDATE_SENTENCE)
+    ]
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+    owning = [
+        comment for comment in escalations if comment.issue_id == "restating-criterion"
+    ]
+    assert len(owning) == 1
+    assert h.MANDATE_SENTENCE in owning[0].body
+    assert "needs decision" in board.server.issues["restating-criterion"].labels
+    assert (
+        board.server.issues[CLAIMED_ISSUE].description
+        == f"{h.MANDATE_SENTENCE} {h.DRAFT_BODY}"
+    )
+    assert [
+        args
+        for name, args in board.calls
+        if name == "save_issue"
+        and "description" in args
+        and args.get("id") == CLAIMED_ISSUE
+    ] == []
+    unheld = [record for record in logs if record["event"] == "organize_surface_unheld"]
+    # One per round: the surface is still held when the second round reaches
+    # the same write, and each round says so under its own name.
+    assert len(unheld) == 2
+    assert all(
+        (
+            record["issue_key"],
+            record["phase"],
+            record["current_holder"],
+            record["surface_kind"],
+        )
+        == (
+            CLAIMED_ISSUE,
+            "ticket",
+            "another-pass",
+            SurfaceKind.ISSUE_DESCRIPTION.value,
+        )
+        for record in unheld
+    )
+
+
+async def test_a_finding_outside_the_admitted_scope_stays_a_refusal(monkeypatch):
+    """A finding naming an issue the scope does not hold is refused, not owned.
+
+    There is no issue inside the scope for the stage to escalate on, so the
+    write refusal stands where it is: nothing is escalated, the named issue
+    is not classified, and no marker lands.
+    """
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True, phases=h.ticket_only, body=h.PREPARED_BODY
+    )
+    admit_as(
+        monkeypatch,
+        executor,
+        key=CLAIMED_ISSUE,
+        payload={
+            "verdict": "buildable",
+            "evidence": "The prepared body carries its own source.",
+            "findings": [
+                {
+                    "issue_id": APPROVED_ISSUE,
+                    "defect_class": h.REGROWTH_CLASS,
+                    "evidence": "The named issue restates the source version.",
+                    "role": "mandate",
+                    "mandate_text": h.MANDATE_SENTENCE,
+                }
+            ],
+        },
+    )
+    with pytest.raises(OrganizeWriteRefusalError, match="outside the admitted scope"):
+        await h.run_owner(owner)
+    assert not [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+    assert "needs decision" not in board.server.issues[APPROVED_ISSUE].labels
+    assert not {"body complete", "criteria complete"} & set(
+        board.server.issues[CLAIMED_ISSUE].labels
+    )
