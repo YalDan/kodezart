@@ -890,9 +890,7 @@ class RalphLoop:
                     ctx=ctx,
                     cwd=cwd,
                     criteria=[
-                        criterion
-                        for criterion in dispatched
-                        if criterion.id in passing
+                        criterion for criterion in dispatched if criterion.id in passing
                     ],
                     graded_sha=native_ref,
                     iteration=state["iteration"],
