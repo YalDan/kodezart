@@ -24,17 +24,24 @@ from kodezart.domain.errors import (
     StaleWriteError,
 )
 from kodezart.domain.fire_spec import tracker_spec_from_issues
-from kodezart.domain.rulings import addressable_issues
+from kodezart.domain.rulings import addressable_issues, render_ruling
 from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
-from kodezart.types.domain.agent import RulingProtectedTestRef
+from kodezart.services.ruling_records import RulingRecordReader
+from kodezart.types.domain.agent import Ruling, RulingProtectedTestRef
 from kodezart.types.domain.audit_forge import AuditForgeRequest
 from kodezart.types.domain.criteria import DraftedCriterion, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOffState
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_state import LaneBinding
-from kodezart.types.domain.tracker import IssueRelationKind, WorkflowStateKind
+from kodezart.types.domain.tracker import (
+    IssueRelationKind,
+    TrackerComment,
+    WorkflowStateKind,
+)
+from tests.domain.test_rulings import ruling_data
 from tests.fakes import FakeGitService, FakeMcpIssue, FakeTrackerPort, PassThroughGate
 from tests.lane_fixture import lane_operation
 from tests.tracker.conftest import (
@@ -43,6 +50,7 @@ from tests.tracker.conftest import (
     ISSUE_LABELS,
     fixture_server,
 )
+from tests.tracker.lease_fixtures import leased_comment
 
 LABEL = ISSUE_LABELS["criterion"]
 
@@ -211,6 +219,26 @@ def lane_of(subject: str) -> LaneBinding:
     )
 
 
+def ruling_operation() -> OperationConfig:
+    """An operation configuring exactly the marker purpose a designation needs."""
+    return OperationConfig(
+        operation_name="renumbering-fixture",
+        workspace="fixture",
+        marker_prefixes={"ruling": "renumbering-fixture-answer"},
+    )
+
+
+async def record_ruling(tracker, *, owner: str) -> TrackerComment:
+    """Put one answer record on *owner*, rendered and written the shipped way."""
+    body = render_ruling(
+        ruling=Ruling.model_validate(ruling_data(issue_ref=owner, question=QUESTION)),
+        lane_key=SUBJECT,
+        marker_prefixes=ruling_operation().marker_prefixes,
+    )
+    marker, payload = body.split("\n", 1)
+    return await leased_comment(tracker, target=owner, marker=marker, body=payload)
+
+
 def verdict_on(key: str) -> CriterionCrossOff:
     """One passing verdict, keyed by the criterion it addresses."""
     return CriterionCrossOff(
@@ -333,13 +361,18 @@ async def test_a_verdict_a_designation_and_an_audit_request_resolve_through_the_
     tracker, tracker_writes, server
 ):
     """The three referents keyed by identity, re-resolved after the rewrite."""
-    before = tracker_writes()
     family = tuple(await tracker.read_criteria(issue_key=SUBJECT))
     designation_before = RulingProtectedTestRef(
         source_ref=mint_ruling_id(issue_ref=THIRD, question=QUESTION),
         path="tests/tracker/test_criterion_renumbering.py",
         qualified_name="test_a_removed_criterion_and_a_renumbered_remainder_move_no_identity",
     )
+    # The designation names a record on the tracker, so the record goes on the
+    # tracker before the rewrite: reading it back afterwards is what makes the
+    # identity load-bearing. This seeding write is the fixture's own and is
+    # taken before the observation the no-write assertion below is over.
+    recorded = await record_ruling(tracker, owner=THIRD)
+    before = tracker_writes()
 
     retire(tracker, server, SECOND)
     renumber(
@@ -360,12 +393,16 @@ async def test_a_verdict_a_designation_and_an_audit_request_resolve_through_the_
         evidence=CriterionEvidence(graded_sha=GRADED_SHA, test="the case above"),
     )
     assert await tracker.read_issue(issue_key=cross_off.criterion) == survivor
-    # A designation: the identity minted before the rewrite is the identity
-    # minted after it, and the key is a member of the set an answer may
-    # address, composed from the family as it now reads.
-    assert designation_before.source_ref == mint_ruling_id(
-        issue_ref=THIRD, question=QUESTION
-    )
+    # A designation: the record it names is read back off the tracker after the
+    # rewrite and still carries the identity minted before it — a read through
+    # the shipped reader, not the mint called twice on the same inputs — and
+    # the key is a member of the set an answer may address, composed from the
+    # family as it now reads.
+    ((read_back, record),) = await RulingRecordReader(
+        tracker=tracker, operation=ruling_operation()
+    ).read_issue(issue_key=THIRD)
+    assert record.ruling_id == designation_before.source_ref
+    assert read_back.comment_key == recorded.comment_key
     fresh = await tracker.read_criteria(issue_key=SUBJECT)
     assert THIRD in addressable_issues(
         subject=SUBJECT, criteria=(row.issue_key for row in fresh)
