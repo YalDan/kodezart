@@ -778,6 +778,18 @@ is what lets the report-only discipline of a scope run and this row's
 structural authority both hold: the discipline binds an approved scope, and
 this row runs only before approval.
 
+A finding the row forms is held while the phase converges, not written when
+it is formed: a finding the next round repairs never reaches the tracker.
+Every finding still open when the row halts — the last dry round's, the
+residuals of the round that halted, and those the halting judgement carries —
+is written before the halt report returns, after the round's lease is
+released, as its own record on the item it names: one escalation per item and
+question, carrying the finding's evidence and the pass's interim reading, so
+two classes on one item are two records and one class raised twice is one.
+Whether the judgement behind the halt is still current is read once, before
+the first record, because each record's decision label is itself a change to
+the scope that judgement was bound to.
+
 Because approval admits a member to a run stage instead of ending it, a
 run-stage row may name `scope_labels.approved` as its gate by that exact
 reference. Such a gate reads the per-issue cascade, never the addressed

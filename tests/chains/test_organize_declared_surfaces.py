@@ -511,3 +511,269 @@ async def test_an_answer_that_writes_nothing_is_not_weighed_against_the_set(
     assert "undeclared_surface" not in {
         finding.defect_class for finding in report.halt.surviving_findings
     }
+
+
+STUCK = "FIX-STUCK"
+GROOM_MARKER = "graph complete"
+INTERIM = "Preparation stops; no completion marker or execution is authorized."
+
+
+def spec_finding(owner, defect_class="missing_source", evidence=None):
+    return {
+        "issue_id": owner,
+        "defect_class": defect_class,
+        "evidence": evidence or f"{owner} cites no source for its deliverable.",
+        "role": "instance",
+    }
+
+
+def judging(board, executor, monkeypatch, answers):
+    """Judge sessions answered per subject from *answers*.
+
+    ``answers[key](n)`` is the payload of the n-th judgement of *key*
+    (counted from one), or None for the configured executor's own answer.
+    Author and verifier sessions keep the configured answers.
+    """
+    original = executor.stream
+    seen = {}
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if (
+            title not in {"OrganizeProposal", "WriteBackFinding"}
+            and keys
+            and keys[-1] in answers
+        ):
+            seen[keys[-1]] = seen.get(keys[-1], 0) + 1
+            payload = answers[keys[-1]](seen[keys[-1]])
+            if payload is not None:
+                executor.calls.append(kwargs)
+                yield result(structured_output=payload)
+                return
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+    return seen
+
+
+def buildable(key, *findings):
+    return {
+        "issue_id": key,
+        "verdict": "buildable",
+        "evidence": f"{key} is buildable from its source.",
+        "findings": list(findings),
+    }
+
+
+def refusal(key, kind, *findings):
+    return {
+        "issue_id": key,
+        "verdict": "not_buildable",
+        "evidence": f"{key} leaves a choice open.",
+        "refusal_kind": kind,
+        "invented_decision": f"Settle the open choice on {key}.",
+        "findings": list(findings),
+    }
+
+
+def escalations(board, key, question=None):
+    """The escalation records on *key*, read back as the tracker holds them."""
+    from kodezart.types.domain.run_state import LaneEscalation
+
+    records = [
+        LaneEscalation.model_validate_json(comment.body.partition("\n")[2])
+        for comment in board.server.comments
+        if comment.issue_id == key and comment.body.startswith("[organize-question:")
+    ]
+    return [
+        record for record in records if question is None or record.question == question
+    ]
+
+
+async def test_every_open_finding_is_written_to_its_own_item_before_the_halt_returns(
+    monkeypatch,
+):
+    """Each finding lands on its own item, with its evidence and the interim reading.
+
+    The two members carry the pass's marker, so only the dry round judges
+    them; the findings it forms name them rather than the subject.
+    """
+    from tests.chains.test_organize_owner import stage_report_step
+
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    first, second = "FIX-A", "FIX-B"
+    for key in (first, second):
+        member(board, key, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            key: (lambda _, key=key: buildable(key, spec_finding(key)))
+            for key in (first, second)
+        },
+    )
+    stage_report_step(monkeypatch, board)
+    report = await run_owner(owner)
+    assert report.halt.cause == "convergence_exhausted"
+    for key in (first, second):
+        (record,) = escalations(board, key, "missing_source")
+        assert record.issue_id == key
+        assert record.interim_basis == spec_finding(key)["evidence"]
+        assert record.interim_reading == INTERIM
+        assert "needs decision" in board.server.issues[key].labels
+    assert not escalations(board, CLAIMED_ISSUE)
+    written = [
+        index
+        for index, (name, args) in enumerate(board.calls)
+        if name == "save_comment"
+        and str(args.get("body", "")).startswith("[organize-question:")
+    ]
+    reported = [
+        index for index, (name, _) in enumerate(board.calls) if name == "stage_report"
+    ]
+    assert written
+    assert reported
+    assert max(written) < min(reported)
+
+
+@pytest.mark.parametrize("cause", ["human_decision", "admission_exhausted", "residual"])
+async def test_a_halt_inside_a_round_carries_the_findings_left_open(monkeypatch, cause):
+    """A halt inside a round writes what earlier rounds and this one left open."""
+    owner, board, executor = factory(convergence_bound=2, bound=1)
+    if cause == "residual":
+        # One subject's write needs a member that joined mid-round, then the
+        # next subject exhausts its admission rounds in the same round.
+        def join():
+            if LATE not in board.server.issues:
+                member(board, LATE)
+
+        edging(board, executor, monkeypatch, LATE, join=join)
+        member(board, STUCK)
+        original = executor.stream
+
+        async def stuck(**kwargs):
+            title = kwargs["output_format"]["schema"].get("title")
+            keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+            if title == "AdmissionJudgment" and keys and keys[-1] == STUCK:
+                yield result(structured_output=refusal(STUCK, "spec_gap"))
+                return
+            async for event in original(**kwargs):
+                yield event
+
+        monkeypatch.setattr(executor, "stream", stuck)
+        report = await run_owner(owner)
+        assert report.halt.cause == "admission_exhausted"
+        assert [
+            (finding.issue_id, finding.defect_class)
+            for finding in report.halt.surviving_findings
+        ] == [(LATE, "undeclared_surface")]
+        assert escalations(board, LATE, "undeclared_surface")
+        return
+    # Round one: the dry round forms a finding on the marked sibling, and
+    # the working member is clean at admission but refused by the dry round.
+    # Round two works both again: the sibling is clean now, and the working
+    # member halts while the sibling's finding is still the round's open one.
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    member(board, STUCK)
+    kind = "human_decision" if cause == "human_decision" else "spec_gap"
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            SIBLING: lambda n: (
+                buildable(SIBLING, spec_finding(SIBLING))
+                if n == 1
+                else buildable(SIBLING)
+            ),
+            STUCK: lambda n: buildable(STUCK) if n == 1 else refusal(STUCK, kind),
+        },
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == cause
+    assert (SIBLING, "missing_source") in {
+        (finding.issue_id, finding.defect_class)
+        for finding in report.halt.surviving_findings
+    }
+    (record,) = escalations(board, SIBLING, "missing_source")
+    assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+
+
+async def test_an_admission_results_own_findings_are_written_at_its_halt(monkeypatch):
+    """The refusal that halts carries findings on another item; they land there."""
+    owner, board, executor = factory(convergence_bound=2, bound=1)
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    member(board, STUCK)
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {STUCK: lambda _: refusal(STUCK, "human_decision", spec_finding(SIBLING))},
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "human_decision"
+    (record,) = escalations(board, SIBLING, "missing_source")
+    assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+    assert escalations(board, STUCK)
+
+
+@pytest.mark.parametrize("repair", ["repaired", "recurs"])
+async def test_a_finding_the_next_round_repairs_never_reaches_the_board(
+    monkeypatch, repair
+):
+    """Findings are held while the phase converges; only the open ones are written."""
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            SIBLING: lambda n: (
+                buildable(SIBLING, spec_finding(SIBLING))
+                if n == 1 or repair == "recurs"
+                else buildable(SIBLING)
+            )
+        },
+    )
+    report = await run_owner(owner)
+    if repair == "repaired":
+        assert report.halt is None
+        assert not escalations(board, SIBLING)
+        assert "needs decision" not in board.server.issues[SIBLING].labels
+        return
+    # The sibling the finding names is a subject of the next round, and a
+    # finding that keeps recurring exhausts its admission rounds there.
+    assert report.halt.cause == "admission_exhausted"
+    assert escalations(board, SIBLING, "missing_source")
+
+
+async def test_two_findings_of_different_classes_on_one_item_are_two_records(
+    monkeypatch,
+):
+    """One record per item and question: two classes are two, one class twice is one."""
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            SIBLING: lambda _: buildable(
+                SIBLING,
+                spec_finding(SIBLING, "missing_source", "The first source is absent."),
+                spec_finding(SIBLING, "missing_source", "The second source is absent."),
+                spec_finding(SIBLING, "ambiguous_scope", "Two deliverables share it."),
+            )
+        },
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "convergence_exhausted"
+    assert sorted(
+        record.question
+        for record in escalations(board, SIBLING)
+        if record.question in {"missing_source", "ambiguous_scope"}
+    ) == ["ambiguous_scope", "missing_source"]

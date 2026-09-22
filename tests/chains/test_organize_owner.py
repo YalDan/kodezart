@@ -1790,18 +1790,47 @@ async def test_escalation_and_its_classification_land_before_the_stage_report(
 
 
 async def test_a_raising_stage_report_leaves_the_escalation_recorded(monkeypatch):
-    owner, board, _ = factory(refuse_forever=True, bound=1)
+    """Every record of the halt is on the board before the report step runs.
+
+    The refusal carries findings on two other members, so the halt writes
+    three records: the refusal's own and one on each member a finding names.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    named = ("FIX-NAMED-A", "FIX-NAMED-B")
+    owner, board, _ = factory(
+        refuse_forever=True,
+        bound=1,
+        refusal={
+            "findings": [
+                {
+                    "issue_id": key,
+                    "defect_class": "missing_source",
+                    "evidence": f"{key} cites no source.",
+                    "role": "instance",
+                }
+                for key in named
+            ]
+        },
+    )
+    for key in named:
+        board.server.issues[key] = FakeMcpIssue(
+            id=key, description="Prepared body", parent_id=CLAIMED_ISSUE
+        )
     stage_report_step(monkeypatch, board, raises=RuntimeError("stage report failed"))
     with pytest.raises(RuntimeError, match="stage report failed"):
         await run_owner(owner)
-    escalations = [
-        comment
+    escalations = {
+        comment.issue_id: comment.body
         for comment in board.server.comments
         if comment.body.startswith(ESCALATION_MARKER)
-    ]
-    assert len(escalations) == 1
-    assert "The current body omits the required source." in escalations[0].body
-    assert "needs decision" in board.server.issues[CLAIMED_ISSUE].labels
+    }
+    assert set(escalations) == {CLAIMED_ISSUE, *named}
+    assert "The current body omits the required source." in escalations[CLAIMED_ISSUE]
+    for key in named:
+        assert f"{key} cites no source." in escalations[key]
+    for key in (CLAIMED_ISSUE, *named):
+        assert "needs decision" in board.server.issues[key].labels
 
 
 async def test_approval_withdrawn_during_a_stage_author_write_refuses_the_write(

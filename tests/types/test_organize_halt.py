@@ -136,17 +136,6 @@ def test_the_escalation_id_list_belongs_to_the_escalation_cause_alone(cause):
                 }
             ],
         },
-        {
-            "cause": "human_decision",
-            "surviving_findings": [
-                {
-                    "issue_id": "native-child",
-                    "defect_class": "missing_source",
-                    "evidence": "The source is absent.",
-                    "role": "instance",
-                }
-            ],
-        },
         {"cause": "human_decision", "write_back_results": [write_back()]},
         {"cause": "human_decision", "questions": [question()], "bound": bound()},
         {"cause": "admission_exhausted"},
@@ -232,6 +221,19 @@ def test_wrong_cause_or_missing_evidence_refuses(payload):
     [
         {"cause": "human_decision", "questions": [question()]},
         {"cause": "human_decision", "admission_results": [admission()]},
+        {
+            # A human choice carries the findings still open when it arose.
+            "cause": "human_decision",
+            "questions": [question()],
+            "surviving_findings": [
+                {
+                    "issue_id": "native-child",
+                    "defect_class": "missing_source",
+                    "evidence": "The source is absent.",
+                    "role": "instance",
+                }
+            ],
+        },
         {"cause": "admission_exhausted", "bound": bound()},
         {
             "cause": "admission_exhausted",
