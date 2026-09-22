@@ -46,6 +46,7 @@ from kodezart.types.domain.scope_terminal import (
     derive_scope_outcome,
 )
 from kodezart.types.domain.ticket_review import TicketReviewMode
+from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.adapters.test_github_api import _make_client
 from tests.chains.test_native_fire import (
@@ -72,17 +73,23 @@ from tests.fakes import (
     make_prompt_provider,
 )
 from tests.integration.test_scope_runtime import (
+    A_KEYS,
     FORGE_ORIGIN,
     ORIGIN,
     SCOPE,
+    TWO_CHECKS,
     WALK_BOUND_SECONDS,
     WalkRepos,
     approve_container,
     board,
     bounded_walk,
     drive,
+    echoes,
     finish_by_hand,
+    first_fire,
+    lane_failures,
     lane_record,
+    recorded_so_far,
     resumable,
     runtime,
     ticks_of,
@@ -1288,3 +1295,81 @@ async def test_a_scratch_shaped_scope_ends_with_exactly_one_status_update():
         assert second_writes == []
     finally:
         await forge.close()
+
+
+# ---------------------------------------------------------------------------
+# KOD-482 — an entry after an attempt that left no terminal event
+# ---------------------------------------------------------------------------
+
+
+async def test_an_entry_after_an_attempt_with_no_terminal_event_reports_from_tracker():
+    """The next entry reports what the tracker holds, not what the dead run knew.
+
+    Run one fires lane A, finishes part of its roster, records it, and dies
+    before its exit: no terminal ran, so it left no report and posted nothing.
+    Run two is a new process sharing only the board, the remote and the
+    container. Its report is the one terminal event of its own walk, and its
+    outcome is derived from the lane vector read at that walk's own exit: A's
+    done column and branch come off the tracker, B was never recorded by any
+    process and so carries no branch and no pull request.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A", "B"), checks=TWO_CHECKS)
+    # The board's issues carry no project, so nothing cascades an approval to
+    # B once its own is withheld: no process can fire it or write its record.
+    del port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key="B")]
+
+    dead, before = await first_fire(port, repos)
+
+    # The dead attempt ran no terminal: nothing was read off the container and
+    # nothing was posted on it.
+    assert dead.status.posts == []
+    assert dead.status.reads == []
+    # It still owed work when it died.
+    assert port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+    assert port.issues["A/second"].state_kind is WorkflowStateKind.UNSTARTED
+    # B was never recorded, and A was.
+    assert await recorded_so_far(port, "B") is None
+    assert before.branch
+
+    second = resumable(
+        port=port,
+        repos=repos,
+        evaluations=echoes(passed=set(A_KEYS)),
+        status=dead.status,
+    )
+    events = await bounded_walk(second, job="second-job")
+
+    reports = terminals(events)
+    assert len(reports) == 1
+    assert events[-1] is reports[0]
+    report = reports[0]
+
+    # The outcome is the derivation of the vector this entry read at its exit.
+    assert report.outcome is derive_scope_outcome(report.lanes)
+    assert report.outcome is WorkflowOutcome.scope_stopped_short
+    assert [lane.issue for lane in report.lanes] == ["A", "B"]
+    assert ticks_of(events)[-1].unapproved_lanes == ("B",)
+
+    # A is finished by this entry, and its branch is the one on its record.
+    assert port.issues["A/second"].state_kind is WorkflowStateKind.COMPLETED
+    assert report.lanes[0] == ScopeLaneEntry(
+        issue="A", done=True, branch=before.branch, pr=None
+    )
+    assert before.branch == (await lane_record(port, "A")).branch
+
+    # B has no record, so nothing is invented for it.
+    assert report.lanes[1] == ScopeLaneEntry(
+        issue="B", done=False, branch=None, pr=None
+    )
+    assert await recorded_so_far(port, "B") is None
+
+    # One read of the container, which the dead attempt left empty, and one
+    # post carrying this entry's report.
+    assert second.status is dead.status
+    assert dead.status.reads == [SCOPE]
+    assert dead.status.posts == [(SCOPE, render_scope_status(report))]
+    assert (
+        dead.status.posts[0][1].splitlines()[0] == "Scope outcome: scope_stopped_short"
+    )
+    assert lane_failures(events) == ()
