@@ -11,9 +11,10 @@ workspace anywhere in this module and none may be introduced.
 
 import asyncio
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import timedelta
-from inspect import isawaitable
+from inspect import isawaitable, signature
 
 import pytest
 
@@ -39,11 +40,22 @@ from kodezart.domain.errors import (
     SurfaceLeaseError,
 )
 from kodezart.domain.fire_spec import replace_criterion_fields
+from kodezart.domain.organize_graph import graph_snapshot
+from kodezart.domain.run_alarm_record import run_alarm_marker, run_alarm_surface
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLabel
+from kodezart.types.domain.organize_graph import GraphProposal
+from kodezart.types.domain.run_alarm import (
+    AlarmBound,
+    AlarmReading,
+    AlarmSignal,
+    CountEvidence,
+    RunAlarm,
+    SurfaceSubject,
+)
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import (
@@ -68,6 +80,7 @@ from kodezart.types.domain.tracker import (
     is_open,
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
+from tests.chains.test_write_back_adoption import artifact_writes, parameters
 from tests.fakes import FakeLinearMcpServer, FakeMcpComment, FakeMcpIssue
 from tests.tracker.conftest import (
     ADAPTER_WRITE_TOOLS,
@@ -3239,6 +3252,427 @@ class TestIndependentlyHeldSurfaces:
         symmetric = await tracker.reset_criterion_pending(expected=other, holder=JOB_B)
 
         assert symmetric.state_kind is WorkflowStateKind.UNSTARTED
+
+
+#: The two parameters through which a caller can name the holder it writes
+#: under: one of them names the identity directly, the other carries the
+#: grant the identity holds.
+HOLDER_PARAMETERS = frozenset({"holder", "authorization"})
+
+
+def supplied_holder_writes() -> frozenset[str]:
+    """Every port write that can supply a holder, read off the port itself.
+
+    Derived rather than listed for the reason the adoption check's own
+    surface is: a write that grows a holder parameter and is left out of a
+    table written by hand would be the one nothing ever refused.
+    """
+    return frozenset(
+        method
+        for method in artifact_writes(TrackerPort)
+        if HOLDER_PARAMETERS & set(parameters(method, TrackerPort))
+    )
+
+
+def single_writer_writes() -> frozenset[str]:
+    """Those whose holder is OPTIONAL: an absent one is the writer's own act.
+
+    Read off the signature's default rather than declared per row, so a
+    seam that stops accepting an absent holder — or starts — moves this
+    set by itself instead of drifting from a flag beside it.
+    """
+    return frozenset(
+        method
+        for method in supplied_holder_writes()
+        if any(
+            signature(getattr(TrackerPort, method)).parameters[name].default is None
+            for name in HOLDER_PARAMETERS & set(parameters(method, TrackerPort))
+        )
+    )
+
+
+#: A child and a peer under the claimable issue: the graph row addresses the
+#: child's own graph surface, and the criterion and split rows create under
+#: the parent's own creation surfaces.
+GRAPH_CHILD = "FIX-9"
+GRAPH_PEER = "FIX-10"
+#: The two addresses for creating membership under one issue, which grant no
+#: edit of any child that already exists there.
+CLAIMED_CRITERION_CHILD_SET = WritableSurface(
+    kind=SurfaceKind.CRITERION_CHILD_SET,
+    ref=CLAIMED_REF,
+)
+CLAIMED_SPLIT_SET = WritableSurface(
+    kind=SurfaceKind.ISSUE_SPLIT_SET,
+    ref=CLAIMED_REF,
+)
+CHILD_GRAPH = WritableSurface(
+    kind=SurfaceKind.ISSUE_GRAPH,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=GRAPH_CHILD),
+)
+#: The alarm record one row writes, and the marker its own address is
+#: composed from: the seam derives the whole address from the subject and
+#: the signal, so the row names it the way the writer does.
+ALARM = RunAlarm(
+    subject=SurfaceSubject(
+        scope_key="fixture-scope",
+        lane_key=EVENT_LANE,
+        surface=MARKER_A,
+    ),
+    signal=AlarmSignal.SURFACE_CONTENDED,
+    readings=(
+        AlarmReading(source_ref="fixture/holders", value=CountEvidence(value=2)),
+    ),
+    bound=AlarmBound(
+        config_field="run_alarm_max_surface_holders",
+        configured_value=1,
+        observed_value=2,
+    ),
+    raised_at_sha="fixture-head",
+    raised_by="the-raising-job",
+)
+ALARM_SURFACE = run_alarm_surface(
+    issue_key=APPROVED_ISSUE,
+    marker=run_alarm_marker(
+        subject=ALARM.subject, signal=ALARM.signal, marker_prefixes=MARKER_PREFIXES
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HolderWrite:
+    """One port write, the address it asserts, and how a case makes it.
+
+    ``write`` takes the holder to supply — ``None`` for the single-writer
+    write — so one statement of a seam serves both the refusing arms and
+    the arm that supplies nobody. ``effect`` is what the seam MOVES, read
+    back through the port, so "it wrote" and "it wrote nothing" are both
+    readings rather than a trusted return value. ``prepare`` is for a seam
+    whose precondition is not the workspace's resting state; a seam that
+    will not fit is a finding, never a row left out.
+    """
+
+    surface: WritableSurface
+    write: Callable[[TrackerPort, str | None], Awaitable[object]]
+    effect: Callable[[TrackerPort], Awaitable[object]]
+    prepare: Callable[[TrackerPort], Awaitable[None]] | None = None
+
+
+async def _write_a_comment(tracker: TrackerPort, holder: str | None) -> object:
+    return await tracker.upsert_comment(
+        target=CLAIMED_ISSUE,
+        marker="A",
+        body="a record written under the marker's own grant",
+        holder=holder,
+    )
+
+
+async def _write_a_description(tracker: TrackerPort, holder: str | None) -> object:
+    current = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    return await tracker.edit_description(
+        target=CLAIMED_ISSUE,
+        expected=current.body,
+        replacement="a body written under the description's own grant",
+        authorization=None
+        if holder is None
+        else DescriptionWriteAuthority(holder=holder, surface=CLAIMED_DESCRIPTION),
+    )
+
+
+async def _write_a_classification(tracker: TrackerPort, holder: str | None) -> object:
+    return await tracker.set_issue_classification(
+        issue_key=CLAIMED_ISSUE, classification="criterion", holder=holder
+    )
+
+
+async def _move_a_criterion_back(tracker: TrackerPort, holder: str | None) -> object:
+    finished = await tracker.read_issue(issue_key=OWED_CRITERION)
+    return await tracker.reset_criterion_pending(expected=finished, holder=holder)
+
+
+async def _change_a_graph(tracker: TrackerPort, holder: str | None) -> object:
+    assert holder is not None
+    proposed = GraphProposal.model_validate(
+        {
+            "kind": "graph",
+            "issue_id": GRAPH_CHILD,
+            "changes": [{"kind": "priority", "priority": IssuePriority.HIGH.value}],
+        }
+    )
+    # The child's own ancestry is part of the snapshot the seam verifies,
+    # so the parent is read with it; only the child is affected, so only
+    # the child's graph address is a grant this write needs.
+    return await tracker.update_issue_graph(
+        issue_key=GRAPH_CHILD,
+        expected=tuple(
+            [
+                graph_snapshot(await tracker.read_issue(issue_key=key))
+                for key in (CLAIMED_ISSUE, GRAPH_CHILD)
+            ]
+        ),
+        changes=proposed.changes,
+        holder=holder,
+    )
+
+
+async def _create_a_split(tracker: TrackerPort, holder: str | None) -> object:
+    assert holder is not None
+    source = await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    return await tracker.create_split_if_absent(
+        source_key=CLAIMED_ISSUE,
+        deliverable_key="fixture/split",
+        title="a split of the claimable issue",
+        body="the independent child specification",
+        holder=holder,
+        expected=(graph_snapshot(source),),
+    )
+
+
+async def _create_a_criterion(tracker: TrackerPort, holder: str | None) -> object:
+    assert holder is not None
+    return await tracker.create_criterion_if_absent(
+        parent_key=CLAIMED_ISSUE,
+        title="a criterion this table mints",
+        check="the minted criterion states this check and no other",
+        do="mint it under the parent's own criterion-child grant",
+        holder=holder,
+    )
+
+
+async def _record_an_alarm(tracker: TrackerPort, holder: str | None) -> object:
+    assert holder is not None
+    return await tracker.record_run_alarm(
+        issue_key=APPROVED_ISSUE, alarm=ALARM, holder=holder
+    )
+
+
+async def _the_issues_comments(tracker: TrackerPort) -> object:
+    return tuple(
+        comment.body for comment in await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+    )
+
+
+async def _the_issues_body(tracker: TrackerPort) -> object:
+    return (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).body
+
+
+async def _the_issues_labels(tracker: TrackerPort) -> object:
+    return (await tracker.read_issue(issue_key=CLAIMED_ISSUE)).issue_labels
+
+
+async def _the_criterions_state(tracker: TrackerPort) -> object:
+    return (await tracker.read_issue(issue_key=OWED_CRITERION)).state_kind
+
+
+async def _the_childs_priority(tracker: TrackerPort) -> object:
+    return (await tracker.read_issue(issue_key=GRAPH_CHILD)).priority
+
+
+async def _the_issues_split_children(tracker: TrackerPort) -> object:
+    return tuple(
+        child.issue_key
+        for child in await tracker.read_split_children(source_key=CLAIMED_ISSUE)
+    )
+
+
+async def _the_issues_criteria(tracker: TrackerPort) -> object:
+    return frozenset(
+        row.issue_key for row in await tracker.read_criteria(issue_key=CLAIMED_ISSUE)
+    )
+
+
+async def _the_recorded_alarm(tracker: TrackerPort) -> object:
+    return await tracker.read_run_alarm(
+        issue_key=APPROVED_ISSUE, subject=ALARM.subject, signal=ALARM.signal
+    )
+
+
+#: Every supplied-holder port write, with the address it refuses at. The
+#: KEYS are compared with the derivation above, so this table cannot fall
+#: behind the port without a case going red.
+SUPPLIED_HOLDER_WRITES: Mapping[str, HolderWrite] = {
+    "upsert_comment": HolderWrite(
+        surface=MARKER_A, write=_write_a_comment, effect=_the_issues_comments
+    ),
+    "edit_description": HolderWrite(
+        surface=CLAIMED_DESCRIPTION,
+        write=_write_a_description,
+        effect=_the_issues_body,
+    ),
+    "set_issue_classification": HolderWrite(
+        surface=CLAIMED_LABEL_SET,
+        write=_write_a_classification,
+        effect=_the_issues_labels,
+    ),
+    "reset_criterion_pending": HolderWrite(
+        surface=criterion_surface(OWED_CRITERION),
+        write=_move_a_criterion_back,
+        effect=_the_criterions_state,
+    ),
+    "update_issue_graph": HolderWrite(
+        surface=CHILD_GRAPH, write=_change_a_graph, effect=_the_childs_priority
+    ),
+    "create_split_if_absent": HolderWrite(
+        surface=CLAIMED_SPLIT_SET,
+        write=_create_a_split,
+        effect=_the_issues_split_children,
+    ),
+    "create_criterion_if_absent": HolderWrite(
+        surface=CLAIMED_CRITERION_CHILD_SET,
+        write=_create_a_criterion,
+        effect=_the_issues_criteria,
+    ),
+    "record_run_alarm": HolderWrite(
+        surface=ALARM_SURFACE, write=_record_an_alarm, effect=_the_recorded_alarm
+    ),
+}
+
+
+class TestSuppliedHolderWrites:
+    """Every port write that supplies a holder refuses one it does not hold.
+
+    One statement over the whole holder-taking surface of the port, with
+    the surface itself derived from the port's own members: a write that
+    gains a holder and no row here reds the first case, and a row for a
+    write that no longer takes one reds it too.
+
+    The refusal is asserted before any backend MUTATION rather than before
+    any backend call: a backend with no conditional write cannot know a
+    surface is unheld without reading the log it is recorded on. The one
+    refusal that needs no read at all — the approval member — is asserted
+    before any request, in its own class above.
+    """
+
+    @pytest.fixture
+    def server(self, clock: FixtureClock) -> FakeLinearMcpServer:
+        """The fixture workspace plus the members these rows address.
+
+        A finished criterion for the move back, and a child and a peer of
+        the claimable issue for the graph and split rows. Seeded here, so
+        no module built on the shared workspace sees them.
+        """
+        value = fixture_server(clock=clock)
+        value.issues[OWED_CRITERION] = criterion_sub_issue(
+            OWED_CRITERION,
+            title="a criterion this writer owes",
+            status="Done",
+            status_type="completed",
+        )
+        for key in (GRAPH_CHILD, GRAPH_PEER):
+            value.issues[key] = FakeMcpIssue(
+                id=key,
+                title=f"an ordinary child {key}",
+                description=f"the body of {key}",
+                parent_id=CLAIMED_ISSUE,
+                status="Todo",
+                status_type="unstarted",
+                created_at=FIXTURE_NOW - timedelta(days=2),
+                updated_at=FIXTURE_NOW,
+            )
+        return value
+
+    def test_the_table_is_the_derived_holder_taking_write_surface(self) -> None:
+        """The rows ARE the port's holder-taking writes, neither more nor less."""
+        assert supplied_holder_writes()
+        assert frozenset(SUPPLIED_HOLDER_WRITES) == supplied_holder_writes()
+        assert single_writer_writes() <= supplied_holder_writes()
+        assert single_writer_writes()
+
+    @pytest.mark.parametrize("method", sorted(SUPPLIED_HOLDER_WRITES))
+    @pytest.mark.parametrize("standing", ["unheld", "expired", "foreign"])
+    async def test_a_supplied_holder_that_does_not_hold_is_refused_with_nothing_written(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        clock: FixtureClock,
+        method: str,
+        standing: str,
+    ) -> None:
+        """Three ways not to hold a surface, and one refusal for all of them.
+
+        Nobody holding it, this holder's own grant lapsed, and a rival
+        holding it live: each raises the typed lease error carrying the
+        whole address as primitives, and the no-lease and lapsed arms name
+        no current holder rather than inventing one. The observed write
+        log is taken AFTER the acquisition, so the marker writes the
+        arrangement itself makes are inside the baseline and the refusal
+        is shown to add nothing to it; what the seam would have moved is
+        read back as well, so the refusal is also shown to have left the
+        surface where its reader found it.
+        """
+        row = SUPPLIED_HOLDER_WRITES[method]
+        if row.prepare is not None:
+            await row.prepare(tracker)
+        held = frozenset({row.surface})
+        if standing == "expired":
+            await tracker.acquire_surfaces(
+                surfaces=held, holder=JOB_A, lease_seconds=LEASE_SECONDS
+            )
+            clock.advance(seconds=LEASE_SECONDS + 1)
+        elif standing == "foreign":
+            await tracker.acquire_surfaces(
+                surfaces=held, holder=JOB_B, lease_seconds=LEASE_SECONDS
+            )
+        before = await row.effect(tracker)
+        written = tracker_writes()
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await row.write(tracker, JOB_A)
+
+        assert (
+            refused.value.surface_kind,
+            refused.value.scope_kind,
+            refused.value.scope_key,
+            refused.value.marker,
+        ) == (
+            row.surface.kind.value,
+            row.surface.ref.kind.value,
+            row.surface.ref.key,
+            row.surface.marker,
+        )
+        assert refused.value.current_holder == (
+            JOB_B if standing == "foreign" else None
+        )
+        assert tracker_writes() == written
+        assert await row.effect(tracker) == before
+
+    @pytest.mark.parametrize("method", sorted(single_writer_writes()))
+    async def test_a_write_that_supplies_no_holder_consults_no_lease(
+        self,
+        tracker: TrackerPort,
+        method: str,
+    ) -> None:
+        """An absent holder is the single writer's own act, and it writes.
+
+        The surface is held LIVE by a rival while this write is made, so
+        the day a holder-less write starts consulting a lease this is the
+        case that reds: an arm that left the surface unheld would still
+        pass. The write lands, read back off what the seam moves rather
+        than off a write log — the two implementations log a state move
+        differently — because an absent holder is by design not an unheld
+        one. The rival's grant is untouched by it: the lease records who
+        is writing, and this write did not claim to be that writer.
+        """
+        row = SUPPLIED_HOLDER_WRITES[method]
+        if row.prepare is not None:
+            await row.prepare(tracker)
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({row.surface}),
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+        before = await row.effect(tracker)
+
+        await row.write(tracker, None)
+
+        assert await row.effect(tracker) != before
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({row.surface}),
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_B
 
 
 #: The criterion sub-issue the provenance property addresses, and the body
