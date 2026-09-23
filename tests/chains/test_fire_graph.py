@@ -1,14 +1,16 @@
 """The actual compiled fire excludes every delivery node and route."""
 
 import asyncio
+import hashlib
 import inspect
 import json
+import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from enum import Enum
 from itertools import product
 from math import prod
 from pathlib import Path
-from types import UnionType
+from types import CodeType, FrameType, UnionType
 from typing import Annotated, Literal, Union, get_args, get_origin
 
 from fastapi import FastAPI
@@ -16,9 +18,14 @@ from pydantic import BaseModel
 from pydantic_core import SchemaSerializer
 from starlette.types import Message
 
+import kodezart
+from kodezart.adapters import asyncio_job_queue
+from kodezart.api.v1.endpoints import agent as agent_routes
+from kodezart.api.v1.endpoints import jobs as job_routes
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.outcome import classify_outcome
+from kodezart.handlers import agent_handler
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
@@ -38,6 +45,7 @@ from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
+from kodezart.utils.sse import format_sse
 from tests.chains.test_fire_extraction import DELIVERY_FIELDS, fire
 from tests.domain.test_outcome import _state
 from tests.fakes import (
@@ -1043,3 +1051,161 @@ async def test_what_production_sends_for_the_terminal_is_its_fields_and_no_more(
         assert len(frames) == len(built), route
         for (name, terminal), frame in zip(built, frames, strict=True):
             assert_sends_its_fields(terminal, frame, f"{route}: {name}")
+
+
+#: Where the shipped package's source lives: a frame whose code was read
+#: from a file under it runs production code.
+PACKAGE_ROOT = Path(inspect.getfile(kodezart)).parent
+
+#: Every function between a terminal event and the bytes a client reads, on
+#: every route that streams it, each with the sha256 of its source text.
+#: A key the handler, the queue or the framing adds for some values of the
+#: terminal and not others is added in one of these, whatever values the
+#: egress check renders, so the functions are pinned whole: a change to any
+#: of them — or a function joining or leaving the path — has to update this
+#: table deliberately, which is the review this pin exists to force.  Held
+#: equal to the path as the drive below observes it.
+EGRESS_PATH: dict[Callable[..., object], str] = {
+    asyncio_job_queue.AsyncioJobQueue._worker: (
+        "55544aa6ca52e76b284c27b3d9de15540a8f597454659d529fdd9bfaa78a9cf6"
+    ),
+    asyncio_job_queue.AsyncioJobQueue._run_job: (
+        "5763ef3bc64dbad043b3d439170dc9d824aa58ccd25ed51bf38f28a371eee9dc"
+    ),
+    asyncio_job_queue.AsyncioJobQueue._publish: (
+        "d6a85e1885ad36f4ca75934bd37c541f65f26ad643520400b48411d0270a61f7"
+    ),
+    asyncio_job_queue._JobStream.publish: (
+        "2ce3207a884a56d24921e3fe5f5af3edf47904437a0ca1fb825957d505e5266d"
+    ),
+    asyncio_job_queue._JobStream.stream: (
+        "16713e2573486f8b4b1c70d0054ed76f8cf8648710da53e7f078ea7a78ee0012"
+    ),
+    AgentService.stream: (
+        "df524d52ffd4a599d2b539ec42f7c69988d92a584c731209be308712192eb042"
+    ),
+    AgentService._run_in_workspace: (
+        "77df3f7aa17ae2ead48e9a1e948b9b332ff306d5a4a032945c912f916186834d"
+    ),
+    agent_handler._queued_event_payload: (
+        "0a3e97589e823a8da2cbfe87e9d0d4e439af480bcc27ea7a02bea0fbe6fe2192"
+    ),
+    agent_handler._streamed_event_payload: (
+        "7d0987455078317117be5bf99d57f3e70d72128180a31ccd83ff42109fa9c3a0"
+    ),
+    agent_handler.AgentHandler.stream_query: (
+        "aa935c671ec4e9ea9a61c61bff49b6ceffa2a9888e016aa490699a7be38f4b9e"
+    ),
+    agent_handler.AgentHandler.attach_job: (
+        "2cb907ec716d4503ee419a14cf4cca0938642daa0e24add04382ea93df8f4359"
+    ),
+    agent_handler.AgentHandler.stream_workflow: (
+        "e9b9e5fbb7cd223451981abaab0eb24bb8af6fd6a7d51035a5f1272121e91256"
+    ),
+    agent_routes.stream_query: (
+        "dcef427f982ff12411c38879358dff9c9275223383329ead6ee73f1c02ed7bed"
+    ),
+    agent_routes.stream_workflow: (
+        "cbba11e3e1f1cc49bf238fbc1d6df536c4951af7a8bf420b893feabff3873ae4"
+    ),
+    job_routes.stream_job: (
+        "de117e987b5560c5e755a6940859aeeceb4854631c87d1fd9b7497eb4e7c4e1b"
+    ),
+    format_sse: "08c5bddea68439bc1f3a4bfc7f84b2c3dd443c5810a5a34380481ec2c1572f8f",
+}
+
+
+def carries_terminal(value: object) -> bool:
+    """Whether *value* is the terminal, or its rendering on the way out.
+
+    The event itself, the mapping the handler renders it to, or the SSE
+    frame text that mapping is formatted into.
+    """
+    if isinstance(value, WorkflowCompleteEvent):
+        return True
+    if isinstance(value, dict):
+        return value.get("type") == "workflow_complete"
+    if isinstance(value, str):
+        return '"type": "workflow_complete"' in value
+    return False
+
+
+def function_of(code: CodeType) -> Callable[..., object]:
+    """The module function or method *code* belongs to, by object.
+
+    Read off the code's module and qualified name; a function nested in
+    another — a route's ``generate`` — belongs to the one it is nested in,
+    whose source holds it.  Bounded by the parts of the name.
+    """
+    owner: object = inspect.getmodule(code)
+    for part in code.co_qualname.split(".<locals>.")[0].split("."):
+        member = inspect.getattr_static(owner, part)
+        owner = getattr(member, "__func__", member)
+    assert inspect.isfunction(owner), code
+    return owner
+
+
+def source_digest(function: Callable[..., object]) -> str:
+    """The sha256 of *function*'s source text, as ``inspect`` reads it."""
+    return hashlib.sha256(inspect.getsource(function).encode()).hexdigest()
+
+
+async def egress_path(events: list[AgentEvent]) -> set[Callable[..., object]]:
+    """Every production function the terminal passes through on its way out.
+
+    Observed, not listed: the app is driven over every route that streams
+    (:func:`emitted`) with a profile hook on the thread.  Whenever a
+    function of the shipped package is entered holding the terminal or its
+    rendering, or hands one back — a return, or a generator's yield — every
+    production function on the stack at that moment is on the path: the
+    worker that publishes the event, the queue's stream that replays and
+    fans it out, the handler that renders it, the route that frames it.
+    Bounded by the calls the drive makes and, per call, by the stack's
+    depth.
+    """
+    path: set[CodeType] = set()
+    root = str(PACKAGE_ROOT)
+
+    def observe(frame: FrameType, event: str, arg: object) -> None:
+        if event not in ("call", "return"):
+            return
+        if not frame.f_code.co_filename.startswith(root):
+            return
+        held = [arg] if event == "return" else list(frame.f_locals.values())
+        if not any(map(carries_terminal, held)):
+            return
+        on_stack: FrameType | None = frame
+        while on_stack is not None:
+            if on_stack.f_code.co_filename.startswith(root):
+                path.add(on_stack.f_code)
+            on_stack = on_stack.f_back
+
+    previous = sys.getprofile()
+    sys.setprofile(observe)
+    try:
+        await emitted(events)
+    finally:
+        sys.setprofile(previous)
+    return {function_of(code) for code in path}
+
+
+async def test_the_egress_path_is_pinned_whole():
+    """Every function between the terminal and the wire, by object and source.
+
+    The instances the egress check renders can only show a key for the
+    values somebody built, so the code that could add one is pinned
+    instead: the path is derived by driving every stream route the table
+    marks and observing which production functions the terminal passes
+    through, and that set must equal :data:`EGRESS_PATH`, each function's
+    source still hashing to what the table holds.
+    """
+    full = template()
+    derived = await egress_path([full, full.model_copy()])
+    assert EGRESS_PATH != {}
+    assert {
+        f"{function.__module__}.{function.__qualname__}" for function in derived
+    } == {f"{function.__module__}.{function.__qualname__}" for function in EGRESS_PATH}
+    assert derived == set(EGRESS_PATH)
+    assert {function: source_digest(function) for function in EGRESS_PATH} == (
+        EGRESS_PATH
+    )
