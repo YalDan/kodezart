@@ -30,6 +30,7 @@ from collections.abc import Iterator, Mapping
 
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.tracker import TrackerIssue
 from tests.chains.test_write_back_adoption import (
     FUNCTIONS,
     KOD_806_STATE_MOVES,
@@ -39,6 +40,7 @@ from tests.chains.test_write_back_adoption import (
     WALKER,
     CallSite,
     Production,
+    Source,
     artifact_writes,
     called_name,
     direct_calls,
@@ -218,89 +220,250 @@ def test_a_sibling_call_inside_the_class_that_states_the_move_is_not_unseen():
     assert unseen_moves({"adapters/backend.py": STATES_THE_METHOD}) == ()
 
 
-def _functions(tree: ast.AST) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef]:
-    for node in ast.walk(tree):
-        if isinstance(node, FUNCTIONS):
-            yield node
+#: The board row's own state-name field, read off TrackerIssue: the field the
+#: restore's keyword is named for.
+(BOARD_STATE,) = (name for name in TrackerIssue.model_fields if name == RESTORED_NAME)
+
+Function = ast.FunctionDef | ast.AsyncFunctionDef
 
 
-def _local_values(
-    function: ast.FunctionDef | ast.AsyncFunctionDef, name: str
-) -> list[ast.expr]:
-    """Every value the enclosing function binds *name* to."""
+def _own_nodes(function: Function) -> Iterator[ast.AST]:
+    """The nodes of a function outside every function or class nested in it."""
+    pending = list(ast.iter_child_nodes(function))
+    while pending:
+        node = pending.pop()
+        yield node
+        if not isinstance(node, (*FUNCTIONS, ast.ClassDef)):
+            pending.extend(ast.iter_child_nodes(node))
+
+
+def _holds_name(target: ast.expr, name: str) -> bool:
+    return any(
+        isinstance(node, ast.Name) and node.id == name for node in ast.walk(target)
+    )
+
+
+def _bound_values(function: Function, name: str) -> list[ast.expr] | None:
+    """Every value the function binds *name* to, in any binding form.
+
+    ``None`` when a binding form binds it to nothing an expression names
+    (an import, a ``with`` or ``except`` target, a ``del``).
+    """
     values: list[ast.expr] = []
-    for node in ast.walk(function):
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == name
-            for target in node.targets
+    for node in _own_nodes(function):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    values.append(node.value)
+                elif isinstance(target, ast.Tuple | ast.List) and _holds_name(
+                    target, name
+                ):
+                    paired = [
+                        value
+                        for element, value in zip(
+                            target.elts, getattr(node.value, "elts", ()), strict=False
+                        )
+                        if isinstance(element, ast.Name) and element.id == name
+                    ]
+                    unpacked = isinstance(node.value, ast.Tuple | ast.List) and len(
+                        node.value.elts
+                    ) == len(target.elts)
+                    values.extend(paired if unpacked and paired else [node.value])
+        elif isinstance(node, ast.AnnAssign | ast.AugAssign | ast.NamedExpr):
+            if (
+                isinstance(node.target, ast.Name)
+                and node.target.id == name
+                and node.value is not None
+            ):
+                values.append(node.value)
+        elif isinstance(node, ast.For | ast.AsyncFor | ast.comprehension):
+            if _holds_name(node.target, name):
+                values.append(node.iter)
+        elif isinstance(node, ast.withitem):
+            if node.optional_vars is not None and _holds_name(node.optional_vars, name):
+                return None
+        elif (isinstance(node, ast.ExceptHandler) and node.name == name) or (
+            isinstance(node, ast.Import | ast.ImportFrom)
+            and any((alias.asname or alias.name) == name for alias in node.names)
         ):
-            values.append(node.value)
-        elif (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == name
-            and node.value is not None
-        ):
-            values.append(node.value)
+            return None
     return values
 
 
-def _reaches(
-    function: ast.FunctionDef | ast.AsyncFunctionDef, expression: ast.expr
-) -> list[ast.expr]:
-    """The expression and every local binding it reads, followed through."""
-    seen: set[str] = set()
-    reached = [expression]
-    pending = [expression]
-    while pending:
-        for node in ast.walk(pending.pop()):
-            if isinstance(node, ast.Name) and node.id not in seen:
-                seen.add(node.id)
-                values = _local_values(function, node.id)
-                reached.extend(values)
-                pending.extend(values)
-    return reached
+def _parameters(function: Function) -> list[str]:
+    arguments = function.args
+    return [
+        argument.arg
+        for argument in (
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+        )
+    ]
 
 
-#: The names the configured mapping is held under: the operation field and
-#: the adapter keyword it is handed to, each read off its owner.
-MAPPING_NAMES = CONFIGURED | ADAPTER_MAPPING
+class Provenance:
+    """Where the state name a restore puts back comes from.
 
+    A restored name must bottom out at a read of the board row's own
+    state-name field.  It is followed through every binding form of a local
+    name (an assignment, tuple and starred targets among them, an annotated
+    or augmented assignment, a walrus, a loop or comprehension target), from
+    a parameter to the same-named argument at every production caller of
+    the function, and from a read of any other model field to every
+    production keyword of that field's name.  A call of the builtin
+    ``next`` is followed through its arguments, a comprehension through its
+    element, a conditional through both arms; ``None`` names no state.
+    Anything else is reported: a constant, a lookup in a mapping, an
+    attribute held on ``self``, a name bound in a form that names no
+    value, and a parameter or field nothing in production passes.
 
-def _configured(expression: ast.expr) -> bool:
-    return any(
-        (isinstance(node, ast.Constant) and isinstance(node.value, str))
-        or (isinstance(node, ast.Attribute) and node.attr.lstrip("_") in MAPPING_NAMES)
-        or (isinstance(node, ast.Name) and node.id.lstrip("_") in MAPPING_NAMES)
-        for node in ast.walk(expression)
-    )
+    Still unseen: a name composed at run time or reached by ``getattr``;
+    a caller that omits the parameter and leaves its default; callers are
+    matched by the called name alone, so a same-named function elsewhere is
+    followed too, which can only report more; and the board-row read is
+    recognised by the field's name on any receiver but ``self``, so another
+    object carrying an attribute of that name is taken for the board.
+    """
 
+    def __init__(self, sources: Mapping[str, str]) -> None:
+        production = Production(sources)
+        self.functions = production.functions
+        self.calls = {
+            source: list(direct_calls(node)) for source, node in self.functions.items()
+        }
 
-def configured_restores(sources: Mapping[str, str]) -> tuple[str, ...]:
-    """Each restore whose state name is a constant or the configured mapping."""
-    found = []
-    for module, text in sorted(sources.items()):
-        for function in _functions(ast.parse(text)):
-            for call in direct_calls(function):
-                if called_name(call) != RESTORE_STATE:
-                    continue
-                for keyword in call.keywords:
-                    if keyword.arg == RESTORED_NAME and any(
-                        _configured(value)
-                        for value in _reaches(function, keyword.value)
-                    ):
-                        found.append(f"{module}::{function.name}")
-    return tuple(found)
+    def _is_method(self, source: Source) -> bool:
+        node = self.functions[source]
+        parameters = _parameters(node)
+        return bool(parameters) and parameters[0] in {"self", "cls"}
+
+    def restores(self) -> Iterator[tuple[Source, ast.Call]]:
+        for source, calls in sorted(
+            self.calls.items(), key=lambda item: (item[0].module, item[0].function)
+        ):
+            for call in calls:
+                if called_name(call) == RESTORE_STATE:
+                    yield source, call
+
+    def unboarded(self) -> tuple[str, ...]:
+        """Each restore, with every origin of its name that is not the board."""
+        found = []
+        for source, call in self.restores():
+            named = [word.value for word in call.keywords if word.arg == RESTORED_NAME]
+            leaves = (
+                [leaf for value in named for leaf in self.origins(source, value, set())]
+                if named
+                else [f"{ast.unparse(call)} names no {RESTORED_NAME}"]
+            )
+            found.extend(
+                f"{source.module}::{source.function}: {leaf}"
+                for leaf in sorted(set(leaves))
+            )
+        return tuple(found)
+
+    def origins(
+        self, source: Source, expression: ast.expr, seen: set[object]
+    ) -> list[str]:
+        """The origins of *expression* in *source* that are not a board read."""
+        where = f"{source.module}::{source.function}"
+        match expression:
+            case ast.Constant(value=None):
+                return []
+            case ast.Attribute(value=ast.Name(id="self")):
+                return [f"{ast.unparse(expression)} held on self in {where}"]
+            case ast.Attribute(attr=attr) if attr == BOARD_STATE:
+                return []
+            case ast.Attribute(attr=attr):
+                return self._field_origins(attr, expression, where, seen)
+            case ast.Name(id=name):
+                return self._name_origins(source, name, seen)
+            case ast.Call(func=ast.Name(id="next"), args=args):
+                return [
+                    leaf for arg in args for leaf in self.origins(source, arg, seen)
+                ]
+            case (
+                ast.GeneratorExp(elt=elt) | ast.ListComp(elt=elt) | ast.SetComp(elt=elt)
+            ):
+                return self.origins(source, elt, seen)
+            case ast.IfExp(body=body, orelse=orelse):
+                return self.origins(source, body, seen) + self.origins(
+                    source, orelse, seen
+                )
+            case ast.BoolOp(values=values):
+                return [
+                    leaf
+                    for value in values
+                    for leaf in self.origins(source, value, seen)
+                ]
+        return [f"{ast.unparse(expression)} in {where}"]
+
+    def _field_origins(
+        self, field: str, expression: ast.expr, where: str, seen: set[object]
+    ) -> list[str]:
+        if ("field", field) in seen:
+            return []
+        seen.add(("field", field))
+        passed = [
+            (source, word.value)
+            for source, calls in self.calls.items()
+            for call in calls
+            for word in call.keywords
+            if word.arg == field
+        ]
+        if not passed:
+            return [f"{ast.unparse(expression)} passed by nothing, in {where}"]
+        return [
+            leaf
+            for source, value in passed
+            for leaf in self.origins(source, value, seen)
+        ]
+
+    def _name_origins(self, source: Source, name: str, seen: set[object]) -> list[str]:
+        if (source, name) in seen:
+            return []
+        seen.add((source, name))
+        where = f"{source.module}::{source.function}"
+        function = self.functions[source]
+        values = _bound_values(function, name)
+        if values is None:
+            return [f"{name} bound to no value in {where}"]
+        leaves = [
+            leaf for value in values for leaf in self.origins(source, value, seen)
+        ]
+        parameters = _parameters(function)
+        if name not in parameters:
+            return leaves if values else [f"{name} bound nowhere in {where}"]
+        positional = [
+            argument.arg
+            for argument in (*function.args.posonlyargs, *function.args.args)
+        ]
+        index = (
+            positional.index(name) - (1 if self._is_method(source) else 0)
+            if name in positional
+            else -1
+        )
+        passed = [
+            (caller, argument)
+            for caller, calls in self.calls.items()
+            for call in calls
+            if called_name(call) == function.name
+            for argument in (
+                *(word.value for word in call.keywords if word.arg == name),
+                *(call.args[index : index + 1] if index >= 0 else ()),
+            )
+        ]
+        if not passed and not values:
+            return [f"parameter {name} passed by no caller of {where}"]
+        return leaves + [
+            leaf
+            for caller, argument in passed
+            for leaf in self.origins(caller, argument, seen)
+        ]
 
 
 def restores(sources: Mapping[str, str]) -> int:
-    return sum(
-        1
-        for text in sources.values()
-        for function in _functions(ast.parse(text))
-        for call in direct_calls(function)
-        if called_name(call) == RESTORE_STATE
-    )
+    return sum(1 for _ in Provenance(sources).restores())
 
 
 def _restore(expression: str) -> str:
@@ -312,23 +475,92 @@ class Restorer:
 """
 
 
+def _restore_directly(expression: str) -> str:
+    return f"""
+class Restorer:
+    async def put_back(self, key, operation, stage, row):
+        await self._tracker.{RESTORE_STATE}(
+            issue_key=key, {RESTORED_NAME}={expression}
+        )
+"""
+
+
+THROUGH_A_PARAMETER = f"""
+class Restorer:
+    async def put_back(self, key, name):
+        await self._tracker.{RESTORE_STATE}(issue_key=key, {RESTORED_NAME}=name)
+
+
+async def fail(restorer, key, operation, stage):
+    await restorer.put_back(key, name=operation.{{field}}[stage])
+"""
+TUPLE_BOUND = f"""
+class Restorer:
+    async def put_back(self, key, row):
+        name, _ = "Backlog", row
+        await self._tracker.{RESTORE_STATE}(issue_key=key, {RESTORED_NAME}=name)
+"""
+WALRUS_BOUND = f"""
+class Restorer:
+    async def put_back(self, key):
+        if (name := "Todo"):
+            pass
+        await self._tracker.{RESTORE_STATE}(issue_key=key, {RESTORED_NAME}=name)
+"""
+BOARD_THROUGH_A_FIELD = f"""
+class Restorer:
+    async def put_back(self, key, report):
+        await self._tracker.{RESTORE_STATE}(
+            issue_key=key, {RESTORED_NAME}=report.claimed_name
+        )
+
+
+def claim(winner):
+    return Report(claimed_name=winner.{BOARD_STATE})
+"""
+
+
 def test_a_restored_state_name_is_read_from_the_board_and_not_from_configuration():
     assert CONFIGURED
     assert ADAPTER_MAPPING
+    assert BOARD_STATE in TrackerIssue.model_fields
     sources = production_sources()
     assert restores(sources) == len(
         [site for site in PERMITTED if site.method == RESTORE_STATE]
     )
-    assert configured_restores(sources) == ()
+    assert Provenance(sources).unboarded() == ()
     (field,) = sorted(CONFIGURED)
+    held = f"self._{sorted(ADAPTER_MAPPING)[0]}[stage]"
     planted = {
-        "chains/constant.py": _restore('"Done"'),
+        "chains/board.py": _restore(f"row.{BOARD_STATE}"),
+        "chains/board_field.py": BOARD_THROUGH_A_FIELD,
         "chains/configured.py": _restore(f"operation.{field}[stage]"),
-        "chains/held.py": _restore(f"self._{sorted(ADAPTER_MAPPING)[0]}[stage]"),
-        "chains/board.py": _restore("row.state_name"),
+        "chains/constant.py": _restore('"Done"'),
+        "chains/direct.py": _restore_directly('"Done"'),
+        "chains/held.py": _restore(held),
+        "chains/parameter.py": THROUGH_A_PARAMETER.replace("{field}", field),
+        "chains/review.py": _restore("self._review_state"),
+        "chains/state_names.py": _restore("self._state_names[stage]"),
+        "chains/tuple.py": TUPLE_BOUND,
+        "chains/walrus.py": WALRUS_BOUND,
     }
-    assert configured_restores(planted) == (
-        "chains/configured.py::put_back",
-        "chains/constant.py::put_back",
-        "chains/held.py::put_back",
+    assert Provenance(planted).unboarded() == (
+        f"chains/configured.py::Restorer.put_back: operation.{field}[stage] "
+        "in chains/configured.py::Restorer.put_back",
+        "chains/constant.py::Restorer.put_back: 'Done' "
+        "in chains/constant.py::Restorer.put_back",
+        "chains/direct.py::Restorer.put_back: 'Done' "
+        "in chains/direct.py::Restorer.put_back",
+        f"chains/held.py::Restorer.put_back: {held} "
+        "in chains/held.py::Restorer.put_back",
+        f"chains/parameter.py::Restorer.put_back: operation.{field}[stage] "
+        "in chains/parameter.py::fail",
+        "chains/review.py::Restorer.put_back: self._review_state held on self "
+        "in chains/review.py::Restorer.put_back",
+        "chains/state_names.py::Restorer.put_back: self._state_names[stage] "
+        "in chains/state_names.py::Restorer.put_back",
+        "chains/tuple.py::Restorer.put_back: 'Backlog' "
+        "in chains/tuple.py::Restorer.put_back",
+        "chains/walrus.py::Restorer.put_back: 'Todo' "
+        "in chains/walrus.py::Restorer.put_back",
     )
