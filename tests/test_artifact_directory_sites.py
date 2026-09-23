@@ -9,25 +9,37 @@ missed.
 
 Nothing is listed by hand that the tree can be asked for: the directory is
 the constant's own value, the modules permitted to name it are the constant's
-module and the persister that writes it, and the scanned tree is the package
-the constant is packaged in.  What IS listed is the calls the persister may
-make on a path under the directory, each with the reason it is not a read,
-and that table is checked against the walk in both directions, so an
-exemption for a call that no longer exists is as red as an unexempted call.
+module and the module the persister class is defined in, and the scanned tree
+is every ``.py`` module of the package the constant is packaged in.  What IS
+listed is the calls the persister may make on a path under the directory,
+each with the reason it is not a read, and that table is checked against the
+walk in both directions, so an exemption for a call that no longer exists is
+as red as an unexempted call.
 
-The walk is textual and executes nothing, which is what lets it speak for the
-whole tree rather than for the paths a fixture reaches.  Its blind spots,
-which review has to read from the code instead: a directory name assembled
-from fragments or read from configuration, and a read made through a helper
-that is handed the path and names none of it.
+The directory is seen in every spelling a module can give it: the constant's
+bare name, an import of it under another name, the constant read as a
+module attribute, and any string that holds it as a path segment — split on
+``/`` and ``:``, so a relative, absolute, ``./``-prefixed, f-string or
+``ref:path`` spelling is one.  A name bound to such a path, by assignment, a
+walrus, a loop, a ``with`` target or an attribute such as
+``self._artifact_dir``, carries it on.
+
+The walk is textual and executes nothing, which is what lets it speak for
+every ``.py`` module rather than for the paths a fixture reaches.  Its blind
+spots, which review has to read from the code instead: a directory name
+assembled from fragments or read from configuration, and a read made through
+a helper that is handed the path and names none of it.
 """
 
 import ast
+import inspect
+import re
 import sys
 from pathlib import Path
 
 import pytest
 
+from kodezart.adapters.git.artifact_persister import GitArtifactPersister
 from kodezart.core import constants
 from kodezart.core.constants import ARTIFACT_DIR
 
@@ -40,8 +52,14 @@ CONSTANT_MODULE = (
     .relative_to(SOURCE_ROOT)
     .as_posix()
 )
-#: The one writer: the adapter that persists the projection onto a branch.
-PERSISTER_MODULE = "adapters/git/artifact_persister.py"
+#: The one writer: the adapter that persists the projection onto a branch,
+#: read off the module its class is defined in.
+PERSISTER_MODULE = (
+    Path(inspect.getfile(inspect.getmodule(GitArtifactPersister) or constants))
+    .resolve()
+    .relative_to(SOURCE_ROOT)
+    .as_posix()
+)
 #: The name the constant is bound to, so a module naming it is seen whether it
 #: spells the value or imports the name.
 CONSTANT = "ARTIFACT_DIR"
@@ -96,25 +114,46 @@ def docstrings(tree: ast.AST) -> frozenset[int]:
     return frozenset(found)
 
 
+def holds_the_directory(text: str) -> bool:
+    """Whether *text* has the directory as one of its path segments.
+
+    Split on ``/`` and on ``:``, so a relative, absolute, ``./``-prefixed or
+    ``ref:path`` spelling is seen, and prose that merely mentions the word
+    beside other text is not.
+    """
+    return ARTIFACT_DIR in re.split(r"[/:]", text)
+
+
+def imported_as(tree: ast.AST) -> frozenset[str]:
+    """Every local name an import binds the constant to, its own included."""
+    return frozenset(
+        node.asname or node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.alias) and node.name == CONSTANT
+    )
+
+
 def names_the_directory(tree: ast.AST) -> bool:
     """Whether this module names the artifact directory at all.
 
-    By the constant's name, or by its value written out — a literal path
-    under it carries the directory as surely as the constant does.
+    By the constant's name, bare, imported under another name or read as a
+    module attribute, or by its value written into any string that is not a
+    docstring — a literal path under it carries the directory as surely as
+    the constant does.
     """
     prose = docstrings(tree)
+    if imported_as(tree):
+        return True
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id == CONSTANT:
             return True
-        if isinstance(node, ast.alias) and (node.asname or node.name) == CONSTANT:
+        if isinstance(node, ast.Attribute) and node.attr == CONSTANT:
             return True
         if (
             isinstance(node, ast.Constant)
             and isinstance(node.value, str)
             and id(node) not in prose
-            and (
-                node.value == ARTIFACT_DIR or node.value.startswith(f"{ARTIFACT_DIR}/")
-            )
+            and holds_the_directory(node.value)
         ):
             return True
     return False
@@ -124,24 +163,56 @@ def _is_directory_expression(node: ast.expr, aliases: frozenset[str]) -> bool:
     """Whether this expression IS a path at or under the directory."""
     if isinstance(node, ast.Name):
         return node.id in aliases
+    if isinstance(node, ast.Attribute):
+        return node.attr == CONSTANT or ast.unparse(node) in aliases
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value == ARTIFACT_DIR or node.value.startswith(f"{ARTIFACT_DIR}/")
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        return holds_the_directory(node.value)
+    if isinstance(node, ast.JoinedStr):
+        return any(
+            _is_directory_expression(
+                part.value if isinstance(part, ast.FormattedValue) else part, aliases
+            )
+            for part in node.values
+        )
+    if isinstance(node, ast.NamedExpr):
+        return _is_directory_expression(node.value, aliases)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Div, ast.Add)):
         return _is_directory_expression(node.left, aliases) or _is_directory_expression(
             node.right, aliases
         )
     if isinstance(node, ast.Call):
-        return any(_is_directory_expression(arg, aliases) for arg in node.args)
+        # A path built from one (``Path(ws, ".kodezart")``), or derived from
+        # one by a method of it (``artifact_dir.joinpath(name)``).
+        return any(_is_directory_expression(arg, aliases) for arg in node.args) or (
+            isinstance(node.func, ast.Attribute)
+            and _is_directory_expression(node.func.value, aliases)
+        )
     return False
+
+
+def _bound(target: ast.expr) -> set[str]:
+    """What a binding target names: a local, or an attribute such as a field."""
+    if isinstance(target, ast.Name):
+        return {target.id}
+    if isinstance(target, ast.Attribute):
+        return {ast.unparse(target)}
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return {name for inner in target.elts for name in _bound(inner)}
+    if isinstance(target, ast.Starred):
+        return _bound(target.value)
+    return set()
 
 
 def _aliases(tree: ast.AST) -> frozenset[str]:
     """Every name that stands for a path at or under the directory.
 
-    Grown to a fixed point, because a name bound from another such name
-    carries the same path rather than a value of another kind.
+    Seeded with every local name the constant is imported as, and grown to a
+    fixed point, because a name bound from another such name carries the
+    same path rather than a value of another kind.  A binding is an
+    assignment, a walrus, a loop or comprehension target, or a ``with``
+    target; an attribute target is carried by its spelling.
     """
-    aliases = {CONSTANT}
+    aliases = {CONSTANT} | set(imported_as(tree))
     bindings: list[tuple[list[ast.expr], ast.expr]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
@@ -150,8 +221,12 @@ def _aliases(tree: ast.AST) -> frozenset[str]:
             isinstance(node, (ast.AnnAssign, ast.AugAssign)) and node.value is not None
         ):
             bindings.append(([node.target], node.value))
+        elif isinstance(node, ast.NamedExpr):
+            bindings.append(([node.target], node.value))
         elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
             bindings.append(([node.target], node.iter))
+        elif isinstance(node, ast.withitem) and node.optional_vars is not None:
+            bindings.append(([node.optional_vars], node.context_expr))
     changed = True
     while changed:
         previous = set(aliases)
@@ -159,11 +234,7 @@ def _aliases(tree: ast.AST) -> frozenset[str]:
             if not _is_directory_expression(value, frozenset(aliases)):
                 continue
             for target in targets:
-                aliases.update(
-                    inner.id
-                    for inner in ast.walk(target)
-                    if isinstance(inner, ast.Name)
-                )
+                aliases.update(_bound(target))
         changed = aliases != previous
     return frozenset(aliases)
 
@@ -201,12 +272,19 @@ def calls_on_the_directory(tree: ast.AST) -> frozenset[str]:
     return frozenset(found)
 
 
-def modules() -> dict[str, ast.Module]:
-    """Every shipped module, parsed once, keyed by its path in the package."""
+def modules(root: Path) -> dict[str, ast.Module]:
+    """Every ``.py`` module under *root*, parsed, keyed by its path there."""
     return {
-        path.relative_to(SOURCE_ROOT).as_posix(): ast.parse(path.read_text())
-        for path in sorted(SOURCE_ROOT.rglob("*.py"))
+        path.relative_to(root).as_posix(): ast.parse(path.read_text())
+        for path in sorted(root.rglob("*.py"))
     }
+
+
+def naming(trees: dict[str, ast.Module]) -> frozenset[str]:
+    """Every module that names the directory."""
+    return frozenset(
+        module for module, tree in trees.items() if names_the_directory(tree)
+    )
 
 
 def test_the_artifact_directory_is_named_by_its_constant_and_the_persister_alone():
@@ -215,13 +293,13 @@ def test_the_artifact_directory_is_named_by_its_constant_and_the_persister_alone
     Everything else on both arms is free of it, so no module can be reading a
     projection it never names.
     """
-    naming = {module for module, tree in modules().items() if names_the_directory(tree)}
-    assert naming == {CONSTANT_MODULE, PERSISTER_MODULE}, sorted(naming)
+    named = naming(modules(SOURCE_ROOT))
+    assert named == {CONSTANT_MODULE, PERSISTER_MODULE}, sorted(named)
 
 
 def test_no_site_reads_a_path_under_the_artifact_directory():
     """The writer makes, writes, asks about and removes; it never reads."""
-    trees = modules()
+    trees = modules(SOURCE_ROOT)
     made = set(calls_on_the_directory(trees[PERSISTER_MODULE])) | set(
         calls_on_the_directory(trees[CONSTANT_MODULE])
     )
@@ -234,20 +312,75 @@ def test_every_exemption_carries_the_reason_it_is_one():
     assert READS.isdisjoint(EXEMPT)
 
 
+#: Where a planted reader sits in its package: a services-shaped module.
+PLANTED = "services/planted.py"
+
+
+def plant(root: Path, body: str, *, at: str = PLANTED) -> dict[str, ast.Module]:
+    """A package under *root* holding one planted module, walked as the tree is."""
+    module = root / at
+    module.parent.mkdir(parents=True, exist_ok=True)
+    module.write_text(body)
+    return modules(root)
+
+
 @pytest.mark.parametrize(
-    "body",
+    "body,at",
     [
         pytest.param(
             "from kodezart.core.constants import ARTIFACT_DIR\n"
             "def satisfied(workspace):\n"
             "    entry = Path(workspace) / ARTIFACT_DIR / 'criteria.json'\n"
             "    return json.loads(entry.read_text())\n",
+            PLANTED,
             id="a-service-reading-the-projected-file",
         ),
         pytest.param(
             "def satisfied(workspace):\n"
             "    return Path(workspace, '.kodezart/criteria.json').read_text()\n",
+            PLANTED,
             id="a-literal-path-under-the-directory",
+        ),
+        pytest.param(
+            "from kodezart.core import constants\n"
+            "def satisfied(workspace):\n"
+            "    entry = Path(workspace) / constants.ARTIFACT_DIR / 'criteria.json'\n"
+            "    return json.loads(entry.read_text())\n",
+            PLANTED,
+            id="the-constant-read-as-a-module-attribute",
+        ),
+        pytest.param(
+            "from kodezart.core.constants import ARTIFACT_DIR as projection\n"
+            "def satisfied(workspace):\n"
+            "    return (Path(workspace) / projection / 'criteria.json').read_text()\n",
+            PLANTED,
+            id="the-constant-imported-under-another-name",
+        ),
+        pytest.param(
+            "def satisfied(workspace):\n"
+            "    return open(f'{workspace}/.kodezart/criteria.json').read()\n",
+            PLANTED,
+            id="an-f-string-path-under-the-directory",
+        ),
+        pytest.param(
+            "def satisfied():\n"
+            "    return [entry.name for entry in Path('./.kodezart').iterdir()]\n",
+            PLANTED,
+            id="a-dot-slash-path",
+        ),
+        pytest.param(
+            "async def satisfied(git, cwd):\n"
+            "    return await git.show(cwd, 'origin:.kodezart/criteria.json')\n",
+            PLANTED,
+            id="a-ref-qualified-path",
+        ),
+        pytest.param(
+            "from kodezart.core.constants import ARTIFACT_DIR\n"
+            "def satisfied(workspace):\n"
+            "    if (entry := Path(workspace) / ARTIFACT_DIR / 'c.json').exists():\n"
+            "        return entry.read_text()\n",
+            PLANTED,
+            id="a-walrus-bound-path",
         ),
         pytest.param(
             "from kodezart.core.constants import ARTIFACT_DIR\n"
@@ -255,25 +388,62 @@ def test_every_exemption_carries_the_reason_it_is_one():
             "    def persist(self, workspace):\n"
             "        artifact_dir = Path(workspace) / ARTIFACT_DIR\n"
             "        return [entry.name for entry in artifact_dir.iterdir()]\n",
+            PERSISTER_MODULE,
             id="a-read-inside-the-writer-itself",
+        ),
+        pytest.param(
+            "from kodezart.core.constants import ARTIFACT_DIR\n"
+            "class ArtifactPersister:\n"
+            "    def persist(self, workspace):\n"
+            "        artifact_dir = Path(workspace) / ARTIFACT_DIR\n"
+            "        artifact_dir.mkdir(exist_ok=True)\n"
+            "        self._artifact_dir = artifact_dir\n"
+            "        return self._artifact_dir.joinpath('ticket.json').read_text()\n",
+            PERSISTER_MODULE,
+            id="an-attribute-held-path-read-inside-the-writer",
+        ),
+        pytest.param(
+            "from kodezart.core.constants import ARTIFACT_DIR\n"
+            "class ArtifactPersister:\n"
+            "    def persist(self, workspace):\n"
+            "        return open(f'{workspace}/{ARTIFACT_DIR}/criteria.json').read()\n",
+            PERSISTER_MODULE,
+            id="an-f-string-naming-the-constant-inside-the-writer",
         ),
     ],
 )
-def test_a_planted_read_is_reported(body):
-    tree = ast.parse(body)
-    assert names_the_directory(tree)
-    assert calls_on_the_directory(tree) & READS
+def test_a_planted_read_is_reported(body, at, tmp_path):
+    trees = plant(tmp_path, body, at=at)
+    assert at in naming(trees)
+    assert calls_on_the_directory(trees[at]) - set(EXEMPT)
 
 
-def test_a_planted_write_only_module_is_not_reported():
+def test_a_planted_write_only_module_is_not_reported(tmp_path):
     """The control's control: writing under the directory stays green."""
-    tree = ast.parse(
+    trees = plant(
+        tmp_path,
         "from kodezart.core.constants import ARTIFACT_DIR\n"
         "def persist(workspace, artifacts):\n"
         "    artifact_dir = Path(workspace) / ARTIFACT_DIR\n"
         "    artifact_dir.mkdir(exist_ok=True)\n"
         "    for name, content in artifacts.items():\n"
-        "        (artifact_dir / name).write_text(content)\n"
+        "        (artifact_dir / name).write_text(content)\n",
+        at=PERSISTER_MODULE,
     )
-    assert names_the_directory(tree)
-    assert not calls_on_the_directory(tree) & READS
+    assert PERSISTER_MODULE in naming(trees)
+    assert calls_on_the_directory(trees[PERSISTER_MODULE]) <= set(EXEMPT)
+
+
+def test_prose_naming_the_directory_is_not_a_module_naming_it(tmp_path):
+    """A docstring that holds the path as a segment is documentation."""
+    trees = plant(
+        tmp_path,
+        '""".kodezart/criteria.json is written for a person and read by nothing."""\n'
+        "def satisfied(record):\n"
+        '    """.kodezart/criteria.json is never consulted here."""\n'
+        "    return record.done\n",
+    )
+    # The prose does hold the directory as a segment: only its being a
+    # docstring keeps the module out.
+    assert holds_the_directory(ast.get_docstring(trees[PLANTED]) or "")
+    assert PLANTED not in naming(trees)
