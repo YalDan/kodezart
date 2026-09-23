@@ -119,7 +119,7 @@ MISPLACEMENT_SENTENCE = (
 
 #: The member's own paragraphs, as prose, each written once and read by
 #: both registers below. The two sentences that decide the route and the
-#: four sentences of the standard are the constants above.
+#: nine sentences of the standard are the constants above.
 OPENING = (
     "Assess whether the issue satisfies the supplied mandate rubric from its own "
     "specification, without inventing a decision. Work alone. Return the "
@@ -147,7 +147,9 @@ GRADABILITY = (
     "to absorb. Do not assume a command, service or credential the declarations "
     "do not state."
 )
-HIERARCHY = " ".join((*SENTENCES, MISPLACEMENT_SENTENCE))
+#: The fragment composes the quick-win sizing after the hierarchy (KOD-904),
+#: so the judge reads it too, in front of the applying sentence.
+HIERARCHY = " ".join((*SENTENCES, *QUICK_WIN_SENTENCES, MISPLACEMENT_SENTENCE))
 RUBRIC = (
     "Use the supplied mandate rubric to judge the issue. Read repository "
     "evidence at the supplied base ref before making repository claims."
@@ -571,8 +573,8 @@ HALT_LICENSED: dict[str, tuple[str, str]] = {
         "other refusal kind\nand stop the stage instead of handing it on.\n",
     ),
     "in_front_of_the_applying_sentence": (
-        "don't invent it.\nAn issue outside that tree",
-        "don't invent it.\nPlacement is a judgement only a person can settle, so "
+        "its stated criteria.\nAn issue outside that tree",
+        "its stated criteria.\nPlacement is a judgement only a person can settle, so "
         "escalate rather than\nrepair it. An issue outside that tree",
     ),
     "in_an_unrelated_paragraph": (
