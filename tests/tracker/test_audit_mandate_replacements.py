@@ -91,9 +91,10 @@ async def test_unreadable_replacement_refs_cannot_return_mandate(
 
 @pytest.mark.parametrize("read_number", [1, 2])
 async def test_replacement_read_settles_before_mandate_workspace_release(
-    setup, monkeypatch, tmp_path, read_number
+    setup, monkeypatch, tmp_path, tracker_writes, read_number
 ):
     build, _, git, workspace = setup
+    writes = tracker_writes()
     await assert_git_read_settles_before_release(
         invoke=lambda: build().complete(REQUEST),
         git=git,
@@ -103,3 +104,4 @@ async def test_replacement_read_settles_before_mandate_workspace_release(
         phase="has_replace_refs",
         read_number=read_number,
     )
+    assert tracker_writes() == writes

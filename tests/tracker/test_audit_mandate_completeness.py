@@ -150,28 +150,39 @@ async def test_a_failed_restamp_mandate_keeps_the_raw_trace_and_its_reason(
     assert tracker_writes() == before
 
 
-async def refuted_arm(arm, setup, tracker, server):
-    """A real sweep observation whose *arm* is REFUTED and complete."""
+async def refuted_arm(arm, setup, tracker, server, tracker_writes):
+    """A real sweep observation whose *arm* is REFUTED and complete.
+
+    The sweep that produces it writes nothing: the mandating surfaces it
+    hunts over are read, never edited.
+    """
     build, executor, _, _, _, pr_states, _, operation = setup
     if arm == "terminal":
         await terminal_ready(tracker, server, pr_states)
-        return (await build().run()).observations[1]
-    if arm == "forge":
+        before = tracker_writes()
+        observation = (await build().run()).observations[1]
+    elif arm == "forge":
         await state(tracker, server, CHILD, "Done", WorkflowStateKind.COMPLETED)
         selected = selected_operation(operation)
         async with forge("fake", "work") as (ci, _):
-            return (
+            before = tracker_writes()
+            observation = (
                 await build(
                     selected_op=selected,
                     selected_forge=verifier(tracker, selected, ci),
                 ).run()
             ).observations[0]
-    if arm == "restamp":
+    elif arm == "restamp":
         await refuted_restamp(tracker, server, "current")
-        return (await build().run()).observations[0]
-    executor.verdict = "refuted"
-    await state(tracker, server, CHILD, "In Review", WorkflowStateKind.STARTED)
-    return (await build().run()).observations[0]
+        before = tracker_writes()
+        observation = (await build().run()).observations[0]
+    else:
+        executor.verdict = "refuted"
+        await state(tracker, server, CHILD, "In Review", WorkflowStateKind.STARTED)
+        before = tracker_writes()
+        observation = (await build().run()).observations[0]
+    assert tracker_writes() == before
+    return observation
 
 
 #: The completeness rule's rows, stated here independently of the table
@@ -189,7 +200,7 @@ ARMS = (
     ("arm", "completed", "reason"), ARMS, ids=[row[0] for row in ARMS]
 )
 async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion(
-    setup, tracker, server, arm, completed, reason
+    setup, tracker, server, tracker_writes, arm, completed, reason
 ):
     """Drop the mandate verdict from a refutation the sweep produced: refused.
 
@@ -200,7 +211,7 @@ async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion
     here rather than taking its case away with it.
     """
     assert set(MANDATED_ARMS) == set(ARMS)
-    observation = await refuted_arm(arm, setup, tracker, server)
+    observation = await refuted_arm(arm, setup, tracker, server, tracker_writes)
     assert getattr(observation, arm).verdict is AuditVerdict.REFUTED
     assert getattr(observation, completed) is not None
 
@@ -216,7 +227,7 @@ async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion
 
 @pytest.mark.parametrize("arm", ["forge", "evidence"])
 async def test_a_forge_or_evidence_refutation_is_completed_by_a_refuting_report(
-    setup, tracker, server, arm
+    setup, tracker, server, tracker_writes, arm
 ):
     """The report beside a refutation must be that refutation's own report.
 
@@ -225,7 +236,7 @@ async def test_a_forge_or_evidence_refutation_is_completed_by_a_refuting_report(
     about another claim than the one the evidence stands on completes
     nothing the observation carries.  Both are refused at construction.
     """
-    observation = await refuted_arm(arm, setup, tracker, server)
+    observation = await refuted_arm(arm, setup, tracker, server, tracker_writes)
     if arm == "forge":
         claim = observation.forge_report.claim
         holding = AuditClaimReport.model_validate(
