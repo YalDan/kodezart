@@ -41,17 +41,6 @@ class NativeAmendmentRefusalError(NativeWriteRefusalError):
         )
 
 
-class AmendmentRequiresWriteError(NativeWriteRefusalError):
-    """A reproduced ground still requires confirmed amendment writes."""
-
-    def __init__(self, judgment: AmendmentJudgment) -> None:
-        self.judgment = judgment
-        super().__init__(
-            "The ground was reproduced, but no confirmed amendment authorizes "
-            "this departure; the harness will not commit or publish it."
-        )
-
-
 class AmendmentWriteBackRefusalError(NativeWriteRefusalError):
     """An unsettled canonical write, retaining the actual artifact and all rounds."""
 
