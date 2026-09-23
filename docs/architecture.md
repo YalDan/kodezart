@@ -270,8 +270,10 @@ record is the only source of what the lane committed, so the record is
 resolved before any remote is asked anything: `recorded_lane` resolves the
 loop, deliverable and base refs by ROLE — never a ref composed from another
 ref's text — and the head as the record's last commit act, never the head field
-and never a remote reading. After a stall that last act is the landing act, so
-the head is the best iteration the landing chose. A record naming no commit act
+and never a remote reading. After a stall exit that had a commit, that last act
+is the best iteration: the consolidated tip when the landing integrated, and
+otherwise the best commit itself. A record whose run reached no stall exit names
+its last act, and that is the head. A record naming no commit act
 refuses, because a lane resumed against none has nothing to grade (KOD-705).
 The loop level's remote head is read at the branch the LOOP role resolves, and
 says whether the recorded loop branch still stands at that head; where it does
@@ -344,7 +346,10 @@ resolving now each raise `LaneEntryError`. A loop branch the remote holds
 anywhere but the record's head is not resumed from: it is logged with both shas
 and left in place, and a lane owing nothing whose loop branch has left its head
 raises `LaneEntryError`, because delivering that branch as it stands would
-deliver a commit the record does not name.
+deliver a commit the record does not name. So a lane that landed and then had
+every criterion crossed off, with no pull request, refuses on every walk, even
+though its deliverable branch holds the record's head; the refusal stays inside
+that lane.
 The subject text is read once, at the fire's entry, and compared with the
 digest the record pinned: a difference raises `SubjectAmendedError` before any
 session, and a record with no digest is not compared and is pinned by its next
@@ -373,12 +378,15 @@ record out of a delivery, writes nothing when the record already carries that
 pull request, and otherwise edits the one marker comment in place under the
 prior body it just read.
 
-`record_landing` is the stall landing's act on that same record, through the
-same writer. The landing step makes it after it consolidated a stalled run's best
-iteration, and only when the landing put that work on the deliverable branch:
-the row names the tip the deliverable then stands at, so re-entry resumes there
-and not at the loop tip the landing was chosen over. It writes nothing when the
-record's newest act is already the landed sha.
+`record_landing` is the stall exit's best act on that same record, through the
+same writer. The landing step makes it on every stall exit that has a best
+iteration: when the landing put that work on the deliverable branch, the row
+names the tip the deliverable then stands at, and otherwise — a consolidation
+that did not integrate, or a forge-less landing — it names the best commit
+itself, one of the loop branch's own commits. Either way re-entry resumes there
+and not at the loop tip the best iteration was chosen over. A stall exit with no
+commit records nothing. It writes nothing when the record's newest act is
+already that sha.
 
 `write_cross_offs` is another call. `RalphLoop._evaluate_node` makes it once
 per iteration, after the grade and before the iteration event is emitted, so a

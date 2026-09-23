@@ -19,9 +19,12 @@ class ResumedLane(CamelCaseModel):
     """A record exists and the lane still owes criteria: resume at its head.
 
     ``head_sha`` is the head the RECORD names: its last commit act. After a
-    stall that is the landing act, so a lane resumes at the best iteration the
-    landing chose and never at the loop tip it was chosen over. No remote
-    reading is ever this value (KOD-705, KOD-96).
+    stall exit that had a commit, that act is the best iteration — the
+    consolidated tip when the landing integrated, and otherwise the best
+    commit itself — so a lane resumes there and never at the loop tip it was
+    chosen over. A record whose run reached no stall exit names its last act,
+    and that is the head. No remote reading is ever this value (KOD-705,
+    KOD-96).
 
     ``loop_branch`` is the recorded loop branch when the remote holds it at
     exactly ``head_sha``, and the fire continues it. ``None`` says no recorded

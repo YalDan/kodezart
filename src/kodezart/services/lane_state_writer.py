@@ -194,9 +194,10 @@ class TrackerLaneStateWriter:
     ) -> LaneRunState:
         """Record the landed best iteration as this lane's next commit act.
 
-        A stall consolidates the best iteration of the run onto the
-        deliverable branch, and *landed_sha* is where that branch then
-        stands. The row is the act, so it is appended through the one
+        *landed_sha* is the stall exit's best iteration: where the deliverable
+        branch stands when the landing consolidated it there, and otherwise
+        the best commit itself, one of the loop branch's own commits. The row
+        is the act, so it is appended through the one
         constructor every other row goes through, at this one site: a
         re-entry resolving the last act would otherwise resume from the work
         the landing was chosen over (KOD-705).
