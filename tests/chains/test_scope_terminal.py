@@ -12,12 +12,14 @@ tick count is a literal observed from the run before it was written down.
 
 import ast
 import asyncio
+import dataclasses
 import inspect
 import sys
 from typing import get_args, get_type_hints
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
+from pydantic import BaseModel
 
 from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.chains.criteria import TrackerCriteria
@@ -974,16 +976,27 @@ def classes_in(hint: object) -> set[type]:
     return found
 
 
-def terminal_input_modules() -> set[str]:
-    """The modules of every class the terminal's signatures take or give.
+def field_types(cls: type) -> list[object]:
+    """The resolved type of every field *cls* declares, dataclass or model."""
+    hints = get_type_hints(cls)
+    if dataclasses.is_dataclass(cls):
+        return [hints[field.name] for field in dataclasses.fields(cls)]
+    if issubclass(cls, BaseModel):
+        return [hints[name] for name in cls.model_fields]
+    return []
 
-    Derived from the resolved annotations of ``report``, the constructor and
-    ``derive_scope_outcome``, so the type a reading arrives in is scanned with
-    the act that reads it.  What stays unseen is a type reached only through
-    another types module: the closure above does not follow that package.
+
+def terminal_input_classes() -> set[type]:
+    """Every class the terminal can be handed, through its fields.
+
+    Seeded with the resolved annotations of ``report``, the constructor and
+    ``derive_scope_outcome``, then closed over the field types of every
+    ``kodezart`` class reached, so a value that rides in on a field of a field
+    is reached as much as one a signature names.  Bounded by the classes
+    already taken, so a class that refers back to itself terminates.
     """
-    return {
-        found.__module__
+    pending = [
+        found
         for function in (
             ScopeTerminal.report,
             ScopeTerminal.__init__,
@@ -991,24 +1004,60 @@ def terminal_input_modules() -> set[str]:
         )
         for hint in get_type_hints(function).values()
         for found in classes_in(hint)
+    ]
+    reached: set[type] = set()
+    while pending:
+        cls = pending.pop()
+        if cls in reached:
+            continue
+        reached.add(cls)
+        if cls.__module__.startswith("kodezart."):
+            pending.extend(
+                found for hint in field_types(cls) for found in classes_in(hint)
+            )
+    return reached
+
+
+def terminal_input_modules() -> set[str]:
+    """The modules of every class the terminal can be handed, and its imports.
+
+    Every ``kodezart`` module a class of ``terminal_input_classes`` lives in,
+    and every ``kodezart`` module the terminal module imports directly,
+    ``kodezart.core`` included, which the import closure does not follow.
+    """
+    seed = ast.parse(path_of(TERMINAL_SEED).read_text(encoding="utf-8"))
+    return {
+        found.__module__
+        for found in terminal_input_classes()
         if found.__module__.startswith("kodezart.")
-    }
+    } | imported_modules(seed, ("kodezart.",))
 
 
 def test_no_module_of_the_terminal_reaches_a_union_value():
     """The terminal reads no union result at all, and cannot start to quietly.
 
-    Over the terminal's import closure and the modules of the types its
-    signatures take and give: no module imports the union module or a module
+    Over the terminal's import closure, the modules it imports directly, and
+    the modules of every class its signatures take or give and of every class
+    their fields reach: no module imports the union module or a module
     producing its values, and none names a union type or outcome value.
     """
     modules = terminal_modules() | terminal_input_modules()
     producers = union_producers()
     # Non-vacuity: the producers are found, the vocabulary is the union's,
-    # and the reading the terminal is handed is on the scanned surface.
+    # and the reading the terminal is handed is on the scanned surface, down
+    # to the address a field of a field carries and the core module the
+    # terminal imports.
     assert producers >= {"kodezart.domain.union_facts", "kodezart.services.union_tick"}
     assert {"UnionCompositionResult", "UnionRemediationEntry"} <= UNION_NAMES
-    assert {TERMINAL_SEED, "kodezart.types.domain.scope_ready"} <= modules
+    assert {
+        TERMINAL_SEED,
+        "kodezart.types.domain.scope_ready",
+        "kodezart.types.domain.scope_address",
+        "kodezart.core.outbound_write",
+    } <= modules
+    # A field typed as bare ``object`` could carry a union value past every
+    # module this scan reads, so no field the terminal can be handed is one.
+    assert object not in terminal_input_classes()
     offenders = {
         module: sites
         for module in sorted(modules)
@@ -1058,7 +1107,14 @@ def test_the_union_detector_finds_every_producer():
 
 
 def test_the_terminal_takes_nothing_but_its_reading():
-    """The act and its arithmetic take the reading and the vector, and no more."""
+    """The act and its arithmetic take the reading and the vector, and no more.
+
+    The act has one public capability, ``report``: a second public method is a
+    second way to hand the terminal something.
+    """
+    assert [name for name in dir(ScopeTerminal) if not name.startswith("_")] == [
+        "report"
+    ]
     assert list(inspect.signature(derive_scope_outcome).parameters) == ["lanes"]
     assert list(inspect.signature(ScopeTerminal.report).parameters) == [
         "self",
