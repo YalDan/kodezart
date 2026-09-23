@@ -27,6 +27,10 @@ OLD_PARENT = "FIX-2"
 NEW_PARENT = "FIX-3"
 ADDED = "FIX-4"
 REMOVED = "FIX-5"
+#: A second issue in one relation list, so every issue a list names is asked
+#: for and not only its first.
+ADDED_TOO = "FIX-6"
+REMOVED_TOO = "FIX-7"
 AT = datetime(2026, 9, 1, tzinfo=UTC)
 
 
@@ -93,6 +97,16 @@ PEER_SHAPES: Mapping[str, tuple[Mapping[str, object], str | None, frozenset[str]
         OLD_PARENT,
         frozenset({CHILD, ADDED, REMOVED}),
     ),
+    "blocked_by_add_two": (
+        {"kind": "blocked_by", "add": [ADDED, ADDED_TOO]},
+        OLD_PARENT,
+        frozenset({CHILD, ADDED, ADDED_TOO}),
+    ),
+    "blocked_by_remove_two": (
+        {"kind": "blocked_by", "remove": [REMOVED, REMOVED_TOO]},
+        OLD_PARENT,
+        frozenset({CHILD, REMOVED, REMOVED_TOO}),
+    ),
     "related_to_add": (
         {"kind": "related_to", "add": [ADDED]},
         OLD_PARENT,
@@ -107,6 +121,16 @@ PEER_SHAPES: Mapping[str, tuple[Mapping[str, object], str | None, frozenset[str]
         {"kind": "related_to", "add": [ADDED], "remove": [REMOVED]},
         OLD_PARENT,
         frozenset({CHILD, ADDED, REMOVED}),
+    ),
+    "related_to_add_two": (
+        {"kind": "related_to", "add": [ADDED, ADDED_TOO]},
+        OLD_PARENT,
+        frozenset({CHILD, ADDED, ADDED_TOO}),
+    ),
+    "related_to_remove_two": (
+        {"kind": "related_to", "remove": [REMOVED, REMOVED_TOO]},
+        OLD_PARENT,
+        frozenset({CHILD, REMOVED, REMOVED_TOO}),
     ),
     "priority": (
         {"kind": "priority", "priority": IssuePriority.HIGH.value},
