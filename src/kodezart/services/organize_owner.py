@@ -1118,11 +1118,19 @@ class OrganizeOwner:
                     admitted=admitted,
                     under_approval=phase.role.runs_under_approval,
                 )
+                # A later round follows a dry block that did not hold: a
+                # dry block that holds ends the loop. So only the first round
+                # may end before its own dry block.
+                first_round = _convergence_round == 0
                 if pending is None:
-                    # Nobody is admitted here: an approved scope on the
-                    # pre-approval row, or one whose gate is absent. No work,
-                    # no completion, no halt.
-                    break
+                    if first_round:
+                        # Nobody is admitted here: an approved scope on the
+                        # pre-approval row, or one whose gate is absent. No
+                        # work, no completion, no halt.
+                        break
+                    # The pass's own write can take the last admitted member
+                    # out of the roster; the round still spends its dry round.
+                    pending = ()
                 active = True
                 blocked = tuple(
                     key
@@ -1161,10 +1169,12 @@ class OrganizeOwner:
                     and admitted.get(issue.issue_key, False)
                     and (issue.issue_key in pending or issue.issue_key in finding_keys)
                 ]
-                # A live finding keeps the round going with no subject: the
-                # pass's own write can empty the roster (a cleared parent),
-                # and the finding then still needs its dry round.
-                if not subjects and not findings:
+                # With no subject, only the first round ends here. A later
+                # round follows a dry block that failed, on a live finding, a
+                # refusal with none, a moved roster or a stale reading, so it
+                # spends its dry round: the loop then ends only by a dry
+                # round that holds or by the bound.
+                if not subjects and first_round:
                     break
                 work = {issue.issue_key for issue in gap}
                 for issue in subjects:
