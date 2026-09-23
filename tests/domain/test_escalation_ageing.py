@@ -2,7 +2,6 @@
 
 import ast
 import inspect
-import pkgutil
 from pathlib import Path
 
 import pytest
@@ -449,15 +448,34 @@ def test_signal_module_is_pure_and_count_comparisons_have_no_literal_bound(
     )
 
 
-def _names_an_alarm_signal(path: Path) -> bool:
-    """Whether the module at *path* imports the signal vocabulary by name."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+def _names_an_alarm_signal(source: str) -> bool:
+    """Whether *source* names the signal vocabulary in any spelling.
+
+    An import of the name, a bare use of it, and an attribute read of it off
+    a module imported whole (``run_alarm.AlarmSignal``) all count.
+    """
+    tree = ast.parse(source)
     return any(
-        alias.name == "AlarmSignal"
+        (
+            isinstance(node, ast.ImportFrom)
+            and any(alias.name == "AlarmSignal" for alias in node.names)
+        )
+        or (isinstance(node, ast.Name) and node.id == "AlarmSignal")
+        or (isinstance(node, ast.Attribute) and node.attr == "AlarmSignal")
         for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
     )
+
+
+def _modules_naming_an_alarm_signal(root: Path, package: str) -> set[str]:
+    """Every module under *root*, at any depth, that names the vocabulary."""
+    found = set()
+    for path in sorted(root.rglob("*.py")):
+        parts = path.relative_to(root).with_suffix("").parts
+        if parts[-1] == "__init__":
+            parts = parts[:-1]
+        if _names_an_alarm_signal(path.read_text(encoding="utf-8")):
+            found.add(".".join((package, *parts)))
+    return found
 
 
 def test_every_domain_module_naming_an_alarm_signal_is_in_the_purity_scan():
@@ -465,17 +483,41 @@ def test_every_domain_module_naming_an_alarm_signal_is_in_the_purity_scan():
 
     A new signal module that names the vocabulary and is missing from the
     table above would otherwise carry none of its protection: no import
-    allow-list, no await, no literal bound. Derived from the package's own
-    modules, so a module added anywhere under it is found.
+    allow-list, no await, no literal bound. Derived from every module under
+    the package, subpackages included, so a module added anywhere under it is
+    found.
     """
-    root = Path(kodezart.domain.__path__[0])
-    derived = {
-        f"kodezart.domain.{info.name}"
-        for info in pkgutil.iter_modules([str(root)])
-        if not info.ispkg and _names_an_alarm_signal(root / f"{info.name}.py")
-    }
+    derived = _modules_naming_an_alarm_signal(
+        Path(kodezart.domain.__path__[0]), kodezart.domain.__name__
+    )
     scanned = {module.__name__ for module, _ in SIGNAL_MODULES}
 
     # Not vacuous: the fold modules are found by the derivation itself.
     assert {run_shape.__name__, stream_signals.__name__} <= derived
     assert scanned == derived
+
+
+def test_the_derivation_finds_a_subpackage_module_reading_the_vocabulary_by_attribute(
+    tmp_path,
+):
+    """The derivation's own positive control, on a tree written for it.
+
+    The module sits in a subpackage and never imports the name: it imports
+    the vocabulary's module whole and reads the name off it.
+    """
+    nested = tmp_path / "folds" / "deeper"
+    nested.mkdir(parents=True)
+    (tmp_path / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "folds" / "__init__.py").write_text("", encoding="utf-8")
+    (nested / "__init__.py").write_text("", encoding="utf-8")
+    (nested / "quiet.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (nested / "attribute_fold.py").write_text(
+        "from kodezart.types.domain import run_alarm\n"
+        "\n"
+        "SIGNAL = run_alarm.AlarmSignal.TALLY_UNMOVED\n",
+        encoding="utf-8",
+    )
+
+    assert _modules_naming_an_alarm_signal(tmp_path, "synthetic") == {
+        "synthetic.folds.deeper.attribute_fold"
+    }
