@@ -80,14 +80,18 @@ SUPERVISOR_ROLE_MEMBERS = frozenset(
         "post_run_event",
     }
 )
-#: The slice's own three modules. The clock rules below are scoped to these
-#: rather than to the whole closure, because the scheduler that drives the tick
-#: legitimately holds a clock and an event loop; what is refused is a second
-#: one, of the observation's own.
+#: The observation's own four modules: the tick, the lane observer, the
+#: composition root and the scope arm's collector. The clock rules below are
+#: scoped to these rather than to the whole closure, because the scheduler that
+#: drives the tick legitimately holds a clock and an event loop; what is
+#: refused is a second one, of the observation's own. Listed rather than
+#: derived: the same closure reaches the scheduler, which holds the clock by
+#: design, and telling the two apart would take a rule of its own.
 OWN_MODULES = (
     "kodezart.services.supervisor_pass",
     "kodezart.services.alarm_supervisor",
     "kodezart.composition.supervisor",
+    "kodezart.services.scope_tally",
 )
 #: Waiting, scheduling and reading the time are the scheduler's, so a module of
 #: the observation importing one of these is taking a second opinion on when.
@@ -318,7 +322,7 @@ def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
     A pass that slept, armed a timer, or read a clock of its own would have a
     cadence and a notion of elapsed time that no configuration names, and a
     short sleep is invisible to a bounded integration tick. The rule is scoped
-    to the observation's own three modules: the scheduler it is registered on
+    to the observation's own four modules: the scheduler it is registered on
     holds the event loop and the one clock, which is where they belong.
 
     ``from datetime import datetime`` stays admissible — it is the type of the

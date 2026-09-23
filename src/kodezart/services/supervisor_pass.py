@@ -145,6 +145,7 @@ class SupervisorPass:
             await self._log.awarning(
                 "supervisor_scope_alarm_raised",
                 scope=ref.key,
+                signal=alarm.signal.value,
                 marker=alarm.readings[0].source_ref,
             )
 
