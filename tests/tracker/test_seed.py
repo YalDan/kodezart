@@ -1,4 +1,4 @@
-"""A seed_issue edits the fixture issue and is none of the writes a case counts."""
+"""A seed edits the fixture issue and is none of the writes a case counts."""
 
 from tests.tracker.conftest import APPROVED_ISSUE
 
