@@ -25,6 +25,7 @@ from kodezart.domain.errors import (
     OutboundContentBlockedError,
     ScopeStatusError,
 )
+from kodezart.domain.lane_record import record_with_pull_request, render_lane_record
 from kodezart.domain.scope_terminal import (
     SCOPE_STATUS_HEADING,
     latest_scope_report,
@@ -707,6 +708,55 @@ async def test_a_lane_owing_nothing_is_done_whatever_its_pull_request_says(
         f"- [x] A — branch {LANE_BRANCH} — pull request #12",
         "- [x] B — no branch recorded — no pull request recorded",
     ]
+
+
+async def test_the_terminal_reads_a_lanes_record_from_the_board_at_the_exit() -> None:
+    """The row's recorded columns are the board's at the exit, not a memory.
+
+    The walk and the terminal share one record reader. A's record is read
+    through it once, as the walk reads it when it fires the lane, and then
+    the record on the board changes. The terminal's row carries the changed
+    columns, so nothing the reader returned earlier stands in for the read.
+    """
+    port = FakeTrackerPort(issues=[])
+    records = LaneRecordReader(tracker=port, operation=OPERATION)
+    first = lane_record(
+        lane="A",
+        pr=LanePR(
+            url="https://forge.invalid/fixture/repo/pull/12", number=12, state="open"
+        ),
+    )
+    posted = await port.post_comment(
+        issue_key="A",
+        body=render_lane_record(
+            record=first, marker_prefixes=OPERATION.marker_prefixes
+        ),
+    )
+    located = await records.find(issue_key="A", lane_key="A")
+    assert located is not None
+    assert located[1].pr == first.pr
+    edited = record_with_pull_request(
+        prior=first,
+        pr=LanePR(
+            url="https://forge.invalid/fixture/repo/pull/13", number=13, state="open"
+        ),
+    )
+    port.comments[port.comments.index(posted)] = posted.model_copy(
+        update={
+            "body": render_lane_record(
+                record=edited, marker_prefixes=OPERATION.marker_prefixes
+            )
+        }
+    )
+
+    event = await terminal(records=records).report(
+        ready=reading(ready=("A",), closed=("B",))
+    )
+
+    assert event.lanes[0] == ScopeLaneEntry(
+        issue="A", done=False, branch=edited.branch, pr=edited.pr
+    )
+    assert event.lanes[0].pr != first.pr
 
 
 # ---------------------------------------------------------------------------

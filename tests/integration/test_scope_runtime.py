@@ -4102,9 +4102,8 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
         # the bound is reported as a lane that is not done, so the scope cannot
         # derive the finished outcome from it, while B — which closed its own
         # criterion in this same invocation — is done in the same report. The
-        # two recorded columns of A's row are re-read from the board at the
-        # exit, so they are compared with A's record as the board holds it now
-        # and not with anything the walk carried.
+        # two recorded columns of A's row match A's record as the board holds
+        # it after the walk.
         terminal = events[-1]
         assert isinstance(terminal, ScopeTerminalEvent)
         assert terminal.outcome is WorkflowOutcome.scope_stopped_short
