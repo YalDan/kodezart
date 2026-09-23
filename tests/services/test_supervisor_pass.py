@@ -6,6 +6,7 @@ import pytest
 import structlog.testing
 
 from kodezart.domain.lane_alarms import stored_alarm
+from kodezart.domain.run_alarm_record import run_alarm_marker
 from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import TICKET_MARKER_SOURCE, tally_unmoved
@@ -34,8 +35,10 @@ from tests.services.lane_tally_fixtures import (
     PREFIXES,
     SCOPE,
     alarm_marker,
+    allow_foreign_write,
     board,
     checks,
+    criterion,
     declared_set_fixture,
     events_on,
     operation,
@@ -53,8 +56,15 @@ LANES = ("LANE-B", "LANE-C")
 every_write_of_a_tick_is_inside_the_declared_set = declared_set_fixture()
 
 
-def ready_set(*, ref=REF, lanes=LANES, closed=(), blocked=(), unapproved=()):
-    """One scope reading in the shape the walker's own read composes it in."""
+def ready_set(
+    *, ref=REF, lanes=LANES, closed=(), blocked=(), unapproved=(), descendants=()
+):
+    """One scope reading in the shape the walker's own read composes it in.
+
+    *descendants* are criterion rows under a member's deliverable child. The
+    walker's read carries them among the scope's criteria like any other, so
+    they are appended to the members' own.
+    """
     return ScopeReadySet(
         scope=ResolvedScope(ref=ref, issues=()),
         ready=tuple(
@@ -78,7 +88,8 @@ def ready_set(*, ref=REF, lanes=LANES, closed=(), blocked=(), unapproved=()):
                 *unapproved,
             )
             for row in subtree(lane)
-        ),
+        )
+        + tuple(descendants),
         closed=tuple(make_tracker_issue(lane) for lane in closed),
         unapproved=unapproved,
     )
@@ -300,8 +311,19 @@ async def test_a_finished_member_is_observed_so_a_standing_raise_is_cleared():
     assert stored.readings[2].value.value == tuple(sorted(checks("LANE-B")))
 
 
-async def test_a_blocked_members_tally_raise_stands(monkeypatch):
+@pytest.mark.parametrize(
+    "waiting",
+    [
+        {"blocked": (BlockedIssue(issue_key="LANE-B", blocker_keys=("LANE-X",)),)},
+        {"unapproved": ("LANE-B",)},
+    ],
+    ids=["blocked", "unapproved"],
+)
+async def test_a_blocked_members_tally_raise_stands(monkeypatch, waiting):
     """A member nothing can fire has no clock to measure, and is still read.
+
+    Blocked and unapproved are the two waiting members, and each is carried in
+    its own part of the reading, so each is asked the same question here.
 
     Its tally is not composed at all, which is the only safe reading: with no
     roster and no gap it would look like a lane that had finished its work,
@@ -331,12 +353,7 @@ async def test_a_blocked_members_tally_raise_stands(monkeypatch):
 
     await pass_over(
         port,
-        readings={
-            REF: ready_set(
-                lanes=("LANE-C",),
-                blocked=(BlockedIssue(issue_key="LANE-B", blocker_keys=("LANE-X",)),),
-            )
-        },
+        readings={REF: ready_set(lanes=("LANE-C",), **waiting)},
         tally=tally,
     ).run(FIXTURE_EPOCH)
 
@@ -455,6 +472,57 @@ async def test_a_lapse_on_an_unapproved_lane_is_raised_at_its_criterion():
     ]
     assert records[0].bound is None
     assert await events_on(port, "LANE-B") == accounts
+
+
+async def test_a_lapse_under_a_waiting_lanes_deliverable_child_is_raised_at_it():
+    """The scope's criteria reach below the lane's direct children, and are read.
+
+    The lane's lapsed criterion sits under a deliverable child of the lane, and
+    the scope's reading carries it among its criteria as the walker's read
+    does. The lane is blocked, so nothing re-derives it: the tick records the
+    lapse on the lane that announced it, keyed to the child it sits under.
+    """
+    port = await board(lanes=LANES)
+    child = "LANE-B/deliverable"
+    lapsed = f"{child}/check"
+    for kind in (RunEventKind.ISSUE_CROSSED_OFF, RunEventKind.CRITERION_LAPSED):
+        await port.post_run_event(
+            issue_key="LANE-B",
+            event=LaneRunEvent(
+                kind=kind, lane_key="LANE-B", subject_key=lapsed, graded_sha=HEAD
+            ),
+        )
+    address = CriterionSubject(
+        scope_key=SCOPE, issue_id=child, member_id=lapsed, lane_key="LANE-B"
+    )
+    # The declared set enumerates each lane's direct criteria; this address is
+    # the supervisor's own, one level further down, and is named here.
+    allow_foreign_write(
+        port,
+        lane="LANE-B",
+        marker=run_alarm_marker(
+            subject=address,
+            signal=AlarmSignal.LAPSE_UNDISCHARGED,
+            marker_prefixes=port.marker_prefixes,
+        ),
+    )
+
+    await pass_over(
+        port,
+        readings={
+            REF: ready_set(
+                lanes=("LANE-C",),
+                blocked=(BlockedIssue(issue_key="LANE-B", blocker_keys=("LANE-X",)),),
+                descendants=(criterion(lapsed, lane=child),),
+            )
+        },
+    ).run(FIXTURE_EPOCH)
+
+    records = await port.read_run_alarms(issue_key="LANE-B")
+    assert [(row.subject, row.signal) for row in records] == [
+        (address, AlarmSignal.LAPSE_UNDISCHARGED)
+    ]
+    assert alarm_raised(records[0])
 
 
 @pytest.mark.parametrize("stopped", ["the lane observation", "the scope read"])

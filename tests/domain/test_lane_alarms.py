@@ -193,26 +193,31 @@ def test_a_standing_raise_is_not_rewritten():
     assert again == ()
 
 
-def test_a_waiting_lane_composes_no_tally_record_and_still_reads_its_lapses():
+@pytest.mark.parametrize(
+    "review", [False, True], ids=["back in Todo", "held in review"]
+)
+def test_a_waiting_lane_composes_no_tally_record_and_still_reads_its_lapses(review):
     """Blocked or unapproved: its clock is not measured, its stream is read.
 
     The same lane read as ready would raise its tally — more commits than the
     bound, nothing closed — so the absence of a tally record is the standing,
     not the board. And the lapse it announced is undischarged because nothing
-    is going to run it.
+    is going to run it, whether the lapse left the criterion back in Todo or
+    held in review: both are open, and neither is re-derived.
     """
+    criteria = (criterion(FIRST, review=review), criterion(SECOND))
     lapsed = (said(CROSSED_OFF, FIRST), said(LAPSED, FIRST))
     stalled = ("sha-one", "sha-two")
     ready = compose(
-        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
-        criteria=MOVED_BACK,
+        standing=Ready(roster=criteria, gap=criteria),
+        criteria=criteria,
         events=lapsed,
         commits=stalled,
     )
     assert AlarmSignal.TALLY_UNMOVED in {r.signal for r in ready}
 
     records = compose(
-        standing=Waiting(), criteria=MOVED_BACK, events=lapsed, commits=stalled
+        standing=Waiting(), criteria=criteria, events=lapsed, commits=stalled
     )
 
     assert [(r.subject, r.signal) for r in records] == [
