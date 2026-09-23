@@ -251,6 +251,7 @@ async def test_a_declared_marker_table_is_taken_as_written(tmp_path):
 V02_BASE_SPEC = BaseSpec(inputs=(), base_branch="release")
 LIVE = FIXTURE_NOW + timedelta(minutes=10)
 LATER = FIXTURE_NOW + timedelta(minutes=20)
+LATEST = FIXTURE_NOW + timedelta(minutes=30)
 LAPSED = FIXTURE_NOW - timedelta(minutes=1)
 
 
@@ -301,10 +302,11 @@ async def test_markers_v02_wrote_are_still_read():
     _server, tracker = _board(_comment("c-1", _v02_claim("v02-host", LAPSED)))
     assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
 
-    # Two holders: the earliest created wins, until its own latest expiry.
+    # Two holders: the earliest created wins, until its own latest expiry,
+    # which is not the later expiry the other holder's claim carries.
     early = FIXTURE_NOW - timedelta(hours=2)
     _server, tracker = _board(
-        _comment("c-2", _v02_claim("second", LATER)),
+        _comment("c-2", _v02_claim("second", LATEST)),
         _comment("c-1", _v02_claim("first", LIVE), created_at=early),
         _comment(
             "c-3",
