@@ -1080,6 +1080,46 @@ async def test_a_record_the_phase_may_not_write_is_named_unrecorded_and_the_rest
     assert "needs decision" not in board.server.issues[unadmitted].labels
 
 
+async def test_a_finding_on_a_criterion_child_is_written_to_that_child(monkeypatch):
+    """The criteria row's finding on its own criterion child lands on the child.
+
+    The child carries its criterion label and never the stage's gate label,
+    which only organize subjects receive. The halt still writes the record
+    there, and keeps its own cause and bound.
+    """
+    owner, board, executor = factory(
+        under_approval=True,
+        convergence_bound=1,
+        body="Prepared body grounded in the source.",
+        phases=lambda rows: rows[1:],
+    )
+    board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+    member(board, CRITERION_CHILD, labels=["check"])
+    seen = judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            CRITERION_CHILD: lambda _: buildable(
+                CRITERION_CHILD, spec_finding(CRITERION_CHILD)
+            )
+        },
+    )
+    report = await run_owner(owner)
+    assert seen[CRITERION_CHILD] == 1
+    assert report.halt.cause == "convergence_exhausted"
+    assert (report.halt.bound.setting, report.halt.bound.rounds_used) == (
+        "organize.max_convergence_rounds",
+        1,
+    )
+    (record,) = escalations(board, CRITERION_CHILD, "missing_source")
+    assert record.interim_basis == spec_finding(CRITERION_CHILD)["evidence"]
+    assert record.interim_reading == INTERIM
+    labels = board.server.issues[CRITERION_CHILD].labels
+    assert "needs decision" in labels
+    assert "body complete" not in labels
+
+
 async def test_a_halt_record_whose_admission_went_stale_is_named_unrecorded(
     monkeypatch,
 ):
