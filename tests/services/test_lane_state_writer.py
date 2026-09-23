@@ -60,7 +60,11 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.privacy import PrivateSurface
-from kodezart.types.domain.run_event import UNDEMONSTRATED_EVENT_KINDS, RunEventKind
+from kodezart.types.domain.run_event import (
+    EVIDENCE_ROW_WRITES,
+    UNDEMONSTRATED_EVENT_KINDS,
+    RunEventKind,
+)
 from kodezart.types.domain.run_state import LaneBinding, LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
@@ -976,7 +980,9 @@ def criterion_body(key: str) -> str:
     return f"**Check:** {check_of(key)}\n**Do:** the build {key} names\n**Evidence:** —"
 
 
-def criteria_board(*, bodies: dict[str, str] | None = None) -> FakeTrackerPort:
+def criteria_board(
+    *, bodies: dict[str, str] | None = None, keys: Sequence[str] = CRITERIA
+) -> FakeTrackerPort:
     """The lane, its criterion sub-issues, and one issue that is not a criterion."""
     overrides = bodies or {}
     return FakeTrackerPort(
@@ -990,7 +996,7 @@ def criteria_board(*, bodies: dict[str, str] | None = None) -> FakeTrackerPort:
                     issue_labels=frozenset({"criterion"}),
                     body=overrides.get(key, criterion_body(key)),
                 )
-                for key in CRITERIA
+                for key in keys
             ),
         ],
         marker_prefixes=lane_operation().marker_prefixes,
@@ -1295,19 +1301,25 @@ class EditingBoard(FakeTrackerPort):
     The change lands after the fresh read the write was decided on and
     before the edit it was decided for, which is the window the two halves
     of a tick sit in: whatever a writer remembered from before this moment
-    is no longer what the sub-issue holds.
+    is no longer what the sub-issue holds. The first *after* edits of the
+    addressed sub-issue land untouched, so a test can finish it before the
+    edit the change rides on.
     """
 
-    def __init__(self, *, target: str, change: dict[str, object]) -> None:
+    def __init__(
+        self, *, target: str, change: dict[str, object], after: int = 0
+    ) -> None:
         source = criteria_board()
         super().__init__(
             issues=list(source.issues.values()),
             marker_prefixes=lane_operation().marker_prefixes,
         )
-        self._target, self._change = target, change
+        self._target, self._change, self._after = target, change, after
 
     async def edit_description(self, *, target, expected, replacement, **rest):
-        if target == self._target:
+        if target == self._target and self._after:
+            self._after -= 1
+        elif target == self._target:
             self.issues[target] = self.issues[target].model_copy(update=self._change)
         return await super().edit_description(
             target=target, expected=expected, replacement=replacement, **rest
@@ -1340,34 +1352,76 @@ async def test_a_body_that_changed_under_the_stamp_leaves_the_criterion_unfinish
     assert stream(port) == []
 
 
-async def test_a_state_that_moved_under_the_stamp_is_not_moved_to_done():
+#: The sub-issues a board moves while the stamp lands: the commit an earlier
+#: attempt finished it at, if any, the commit this grading reads, and the
+#: state the board takes it to.
+MOVED_UNDER_THE_STAMP = {
+    "unstarted": (None, "d" * 40, "In Progress"),
+    "finished": ("1" * 40, "2" * 40, "In Review"),
+}
+
+
+@pytest.mark.parametrize("moved", sorted(MOVED_UNDER_THE_STAMP))
+async def test_a_state_that_moved_under_the_stamp_is_not_moved_to_done(moved):
     """The transition reads its own sub-issue, because it carries no precondition.
 
     The board moves the sub-issue out of the states a tick addresses while
     the stamp is landing. The stamp is that grading's own record and stays,
     but the criterion is not finished on top of a board that took it
     somewhere this verdict does not address.
+
+    The pass entry records the stamp and is posted as soon as it lands, so
+    this refusal of the transition, like a transition the board loses,
+    leaves the row and the last entry of its history naming the same
+    commit. A criterion already finished at an earlier head and graded again
+    at a later one is the case that matters: posted only once the moved
+    sub-issue had been read back, the entry would be missing, the row would
+    name the later commit while its history ended at the earlier one, and no
+    later attempt's roster would reach the criterion to repair it.
     """
+    finished_at, graded_at, state_name = MOVED_UNDER_THE_STAMP[moved]
     port = EditingBoard(
         target=CRITERIA[0],
         change={
             "state_kind": WorkflowStateKind.STARTED,
-            "state_name": "In Progress",
+            "state_name": state_name,
         },
+        after=0 if finished_at is None else 1,
     )
     lane_state = writer(port, lane_repo())
+    if finished_at is not None:
+        await tick(lane_state, sha=finished_at)
+    before = stream(port)
+    transitions, edits = list(port.workflow_writes), list(port.issue_writes)
 
     with pytest.raises(StaleWriteError) as caught:
-        await tick(lane_state, sha="d" * 40)
+        await tick(lane_state, sha=graded_at)
 
     assert caught.value.target == CRITERIA[0]
     assert port.issues[CRITERIA[0]].state_kind is WorkflowStateKind.STARTED
     assert parse_criterion_evidence(port.issues[CRITERIA[0]].body) == CriterionEvidence(
-        graded_sha="d" * 40,
+        graded_sha=graded_at,
         test=evaluation_observation(session_id="eval-session", iteration=1),
     )
-    assert port.workflow_writes == []
-    assert [key for key, _, _ in port.issue_writes] == [CRITERIA[0]]
+    assert port.workflow_writes == transitions
+    assert [key for key, _, _ in port.issue_writes[len(edits) :]] == [CRITERIA[0]]
+    posted = stream(port)
+    passed = LaneRunEvent(
+        kind=RunEventKind.CRITERION_PASSED,
+        lane_key=LANE,
+        subject_key=CRITERIA[0],
+        graded_sha=graded_at,
+    )
+    assert posted == [*before, passed]
+    assert [
+        event
+        for event in posted
+        if event.subject_key == CRITERIA[0] and event.kind in EVIDENCE_ROW_WRITES
+    ][-1] == passed
+    history = evidence_row_history(events=posted, criterion_key=CRITERIA[0])
+    assert restamp_verdict(history=history, graded_sha=graded_at) is (
+        AuditVerdict.HOLDS
+    )
 
 
 @pytest.mark.parametrize(
@@ -1761,14 +1815,20 @@ async def test_a_regression_on_a_body_no_evidence_row_can_be_set_on_is_refused(h
 
 
 async def test_one_grading_broken_twice_is_still_one_refutation():
-    """The event is keyed to the grading, so the same grading posts it once.
+    """The same refutation with no row write between is posted once.
 
-    The criterion is broken at a head, finished again at that same head, and
-    broken at it once more: three verdicts about one grading. The second
-    break enters the act again — the criterion is finished, so there is
-    something to take back — and the stream already holds the refutation
-    that names this lane, this criterion and this sha, so nothing is added
-    to it. The sub-issue is taken back either way.
+    The criterion is broken at a head, moved back into the finished state
+    by hand, and broken at that same head once more: two verdicts about one
+    grading. The second break enters the act again — the criterion is
+    finished, so there is something to take back — and the criterion's last
+    row-write entry is already the refutation that names this lane, this
+    criterion and this sha, so nothing is added to the stream. The sub-issue
+    is taken back either way.
+
+    The move back is by hand because it writes no Evidence row. A pass at
+    that head between the two breaks would restamp the row and be the
+    history's last write, so the second break would be a row write of its
+    own and announced again (KOD-506), which the every-state case pins.
     """
     port = criteria_board()
     lane_state = writer(port, lane_repo())
@@ -1776,7 +1836,7 @@ async def test_one_grading_broken_twice_is_still_one_refutation():
 
     await tick(lane_state, sha="1" * 40)
     await tick(lane_state, sha="2" * 40, failed=[broken])
-    await tick(lane_state, sha="2" * 40)
+    await port.set_workflow_state(issue_key=broken, stage=LifecycleStage.DONE)
     assert port.issues[broken].state_kind is WorkflowStateKind.COMPLETED
 
     await tick(lane_state, sha="2" * 40, failed=[broken])
@@ -1890,22 +1950,25 @@ async def test_every_reading_that_came_back_empty_is_recorded_under_its_own_kind
 async def test_the_rows_write_history_ends_where_the_row_does_in_every_state(reason):
     """No state a cross-off leaves has a row behind its own write history.
 
-    Three criteria are finished at one head, and the next attempt leaves each
-    in a different state: one refuted and taken back, one read as
+    Four criteria are finished at one head, and the next attempt leaves each
+    in a different state: two refuted and taken back, one read as
     undemonstrated under *reason*, one passed again; that one then lapses at
-    a third head, and the head then returns to the first commit, where the
-    refuted one passes again. The audit's restamp trace reads the lane's
-    stream as each Evidence row's write history (KOD-506), so for every
-    criterion the last commit that history names must be the one its row
-    names.
+    a third head. The head then returns to the first commit, where one of
+    the refuted two passes again, and moves on to the second, where it is
+    refuted again. The audit's restamp trace reads the lane's stream as each
+    Evidence row's write history (KOD-506), so for every criterion the last
+    commit that history names must be the one its row names.
 
     The return is a head revisiting a commit, as a divergence recovery that
     resets the workspace to the remote tip can. The pass there restamps the
-    row at the first commit after the refutation at the second, so it is a
-    row write of its own and is announced again, though an equal entry sits
-    earlier in the stream: looked up anywhere in the stream rather than as
-    the criterion's last row write, it would leave the history ending at the
-    refutation while the row names the first commit.
+    row at the first commit after the refutation at the second, and the
+    refutation after it restamps the row at the second again after that
+    pass, so each is a row write of its own and is announced again, though
+    an equal entry sits earlier in the stream: looked up anywhere in the
+    stream rather than as the criterion's last row write, either would leave
+    the history ending at the other while the row names its own commit. The
+    other refuted criterion stays where the refutation left it, so the
+    refuted state still ends in a criterion of its own.
 
     The lapse announces nothing: the one that lapses keeps exactly the passes
     it was finished with, and no entry at all for the lapse.
@@ -1917,17 +1980,22 @@ async def test_the_rows_write_history_ends_where_the_row_does_in_every_state(rea
     its row (KOD-610). A writer that posted a pass for it, or a history that
     read its reading as a row write, leaves the row behind the history.
     """
-    port = criteria_board()
+    broken, revisited, unread, kept = keys = (*CRITERIA, f"{LANE}/fourth")
+    port = criteria_board(keys=keys)
     lane_state = writer(port, lane_repo())
-    broken, unread, kept = CRITERIA
     first, second, third = "1" * 40, "2" * 40, "3" * 40
-    await tick(lane_state, sha=first)
+    await tick(lane_state, sha=first, keys=keys)
 
     await tick(
-        lane_state, sha=second, failed=[broken], reasons=withheld([unread], reason)
+        lane_state,
+        sha=second,
+        keys=keys,
+        failed=[broken, revisited],
+        reasons=withheld([unread], reason),
     )
     await lapse(lane_state, key=kept, standing_sha=second, head_sha=third)
-    await tick(lane_state, sha=first, keys=[broken])
+    await tick(lane_state, sha=first, keys=[revisited])
+    await tick(lane_state, sha=second, keys=[revisited], failed=[revisited])
 
     posted = stream(port)
 
@@ -1945,20 +2013,25 @@ async def test_the_rows_write_history_ends_where_the_row_does_in_every_state(rea
     assert entries(broken) == [
         (RunEventKind.CRITERION_PASSED, first),
         (RunEventKind.CRITERION_REFUTED, second),
+    ]
+    assert entries(revisited) == [
         (RunEventKind.CRITERION_PASSED, first),
+        (RunEventKind.CRITERION_REFUTED, second),
+        (RunEventKind.CRITERION_PASSED, first),
+        (RunEventKind.CRITERION_REFUTED, second),
     ]
     assert entries(kept) == [
         (RunEventKind.CRITERION_PASSED, first),
         (RunEventKind.CRITERION_PASSED, second),
     ]
     assert port.issues[unread].state_kind is WorkflowStateKind.COMPLETED
-    assert port.issues[broken].state_kind is WorkflowStateKind.COMPLETED
+    assert port.issues[broken].state_kind is WorkflowStateKind.UNSTARTED
+    assert port.issues[revisited].state_kind is WorkflowStateKind.UNSTARTED
     rows = {
-        key: parse_criterion_evidence(port.issues[key].body).graded_sha
-        for key in CRITERIA
+        key: parse_criterion_evidence(port.issues[key].body).graded_sha for key in keys
     }
-    assert rows == {broken: first, unread: first, kept: second}
-    for key in CRITERIA:
+    assert rows == {broken: second, revisited: second, unread: first, kept: second}
+    for key in keys:
         history = evidence_row_history(events=posted, criterion_key=key)
         assert history[-1] == rows[key], key
         assert restamp_verdict(history=history, graded_sha=rows[key]) is (

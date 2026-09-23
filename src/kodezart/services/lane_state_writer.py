@@ -72,6 +72,29 @@ ANNOUNCING_STATES = frozenset(
 )
 
 
+def _ends_row_history(*, event: LaneRunEvent, events: Sequence[LaneRunEvent]) -> bool:
+    """Whether *event* is already the last row write *events* holds for its subject.
+
+    The one de-duplication rule of both entries that record an Evidence row
+    write, the pass and the refutation. The stream is that row's write
+    history, so a row write is announced unless the history already ends at
+    it: the same verdict written again at the same head restamps the same
+    row and adds nothing. An equal entry anywhere earlier does not stand in
+    for it: a head that returns to a commit after a later write of the other
+    kind restamps the row there again, and without a fresh entry the history
+    would end at that other write while the row names this commit
+    (KOD-506). Only the kinds that write the row are its history, so an
+    undemonstrated reading between two of them does not end it. One pass
+    over the act's finite reading of the stream.
+    """
+    written = [
+        entry
+        for entry in events
+        if entry.subject_key == event.subject_key and entry.kind in EVIDENCE_ROW_WRITES
+    ]
+    return written[-1:] == [event]
+
+
 class TrackerLaneStateWriter:
     """Write what a lane's own work leaves on its board: the record and the ticks.
 
@@ -462,8 +485,11 @@ class TrackerLaneStateWriter:
 
         Identity is the whole value, so a graph-level retry of the same
         grading at the same head adds nothing and the same criterion graded
-        again at a later head is its own event — the rule the refutation
-        beside it already follows.
+        again at a later head is its own event. It is looked up anywhere in
+        the stream, not against the row's last write as the pass and the
+        refutation are, because it writes no row: it is no entry of that
+        history, and the row's writes between two equal readings do not make
+        the second one a new fact.
         """
         event = LaneRunEvent(
             kind=UNDEMONSTRATED_EVENT_KINDS[reason],
@@ -544,12 +570,7 @@ class TrackerLaneStateWriter:
             subject_key=criterion.id,
             graded_sha=cross_off.evidence.graded_sha,
         )
-        written = [
-            entry
-            for entry in events
-            if entry.subject_key == criterion.id and entry.kind in EVIDENCE_ROW_WRITES
-        ]
-        posted = written[-1:] == [event]
+        posted = _ends_row_history(event=event, events=events)
         await self._stamp(
             lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
         )
@@ -608,6 +629,15 @@ class TrackerLaneStateWriter:
         event. Nothing repairs the event for such a criterion: unstarted, it
         is no longer this fire's claim to take back.
 
+        A refutation is de-duplicated by the pass's own rule: it is posted
+        unless the criterion's LAST row-write entry in *events* is already
+        this refutation. An equal refutation earlier in the stream would not
+        do: a criterion passed at one commit, refuted at a later one, passed
+        again at the first and refuted again at the later one has its row
+        restamped at the later commit again, and without a fresh entry the
+        history would end at the pass while the row names the refuting
+        commit.
+
         The sub-issue is read once more after the move and asked the same
         precondition, because the Evidence row is set against THAT body: a
         criterion a third party amended under the move is one this verdict no
@@ -626,7 +656,7 @@ class TrackerLaneStateWriter:
         # refuses here, while the sub-issue still reads as the pass it was,
         # rather than after the move back has already taken it.
         self._evidence_body(issue=issue, criterion=criterion, cross_off=cross_off)
-        posted = event is not None and event in events
+        posted = event is not None and _ends_row_history(event=event, events=events)
         await settle(self._tracker.reset_criterion_pending(expected=issue, holder=None))
         moved = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=moved, criterion=criterion)
