@@ -18,6 +18,8 @@ import sys
 from types import ModuleType
 from typing import NoReturn
 
+import structlog.testing
+
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.scope_runtime import build_scope_runtime
 from kodezart.config.app import AppConfig
@@ -297,25 +299,18 @@ async def test_the_same_shape_inside_the_filter_names_no_out_of_scope_entry() ->
     )
 
 
-async def test_dispatch_target_resolution_reads_no_lane_body(monkeypatch) -> None:
-    """The walk picks its lane from typed rows; the lane's prose is not read.
+def trap_lane_bodies(monkeypatch) -> tuple[list[str], list[str]]:
+    """Record every ``body`` read of a non-criterion row until a lane's entry.
 
-    The lane's description is a checklist in the live template grammar, so a
-    selection that consulted it — to skip the lane, to mint a target, to rank
-    it — would have text to act on. A recording trap on ``body`` for every
-    row that is not a criterion is installed over one tick: the ready read,
-    the selection, the turn built from the chosen row, and the readmission
-    the turn asks before its entry. It is lifted when the lane's entry is
-    read, which is where the fire is launched from; the fire's own subject
-    prompt is read after that, and is the fire's input rather than a
-    resolution of which lane to fire.
+    Returns the list the trap records body reads into and the list of lane
+    keys whose entry was read. The trap is installed now and lifted when a
+    lane's entry is read, which is where a turn is launched from; the fire's
+    own subject prompt is read after that, and is the fire's input rather
+    than a resolution of which lane to fire.
 
     The trap sees attribute reads of ``body`` on a ``TrackerIssue``; a read
     through ``__dict__``, ``vars()`` or ``model_dump()`` is outside it.
     """
-    assert criterion_field_bodies(PHANTOM_CHECKLIST, field="Check") != ()
-    port = scope_board(criterion_row("A/check"))
-    port.issues["A"] = port.issues["A"].model_copy(update={"body": PHANTOM_CHECKLIST})
     body_reads: list[str] = []
     launched: list[str] = []
     original = TrackerIssue.__getattribute__
@@ -334,6 +329,24 @@ async def test_dispatch_target_resolution_reads_no_lane_body(monkeypatch) -> Non
 
     monkeypatch.setattr(LaneEntryReader, "read", lifting)
     monkeypatch.setattr(TrackerIssue, "__getattribute__", trapped)
+    return body_reads, launched
+
+
+async def test_dispatch_target_resolution_reads_no_lane_body(monkeypatch) -> None:
+    """The walk picks its lane from typed rows; the lane's prose is not read.
+
+    The lane's description is a checklist in the live template grammar, so a
+    selection that consulted it — to skip the lane, to mint a target, to rank
+    it — would have text to act on. A recording trap on ``body`` for every
+    row that is not a criterion is installed over one tick: the ready read,
+    the selection, the turn built from the chosen row, and the readmission
+    the turn asks before its entry. It is lifted when the lane's entry is
+    read (see ``trap_lane_bodies``).
+    """
+    assert criterion_field_bodies(PHANTOM_CHECKLIST, field="Check") != ()
+    port = scope_board(criterion_row("A/check"))
+    port.issues["A"] = port.issues["A"].model_copy(update={"body": PHANTOM_CHECKLIST})
+    body_reads, launched = trap_lane_bodies(monkeypatch)
     walk = walk_over(port, RestingLane())
     async with asyncio.timeout(WALK_BOUND_SECONDS):
         observations = [
@@ -351,6 +364,57 @@ async def test_dispatch_target_resolution_reads_no_lane_body(monkeypatch) -> Non
         failure.issue_key
         for failure in observations[-1].failed_lanes
         if failure.error.error_kind == FireNotUnderTestError.__name__
+    ] == ["A"]
+
+
+class DeliveringLane:
+    """A lane graph whose origin can deliver, so a finished lane is offered.
+
+    Its turn never gets as far as a fire here: the finished lane has nothing
+    recorded to deliver, so its entry reading leaves it nothing to do.
+    """
+
+    delivers = True
+    fire = UnfiredPreparation()
+
+
+async def test_the_delivery_only_turn_is_chosen_without_reading_a_lane_body(
+    monkeypatch,
+) -> None:
+    """A finished lane is offered for its delivery from typed rows alone.
+
+    The lane owes nothing, so the ready read files it closed, and the origin
+    can deliver, so selection's delivery arm is what offers it. Its
+    description is a checklist in the live template grammar, with a Check row
+    and an Evidence row to act on. The same trap as the ready arm's is held
+    over the tick until the delivery-only turn's entry is read.
+    """
+    assert criterion_field_bodies(PHANTOM_CHECKLIST, field="Check") != ()
+    assert criterion_field_bodies(PHANTOM_CHECKLIST, field="Evidence") != ()
+    port = scope_board(criterion_row("A/check", closed=True))
+    port.issues["A"] = port.issues["A"].model_copy(update={"body": PHANTOM_CHECKLIST})
+    assert [
+        issue.issue_key
+        for issue in (await read_scope_ready(ref=SCOPE, tracker=port)).closed
+    ] == ["A"]
+    body_reads, launched = trap_lane_bodies(monkeypatch)
+    with structlog.testing.capture_logs() as logs:
+        walk = walk_over(port, DeliveringLane())
+        async with asyncio.timeout(WALK_BOUND_SECONDS):
+            observations = [
+                event.observation
+                async for event in walk
+                if isinstance(event, ScopeWalkEvent)
+            ]
+
+    assert body_reads == []
+    # The tick really reached the delivery-only turn's entry: the finished
+    # lane was selected, readmitted as still finished and entered, and the
+    # entry left it nothing to do.
+    assert launched == ["A"]
+    assert observations[0].ready == ()
+    assert [
+        event["lane"] for event in logs if event["event"] == "scope_lane_nothing_to_do"
     ] == ["A"]
 
 
