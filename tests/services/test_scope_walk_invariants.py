@@ -31,6 +31,7 @@ from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import ExclusionClause
 from kodezart.types.domain.operation import RepoEntry, ScopeLabel
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.scope_ready import UnreachableCriterion, UnreachableReason
 from kodezart.types.domain.scope_runtime import GapMeasurement, ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
@@ -158,8 +159,8 @@ async def test_the_walk_lists_the_excluded_criteria_beside_each_gap() -> None:
 
 
 #: The project B1's criterion sits in, which is not the addressed scope: the
-#: reason the filter gives for it is this identity, where A1's criterion,
-#: belonging to no project, is given a sentence saying so.
+#: filter misses it as belonging to another project, this one, where A1's
+#: criterion is missed as belonging to no project at all.
 ELSEWHERE = "another-project"
 
 
@@ -208,8 +209,8 @@ def out_of_reach_board() -> FakeTrackerPort:
 #: Both out-of-reach criteria, with the reason the filter gives each, in the
 #: order their lanes are ready.
 OUT_OF_REACH = [
-    ("A1/check", ExclusionClause.OUT_OF_SCOPE, "the issue belongs to no project"),
-    ("B1/check", ExclusionClause.OUT_OF_SCOPE, ELSEWHERE),
+    ("A1/check", ExclusionClause.OUT_OF_SCOPE, UnreachableReason.NO_PROJECT.value),
+    ("B1/check", ExclusionClause.OUT_OF_SCOPE, UnreachableReason.OTHER_PROJECT.value),
 ]
 
 
@@ -236,6 +237,16 @@ async def test_an_open_criterion_the_filter_cannot_reach_is_named_with_its_reaso
 
     assert out_of_scope(observation) == OUT_OF_REACH
     assert "A/check" not in [key for key, _, _ in out_of_scope(observation)]
+    # One computation: the exclusions are the ready read's own naming, which
+    # carries the project B1's criterion sits in instead.
+    assert observation.unreachable_criteria == (
+        UnreachableCriterion(issue_key="A1/check", reason=UnreachableReason.NO_PROJECT),
+        UnreachableCriterion(
+            issue_key="B1/check",
+            reason=UnreachableReason.OTHER_PROJECT,
+            container=ELSEWHERE,
+        ),
+    )
     assert observation.gaps == (
         GapMeasurement(lane_key="A", criterion_keys=("A/check", "A1/check")),
         GapMeasurement(lane_key="B", criterion_keys=("B/check", "B1/check")),

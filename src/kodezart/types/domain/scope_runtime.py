@@ -69,9 +69,11 @@ class ScopeWalkObservation(CamelCaseModel):
     durable write the run makes.
 
     An open criterion the scope's own filter cannot address in its own right
-    is named among ``exclusions`` with the reason the filter gives, for READY
-    lanes only: one under a blocked or unapproved member stays on
-    ``unresolved_criteria`` and is named when its lane becomes ready.
+    is also named among ``exclusions`` with the reason the filter gives, for
+    READY lanes only, read off ``unreachable_criteria`` and never computed a
+    second time: one under a blocked or unapproved member stays named on
+    ``unreachable_criteria`` alone and joins ``exclusions`` when its lane
+    becomes ready.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

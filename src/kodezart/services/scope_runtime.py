@@ -12,7 +12,7 @@ from pydantic import TypeAdapter
 
 from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.chains.native_delivery import NativeLaneWorkflow
-from kodezart.chains.scope_walker import read_scope_ready, unreachable_criteria
+from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import DeliveryProbe, RepoCache, TrackerPort
@@ -39,7 +39,11 @@ from kodezart.types.domain.native_delivery import (
 from kodezart.types.domain.operation import RepoEntry, RunKind
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
+from kodezart.types.domain.scope_ready import (
+    ScopeReadyLane,
+    ScopeReadySet,
+    UnreachableCriterion,
+)
 from kodezart.types.domain.scope_runtime import (
     GapMeasurement,
     LaneFailure,
@@ -604,16 +608,14 @@ class ScopeWorkflowEngine:
             # the filter gives, rather than left to be inferred from a silence.
             # Ready lanes only: one under a blocked or unapproved member has no
             # gap on this reading and is named when its lane becomes ready.
-            members = {issue.issue_key for issue in ready.scope.issues}
+            # Read off the ready read's own naming, never computed again here.
             exclusions = [
                 IssueExclusion(
                     issue_key=named.issue_key,
                     clause=ExclusionClause.OUT_OF_SCOPE,
-                    detail=named.reason,
+                    detail=named.reason.value,
                 )
-                for named in unreachable_criteria(
-                    ref=scope, members=members, lanes=ready.ready
-                )
+                for named in _ready_unreachable(ready)
             ]
             exclusions.extend(
                 IssueExclusion(
@@ -765,6 +767,22 @@ def _lane_namespace(job_id: str, lane_key: str) -> str:
     checkpoint address: the scope path persists no graph state (KOD-840).
     """
     return f"{job_id}-scope-{sha256(lane_key.encode()).hexdigest()}"
+
+
+def _ready_unreachable(ready: ScopeReadySet) -> tuple[UnreachableCriterion, ...]:
+    """The ready read's unreachable criteria that a READY lane owes.
+
+    In the order the lanes are ready, each once, under the first lane whose
+    gap carries it: a projection of ``ready.unreachable`` onto the ready
+    lanes' gaps, so the naming stays the one the ready read computed.
+    """
+    named = {entry.issue_key: entry for entry in ready.unreachable}
+    owed: dict[str, UnreachableCriterion] = {}
+    for row in ready.ready:
+        for criterion in row.gap:
+            if criterion.issue_key in named:
+                owed.setdefault(criterion.issue_key, named[criterion.issue_key])
+    return tuple(owed.values())
 
 
 def _observation(
