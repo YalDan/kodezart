@@ -275,7 +275,8 @@ what such a file can carry:
 
 Boot logs `operation_file_v02_accepted` once when the exception applied, with
 `ignored` naming each table it dropped and `defaulted` naming each member it
-supplied. A file written for v0.3 logs nothing of the kind.
+supplied: `marker_prefixes` for the table above, and `records.fire` for a fire
+log given the title-line row. A file written for v0.3 logs nothing of the kind.
 
 What v0.2 already wrote on your issues is still read:
 
