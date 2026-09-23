@@ -164,7 +164,8 @@ class IssueExclusion(DispatchModel):
     """One issue and the clause that excluded it.
 
     ``detail`` is a machine-readable qualifier for the clause — the blocking
-    issue's key, the holder of the claim — never an explanation.
+    issue's key, the holder of the claim — or, for ``OUT_OF_SCOPE``, the
+    reason the scope's filter gives for not reaching the issue.
     """
 
     issue_key: str = Field(min_length=1)

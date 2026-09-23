@@ -283,9 +283,9 @@ and emits none. A lane is done when no criterion under it is open, and the
 outcome reads that column and nothing else — not a pull request, not a merge.
 Unapproved and skipped lanes, unresolved criterion keys and the excluded
 criterion keys the board set aside remain explicit in `scope_walk.observation`.
-Each ready lane's gap is measured there, fresh on every tick, and on no durable
-write the run makes: not the lane record, not a criterion's Evidence write and
-not the status update.
+Each ready lane's gap is measured there, fresh on every tick, and on none of
+the three surfaces the run writes down: the lane record comment, a
+criterion's Evidence row and the scope status update.
 
 This request route executes eligible lanes serially, and a lane is fired again in
 the same invocation while its last fire closed a previously open criterion of its
