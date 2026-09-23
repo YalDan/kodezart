@@ -563,7 +563,11 @@ def imported_modules(
       ``import kodezart`` and then ``kodezart.domain.gap.compute_gap``, or
       ``from kodezart import domain`` and then ``domain.gap``;
     - a string constant that spells a module's dotted name, the way
-      ``importlib.import_module`` or ``__import__`` is handed one.
+      ``importlib.import_module`` or ``__import__`` is handed one;
+    - a string constant that names an object as ``module:attr`` or
+      ``module.attr``, the way ``pkgutil.resolve_name`` is handed one:
+      resolved through ``named_object``, it names every module along its
+      dotted path and the module the object itself is defined in.
 
     Not seen: a module name assembled at run time, a relative name handed to
     ``importlib.import_module`` with its package, and ``eval`` or ``exec``.
@@ -600,6 +604,7 @@ def imported_modules(
                     bound[alias.asname or alias.name] = f"{base}.{alias.name}"
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             named.add(node.value)
+            named.update(_modules_named_by(node.value))
     for node in ast.walk(tree):
         spelled = (
             _spelling(node) if isinstance(node, ast.Name | ast.Attribute) else None
@@ -657,6 +662,31 @@ def named_object(text: str) -> object | None:
         return pkgutil.resolve_name(text)
     except (ImportError, AttributeError, ValueError):
         return None
+
+
+def _modules_named_by(text: str) -> frozenset[str]:
+    """The dotted modules a string naming an object names, or none.
+
+    Every prefix of its dotted path, the way an import of the path names
+    each package along it, and the module the named object is defined in,
+    or the object itself when it is a module.  A text ``named_object``
+    resolves to nothing names no module here.
+    """
+    named = named_object(text)
+    if named is None:
+        return frozenset()
+    parts = text.replace(":", ".").split(".")
+    home = (
+        named.__name__
+        if inspect.ismodule(named)
+        else getattr(named, "__module__", None)
+    )
+    return frozenset(
+        {
+            *(".".join(parts[:end]) for end in range(1, len(parts) + 1)),
+            *([home] if isinstance(home, str) else []),
+        }
+    )
 
 
 def _dotted_name(relative: str) -> str:
@@ -784,8 +814,11 @@ def _denoted(
     """Every object an expression can denote here, each with what it stands in for.
 
     A loaded name through the module's globals and through every import that
-    binds it, an attribute through each object its receiver denotes, and a
-    string constant through ``named_object``.
+    binds it, an attribute through each object its receiver denotes, a
+    string constant through ``named_object``, and a call handed a string
+    constant naming an object as that object, the way
+    ``pkgutil.resolve_name("kodezart.domain:gap")`` returns it, so an
+    attribute taken off such a call is read off the named object.
     """
     candidates: list[object] = []
     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
@@ -801,7 +834,38 @@ def _denoted(
         named = named_object(node.value)
         if named is not None:
             candidates.append(named)
+    elif isinstance(node, ast.Call):
+        for argument in (*node.args, *(keyword.value for keyword in node.keywords)):
+            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                named = named_object(argument.value)
+                if named is not None:
+                    candidates.append(named)
     return tuple(found for value in candidates for found in _unwrapped(value))
+
+
+def loaded_values(
+    relative: str,
+    tree: ast.Module,
+    namespace: Mapping[str, object],
+    within: ast.AST,
+) -> tuple[object, ...]:
+    """Every object a loaded name or attribute inside *within* can denote.
+
+    Read the way ``referencing_definitions`` reads a reference: a name
+    through the module's globals and through every import anywhere in
+    *tree* that binds it, an attribute through each object its receiver
+    denotes.  So a constant a name is bound to — in this module, or in the
+    module an import names — is read by its value, not by its word.  Not
+    seen: a value handed in at run time, and a name bound by assignment
+    inside a function.
+    """
+    bound = _import_bindings(relative, tree)
+    return tuple(
+        value
+        for node in ast.walk(within)
+        if isinstance(node, ast.Name | ast.Attribute) and isinstance(node.ctx, ast.Load)
+        for value in _denoted(node, namespace, bound)
+    )
 
 
 def referencing_definitions(
@@ -818,8 +882,9 @@ def referencing_definitions(
     an import anywhere in it binds to the object (an aliased import, an
     import inside a function, a module-level rebinding, a re-export), an
     attribute of a module or class that is the object, a string constant
-    naming it as ``module:attr`` or ``module.attr``, and a
-    ``functools.partial`` or static method of it.
+    naming it as ``module:attr`` or ``module.attr``, an attribute taken off a
+    call handed such a string, and a ``functools.partial`` or static method
+    of it.
 
     Each function holding a reference is a definition here, and so is every
     function enclosing that one, so a closure's caller is read with it.  A

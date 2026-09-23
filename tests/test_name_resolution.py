@@ -13,6 +13,8 @@ from tests.name_resolution import (
     bound_names,
     call_sites,
     definitions,
+    imported_modules,
+    loaded_values,
     module_namespace,
     named_object,
     parameters_receiving,
@@ -547,3 +549,81 @@ def test_a_relative_import_in_a_package_init_resolves_against_the_package():
             wanted=(compute_gap,),
         )
     ] == ["plan"]
+
+
+@pytest.mark.parametrize(
+    ("text", "edge"),
+    [
+        ("kodezart.domain.gap:in_gap", True),
+        ("kodezart.domain.gap.in_gap", True),
+        ("kodezart.domain:gap", True),
+        ("kodezart.domain.gap", True),
+        ("kodezart.domain.gap:absent", False),
+        ("in_gap", False),
+    ],
+)
+def test_a_string_naming_an_object_is_an_import_edge_to_its_module(text, edge):
+    """A string ``pkgutil.resolve_name`` reads names the module it resolves in.
+
+    The planted module imports nothing; the string alone is the edge, and a
+    string that resolves to nothing is none.
+    """
+    sources = source_tree()
+    sources["services/planted.py"] = f"TARGET = {text!r}\n"
+    trees = parsed(sources)
+
+    named = imported_modules("services/planted.py", trees["services/planted.py"], trees)
+
+    assert ("domain/gap.py" in named) is edge
+
+
+def test_an_attribute_off_a_call_handed_a_named_module_is_the_attribute():
+    """``pkgutil.resolve_name("kodezart.domain:gap").compute_gap`` is compute_gap.
+
+    The call's argument names the module, so the attribute is read off the
+    module itself; the same call on a string naming nothing refers to nothing.
+    """
+    source = (
+        "import pkgutil\n"
+        "\n"
+        "def plan(rows):\n"
+        "    return pkgutil.resolve_name('kodezart.domain:gap').compute_gap(rows)\n"
+    )
+    missing = source.replace("kodezart.domain:gap", "kodezart.domain:absent")
+
+    def found(text):
+        return referencing_definitions(
+            "services/planted.py",
+            ast.parse(text),
+            module_namespace("services/planted.py", text),
+            wanted=(compute_gap,),
+        )
+
+    assert [name for name, _node in found(source)] == ["plan"]
+    assert found(missing) == ()
+
+
+def test_a_loaded_name_is_read_by_the_value_it_is_bound_to():
+    """A name bound in the module or by an import is read as its value."""
+    source = (
+        "import kodezart.domain.fire_spec as spec\n"
+        "\n"
+        "LOCAL = 'bound here'\n"
+        "\n"
+        "def plan(rows):\n"
+        "    from kodezart.domain.fire_spec import DELIVERABLES_SECTION\n"
+        "\n"
+        "    return (LOCAL, DELIVERABLES_SECTION, spec.DELIVERABLES_SECTION, rows)\n"
+    )
+    tree_of = ast.parse(source)
+    namespace = module_namespace("services/planted.py", source)
+    returned = next(node for node in ast.walk(tree_of) if isinstance(node, ast.Tuple))
+    local, imported, attribute, parameter = returned.elts
+
+    def values(node):
+        return set(loaded_values("services/planted.py", tree_of, namespace, node))
+
+    assert values(local) == {"bound here"}
+    assert values(imported) == {"Deliverables"}
+    assert "Deliverables" in values(attribute)
+    assert values(parameter) == set()
