@@ -17,6 +17,7 @@ from typing import get_type_hints
 import pytest
 import structlog.testing
 
+from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.errors import LaneRosterArityError, TrackerUnavailableError
 from kodezart.core.protocols import OutboundContentGate, ScopeStatusUpdates
 from kodezart.domain.errors import (
@@ -901,26 +902,47 @@ def _terminal_attribute() -> str:
     )
 
 
-def test_the_terminal_is_handed_the_ready_read_and_nothing_else():
+def test_the_terminal_is_handed_the_ready_read_and_nothing_else() -> None:
     """Nothing the invocation remembered reaches here, asserted over the seam.
 
     The class docstring's claim is invisible to every behavioural test: a
     value the walk carried would normally equal the value the tick's reading
     carries, so a terminal handed the walk's memory as a second argument would
-    report exactly what this one reports. So the seam is read instead — the
-    two signatures, whose every name is read off the objects they belong to,
-    and the walker's one call of it, which hands the tick's ready read by
-    keyword and hands nothing else.
+    report exactly what this one reports. So the seam is read instead:
+
+    - the terminal's whole public surface is the one report method;
+    - the two signatures, annotated or not, whose every name is read off the
+      objects they belong to;
+    - the walker's every use of the terminal, which is that one call, handing
+      the tick's ready read by keyword and nothing else;
+    - and the value it hands, a local every binding of which is an awaited
+      ready read of the scope.
     """
-    assert get_type_hints(ScopeTerminal.report) == {
+    report_hints = get_type_hints(ScopeTerminal.report)
+    init_hints = get_type_hints(ScopeTerminal.__init__)
+    assert report_hints == {
         "ready": ScopeReadySet,
         "return": ScopeTerminalEvent,
     }
-    assert get_type_hints(ScopeTerminal.__init__) == {
+    assert init_hints == {
         "records": LaneRecordReader,
         "status": ScopeStatusUpdates,
         "gate": OutboundContentGate,
         "return": type(None),
+    }
+    # An unannotated parameter is invisible to the hints, so the parameter
+    # names are compared as well, against the same hints.
+    assert list(inspect.signature(ScopeTerminal.report).parameters) == [
+        "self",
+        *(name for name in report_hints if name != "return"),
+    ]
+    assert list(inspect.signature(ScopeTerminal.__init__).parameters) == [
+        "self",
+        *(name for name in init_hints if name != "return"),
+    ]
+    # A second public method would be a second channel into the terminal.
+    assert {name for name in vars(ScopeTerminal) if not name.startswith("_")} == {
+        ScopeTerminal.report.__name__
     }
     receiver = f"self.{_terminal_attribute()}"
     walker = ast.parse(inspect.getsource(sys.modules[ScopeWorkflowEngine.__module__]))
@@ -937,3 +959,47 @@ def test_the_terminal_is_handed_the_ready_read_and_nothing_else():
     (call,) = calls
     assert call.args == []
     assert [keyword.arg for keyword in call.keywords] == ["ready"]
+    # Every attribute reached through the terminal anywhere in the walker's
+    # module, read or written, is that one call's callee: no other method is
+    # called on it and nothing is set on it.
+    assert [
+        node
+        for node in ast.walk(walker)
+        if isinstance(node, ast.Attribute) and ast.unparse(node.value) == receiver
+    ] == [call.func]
+    # What is handed is the local itself, not a value built from it.
+    assert [ast.unparse(keyword.value) for keyword in call.keywords] == ["ready"]
+    (engine,) = (
+        node
+        for node in walker.body
+        if isinstance(node, ast.ClassDef) and node.name == ScopeWorkflowEngine.__name__
+    )
+    (run,) = (
+        node
+        for node in engine.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name == ScopeWorkflowEngine.run.__name__
+    )
+    assert any(node is call for node in ast.walk(run))
+    local = ast.unparse(call.keywords[0].value)
+    assert local not in {argument.arg for argument in parameters_of(run)}
+    parents = {
+        id(child): node
+        for node in ast.walk(run)
+        for child in ast.iter_child_nodes(node)
+    }
+    bindings = [
+        parents[id(node)]
+        for node in ast.walk(run)
+        if isinstance(node, ast.Name)
+        and node.id == local
+        and isinstance(node.ctx, ast.Store)
+    ]
+    assert bindings
+    assert all(
+        isinstance(binding, ast.Assign)
+        and isinstance(binding.value, ast.Await)
+        and isinstance(binding.value.value, ast.Call)
+        and ast.unparse(binding.value.value.func) == read_scope_ready.__name__
+        for binding in bindings
+    )
