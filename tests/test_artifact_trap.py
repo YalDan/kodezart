@@ -8,6 +8,7 @@ real repository, are recorded and permitted while a read planted beside
 them is not.
 """
 
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -257,3 +258,30 @@ async def test_the_writers_persist_is_recorded_and_permitted(
     assert len(written) == sum(len(artifacts) for artifacts in projections)
     assert all(record.writes for record in written)
     assert all(record.from_writer for record in records)
+
+
+def test_a_read_in_a_module_no_wrapped_flow_calls_is_not_recorded(
+    projection: Path, tmp_path: Path
+) -> None:
+    """The stated limit: the trap sees what runs, and nothing else.
+
+    A module holding a read under the directory is imported, and a trapped
+    block runs beside it without calling it: nothing is recorded, because
+    the read never happened.  The same read, called, is.
+    """
+    source = tmp_path / "unreached.py"
+    source.write_text(
+        "from pathlib import Path\n"
+        "def satisfied(root):\n"
+        f"    return (Path(root) / {DIRECTORY!r} / {PROJECTED!r}).read_text()\n"
+    )
+    spec = importlib.util.spec_from_file_location("unreached", source)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with trapped() as records:
+        os.listdir(tmp_path)
+    assert records == []
+    with trapped() as records:
+        module.satisfied(projection.parent)
+    assert unpermitted(records), records

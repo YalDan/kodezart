@@ -45,7 +45,8 @@ returns one. In the permitted modules no return, yield or lambda hands a
 directory path out at all, so no other module can be given one by calling
 them.
 
-The walk is textual and executes nothing, which is what lets it speak for
+The walk reads the source and runs none of it, except for importing the two
+permitted modules to read their values, which is what lets it speak for
 every ``.py`` module rather than for the paths a fixture reaches.  Its
 reach is the one stated for every static guard; outside it:
 
@@ -57,6 +58,13 @@ reach is the one stated for every static guard; outside it:
   inside a function body).
 
 Each of the three is held as unseen by a committed test below.
+
+Behind the walk stands a run-time trap (``tests/artifact_trap.py``): an audit
+hook that observes every open, directory listing and subprocess the wrapped
+flows make, whatever the spelling, and refuses any of them under the
+directory but the writer's own writes.  Together the two have one general
+limit: the one above, plus a read on a flow no wrapped test drives, which
+``tests/test_artifact_trap.py`` holds as unrecorded.
 """
 
 import ast
