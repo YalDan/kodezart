@@ -10,10 +10,12 @@ census says which exits exist; only the scenarios are runtime proof.
 
 import ast
 import asyncio
+import copy
 import importlib
 import inspect
 import operator
 import traceback
+from collections.abc import Callable
 from contextlib import suppress
 from functools import partial
 from pathlib import Path
@@ -68,6 +70,38 @@ FAILING_CHECKS = (CheckStep(name="gate", command="false"),)
 PORT_PARAMETERS: dict[str, type] = ports_of(ScopeUnionCoordinator)
 
 
+def _is_dunder(name: str) -> bool:
+    return name.startswith("__") and name.endswith("__")
+
+
+class Forwarded:
+    """A member read through the recorder: it can be called, and nothing else.
+
+    The port's own bound method would hand back the unrecorded port through
+    ``__self__``, so the recorder hands back this instead.  Every name that
+    is not a dunder is refused, so its slot is not a way back either; a
+    dunder read resolves on this class, which defines no ``__self__``,
+    ``__func__``, ``__wrapped__`` or ``__closure__``; and its state is not
+    handed out for copying or pickling.
+    """
+
+    __slots__ = ("_call",)
+
+    def __init__(self, call: Callable[..., object]) -> None:
+        object.__setattr__(self, "_call", call)
+
+    def __getattribute__(self, name: str) -> object:
+        if _is_dunder(name):
+            return object.__getattribute__(self, name)
+        raise AttributeError(name)
+
+    def __getstate__(self) -> object:
+        raise TypeError("a member read through the recorder is not copied")
+
+    def __call__(self, *args: object, **kwargs: object) -> object:
+        return object.__getattribute__(self, "_call")(*args, **kwargs)
+
+
 class Asked:
     """A port as the step holds it, recording every member read off it.
 
@@ -77,9 +111,15 @@ class Asked:
     through an alias or with starred arguments, ``operator.attrgetter`` or
     ``methodcaller``, and ``port.__getattribute__(name)`` — a dunder read
     resolves on the proxy itself, and its ``__getattribute__`` is the
-    recorder.  Out of reach, and so stated: ``object.__getattribute__`` on
-    the proxy's own slots, ``type(port).__dict__``, which reads the proxy's
-    class, and ``eval``/``exec``.
+    recorder.  A member that can be called comes back as ``Forwarded``, never
+    as the port's own bound method, so no read through it (``__self__``,
+    ``__func__``, a closure cell) reaches the unrecorded port; a member that
+    cannot be called comes back as the port holds it.  The proxy's own state
+    is not handed out for copying or pickling either.  Out of reach, and so
+    stated: ``object.__getattribute__`` on the slots of the proxy or of what
+    it hands back (``test_reading_the_recorders_own_slots_is_not_recorded``),
+    ``type(port).__dict__``, which reads the proxy's class, ``gc`` and
+    ``eval``/``exec``.
     """
 
     __slots__ = ("_names", "_port")
@@ -89,10 +129,14 @@ class Asked:
         object.__setattr__(self, "_names", [])
 
     def __getattribute__(self, name: str) -> object:
-        if name.startswith("__") and name.endswith("__"):
+        if _is_dunder(name):
             return object.__getattribute__(self, name)
         object.__getattribute__(self, "_names").append(name)
-        return getattr(object.__getattribute__(self, "_port"), name)
+        member = getattr(object.__getattribute__(self, "_port"), name)
+        return Forwarded(member) if callable(member) else member
+
+    def __getstate__(self) -> object:
+        raise TypeError("a recorded port is not copied")
 
 
 def asked_of(proxy: Asked) -> tuple[str, ...]:
@@ -923,8 +967,8 @@ async def test_the_ports_the_step_is_handed_record_what_it_asks(tmp_path):
     Not parametrised.  The ports are read off the constructor and pinned, so
     an empty read fails here; a green verify must record a read on each of
     them, so a fixture that stopped wrapping them fails here rather than
-    passing every scenario vacuously; and a declared read is forwarded to the
-    port itself.
+    passing every scenario vacuously; and what a declared read hands back is
+    not the port's own bound method, whose ``__self__`` is the port.
     """
     assert PORT_PARAMETERS == {
         "tracker": protocols.TrackerPort,
@@ -939,7 +983,7 @@ async def test_the_ports_the_step_is_handed_record_what_it_asks(tmp_path):
     for name, port in PORT_PARAMETERS.items():
         assert fixture.asked(name), name
         assert fixture.asked(name) <= declared(port), name
-    assert Asked(fixture.git).fetch.__self__ is fixture.git
+    assert getattr(Asked(fixture.git).fetch, "__self__", None) is None
 
 
 #: The member the spellings below read, assembled so no scan could see it.
@@ -973,6 +1017,66 @@ def test_a_read_by_any_spelling_is_on_the_record(spelling, read) -> None:
         read(proxy)
 
     assert ASSEMBLED in asked_of(proxy), spelling
+
+
+#: Every way back to the port through what the recorder hands out: one
+#: attribute past a declared read, or its state.  Each is an ordinary
+#: spelling, so each must be refused before it reaches the unrecorded port.
+ESCAPES = (
+    ("a declared method's __self__", lambda port: port.fetch.__self__),
+    ("a declared method's __func__", lambda port: port.fetch.__func__),
+    ("a declared method's __wrapped__", lambda port: port.fetch.__wrapped__),
+    (
+        "a declared method's closure",
+        lambda port: port.fetch.__closure__[0].cell_contents,
+    ),
+    ("the forwarded member's own slot", lambda port: port.fetch._call),
+    ("the forwarded member's state", lambda port: port.fetch.__getstate__()),
+    ("a copy of the forwarded member", lambda port: copy.copy(port.fetch)),
+    ("the recorder's state", lambda port: port.__getstate__()),
+    ("a copy of the recorder", lambda port: copy.copy(port)),
+)
+
+
+@pytest.mark.parametrize("escape, read", ESCAPES, ids=[row[0] for row in ESCAPES])
+def test_nothing_the_recorder_hands_out_leads_back_to_the_port(escape, read) -> None:
+    """Each route one hop past a declared read is refused before the port."""
+    proxy = Asked(RecordingPublisher())
+
+    with pytest.raises((AttributeError, TypeError)):
+        read(proxy)
+
+    assert asked_of(proxy) in {(), ("fetch",)}, escape
+
+
+def test_reading_the_recorders_own_slots_is_not_recorded() -> None:
+    """The recorder's stated limit, held as unseen: ``object.__getattribute__``.
+
+    Reading the proxy's slot past its own ``__getattribute__`` reaches the
+    port and leaves nothing on the record.  That is deliberate evasion, out
+    of reach and named in the recorder's docstring.
+    """
+    port = RecordingPublisher()
+    proxy = Asked(port)
+
+    assert object.__getattribute__(proxy, "_port") is port
+    assert asked_of(proxy) == ()
+
+
+async def test_a_read_the_port_does_not_declare_is_reported(tmp_path) -> None:
+    """Guards every scenario's ``undeclared_reads() == {}``: it can report one.
+
+    Not parametrised.  One undeclared read through the git port a step was
+    handed, and the report names it, on that port and on no other.
+    """
+    fixture = await build_delivery(tmp_path / "world")
+    fixture.coordinator()
+
+    assert fixture.undeclared_reads() == {}
+
+    getattr(dict(fixture.handed)["git"], "close_pull_request", None)
+
+    assert fixture.undeclared_reads() == {"git": ["close_pull_request"]}
 
 
 #: A branch no repository in the fixture has, so the merge and the deletion

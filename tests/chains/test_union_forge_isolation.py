@@ -359,8 +359,8 @@ async def test_verifying_leaves_every_open_pull_request_open(
     nothing here would see.  The reuse rows read back around their SECOND ask,
     so the return under measurement is the one that composes nothing.  On
     each, no port the step is handed was asked a member its port does not
-    declare, however the read was spelled — the forge this git double carries
-    included.
+    declare, by any spelling the recorder keys on (``Asked`` in the exit
+    sibling states which) — the forge this git double carries included.
     """
     fixture = await build_delivery(
         tmp_path / "world", edits=edits, git=ReachableForgeGit()
