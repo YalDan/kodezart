@@ -18,9 +18,11 @@ import structlog.testing
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.passes import (
+    _DISPATCH_NAME,
     DispatchRuntime,
     build_dispatch_runtime,
     build_prompt_passes,
+    runs_scope_flow,
     verify_pass_preflight,
 )
 from kodezart.composition.records import RECORD_KIND_BY_PASS
@@ -640,6 +642,70 @@ async def test_two_refused_signals_are_named_in_one_abort(tmp_path: Path) -> Non
     assert tracker.capability_probes == [
         (PassSignal.issues_changed, PassSignal.reviews_changed)
     ]
+
+
+async def test_a_refused_signal_names_every_pass_that_declares_it(
+    tmp_path: Path,
+) -> None:
+    """One signal two passes declare is one refusal naming both passes.
+
+    Fire-prep and grooming are both gated on the same signal, and the
+    credential cannot scan for it. Both passes are left ungated by the one
+    refusal, so the abort names the signal once, with both passes and the
+    diagnosis, rather than whichever pass declared it first.
+    """
+    tracker = FakeTrackerPort(scan_refusals={PassSignal.issues_changed: DIAGNOSIS})
+
+    with pytest.raises(PassGateCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=FakeAgentRunner(events=[]),
+            fire_prep_pass_gate_signals=[PassSignal.issues_changed],
+            grooming_pass_gate_signals=[PassSignal.issues_changed],
+        )
+
+    [refusal] = caught.value.refusals
+    assert refusal.startswith(f"{PassSignal.issues_changed.value} gates ")
+    assert PromptKey.FIRE_PREP_PASS.value in refusal
+    assert PromptKey.GROOMING_PASS.value in refusal
+    assert DIAGNOSIS in refusal
+    assert tracker.capability_probes == [(PassSignal.issues_changed,)]
+
+
+async def test_a_refused_dispatch_signal_aborts_naming_the_dispatch_pass(
+    tmp_path: Path,
+) -> None:
+    """The per-issue dispatch pass's signal is probed and refused like any other.
+
+    A deployment that is not worked scope by scope, with a delivery probe and
+    repositories whose teams the dispatch pass scans, schedules the dispatch
+    pass; its gate signal is asked for at boot, and a credential that cannot
+    scan for it aborts startup naming the dispatch pass and the diagnosis.
+    The two session passes declare no signal here, so the dispatch pass is
+    the only thing that can have put the signal in the probe.
+    """
+    operation = example_config()
+    assert not runs_scope_flow(operation)
+    assert any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
+    tracker = FakeTrackerPort(scan_refusals={PassSignal.approved_changed: DIAGNOSIS})
+
+    with pytest.raises(PassGateCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=FakeAgentRunner(events=[]),
+            operation=operation,
+            github_api=FakeDeliveryProbe(),
+            fire_prep_pass_gate_signals=[],
+            grooming_pass_gate_signals=[],
+            dispatch_pass_gate_signals=[PassSignal.approved_changed],
+        )
+
+    assert caught.value.refusals == (
+        f"{PassSignal.approved_changed.value} gates {_DISPATCH_NAME}: {DIAGNOSIS}",
+    )
+    assert tracker.capability_probes == [(PassSignal.approved_changed,)]
 
 
 async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
