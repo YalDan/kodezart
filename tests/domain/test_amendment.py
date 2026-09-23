@@ -2,7 +2,8 @@
 
 import importlib
 import pkgutil
-from typing import get_args
+from collections.abc import Mapping
+from typing import get_args, get_origin
 
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -554,6 +555,48 @@ def _annotation_types(annotation):
         yield from _annotation_types(argument)
 
 
+#: The models a session fills in, directly or as the verdict it is judged by.
+SESSION_ROOTS = (
+    AmendmentClaim,
+    AmendmentJudgment,
+    UpheldJudgment,
+    UpheldAmendment,
+    NativeWriterOutput,
+    FindingEvidence,
+)
+
+
+def _reachable_models(roots):
+    """Every model reachable from *roots* through field annotations, roots included.
+
+    Recurses into the models a field names as well as into the arguments of
+    its annotation, so a model nested any depth below a root is scanned.
+    """
+    seen: list[type[BaseModel]] = []
+    pending = list(roots)
+    while pending:
+        model = pending.pop()
+        if model in seen:
+            continue
+        seen.append(model)
+        for field in model.model_fields.values():
+            for found in _annotation_types(field.annotation):
+                if isinstance(found, type) and issubclass(found, BaseModel):
+                    pending.append(found)
+    return seen
+
+
+def _is_truth_valued_mapping(annotation):
+    """A mapping whose values are truth values, whatever its keys."""
+    origin = get_origin(annotation)
+    if not (isinstance(origin, type) and issubclass(origin, Mapping)):
+        return False
+    arguments = get_args(annotation)
+    return len(arguments) == 2 and any(
+        found is bool for found in _annotation_types(arguments[1])
+    )
+
+
 def _declared_models():
     """Every model declared under `kodezart.types.domain`, found by walking it.
 
@@ -583,18 +626,13 @@ def test_no_field_can_carry_a_session_observed_probe_outcome():
     typed claim, which names a capability and no truth value; and across the whole
     types package the only field pairing capabilities with truth values is the
     repository's own declared environment, which is configuration.
+
+    The session-facing set is the closure of every model reachable from those
+    roots, nested ones included, so a seat added to a citation, a demonstration
+    or a cost claim is seen; and within it no field may be a mapping to truth
+    values, whatever it is keyed by.
     """
-    assert {
-        model.__name__: set(model.model_fields)
-        for model in (
-            AmendmentClaim,
-            AmendmentJudgment,
-            UpheldJudgment,
-            UpheldAmendment,
-            NativeWriterOutput,
-            FindingEvidence,
-        )
-    } == {
+    assert {model.__name__: set(model.model_fields) for model in SESSION_ROOTS} == {
         "AmendmentClaim": {
             "subject",
             "stage",
@@ -628,14 +666,7 @@ def test_no_field_can_carry_a_session_observed_probe_outcome():
     }
     session_facing = {
         (model.__name__, name): field.annotation
-        for model in (
-            AmendmentClaim,
-            AmendmentJudgment,
-            UpheldJudgment,
-            UpheldAmendment,
-            NativeWriterOutput,
-            FindingEvidence,
-        )
+        for model in _reachable_models(SESSION_ROOTS)
         for name, field in model.model_fields.items()
     }
     assert {
@@ -648,10 +679,17 @@ def test_no_field_can_carry_a_session_observed_probe_outcome():
         )
     }
     assert {
+        address: str(annotation)
+        for address, annotation in session_facing.items()
+        if any(
+            _is_truth_valued_mapping(found) for found in _annotation_types(annotation)
+        )
+    } == {}
+    assert {
         (model.__name__, name)
         for model in _declared_models()
         for name, field in model.model_fields.items()
-        if field.annotation == dict[CheckPrerequisite, bool]
+        if {CheckPrerequisite, bool} <= set(_annotation_types(field.annotation))
     } == {("RepoEntry", "runner_environment")}
 
 
@@ -819,6 +857,13 @@ def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_am
         AmendedAmendment.model_validate(applied)
 
 
+#: The rule each anchored row must be refused by; the other rows are refused by
+#: whichever rule their mutation breaks.
+REFUSING_RULE = {
+    "environment_without_capability": "requires the typed claimed capability",
+}
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -874,7 +919,7 @@ def test_completed_reports_refuse_missing_or_unrelated_canonical_evidence(mutati
             "record": value["publication"]["record"],
             "escalation": value["publication"]["record"],
         }
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match=REFUSING_RULE.get(mutation)):
         AmendmentReport.model_validate(
             {"verdicts": [value, value] if mutation == "duplicate" else [value]}
         )
