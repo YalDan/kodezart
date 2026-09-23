@@ -181,6 +181,56 @@ async def test_the_pre_approval_row_declares_no_member_that_reads_approved():
     assert GROOM_MARKER not in board.server.issues[approved].labels
 
 
+async def test_a_member_whose_approval_is_withdrawn_mid_round_is_not_marked_by_it(
+    monkeypatch,
+):
+    """The round marks only what it declared; a withdrawn member waits.
+
+    The member reads approved when the round declares its set, so the set
+    leaves it out. Its approval is withdrawn as the round takes that set,
+    so by the marker it reads admitted, but the round holds no address on
+    it: it keeps no marker this round, and the barrier names it owed.
+    """
+    owner, board, _ = factory()
+    approved = "FIX-APPROVED"
+    member(board, approved, labels=["approved scope"])
+    original = board.call_tool
+
+    async def withdrawing(*, name, arguments):
+        response = await original(name=name, arguments=arguments)
+        labels = board.server.issues[approved].labels
+        # The round's acquisition is the first lease record it creates.
+        if (
+            name == "save_comment"
+            and "id" not in arguments
+            and "kind: lease\n" in str(arguments.get("body", ""))
+            and "approved scope" in labels
+        ):
+            labels.remove("approved scope")
+        return response
+
+    monkeypatch.setattr(board, "call_tool", withdrawing)
+    report = await asyncio.wait_for(run_owner(owner), timeout=60)
+    assert "approved scope" not in board.server.issues[approved].labels
+    assert not any(
+        f"|issue|{approved}|" in line
+        for _, _, lines in acquisitions(board)
+        for line in lines
+    )
+    assert GROOM_MARKER in board.server.issues[CLAIMED_ISSUE].labels
+    assert GROOM_MARKER not in board.server.issues[approved].labels
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue"
+        and args.get("id") == approved
+        and GROOM_MARKER in args.get("addLabels", [])
+    ]
+    assert report.halt.cause == "stage_incomplete"
+    assert report.halt.unlabelled_issue_ids == (approved,)
+    assert board.grants() == []
+
+
 def lapsing(arm, monkeypatch):
     """The owner and board for one write arm, with a lease the session outlasts.
 
