@@ -16,7 +16,11 @@ when it is built alone. The store it is built over declares nothing public.
 The classes are found by what they declare, read off the module's own text,
 assignments counted as well as definitions, and the roles by the register
 the port guards derive, so a member moved between roles moves this guard
-with it.
+with it. Each live class is then read by object as well: the public names of
+its own ``vars()`` are its role's, its MRO holds only the store and role
+doubles, nothing forwards a member through ``__getattr__``, and it satisfies
+no role beyond what it composes and calls through; the store's ``vars()``
+hold nothing public at all.
 """
 
 import ast
@@ -42,6 +46,8 @@ from tests.tracker.role_register import (
     declaring_roles,
     edge_report,
     implementation_classes,
+    members_declared,
+    needed_classes,
     port_module_text,
     roles_implemented_nowhere,
     roles_implemented_twice,
@@ -125,11 +131,89 @@ def test_each_role_double_is_built_over_exactly_the_doubles_it_needs():
 
 
 def test_the_store_declares_no_public_callable():
-    held = {
-        name: value for name, value in vars(STATE).items() if not name.startswith("_")
+    """Nothing public at all: a classmethod or a property is no callable."""
+    assert [name for name in vars(STATE) if not name.startswith("_")] == []
+
+
+def live_doubles() -> dict[str, type]:
+    """Every class the double's module defines over the store, off the module."""
+    return {
+        cls.__name__: cls
+        for _, cls in inspect.getmembers(fakes, inspect.isclass)
+        if cls.__module__ == fakes.__name__
+        and issubclass(cls, STATE)
+        and cls is not STATE
     }
 
-    assert [name for name, value in held.items() if callable(value)] == []
+
+def test_each_double_s_live_members_are_its_roles():
+    """Read off the live class, so a member bound after the body is seen too."""
+    role_of = {name: role for role, name in double_per_role().items()}
+    declared = declared_by_role()
+    doubles = live_doubles()
+    wrong = {
+        name: sorted(public)
+        for name, cls in doubles.items()
+        if (public := {member for member in vars(cls) if not member.startswith("_")})
+        != (set() if name == WHOLE else set(declared.get(role_of.get(name, ""), ())))
+    }
+
+    assert set(doubles) == set(role_of) | {WHOLE}
+    assert wrong == {}
+
+
+def test_every_double_is_built_over_the_store_and_role_doubles_only():
+    doubles = live_doubles()
+    allowed = {STATE, object, *doubles.values()}
+
+    assert {
+        name: [base.__name__ for base in cls.__mro__ if base not in allowed]
+        for name, cls in doubles.items()
+        if set(cls.__mro__) - allowed
+    } == {}
+
+
+def test_no_double_forwards_members_dynamically():
+    assert [
+        f"{cls.__name__}.{hook}"
+        for cls in (STATE, *live_doubles().values())
+        for hook in ("__getattr__", "__getattribute__")
+        if hook in vars(cls)
+    ] == []
+
+
+def test_each_double_satisfies_no_role_outside_its_closure():
+    """A double answers its role, what it composes and what it calls through."""
+    register = port_module_text()
+    needs = needed_classes(MODULE_TEXT, state=STATE.__name__, whole=WHOLE)
+    role_of = {name: role for role, name in double_per_role().items()}
+    declared = declared_by_role()
+    every = sorted(register_roles(register))
+    outside: dict[str, list[str]] = {}
+    for name, cls in live_doubles().items():
+        reached, frontier = set(), [name]
+        while frontier:
+            current = frontier.pop()
+            if current not in reached:
+                reached.add(current)
+                frontier.extend(needs.get(current, ()))
+        answered = set().union(
+            *(declared.get(role_of.get(held, ""), frozenset()) for held in reached)
+        )
+        closure = {
+            role
+            for role in every
+            if name == WHOLE or members_declared(register, role) <= answered
+        }
+        double = cls()
+        if found := [
+            role
+            for role in every
+            if isinstance(double, getattr(protocols, role)) and role not in closure
+        ]:
+            outside[name] = found
+
+    assert outside == {}
 
 
 @pytest.mark.parametrize("role", sorted(register_roles(port_module_text())))

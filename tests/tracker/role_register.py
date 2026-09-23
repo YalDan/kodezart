@@ -1724,15 +1724,12 @@ def consumer_classes(text: str, *, state: str, whole: str) -> dict[str, str]:
     return found
 
 
-def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ...]]:
-    """Every role class whose bases are not exactly the role classes it needs.
+def needed_classes(text: str, *, state: str, whole: str) -> dict[str, frozenset[str]]:
+    """Each role class over *state*, with the role classes it needs.
 
     A role class needs the classes of the declaring roles its role composes,
     and the class that defines each ``self.<name>`` its own body reads that
-    neither it nor the state defines. The role classes its bases reach must
-    be exactly those and what they reach in turn, and each base must be the
-    state or a role class: nothing wider is inherited and nothing it calls
-    is missing when it is built alone.
+    neither it nor the state defines.
     """
     register = port_module_text()
     declaring = declaring_roles(register)
@@ -1744,6 +1741,42 @@ def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ..
     }
     definer = {
         member: name for name in implemented for member in bound_in_body(classes[name])
+    }
+    from_state = bound_in_body(classes[state]) | self_assigned(classes[state])
+    found: dict[str, frozenset[str]] = {}
+    for name in sorted(implemented):
+        role = role_of.get(name)
+        own = bound_in_body(classes[name])
+        found[name] = frozenset(
+            {
+                implemented_role
+                for part in (composed(register, role) if role else frozenset())
+                & declaring
+                if (implemented_role := class_per_role(implemented).get(part))
+            }
+            | {
+                definer[called]
+                for called in self_calls(classes[name]) - own - from_state
+                if called in definer
+            }
+        )
+    return found
+
+
+def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ...]]:
+    """Every role class whose bases are not exactly the role classes it needs.
+
+    What a role class needs is ``needed_classes``. The role classes its
+    bases reach must be exactly those and what they reach in turn, each base
+    must be the state or a role class, and every ``self.<name>`` its body
+    reads must be defined by the state or a role class: nothing wider is
+    inherited and nothing it calls is missing when it is built alone.
+    """
+    classes = class_defs(text)
+    implemented = implementation_classes(text, state=state, whole=whole)
+    needs = needed_classes(text, state=state, whole=whole)
+    definer = {
+        member for name in implemented for member in bound_in_body(classes[name])
     }
     from_state = bound_in_body(classes[state]) | self_assigned(classes[state])
     bases = {
@@ -1764,19 +1797,13 @@ def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ..
 
     report: dict[str, tuple[str, ...]] = {}
     for name in sorted(implemented):
-        role = role_of.get(name)
         own = bound_in_body(classes[name])
-        needed = {
-            implemented_role
-            for part in (composed(register, role) if role else frozenset()) & declaring
-            if (implemented_role := class_per_role(implemented).get(part))
-        }
-        findings: list[str] = []
-        for called in sorted(self_calls(classes[name]) - own - from_state):
-            if called in definer:
-                needed.add(definer[called])
-            else:
-                findings.append(f"calls self.{called}, which no role class defines")
+        needed = set(needs[name])
+        findings = [
+            f"calls self.{called}, which no role class defines"
+            for called in sorted(self_calls(classes[name]) - own - from_state)
+            if called not in definer
+        ]
         findings.extend(
             f"base {base} is neither the state nor a role class"
             for base in bases[name]
