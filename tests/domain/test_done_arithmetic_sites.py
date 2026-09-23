@@ -42,7 +42,9 @@ over the open kinds that decides which criteria a fire works on.
 """
 
 import ast
+import inspect
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -452,6 +454,87 @@ def test_one_body_decides_finishedness_from_a_criterion_state():
     assert found - frozenset(EXEMPT) == frozenset({RULE_SITE}), sorted(
         found - frozenset(EXEMPT)
     )
+
+
+def _closed_readings(
+    statements: list[ast.stmt], names: dict[str, object]
+) -> list[ast.AST]:
+    """Every node of *statements* that reads a closed kind or the predicate."""
+    named = _aliases(ast.Module(body=statements, type_ignores=[]))
+    return [
+        node
+        for statement in statements
+        for node in ast.walk(statement)
+        if _member(node)
+        or (isinstance(node, ast.Name) and node.id in named)
+        or _calls_openness(node)
+        or _reads_a_closed_kind(node, names)
+        or _compares_a_closed_value(node)
+    ]
+
+
+def rollup_arm(function: ast.FunctionDef) -> tuple[list[ast.stmt], ast.Return]:
+    """The refusal of the rollup's exempt arm, and the return after it.
+
+    The refusal is the body up to and including the first ``if`` that
+    raises; the rest must be one ``return``.
+    """
+    body = [
+        statement
+        for statement in function.body
+        if not (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        )
+    ]
+    refusal_end = next(
+        index
+        for index, statement in enumerate(body)
+        if isinstance(statement, ast.If)
+        and any(isinstance(node, ast.Raise) for node in ast.walk(statement))
+    )
+    (returned,) = body[refusal_end + 1 :]
+    assert isinstance(returned, ast.Return)
+    return body[: refusal_end + 1], returned
+
+
+def test_the_rollups_exempt_arm_hands_its_decision_to_the_rule():
+    """The exempt arm refuses what the rule cannot answer, then asks the rule.
+
+    Its return is a call of the rule, resolved by object in the module that
+    declares it, and a closed kind is read only inside the refusal before
+    it: a body that decided the family itself after refusing would be a
+    second arithmetic under the arm's exemption.
+    """
+    module = module_of(open_criteria)
+    text = (SOURCE / module).read_text()
+    names = names_of(module, text, SOURCE)
+    (function,) = ast.parse(textwrap.dedent(inspect.getsource(open_criteria))).body
+    assert isinstance(function, ast.FunctionDef)
+    refusal, returned = rollup_arm(function)
+    assert isinstance(returned.value, ast.Call)
+    assert denoted(returned.value.func, names) is compute_gap
+    assert _closed_readings(refusal, names)
+    assert _closed_readings([returned], names) == []
+
+
+def test_a_rollup_arm_restating_the_rule_after_its_refusal_is_reported():
+    names = names_of_tree(ast.parse(f"from {VOCABULARY_MODULE} import {VOCABULARY}\n"))
+    (function,) = ast.parse(
+        "def open_criteria(criteria, *, ref):\n"
+        f"    if any(c.state_kind is {VOCABULARY}.CANCELED for c in criteria):\n"
+        "        raise LookupError(ref)\n"
+        "    return tuple(\n"
+        f"        c for c in criteria if c.state_kind is not {VOCABULARY}.COMPLETED\n"
+        "    )\n"
+    ).body
+    assert isinstance(function, ast.FunctionDef)
+    refusal, returned = rollup_arm(function)
+    assert _closed_readings(refusal, names)
+    assert _closed_readings([returned], names) != []
+    assert isinstance(returned.value, ast.Call)
+    assert denoted(returned.value.func, names) is not compute_gap
 
 
 def test_every_exemption_names_a_site_the_walk_reports():
