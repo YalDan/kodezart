@@ -21,29 +21,50 @@ own symbol table rather than off a list of statement kinds: a ``class``,
 an assignment to any target shape, ``def``, ``type``, ``for``, ``with ...
 as``, ``except ... as``, a match capture, a walrus, a parameter, a
 ``global`` declaration, in any scope of the module.  Beside the table, an
-attribute stored under the owned word and the owned word spelled as a whole
-string literal are read, because ``module.Word = ...`` and
-``globals()["Word"] = ...`` bind it with no name the table records
+attribute stored or deleted under the owned word, the owned word spelled
+as a whole string literal, and the owned word as a keyword argument are
+read, because ``module.Word = ...``, ``globals()["Word"] = ...`` and
+``globals().update(Word=...)`` bind it with no name the table records
 (``tests/name_resolution.py``'s ``rebound_words``).  An import is judged by
 what it binds: an alias is a rebind when the word it binds is not the
 imported symbol's own name, whichever module it is imported out of, and
-``X as X`` is a rebind unless it comes out of the owner (KOD-540).
+``X as X`` is a rebind unless it comes out of the owner (KOD-540).  Read
+and reported although it binds nothing: a quoted annotation of an owned
+word, an ``__all__`` entry naming it, or a keyword of its name in any call,
+outside its owner.
 
-Not read: a word built at run time (``getattr``, ``setattr``,
-``globals()`` or ``importlib`` with a computed name), and ``eval`` or
-``exec``.  Read and reported although it binds nothing: a quoted
-annotation of an owned word, or an ``__all__`` entry naming it, outside
-its owner.
+The same clause is also read by object: every module of the package is
+imported, and its namespace (``vars(module)``) must bind each owned word to
+the owned symbol itself or not at all.  That reads whatever runs at import,
+however the word is spelled or built.  A copied protocol is found by what
+its bases name in the module's namespace after import (``object_named``),
+so ``typing.Protocol``, ``Protocol[T]``, an alias of it and
+``typing_extensions.Protocol`` are one base.
+
+Outside this guard's reach, as outside every static guard's: a value handed
+across a function boundary, where the other function is not resolved at
+this site (returned from a helper, stored on an object and read elsewhere,
+or passed through a container built elsewhere); a name built at run time;
+a binding made only when a function runs (``setattr`` or ``globals()``
+inside a function body).  For this guard those come to one shape, a word
+the source never spells whole, bound where import does not run it; and a
+word spelled whole is read wherever it is written, a function body
+included.  ``LIMIT_SHAPES`` holds each as unseen, and
+``PROTOCOL_LIMIT_SHAPES`` holds a copy whose base is bound only inside a
+function body; ``eval`` or ``exec`` is not read either.  Only ``*.py`` is
+walked: a ``.pyi`` stub restating an owned word is left to code review.
 """
 
 import ast
 import sys
+import typing
 from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 from typing import Protocol
 
 import pytest
+import typing_extensions
 
 from kodezart.chains.audit_sweep import AuditReadSweep, AuditReadSweepResult
 from kodezart.chains.write_back_verifier import FreshWriteBackJudge, WriteBackVerifier
@@ -54,7 +75,7 @@ from kodezart.types.domain.criterion_lifecycle import CrossOffState
 from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.organize import DefectRole, SpecFinding
 from tests.chains.test_write_back_adoption import step_members
-from tests.name_resolution import rebound_words
+from tests.name_resolution import namespace_after_import, object_named, rebound_words
 
 SOURCE = Path(__file__).resolve().parents[1] / "src" / "kodezart"
 
@@ -119,6 +140,10 @@ ROLE_SHAPES: Mapping[str, frozenset[str]] = {
 
 ROLE_NAMES = frozenset(ROLE_SHAPES)
 
+#: The objects a class names as a base to be a protocol, whichever module it
+#: took them from and however it spells them.
+PROTOCOL_BASES: tuple[object, ...] = (typing.Protocol, typing_extensions.Protocol)
+
 
 def _modules(root: Path) -> list[tuple[str, ast.Module]]:
     """Every module under *root*, keyed by its path inside it."""
@@ -143,25 +168,19 @@ def _declared_members(node: ast.ClassDef) -> frozenset[str]:
     return frozenset(name for name in members if not name.startswith("_"))
 
 
-def _protocol_names(tree: ast.Module) -> frozenset[str]:
-    """Every name this module binds ``typing.Protocol`` to.
+def _is_protocol(node: ast.ClassDef, namespace: Mapping[str, object]) -> bool:
+    """Whether a base of *node* names ``Protocol``, read by object.
 
-    Read out of the module's own imports rather than assumed to be the
-    word ``Protocol``: ``from typing import Protocol as _P`` and a class
-    based on ``_P`` is the same copied protocol under another spelling, and
-    a base matched by spelling alone misses it.
+    Each base is resolved in the module's own namespace after import, so
+    ``Protocol``, ``_P`` bound to it, ``typing.Protocol``, ``Protocol[T]``
+    and ``typing_extensions.Protocol`` are the same base, and a class named
+    anything at all is a copied protocol when that is what it is based on.
     """
-    return frozenset(
-        alias.asname or alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module == "typing"
-        for alias in node.names
-        if alias.name == "Protocol"
+    return any(
+        object_named(base, namespace) is protocol
+        for base in node.bases
+        for protocol in PROTOCOL_BASES
     )
-
-
-def _is_protocol(node: ast.ClassDef, names: frozenset[str]) -> bool:
-    return any(isinstance(base, ast.Name) and base.id in names for base in node.bases)
 
 
 def _source_module(node: ast.ImportFrom | ast.Import, alias: ast.alias) -> str | None:
@@ -221,13 +240,50 @@ def _declared(source: str) -> frozenset[str]:
     return rebound_words(source, names=OWNERS) | frozenset(imports)
 
 
+def _declarations(root: Path) -> dict[str, list[str]]:
+    """Each module under *root* with every owned word it binds, owner or not."""
+    found: dict[str, list[str]] = {}
+    for path in sorted(root.rglob("*.py")):
+        names = sorted(_declared(path.read_text()))
+        if names:
+            found[path.relative_to(root).as_posix()] = names
+    return found
+
+
 def _redeclarations(root: Path) -> dict[str, list[str]]:
     """Each module under *root* declaring a symbol another module owns."""
     found: dict[str, list[str]] = {}
-    for path in sorted(root.rglob("*.py")):
-        module = path.relative_to(root).as_posix()
+    for module, declared in _declarations(root).items():
+        names = [name for name in declared if OWNERS[name] != module]
+        if names:
+            found[module] = names
+    return found
+
+
+def _namespaces(root: Path) -> dict[str, Mapping[str, object]]:
+    """Each module under *root*, keyed by its path inside it, once imported."""
+    return {
+        path.relative_to(root).as_posix(): namespace_after_import(path, root)
+        for path in sorted(root.rglob("*.py"))
+    }
+
+
+def _rebound_after_import(root: Path) -> dict[str, list[str]]:
+    """Each module under *root* whose namespace, once imported, binds an
+    owned word to anything but the owned symbol itself.
+
+    Read by object and not by spelling: whatever the module runs at import
+    -- a keyword update of ``globals()``, a write through
+    ``sys.modules[__name__].__dict__``, a name built out of pieces -- has
+    left its binding in ``vars(module)``, which is compared by identity.
+    """
+    owned = {symbol.__name__: symbol for symbol in GUARDED_SYMBOLS}
+    found: dict[str, list[str]] = {}
+    for module, namespace in _namespaces(root).items():
         names = sorted(
-            name for name in _declared(path.read_text()) if OWNERS[name] != module
+            word
+            for word, symbol in owned.items()
+            if namespace.get(word, symbol) is not symbol
         )
         if names:
             found[module] = names
@@ -241,12 +297,12 @@ def _role_shaped_classes(root: Path) -> dict[str, list[str]]:
     """
     found: dict[str, list[str]] = {}
     for module, tree in _modules(root):
-        protocols = _protocol_names(tree)
+        namespace = namespace_after_import(root / module, root)
         copies = sorted(
             {
                 f"{node.name} as {role}"
                 for node in ast.walk(tree)
-                if isinstance(node, ast.ClassDef) and _is_protocol(node, protocols)
+                if isinstance(node, ast.ClassDef) and _is_protocol(node, namespace)
                 for role, shape in ROLE_SHAPES.items()
                 if _declared_members(node) == shape and OWNERS[role] != module
             }
@@ -343,16 +399,45 @@ def test_no_module_but_the_owner_declares_a_cross_lane_symbol() -> None:
 def test_the_binding_reader_finds_each_owned_word_in_its_own_owner() -> None:
     """The clean result above is a reader that sees, not one gone blind.
 
-    Each owning module does state its owned word, so the reader has to find
+    Each owning module does state its owned word, so the scan has to find
     every one of them there; the owner filter is what keeps them out of the
-    clean result, not a reader that finds nothing anywhere.
+    clean result, not a reader that finds nothing anywhere.  Read through
+    the same walk the clean result is, so a walk that stopped short of an
+    owner -- one reduced to the package's top level, say -- reds here too.
     """
+    declared = _declarations(SOURCE)
     unseen = sorted(
-        name
-        for name, owner in OWNERS.items()
-        if name not in _declared((SOURCE / owner).read_text())
+        name for name, owner in OWNERS.items() if name not in declared.get(owner, [])
     )
     assert OWNERS and unseen == [], unseen
+
+
+def test_no_module_binds_an_owned_word_to_another_object_once_imported() -> None:
+    """The same clause read by object: whatever runs at import is in it."""
+    assert _rebound_after_import(SOURCE) == {}
+
+
+def test_each_owner_binds_its_owned_word_to_the_symbol_once_imported() -> None:
+    """The clean result above is a namespace read, not a walk gone empty.
+
+    Each owning module's own namespace is taken by the same walk and binds
+    the owned word to the very symbol this module imported, so a walk or a
+    lookup that found nothing could not pass as a clean package.
+    """
+    namespaces = _namespaces(SOURCE)
+    unseen = sorted(
+        symbol.__name__
+        for symbol in GUARDED_SYMBOLS
+        if namespaces.get(OWNERS[symbol.__name__], {}).get(symbol.__name__)
+        is not symbol
+    )
+    assert GUARDED_SYMBOLS and unseen == [], unseen
+
+
+def test_a_package_is_read_as_the_module_every_importer_sees() -> None:
+    """A package's ``__init__`` is imported as the package itself, not run a
+    second time under a name whose namespace no importer reads."""
+    assert _namespaces(SOURCE)["__init__.py"] is vars(sys.modules[SOURCE.name])
 
 
 def test_no_module_but_the_owner_declares_a_class_shaped_like_a_write_back_role() -> (
@@ -493,7 +578,8 @@ def test_an_alias_out_of_the_owning_module_onto_a_sibling_name_is_a_rebind(
 #: the alias under each block a module can carry statements in; a function
 #: body is one of them, because ``global`` makes a function's binding the
 #: module's own, and a class inside a function was already reported.  The
-#: last rows are the writes the table does not record.
+#: last rows are the writes the table does not record: through a string,
+#: through a keyword argument, and through an attribute stored or deleted.
 WRITE_BACK = "from kodezart.types.domain.write_back import WriteBackFinding\n\n"
 ALIAS = "from kodezart.types.domain.write_back import WriteBackFinding as SpecFinding"
 BINDING_FORMS = {
@@ -536,8 +622,15 @@ BINDING_FORMS = {
     "globals-literal": WRITE_BACK + "globals()['SpecFinding'] = WriteBackFinding\n",
     "setattr-literal": WRITE_BACK + "import sys\n\n"
     "setattr(sys.modules[__name__], 'SpecFinding', WriteBackFinding)\n",
+    "globals-update-keyword": WRITE_BACK
+    + "globals().update(SpecFinding=WriteBackFinding)\n",
+    "vars-update-keyword": WRITE_BACK
+    + "import kodezart.types.domain.organize as _organize\n\n"
+    "vars(_organize).update(SpecFinding=WriteBackFinding)\n",
     "module-attribute": WRITE_BACK + "import kodezart.types.domain.audit as _audit\n\n"
     "_audit.SpecFinding = WriteBackFinding\n",
+    "module-attribute-del": "import kodezart.types.domain.audit as _audit\n\n"
+    "del _audit.SpecFinding\n",
 }
 
 
@@ -581,6 +674,88 @@ def test_a_read_of_an_owned_word_is_not_a_statement_of_it(
     assert _redeclarations(tmp_path) == {}
 
 
+#: What the arms beside the symbol table read although it binds nothing: the
+#: owned word written whole as a string or as a keyword is reported wherever
+#: it stands, which is the cost of reading every write that spells it.
+WHOLE_WORD_MENTIONS = {
+    "quoted-annotation": "def _take(value: 'SpecFinding') -> None: ...\n",
+    "dunder-all": "__all__ = ['SpecFinding']\n",
+    "call-keyword": "_HELD = dict(SpecFinding=None)\n",
+}
+
+
+@pytest.mark.parametrize(
+    "source", WHOLE_WORD_MENTIONS.values(), ids=list(WHOLE_WORD_MENTIONS)
+)
+def test_a_whole_word_mention_is_reported_though_it_binds_nothing(
+    source: str, tmp_path: Path
+) -> None:
+    (tmp_path / "mention.py").write_text(source)
+
+    assert _redeclarations(tmp_path) == {"mention.py": [SpecFinding.__name__]}
+
+
+#: One row per way a module can leave an owned word bound to another object
+#: once it has run, each planted in a module the pin imports: the pin reads
+#: the namespace, so the row's spelling is not what it keys on -- a name
+#: built out of pieces, which the source scan cannot read, is one of them.
+IMPORT_BINDINGS = {
+    "class-statement": "class SpecFinding: ...\n",
+    "globals-update-keyword": WRITE_BACK
+    + "globals().update(SpecFinding=WriteBackFinding)\n",
+    "name-built-at-import": WRITE_BACK
+    + "globals()['Spec' + 'Finding'] = WriteBackFinding\n",
+}
+
+
+@pytest.mark.parametrize("source", IMPORT_BINDINGS.values(), ids=list(IMPORT_BINDINGS))
+def test_every_binding_left_at_import_is_read_by_object(
+    source: str, tmp_path: Path
+) -> None:
+    (tmp_path / "planted.py").write_text(source)
+
+    assert _rebound_after_import(tmp_path) == {"planted.py": [SpecFinding.__name__]}
+
+
+def test_each_reading_sees_what_the_other_cannot(tmp_path: Path) -> None:
+    """Why both are kept: the source scan reads a function body that import
+    never runs, and the namespace reads a name the source never spells whole.
+    """
+    (tmp_path / "built.py").write_text(IMPORT_BINDINGS["name-built-at-import"])
+    (tmp_path / "deferred.py").write_text(
+        WRITE_BACK + "def _bind() -> None:\n"
+        "    globals().update(SpecFinding=WriteBackFinding)\n"
+    )
+
+    assert _redeclarations(tmp_path) == {"deferred.py": [SpecFinding.__name__]}
+    assert _rebound_after_import(tmp_path) == {"built.py": [SpecFinding.__name__]}
+
+
+#: The stated limit, held as unseen by both readings: a word the source never
+#: spells whole, bound only when a function runs, or handed to the function
+#: that binds it across a function boundary.  Neither function runs at
+#: import, and no whole spelling of the word is anywhere in the source.
+LIMIT_SHAPES = {
+    "bound-when-a-function-runs": WRITE_BACK + "def _bind() -> None:\n"
+    "    globals()['Spec' + 'Finding'] = WriteBackFinding\n",
+    "handed-across-a-function-boundary": WRITE_BACK
+    + "def _bind(namespace: dict[str, object], word: str) -> None:\n"
+    "    namespace[word] = WriteBackFinding\n\n\n"
+    "def _load() -> None:\n"
+    "    _bind(globals(), 'Spec' + 'Finding')\n",
+}
+
+
+@pytest.mark.parametrize("source", LIMIT_SHAPES.values(), ids=list(LIMIT_SHAPES))
+def test_a_word_never_spelled_whole_and_bound_outside_import_is_not_read(
+    source: str, tmp_path: Path
+) -> None:
+    (tmp_path / "limit.py").write_text(source)
+
+    assert _redeclarations(tmp_path) == {}
+    assert _rebound_after_import(tmp_path) == {}
+
+
 def test_an_import_of_an_owned_symbol_from_its_owner_is_not_a_rebind(
     tmp_path: Path,
 ) -> None:
@@ -613,6 +788,79 @@ def test_a_planted_role_copy_under_another_name_reds_the_shape_assertion(
     monkeypatch.setattr(sys.modules[__name__], "SOURCE", tmp_path.resolve())
     with pytest.raises(AssertionError):
         test_no_module_but_the_owner_declares_a_class_shaped_like_a_write_back_role()
+
+
+#: One row per way a class can name ``Protocol`` as its base, each a copy of
+#: the judge role under another name: the base is read by the object it
+#: names in the module's namespace, so no row is a spelling the reader lists.
+JUDGE_BODY = "    async def judge(self, *, artifact: object, ref: str) -> object: ...\n"
+PROTOCOL_COPIES = {
+    "from-typing": "from typing import Protocol\n\n\nclass _Judge(Protocol):\n"
+    + JUDGE_BODY,
+    "aliased": "from typing import Protocol as _P\n\n\nclass _Judge(_P):\n"
+    + JUDGE_BODY,
+    "typing-attribute": "import typing\n\n\nclass _Judge(typing.Protocol):\n"
+    + JUDGE_BODY,
+    "subscripted": "from typing import Protocol, TypeVar\n\n"
+    "T = TypeVar('T')\n\n\nclass _Judge(Protocol[T]):\n" + JUDGE_BODY,
+    "typing-extensions": "import typing_extensions\n\n\n"
+    "class _Judge(typing_extensions.Protocol):\n" + JUDGE_BODY,
+    "inside-a-function": "from typing import Protocol\n\n\n"
+    "def _build() -> object:\n"
+    "    class _Judge(Protocol):\n"
+    "        async def judge(self, *, artifact: object, ref: str) -> object: ...\n"
+    "\n"
+    "    return _Judge\n",
+}
+
+
+@pytest.mark.parametrize("source", PROTOCOL_COPIES.values(), ids=list(PROTOCOL_COPIES))
+def test_a_role_copy_is_found_by_what_its_base_names(
+    source: str, tmp_path: Path
+) -> None:
+    (tmp_path / "copy.py").write_text(source)
+
+    assert _role_shaped_classes(tmp_path) == {
+        "copy.py": [f"_Judge as {WriteBackJudge.__name__}"]
+    }
+
+
+def test_an_implementation_shaped_like_a_role_is_not_a_copy(tmp_path: Path) -> None:
+    """A class that implements the role states its members too; only a class
+    based on ``Protocol`` restates the role, so the shape alone reports
+    nothing."""
+    (tmp_path / "judge.py").write_text("class _Judge:\n" + JUDGE_BODY)
+
+    assert _role_shaped_classes(tmp_path) == {}
+
+
+#: The stated limit for a copy's base: a name bound only when a function runs
+#: is not in the namespace import leaves, so a copy based on it is not read.
+PROTOCOL_LIMIT_SHAPES = {
+    "base-imported-in-the-function-body": "def _build() -> object:\n"
+    "    from typing import Protocol as _P\n\n"
+    "    class _Judge(_P):\n"
+    "        async def judge(self, *, artifact: object, ref: str) -> object: ...\n"
+    "\n"
+    "    return _Judge\n",
+    "module-imported-in-the-function-body": "def _build() -> object:\n"
+    "    import typing as _t\n\n"
+    "    class _Judge(_t.Protocol):\n"
+    "        async def judge(self, *, artifact: object, ref: str) -> object: ...\n"
+    "\n"
+    "    return _Judge\n",
+}
+
+
+@pytest.mark.parametrize(
+    "source", PROTOCOL_LIMIT_SHAPES.values(), ids=list(PROTOCOL_LIMIT_SHAPES)
+)
+def test_a_copy_based_on_a_name_bound_when_a_function_runs_is_not_read(
+    source: str, tmp_path: Path
+) -> None:
+    (tmp_path / "copy.py").write_text(source)
+
+    assert _role_shaped_classes(tmp_path) == {}
 
 
 def test_a_planted_second_import_path_reds_the_re_export_assertion(
