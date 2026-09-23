@@ -13,6 +13,7 @@ from kodezart.core.errors import PromptResolutionError
 from kodezart.types.domain.prompts import PromptKey, SessionRole
 from tests.prompts.sets import OPUS_SET, ORGANIZE_CASE, V5_SET
 from tests.prompts.test_prompt_wiring import load_registry
+from tests.prompts.test_set_completeness import shipped_sets
 
 #: The roles that open a session of their own.
 ORGANIZE_ROLES = {
@@ -33,13 +34,21 @@ ORGANIZE_RUBRIC_ROLES = {
 
 ALL_ORGANIZE_ROLES = {**ORGANIZE_ROLES, **ORGANIZE_RUBRIC_ROLES}
 
+#: Every set the repository ships, read off the tree rather than listed.
+SETS = shipped_sets()
+
+
+def test_the_shipped_sets_are_read_off_the_tree() -> None:
+    """The derived set list is not empty, and holds both sets shipped today."""
+    assert {OPUS_SET, V5_SET} <= set(SETS), SETS
+
 
 def test_organize_roles_have_the_named_enum_members_and_values() -> None:
     for name, value in ALL_ORGANIZE_ROLES.items():
         assert PromptKey[name].value == value
 
 
-@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+@pytest.mark.parametrize("set_name", SETS)
 @pytest.mark.parametrize("name", ALL_ORGANIZE_ROLES)
 async def test_removing_each_organize_data_file_fails_application_prompt_boot(
     set_name: str, name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -62,7 +71,7 @@ async def test_removing_each_organize_data_file_fails_application_prompt_boot(
     assert caught.value.failing_keys == (key.value,)
 
 
-@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+@pytest.mark.parametrize("set_name", SETS)
 @pytest.mark.parametrize("name", ORGANIZE_ROLES)
 def test_each_role_renders_its_own_data_file(set_name: str, name: str) -> None:
     key = PromptKey[name]
@@ -95,7 +104,7 @@ def test_organize_roles_inherit_the_existing_authorship_and_judgment_policies() 
         )
 
 
-@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+@pytest.mark.parametrize("set_name", SETS)
 @pytest.mark.parametrize("name", ORGANIZE_RUBRIC_ROLES)
 def test_each_rubric_renders_without_placeholders(set_name: str, name: str) -> None:
     """A rubric is rendered into another role's prompt, so it carries no hole.
