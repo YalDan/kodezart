@@ -1,5 +1,7 @@
 """Tracker-backed admission sessions, independent on every assess and verify call."""
 
+from collections.abc import Sequence
+
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
@@ -62,8 +64,15 @@ class OrganizeAdmission:
             request, key=PromptKey.ORGANIZE_VERIFY, site="organize_verify"
         )
 
-    async def is_live(self, result: AdmissionResult) -> bool:
-        """Read current revision without dispatching a session or restamping it."""
+    async def is_live(
+        self, result: AdmissionResult, *, member_keys: Sequence[str] | None = None
+    ) -> bool:
+        """Read current revision without dispatching a session or restamping it.
+
+        *member_keys*, when given, is the admitted scope's membership as the
+        caller has just read it, so the context is compared without listing
+        the scope again.
+        """
         revision = await self._tracker.read_issue_revision(issue_key=result.issue_id)
         if revision.issue.issue_key != result.issue_id:
             raise OrganizeAdmissionIdentityError(
@@ -73,7 +82,9 @@ class OrganizeAdmission:
             admitted_body_digest=result.admitted_body_digest,
             current_body_digest=revision.body_digest,
         ) and await self._context.matches(
-            scope=result.admitted_scope, digest=result.admitted_context_digest
+            scope=result.admitted_scope,
+            digest=result.admitted_context_digest,
+            member_keys=member_keys,
         )
 
     async def _judge(

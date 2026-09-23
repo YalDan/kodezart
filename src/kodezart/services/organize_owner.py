@@ -1204,7 +1204,11 @@ class OrganizeOwner:
                     [
                         result
                         for result in admissions.values()
-                        if await self._admission.is_live(result)
+                        # Membership is the round's own roster read, so
+                        # no listing sits between the snapshot and here.
+                        if await self._admission.is_live(
+                            result, member_keys=tuple(sorted(members))
+                        )
                     ]
                 ),
                 open_findings=findings,
