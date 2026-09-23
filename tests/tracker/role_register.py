@@ -723,6 +723,33 @@ def namespace(path: str | None, text: str) -> dict[str, object]:
     return {**live, **module_bindings(text, path)}
 
 
+def bound_object(expression: ast.expr, scope: Mapping[str, object]) -> object:
+    """The object a name or a dotted name is bound to in *scope*, or ``UNBOUND``.
+
+    An alias is followed to the name or dotted name it binds, so an import
+    alias, a module alias and an assignment alias each reach the object.
+    """
+    seen: set[str] = set()
+
+    def lookup(node: ast.expr) -> object:
+        if isinstance(node, ast.Name):
+            if node.id in seen:
+                return UNBOUND
+            value = scope.get(node.id, UNBOUND)
+            if isinstance(value, Alias):
+                seen.add(node.id)
+                if isinstance(value.value, ast.Name | ast.Attribute):
+                    return lookup(value.value)
+                return UNBOUND
+            return value
+        if isinstance(node, ast.Attribute):
+            owner = lookup(node.value)
+            return UNBOUND if owner is UNBOUND else getattr(owner, node.attr, UNBOUND)
+        return UNBOUND
+
+    return lookup(expression)
+
+
 def resolved_names(annotation: ast.expr, scope: Mapping[str, object]) -> frozenset[str]:
     """Every port class *annotation* names, by the object each name resolves to.
 
