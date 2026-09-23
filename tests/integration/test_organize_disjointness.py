@@ -6,6 +6,7 @@ these cases read is the boundary a deployment has rather than a second
 wiring written here.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -13,8 +14,10 @@ import pytest
 
 from kodezart.composition import organize as organize_composition
 from kodezart.domain.errors import OrganizeWriteRefusalError, ScopeNotApprovedError
+from kodezart.types.domain.agent import SystemEvent
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import ScopeLabel
+from tests.chains.test_organize import result as organize_result
 from tests.fakes import SUPPRESS_ALL_SKILLS, PassThroughGate, make_prompt_provider
 from tests.integration.test_scope_entry import (
     GROOM_MARKER,
@@ -160,38 +163,99 @@ async def test_an_unapproved_scope_is_groomed_and_admits_no_run(monkeypatch):
     assert port.leases == {}
 
 
+#: The body of the member the authorship trigger refuses once, so its
+#: author's answer would change the board if it were written.
+DRAFT = "Draft awaiting preparation."
+
+
+def refusing_first_judgement(harness, key):
+    """The first admission judgement of *key* refuses; every other is the double's."""
+    original = harness.executor.stream
+    refused = []
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs.get("prompt", ""))
+        refusing = (
+            title == "AdmissionJudgment" and keys and keys[-1] == key and not refused
+        )
+        async for event in original(**kwargs):
+            if refusing and not isinstance(event, SystemEvent):
+                refused.append(key)
+                event = organize_result(
+                    structured_output={
+                        "issue_id": key,
+                        "verdict": "not_buildable",
+                        "evidence": "The body is a draft.",
+                        "refusal_kind": "spec_gap",
+                        "invented_decision": "Prepare the body from its source.",
+                    }
+                )
+            yield event
+
+    return stream
+
+
+@pytest.mark.parametrize("trigger", ["authorship", "marker"])
 async def test_approval_during_a_grooming_session_refuses_its_write_and_frees_the_run(
-    monkeypatch,
+    monkeypatch, trigger
 ):
     """Approval inside a grooming session refuses that row's next write.
 
-    The scope is approved while the pass reads back the first member's
-    marker. The pre-approval row is refused on the reading it makes before
-    every write, so the second member keeps no marker and the row holds
-    nothing; the run the same approval admits stages every member and walks.
+    ``authorship``: the scope is approved inside the tick's first author
+    session, so the author's write is refused before it lands and no member
+    gains a marker. ``marker``: the scope is approved while the pass reads
+    back the first member's marker, so the second member keeps none. Either
+    way the pre-approval row is refused on the reading it makes before
+    every write and holds nothing; the run the same approval admits stages
+    every member and walks.
     """
     port = triaged(standing_board(LANES))
     operation = standing_operation()
     harness = staging_runtime(
         port, LANES, monkeypatch=monkeypatch, builds=[], operation=operation
     )
+    if trigger == "authorship":
+        port.issues["A"] = port.issues["A"].model_copy(update={"body": DRAFT})
+        monkeypatch.setattr(
+            harness.executor, "stream", refusing_first_judgement(harness, "A")
+        )
     original = harness.executor.stream
+    at_approval = {}
+
+    def approve_once():
+        if not at_approval:
+            at_approval.update(
+                {
+                    name: len(getattr(port, name))
+                    for name in ("issue_writes", "comment_writes")
+                }
+            )
+            approve(port)
 
     async def approving(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        if trigger == "authorship" and title == "OrganizeProposal":
+            approve_once()
         async for event in original(**kwargs):
             if (
-                kwargs["output_format"]["schema"].get("title") == "WriteBackFinding"
+                trigger == "marker"
+                and title == "WriteBackFinding"
                 and '"kind":"issue_label_set"' in kwargs["prompt"]
             ):
-                approve(port)
+                approve_once()
             yield event
 
     monkeypatch.setattr(harness.executor, "stream", approving)
     tick = before(port)
     with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
         await grooming(harness, operation).run(NOW)
+    assert at_approval
+    # Nothing of the tick's lands once approval has: no issue write, no comment.
+    for name, length in at_approval.items():
+        assert len(getattr(port, name)) == length, name
     groomed = {key for key, carried in markers(port).items() if GROOM_MARKER in carried}
-    assert len(groomed) == 1
+    assert len(groomed) == (0 if trigger == "authorship" else 1)
     assert_wrote_only(port, tick, dict.fromkeys(groomed, (GROOM_MARKER,)))
 
     assert port.leases == {}
