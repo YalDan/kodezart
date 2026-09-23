@@ -143,13 +143,18 @@ async def test_an_issue_addressed_scope_reads_triage_off_the_addressed_issue(
 ):
     """The bound of the walk on an issue-addressed scope, made visible.
 
-    The owning project carries triage in both arms. Only the addressed
-    issue's own members open the pre-approval gate on an issue-addressed
-    scope: with triage on the issue the lane is groomed, and with triage on
-    the project alone nothing opens, no session runs and nothing is written.
+    The lane belongs to the addressed project, and that project carries
+    triage in both arms. Only the addressed issue's own members open the
+    pre-approval gate on an issue-addressed scope: with triage on the issue
+    the lane is groomed, and with triage on the project alone nothing opens,
+    no session runs and nothing is written. The parity control at the end
+    shows the project is above the lane for the approval cascade on this
+    same board, so the idle arm is the bound and not a lane outside the
+    project.
     """
     lanes = ("A",)
     port = board(lanes=lanes, approved=False)
+    port.issues["A"] = port.issues["A"].model_copy(update={"project_id": SCOPE.key})
     port.scope_label_members[SCOPE] = frozenset({ScopeLabel.TRIAGE})
     scope = ScopeRef(kind=ScopeKind.ISSUE, key="A")
     if issue_carries:
@@ -164,11 +169,15 @@ async def test_an_issue_addressed_scope_reads_triage_off_the_addressed_issue(
     if grooms:
         assert report.completed_phases == (MandateKind.GROOM,)
         assert port.classification_writes == [("A", GROOM_MARKER)]
-        return
-    assert report.completed_phases == ()
-    assert executor.organize_calls == []
-    assert port.classification_writes == []
-    assert GROOM_MARKER not in port.issues["A"].issue_labels
+    else:
+        assert report.completed_phases == ()
+        assert executor.organize_calls == []
+        assert port.classification_writes == []
+        assert GROOM_MARKER not in port.issues["A"].issue_labels
+    # Parity: approval on the project alone reaches the lane on this board.
+    assert await port.execution_approved(issue_key="A") is False
+    port.scope_label_members[SCOPE] = frozenset({ScopeLabel.APPROVED})
+    assert await port.execution_approved(issue_key="A") is True
 
 
 def swallow_marker_writes(port, executor):
