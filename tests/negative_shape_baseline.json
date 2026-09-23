@@ -514,7 +514,7 @@
   "tests/tracker/test_tracker_boot.py": 48,
   "tests/tracker/test_tracker_boot_cleanup.py": 12,
   "tests/tracker/test_tracker_boot_wiring.py": 80,
-  "tests/tracker/test_tracker_conformance.py": 275,
+  "tests/tracker/test_tracker_conformance.py": 279,
   "tests/types/test_audit_mandate_independent.py": 10,
   "tests/types/test_audit_report_contract.py": 11,
   "tests/types/test_audit_union_contracts.py": 12,
@@ -6829,7 +6829,8 @@
    "TestSurfaceWriteProvenance.test_a_change_that_is_not_a_body_write_adds_no_holder",
    "TestSurfaceWriteProvenance.test_an_unwritten_body_names_no_holder",
    "TestSurfaceWriteProvenance.test_a_single_writer_body_write_names_no_holder",
-   "TestSurfaceWriteProvenance.test_provenance_is_not_answered_for_a_body_this_port_cannot_write"
+   "TestSurfaceWriteProvenance.test_provenance_is_not_answered_for_a_body_this_port_cannot_write",
+   "test_the_observed_adapter_writes_are_every_write_tool_the_adapter_declares"
   ],
   "tests/types/test_audit_mandate_independent.py": [
    "test_judgment_and_observation_roundtrip_flat_json",

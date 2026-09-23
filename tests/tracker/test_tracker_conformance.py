@@ -10,12 +10,23 @@ workspace anywhere in this module and none may be introduced.
 """
 
 import asyncio
+import sys
 from collections.abc import Callable
 from datetime import timedelta
 from inspect import isawaitable
 
 import pytest
 
+from kodezart.adapters.linear.tracker import (
+    _TOOL_CREATE_INITIATIVE_LABEL,
+    _TOOL_CREATE_ISSUE_LABEL,
+    _TOOL_DELETE_COMMENT,
+    _TOOL_SAVE_COMMENT,
+    _TOOL_SAVE_DOCUMENT,
+    _TOOL_SAVE_ISSUE,
+    _TOOL_SAVE_PROJECT_LABEL,
+    LinearMcpTracker,
+)
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
@@ -56,6 +67,7 @@ from kodezart.types.domain.tracker import (
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import FakeLinearMcpServer, FakeMcpComment, FakeMcpIssue
 from tests.tracker.conftest import (
+    ADAPTER_WRITE_TOOLS,
     APPROVED_ISSUE,
     APPROVER,
     ASSET_ISSUE,
@@ -70,6 +82,7 @@ from tests.tracker.conftest import (
     FOREIGN_REVIEW,
     ISSUE_LABELS,
     QUEUE_STATE_LABELS,
+    READ_TOOL_VERBS,
     SCOPE_DIAGNOSIS,
     TEAM_IDENTIFIERS,
     TRACKER_IMPLEMENTATIONS,
@@ -3177,3 +3190,33 @@ class TestSurfaceWriteProvenance:
             await provenance_tracker.read_surface_authorship(
                 surface=unanswerable_surface(kind)
             )
+
+
+def test_the_observed_adapter_writes_are_every_write_tool_the_adapter_declares():
+    """The write observation is derived from the adapter, not picked from it.
+
+    Every tool constant the adapter module declares is either a read, by its
+    verb, or in the observed write set; both sides are non-empty, and the
+    writes include each tool that instates a label or saves a document, the
+    ones a hand-picked set of issue and comment tools had left out.
+    """
+    module = sys.modules[LinearMcpTracker.__module__]
+    declared = {
+        value
+        for name, value in vars(module).items()
+        if name.startswith("_TOOL_") and isinstance(value, str)
+    }
+    reads = {tool for tool in declared if tool.split("_", 1)[0] in READ_TOOL_VERBS}
+
+    assert reads
+    assert ADAPTER_WRITE_TOOLS
+    assert ADAPTER_WRITE_TOOLS == declared - reads
+    assert {
+        _TOOL_SAVE_ISSUE,
+        _TOOL_SAVE_COMMENT,
+        _TOOL_DELETE_COMMENT,
+        _TOOL_SAVE_DOCUMENT,
+        _TOOL_CREATE_ISSUE_LABEL,
+        _TOOL_SAVE_PROJECT_LABEL,
+        _TOOL_CREATE_INITIATIVE_LABEL,
+    } <= ADAPTER_WRITE_TOOLS
