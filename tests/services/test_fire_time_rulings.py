@@ -40,6 +40,7 @@ from kodezart.services import scope_membership, scope_resolution
 from kodezart.services.agent_service import AgentService
 from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.fire_time_rulings import FireTimeRulings
+from kodezart.services.native_amendments import NativeAmendments
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.services.scope_membership import read_subtree_criteria
 from kodezart.types.domain.agent import (
@@ -1968,13 +1969,21 @@ UNSEEN_SHAPES = (
 )
 
 #: The readers the one reading is taken by, and the only ones: the entry's
-#: capture, the barrier's reading against the captured spec, and the set an
-#: answer may address at the write.
+#: capture, the barrier's reading against the captured spec, the set an
+#: answer may address at the write, and the native writer's authority read.
 NAMED_READERS: tuple[Callable[..., object], ...] = (
     TrackerCriteria._capture,
     TrackerCriteria._read_subtree_criteria,
     FireTimeRulings._resolvable,
+    NativeAmendments._read_authority,
 )
+
+#: The one other membership reading on the surface, by module, exactly: the
+#: native writer reads its pinned registry over every member of the subtree,
+#: the issues around the criteria included, and selects no criterion from it.
+REGISTRY_MEMBERSHIP: dict[str, list[str]] = {
+    NativeAmendments.__module__: ["read_scope_members"],
+}
 
 
 def qualified(function: Callable[..., object]) -> str:
@@ -2024,10 +2033,11 @@ def test_the_ruling_step_and_the_fire_entry_read_one_subtree_function() -> None:
 
     What the pass is shown is composed at the entry, and what an answer may
     address is read at the write; both are the subtree only while both are
-    read through the same function.  The surface is exactly the named
-    readers' modules, the functions that call the one reading are exactly the
-    named readers, and no module on the surface reads membership any other
-    way.
+    read through the same function, and so is the native writer's authority
+    read.  The surface is exactly the named readers' modules, the functions
+    that call the one reading are exactly the named readers, and no module on
+    the surface reads membership any other way, save the native writer's one
+    registry reading, which selects no criterion.
 
     Outside this guard's reach: a value handed across a function boundary,
     where the other function is not resolved at this site (returned from a
@@ -2082,4 +2092,6 @@ def test_the_ruling_step_and_the_fire_entry_read_one_subtree_function() -> None:
 
     for module, source in surface.items():
         assert SUBTREE_READING in called_names(ast.parse(source)), module
-        assert subtree_reading_sites(source, forbidden=forbidden) == [], module
+        assert subtree_reading_sites(
+            source, forbidden=forbidden
+        ) == REGISTRY_MEMBERSHIP.get(module, []), module
