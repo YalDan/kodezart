@@ -35,7 +35,7 @@ import ast
 import importlib
 import inspect
 import textwrap
-from collections.abc import Awaitable, Callable, Mapping, Sized
+from collections.abc import Awaitable, Callable, Mapping, Sequence, Sized
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -50,7 +50,13 @@ from kodezart.domain.criterion_creation import criterion_body
 from kodezart.domain.organize_graph import graph_snapshot
 from kodezart.domain.run_alarm_record import run_alarm_marker, run_alarm_surface
 from kodezart.domain.run_event_stream import LaneRunEvent
-from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
+from kodezart.types.domain.branch import (
+    BaseInput,
+    BaseSpec,
+    WorkRef,
+    WorkRefRole,
+    trunk_base,
+)
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState, ScopeLabel
 from kodezart.types.domain.organize_graph import PriorityChange
@@ -69,12 +75,15 @@ from kodezart.types.domain.surface import (
     WritableSurface,
 )
 from kodezart.types.domain.tracker import (
+    ClaimResult,
+    ClaimStatus,
     IssuePriority,
     IssueQuery,
     MappingKind,
     MappingRef,
     ReviewQuery,
     TrackerAsset,
+    TrackerComment,
     TrackerReview,
     WorkflowStateKind,
 )
@@ -425,6 +434,11 @@ async def write_queue_state_mapping(port: FakeTrackerPort) -> None:
 
 #: The project the two container reads address, seeded before the handover.
 PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="fixture-project")
+#: The one milestone the census board's project holds, and the milestone one
+#: of its issues belongs to.
+MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="fixture-milestone")
+#: The holder that lost the census board's one contended claim.
+LOSER = "another-holder"
 #: The label that marks a subject's criteria stage complete, for the one read
 #: that refuses a subject without it.
 CRITERIA_STAGED = "criteria-staged"
@@ -1015,19 +1029,27 @@ async def paged_queries(
 async def full_board(
     double: type[FakeTrackerPort] = FakeTrackerPort,
 ) -> FakeTrackerPort:
-    """The census board: every attribute but the read logs holds something.
+    """The census board: every attribute, and every field on it, holds something.
 
     :func:`board` of *double*, then one of each write the census declares,
     each after its own setup, then by hand whatever those writes leave
-    empty: the project with a member and an initiative, the fire entry's
-    stage label and approval, an asset, the reviews, a recorded repository,
-    a body's authorship and held writer, a refused scan, the approval
-    aliases and a comment read refusal.  Every paged collection — the issues
-    and the reviews — holds one more entry than the largest page any read
-    case asks the double for, so a paged read always leaves something it
-    paged past.  A read that moves any attribute — empties the reviews,
-    prunes what it paged past, drops a lease, rebinds the clock — therefore
-    moves something on it.  Held to that by
+    empty: the project with a member, an initiative and a milestone, the
+    fire entry's stage label and approval, an asset with its type and size,
+    the reviews, a recorded repository, a body's authorship and held
+    writer, a refused scan, the approval aliases and a comment read
+    refusal; and the fields no write fills — on one issue a blocked-by
+    relation, the milestone, an assignee and the project in both
+    spellings; a comment on a second issue, in reply to one on the first;
+    a claim that names its current holder; a base spec with an input and a
+    role; a work ref with a pushed head.  Every paged collection — the
+    issues and the reviews — holds one more entry than the largest page any
+    read case asks the double for, so a paged read always leaves something
+    it paged past.  Every attribute but the read logs holds something, and
+    every field of every model on it, at any depth, holds something on at
+    least one instance, so a read that moves an attribute — empties the
+    reviews, prunes what it paged past, drops a lease, rebinds the clock —
+    or erases a field on every instance — every issue's relations, the
+    comments on other issues — moves something on it.  Held to that by
     :func:`test_the_census_board_holds_something_in_every_attribute` and
     :func:`test_every_paged_read_leaves_something_past_its_page`.
     """
@@ -1042,16 +1064,72 @@ async def full_board(
     await hold_fire_entry(port)
     port.scope_memberships[PROJECT] = (ISSUE,)
     port.initiative_identifiers_by_project[PROJECT.key] = frozenset({"an initiative"})
+    port.scope_containers[MILESTONE] = ScopeContainer(
+        ref=MILESTONE,
+        name="a milestone",
+        description="a milestone body",
+        url="https://example.invalid/milestone/fixture-milestone",
+        parent=PROJECT,
+    )
     port._assets[ISSUE] = (
         TrackerAsset(
             asset_key="fixture-asset",
             title="an asset",
             url="https://example.invalid/asset/fixture-asset",
+            content_type="text/plain",
+            size_bytes=1,
         ),
     )
     for index in range(page + 1 - len(port.issues)):
         key = f"PAGE-{index}"
         port.issues[key] = make_tracker_issue(key, queue_states=())
+    # The fields no write on this board fills, on the first issue past the
+    # seeded three; the milestone and the assignee are the two the issue
+    # factory does not take.
+    filled = "PAGE-0"
+    assert filled in port.issues
+    port.issues[filled] = make_tracker_issue(
+        filled,
+        queue_states=(),
+        blocked_by=(OTHER,),
+        project=PROJECT.key,
+        project_id=f"{PROJECT.key}-id",
+    ).model_copy(update={"milestone_key": MILESTONE.key, "assignee_key": HOLDER})
+    (first_comment, *_) = port.comments
+    port.comments.append(
+        TrackerComment(
+            comment_key="comment-on-another-issue",
+            issue_key=OTHER,
+            author_key=HOLDER,
+            body="a reply on another issue",
+            created_at=FIXTURE_EPOCH,
+            reply_to=first_comment.comment_key,
+        )
+    )
+    # The one claim shape that names a current holder: a claim lost to one.
+    port.claims[OTHER] = ClaimResult(
+        issue_key=OTHER,
+        status=ClaimStatus.LOST,
+        holder=LOSER,
+        expires_at=FIXTURE_EPOCH + timedelta(seconds=LEASE_SECONDS),
+        current_holder=HOLDER,
+    )
+    port.recorded_base_specs[OTHER] = BaseSpec(
+        inputs=(
+            BaseInput(blocker_issue_id=ISSUE, branch="fixture-blocker", sha="b" * 40),
+        ),
+        base_branch="fixture-integration",
+        base_role=WorkRefRole.INTEGRATION,
+    )
+    port.recorded_work_refs[OTHER] = [
+        WorkRef(
+            issue_id=OTHER,
+            role=WorkRefRole.DELIVERABLE,
+            branch="fixture-pushed-branch",
+            pushed_head_sha="e" * 40,
+            recorded_at=FIXTURE_EPOCH,
+        )
+    ]
     port.reviews[REPO] = [
         TrackerReview(
             review_key=f"fixture-review-{index}",
@@ -1150,37 +1228,85 @@ def census_doubles() -> list[type[FakeTrackerPort]]:
     )
 
 
-def holds_nothing(value: object) -> bool:
-    """Whether *value* holds nothing a read could take away.
-
-    ``None``, and a container or a string with no member.  A plain object,
-    one compared by identity, holds nothing when none of its attributes
-    holds anything; bounded by the depth of those objects.  A flag and a
-    number hold whichever value they have, and so does a callable.
-    """
-    if (
+def plain_object(value: object) -> bool:
+    """Whether *value* is a plain object: compared by identity, with attributes."""
+    return (
         type(value).__eq__ is object.__eq__
         and hasattr(value, "__dict__")
         and not callable(value)
-    ):
+    )
+
+
+def holds_nothing(value: object) -> bool:
+    """Whether *value* holds nothing a read could take away.
+
+    ``None``, and a container or a string with no member.  A model holds
+    nothing when none of its fields does, and a plain object, one compared
+    by identity, when none of its attributes does; bounded by the depth of
+    those objects.  A flag and a number hold whichever value they have, and
+    so does a callable.
+    """
+    if isinstance(value, BaseModel):
+        return all(
+            holds_nothing(getattr(value, name)) for name in type(value).model_fields
+        )
+    if plain_object(value):
         return all(holds_nothing(item) for item in vars(value).values())
     return value is None or (isinstance(value, Sized) and len(value) == 0)
+
+
+def fields_held(value: object, found: dict[str, bool] | None = None) -> dict[str, bool]:
+    """Every field of every model in *value*, at any depth, and whether one fills it.
+
+    Keyed ``Model.field``.  A field is filled when some instance of the
+    model under *value* holds something in it, by :func:`holds_nothing`;
+    a field every instance leaves empty is not.  Walked into models field
+    by field, the way KOD-313's ``unfilled`` walks the terminal, and
+    through mappings (keys and values), sequences, sets and plain objects;
+    bounded by the depth of the value.
+    """
+    if found is None:
+        found = {}
+    if isinstance(value, BaseModel):
+        for name in type(value).model_fields:
+            item = getattr(value, name)
+            where = f"{type(value).__qualname__}.{name}"
+            found[where] = found.get(where, False) or not holds_nothing(item)
+            fields_held(item, found)
+    elif isinstance(value, Mapping):
+        for key, item in value.items():
+            fields_held(key, found)
+            fields_held(item, found)
+    elif isinstance(value, Sequence | set | frozenset) and not isinstance(
+        value, str | bytes
+    ):
+        for item in value:
+            fields_held(item, found)
+    elif plain_object(value):
+        for item in vars(value).values():
+            fields_held(item, found)
+    return found
 
 
 @pytest.mark.parametrize("double", census_doubles(), ids=lambda double: double.__name__)
 async def test_the_census_board_holds_something_in_every_attribute(
     double: type[FakeTrackerPort],
 ) -> None:
-    """The board every read case runs on leaves no attribute empty.
+    """The board every read case runs on leaves no attribute, and no field, empty.
 
     The read cases compare the whole state, and that is only as strong as
     the board: a read that empties an attribute the board holds nothing in
-    moves nothing.  So every attribute of the double but its read logs
-    holds something here.  The only attribute a case's own setup lifts is
-    the comment read refusal, for the one read that answers with it.  The
-    read cases hold the flag that makes a read move an issue's stamp at
-    its default, off.  The board is the double's own: every double the
-    census runs on gets one of its class.
+    moves nothing, and so does one that erases a field no instance on the
+    board fills — every issue's relations, say.  So every attribute of the
+    double but its read logs holds something here, and every field of every
+    model on it, at any depth, holds something on at least one instance;
+    the walk is shown to reach the issues' relations.  Comments sit on at
+    least two issues, so a read keyed by issue has entries it must not
+    touch.  The only attribute a case's own setup lifts is the comment read
+    refusal, for the one read that answers with it.  The read cases hold
+    the flag that makes a read move an issue's stamp at its default, off.
+    The board is the double's own: every double the census runs on gets
+    one of its class.
     """
     port = await full_board(double)
     assert type(port) is double
@@ -1191,6 +1317,15 @@ async def test_the_census_board_holds_something_in_every_attribute(
     }
     assert held != {}
     assert sorted(name for name, value in held.items() if holds_nothing(value)) == []
+    assert "TrackerIssue.relations" in fields_held(port.issues)
+    assert {
+        name: sorted(
+            field for field, filled in fields_held(value).items() if not filled
+        )
+        for name, value in held.items()
+        if not all(fields_held(value).values())
+    } == {}
+    assert len({comment.issue_key for comment in port.comments}) >= 2
 
 
 @pytest.mark.parametrize("double", census_doubles(), ids=lambda double: double.__name__)
@@ -1467,76 +1602,141 @@ def test_a_read_log_is_moved_by_the_port_s_reads_alone() -> None:
 RECORDERS = frozenset({"append", "extend"})
 
 
-def own_log(node: ast.AST, logs: frozenset[str], selves: frozenset[str]) -> str | None:
-    """The log *node* is, when it is ``<self>.<log>`` for one of *logs*.
+def is_instance(node: ast.expr, selves: frozenset[str] | set[str]) -> bool:
+    """Whether *node* evaluates to the instance.
 
-    *selves* are the names that hold the instance: ``self`` and every local
-    bound from it.
+    A name in *selves*, or a boolean operation one of whose operands does
+    — ``self or None`` is ``self``.  Bounded by the operation's operands.
     """
+    if isinstance(node, ast.Name):
+        return node.id in selves
+    if isinstance(node, ast.BoolOp):
+        return any(is_instance(value, selves) for value in node.values)
+    return False
+
+
+def bindings(node: ast.AST) -> list[tuple[ast.expr, ast.expr]]:
+    """Every (target, value) pair *node* binds, one per name it binds.
+
+    A plain assignment, each target of a chained one (``port = me = self``),
+    an annotated one and a walrus bind their whole value; a tuple or list
+    target over a tuple or list value of the same length binds element by
+    element (``port, _ = self, None``).  Any other statement binds nothing
+    here.  Bounded by the targets.
+    """
+    if isinstance(node, ast.Assign):
+        pairs = [(target, node.value) for target in node.targets]
+    elif isinstance(node, ast.AnnAssign | ast.NamedExpr) and node.value is not None:
+        pairs = [(node.target, node.value)]
+    else:
+        return []
+    found: list[tuple[ast.expr, ast.expr]] = []
+    for target, value in pairs:
+        if (
+            isinstance(target, ast.Tuple | ast.List)
+            and isinstance(value, ast.Tuple | ast.List)
+            and len(target.elts) == len(value.elts)
+        ):
+            found.extend(zip(target.elts, value.elts, strict=True))
+        else:
+            found.append((target, value))
+    return found
+
+
+def own_log(node: ast.AST, logs: frozenset[str], selves: frozenset[str]) -> str | None:
+    """The log *node* is, when it names one of *logs* on the instance.
+
+    ``<self>.<log>``, or ``getattr(<self>, "<log>")`` with the log's name
+    written out — a literal name is a reference to the log wherever it
+    appears.  *selves* are the names that hold the instance: the one the
+    function's definition gives it and every local bound from it.
+    """
+    if isinstance(node, ast.Attribute) and is_instance(node.value, selves):
+        return node.attr if node.attr in logs else None
     if (
-        isinstance(node, ast.Attribute)
-        and isinstance(node.value, ast.Name)
-        and node.value.id in selves
-        and node.attr in logs
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "getattr"
+        and len(node.args) >= 2
+        and is_instance(node.args[0], selves)
+        and isinstance(node.args[1], ast.Constant)
+        and isinstance(node.args[1].value, str)
+        and node.args[1].value in logs
     ):
-        return node.attr
+        return node.args[1].value
     return None
 
 
-def selves_in(tree: ast.AST) -> frozenset[str]:
-    """``self`` and every local name *tree* binds to it, however many hops.
+def selves_in(tree: ast.AST, instance: str | None = "self") -> frozenset[str]:
+    """*instance* and every local name *tree* binds to it, however many hops.
 
-    ``port = self``, an annotated ``port: X = self``, a ``port := self`` and
-    a name bound from one of those in turn.  Each pass over the tree adds a
-    name or ends the walk, so it is bounded by the names the tree binds.
+    *instance* is the name the function's own definition gives the object
+    it runs on — ``self`` by convention, whatever it is spelled — and
+    ``None`` for a function that runs on no instance.  A name bound from it
+    by a plain, a chained or an annotated assignment or a walrus, as an
+    element of a tuple or list unpacking, or through a boolean operation
+    over it (``self or None``), and a name bound from one of those in turn.
+    Each pass over the tree adds a name or ends the walk, so it is bounded
+    by the names the tree binds.
     """
-    selves = {"self"}
+    selves: set[str] = set() if instance is None else {instance}
     while True:
-        bound = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and len(node.targets) == 1:
-                target, value = node.targets[0], node.value
-            elif isinstance(node, ast.AnnAssign | ast.NamedExpr):
-                target, value = node.target, node.value
-            else:
-                continue
-            if (
-                isinstance(target, ast.Name)
-                and isinstance(value, ast.Name)
-                and value.id in selves
-                and target.id not in selves
-            ):
-                bound.add(target.id)
+        bound = {
+            target.id
+            for node in ast.walk(tree)
+            for target, value in bindings(node)
+            if isinstance(target, ast.Name)
+            and target.id not in selves
+            and is_instance(value, selves)
+        }
         if not bound:
             return frozenset(selves)
         selves |= bound
 
 
-def logs_read_in(function: Callable[..., object], logs: frozenset[str]) -> set[str]:
+def logs_read_in(
+    function: Callable[..., object],
+    logs: frozenset[str],
+    *,
+    instance: str | None = "self",
+) -> set[str]:
     """Every one of *logs* *function*'s own body reads for anything but recording.
 
-    Read off the source.  A load of ``self.<log>`` is allowed in two places
+    Read off the source, with *instance* the name the function gives the
+    object it runs on.  A load of ``self.<log>`` is allowed in two places
     only: as the receiver of an ``.append(...)`` or ``.extend(...)`` call,
-    and as the whole value assigned to a local name, which then counts as
-    the log, so each load of that name is held to the same rule.  A local
-    bound from ``self`` counts as ``self``, so ``port = self`` and then
-    ``port.<log>`` is a load of the log too.  An augmented assignment to
-    ``self.<log>`` — a counter's ``+= 1`` — is a store and records.  Every
-    other load is a read of the log.  Bounded by the body's syntax tree.
+    and as the whole value bound to a local name, which then counts as the
+    log, so each load of that name is held to the same rule.  A local bound
+    from ``self`` in any of the forms :func:`selves_in` follows counts as
+    ``self``, so ``port = self`` and then ``port.<log>`` is a load of the
+    log too, and ``getattr(self, "<log>")`` counts as ``self.<log>``.  An
+    augmented assignment to ``self.<log>`` — a counter's ``+= 1`` — is a
+    store and records.  Every other load is a read of the log.  Bounded by
+    the body's syntax tree.
+
+    Outside its reach, held so by :func:`test_the_log_pass_classifies_each_planted_use`:
+    a value handed across a function boundary — a module function or a
+    nested function handed ``self`` — a name built at run time, a binding
+    made only when the function runs (``setattr``, ``self.__dict__``) and
+    a binding through a loop or a context-manager target.
     """
     tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
-    selves = selves_in(tree)
+    return logs_read_in_tree(tree, logs, instance=instance)
+
+
+def logs_read_in_tree(
+    tree: ast.AST, logs: frozenset[str], *, instance: str | None
+) -> set[str]:
+    """:func:`logs_read_in` over a parsed *tree*."""
+    selves = selves_in(tree, instance)
     aliases: dict[str, str] = {}
     recording: set[int] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None:
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            log = own_log(node.value, logs, selves)
-            if log is not None and len(targets) == 1:
-                (target,) = targets
-                if isinstance(target, ast.Name):
-                    aliases[target.id] = log
-                    recording.add(id(node.value))
+        for target, value in bindings(node):
+            log = own_log(value, logs, selves)
+            if log is not None and isinstance(target, ast.Name):
+                aliases[target.id] = log
+                recording.add(id(value))
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
@@ -1548,7 +1748,9 @@ def logs_read_in(function: Callable[..., object], logs: frozenset[str]) -> set[s
     for node in ast.walk(tree):
         if id(node) in recording:
             continue
-        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+        if isinstance(node, ast.Attribute | ast.Call):
+            if isinstance(node, ast.Attribute) and not isinstance(node.ctx, ast.Load):
+                continue
             log = own_log(node, logs, selves)
             if log is not None:
                 read.add(log)
@@ -1561,15 +1763,36 @@ def logs_read_in(function: Callable[..., object], logs: frozenset[str]) -> set[s
     return read
 
 
+def instance_name(member: object, function: Callable[..., object]) -> str | None:
+    """The name *function* gives the object it runs on, or ``None`` for none.
+
+    A static method and a class method run on no instance.  Every other
+    function on a class line — a method, a property's accessor — runs on
+    the object its first positional parameter names, whatever the spelling.
+    """
+    if isinstance(member, staticmethod | classmethod):
+        return None
+    parameters = list(inspect.signature(function).parameters.values())
+    positional = (
+        inspect.Parameter.POSITIONAL_ONLY,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    )
+    if not parameters or parameters[0].kind not in positional:
+        return None
+    return parameters[0].name
+
+
 def class_line_functions(
     double: type[FakeTrackerPort],
-) -> list[tuple[str, Callable[..., object]]]:
-    """Every function defined on *double*'s class line, ``object`` left out.
+) -> list[tuple[str, Callable[..., object], str | None]]:
+    """Every function on *double*'s class line, with the name of its instance.
 
     Methods, static and class methods through the function they wrap, and
-    each accessor of a property.  Bounded by the classes on the line.
+    each accessor of a property, ``object`` left out; each with the name
+    its definition gives the object it runs on, by :func:`instance_name`.
+    Bounded by the classes on the line.
     """
-    found: list[tuple[str, Callable[..., object]]] = []
+    found: list[tuple[str, Callable[..., object], str | None]] = []
     for cls in double.__mro__:
         if cls is object:
             continue
@@ -1580,7 +1803,11 @@ def class_line_functions(
                 else [getattr(member, "__func__", member)]
             )
             found.extend(
-                (f"{cls.__qualname__}.{name}", accessor)
+                (
+                    f"{cls.__qualname__}.{name}",
+                    accessor,
+                    instance_name(member, accessor),
+                )
                 for accessor in accessors
                 if inspect.isfunction(accessor)
             )
@@ -1591,19 +1818,21 @@ def test_a_read_log_decides_no_answer() -> None:
     """Read in the code: a read log is history, and no method reads it.
 
     For every double the census runs on, every function on its class line
-    is read, and none may read a
-    log for anything but the append or extend that records it.  A read
-    that answers differently once its key is in the log — which moves the
-    board's answers while the state the census compares stands still —
-    fails here, naming the method and the log.
+    is read, with the instance under the name its own definition gives it,
+    and none may read a log for anything but the append or extend that
+    records it.  A read that answers differently once its key is in the
+    log — which moves the board's answers while the state the census
+    compares stands still — fails here, naming the method and the log.
     """
     doubles = census_doubles()
     assert CountingTracker in doubles
     for double in doubles:
         functions = class_line_functions(double)
         assert functions != [], double
-        for name, function in functions:
-            assert logs_read_in(function, double.READ_LOGS) == set(), (double, name)
+        assert {instance for _, _, instance in functions} == {"self"}, double
+        for name, function, instance in functions:
+            read = logs_read_in(function, double.READ_LOGS, instance=instance)
+            assert read == set(), (double, name)
 
 
 class _LogUses:
@@ -1630,16 +1859,125 @@ class _LogUses:
         port.issue_reads.append(key)
         return len(me.issue_reads)
 
+    def decided_through_an_annotated_alias(self, key: str) -> int:
+        port: _LogUses = self
+        return len(port.issue_reads)
 
-def test_the_log_pass_reads_a_log_through_a_local_and_passes_a_record() -> None:
-    """The control for the pass: each planted use is classified as it is."""
+    def decided_through_a_walrus(self, key: str) -> int:
+        return len((port := self).issue_reads) + len(port.issue_reads)
+
+    def decided_through_unpacking(self, key: str) -> int:
+        port, _ = self, None
+        return len(port.issue_reads)
+
+    def decided_through_a_chain(self, key: str) -> int:
+        port = me = self
+        return len(me.issue_reads) + len(port.issue_reads)
+
+    def decided_through_a_boolean(self, key: str) -> int:
+        port = self or None
+        return len(port.issue_reads)
+
+    def decided_through_a_helper(self, key: str) -> int:
+        return _reads_for(self)
+
+    def decided_through_a_nested_function(self, key: str) -> int:
+        def count(port: _LogUses) -> int:
+            return len(port.issue_reads)
+
+        return count(self)
+
+    def decided_through_a_run_time_name(self, key: str) -> int:
+        return len(getattr(self, "issue_" + key))
+
+    def decided_through_a_loop_target(self, key: str) -> int:
+        for port in (self,):
+            return len(port.issue_reads)
+        return 0
+
+
+def _reads_for(port: _LogUses) -> int:
+    """A module function handed the instance: across the boundary, unseen."""
+    return len(port.issue_reads)
+
+
+def decided_on_another_spelling(port: _LogUses, key: str) -> int:
+    """A function whose instance is not spelled ``self``: read off its definition."""
+    return len(port.issue_reads)
+
+
+#: The forms a linter refuses to let a method spell, planted as source: a
+#: ``getattr`` with the log's name written out, read and recorded.
+GETATTR_USES = textwrap.dedent(
+    """
+    def decided_through_getattr(self, key):
+        return len(getattr(self, "issue_reads"))
+
+    def recorded_through_getattr(self, key):
+        getattr(self, "issue_reads").append(key)
+
+    def decided_through_getattr_on_an_alias(self, key):
+        port, _ = self, None
+        return len(getattr(port, "issue_reads"))
+    """
+)
+
+
+def test_the_log_pass_classifies_each_planted_use() -> None:
+    """The control for the pass: each planted use is classified as it is.
+
+    Every binding form the pass follows has a use here it flags, the
+    instance's name is read off the definition, and each shape of the
+    stated limit — a helper or a nested function handed the instance, a
+    name built at run time, a loop target — has a use here it does not
+    see, so the limit is a fact this test holds.
+    """
     logs = frozenset({"issue_reads", "spec_reads"})
+    flagged = {"issue_reads"}
     assert logs_read_in(_LogUses.recorded, logs) == set()
-    assert logs_read_in(_LogUses.decided, logs) == {"issue_reads"}
-    assert logs_read_in(_LogUses.decided_through_a_local, logs) == {"issue_reads"}
-    assert logs_read_in(_LogUses.decided_through_an_alias_of_self, logs) == {
-        "issue_reads"
+    assert logs_read_in(_LogUses.decided, logs) == flagged
+    assert logs_read_in(_LogUses.decided_through_a_local, logs) == flagged
+    assert logs_read_in(_LogUses.decided_through_an_alias_of_self, logs) == flagged
+    assert logs_read_in(_LogUses.decided_through_an_annotated_alias, logs) == flagged
+    assert logs_read_in(_LogUses.decided_through_a_walrus, logs) == flagged
+    assert logs_read_in(_LogUses.decided_through_unpacking, logs) == flagged
+    assert logs_read_in(_LogUses.decided_through_a_chain, logs) == flagged
+    assert logs_read_in(_LogUses.decided_through_a_boolean, logs) == flagged
+    spelling = instance_name(decided_on_another_spelling, decided_on_another_spelling)
+    assert spelling == "port"
+    assert logs_read_in(decided_on_another_spelling, logs, instance=spelling) == (
+        flagged
+    )
+    assert logs_read_in(decided_on_another_spelling, logs) == set()
+    planted = {
+        node.name: node
+        for node in ast.parse(GETATTR_USES).body
+        if isinstance(node, ast.FunctionDef)
     }
+    assert set(planted) == {
+        "decided_through_getattr",
+        "recorded_through_getattr",
+        "decided_through_getattr_on_an_alias",
+    }
+    assert (
+        logs_read_in_tree(planted["decided_through_getattr"], logs, instance="self")
+        == flagged
+    )
+    assert (
+        logs_read_in_tree(planted["recorded_through_getattr"], logs, instance="self")
+        == set()
+    )
+    assert (
+        logs_read_in_tree(
+            planted["decided_through_getattr_on_an_alias"], logs, instance="self"
+        )
+        == flagged
+    )
+    # The stated limit: each of these decides on the log and is not seen.
+    assert logs_read_in(_LogUses.decided_through_a_helper, logs) == set()
+    assert logs_read_in(_LogUses.decided_through_a_nested_function, logs) == set()
+    assert logs_read_in(_LogUses.decided_through_a_run_time_name, logs) == set()
+    assert logs_read_in(_LogUses.decided_through_a_loop_target, logs) == set()
 
 
 async def test_an_ensure_that_adopts_a_defined_value_writes_nothing() -> None:
