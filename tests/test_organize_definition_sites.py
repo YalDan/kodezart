@@ -33,6 +33,16 @@ list is hand-named, because the point of the guard is that these particular
 symbols have one home each; the controls below are hand-written sources, so a
 detector arm the shipped tree happens not to exercise still has a witness.
 
+The halt causes the convergence loop raises are named only inside that loop.
+That scan reads by object after import: a member of the causes however the
+enum is reached (an import alias, a module or local alias, a ``:=`` target,
+a qualified module path), a value call, a ``getattr`` or subscript lookup
+with a literal member name, a report model validated, constructed or copied
+from a literal cause, and a string constant equal to a raised cause's value
+outside the causes module unless it is another enum's own member
+declaration. The halt builder is read wherever it is read, so a bound method
+held for later is a reading too.
+
 Outside every static guard's reach:
 
 - a value handed across a function boundary, where the other function is not
@@ -49,10 +59,20 @@ shapes is held unseen by a committed test below.
 """
 
 import ast
+import builtins
+import enum
+import importlib
+import importlib.util
+import inspect
 from collections import defaultdict
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TypeAliasType, get_args
 
 import pytest
+from pydantic import BaseModel, TypeAdapter
+
+from kodezart.types.domain.organize_owner import StageHaltCause
 
 SOURCE = Path(__file__).resolve().parents[1] / "src" / "kodezart"
 
@@ -79,6 +99,21 @@ LOOP = "OrganizeOwner._converge"
 BOUND = "max_convergence_rounds"
 #: Where the halt causes are declared, and so where the halt variants name them.
 CAUSES = "types/domain/organize_owner.py"
+#: The one report builder the loop raises through.
+HALT = "_halt"
+#: The causes the convergence loop raises, by object, by member name and by
+#: value. STAGE_INCOMPLETE is the barrier's too, so it is not among them.
+RAISED = (
+    StageHaltCause.HUMAN_DECISION,
+    StageHaltCause.ADMISSION_EXHAUSTED,
+    StageHaltCause.CONVERGENCE_EXHAUSTED,
+)
+RAISED_NAMES = frozenset(cause.name for cause in RAISED)
+RAISED_VALUES = frozenset(cause.value for cause in RAISED)
+#: The model methods that validate a mapping or keywords into the model.
+MODEL_BUILDERS = ("model_validate", "model_construct")
+#: What a name the resolver cannot read resolves to.
+UNRESOLVED = object()
 
 #: The statements that open a scope, and so qualify what they enclose.
 DEFINITION = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
@@ -289,17 +324,21 @@ def test_the_scope_a_node_sits_in_is_its_innermost_definition() -> None:
 
 def test_the_halt_sites_live_in_the_convergence_loop_in_source_order() -> None:
     trees = scanned_sources()
-    calls = [
-        (module, tree, node)
-        for module, tree in trees.items()
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "_halt"
+    reads = halt_reads(trees)
+    # Every reading of the halt builder is a call the loop makes: a bound
+    # method held in a name, or read by ``getattr``, is a reading too, and
+    # one that is not called where it is read would hide the call site.
+    assert {
+        (module, scope_of(tree, node), node in called)
+        for module, tree, node, called in reads
+    } == {("services/organize_owner.py", LOOP, True)}, [
+        (module, node.lineno) for module, _, node, _ in reads
     ]
-    assert {(module, scope_of(tree, node)) for module, tree, node in calls} == {
-        ("services/organize_owner.py", LOOP)
-    }, [(module, scope_of(tree, node)) for module, tree, node in calls]
+    calls = [
+        (module, tree, called[node])
+        for module, tree, node, called in reads
+        if node in called
+    ]
     ordered = sorted(calls, key=lambda call: call[2].lineno)
     assert [
         (
@@ -336,23 +375,512 @@ def test_the_halt_sites_live_in_the_convergence_loop_in_source_order() -> None:
         ),
     ]
     # The three causes the loop raises are the loop's to report and nobody
-    # else's. Their own module declares them, and there the halt variants
-    # name them in a ``Literal[...]`` annotation; every other naming of them
-    # is a report, and the loop is the only thing that reports one.
-    # STAGE_INCOMPLETE is deliberately absent: the barrier reports it too,
-    # through the one report builder both it and the loop call.
-    raised = {"HUMAN_DECISION", "ADMISSION_EXHAUSTED", "CONVERGENCE_EXHAUSTED"}
-    named = {
+    # else's. STAGE_INCOMPLETE is deliberately absent: the barrier reports
+    # it too, through the one report builder both it and the loop call.
+    named = cause_uses(trees, {module: module_namespace(module) for module in trees})
+    assert named == {("services/organize_owner.py", LOOP)}, named
+
+
+def halt_reads(
+    trees: dict[str, ast.Module],
+) -> list[tuple[str, ast.Module, ast.AST, dict[ast.AST, ast.Call]]]:
+    """Every reading of ``_halt``: an attribute read, or ``getattr`` by name.
+
+    Each comes with the map from a read to the call it is the callee of, so
+    a caller can tell a call from a bound method held for later.
+    """
+    found = []
+    for module, tree in trees.items():
+        called = {
+            node.func: node for node in ast.walk(tree) if isinstance(node, ast.Call)
+        }
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == HALT
+                and isinstance(node.ctx, ast.Load)
+            ) or (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr"
+                and len(node.args) >= 2
+                and isinstance(node.args[1], ast.Constant)
+                and node.args[1].value == HALT
+            ):
+                found.append((module, tree, node, called))
+    return found
+
+
+def module_namespace(module: str) -> Mapping[str, object]:
+    """The namespace of the shipped module at *module*, after import."""
+    parts = Path(module).with_suffix("").parts
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return vars(importlib.import_module(".".join(("kodezart", *parts))))
+
+
+class _Resolver:
+    """The names of one module, read as the objects they are bound to.
+
+    A name is read from the module's namespace after import, then from the
+    builtins. A name bound only inside a function — a local assignment or a
+    ``:=`` target — is read as the object its bound expression resolves to,
+    wherever in the module that binding sits. An attribute is read with
+    ``inspect.getattr_static`` on the object its value resolves to.
+    """
+
+    def __init__(self, namespace: Mapping[str, object], tree: ast.AST) -> None:
+        self._namespace = namespace
+        self._locals: dict[str, object] = {}
+        bindings = [
+            (target.id, value)
+            for node in ast.walk(tree)
+            for target, value in _simple_bindings(node)
+            if target.id not in namespace
+        ]
+        # Each pass can only resolve a binding the last pass left open, so
+        # the passes are bounded by the number of bindings.
+        for _ in range(len(bindings) + 1):
+            opened = {
+                name: value
+                for name, bound in bindings
+                if name not in self._locals
+                and (value := self.object_of(bound)) is not UNRESOLVED
+            }
+            if not opened:
+                break
+            self._locals.update(opened)
+
+    def object_of(self, node: ast.AST) -> object:
+        if isinstance(node, ast.Name):
+            if node.id in self._locals:
+                return self._locals[node.id]
+            if node.id in self._namespace:
+                return self._namespace[node.id]
+            return vars(builtins).get(node.id, UNRESOLVED)
+        if isinstance(node, ast.Attribute):
+            base = self.object_of(node.value)
+            if base is UNRESOLVED:
+                return UNRESOLVED
+            try:
+                return inspect.getattr_static(base, node.attr)
+            except AttributeError:
+                return UNRESOLVED
+        return UNRESOLVED
+
+
+def _simple_bindings(node: ast.AST) -> list[tuple[ast.Name, ast.expr]]:
+    """The names *node* binds to one whole expression: ``x = e``, ``x := e``."""
+    if isinstance(node, ast.Assign):
+        return [(t, node.value) for t in node.targets if isinstance(t, ast.Name)]
+    if isinstance(node, ast.AnnAssign) and node.value is not None:
+        if isinstance(node.target, ast.Name):
+            return [(node.target, node.value)]
+    if isinstance(node, ast.NamedExpr):
+        return [(node.target, node.value)]
+    return []
+
+
+def _is_raised_value(value: object) -> bool:
+    """Whether *value* equals a raised cause's value, whatever object holds it."""
+    return isinstance(value, str) and value in RAISED_VALUES
+
+
+def _reaches_cause(annotation: object, seen: set[int]) -> bool:
+    """Whether a declared type reaches ``StageHaltCause``, through models too."""
+    # The enum itself, or one of its members named in a ``Literal[...]``.
+    if annotation is StageHaltCause or isinstance(annotation, StageHaltCause):
+        return True
+    if id(annotation) in seen:
+        return False
+    seen.add(id(annotation))
+    if isinstance(annotation, TypeAliasType):
+        return _reaches_cause(annotation.__value__, seen)
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return any(
+            _reaches_cause(field.annotation, seen)
+            for field in annotation.model_fields.values()
+        )
+    return any(_reaches_cause(arg, seen) for arg in get_args(annotation))
+
+
+def _carries_literal_cause(resolver: _Resolver, node: ast.AST) -> bool:
+    """Whether a ``"cause"`` entry anywhere in *node* is a literal raised cause."""
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Dict):
+            for key, value in zip(inner.keys, inner.values, strict=True):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == "cause"
+                    and _is_literal_cause(resolver, value)
+                ):
+                    return True
+    return False
+
+
+def _is_literal_cause(resolver: _Resolver, node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return _is_raised_value(node.value)
+    return _is_raised_value(resolver.object_of(node))
+
+
+def _builds_report(resolver: _Resolver, node: ast.AST) -> bool:
+    """A model whose declared fields reach the causes, validated with a literal one.
+
+    ``M.model_validate({...})``, ``M.model_construct(...)``,
+    ``TypeAdapter(M).validate_python({...})`` and ``x.model_copy(update=...)``.
+    """
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        return False
+    method = node.func.attr
+    carried = [*node.args, *(k.value for k in node.keywords if k.arg != "cause")]
+    literal = any(_carries_literal_cause(resolver, arg) for arg in carried) or any(
+        k.arg == "cause" and _is_literal_cause(resolver, k.value) for k in node.keywords
+    )
+    if not literal:
+        return False
+    if method == "model_copy":
+        return True
+    owner = node.func.value
+    if method == "validate_python" and isinstance(owner, ast.Call) and owner.args:
+        if resolver.object_of(owner.func) is TypeAdapter:
+            owner = owner.args[0]
+    elif method not in MODEL_BUILDERS:
+        return False
+    return _reaches_cause(resolver.object_of(owner), set())
+
+
+def _names_raised_cause(resolver: _Resolver, node: ast.AST) -> bool:
+    """A raised cause's member, a value call, or a lookup of it by a literal name."""
+    if isinstance(node, ast.Attribute):
+        return any(resolver.object_of(node) is cause for cause in RAISED)
+    if isinstance(node, ast.Call):
+        if resolver.object_of(node.func) is StageHaltCause:
+            return True
+        return (
+            resolver.object_of(node.func) is getattr
+            and len(node.args) >= 2
+            and resolver.object_of(node.args[0]) is StageHaltCause
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value in RAISED_NAMES
+        )
+    if isinstance(node, ast.Subscript):
+        return (
+            resolver.object_of(node.value) is StageHaltCause
+            and isinstance(node.slice, ast.Constant)
+            and node.slice.value in RAISED_NAMES
+        )
+    return False
+
+
+def _declares_another_enum_member(
+    namespace: Mapping[str, object], tree: ast.AST, node: ast.AST
+) -> bool:
+    """Whether *node* is the value of another enum's own member declaration.
+
+    Read by object: the enclosing class, resolved in the module's namespace,
+    is an enum other than the causes, and the assigned name is one of its
+    members, whose value is this constant.
+    """
+    parents = _parents(tree)
+    assign = parents.get(node)
+    if not (
+        isinstance(assign, ast.Assign)
+        and assign.value is node
+        and len(assign.targets) == 1
+        and isinstance(assign.targets[0], ast.Name)
+    ):
+        return False
+    body = parents.get(assign)
+    if not isinstance(body, ast.ClassDef):
+        return False
+    owner: object = namespace
+    for part in scope_of(tree, body).split("."):
+        try:
+            owner = (
+                owner[part]
+                if isinstance(owner, Mapping)
+                else inspect.getattr_static(owner, part)
+            )
+        except (KeyError, AttributeError):
+            return False
+    if not isinstance(owner, enum.EnumType) or owner is StageHaltCause:
+        return False
+    member = owner.__members__.get(assign.targets[0].id)
+    return member is not None and member.value == getattr(node, "value", None)
+
+
+def cause_uses(
+    trees: dict[str, ast.Module],
+    namespaces: Mapping[str, Mapping[str, object]],
+) -> set[tuple[str, str]]:
+    """Every naming of a raised cause, as the module and scope it sits in.
+
+    By object: a member of the causes however the enum is reached, a value
+    call, a ``getattr`` or subscript lookup with a literal member name, a
+    report model validated from a literal cause, and, outside the causes
+    module, a string constant equal to a raised cause's value that is not
+    another enum's own member declaration. In the causes module a member
+    named inside a ``Literal[...]`` annotation of a field is a declaration,
+    not a use; anywhere else in that module it is a use.
+    """
+    resolvers = {
+        module: _Resolver(namespaces[module], tree) for module, tree in trees.items()
+    }
+    members = {
         (module, scope_of(tree, node))
         for module, tree in trees.items()
         for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute)
-        and node.attr in raised
-        and isinstance(node.value, ast.Name)
-        and node.value.id == "StageHaltCause"
+        if _names_raised_cause(resolvers[module], node)
         and not (module == CAUSES and _in_literal(tree, node))
     }
-    assert named == {("services/organize_owner.py", LOOP)}, named
+    reports = {
+        (module, scope_of(tree, node))
+        for module, tree in trees.items()
+        for node in ast.walk(tree)
+        if _builds_report(resolvers[module], node)
+    }
+    values = {
+        (module, scope_of(tree, node))
+        for module, tree in trees.items()
+        if module != CAUSES
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and _is_raised_value(node.value)
+        and not _declares_another_enum_member(namespaces[module], tree, node)
+    }
+    return members | reports | values
+
+
+def _planted_uses(source: str, module: str, tmp_path: Path) -> set[tuple[str, str]]:
+    """The cause scan over one planted module, resolved after importing it."""
+    path = tmp_path / "planted_module.py"
+    path.write_text(source, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("planted_module", path)
+    assert spec is not None and spec.loader is not None
+    planted = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(planted)
+    return cause_uses({module: ast.parse(source)}, {module: vars(planted)})
+
+
+PLANTED = "services/planted.py"
+IMPORT_CAUSE = "from kodezart.types.domain.organize_owner import StageHaltCause\n\n\n"
+IMPORT_REPORT = (
+    "from pydantic import TypeAdapter\n\n"
+    "from kodezart.types.domain.organize import RefusalKind\n"
+    "from kodezart.types.domain.organize_owner import (\n"
+    "    ConvergenceExhaustedHalt,\n    StageHaltReport,\n)\n\n\n"
+)
+
+#: One control per way the cause scan claims to see a raised cause named:
+#: the planted module, its source, and the scope the naming is reported in.
+CAUSE_CONTROLS = (
+    (
+        "the member",
+        PLANTED,
+        IMPORT_CAUSE + "def f():\n    return StageHaltCause.HUMAN_DECISION\n",
+        "f",
+    ),
+    (
+        "an import alias",
+        PLANTED,
+        "from kodezart.types.domain.organize_owner import StageHaltCause as _Cause\n"
+        "\n_AGAIN = _Cause.CONVERGENCE_EXHAUSTED\n",
+        "",
+    ),
+    (
+        "a module-level alias",
+        PLANTED,
+        IMPORT_CAUSE + "_C = StageHaltCause\n\n\n"
+        "def f():\n    return _C.ADMISSION_EXHAUSTED\n",
+        "f",
+    ),
+    (
+        "a local alias",
+        PLANTED,
+        IMPORT_CAUSE + "def f():\n    cause = StageHaltCause\n"
+        "    return cause.HUMAN_DECISION\n",
+        "f",
+    ),
+    (
+        "a walrus alias",
+        PLANTED,
+        IMPORT_CAUSE + "def f():\n    if (cause := StageHaltCause) is not None:\n"
+        "        return cause.HUMAN_DECISION\n",
+        "f",
+    ),
+    (
+        "a qualified module path",
+        PLANTED,
+        "import kodezart.types.domain.organize_owner as halts\n\n\n"
+        "def f():\n    return halts.StageHaltCause.CONVERGENCE_EXHAUSTED\n",
+        "f",
+    ),
+    (
+        "a value call",
+        PLANTED,
+        IMPORT_CAUSE + "def f(raw):\n    return StageHaltCause(raw)\n",
+        "f",
+    ),
+    (
+        "a getattr with a literal member name",
+        PLANTED,
+        IMPORT_CAUSE
+        + "def f():\n    return getattr(StageHaltCause, 'HUMAN_DECISION')\n",
+        "f",
+    ),
+    (
+        "a subscript with a literal member name",
+        PLANTED,
+        IMPORT_CAUSE + "def f():\n    return StageHaltCause['ADMISSION_EXHAUSTED']\n",
+        "f",
+    ),
+    (
+        "a string constant equal to a raised value",
+        PLANTED,
+        "def f():\n    return 'convergence_exhausted'\n",
+        "f",
+    ),
+    (
+        "a report validated from a mapping with a literal cause",
+        PLANTED,
+        IMPORT_REPORT + "def f():\n    return StageHaltReport.model_validate(\n"
+        "        {'cause': RefusalKind.HUMAN_DECISION}\n    )\n",
+        "f",
+    ),
+    (
+        "a variant constructed with a literal cause",
+        PLANTED,
+        IMPORT_REPORT
+        + "def f():\n    return ConvergenceExhaustedHalt.model_construct(\n"
+        "        cause=RefusalKind.HUMAN_DECISION\n    )\n",
+        "f",
+    ),
+    (
+        "a report copied with a literal cause",
+        PLANTED,
+        IMPORT_REPORT + "def f(report):\n"
+        "    return report.model_copy(update={'cause': RefusalKind.HUMAN_DECISION})\n",
+        "f",
+    ),
+    (
+        "a report validated through a type adapter",
+        PLANTED,
+        IMPORT_REPORT
+        + "def f():\n    return TypeAdapter(StageHaltReport).validate_python(\n"
+        "        {'cause': RefusalKind.HUMAN_DECISION}\n    )\n",
+        "f",
+    ),
+    (
+        "a member named in the causes module outside an annotation",
+        CAUSES,
+        IMPORT_CAUSE + "def f():\n"
+        "    return X(cause=StageHaltCause.CONVERGENCE_EXHAUSTED)\n",
+        "f",
+    ),
+    (
+        "a Literal built as a value in the causes module",
+        CAUSES,
+        "from typing import Literal, get_args\n\n" + IMPORT_CAUSE + "def f():\n"
+        "    return get_args(Literal[StageHaltCause.CONVERGENCE_EXHAUSTED])[0]\n",
+        "f",
+    ),
+    (
+        "a plain class attribute equal to a raised value",
+        PLANTED,
+        "class Kind:\n    HUMAN_DECISION = 'human_decision'\n",
+        "Kind",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("module", "source", "scope"),
+    [(module, source, scope) for _, module, source, scope in CAUSE_CONTROLS],
+    ids=[shape for shape, _, _, _ in CAUSE_CONTROLS],
+)
+def test_the_cause_scan_sees_each_naming(
+    module: str, source: str, scope: str, tmp_path: Path
+) -> None:
+    assert _planted_uses(source, module, tmp_path) == {(module, scope)}
+
+
+#: What the scan exempts, and the stated limit it does not reach: each reads
+#: as no naming of a raised cause at all.
+UNSEEN_CAUSES = (
+    (
+        "a Literal annotation of a field in the causes module",
+        CAUSES,
+        "from typing import Literal\n\n" + IMPORT_CAUSE + "class Halt:\n"
+        "    cause: Literal[StageHaltCause.CONVERGENCE_EXHAUSTED]\n",
+    ),
+    (
+        "a raised value declared in the causes module",
+        CAUSES,
+        "import enum\n\n\nclass Causes(enum.StrEnum):\n"
+        "    HUMAN_DECISION = 'human_decision'\n",
+    ),
+    (
+        "another enum's own member declaration",
+        PLANTED,
+        "import enum\n\n\nclass Kind(enum.StrEnum):\n"
+        "    HUMAN_DECISION = 'human_decision'\n",
+    ),
+    (
+        "a value handed across a function boundary",
+        PLANTED,
+        IMPORT_REPORT + "def f(make):\n"
+        "    return StageHaltReport.model_validate({'cause': make()})\n",
+    ),
+    (
+        "a name built at run time",
+        PLANTED,
+        IMPORT_CAUSE + "def f():\n"
+        "    member = getattr(StageHaltCause, 'HUMAN_' + 'DECISION')\n"
+        "    return member, 'human_' + 'decision'\n",
+    ),
+    (
+        "a binding made only when a function runs",
+        PLANTED,
+        IMPORT_CAUSE + "def f():\n    globals()['_C'] = StageHaltCause\n\n\n"
+        "def g():\n    return _C.HUMAN_DECISION\n",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("module", "source"),
+    [(module, source) for _, module, source in UNSEEN_CAUSES],
+    ids=[shape for shape, _, _ in UNSEEN_CAUSES],
+)
+def test_the_cause_scan_exempts_declarations_and_does_not_reach_the_limit(
+    module: str, source: str, tmp_path: Path
+) -> None:
+    assert _planted_uses(source, module, tmp_path) == set()
+
+
+def test_the_convergence_halt_holds_no_bound_method_elsewhere() -> None:
+    """The control for the halt reading: a held bound method is a reading."""
+    source = (
+        "class OrganizeOwner:\n"
+        "    async def _converge(self):\n"
+        "        await self._halt(cause=None)\n"
+        "\n"
+        "    async def run(self):\n"
+        "        halt_now = self._halt\n"
+        "        return getattr(self, '_halt')\n"
+    )
+    tree = ast.parse(source)
+    assert [
+        (scope_of(tree, node), node in called, node.lineno)
+        for _, _, node, called in sorted(
+            halt_reads({"planted.py": tree}), key=lambda read: read[2].lineno
+        )
+    ] == [
+        ("OrganizeOwner._converge", True, 3),
+        ("OrganizeOwner.run", False, 6),
+        ("OrganizeOwner.run", False, 7),
+    ]
 
 
 def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
@@ -364,17 +892,27 @@ def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
 
 
 def _in_literal(tree: ast.AST, target: ast.AST) -> bool:
-    """Whether *target* sits inside a ``Literal[...]`` subscript."""
+    """Whether *target* sits in a ``Literal[...]`` that annotates a field.
+
+    Only the annotation of an annotated assignment counts: the same
+    ``Literal[...]`` built as a value, or in a function's signature, is a
+    naming of the cause like any other. The ``Literal`` is read by its
+    spelling, so a respelled one is reported, never exempted.
+    """
     parents = _parents(tree)
     node = target
+    in_literal = False
     while node in parents:
-        node = parents[node]
+        parent = parents[node]
         if (
-            isinstance(node, ast.Subscript)
-            and isinstance(node.value, ast.Name)
-            and node.value.id == "Literal"
+            isinstance(parent, ast.Subscript)
+            and isinstance(parent.value, ast.Name)
+            and parent.value.id == "Literal"
         ):
-            return True
+            in_literal = True
+        if isinstance(parent, ast.AnnAssign):
+            return in_literal and node is parent.annotation
+        node = parent
     return False
 
 
