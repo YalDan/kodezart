@@ -64,7 +64,11 @@ from kodezart.domain.errors import UnverifiedWritePathError
 from kodezart.domain.source_resolution import SourceIndex
 from kodezart.domain.write_adoption import (
     MODULE_LEVEL,
+    _delegations,
     _driven_functions,
+    _grow,
+    _handed_arguments,
+    _overrides,
     artifact_writes,
     content_parameters,
     take_census,
@@ -1133,6 +1137,32 @@ def test_a_name_imported_from_outside_the_package_grounds_nothing_inside_it(case
     assert site in found.unadopted
 
 
+def test_the_same_name_imported_from_inside_the_package_grounds_the_step():
+    """Control for the constructor case: the in-package import does ground.
+
+    The planting is the constructor case with the outside import replaced by
+    the import of the planted in-package step class.  That step is handed
+    to the real verifier, so its write is driven: what refuses the outside
+    import is where the name comes from, not the shape around it.
+    """
+    (step_class, foreign) = FOREIGN_NAMES["constructor"]
+    assert foreign[1].count("from elsewhere import Step\n") == 1
+    inside = (
+        foreign[0],
+        foreign[1].replace(
+            "from elsewhere import Step\n",
+            "from kodezart.planted.step_class import Step\n",
+        ),
+    )
+    found = census(step_class, inside)
+    site = FOREIGN_SITES["constructor"]
+    assert site == CallSite(
+        module="planted/step_class.py", function="Step.write", method="post_comment"
+    )
+    assert site in found.driven
+    assert site not in found.unadopted
+
+
 IMPOSTOR = '''
 from kodezart.core.protocols import TrackerPort
 
@@ -1248,10 +1278,11 @@ def test_an_untyped_call_reaches_no_function_by_its_name_alone():
     the tree.  A reader that fell back to that one name would drive the
     helper's write; the call resolves to nothing, so the write is refused.
     """
-    found = census(
+    planted = (
         ("planted/untyped_step.py", UNTYPED_HELPER_STEP),
         ("planted/only_named.py", ONLY_NAMED_WRITER),
     )
+    found = census(*planted)
     site = CallSite(
         module="planted/only_named.py",
         function="Helper.impostor_only_name",
@@ -1259,6 +1290,12 @@ def test_an_untyped_call_reaches_no_function_by_its_name_alone():
     )
     assert site in found.sites
     assert site in found.unadopted
+    # The premise: the step making the untyped call is itself driven, so a
+    # fallback to the one function of that name would be a delegation.
+    index = SourceIndex({**installed_sources(), **dict(planted)})
+    assert Source(module="planted/untyped_step.py", function="Step.write") in (
+        _driven_functions(index, drive_entry())
+    )
 
 
 #: A module-level writer, imported by name into two other modules: one calls
@@ -1505,9 +1542,21 @@ def test_driven_is_proven_by_declared_types():
     }
     assert audit
     assert audit <= found.unadopted
-    assert Source(
-        module="core/protocols.py", function="WriteBackStep.write"
-    ) not in _driven_functions(SourceIndex(installed_sources()), drive_entry())
+    protocol = Source(module="core/protocols.py", function="WriteBackStep.write")
+    index = SourceIndex(installed_sources())
+    entry = drive_entry()
+    assert protocol not in _driven_functions(index, entry)
+    # Before any grant is withdrawn: the growth itself never grounds the
+    # protocol, rather than grounding it and taking it back.
+    grown = _grow(
+        index,
+        entry,
+        _handed_arguments(index),
+        _delegations(index, _overrides(index)),
+        frozenset(),
+    )
+    assert {site.holder for site in census().driven} <= grown.driven
+    assert protocol not in grown.driven
 
 
 def test_the_census_covers_organize_and_the_evaluators_state_flips():
@@ -1899,7 +1948,8 @@ def test_a_step_run_outside_its_window_loses_its_grant_however_it_is_typed(
 #: a local and called through it, bound into a partial, taken at module
 #: level where no function holds it, or taken inside an applier the verifier
 #: drives: kept on the writer and called later from a method it does not,
-#: by attribute or by ``getattr``, or wrapped in a ``methodcaller``.
+#: by attribute or by ``getattr``, or a ``methodcaller`` applied on the spot,
+#: which calls whatever it is handed rather than the write it names.
 TAKEN_AS_VALUE = {
     "getattr-kept-by-a-driven-applier": (
         DRIVEN.replace(
@@ -1922,8 +1972,9 @@ TAKEN_AS_VALUE = {
             "import operator\nfrom dataclasses import dataclass\n",
         ).replace(
             '            await self._tracker.post_comment(issue_key="K", body="b")\n',
-            '            post = operator.methodcaller("post_comment", issue_key="K")\n'
-            "            await post(self._tracker)\n",
+            "            await operator.methodcaller(\n"
+            '                "post_comment", issue_key="K"\n'
+            "            )(self._tracker)\n",
         ),
         CallSite(
             module="planted/taken_as_value.py",
