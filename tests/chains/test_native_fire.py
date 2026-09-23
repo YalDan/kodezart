@@ -2484,7 +2484,8 @@ def _own_nodes(scope):
     Each node of the tree is visited at most once, so the walk is bounded by
     the scope's own source.
     """
-    pending = list(scope.body) if isinstance(scope.body, list) else [scope.body]
+    body = scope.body if isinstance(scope.body, list) else [scope.body]
+    pending = [node for node in body if not isinstance(node, _SCOPES)]
     while pending:
         node = pending.pop()
         yield node
@@ -2611,34 +2612,38 @@ def _calls_in(module, tree, functions):
         for name, value in namespace.items()
         if isinstance(value, types.ModuleType)
     }
+
     # An import made inside a function binds nothing at module level, so it
-    # is read from the tree and resolved the same way: the name it binds
-    # counts when the object it imports IS the function (or a module).  A
-    # plain ``import a.b.c`` binds only ``a``, to the top-level package, and
-    # the call's dotted attributes reach the function from there.
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            source = importlib.import_module(
-                importlib.util.resolve_name(
-                    "." * node.level + (node.module or ""), module.__package__
+    # is read from the tree, in the scope that makes it, and resolved the
+    # same way: the name it binds counts when the object it imports IS the
+    # function (or a module).  A plain ``import a.b.c`` binds only ``a``, to
+    # the top-level package, and the call's dotted attributes reach the
+    # function from there.
+    def imported_into(scope, names, modules):
+        for node in _own_nodes(scope):
+            if isinstance(node, ast.ImportFrom):
+                source = importlib.import_module(
+                    importlib.util.resolve_name(
+                        "." * node.level + (node.module or ""), module.__package__
+                    )
+                    if node.level
+                    else node.module
                 )
-                if node.level
-                else node.module
-            )
-            for alias in node.names:
-                value = getattr(source, alias.name, None)
-                if _is_one_of(value, functions):
-                    names.add(alias.asname or alias.name)
-                elif isinstance(value, types.ModuleType):
-                    modules[alias.asname or alias.name] = value
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                imported = importlib.import_module(alias.name)
-                if alias.asname:
-                    modules[alias.asname] = imported
-                else:
-                    top = alias.name.partition(".")[0]
-                    modules[top] = importlib.import_module(top)
+                for alias in node.names:
+                    value = getattr(source, alias.name, None)
+                    if _is_one_of(value, functions):
+                        names.add(alias.asname or alias.name)
+                    elif isinstance(value, types.ModuleType):
+                        modules[alias.asname or alias.name] = value
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    imported = importlib.import_module(alias.name)
+                    if alias.asname:
+                        modules[alias.asname] = imported
+                    else:
+                        top = alias.name.partition(".")[0]
+                        modules[top] = importlib.import_module(top)
+
     # A method is reached through its own instance: ``self.<method>`` in a
     # method of the class, or ``self.<attribute>.<method>`` where the class
     # declares what that attribute holds.  Either is resolved on the class,
@@ -2656,11 +2661,12 @@ def _calls_in(module, tree, functions):
             declared_by_class[id(klass)] = _attribute_classes(klass, namespace, modules)
         return receiver, owner, declared_by_class[id(klass)]
 
-    # A scope is ``(receiver, names, narrowed)``: the method's own instance,
-    # if any; the plain names whose value IS the function; and the local
-    # names that hold a declared ``self`` attribute, with its classes.
+    # A scope is ``(receiver, names, narrowed, modules)``: the method's own
+    # instance, if any; the plain names whose value IS the function; the
+    # local names that hold a declared ``self`` attribute, with its classes;
+    # and the names that hold a module.
     def classes_of(node, scope):
-        receiver, _, narrowed = scope
+        receiver, _, narrowed, _ = scope
         if isinstance(node, ast.Name):
             if receiver is not None and node.id == receiver[0]:
                 return (receiver[1],)
@@ -2681,7 +2687,7 @@ def _calls_in(module, tree, functions):
             return value.id in scope[1]
         if not isinstance(value, ast.Attribute):
             return False
-        owner = _module_named_by(value.value, modules)
+        owner = _module_named_by(value.value, scope[3])
         if owner is not None:
             return _is_one_of(getattr(owner, value.attr, None), functions)
         return any(
@@ -2700,6 +2706,8 @@ def _calls_in(module, tree, functions):
     # that attribute holds.  Each pass adds a name or ends the loop, so it
     # runs at most once per binding.
     def scope_of(node, receiver, outer):
+        names, modules_here = set(outer[1]), dict(outer[3])
+        imported_into(node, names, modules_here)
         bindings = _local_bindings(node)
         narrowed = dict(outer[2])
         for name, value in bindings:
@@ -2713,15 +2721,14 @@ def _calls_in(module, tree, functions):
                     *narrowed.get(name, ()),
                     *receiver[2].get(value.attr, ()),
                 }
-        names = set(outer[1])
         grown = True
         while grown:
-            scope = (receiver, names, narrowed)
+            scope = (receiver, names, narrowed, modules_here)
             added = {name for name, value in bindings if is_function(value, scope)}
             added -= names
             names |= added
             grown = bool(added)
-        return receiver, frozenset(names), narrowed
+        return receiver, frozenset(names), narrowed, modules_here
 
     found = []
 
@@ -2742,7 +2749,7 @@ def _calls_in(module, tree, functions):
                 found.append((module.__name__, here or f"module line {child.lineno}"))
             walk(child, path, here, inner)
 
-    walk(tree, (), None, scope_of(tree, None, (None, frozenset(names), {})))
+    walk(tree, (), None, scope_of(tree, None, (None, frozenset(names), {}, modules)))
     return found
 
 
@@ -2945,3 +2952,355 @@ async def test_a_fixture_supplying_a_persisted_set_fails_at_the_native_barrier(
 
     assert counting.calls == []
     assert port.issues[DIRECT_OWED].state_kind is WorkflowStateKind.UNSTARTED
+
+
+# ---------------------------------------------------------------------------
+# The resolver's own controls: small modules fed to ``_calls_in``, one
+# function per form it follows and one per form it does not.  Every branch
+# of the resolver is held here, so deleting one turns a form red, and every
+# shape of the stated limit is held unseen, so the limit is a fact the tests
+# hold rather than a sentence (KOD-652).
+# ---------------------------------------------------------------------------
+
+#: A module whose functions each reach the targets by one form, or by one
+#: shape the resolver does not follow, or reach a same-named other thing.
+#: The targets are the snapshot check and ``Gate``'s own methods.
+RESOLVER_PROBE = """
+import functools
+from typing import Optional, Union
+
+from kodezart.chains import criteria as _criteria
+from kodezart.chains.criteria import require_current_native_snapshot
+
+
+class Gate:
+    def _require_current(self):
+        return None
+
+    @staticmethod
+    def _static_check():
+        return None
+
+    @classmethod
+    def _class_check(cls):
+        return None
+
+    def own_method(self):
+        self._require_current()
+
+    def static_method(self):
+        self._static_check()
+
+    def class_method(self):
+        self._class_check()
+
+    def bound_method(self):
+        check = self._require_current
+        check()
+
+    def walrus_method(self):
+        (check := self._require_current)()
+
+
+class Other:
+    def _require_current(self):
+        return None
+
+    def other_class_method(self):
+        self._require_current()
+
+
+class Piped:
+    def __init__(self, gate: Gate | None):
+        self._gate = gate
+
+    def attribute_method(self):
+        self._gate._require_current()
+
+    def bound_attribute_method(self):
+        check = self._gate._require_current
+        check()
+
+    def narrowed_attribute(self):
+        gate = self._gate
+        if gate is None:
+            raise ValueError("no gate")
+        gate._require_current()
+
+
+class OptionalDeclared:
+    def __init__(self, gate: Optional[Gate]):
+        self._gate = gate
+
+    def optional_declared(self):
+        self._gate._require_current()
+
+
+class UnionDeclared:
+    def __init__(self, gate: Union[Gate, None]):
+        self._gate = gate
+
+    def union_declared(self):
+        self._gate._require_current()
+
+
+class BodyDeclared:
+    _gate: Gate
+
+    def body_declared(self):
+        self._gate._require_current()
+
+
+class AssignDeclared:
+    def __init__(self):
+        self._gate: Gate = Gate()
+
+    def assign_declared(self):
+        self._gate._require_current()
+
+
+class OtherHeld:
+    def __init__(self, other: Other):
+        self._other = other
+
+    def other_attribute(self):
+        self._other._require_current()
+
+
+def direct(state):
+    require_current_native_snapshot(state, reader=None)
+
+
+def module_alias(state):
+    _criteria.require_current_native_snapshot(state, reader=None)
+
+
+def plain_import(state):
+    import kodezart.chains.criteria
+
+    kodezart.chains.criteria.require_current_native_snapshot(state, reader=None)
+
+
+def local_module_import(state):
+    import kodezart.chains.criteria as crit
+
+    crit.require_current_native_snapshot(state, reader=None)
+
+
+def local_from_import(state):
+    from kodezart.chains.criteria import require_current_native_snapshot as ask
+
+    ask(state, reader=None)
+
+
+def assignment(state):
+    check = require_current_native_snapshot
+    check(state, reader=None)
+
+
+def chained(state):
+    first = second = require_current_native_snapshot
+    second(state, reader=None)
+
+
+def annotated(state):
+    check: object = require_current_native_snapshot
+    check(state, reader=None)
+
+
+def unpacking(state):
+    check, other = require_current_native_snapshot, None
+    check(state, reader=None)
+
+
+def walrus(state):
+    (check := require_current_native_snapshot)(state, reader=None)
+
+
+def walrus_bound(state):
+    if check := require_current_native_snapshot:
+        check(state, reader=None)
+
+
+def loop_target(state):
+    for check in (require_current_native_snapshot,):
+        check(state, reader=None)
+
+
+def comprehension_target(state):
+    return [check(state, reader=None) for check in [require_current_native_snapshot]]
+
+
+def positional_default(state, check=require_current_native_snapshot):
+    check(state, reader=None)
+
+
+def keyword_default(state, *, check=require_current_native_snapshot):
+    check(state, reader=None)
+
+
+def other_local(state):
+    check = len
+    check(state)
+
+
+def conditional(state):
+    check = require_current_native_snapshot if state else None
+    check(state, reader=None)
+
+
+def starred(state):
+    check, *rest = require_current_native_snapshot, None, None
+    check(state, reader=None)
+
+
+def loop_over_name(state):
+    candidates = (require_current_native_snapshot,)
+    for check in candidates:
+        check(state, reader=None)
+
+
+def local_module(state):
+    crit = _criteria
+    crit.require_current_native_snapshot(state, reader=None)
+
+
+def parameter_instance(gate: Gate):
+    gate._require_current()
+
+
+def constructed_instance():
+    gate = Gate()
+    gate._require_current()
+
+
+def mapping(state):
+    {"check": require_current_native_snapshot}["check"](state, reader=None)
+
+
+def partial(state):
+    functools.partial(require_current_native_snapshot, reader=None)(state)
+
+
+def run_time(state):
+    getattr(_criteria, "require_current_" + "native_snapshot")(state, reader=None)
+"""
+
+#: The form each function of the probe reaches a target by, one per form
+#: ``callers_of`` states it follows.
+RESOLVER_FOLLOWS = {
+    "direct": "a direct call",
+    "Gate.own_method": "self.<method>",
+    "Piped.attribute_method": "self.<attribute>.<method>",
+    "plain_import": "a plain import inside a function",
+    "local_module_import": "an import-as of a module inside a function",
+    "local_from_import": "a from-import inside a function",
+    "module_alias": "a module alias",
+    "assignment": "assignment",
+    "chained": "chained assignment",
+    "annotated": "annotated assignment",
+    "unpacking": "equal-length tuple unpacking",
+    "walrus": "a walrus as the callee",
+    "walrus_bound": "a name a walrus binds",
+    "loop_target": "a for target over a literal sequence",
+    "comprehension_target": "a comprehension target over a literal sequence",
+    "positional_default": "a positional default",
+    "keyword_default": "a keyword-only default",
+    "Gate.static_method": "a staticmethod, unwrapped",
+    "Gate.class_method": "a classmethod, unwrapped",
+    "Piped.bound_attribute_method": "self.<attribute>.<method> held in a local",
+    "OptionalDeclared.optional_declared": "an Optional[...] declaration",
+    "UnionDeclared.union_declared": "a Union[...] declaration",
+    "BodyDeclared.body_declared": "a class-body annotation",
+    "AssignDeclared.assign_declared": "an annotated assignment to self",
+    "Gate.bound_method": "a bound method held in a local",
+    "Gate.walrus_method": "a bound method held by a walrus",
+    "Piped.narrowed_attribute": "an attribute narrowed through a local",
+}
+
+#: The functions of the probe that must stay out: a same-named thing that is
+#: not a target, and each shape of the stated limit.
+RESOLVER_DOES_NOT_FOLLOW = {
+    "other_local": "a same-named local in another function",
+    "Other.other_class_method": "a method of another class with the name",
+    "OtherHeld.other_attribute": "that method through a declared attribute",
+    "conditional": "a conditional expression",
+    "starred": "starred unpacking",
+    "loop_over_name": "a for over a name bound to a sequence",
+    "local_module": "a module bound to a local name",
+    "parameter_instance": "an instance held in a parameter",
+    "constructed_instance": "an instance held in a local it was built into",
+    "mapping": "a mapping",
+    "partial": "functools.partial",
+    "run_time": "a name assembled at run time",
+}
+
+#: A module of its own holding a function named like the check, and a call
+#: to that function: the same spelling, another object.
+RESOLVER_ELSEWHERE = """
+def require_current_native_snapshot(state, reader):
+    return None
+
+
+def same_name(state):
+    require_current_native_snapshot(state, reader=None)
+"""
+
+
+def _probe_module(directory, name, source):
+    """*source* imported as the module *name*, beside its own syntax tree."""
+    path = directory / f"{name}.py"
+    path.write_text(source, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module, ast.parse(source)
+
+
+def _probe_targets(module):
+    """The snapshot check and ``Gate``'s own methods, as function objects.
+
+    Taken off the wrappers here, not through the resolver's own unwrapping,
+    so the unwrapping is under test rather than assumed.
+    """
+    gate = vars(module.Gate)
+    return (
+        require_current_native_snapshot,
+        gate["_require_current"],
+        gate["_static_check"].__func__,
+        gate["_class_check"].__func__,
+    )
+
+
+def test_the_resolver_follows_each_stated_form_and_nothing_else(tmp_path):
+    """Exactly the functions that reach a target by a followed form are found.
+
+    Not parametrised: one reading of the probe, compared whole.  A branch of
+    the resolver that is deleted drops its form from what is found; a shape
+    the limit names that starts being followed adds one; either way the two
+    sets differ (KOD-652).
+    """
+    module, tree = _probe_module(tmp_path, "resolver_probe", RESOLVER_PROBE)
+    # Both tables name functions the probe defines, and no function twice,
+    # so a negative can neither be missing nor hide among the positives.
+    assert not set(RESOLVER_FOLLOWS) & set(RESOLVER_DOES_NOT_FOLLOW)
+    for qualname in (*RESOLVER_FOLLOWS, *RESOLVER_DOES_NOT_FOLLOW):
+        value = module
+        for part in qualname.split("."):
+            value = vars(value)[part]
+        assert inspect.isfunction(value), qualname
+
+    found = {holder for _, holder in _calls_in(module, tree, _probe_targets(module))}
+
+    assert found == set(RESOLVER_FOLLOWS)
+
+
+def test_a_same_named_function_in_another_module_is_not_the_check(tmp_path):
+    """A call to another module's function of the same name is not found."""
+    probe, _ = _probe_module(tmp_path, "resolver_probe", RESOLVER_PROBE)
+    module, tree = _probe_module(tmp_path, "resolver_elsewhere", RESOLVER_ELSEWHERE)
+
+    assert module.require_current_native_snapshot is not (
+        require_current_native_snapshot
+    )
+    assert _calls_in(module, tree, _probe_targets(probe)) == []
