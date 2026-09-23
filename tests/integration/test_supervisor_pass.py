@@ -653,6 +653,67 @@ async def test_the_composed_tick_observes_a_scope_stalled_at_a_stage_barrier():
         assert alarm_raised(stored)
 
 
+def _enter_criteria_stage(port, lane, *, entered):
+    """Give *lane* the criteria stage's label, or take it away."""
+    issue = port.issues[lane]
+    labels = (
+        issue.issue_labels | {"criteria"}
+        if entered
+        else issue.issue_labels - {"criteria"}
+    )
+    port.issues[lane] = issue.model_copy(update={"issue_labels": labels})
+
+
+def _scope_raises(logs):
+    return [
+        (entry["scope"], entry["marker"])
+        for entry in logs
+        if entry["event"] == "supervisor_scope_alarm_raised"
+    ]
+
+
+async def test_every_declared_scope_is_observed_on_every_tick():
+    """Each declared scope's barrier is read from its own roster, every tick.
+
+    Two scopes with different rosters, one lane each. Only the second scope's
+    lane has entered the criteria stage without the body stage's marker, so
+    only its barrier is open, and the tick says so for that scope and no
+    other, and says it again on the next tick. Then the two swap, and the
+    next tick names the first scope alone.
+    """
+    operation = declared(scopes=tuple(PAIRED_LANES))
+    port = await board(
+        lanes=tuple(PAIRED_LANES.values()),
+        scopes={ref: (lane,) for ref, lane in PAIRED_LANES.items()},
+        holder=supervisor_holder(operation_name=operation.operation_name),
+    )
+    _enter_criteria_stage(port, PAIRED_LANES[SECOND_SCOPE], entered=True)
+    scheduled = build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            run_alarm_max_commits_without_closure=BOUND,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=operation,
+        tracker=port,
+    )
+
+    for _ in range(2):
+        with structlog.testing.capture_logs() as logs:
+            async with asyncio.timeout(TICK_BOUND_SECONDS):
+                assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+        assert _scope_raises(logs) == [(SECOND_SCOPE.key, TICKET_MARKER_SOURCE)]
+
+    _enter_criteria_stage(port, PAIRED_LANES[SECOND_SCOPE], entered=False)
+    _enter_criteria_stage(port, PAIRED_LANES[SCOPE], entered=True)
+    with structlog.testing.capture_logs() as logs:
+        async with asyncio.timeout(TICK_BOUND_SECONDS):
+            assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+
+    assert _scope_raises(logs) == [(SCOPE.key, TICKET_MARKER_SOURCE)]
+
+
 #: A dispatch holder no default would produce, so a lease holder composed from
 #: it would be visible wherever it appeared.
 FOREIGN_PROCESS = "separate-deployment"
