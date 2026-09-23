@@ -952,7 +952,7 @@ def test_every_member_the_port_declares_is_driven_here() -> None:
     assert {case.method for case in CASES.values()} == port_members()
 
 
-def test_every_journal_the_check_reaches_is_filled_by_one_of_these_writes() -> None:
+def test_every_journal_the_check_reaches_is_written_to_here() -> None:
     """And the other direction: no journal in the projection is unexercised.
 
     A journal nothing fills is a journal whose coverage is asserted and never
@@ -966,7 +966,7 @@ def test_every_journal_the_check_reaches_is_filled_by_one_of_these_writes() -> N
 @pytest.mark.parametrize(
     "case", sorted(name for name, row in CASES.items() if row.journals)
 )
-async def test_a_write_through_any_port_method_answers_that_the_board_was_touched(
+async def test_a_write_on_any_journal_answers_that_the_board_was_touched(
     case: str,
 ) -> None:
     """One write, through one port method, and both answers are False."""
