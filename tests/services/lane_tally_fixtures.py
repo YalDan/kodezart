@@ -50,9 +50,10 @@ class Board:
     """One board built through :func:`board`, and what may be written to it.
 
     *allowed* holds the ``(lane, marker)`` pairs a test names for a writer
-    other than the supervisor, so a legitimate foreign write is admitted by
-    being declared rather than by widening the set every board is checked
-    against.
+    other than the supervisor, or for a supervisor address below a lane's
+    direct criteria, so a legitimate write outside the lanes' own set is
+    admitted by being declared rather than by widening the set every board is
+    checked against.
 
     *states* and *state_changes* are the board's states as the tick found
     them. A state move that goes around the port's writers leaves no write
@@ -252,7 +253,11 @@ def close_criterion(port, key):
 
 
 def allow_foreign_write(port, *, lane, marker):
-    """Name one write on *port* that a holder other than the supervisor makes.
+    """Name one write on *port* outside the lanes' own declared set.
+
+    Either a holder other than the supervisor makes it, or it is the
+    supervisor's own at an address the set does not enumerate, such as a
+    criterion under a lane's deliverable child.
 
     The declared-set check reads the tick's own writes, so a write a test
     makes on purpose has to be named before it is made. Naming it keeps the
