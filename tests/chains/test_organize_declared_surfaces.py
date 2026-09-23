@@ -341,6 +341,40 @@ async def test_approval_landing_before_the_groom_marker_refuses_the_marker(monke
     assert board.grants() == []
 
 
+async def test_approval_landing_inside_the_markers_renewal_refuses_the_marker(
+    monkeypatch,
+):
+    """Approval inside the marker's own renewal refuses the marker write.
+
+    The subject's body is already prepared, so the only renewal of the
+    round is the in-place edit of its lease marker that the marker write
+    makes. The scope is approved during that edit; the approval reading
+    after it refuses, and the member keeps no marker.
+    """
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    owner, board, _ = factory(body="Prepared body grounded in the source.")
+    original = board.call_tool
+    renewed = []
+
+    async def approving(*, name, arguments):
+        response = await original(name=name, arguments=arguments)
+        body = str(arguments.get("body", ""))
+        # A renewal is the in-place edit that restates when the hold began;
+        # the acquisition's own edit from bid to held is not one.
+        if name == "save_comment" and "since:" in body and "kind: lease\n" in body:
+            renewed.append(arguments)
+            board.server.issues[CLAIMED_ISSUE].labels.append("approved scope")
+        return response
+
+    monkeypatch.setattr(board, "call_tool", approving)
+    with pytest.raises(OrganizeWriteRefusalError, match="groom is not admitted"):
+        await run_owner(owner)
+    assert len(renewed) == 1
+    assert GROOM_MARKER not in board.server.issues[CLAIMED_ISSUE].labels
+    assert board.grants() == []
+
+
 LATE = "FIX-LATE"
 FOREIGN = "FIX-2"
 
