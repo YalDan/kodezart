@@ -9,8 +9,7 @@ from kodezart.core.errors import PassGateCapabilityError
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain import run_alarm_table
-from kodezart.domain.lane_alarms import OBSERVED_ALARMS
-from kodezart.domain.run_alarm_table import AlarmTableError, alarm_scans
+from kodezart.domain.run_alarm_table import AlarmTableError
 from kodezart.services.agent_service import AgentService
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.dispatch import PassRun, PassSignal, SelfWriteLedger
@@ -374,10 +373,12 @@ async def test_the_same_operation_without_organize_scopes_keeps_the_per_issue_pa
 
 
 class _RefusingScanner(FakeTrackerPort):
-    """A port that answers only the scans the supervisor's alarms declare.
+    """A port that answers only issue activity, the supervisor's one scan.
 
-    Any other signal is a pass this deployment withholds asking for a
-    capability it will never use, and fails the test.
+    The allow-list is written out rather than read off the alarm table, so a
+    table that came to declare another scan is a change this double sees. Any
+    other signal is a pass this deployment withholds asking for a capability
+    it will never use, and fails the test.
     """
 
     def __init__(self, **rest):
@@ -385,8 +386,7 @@ class _RefusingScanner(FakeTrackerPort):
         self.asked: list[PassSignal] = []
 
     async def verify_scan_capability(self, *, signals):
-        declared = set(alarm_scans(OBSERVED_ALARMS))
-        if not set(signals) <= declared:
+        if not set(signals) <= {PassSignal.issues_changed}:
             raise AssertionError(f"a withheld pass asked for {signals}")
         self.asked.extend(signals)
         return {}
