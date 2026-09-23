@@ -44,10 +44,11 @@ from kodezart.domain.errors import (
     OrganizeWriteRefusalError,
     ScopeReadError,
 )
-from kodezart.domain.gap import compute_gap, in_gap
+from kodezart.domain.gap import compute_gap, in_gap, open_state_kind
 from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
 from kodezart.domain.organize import (
     admission_route,
+    evidence_is_fillable,
     is_admission_live,
     is_organize_subject,
     organize_at_rest,
@@ -1503,8 +1504,13 @@ GAP_COMPUTATION_MODULES = frozenset(
         "composition/supervisor.py",
         "domain/gap.py",
         "domain/issue_tree.py",
+        "domain/lane_alarms.py",
         "domain/organize.py",
+        "domain/run_alarm_table.py",
+        "domain/stream_signals.py",
+        "domain/tally_record.py",
         "main.py",
+        "services/alarm_supervisor.py",
         "services/barren_record_signals.py",
         "services/escalation_signals.py",
         "services/mandate_graph.py",
@@ -1516,6 +1522,7 @@ GAP_COMPUTATION_MODULES = frozenset(
         "services/scope_organizer.py",
         "services/scope_runtime.py",
         "services/scope_tally.py",
+        "services/supervisor_pass.py",
     }
 )
 #: Every module of the tree that spells the change stamp, and the reason it
@@ -2258,6 +2265,11 @@ def arithmetic_cases(stamp):
     ``stage_rows``: the rows on each side of approval.  ``is_admission_live``
     takes two digests and no record, so the stamp cannot reach it: the same
     digest, a changed one, and its refusal of a blank one.
+    ``open_state_kind`` takes a workflow kind and no record either: every
+    kind, each with and without a supersession, and its refusal of a blank
+    supersession.  ``evidence_is_fillable`` takes two names and no record: a
+    runnable test named, an observation named, nothing named, and only blank
+    names.
     """
     built = iter(range(1_000))
 
@@ -2576,6 +2588,43 @@ def arithmetic_cases(stamp):
         "is_admission_live: the same digest": liveness("opaque:1", "opaque:1"),
         "is_admission_live: a changed digest": liveness("opaque:1", "opaque:2"),
         "is_admission_live refuses a blank digest": liveness("opaque:1", " "),
+        **{
+            f"open_state_kind: {kind.value}{superseded}": (
+                open_state_kind,
+                {
+                    "state_kind": kind,
+                    "supersession_ref": "over/1" if superseded else None,
+                },
+                (),
+            )
+            for kind in WorkflowStateKind
+            for superseded in ("", " superseded")
+        },
+        "open_state_kind refuses a blank supersession": (
+            open_state_kind,
+            {"state_kind": WorkflowStateKind.UNSTARTED, "supersession_ref": " "},
+            (),
+        ),
+        "evidence_is_fillable: a runnable test named": (
+            evidence_is_fillable,
+            {"runnable_test": "tests/test_bytes.py", "named_observation": None},
+            (),
+        ),
+        "evidence_is_fillable: an observation named": (
+            evidence_is_fillable,
+            {"runnable_test": None, "named_observation": OBSERVATION},
+            (),
+        ),
+        "evidence_is_fillable: nothing named": (
+            evidence_is_fillable,
+            {"runnable_test": None, "named_observation": None},
+            (),
+        ),
+        "evidence_is_fillable: only blank names": (
+            evidence_is_fillable,
+            {"runnable_test": " ", "named_observation": ""},
+            (),
+        ),
     }
 
 
@@ -2702,6 +2751,28 @@ ARITHMETIC_OUTCOMES = {
         "refused",
         "admission liveness requires both nonempty body digests",
     ),
+    "open_state_kind: triage": ("answered", True),
+    "open_state_kind: triage superseded": ("answered", True),
+    "open_state_kind: backlog": ("answered", True),
+    "open_state_kind: backlog superseded": ("answered", True),
+    "open_state_kind: unstarted": ("answered", True),
+    "open_state_kind: unstarted superseded": ("answered", True),
+    "open_state_kind: started": ("answered", True),
+    "open_state_kind: started superseded": ("answered", True),
+    "open_state_kind: completed": ("answered", False),
+    "open_state_kind: completed superseded": ("answered", False),
+    "open_state_kind: canceled": ("answered", True),
+    "open_state_kind: canceled superseded": ("answered", False),
+    "open_state_kind: duplicate": ("answered", True),
+    "open_state_kind: duplicate superseded": ("answered", False),
+    "open_state_kind refuses a blank supersession": (
+        "refused",
+        "a supersession reference must be nonempty",
+    ),
+    "evidence_is_fillable: a runnable test named": ("answered", True),
+    "evidence_is_fillable: an observation named": ("answered", True),
+    "evidence_is_fillable: nothing named": ("answered", False),
+    "evidence_is_fillable: only blank names": ("answered", False),
 }
 #: Each change stamp the records are read under besides the baseline: a trap
 #: that raises on any operation, and two readings far apart whose order runs
@@ -2874,11 +2945,20 @@ CALL_SITE_OUTCOMES = {
 CALL_SITES_NOT_RUN = {
     ("chains/organize.py", "OrganizeAdmission.is_live"): "Async; reads the "
     "current revision through the tracker port.",
+    ("domain/stream_signals.py", "lapse_undischarged"): "Folds alarm "
+    "readings, a workflow kind among them, and takes no tracker record, so no "
+    "record's change stamp reaches it for the trap to hold.",
     ("composition/organize.py", "build_scope_organizer"): "The composition "
     "root: it reads stage_rows over the configured mandates while it wires the "
     "organizer, and needs the whole application configuration and its ports.",
     ("services/mandate_graph.py", "observe_ruling_growth"): "Async; reads "
     "criteria and ruling projections through the tracker port.",
+    ("services/organize_owner.py", "OrganizeOwner._author_write"): "Async; a "
+    "method of the organize service, authoring a write through its ports.",
+    ("services/organize_owner.py", "OrganizeOwner._author_write.apply"): "Async; "
+    "the write step nested in _author_write, run on its author and ports.",
+    ("services/organize_owner.py", "OrganizeOwner._converge"): "Async; a method "
+    "of the organize service, running a phase's rounds over its ports.",
     ("services/organize_owner.py", "OrganizeOwner._proof_live"): "Async; a "
     "method of the organize service, reading a snapshot through its ports.",
     ("services/organize_owner.py", "OrganizeOwner._roster"): "A method of the "
@@ -2915,11 +2995,13 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
     and ``SubtreeClosure.open_criterion_keys`` — or named in
     ``CALL_SITES_NOT_RUN`` with why: ``OrganizeAdmission.is_live``,
     ``build_scope_organizer``, ``observe_ruling_growth``, the organize
-    service's ``_proof_live``, ``_roster``, ``_route`` and ``run``,
+    service's ``_author_write`` and the ``apply`` nested in it,
+    ``_converge``, ``_proof_live``, ``_roster``, ``_route`` and ``run``,
     ``read_barren_tick`` and ``observe_scope_tally``, each of which needs a
-    tracker port, a service instance or the composition's wiring.  A new call
-    site reds here until it is one or the other.  Each case answers what it
-    was built for over the baseline stamp.
+    tracker port, a service instance or the composition's wiring; and
+    ``lapse_undischarged``, which takes alarm readings and no tracker
+    record.  A new call site reds here until it is one or the other.  Each
+    case answers what it was built for over the baseline stamp.
     """
     points = arithmetic_entry_points()
     cases = call_site_cases(lambda _position: BASELINE_STAMP)
