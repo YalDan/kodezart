@@ -424,6 +424,7 @@
   "tests/test_release.py": 4,
   "tests/test_suppression_baseline.py": 60,
   "tests/tools/test_scratch_scope.py": 60,
+  "tests/tracker/conftest.py": 1,
   "tests/tracker/test_adapter_roles.py": 14,
   "tests/tracker/test_alarm_independent.py": 4,
   "tests/tracker/test_artifact_native_fields.py": 9,
@@ -460,6 +461,7 @@
   "tests/tracker/test_comment_expected.py": 15,
   "tests/tracker/test_comment_expected_independent.py": 6,
   "tests/tracker/test_comment_pages.py": 9,
+  "tests/tracker/test_conformance_call_log.py": 7,
   "tests/tracker/test_conformance_registry_routing.py": 1,
   "tests/tracker/test_consumer_read_ports.py": 19,
   "tests/tracker/test_criterion_creation.py": 27,
@@ -6295,6 +6297,10 @@
    "test_duplicate_on_later_page_prevents_any_write",
    "test_missing_or_repeated_cursor_refuses_before_creation",
    "test_page_overlap_does_not_invent_a_duplicate"
+  ],
+  "tests/tracker/test_conformance_call_log.py": [
+   "test_the_golden_names_exactly_the_conformance_cases_on_the_adapter_arm",
+   "test_the_digest_sees_a_value_and_not_what_varies_between_runs"
   ],
   "tests/tracker/test_conformance_registry_routing.py": [
    "test_conformance_modules_build_no_tracker_outside_the_registry"

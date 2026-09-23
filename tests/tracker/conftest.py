@@ -7,7 +7,7 @@ test is copied, which is the whole point of a port-level suite.
 """
 
 import sys
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from inspect import isawaitable
@@ -39,6 +39,12 @@ from tests.fakes import (
     FakeTrackerPort,
     seed_fake_issue,
     seed_server_issue,
+)
+from tests.tracker.conformance_call_log import (
+    call_log_digest,
+    logged_call,
+    recorded_case,
+    recorded_digests,
 )
 from tests.tracker.marker_config import MARKER_PREFIXES
 
@@ -712,4 +718,35 @@ def observed_writes(
         )
     return lambda: tuple(
         call for call in server.calls if call[0] in ADAPTER_WRITE_TOOLS
+    )
+
+
+@pytest.fixture(autouse=True)
+def conformance_call_log(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """Hold each conformance case on the adapter arm to its recorded call log.
+
+    Every ``call_tool`` a fixture workspace answers while the case runs is
+    logged, in order, with its argument values; when the case is done the
+    log's digest must equal the one recorded for its node id before the
+    adapter was split. Any other case runs untouched.
+    """
+    nodeid = request.node.nodeid
+    if not recorded_case(nodeid, arms=TRACKER_ADAPTERS):
+        yield
+        return
+    calls: list[str] = []
+    answer = FakeLinearMcpServer.call_tool
+
+    async def logging(
+        self: FakeLinearMcpServer, *, name: str, arguments: Mapping[str, object]
+    ) -> object:
+        calls.append(logged_call(name, arguments))
+        return await answer(self, name=name, arguments=arguments)
+
+    monkeypatch.setattr(FakeLinearMcpServer, "call_tool", logging)
+    yield
+    assert call_log_digest(calls) == recorded_digests().get(nodeid), (
+        f"{nodeid} sent {len(calls)} calls that differ from its recorded log"
     )
