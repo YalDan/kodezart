@@ -1,6 +1,7 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
 import asyncio
+import copy
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -8,8 +9,10 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 from urllib.parse import quote, urlsplit
+from weakref import WeakKeyDictionary
 
 from fastapi import FastAPI
 
@@ -3496,6 +3499,29 @@ class FakeTrackerPort:
     ``GRANTED``.
     """
 
+    #: The attributes this double keeps to record READS: each is a log a read
+    #: method appends its request to — the issue keys read, the issue and
+    #: review scans, the capability probes — and nothing else.  They are the
+    #: one part of the double a read moves, so they are the one part the
+    #: "nothing was written" comparison (``nothing_written``) leaves out.  A
+    #: subclass that keeps a read counter of its own adds it here.
+    #:
+    #: Derived by what the logs are, not trusted: the census beside this
+    #: module runs every read the port declares on a fresh board and holds
+    #: the attributes those reads move, only ever by appending, equal to this
+    #: set; it reads every method of this double and of each subclass and
+    #: finds each read log moved inside the port's reads alone; and it shows
+    #: every write moving the state outside the logs.  A read log that
+    #: recorded a write fails there.
+    READ_LOGS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "issue_reads",
+            "scans",
+            "review_scans",
+            "capability_probes",
+        }
+    )
+
     def __init__(
         self,
         *,
@@ -5214,11 +5240,14 @@ def tracker_state(port: FakeTrackerPort) -> dict[str, object]:
 #: The set is not trusted to be complete either: the census beside this
 #: module drives EVERY member the port declares, read off its class line with
 #: no list of verbs, each through a case that runs it — a write case naming
-#: the journals it fills, a read case shown to fill none — so a write that
-#: lands in no journal here fails there, naming the method, a member of any
-#: name without a case fails there, and a journal nothing fills fails there
-#: too.  That is the one failure a list of journals cannot report about
-#: itself.
+#: the journals it fills, a read case shown to move nothing but its read log
+#: — so a write that lands in no journal here fails there, naming the
+#: method, a member of any name without a case fails there, and a journal
+#: nothing fills fails there too.  That is the one failure a list of
+#: journals cannot report about itself.  The write-set claim itself,
+#: ``nothing_written``, no longer rests on this list: it compares the whole
+#: state but the read logs, and holds only that the rendering reaches every
+#: journal named here.
 TRACKER_WRITE_JOURNALS = frozenset(
     {
         "issue_writes",
@@ -5265,51 +5294,80 @@ def handed_over(port: FakeTrackerPort) -> Callable[[], bool]:
     return lambda: tracker_state(port) == before
 
 
+def written_state(port: FakeTrackerPort) -> dict[str, object]:
+    """Every attribute of *port* but its read logs, deep-copied, then rendered.
+
+    The whole state a write could move: every attribute of the instance,
+    whatever it is called and whether or not a journal names it, except the
+    logs its class declares in ``READ_LOGS``.  The copy is deep so that a
+    value the rendering keeps as it is — a model, a record — is not shared
+    with the live double, where a write in place would change the snapshot
+    with it.
+    """
+    return {
+        name: _comparable(value)
+        for name, value in sorted(copy.deepcopy(vars(port)).items())
+        if name not in type(port).READ_LOGS
+    }
+
+
 def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
-    """Answer, later, whether *port*'s write journals are as they were.
+    """Answer, later, whether *port*'s whole state, but its read logs, is as it was.
 
     ``handed_over`` compares the double's whole surface, reads included: the
     claim for a pass that must not touch the board at all.  A consumer that
     legitimately READS the board — a lane's delivery re-reads its criteria
-    before every barrier — needs the narrower claim: of the journals a write
-    can land in, none moved.
+    before every barrier — needs the narrower claim, and this is exactly it:
+    the double is deep-copied when it is handed over, and when the answer is
+    asked for every attribute of the live double is compared with the same
+    attribute of that copy, both rendered by the rule above, leaving out
+    only the read logs the double's class declares in ``READ_LOGS``.  So
+    any attribute a call moves counts — a write journal, the issues
+    themselves, the comments, the claims, a subclass's own state, and a
+    board a fixture moved by its own hand after the handover — whether or
+    not any list names it; only the logs that exist to record reads do not.
+    A fixture that has to move the board mid-call does it through
+    ``moved_by_hand``, which moves the handed-over copy with it.
 
-    The surface is the journal list above, and NO write on the port is
-    outside it.  That is a measured claim, not an intention: the census
-    beside this module drives EVERY member the port declares — read off the
-    port's class line, whatever each is called, with no verb list deciding
-    which are writes — through a case that runs it, so a write landing in no
-    journal here is a failure there, naming the method, a member with no case
-    is a failure there, and a read that fills a journal is one too.  A write
-    that ADDRESSES an issue is reached whichever attribute it fills — the
-    identity map under ``upsert_issue``, say — because it stamps the issue
-    through ``_wrote`` and that stamp lands in ``self_writes``.  The writes
-    that address no issue carry a journal of their own so they are reached
-    too: the two unlock attempts, a work ref recorded against an issue no
-    board holds, a graph write, and each mapping ensure that instates — a
-    scope label or one of the other instatable kinds — all of which address
-    the workspace.
-
-    An ensure that ADOPTS a value the workspace already defines is the one
-    ensure this answers True for, because it writes nothing: it returns the
-    identifier it found and touches no attribute.  That is shown beside the
-    census as an empty journal rather than asserted here.
-
-    Attributes outside the set (``issue_reads``, ``scans``, a subclass's own
-    counters) are outside the claim by construction, and so is a board a
-    fixture moved by its own hand (``port.issues[...] = ...``): that is the
-    fixture changing the world under the consumer, not the consumer writing.
-    ``handed_over`` is the answerer that covers those.
+    The read logs are measured, not assumed: the census beside this module
+    runs every member the port declares, holds the attributes the reads
+    move equal to ``READ_LOGS``, finds each log moved inside the port's
+    reads alone, and shows every write moving the state outside them.  A
+    write journal declared a read log is refused below, because the
+    rendering then no longer reaches it.  An ensure that ADOPTS a value the
+    workspace already defines answers True because it moves no attribute at
+    all, which the census shows as well.
     """
-
-    def journals() -> dict[str, object]:
-        state = tracker_state(port)
-        return {name: state[name] for name in TRACKER_WRITE_JOURNALS if name in state}
-
-    before = journals()
+    before = written_state(port)
     missed = TRACKER_WRITE_JOURNALS - set(before)
     assert missed == frozenset(), f"the state rendering reaches no {sorted(missed)}"
-    return lambda: journals() == before
+    handover = copy.deepcopy(port)
+    _HANDOVERS.setdefault(port, []).append(handover)
+    return lambda: written_state(port) == written_state(handover)
+
+
+#: The board each open write-set claim was handed, per live double: what the
+#: live double is compared with, moved only by ``moved_by_hand``.
+_HANDOVERS: WeakKeyDictionary[FakeTrackerPort, list[FakeTrackerPort]] = (
+    WeakKeyDictionary()
+)
+
+
+def moved_by_hand(
+    port: FakeTrackerPort, change: Callable[[FakeTrackerPort], None]
+) -> None:
+    """Move *port* by the fixture's own hand, and the board each claim holds.
+
+    A fixture that changes the world under a consumer — a criterion edited
+    on the board while the consumer is between two reads of it — is not the
+    consumer writing.  The change is made here, to the live double and to
+    the copy each open ``nothing_written`` claim over it was handed, so the
+    claim still compares the WHOLE state and still sees any write the
+    consumer made; a board moved by hand any other way is a moved board.
+    """
+    change(port)
+    for handover in _HANDOVERS.get(port, []):
+        change(handover)
 
 
 class FakeDeliveryProbe:

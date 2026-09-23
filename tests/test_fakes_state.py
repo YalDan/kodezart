@@ -3,9 +3,9 @@
 ``tests.fakes.handed_over`` and ``tests.fakes.nothing_written`` are what every
 "this pass wrote nothing to the board" assertion in the suite comes down to:
 the first renders the double's whole surface when the board is handed over and
-compares it when the answer is asked for; the second compares the same
-rendering projected onto the journals a write can land in, which is the claim
-a consumer that legitimately reads the board can still make. An answer of
+compares it when the answer is asked for; the second compares a deep copy of
+the same whole state with only the read logs left out, which is the claim a
+consumer that legitimately reads the board can still make. An answer of
 ``True`` for a board something DID write to would make all of those assertions
 agree with the write they exist to catch, and none of them would report it —
 the failure is silent by construction, because a check that always answers
@@ -16,17 +16,23 @@ DECLARES, read off the port's whole class line — the port and the reader
 roles it extends — with no list of verbs deciding which of them count as
 writes.  Each member is classified by a case that RUNS it: a write case
 declares the journals its write fills and they are compared exactly, and a
-read case declares none and is shown to fill none.  A member added to the
-port under any name arrives with no case and fails here, naming it; a write
-the double reaches through no journal fails its case; a read whose double
-writes a journal fails its case; and a journal no write fills fails here too.
-None of that can hide in a list that drifted from the port.
+read case declares none and is shown to move no attribute of the double but
+its own read log.  A member added to the port under any name arrives with no
+case and fails here, naming it; a write the double reaches through no journal
+fails its case; a read whose double moves anything else — a journal, an
+issue, a comment — fails its case; and a journal no write fills fails here
+too.  The read logs themselves are derived here from what the reads move, and
+held apart from every write.  None of that can hide in a list that drifted
+from the port.
 
 The one write that answers ``True`` is a mapping ensure that ADOPTS what the
 workspace already defines, and it answers True because it writes nothing:
 that case is below as well, with its journal shown empty.
 """
 
+import ast
+import inspect
+import textwrap
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
@@ -60,6 +66,7 @@ from kodezart.types.domain.tracker import (
     ReviewQuery,
     WorkflowStateKind,
 )
+from tests.chains.test_native_fire import CountingTracker
 from tests.fakes import (
     FIXTURE_EPOCH,
     FIXTURE_TEAM_KEY,
@@ -67,8 +74,10 @@ from tests.fakes import (
     FakeTrackerPort,
     handed_over,
     make_tracker_issue,
+    moved_by_hand,
     nothing_written,
     tracker_state,
+    written_state,
 )
 
 ISSUE = "KOD-1"
@@ -921,6 +930,12 @@ CASES: Mapping[str, Case] = {
 }
 
 
+#: The cases, by name, that classify a member as a read (no journal) and as
+#: a write (the journals it fills).
+READS = sorted(name for name, row in CASES.items() if not row.journals)
+WRITES = sorted(name for name, row in CASES.items() if row.journals)
+
+
 def port_members() -> frozenset[str]:
     """Every public member the port declares, read off its whole class line.
 
@@ -963,9 +978,7 @@ def test_every_journal_the_check_reaches_is_written_to_here() -> None:
     assert filled == TRACKER_WRITE_JOURNALS
 
 
-@pytest.mark.parametrize(
-    "case", sorted(name for name, row in CASES.items() if row.journals)
-)
+@pytest.mark.parametrize("case", WRITES)
 async def test_a_write_on_any_journal_answers_that_the_board_was_touched(
     case: str,
 ) -> None:
@@ -991,30 +1004,203 @@ async def test_a_write_on_any_journal_answers_that_the_board_was_touched(
     assert unwritten() is False
 
 
-@pytest.mark.parametrize(
-    "case", sorted(name for name, row in CASES.items() if not row.journals)
-)
-async def test_a_read_through_any_port_method_moves_no_journal(case: str) -> None:
-    """One read, through one port method, and the write set stands still.
+async def moved_by(case: str) -> dict[str, tuple[object, object]]:
+    """Every attribute of a fresh board the case's call moves, before and after.
 
-    A read declares no journal, and that is checked by running it: a double
-    whose read fills a journal would make every write-set claim over a
-    consumer that reads the board answer False for a write nobody made, and
-    it fails here instead, naming the read.
+    The WHOLE state, read logs included, rendered on each side, so what
+    comes back is everything the call did to the double and nothing its
+    setup did before it.
+    """
+    row = CASES[case]
+    port = board()
+    if row.setup is not None:
+        await row.setup(port)
+    before = {**written_state(port), **read_logs(port)}
+    await row.call(port)
+    after = {**written_state(port), **read_logs(port)}
+    return {
+        name: (before.get(name), value)
+        for name, value in after.items()
+        if before.get(name) != value
+    }
+
+
+def read_logs(port: FakeTrackerPort) -> dict[str, object]:
+    """The read logs of *port*, rendered by the same rule as the rest."""
+    return {
+        name: rendered
+        for name, rendered in tracker_state(port).items()
+        if name in FakeTrackerPort.READ_LOGS
+    }
+
+
+@pytest.mark.parametrize("case", READS)
+async def test_a_read_through_any_port_method_moves_no_state(case: str) -> None:
+    """One read, through one port method, and the double stands still.
+
+    Every attribute of the instance is compared, deep-copied, before and
+    after — not the journals a list names — leaving out only the read logs.
+    A read whose double rewrites an issue, appends a comment, or moves any
+    other attribute fails here, naming the read, and ``nothing_written``
+    answers False for it, because it makes the same comparison.
     """
     row = CASES[case]
     port = board()
     if row.setup is not None:
         await row.setup(port)
     unwritten = nothing_written(port)
-    before = tracker_state(port)
+    before = written_state(port)
 
     await row.call(port)
 
-    after = tracker_state(port)
-    moved = {name for name, value in after.items() if before[name] != value}
-    assert moved & TRACKER_WRITE_JOURNALS == frozenset()
+    after = written_state(port)
+    assert set(after) == set(before)
+    assert {name for name, value in after.items() if before[name] != value} == set()
     assert unwritten() is True
+
+
+async def test_the_read_logs_are_what_the_reads_fill() -> None:
+    """The read logs are derived by what they are: what the reads append to.
+
+    Every read the port declares is run on a fresh board, and the attributes
+    those reads move — the whole state, nothing projected — are exactly the
+    logs ``nothing_written`` leaves out, each moved only by appending to
+    what it held.  A read that fills anything else widens the first set and
+    fails here as well as in its own case; a log no read fills fails here
+    too.
+    """
+    filled: set[str] = set()
+    for case in READS:
+        for name, (before, after) in (await moved_by(case)).items():
+            assert isinstance(before, tuple), (case, name)
+            assert isinstance(after, tuple), (case, name)
+            assert after[: len(before)] == before, (case, name)
+            filled.add(name)
+    assert filled == FakeTrackerPort.READ_LOGS
+
+
+async def test_a_read_log_records_no_write() -> None:
+    """No write is recorded only where a read is, and no read log is a journal.
+
+    Every write the port declares is run on a fresh board, and each moves
+    the state OUTSIDE the read logs, so the comparison that leaves the logs
+    out still sees it; and no write journal is a read log.  A write whose
+    only trace is a read log, or a journal named as one, fails here.
+    """
+    assert FakeTrackerPort.READ_LOGS & TRACKER_WRITE_JOURNALS == frozenset()
+    for case in WRITES:
+        moved = set(await moved_by(case))
+        assert moved - FakeTrackerPort.READ_LOGS, case
+
+
+#: The calls that move the list, dict or set they are called on.
+MUTATORS = frozenset(
+    {
+        "add",
+        "append",
+        "clear",
+        "discard",
+        "extend",
+        "insert",
+        "pop",
+        "popitem",
+        "remove",
+        "setdefault",
+        "update",
+    }
+)
+
+
+def own_attribute(node: ast.expr) -> str | None:
+    """The ``x`` of ``self.x``, or of ``self.x[...]`` however deep; else None."""
+    while isinstance(node, ast.Subscript):
+        node = node.value
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "self"
+    ):
+        return node.attr
+    return None
+
+
+def moved_in(function: Callable[..., object]) -> frozenset[str]:
+    """Every attribute of ``self`` *function*'s own body moves.
+
+    Read off the source: an assignment, an augmented or annotated one, or a
+    ``del`` whose target is ``self.x`` or an item of it, and a mutating call
+    on ``self.x`` or an item of it.  Bounded by the body's syntax tree.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    moved: set[str] = set()
+    for node in ast.walk(tree):
+        targets: list[ast.expr] = []
+        if isinstance(node, ast.Assign | ast.Delete):
+            targets = list(node.targets)
+        elif isinstance(node, ast.AugAssign | ast.AnnAssign):
+            targets = [node.target]
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in MUTATORS
+        ):
+            targets = [node.func.value]
+        for target in targets:
+            for part in target.elts if isinstance(target, ast.Tuple) else [target]:
+                if (name := own_attribute(part)) is not None:
+                    moved.add(name)
+    return frozenset(moved)
+
+
+def declaring_doubles() -> list[type[FakeTrackerPort]]:
+    """The double and every subclass of it that declares read logs of its own.
+
+    Walked over ``__subclasses__``, each class once, so bounded by the
+    classes defined; the counting board the lane's delivery is driven on is
+    imported above and is always among them.
+    """
+    found: list[type[FakeTrackerPort]] = []
+    seen: set[type[FakeTrackerPort]] = set()
+    pending: list[type[FakeTrackerPort]] = [FakeTrackerPort]
+    while pending:
+        double = pending.pop()
+        if double in seen:
+            continue
+        seen.add(double)
+        pending.extend(double.__subclasses__())
+        if "READ_LOGS" in vars(double):
+            found.append(double)
+    return found
+
+
+def test_a_read_log_is_moved_by_the_port_s_reads_alone() -> None:
+    """Read in the code: a read log is moved inside a port read and nowhere else.
+
+    For the double and for every subclass that declares read logs of its
+    own, every method along its class line is read, and each one that moves
+    a read log must be a member the census classifies as a read; every log
+    it declares must be moved by one of those reads.  A write that records
+    itself in a read log — directly, not by calling a read — fails here,
+    naming the method and the log, and so does a log nothing fills.
+    """
+    reads = {CASES[case].method for case in READS}
+    assert CountingTracker in declaring_doubles()
+    for double in declaring_doubles():
+        filled: set[str] = set()
+        line = [
+            cls
+            for cls in double.__mro__
+            if cls is not object and issubclass(cls, FakeTrackerPort)
+        ]
+        for cls in line:
+            for name, member in vars(cls).items():
+                function = getattr(member, "__func__", member)
+                if name == "__init__" or not inspect.isfunction(function):
+                    continue
+                logged = moved_in(function) & double.READ_LOGS
+                assert not logged or name in reads, (double, name, logged)
+                filled |= logged
+        assert filled == double.READ_LOGS, double
 
 
 async def test_an_ensure_that_adopts_a_defined_value_writes_nothing() -> None:
@@ -1066,3 +1252,26 @@ async def test_a_read_moves_the_whole_surface_but_not_the_write_set() -> None:
 
     assert untouched() is False
     assert unwritten() is True
+
+
+async def test_a_board_moved_by_hand_is_not_a_write_and_hides_none() -> None:
+    """A fixture's own move of the board is carried; a write beside it shows.
+
+    ``moved_by_hand`` moves the live double and the copy the claim was handed
+    alike, so the claim still compares the whole state: the fixture's move
+    alone answers True, a write made after it answers False, and the same
+    move made by hand without it is a moved board.
+    """
+    port = board()
+    unwritten = nothing_written(port)
+
+    moved_by_hand(port, lambda live: live.issues.pop(OTHER))
+
+    assert unwritten() is True
+    await write_comment(port)
+    assert unwritten() is False
+
+    undeclared = board()
+    unwritten = nothing_written(undeclared)
+    undeclared.issues.pop(OTHER)
+    assert unwritten() is False
