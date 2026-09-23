@@ -42,14 +42,17 @@ SOURCE_SUFFIXES: Final[tuple[str, ...]] = ("*.py", "*.pyi")
 #: the linter it replaced, and the import-sorter exemptions, so all three
 #: are read; it honours a sorter exemption spelled bare and spelled under
 #: its own prefix, so the prefix is optional there as it is on the
-#: exemption beside it.  The formatter the gate runs beside it honours its
-#: own whole-region pair and its per-statement form, and it honours the
-#: whole-region pair of the formatter it replaced, so all of those are one
-#: family here.  Any inline setting of the type checker is a per-module
-#: configuration change, the same class its own table in the project file
-#: pins, so the prefix alone is what is read: a match on prose would cost
-#: one row of the allowed map, which is the safe direction.  No form for a
-#: checker the gate does not run.
+#: exemption beside it.  It also honours its own range pair, a
+#: ``ruff: disable[...]`` comment and the ``ruff: enable[...]`` that closes
+#: it, which silences the named rules on every line between them, so both
+#: halves of that pair are read.  The formatter the gate runs beside it
+#: honours its own whole-region pair and its per-statement form, and it
+#: honours the whole-region pair of the formatter it replaced, so all of
+#: those are one family here.  Any inline setting of the type checker is a
+#: per-module configuration change, the same class its own table in the
+#: project file pins, so the prefix alone is what is read: a match on prose
+#: would cost one row of the allowed map, which is the safe direction.  No
+#: form for a checker the gate does not run.
 #:
 #: The tools match these words without regard to case, so the pattern does
 #: too.  A spelling read here that no tool honours costs one row of that
@@ -58,6 +61,7 @@ SOURCE_SUFFIXES: Final[tuple[str, ...]] = ("*.py", "*.pyi")
 SUPPRESSION: Final[re.Pattern[str]] = re.compile(
     r"#\s*(?:type:\s*ignore"
     r"|(?:ruff:\s*|flake8:\s*)?noqa"
+    r"|ruff:\s*(?:disable|enable)"
     r"|mypy:"
     r"|(?:ruff:\s*)?isort:\s*(?:skip_file|skip|off)"
     r"|fmt:\s*(?:off|on|skip)"
