@@ -480,7 +480,11 @@ whose repair is to move the demonstration. A criterion sub-issue is created
 only when its author names what will fill its Evidence (a runnable test, or
 the observation recorded where no test can run); one that names neither is
 refused before the child exists. The Evidence row itself is still created
-empty.
+empty. That refusal asks only that a demonstration is named. Whether the
+named test runs through a declared check, or the named observation is one the
+declared runner environment can make, is the criteria author's judgement,
+under a prompt that carries the same declared environments, and the
+verifier's under the verify prompt.
 
 One organize table declares three phases, and the role table says which side
 of scope approval each runs on. `groom` runs before approval, on the grooming

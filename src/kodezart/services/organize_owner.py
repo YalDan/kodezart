@@ -655,7 +655,11 @@ class OrganizeOwner:
                 # Asked over the criteria this step is about to create, not
                 # over every proposed one: replaying an existing child stays
                 # dry, and a child is never created with nothing that could
-                # ever fill its Evidence row.
+                # ever fill its Evidence row. One unnamed criterion refuses
+                # the whole step before any child exists. The refusal asks
+                # only that a demonstration is named; whether it can run in
+                # a declared environment is the criteria author's and the
+                # verifier's judgement under their prompts.
                 if not all(
                     evidence_is_fillable(
                         runnable_test=item.runnable_test,
