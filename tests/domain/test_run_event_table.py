@@ -8,6 +8,7 @@ built with, and nowhere else (KOD-795).
 
 import ast
 import inspect
+import textwrap
 import tomllib
 import typing
 from collections.abc import Mapping
@@ -300,18 +301,58 @@ def guarded_block(text: str, name: str) -> str:
     return text[start : end + len("{{/if}}")]
 
 
-def scanned_surfaces() -> dict[str, str]:
-    """The table and every surface that consumes it, located by name."""
+def consumer_functions() -> dict[str, str]:
+    """The table's Python consumers, each as source text."""
     return {
-        **table_surfaces(),
         "OperationConfig.require_run_event_table": inspect.getsource(
             OperationConfig.require_run_event_table
         ),
         "prompt_namespaces.operation_bindings": binding_call(TABLE_FIELD),
+    }
+
+
+def consumer_templates() -> dict[str, str]:
+    """The table's prompt consumers, each as the template region it renders."""
+    return {
         f"{GROOMING_PROMPT.name}:{TABLE_FIELD}": guarded_block(
             GROOMING_PROMPT.read_text(), TABLE_FIELD
         ),
     }
+
+
+def scanned_surfaces() -> dict[str, str]:
+    """The table and every surface that consumes it, located by name."""
+    return {**table_surfaces(), **consumer_functions(), **consumer_templates()}
+
+
+def mapping_reads(
+    functions: Mapping[str, str], templates: Mapping[str, str]
+) -> dict[str, tuple[str, ...]]:
+    """Each consumer surface that reads a configured state mapping, with the
+    fields it reads.
+
+    A Python surface is parsed and reports every attribute naming a
+    configured field, so a consumer that renders its effects through the
+    mapping is seen although no state string is spelled in it.  A template
+    surface reports every configured field it references.
+    """
+    reads = {
+        name: tuple(
+            sorted(
+                {
+                    node.attr
+                    for node in ast.walk(ast.parse(textwrap.dedent(text)))
+                    if isinstance(node, ast.Attribute) and node.attr in CONFIGURED
+                }
+            )
+        )
+        for name, text in functions.items()
+    }
+    reads.update(
+        (name, tuple(sorted(field for field in CONFIGURED if field in text)))
+        for name, text in templates.items()
+    )
+    return {name: fields for name, fields in sorted(reads.items()) if fields}
 
 
 def state_names_in(
@@ -378,6 +419,29 @@ def test_the_state_resolution_site_is_outside_the_scanned_surfaces():
     assert state_names_in({"whole": whole}, tokens)
     block = guarded_block(whole, TABLE_FIELD)
     assert state_names_in({"block": block}, tokens) == {}
+
+
+def test_no_consumer_of_the_table_reads_the_configured_state_mapping():
+    assert CONFIGURED
+    assert mapping_reads(consumer_functions(), consumer_templates()) == {}
+
+
+def test_a_consumer_reading_the_configured_state_mapping_is_reported():
+    (field,) = sorted(CONFIGURED)
+    binding = (
+        f"_bind_absentable(bindings, {TABLE_FIELD!r}, [{{'event': name, "
+        f"'effect': config.{field}.get(effect, effect.value)}} "
+        f"for name, effect in config.{TABLE_FIELD}.items()], "
+        f"absent=not config.{TABLE_FIELD})"
+    )
+    template = (
+        f"{{{{#if {TABLE_FIELD}}}}}{{{{#each {TABLE_FIELD}}}}}- {{{{this.event}}}}: "
+        f"{{{{{field}.done}}}}\n{{{{/each}}}}{{{{/if}}}}"
+    )
+    assert mapping_reads({"binding": binding}, {"template": template}) == {
+        "binding": (field,),
+        "template": (field,),
+    }
 
 
 @pytest.mark.parametrize("surface", sorted(scanned_surfaces()))
