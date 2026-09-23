@@ -986,6 +986,88 @@ async def test_a_marker_the_board_does_not_report_halts_the_mandate(monkeypatch)
     assert session_titles(executor.calls[opened_before:]) == []
 
 
+async def test_a_read_back_that_answers_another_member_halts_the_mandate(
+    monkeypatch,
+):
+    """The member read back must be the member written, not one like it.
+
+    After the marker write, the board answers the member's re-read with a
+    different member that does carry the marker. The label set alone would
+    pass; the pass refuses because the answer is not the member it wrote,
+    and no write-back judgment is opened after the write.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = factory(body=PREPARED_BODY)
+    board.server.issues["marked-child"] = FakeMcpIssue(
+        id="marked-child",
+        parent_id=CLAIMED_ISSUE,
+        description=PREPARED_BODY,
+        labels=["graph complete"],
+    )
+    port = board.built_tracker
+    original_write = port.set_issue_classification
+    original_read = port.read_planning_issue
+    written = []
+
+    async def writing(*, issue_key, classification, holder=None):
+        answer = await original_write(
+            issue_key=issue_key, classification=classification, holder=holder
+        )
+        written.append((issue_key, len(executor.calls)))
+        return answer
+
+    async def reading(*, issue_key):
+        if written and issue_key == written[-1][0]:
+            return await original_read(issue_key="marked-child")
+        return await original_read(issue_key=issue_key)
+
+    monkeypatch.setattr(port, "set_issue_classification", writing)
+    monkeypatch.setattr(port, "read_planning_issue", reading)
+    with pytest.raises(OrganizeWriteRefusalError, match="did not read back") as caught:
+        await run_owner(owner)
+    assert written == [(CLAIMED_ISSUE, written[0][1])]
+    assert caught.value.issue_key == CLAIMED_ISSUE
+    assert session_titles(executor.calls[written[0][1] :]) == []
+
+
+async def test_a_swallowed_write_on_a_later_member_halts_the_mandate(monkeypatch):
+    """Every member's marker is read back, not only the first one written.
+
+    Two members reach the marker sweep. The board keeps the first write and
+    swallows the second: the refusal names the second member, and no
+    write-back judgment is opened for it.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = factory(body=PREPARED_BODY)
+    board.server.issues["second"] = FakeMcpIssue(
+        id="second", parent_id=CLAIMED_ISSUE, description=PREPARED_BODY
+    )
+    port = board.built_tracker
+    original_write = port.set_issue_classification
+    written = []
+
+    async def second_swallowed(*, issue_key, classification, holder=None):
+        written.append(issue_key)
+        if len(written) == 2:
+            return await port.read_planning_issue(issue_key=issue_key)
+        return await original_write(
+            issue_key=issue_key, classification=classification, holder=holder
+        )
+
+    monkeypatch.setattr(port, "set_issue_classification", second_swallowed)
+    with pytest.raises(OrganizeWriteRefusalError, match="did not read back") as caught:
+        await run_owner(owner)
+    assert len(written) == 2
+    first, swallowed = written
+    assert first != swallowed
+    assert caught.value.issue_key == swallowed
+    assert "graph complete" in board.server.issues[first].labels
+    assert "graph complete" not in board.server.issues[swallowed].labels
+    assert judged_members(executor) == [first]
+
+
 async def test_the_marker_gate_is_not_the_judges_verdict(monkeypatch):
     """Every judgment the pass did ask for held, and the pass still refused.
 
