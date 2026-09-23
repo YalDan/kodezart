@@ -1,10 +1,12 @@
-"""One spelling of the non-counting pair, and one module that names it.
+"""One spelling of the non-counting pair, and one module that names Duplicate.
 
 A criterion the board Canceled or closed as a Duplicate counts for nothing
 and refuses nothing (KOD-794).  Two readers that each decide that for
-themselves can part, so the pair is named in exactly one module and every
-other reader asks that module.  The scan below is what turns "exactly one"
-into a fact, and it derives the modules it reads rather than listing them.
+themselves can part, so every criterion reader asks the one predicate.  What
+the scan below pins to one module is the Duplicate kind: no module outside
+the enum's own names it, in any spelling.  Canceled is not scanned, because
+it keeps readers of its own outside the criterion reading.  The scan derives
+the modules it reads rather than listing them.
 """
 
 import ast
@@ -34,20 +36,46 @@ def test_is_non_counting_classifies_every_state_kind(kind):
     assert is_open(kind) is (kind not in CLOSED)
 
 
-def duplicate_kind_sites(source: str) -> int:
-    """How many times *source* names ``WorkflowStateKind.DUPLICATE``.
+def enum_aliases(tree: ast.AST) -> frozenset[str]:
+    """Every other local name a from-import binds the enum to."""
+    return frozenset(
+        alias.asname
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if alias.name == WorkflowStateKind.__name__ and alias.asname is not None
+    )
 
-    An attribute access whose attribute is ``DUPLICATE`` and whose value
-    spells the enum: the one shape a module has to write to branch on the
-    kind, under whatever name it imported the enum by.
+
+def names_the_enum(value: ast.expr, aliases: frozenset[str]) -> bool:
+    """Whether *value* spells the enum, bare, aliased or module-qualified."""
+    if isinstance(value, ast.Name):
+        return value.id.endswith(WorkflowStateKind.__name__) or value.id in aliases
+    return isinstance(value, ast.Attribute) and value.attr == WorkflowStateKind.__name__
+
+
+def duplicate_kind_sites(source: str) -> int:
+    """How many times *source* names the Duplicate kind, in any spelling.
+
+    Three shapes: an attribute ``DUPLICATE`` on the enum, whether the enum is
+    spelled by its own name, by a name a from-import aliased it to, or as an
+    attribute of a module; and a string constant that is exactly the kind's
+    value, which is the same member to a string enum.
     """
+    tree = ast.parse(source)
+    aliases = enum_aliases(tree)
     return sum(
         1
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Attribute)
-        and node.attr == WorkflowStateKind.DUPLICATE.name
-        and isinstance(node.value, ast.Name)
-        and node.value.id.endswith(WorkflowStateKind.__name__)
+        for node in ast.walk(tree)
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == WorkflowStateKind.DUPLICATE.name
+            and names_the_enum(node.value, aliases)
+        )
+        or (
+            isinstance(node, ast.Constant)
+            and node.value == WorkflowStateKind.DUPLICATE.value
+        )
     )
 
 
@@ -77,7 +105,28 @@ def open_criteria(criteria, *, ref):
 """
 
 
+#: One planted source per spelling the scan must see besides the bare enum:
+#: the kind's string value, the enum reached through a module alias, and the
+#: enum imported under another name.
+RESPELLINGS = {
+    "string-value": (
+        "counting = [c for c in criteria\n"
+        "            if c.state_kind not in {'canceled', 'duplicate'}]\n"
+    ),
+    "module-alias": (
+        "from kodezart.types.domain import tracker as _t\n"
+        "PAIR = {_t.WorkflowStateKind.CANCELED, _t.WorkflowStateKind.DUPLICATE}\n"
+    ),
+    "enum-alias": (
+        "from kodezart.types.domain.tracker import WorkflowStateKind as Kind\n"
+        "PAIR = {Kind.CANCELED, Kind.DUPLICATE}\n"
+    ),
+}
+
+
 def test_the_scan_reports_a_module_that_names_the_kind_itself():
     assert duplicate_kind_sites(RETIRED_READING) == 1
+    for spelling, source in RESPELLINGS.items():
+        assert duplicate_kind_sites(source) == 1, spelling
     assert duplicate_kind_sites("def f():\n    return DUPLICATE\n") == 0
     assert duplicate_kind_sites((SOURCE_ROOT / HOME).read_text()) >= 1
