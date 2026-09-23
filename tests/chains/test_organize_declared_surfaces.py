@@ -142,6 +142,45 @@ async def test_a_contended_declared_set_writes_nothing_and_opens_no_session():
     assert written(board) == []
 
 
+async def test_the_pre_approval_row_declares_no_member_that_reads_approved():
+    """A member approved in its own right is outside the pre-approval round's set.
+
+    The scope is still in triage, but one member carries its own approval
+    label, so an issue-scope run may hold it. The grooming round declares
+    none of that member's lines, and a lease held elsewhere on it does not
+    refuse the round over the rest of the scope.
+    """
+    owner, board, _ = factory()
+    approved = "FIX-APPROVED"
+    member(board, approved, labels=["approved scope"])
+    rival = WritableSurface(
+        kind=SurfaceKind.ISSUE_DESCRIPTION,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=approved),
+    )
+    async with RunSurfaceLease(
+        tracker=board.tracker(),
+        job_id="issue-scope-run",
+        surfaces=frozenset({rival}),
+        lease_seconds=900.0,
+    ):
+        report = await run_owner(owner)
+    assert report.halt is None
+    rounds = [
+        (args["issueId"], lines)
+        for args, (holder, _, lines) in zip(
+            board.lease_creations(), acquisitions(board), strict=True
+        )
+        if holder == JOB
+    ]
+    assert rounds
+    assert all(
+        key != approved and not any(f"|issue|{approved}|" in line for line in lines)
+        for key, lines in rounds
+    )
+    assert GROOM_MARKER in board.server.issues[CLAIMED_ISSUE].labels
+    assert GROOM_MARKER not in board.server.issues[approved].labels
+
+
 async def test_a_round_whose_lease_lapsed_in_a_session_writes_nothing_more(
     monkeypatch,
 ):
