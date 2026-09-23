@@ -9,9 +9,10 @@
 # the refusal names the member and what it stops.
 #
 # [[organize_scopes]] is the one scope table, and declaring it is what makes
-# this a scope deployment: the organize tick, the scope heartbeat and the
-# supervisor are scheduled. The fire-prep and grooming session passes run over
-# the declared team and repository as they do without the table: they keep the
+# this a scope deployment: the organize tick and the supervisor are scheduled,
+# and with KODEZART_DISPATCH_WORKFLOW=scope the scope heartbeat dispatches the
+# approved rows. The fire-prep and grooming session passes run over the
+# declared team and repository as they do without the table: they keep the
 # board in order, and the scope walk builds what is approved. There is no
 # [run_event_states] table here: it is not read on this path.
 
@@ -91,7 +92,8 @@ admission_prompt_key = "organize_assess"
 terminal_marker_key = "issue_labels.criteria"
 
 # The one scope table. This row is walked by the organize owner, submitted by
-# the scope_heartbeat pass once it carries the approved label, and read by the
+# the scope_heartbeat pass once it carries the approved label (with
+# KODEZART_DISPATCH_WORKFLOW=scope), and read by the
 # observation tick that records each lane's alarm. Bound to exactly one declared
 # repository; change the key to your own project's. Declaring organize_mandates
 # without a row here is a partial organize configuration and is refused at boot.

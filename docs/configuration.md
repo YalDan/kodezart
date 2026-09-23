@@ -448,6 +448,20 @@ The shipped default is the empty list: the mechanism ships and the grant is
 operator configuration. The intended first grant is `["ticket_fire"]` — the
 ticket-driven fire sessions and nothing else.
 
+The grant decides the knowledge server only. The tracker's MCP server is
+attached by kodezart to every `scheduled_pass` session (grooming, fire prep and
+the audit judges) whenever `KODEZART_TRACKER__TOKEN` is set, from the same
+tracker settings the in-process client dials (`KODEZART_TRACKER__SERVER_NAME`,
+`KODEZART_TRACKER__SERVER_URL`, `KODEZART_TRACKER__AUTH_HEADER`,
+`KODEZART_TRACKER__AUTH_SCHEME`), and to no other session kind; with no token, no session is given it. There is no setting of its
+own. Every session runs with `strict_mcp_config`, so a server definition in the
+session's working directory is never loaded beside these:
+
+| Session kind | MCP servers kodezart attaches |
+| -- | -- |
+| `scheduled_pass` | the knowledge server when granted, and the tracker server when a tracker token is set |
+| every other kind | the knowledge server when granted |
+
 The knowledge knobs are role-named, and the vendor appears only in values —
 the server name (`notion`) and the interactive-auth host list. Putting a
 different knowledge store behind the MCP mechanism is a change of values —
@@ -790,19 +804,36 @@ scope's verified audit summary is reported on. It is optional because a
 deployment that configures no audit has nowhere to report; a configured audit
 refuses naming `organize_scopes.report_issue_key` on a row that omits it.
 
-Declaring `[[organize_scopes]]` also withholds the per-issue machine. Such a
-deployment is worked scope by scope, and the periodic dispatch pass and the two
-remaining prompt passes scan whole boards, so none of the three is scheduled and
-no lifecycle watcher is built; `scheduled_passes_not_wired` and
-`prompt_passes_not_wired` each carry `organize_scopes_declared: true` so the
-reason is in the log rather than inferred from an empty schedule. Boot also asks
-nothing of those passes: no gate signal they configure is probed and no template
-they would send is rendered.
+Declaring `[[organize_scopes]]` withholds no other pass. What starts under which
+configuration:
+
+- `grooming_pass` and `fire_prep_pass` start whenever the operation declares
+  teams and repositories, as in v0.2, on `KODEZART_GROOMING_PASS_INTERVAL_SECONDS`
+  and `KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS`. They keep the whole board in
+  order inside the declared teams and repositories, rows or not; the scope walk
+  builds only what is approved.
+- `KODEZART_DISPATCH_WORKFLOW=fire` (the default): with a tracker connected and a
+  GitHub client configured, one `dispatch:<repo>` pass per declared repository,
+  with the lifecycle watcher and the claim heartbeat, rows or not. No
+  `scope_heartbeat`.
+- `KODEZART_DISPATCH_WORKFLOW=scope`: with `[[organize_scopes]]` declared and a
+  tracker connected, the `scope_heartbeat` pass. No `dispatch:<repo>` pass, so no
+  scheduled run starts without a scope.
+- `[[organize_scopes]]` declared and a tracker connected: `organize_pass` on
+  grooming's timer, reporting under the run kind `organize`, and the `supervisor`
+  observation tick, under either setting.
+
+`scheduled_passes_not_wired` carries `dispatch_workflow` beside its three
+premises, and `scope_heartbeat_not_wired` carries `dispatch_workflow` and
+`organize_scopes_declared`, so the reason is in the log rather than inferred
+from an empty schedule. Boot probes the gate signals of exactly the passes it
+wires and renders exactly their templates.
 
 `[[organize_scopes]]` rows are the standing scopes: each one is groomed before
 approval by the organize tick on the grooming cadence, and submitted as a scope
-run by the `scope_heartbeat` pass once it carries `scope_labels.approved`. That
-pass takes the place of the withheld dispatch scan and reuses its knobs —
+run by the `scope_heartbeat` pass once it carries `scope_labels.approved`, where
+`KODEZART_DISPATCH_WORKFLOW=scope`. That pass takes the place of the dispatch
+scan and reuses its knobs —
 `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` and
 `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` — and submits onto
 `KODEZART_DISPATCH_LANE`. It adds no configuration field of its own, opens no
@@ -812,7 +843,8 @@ is not submitted again; a row whose last run in this process ended with every
 lane done rests until its members move; a restarted process submits every
 approved row on its first tick, and that walk posts no status update the project
 already carries.
-Declaring no row schedules neither the organize tick nor the heartbeat.
+Declaring no row schedules neither the organize tick nor the heartbeat, under
+either setting.
 
 When those bindings are configured, set both
 `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
@@ -820,9 +852,12 @@ When those bindings are configured, set both
 has a default. The optional `KODEZART_ORGANIZE` JSON container accepts the same
 `max_admission_rounds` and `max_convergence_rounds` fields. Partial owner
 configuration refuses scheduling. Retired flat Organize bound spellings remain
-rejected. Each native tick uses the
-existing grooming run identity and resolves the configured repository trunk to
-a fresh immutable remote commit before assessment.
+rejected. The native tick is scheduled as `organize_pass` on the grooming
+cadence and budget and reports under its own run kind, `organize`: declare
+`records.organize` for its log, and none of its rows lands in the grooming log,
+whose newest row is the grooming session's window. Each tick resolves the
+configured repository trunk to a fresh immutable remote commit before
+assessment.
 
 ## Tracker write verification
 

@@ -23,12 +23,33 @@ concerns.
   `ScopedExecutionUnavailableError` names the absence of a scoped arm or of a
   delivery reader for the origin. The README's stale paragraph about claim
   acquisition being refused is deleted; claim acquisition is implemented.
-- An operation that declares `[[organize_scopes]]` schedules the organize tick
-  and the audit pass only. The periodic dispatch pass, the fire-prep and
-  grooming prompt passes and the lifecycle watcher are withheld, and the
-  existing `scheduled_passes_not_wired` and `prompt_passes_not_wired` events
-  each carry a new `organize_scopes_declared` boolean saying so. Boot probes no
-  gate signal and renders no template for a withheld pass.
+- `grooming_pass` and `fire_prep_pass` start whenever the operation declares
+  teams and repositories, as in v0.2, whether or not it declares
+  `[[organize_scopes]]` (KOD-846). `prompt_passes_not_wired` carries its v0.2
+  fields, `operation_config_present` and `absent`.
+- `KODEZART_DISPATCH_WORKFLOW` (`AppConfig.dispatch_workflow`) says which
+  workflow the scheduled dispatcher submits runs to (KOD-846). `fire`, the
+  default, builds one `dispatch:<repo>` pass per declared repository with the
+  lifecycle watcher and claim heartbeat, under v0.2's conditions (a tracker
+  connected and a GitHub client configured), rows or not, and no
+  `scope_heartbeat`. `scope` builds no dispatch pass and schedules
+  `scope_heartbeat` over the declared `[[organize_scopes]]` rows, so no
+  scheduled run starts without a scope. `scheduled_passes_not_wired` carries
+  `dispatch_workflow` beside its premises, and a new `scope_heartbeat_not_wired`
+  event carries `dispatch_workflow` and `organize_scopes_declared`. Boot probes
+  the gate signals of exactly the passes it wires.
+- The organize tick is scheduled as `organize_pass`, on the grooming cadence and
+  budget, and reports under a run kind of its own, `organize`
+  (`records.organize`), so no organize row lands in the grooming log and
+  `grooming_pass` stays the grooming session's name (KOD-846).
+- Every `scheduled_pass` session (grooming, fire prep, the audit judges) is
+  given the tracker's MCP server whenever `KODEZART_TRACKER__TOKEN` is set,
+  built from the same tracker settings and credential the in-process client
+  dials; no other session kind is, and no token gives none (KOD-846).
+  `strict_mcp_config` stays on for every session. There is no new setting.
+- `docs/operation.scope.toml` declares `[queue_states]`, which the grooming and
+  fire-prep sessions read, and `docs/running-a-scope.md` sets
+  `KODEZART_DISPATCH_WORKFLOW=scope`.
 - A v0.2 operation file boots as it is (KOD-903), as the one exception to the
   no-fallback rule: `[[initiatives]]` is accepted and ignored, a file with no
   `[marker_prefixes]` table gets the markers v0.2 wrote for the per-issue path,

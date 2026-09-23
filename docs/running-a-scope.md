@@ -58,9 +58,10 @@ without the member it stands over. This page prints no config block of its own,
 because a copy here is a copy that goes stale.
 
 Two things about that file are worth saying twice. Declaring
-`[[organize_scopes]]` is what makes a deployment a scope deployment: the
-per-issue dispatch pass and the two remaining prompt passes scan whole boards
-and are not scheduled at all. And declaring `[[organize_mandates]]` without an
+`[[organize_scopes]]` schedules the organize tick and the observation tick; the
+grooming and fire-prep sessions run beside them over the declared team and
+repository, as they do without the table, and `KODEZART_DISPATCH_WORKFLOW` below
+decides which dispatcher runs. And declaring `[[organize_mandates]]` without an
 `[[organize_scopes]]` row is a partial organize configuration, refused at boot.
 
 ## The environment
@@ -96,18 +97,23 @@ current name; every retired spelling is refused rather than ignored.
 
 - `tracker_mappings_reconciled` — the backend is dialled and every declared
   mapping is resolved. It names the backend and the two lists above.
-- `scheduled_passes_not_wired` with `organize_scopes_declared: true` — the
-  per-issue dispatch pass is withheld, and this field is why.
-- `prompt_passes_not_wired` with `organize_scopes_declared: true` — the fire-prep
-  and grooming session passes are withheld, for the same reason.
+- `scheduled_passes_not_wired` with `dispatch_workflow: scope` — no dispatch
+  pass is built, and this field is why.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
-  carries and that pass's interval. On a scope deployment that is the organize
-  tick, the standing scopes' heartbeat, the observation tick that watches each
-  lane's run shape, and the audit pass where one is configured.
+  carries and that pass's interval. On a scope deployment that is the
+  observation tick (supervisor), the organize tick (organize_pass), the
+  fire-prep and grooming sessions (fire_prep_pass, grooming_pass), the standing
+  scopes' heartbeat (scope_heartbeat), and the audit pass where one is
+  configured.
 
-Both "not wired" lines are expected here, and a boot that does NOT carry them on
-a scope deployment is a boot that just scheduled the per-issue machine over your
-team's whole board.
+The "not wired" line is expected here. A boot that does NOT carry it, and whose
+scheduler names a dispatch pass per repository and no scope heartbeat, is
+running with `KODEZART_DISPATCH_WORKFLOW` at its default and dispatches approved
+issues one at a time through the v0.2 fire.
+
+The grooming and fire-prep sessions are given the tracker's MCP server by this
+process, from the same credential it dials the tracker with; nothing has to be
+registered on the host.
 
 ## Starting a run
 

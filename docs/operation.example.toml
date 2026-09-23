@@ -36,15 +36,16 @@ organize_mandates = []
 # deployment configures no audit, and a configured audit refuses by name on a
 # row that omits it.
 # Who reads these rows: the organize tick grooms each one before approval on
-# the grooming cadence; the scope_heartbeat pass submits it as a scope run once
-# it carries scope_labels.approved, on the dispatch cadence and lane, writing
-# nothing to the tracker; the observation tick reads each row's scope where a
-# tracker is dialled; and the audit collects each row where audit settings are
-# configured.
-# Declaring any row withholds the per-issue machine: no dispatch pass, no
-# fire-prep or grooming session pass and no lifecycle watcher is scheduled,
-# because that deployment is worked scope by scope. Empty keeps them, declares
-# no standing scope and schedules none of the four passes above.
+# the grooming cadence; with KODEZART_DISPATCH_WORKFLOW=scope the
+# scope_heartbeat pass submits it as a scope run once it carries
+# scope_labels.approved, on the dispatch cadence and lane, writing nothing to
+# the tracker; the observation tick reads each row's scope where a tracker is
+# dialled; and the audit collects each row where audit settings are configured.
+# Declaring a row withholds no other pass: the fire-prep and grooming session
+# passes run over the declared teams and repositories either way, and which
+# dispatcher runs is KODEZART_DISPATCH_WORKFLOW's answer (the v0.2 dispatch pass
+# by default). Empty declares no standing scope and schedules none of the four
+# passes above.
 organize_scopes = []
 
 # Identities the agent posts under, in the order the pass templates address

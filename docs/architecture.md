@@ -29,10 +29,13 @@ All cross-layer dependencies point inward through protocols defined in
 (`main.py` `lifespan()`).
 Dialling the tracker consults no run-event table; a declared one is checked when
 the operation file loads. An operation that declares `[[organize_scopes]]`
-schedules the passes that read that one table — the organize tick, the scope
-heartbeat, the observation tick where a tracker is dialled and the audit where
-one is configured — and withholds the per-issue machine: the dispatch pass, the
-two remaining prompt passes and the lifecycle watcher are not built.
+schedules the passes that read that one table — the organize tick, the
+observation tick where a tracker is dialled and the audit where one is
+configured — and withholds no other pass: grooming and fire prep run over the
+declared teams and repositories either way. `dispatch_workflow` chooses the one
+scheduled dispatcher: `fire`, the default, builds the v0.2 dispatch pass per
+repository with its lifecycle watcher; `scope` builds the scope heartbeat over
+the rows and no dispatch pass.
 The lifespan registers each acquired resource with an `AsyncExitStack`.
 Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
 their records, then closes their transports; the checkpointer retains its
@@ -643,7 +646,8 @@ entered on every pass through a stage, including a replay with nothing left to
 do.
 
 Setting the approval label is what starts a scope run. The `scope_heartbeat`
-pass reads each `[[organize_scopes]]` row on the dispatch cadence and submits a
+pass, scheduled where `dispatch_workflow` is `scope`, reads each
+`[[organize_scopes]]` row on the dispatch cadence and submits a
 scope run for every row that is approved and has no live job, onto the
 configured dispatch lane. It opens no session, takes no surface lease and makes
 no tracker write: applying the label is somebody else's act and this pass only

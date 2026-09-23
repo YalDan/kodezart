@@ -851,8 +851,9 @@ it could not resolve. Nothing runs until you fix it.
 | `tracker_mappings_reconciled`, then `pass_scheduler_started` | A | Nothing. Go to step 8. |
 | `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER__TOKEN` (step 1). |
 | `tracker_not_configured` with `operation_config_present: false` | B | Set `KODEZART_OPERATION_CONFIG` (step 5). |
-| `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. With `organize_scopes_declared: true` this is not a gap at all: that deployment works scope by scope and withholds both passes on purpose. |
-| `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`, `organize_scopes_declared`. Supply whichever of the first three reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. With `organize_scopes_declared: true` the pass is withheld on purpose. |
+| `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register, with or without `[[organize_scopes]]`. |
+| `scheduled_passes_not_wired` | B | The event names the setting and carries one boolean per premise — `dispatch_workflow`, `tracker_present`, `operation_config_present`, `delivery_probe_present`. With `dispatch_workflow: scope` no dispatch pass is built on purpose: the scope heartbeat dispatches instead. Otherwise supply whichever premise reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. |
+| `scope_heartbeat_not_wired` | B | Carries `dispatch_workflow` and `organize_scopes_declared`. Expected under the default `fire`; under `scope` it means no `[[organize_scopes]]` row is declared. |
 | `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
 | `TrackerEnsureConflictError` | C | A value the operation *owns* exists with a conflicting definition, or two declared entries claim one backend value. Reconcile the workspace or the config by hand; boot will not alter either for you. |
@@ -895,24 +896,24 @@ wakes and reports `outcome: empty_eligible_set`, the report carries one
 exclusion per issue naming the clause that excluded it — read the clause rather
 than re-reading the config.
 
-**The prep and grooming passes are scheduled here; their sessions reach the
-tracker through the host, not through this process.** Step 8 exercises the
-dispatch pass, which is deterministic and dials the tracker in-process. The
-judgment passes are a different shape: on their interval
-(`KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS`,
+**The prep and grooming passes are scheduled here, and this process gives their
+sessions the tracker.** Step 8 exercises the dispatch pass, which is
+deterministic and dials the tracker in-process. The judgment passes are a
+different shape: on their interval (`KODEZART_FIRE_PREP_PASS_INTERVAL_SECONDS`,
 `KODEZART_GROOMING_PASS_INTERVAL_SECONDS`) the rendered prompt goes to an
 **agent session**, and the session does the work — so the session itself must
 be able to reach the tracker. Both passes register whenever the operation
-config declares at least one team and one repository and declares no
-`organize_scopes` (an empty roster, or a declared scope, logs
-`prompt_passes_not_wired` naming which it was). What this process attaches to
-a session is the knowledge server it was granted
-(`KODEZART_KNOWLEDGE__SESSION_GRANTS`) and nothing else: it registers no tracker
-MCP server on a session. That registration is host configuration, made where a
-session started in `KODEZART_SCHEDULED_PASS_WORKING_DIR` can see it, and
-nothing here performs or verifies it — do not read a machine-local MCP
-registration you happen to have as a property of the deployment. Attaching the
-tracker to sessions from configuration is planned.
+config declares at least one team and one repository, with or without
+`[[organize_scopes]]` (an empty roster logs `prompt_passes_not_wired` naming
+what is absent). Whenever `KODEZART_TRACKER__TOKEN` is set, this process
+attaches the tracker's MCP server to every scheduled-pass session (grooming,
+fire prep and the audit judges), built from the same tracker settings
+(`KODEZART_TRACKER__SERVER_URL`, `KODEZART_TRACKER__AUTH_HEADER`,
+`KODEZART_TRACKER__AUTH_SCHEME`) and credential the in-process client dials with, beside the knowledge
+server where `KODEZART_KNOWLEDGE__SESSION_GRANTS` grants it. No other session
+kind is given the tracker, and every session runs strict, so no server
+registered on the host or in a working directory is loaded beside these.
+Nothing has to be registered on the host.
 
 ## Development
 
