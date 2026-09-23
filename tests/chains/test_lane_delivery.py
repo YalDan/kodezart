@@ -55,6 +55,7 @@ from tests.fakes import (
     FakePRStateReader,
     PassThroughGate,
     make_prompt_provider,
+    moved_by_hand,
     nothing_written,
 )
 
@@ -528,7 +529,7 @@ async def test_current_checks_are_revalidated_after_the_awaited_description():
 
     class ChangingGate(PassThroughGate):
         async def gate(self, **kwargs):
-            change_tracker(tracker, "changed-check")
+            moved_by_hand(tracker, lambda port: change_tracker(port, "changed-check"))
             return await super().gate(**kwargs)
 
     owner._gate = ChangingGate()

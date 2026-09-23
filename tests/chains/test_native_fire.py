@@ -1643,6 +1643,11 @@ class NativeExecutor(FakeAgentExecutor):
 
 
 class CountingTracker(FakeTrackerPort):
+    #: The two counters below record reads — a spec read, a scope resolve —
+    #: and nothing else, so a write-set claim over this board leaves them out
+    #: the way it leaves out the double's own read logs.
+    READ_LOGS = FakeTrackerPort.READ_LOGS | {"spec_reads", "subtree_reads"}
+
     def __init__(self):
         source = tracker()
         # The source board's markers too, the same ones the engine writes
