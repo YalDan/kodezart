@@ -130,6 +130,7 @@ TERMINAL_FIELDS = {
 STATE_KEYS = {
     "accept_verdict",
     "acceptance_criteria",
+    "best_iteration_branch",
     "best_iteration_sha",
     "criteria_infeasible",
     "criteria_regeneration_rounds",
@@ -842,6 +843,7 @@ def fire_state(
         lane_entry=None,
         work_base_ref="main",
         repo_visibility=RepoVisibility.UNKNOWN,
+        best_iteration_branch=None,
     )
     state["issue_key"] = SUBJECT
     state["fire_spec"] = native_spec()
