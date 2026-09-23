@@ -513,6 +513,19 @@ class SubprocessGitService:
         )
         return exit_code == 0
 
+    async def has_object(self, cwd: str, object_sha: str) -> bool:
+        """Return True iff the repository at *cwd* holds *object_sha*.
+
+        Maps to ``git cat-file -e``: exit 0 → True, exit 1 (a well-formed
+        name the repository does not know) → False, any other exit raises.
+        """
+        exit_code, _ = await self._run_with_exit_codes(
+            ["git", "cat-file", "-e", object_sha],
+            cwd=cwd,
+            allowed=frozenset({0, 1}),
+        )
+        return exit_code == 0
+
     async def remote_branch_sha(
         self,
         cwd: str,

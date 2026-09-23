@@ -97,7 +97,11 @@ async def read_verification_head(
         contained = False
         if deliverable_head is not None:
             await git.fetch(repository)
-            contained = await git.is_ancestor(
+            # A recorded head the fetched cache does not know is on no remote
+            # ref, so the deliverable does not hold it: an answer, not a
+            # failed read. Every other git failure still raises.
+            known = await git.has_object(repository, record.head_sha)
+            contained = known and await git.is_ancestor(
                 repository, record.head_sha, deliverable_head
             )
         return VerificationHead(

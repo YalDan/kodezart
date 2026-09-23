@@ -254,6 +254,16 @@ class GitService(Protocol):
         """
         ...
 
+    async def has_object(self, cwd: str, object_sha: str) -> bool:
+        """True iff the repository at *cwd* holds the object *object_sha*.
+
+        Maps to ``git cat-file -e <object_sha>`` (exit 0 → True, exit 1 →
+        False, any other exit raises). Exit 1 answers only for a well-formed
+        full object name the repository does not know; a malformed name or an
+        unreadable repository exits otherwise and raises.
+        """
+        ...
+
     async def remote_branch_sha(
         self,
         cwd: str,
