@@ -2341,7 +2341,16 @@ async def test_an_expensive_grading_whose_paths_moved_is_dispatched_again():
     lane = Lane(
         evaluations=[
             declaring(TOUCHED_PREFIX),
-            criteria_echo(keys=OWED_KEYS, passed={CARRIED}),
+            criteria_echo(
+                keys=OWED_KEYS,
+                passed={CARRIED},
+                declared={
+                    CARRIED: {
+                        "rederivationClass": "expensive",
+                        "exercisedPaths": [TOUCHED_PREFIX],
+                    }
+                },
+            ),
         ],
         max_iterations=2,
     )
@@ -2362,9 +2371,51 @@ async def test_an_expensive_grading_whose_paths_moved_is_dispatched_again():
     }
     assert set(rows) == set(OWED_KEYS)
     assert rows[CARRIED].reasoning != CARRIED_REASON
-    # The re-derived grading declares nothing this time, so it is cheap again:
-    # the later declaration wins, exactly as the model's own reading says.
-    assert rows[CARRIED].rederivation_class is RederivationClass.cheap
+    # The class holds across the re-derivation.
+    assert rows[CARRIED].rederivation_class is RederivationClass.expensive
+
+
+async def test_a_prefixless_path_bound_declaration_holds_as_cheap_across_iterations():
+    """A class is compared after it is read, not as the session wrote it.
+
+    The first grading fails one criterion and declares it expensive over no
+    prefix at all. That declaration earns no exemption, so it reads cheap;
+    the second grading fails it again and declares nothing, which is cheap
+    too. The class the criterion holds never changed, so the fire runs both
+    iterations out rather than refusing a class change that never happened
+    (KOD-694, KOD-890).
+    """
+    lane = Lane(
+        evaluations=[
+            criteria_echo(
+                keys=OWED_KEYS,
+                passed=(),
+                declared={
+                    CARRIED: {"rederivationClass": "expensive", "exercisedPaths": []}
+                },
+            ),
+            criteria_echo(keys=OWED_KEYS, passed=()),
+        ],
+        max_iterations=2,
+    )
+    events = await lane.run()
+
+    assert len(lane.executor.evaluation_prompts) == 2
+    assert check_of(CARRIED) in lane.executor.evaluation_prompts[1]
+    iterations = [
+        event for event in events if isinstance(event, WorkflowIterationEvent)
+    ]
+    assert len(iterations) == 2
+    # Not vacuous: as the session wrote them, the two answers name two
+    # classes, so a comparison of the raw answers would have refused here.
+    declared = [
+        {
+            result.criterion_id: result
+            for result in iteration.evaluation.criteria_results
+        }[CARRIED].rederivation_class
+        for iteration in iterations
+    ]
+    assert declared == [RederivationClass.expensive, RederivationClass.cheap]
 
 
 async def test_an_observed_grading_whose_paths_moved_is_taken_back_as_lapsed():
@@ -2779,7 +2830,23 @@ async def test_a_lane_with_every_criterion_withheld_refuses_before_it_opens_a_se
     """
     lane = Lane(
         evaluations=[
-            declaring(TOUCHED_PREFIX, rederivation_class="observed"),
+            criteria_echo(
+                keys=OWED_KEYS,
+                passed={CARRIED},
+                declared={
+                    CARRIED: {
+                        "rederivationClass": "observed",
+                        "exercisedPaths": [TOUCHED_PREFIX],
+                    },
+                    **{
+                        key: {
+                            "rederivationClass": "expensive",
+                            "exercisedPaths": [UNTOUCHED_PREFIX],
+                        }
+                        for key in OWED_KEYS[1:]
+                    },
+                },
+            ),
             criteria_echo(
                 keys=OWED_KEYS[1:],
                 passed=set(OWED_KEYS[1:]),
