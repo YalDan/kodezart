@@ -218,37 +218,19 @@ async def test_a_scope_team_gets_no_per_issue_pass_while_the_other_team_keeps_al
     # The heartbeat's lane is never the lane a per-issue fire waits on.
     assert scope_lane(config) != config.dispatch_lane
 
-    # Exactly as v0.2 scheduled them: the same operation with no scope row,
-    # over the same doubles, schedules the per-issue team's three passes with
-    # the same cadence, budget and report.
+    # The per-issue team's dispatch pass scans as it does with no scope row,
+    # over the same doubles. Cadence, budget, record identity and gates are
+    # compared over gated boots in the next test.
     v02_config, v02_operation, v02_prompts = _v02_only(tmp_path, operation)
     v02_board = _board()
-    v02_queue = FakeJobQueue()
     v02, _logs = await _boot(
         v02_config,
         v02_operation,
         v02_prompts,
         board=v02_board,
         runner=FakeAgentRunner(events=[]),
-        queue=v02_queue,
+        queue=FakeJobQueue(),
     )
-    for name in (
-        f"dispatch:{second}",
-        PromptKey.FIRE_PREP_PASS.value,
-        PromptKey.GROOMING_PASS.value,
-    ):
-        mixed_entry, v02_entry = _named(runtime, name), _named(v02, name)
-        assert (
-            mixed_entry.name,
-            mixed_entry.interval_seconds,
-            mixed_entry.timeout_seconds,
-            mixed_entry.report is not None,
-        ) == (
-            v02_entry.name,
-            v02_entry.interval_seconds,
-            v02_entry.timeout_seconds,
-            v02_entry.report is not None,
-        ), name
     assert operation.teams_scanned_by(second) == ("agent",)
     assert v02_operation.teams_scanned_by(second) == ("agent",)
     await _tick(_named(v02, f"dispatch:{second}"))
@@ -257,6 +239,82 @@ async def test_a_scope_team_gets_no_per_issue_pass_while_the_other_team_keeps_al
     # team too, and its repository keeps its own dispatch pass.
     assert v02_operation.per_issue_teams() == ("primary", "agent")
     assert f"dispatch:{example}" in [entry.name for entry in v02.scheduler.passes]
+
+
+#: The two session passes, in the order the schedule registers them.
+SESSION_PASSES = (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS)
+
+
+def _gated(config):
+    """*config* with both session passes gated on issue churn, so each gate scans."""
+    return config.model_copy(
+        update={
+            "fire_prep_pass_gate_signals": [PassSignal.issues_changed],
+            "grooming_pass_gate_signals": [PassSignal.issues_changed],
+        }
+    )
+
+
+async def _session_scans(runtime, board, key):
+    """The boards one tick of *key*'s session pass asks its gate about."""
+    board.scans.clear()
+    await _tick(_named(runtime, key.value))
+    assert board.scans, key
+    return {query.team_key for query in board.scans}
+
+
+async def test_a_gated_session_pass_scans_only_the_per_issue_boards(tmp_path):
+    config, operation, prompts = _mixed(tmp_path)
+    second = operation.repos[1].url
+    board = _board()
+    runtime, _logs = await _boot(
+        _gated(config),
+        operation,
+        prompts,
+        board=board,
+        runner=FakeAgentRunner(events=[]),
+        queue=FakeJobQueue(),
+    )
+    v02_config, v02_operation, v02_prompts = _v02_only(tmp_path, operation)
+    v02_board = _board()
+    v02, _v02_logs = await _boot(
+        _gated(v02_config),
+        v02_operation,
+        v02_prompts,
+        board=v02_board,
+        runner=FakeAgentRunner(events=[]),
+        queue=FakeJobQueue(),
+    )
+
+    # The one intended difference: a session gate of the mixed deployment
+    # never asks about the walked team's board, while with no scope row
+    # primary is a per-issue team and its board is scanned too.
+    for key in SESSION_PASSES:
+        assert await _session_scans(runtime, board, key) == {"agent"}, key
+        assert await _session_scans(v02, v02_board, key) == {"primary", "agent"}, key
+
+    # Everything else is exactly as the deployment with no scope row schedules
+    # it: cadence and budget of all three passes, and each session pass's
+    # record identity and gate signals.
+    for name in (
+        f"dispatch:{second}",
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
+    ):
+        mixed_entry, v02_entry = _named(runtime, name), _named(v02, name)
+        assert mixed_entry.interval_seconds == v02_entry.interval_seconds, name
+        assert mixed_entry.timeout_seconds == v02_entry.timeout_seconds, name
+    for key in SESSION_PASSES:
+        mixed_run = _named(runtime, key.value).run
+        v02_run = _named(v02, key.value).run
+        for keyword in ("kind", "key"):
+            assert mixed_run.keywords[keyword] == v02_run.keywords[keyword], key
+        assert mixed_run.keywords["key"] is key
+        assert (
+            mixed_run.keywords["gate"].signals
+            == v02_run.keywords["gate"].signals
+            == (PassSignal.issues_changed,)
+        ), key
 
 
 class _RecordingPrompts:
