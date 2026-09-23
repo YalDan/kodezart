@@ -94,11 +94,25 @@ SKIP_FORMS: Final[frozenset[str]] = frozenset(
     }
 )
 
+#: The standard library's own switch for the type checker: a function or a
+#: class it decorates is not checked at all, under the strict settings the
+#: gate runs as much as under any other, and the linter says nothing of it.
+#: A decorator rather than a comment, so it is read the way the skip forms
+#: are, through the module's own bindings.
+TYPE_CHECK_FORMS: Final[frozenset[str]] = frozenset({"typing.no_type_check"})
+
+#: The flag the type checker takes as always true.  A block guarded by its
+#: negation is one the checker treats as never running, and so never reads.
+TYPE_CHECKING_FLAG: Final[str] = "typing.TYPE_CHECKING"
+
 #: The modules the form rosters name members of.  A chain resolves to a form
 #: only through a binding whose origin is one of these or a module under
 #: one, so the roster and the resolver cannot drift: a form added under a
 #: root that is not here would resolve nowhere and its control would red.
-FORM_ROOTS: Final[tuple[str, ...]] = ("pytest", "unittest")
+#: Binding a root binds its every imported name, but only a rostered name is
+#: ever reported, so a module importing ``Final`` from the standard
+#: library's typing module reports nothing.
+FORM_ROOTS: Final[tuple[str, ...]] = ("pytest", "unittest", "typing")
 
 
 def gated_mark_forms() -> frozenset[str]:
@@ -332,6 +346,28 @@ def sites(module: Source, forms: frozenset[str]) -> tuple[str, ...]:
         if name is not None and name in forms:
             found.append((node.lineno, node.col_offset, name))
     return tuple(name for _, _, name in sorted(found))
+
+
+def unchecked_blocks(module: Source) -> tuple[str, ...]:
+    """Every block guarded by the negated type-checking flag, in file order.
+
+    ``if not TYPE_CHECKING:`` and ``if not typing.TYPE_CHECKING:``, and any
+    alias of either, resolved through the module's own bindings: the type
+    checker takes the flag as true, so it never reads the block.  Each is
+    reported as the flag's origin, once per block.
+    """
+    bindings = form_bindings(module.tree)
+    found: list[tuple[int, int]] = []
+    for node in ast.walk(module.tree):
+        if not (
+            isinstance(node, ast.If)
+            and isinstance(node.test, ast.UnaryOp)
+            and isinstance(node.test.op, ast.Not)
+        ):
+            continue
+        if _through(dotted(node.test.operand), bindings) == TYPE_CHECKING_FLAG:
+            found.append((node.lineno, node.col_offset))
+    return tuple(f"not {TYPE_CHECKING_FLAG}" for _ in sorted(found))
 
 
 def test_declarations(module: Source) -> tuple[str, ...]:

@@ -97,7 +97,16 @@ One member of that class is worth its own words: a stub carrying no
 directive at all, sitting beside the module it shadows, takes that module
 out of the type checker's reach, because the checker reads the stub in
 place of it.  That shape has no directive to count and no roster can see
-it; it is a diff the code review has to catch.
+it; it is a diff the code review has to catch.  A fourth is out of it: the
+type checker's own switches are read in two spellings only -- the standard
+library's `no_type_check` decorator, through the module's bindings, and a
+block under the negated type-checking flag -- and not in the others the
+checker honours.  Unread are the else arm of a block under the flag itself,
+a conditional expression on the negated flag, the flag compared rather than
+negated, a block under a version or platform test the checker takes as
+false, the decorator spelled through `typing_extensions`, which re-exports
+the same object, and either spelling reached the ways the resolver states
+it does not follow.
 
 Another member of that class is the gate's own command line.  What is
 pinned below is the configuration the project file declares; what reads it
@@ -212,6 +221,16 @@ ALLOWED_GATED_MARKS: dict[str, tuple[str, ...]] = {
     "tests/probes/test_v5_orchestration_live.py": ("pytest.mark.live",),
     "tests/spec/test_model_agreement.py": ("pytest.mark.live",),
 }
+
+#: Every place the tree switches the type checker off with the standard
+#: library's own decorator, by path and form in file order.  None today, in
+#: shipped code or in the suite: a first site is a row added here with the
+#: reason it earns its place.
+ALLOWED_UNCHECKED: dict[str, tuple[str, ...]] = {}
+
+#: Every block the tree guards with the negated type-checking flag, which the
+#: checker therefore never reads, by path in file order.  None today.
+ALLOWED_UNCHECKED_BLOCKS: dict[str, tuple[str, ...]] = {}
 
 #: The configuration subtrees that decide what the type checker, the linter
 #: and the warning filter let through.  Read from the project file and
@@ -454,6 +473,36 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
     "# ruff: enable[E501]",
 )
 
+#: The decorator in each shape a module can bind it: through the module, by
+#: name, under an alias of its own, and through the module under an alias.
+TYPE_CHECK_CONTROLS: tuple[tuple[str, str], ...] = (
+    (
+        "typing.no_type_check",
+        "import typing\n@typing.no_type_check\ndef f() -> int: ...\n",
+    ),
+    (
+        "typing.no_type_check",
+        "from typing import no_type_check\n@no_type_check\ndef f() -> int: ...\n",
+    ),
+    (
+        "typing.no_type_check",
+        "from typing import no_type_check as unchecked\n@unchecked\n"
+        "def f() -> int: ...\n",
+    ),
+    (
+        "typing.no_type_check",
+        "import typing as t\n@t.no_type_check\nclass C: ...\n",
+    ),
+)
+
+#: A block under the negated flag in each shape a module can bind the flag.
+UNCHECKED_BLOCK_CONTROLS: tuple[str, ...] = (
+    "from typing import TYPE_CHECKING\nif not TYPE_CHECKING:\n    x: int = 'x'\n",
+    "import typing\nif not typing.TYPE_CHECKING:\n    x: int = 'x'\n",
+    "from typing import TYPE_CHECKING as CHECKING\n"
+    "def f() -> None:\n    if not CHECKING:\n        x: int = 'x'\n",
+)
+
 #: The files a tool discovers instead of, or ahead of, the project file.
 #: The linter reads the one closest to each file it checks and inherits
 #: nothing from the one above, so a file with any of these names beside the
@@ -581,6 +630,90 @@ def test_the_tree_carries_exactly_the_gated_marks_the_baseline_names() -> None:
     )
 
     assert carried == ALLOWED_GATED_MARKS
+
+
+def test_the_tree_carries_exactly_the_type_checker_switches_the_baseline_names() -> (
+    None
+):
+    """A function the checker is told to skip is a function nobody checked."""
+    carried = negative_shape.census(
+        lambda module: negative_shape.sites(module, negative_shape.TYPE_CHECK_FORMS)
+    )
+
+    assert carried == ALLOWED_UNCHECKED
+
+
+def test_the_tree_carries_exactly_the_unchecked_blocks_the_baseline_names() -> None:
+    """A block the checker takes as never running is a block it never reads."""
+    carried = negative_shape.census(negative_shape.unchecked_blocks)
+
+    assert carried == ALLOWED_UNCHECKED_BLOCKS
+
+
+def test_no_shipped_module_switches_the_type_checker_off() -> None:
+    """Production code carries neither of the standard library's switches."""
+    decorated = negative_shape.census(
+        lambda module: negative_shape.sites(module, negative_shape.TYPE_CHECK_FORMS)
+    )
+    guarded = negative_shape.census(negative_shape.unchecked_blocks)
+
+    assert [path for path in decorated if not path.startswith("tests/")] == []
+    assert [path for path in guarded if not path.startswith("tests/")] == []
+
+
+@pytest.mark.parametrize(
+    ("form", "control"),
+    TYPE_CHECK_CONTROLS,
+    ids=[f"{index}-{form}" for index, (form, _) in enumerate(TYPE_CHECK_CONTROLS)],
+)
+def test_the_resolver_sees_the_type_checker_switch_through_each_binding(
+    form: str, control: str
+) -> None:
+    """The name a module binds the decorator to does not change what it is."""
+    found = negative_shape.sites(
+        Source.of("control.py", control), negative_shape.TYPE_CHECK_FORMS
+    )
+
+    assert found == (form,)
+
+
+def test_every_type_checker_switch_is_controlled() -> None:
+    """A switch added to the roster without a control is one nothing proves."""
+    assert {form for form, _ in TYPE_CHECK_CONTROLS} == (
+        negative_shape.TYPE_CHECK_FORMS
+    )
+
+
+@pytest.mark.parametrize("control", UNCHECKED_BLOCK_CONTROLS)
+def test_a_block_under_the_negated_flag_is_read_in_each_binding(
+    control: str,
+) -> None:
+    """The flag's spelling does not change that the block goes unread."""
+    found = negative_shape.unchecked_blocks(Source.of("control.py", control))
+
+    assert found == ("not typing.TYPE_CHECKING",)
+
+
+def test_the_typing_root_reports_only_what_is_rostered() -> None:
+    """Binding the typing module's names reports none of the ones not rostered.
+
+    The flag itself, unnegated, guards the imports only the checker needs,
+    and a qualifier such as ``Final`` is bound through the same root; neither
+    is a site of any roster, and neither block is an unchecked one.
+    """
+    control = Source.of(
+        "control.py",
+        "from typing import TYPE_CHECKING, Final\n"
+        "import pytest\n"
+        "if TYPE_CHECKING:\n    import os\n"
+        "LIMIT: Final = 1\n",
+    )
+    forms = (
+        SKIP_FORMS | negative_shape.gated_mark_forms() | negative_shape.TYPE_CHECK_FORMS
+    )
+
+    assert negative_shape.sites(control, forms) == ()
+    assert negative_shape.unchecked_blocks(control) == ()
 
 
 def test_the_gate_deselects_exactly_the_markers_the_project_declares() -> None:
