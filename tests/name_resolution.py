@@ -36,6 +36,8 @@ package writes either form.
 """
 
 import ast
+import importlib
+import importlib.util
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -515,3 +517,110 @@ def bound_names(
         if grown == set(names):
             return names
         names = frozenset(grown)
+
+
+def defining_module(value: object, root: Path = SOURCE_ROOT) -> str:
+    """The path of the module that defines *value*, keyed as ``source_tree`` keys it.
+
+    Read off the object's own ``__module__``, so a definition that moves
+    carries every guard keyed on its home with it.
+    """
+    module = importlib.import_module(getattr(value, "__module__", ""))
+    return Path(module.__file__ or "").resolve().relative_to(root.resolve()).as_posix()
+
+
+def _dotted_modules(trees: Mapping[str, ast.Module]) -> dict[str, str]:
+    """Dotted module name -> the path *trees* keys it under, packages included."""
+    named: dict[str, str] = {}
+    for relative in trees:
+        parts = relative.removesuffix(".py").split("/")
+        if parts[-1] == "__init__":
+            parts = parts[:-1]
+        named[".".join((SOURCE_ROOT.name, *parts))] = relative
+    return named
+
+
+def imported_modules(
+    module: str, tree: ast.Module, trees: Mapping[str, ast.Module]
+) -> frozenset[str]:
+    """Every module of *trees* that *module*'s source names, by any static route.
+
+    - an ``import`` or a ``from`` import anywhere in the module: at the top,
+      inside a function or a class, under ``if TYPE_CHECKING:`` alike;
+    - a relative ``from`` import, resolved against *module*'s own package;
+    - ``from package import name`` where ``package.name`` is a module;
+    - a dotted spelling that runs through a name an import binds —
+      ``import kodezart`` and then ``kodezart.domain.gap.compute_gap``, or
+      ``from kodezart import domain`` and then ``domain.gap``;
+    - a string constant that spells a module's dotted name, the way
+      ``importlib.import_module`` or ``__import__`` is handed one.
+
+    Not seen: a module name assembled at run time, a relative name handed to
+    ``importlib.import_module`` with its package, and ``eval`` or ``exec``.
+    """
+    dotted = _dotted_modules(trees)
+    own = next(
+        (name for name, path in dotted.items() if path == module),
+        SOURCE_ROOT.name,
+    )
+    package = own if module.endswith("__init__.py") else own.rpartition(".")[0]
+    named: set[str] = set()
+    bound: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                named.add(alias.name)
+                if alias.asname:
+                    bound[alias.asname] = alias.name
+                else:
+                    root = alias.name.partition(".")[0]
+                    bound[root] = root
+        elif isinstance(node, ast.ImportFrom):
+            base = (
+                importlib.util.resolve_name(
+                    "." * node.level + (node.module or ""), package
+                )
+                if node.level
+                else node.module or ""
+            )
+            named.add(base)
+            for alias in node.names:
+                if f"{base}.{alias.name}" in dotted:
+                    named.add(f"{base}.{alias.name}")
+                    bound[alias.asname or alias.name] = f"{base}.{alias.name}"
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            named.add(node.value)
+    for node in ast.walk(tree):
+        spelled = (
+            _spelling(node) if isinstance(node, ast.Name | ast.Attribute) else None
+        )
+        if spelled is None:
+            continue
+        root, _, rest = spelled.partition(".")
+        if root not in bound:
+            continue
+        parts = [bound[root], *([rest] if rest else [])]
+        full = ".".join(parts).split(".")
+        named.update(".".join(full[:end]) for end in range(1, len(full) + 1))
+    return frozenset(dotted[name] for name in named if name in dotted)
+
+
+def modules_reaching(
+    trees: Mapping[str, ast.Module], *, homes: Collection[str]
+) -> frozenset[str]:
+    """Every module of *trees* whose imports lead to one of *homes*, at any depth.
+
+    The homes themselves included.  Grown to a fixed point over
+    ``imported_modules``; each round adds a module or ends the walk, so it
+    takes at most one round per module.
+    """
+    edges = {
+        module: imported_modules(module, tree, trees) for module, tree in trees.items()
+    }
+    reached = set(homes) & set(trees)
+    for _round in range(len(trees) + 1):
+        grown = {module for module, named in edges.items() if named & reached}
+        if grown <= reached:
+            break
+        reached |= grown
+    return frozenset(reached)
