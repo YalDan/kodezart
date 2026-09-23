@@ -22,10 +22,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import get_args, get_origin
+from typing import Annotated, TypeAliasType, TypeVar, get_args, get_origin
 
 import pytest
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, RootModel, TypeAdapter, ValidationError, create_model
 
 import kodezart
 import kodezart.types.domain as types_domain
@@ -658,11 +658,28 @@ def test_claim_cannot_carry_writer_reasoning_unknown_stage_or_unknown_ground():
         NativeWriterOutput(claims=[valid, valid])
 
 
-def _annotation_types(annotation):
-    """Every type mentioned anywhere inside one field's annotation."""
+def _annotation_types(annotation, followed=()):
+    """Every type mentioned anywhere inside one field's annotation.
+
+    Follows the arguments of a subscripted annotation, the value a PEP 695
+    alias (``type X = ...``) stands for, and a type variable's bound and
+    constraints, none of which ``get_args`` reaches. *followed* holds the
+    aliases and type variables already being followed on this path, so a
+    recursive alias ends the walk instead of looping.
+    """
     yield annotation
+    if isinstance(annotation, TypeAliasType | TypeVar):
+        if annotation in followed:
+            return
+        followed = (*followed, annotation)
+    if isinstance(annotation, TypeAliasType):
+        yield from _annotation_types(annotation.__value__, followed)
+    if isinstance(annotation, TypeVar):
+        for bound in (annotation.__bound__, *annotation.__constraints__):
+            if bound is not None:
+                yield from _annotation_types(bound, followed)
     for argument in get_args(annotation):
-        yield from _annotation_types(argument)
+        yield from _annotation_types(argument, followed)
 
 
 #: The parameters through which a session is handed the schema of its output:
@@ -1305,6 +1322,31 @@ SESSION_CLOSURE = {
             "...]"
         ),
     },
+    "MandateAbsent": {
+        "evidence": "<class 'str'>",
+        "verdict": "typing.Literal[<AuditVerdict.REFUTED: 'refuted'>]",
+        "finding": "<class 'NoneType'>",
+        "source_index": "<class 'NoneType'>",
+    },
+    "MandateFinding": {
+        "issue_id": "<class 'str'>",
+        "defect_class": "<class 'str'>",
+        "evidence": "<class 'str'>",
+        "role": "typing.Literal[<DefectRole.MANDATE: 'mandate'>]",
+        "mandate_text": "<class 'str'>",
+    },
+    "MandateInstructed": {
+        "evidence": "<class 'str'>",
+        "verdict": "typing.Literal[<AuditVerdict.HOLDS: 'holds'>]",
+        "finding": "<class 'kodezart.types.domain.audit.MandateFinding'>",
+        "source_index": "<class 'int'>",
+    },
+    "MandateUnverifiable": {
+        "evidence": "<class 'str'>",
+        "verdict": "typing.Literal[<AuditVerdict.UNVERIFIABLE: 'unverifiable'>]",
+        "finding": "<class 'NoneType'>",
+        "source_index": "<class 'int'>",
+    },
     "MilestoneChange": {
         "kind": "typing.Literal['milestone']",
         "milestone_id": (
@@ -1776,6 +1818,101 @@ def test_the_root_derivation_prelude_and_a_cycle_hand_nothing_over(tmp_path):
     assert _planted(tmp_path, bare) == ([], [{"type": "object"}])
 
 
+def _closure_snapshot(roots):
+    """Every field of every model reachable from *roots*, with its declared type."""
+    return {
+        model.__name__: {
+            name: repr(field.annotation) for name, field in model.model_fields.items()
+        }
+        for model in _reachable_models(roots)
+    }
+
+
+def _core_schema_models(roots):
+    """Every model class pydantic's own schema of *roots* validates, roots included.
+
+    Read off each root's core schema, which pydantic builds by resolving every
+    annotation form itself, aliases and type variables included, so this walk
+    shares nothing with the annotation walk above. The core schema is a finite
+    tree of dicts, lists and tuples that names a shared model by a string
+    reference; each container is visited once.
+    """
+    found: list[type[BaseModel]] = []
+    visited: set[int] = set()
+    pending: list[object] = [root.__pydantic_core_schema__ for root in roots]
+    while pending:
+        node = pending.pop()
+        if id(node) in visited:
+            continue
+        visited.add(id(node))
+        if isinstance(node, dict):
+            model = node.get("cls")
+            if node.get("type") == "model" and model not in found:
+                found.append(model)
+            pending.extend(node.values())
+        elif isinstance(node, list | tuple):
+            pending.extend(node)
+    return found
+
+
+def test_every_model_a_session_fills_is_inside_the_snapshot():
+    """No session-filled model sits outside the snapshot, however it is reached.
+
+    Every model class that pydantic's own schema of a derived root validates
+    is a key of the snapshot: one named through a PEP 695 alias, a type
+    variable, a union, a discriminator or a root model is pinned with its
+    fields like any other.
+    """
+    roots, _ = session_roots()
+    reached = _core_schema_models(roots)
+    assert {model.__name__ for model in reached} >= {
+        "AuditMandateJudgment",
+        "MandateInstructed",
+        "MandateAbsent",
+        "MandateUnverifiable",
+        "MandateFinding",
+    }
+    assert {model.__name__ for model in reached} - set(SESSION_CLOSURE) == set()
+
+
+def _planted_root(form, gained):
+    """A root that reaches one model only through *form*; *gained* adds a field.
+
+    The added field is the shape of a probe outcome, a capability paired with
+    a truth value.
+    """
+    fields: dict[str, object] = {"evidence": (str, ...)}
+    if gained:
+        fields["observed"] = (tuple[tuple[str, bool], ...], ())
+    inner = create_model("PlantedFinding", **fields)
+    if form == "alias":
+        alias = TypeAliasType("PlantedJudgment", Annotated[inner | None, "planted"])
+        return RootModel[alias]
+    return create_model(
+        "PlantedHolder", judgment=(TypeVar("PlantedVerdict", bound=inner), ...)
+    )
+
+
+@pytest.mark.parametrize("form", ["alias", "type_variable_bound"])
+def test_a_model_reached_only_through_an_alias_gaining_a_field_fails_the_snapshot(
+    form,
+):
+    """The snapshot walk follows what ``get_args`` does not reach.
+
+    A root whose only route to a model is a PEP 695 alias, or a type variable's
+    bound, is pinned with that model's fields, so the model gaining a field
+    changes the snapshot.
+    """
+    kept = _closure_snapshot((_planted_root(form, gained=False),))
+    gained = _closure_snapshot((_planted_root(form, gained=True),))
+    assert kept["PlantedFinding"] == {"evidence": "<class 'str'>"}
+    assert gained["PlantedFinding"] == {
+        "evidence": "<class 'str'>",
+        "observed": "tuple[tuple[str, bool], ...]",
+    }
+    assert gained != kept
+
+
 def test_no_field_can_carry_a_session_observed_probe_outcome():
     """A probe outcome is a capability paired with a truth value about this host.
 
@@ -1803,12 +1940,7 @@ def test_no_field_can_carry_a_session_observed_probe_outcome():
     session_models = _reachable_models((*roots, *JUDGED_BY))
     assert session_models
     assert len({model.__name__ for model in session_models}) == len(session_models)
-    assert {
-        model.__name__: {
-            name: repr(field.annotation) for name, field in model.model_fields.items()
-        }
-        for model in session_models
-    } == SESSION_CLOSURE
+    assert _closure_snapshot((*roots, *JUDGED_BY)) == SESSION_CLOSURE
     session_facing = {
         (model.__name__, name): field.annotation
         for model in session_models
