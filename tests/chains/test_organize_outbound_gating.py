@@ -37,6 +37,7 @@ from kodezart.types.domain.gating import (
 from tests.chains import test_organize_owner as organize_suite
 from tests.chains.test_organize_owner import factory, run_owner
 from tests.chains.test_write_back_adoption import (
+    GROOMING_SHAPES,
     SHAPES,
     RecordingTracker,
     content_parameters,
@@ -175,6 +176,28 @@ async def test_every_organize_write_in_a_scope_run_is_gated_first(monkeypatch, s
         assert "create_split_if_absent" in written
     parent = board.server.issues[CLAIMED_ISSUE]
     assert {"body complete", "criteria complete"} <= set(parent.labels)
+
+
+@pytest.mark.parametrize("shape", sorted(GROOMING_SHAPES))
+async def test_every_grooming_write_is_gated_first(monkeypatch, shape):
+    """The pre-approval row's graph change, its bodies and its phase marker."""
+    journal = Journal()
+    owner, board, _ = observed_organize_run(
+        monkeypatch,
+        journal,
+        shape=shape,
+        gate=RecordingGate(journal),
+        under_approval=False,
+    )
+    report = await run_owner(owner)
+    assert report.halt is None
+
+    require_gate_coverage(journal)
+    assert GROOMING_SHAPES[shape].method in {write.method for write in journal.writes}
+    assert "set_issue_classification" in {
+        write.method for write in content_writes(journal)
+    }
+    assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
 
 
 async def test_every_escalation_write_the_node_makes_is_gated_first(monkeypatch):
