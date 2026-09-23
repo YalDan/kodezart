@@ -242,7 +242,6 @@ ADAPTER_MAPPING = frozenset(
     and get_args(hint)[:1] == (LifecycleStage,)
 )
 PROMPTS_ROOT = SOURCE_ROOT / "prompts"
-GROOMING_PROMPT = PROMPTS_ROOT / "sets" / "claude-opus" / "grooming_pass.md"
 #: A block helper's opening or closing tag, with the helper and its argument.
 BLOCK_TAG = re.compile(r"\{\{([#/])(\w+)(?:\s+([^}]*?))?\s*\}\}")
 
@@ -548,24 +547,46 @@ def test_no_tracker_state_string_appears_in_the_table_or_its_consumers():
         f"{module_path(OperationConfig)}::"
         f"{OperationConfig.require_run_event_table.__qualname__}"
     ) in readers
-    assert binding_call(TABLE_FIELD) in readers.values()
+    binding = binding_call(TABLE_FIELD)
+    assert binding in readers.values()
+    assert f"{TABLE_FIELD}.items()" in binding
     for name, text in {**readers, **templates}.items():
         assert TABLE_FIELD in text, name
+    for name, region in templates.items():
+        assert "{{this.effect}}" in region, name
     assert state_names_in(surfaces, tokens) == {}
 
 
+def _holds(text: str, fragment: str) -> bool:
+    """Whether *text* holds *fragment*: as text, or, when *text* parses as
+    source, as the unparsed form of one of its nodes, so a surface widened
+    over the fragment is caught however its source is laid out."""
+    if fragment in text:
+        return True
+    try:
+        tree = ast.parse(textwrap.dedent(text))
+    except SyntaxError:
+        return False
+    return any(ast.unparse(node) == fragment for node in ast.walk(tree))
+
+
 def test_the_state_resolution_site_is_outside_the_scanned_surfaces():
-    """The configured mapping's own binding and the prompt's resolution site
-    exist, carry what the scan forbids elsewhere, and are not scanned."""
-    tokens = vendor_state_names()
+    """The configured mapping's own prompt binding, and a prompt placeholder
+    that renders a state through it, both exist and both lie outside every
+    scanned surface: the scan does not ban the site the Check requires."""
     surfaces = scanned_surfaces()
     for field in CONFIGURED:
         sibling = binding_call(field)
-        assert sibling not in surfaces.values()
-    whole = GROOMING_PROMPT.read_text()
-    assert state_names_in({"whole": whole}, tokens)
-    for block in table_regions(whole):
-        assert state_names_in({"block": block}, tokens) == {}
+        assert all(not _holds(text, sibling) for text in surfaces.values())
+    remainder = []
+    for text in prompt_sources().values():
+        for region in table_regions(text):
+            text = text.replace(region, "")
+        remainder.append(text)
+    placeholders = [f"{{{{{field}." for field in sorted(CONFIGURED)]
+    assert any(
+        placeholder in text for text in remainder for placeholder in placeholders
+    )
 
 
 def test_no_consumer_of_the_table_reads_the_configured_state_mapping():
