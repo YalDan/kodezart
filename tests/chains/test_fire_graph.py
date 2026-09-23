@@ -13,6 +13,7 @@ from typing import Annotated, Literal, Union, get_args, get_origin
 
 from fastapi import FastAPI
 from pydantic import BaseModel
+from pydantic_core import SchemaSerializer
 from starlette.types import Message
 
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
@@ -602,6 +603,122 @@ def test_the_fire_terminal_and_state_grow_no_field_of_the_lane_s_delivery():
     delivery = set(LaneDelivery.model_fields)
     assert delivery & set(WorkflowCompleteEvent.model_fields) == SHARED_WITH_TERMINAL
     assert delivery & set(WorkflowState.__annotations__) == SHARED_WITH_STATE
+
+
+#: What a class may define to be rendered some other way than by its
+#: fields: pydantic's own entry points, which ``BaseModel`` defines and a
+#: model overrides by defining one of its own, and the two hooks through
+#: which a model's serialiser and schema are built.
+SERIALISATION_HOOKS = frozenset(
+    {
+        "__get_pydantic_core_schema__",
+        "__getstate__",
+        "__iter__",
+        "__pydantic_serializer__",
+        "dict",
+        "json",
+        "model_dump",
+        "model_dump_json",
+    }
+)
+
+#: The schema types whose own function decides what is sent: a plain or a
+#: wrap function replaces or wraps the default rendering of what it holds.
+FUNCTION_SCHEMAS = frozenset({"function-plain", "function-wrap"})
+
+
+def custom_serialisation(schema: object) -> list[str]:
+    """Every place in a core *schema* where a value is not sent by default.
+
+    A ``serialization`` entry of any kind — which is how pydantic records a
+    ``model_serializer``, a ``field_serializer`` and a ``PlainSerializer`` or
+    ``WrapSerializer`` annotation, however it is spelled — and any schema
+    of a function type.  Walked through every mapping and list the schema
+    holds, at any depth; bounded by the schema's own finite tree, each node
+    taken once.
+    """
+    found: list[str] = []
+    pending: list[tuple[str, object]] = [("schema", schema)]
+    seen: set[int] = set()
+    while pending:
+        where, node = pending.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        if isinstance(node, Mapping):
+            if "serialization" in node:
+                found.append(f"{where}.serialization")
+            kind = node.get("type")
+            if isinstance(kind, str) and kind in FUNCTION_SCHEMAS:
+                found.append(f"{where}: {kind}")
+            pending.extend((f"{where}.{key}", value) for key, value in node.items())
+        elif isinstance(node, list | tuple):
+            pending.extend(
+                (f"{where}[{index}]", item) for index, item in enumerate(node)
+            )
+    return sorted(found)
+
+
+def own_serialisation_hooks(cls: type) -> set[str]:
+    """Each hook of :data:`SERIALISATION_HOOKS` *cls* defines in its own ``vars()``.
+
+    Pydantic sets ``__pydantic_serializer__`` on every model class it
+    builds, from that class's own core schema, which the walk above reads.
+    That one is pydantic's rendering of the schema and not a hook of the
+    class, so it is left out when it is exactly that serialiser: built by
+    pydantic-core from the very schema object the class holds.  Any other
+    serialiser there is one somebody put there, and is kept.
+    """
+    own = vars(cls)
+    hooks = {name for name in own if name in SERIALISATION_HOOKS}
+    serializer = own.get("__pydantic_serializer__")
+    if type(serializer) is SchemaSerializer and serializer.__reduce__()[1][
+        0
+    ] is own.get("__pydantic_core_schema__"):
+        hooks.discard("__pydantic_serializer__")
+    return hooks
+
+
+def test_nothing_on_the_terminal_s_closure_renders_it_but_its_fields():
+    """No custom serialisation on the terminal or on any model it holds.
+
+    The egress check below renders instances, and an instance shows a key
+    only for the values somebody chose to build: a serialiser keyed on a
+    value no instance holds sends a delivery fact for that value alone and
+    passes it.  So the places such a key can be added are closed as objects
+    rather than searched for with more values.  For the terminal and every
+    model its annotations reach, and every class on each one's line but
+    pydantic's own ``BaseModel``: the core schema pydantic serialises from,
+    walked whole, holds no serialisation of its own; the model has no
+    computed field; and the class defines none of pydantic's rendering
+    entry points or hooks.  Whatever a model's values, what it sends is
+    then its fields, as its schema declares them.
+    """
+    closure = set(models_under(WorkflowCompleteEvent))
+    assert closure == {WorkflowCompleteEvent, *NESTED_FIELDS}
+    line = {
+        cls
+        for model in closure
+        for cls in model.__mro__
+        if cls is not object and cls is not BaseModel
+    }
+    assert closure < line
+    assert all(issubclass(cls, BaseModel) for cls in line)
+    assert {
+        cls.__qualname__: found
+        for cls in line
+        if (found := custom_serialisation(cls.__pydantic_core_schema__))
+    } == {}
+    assert {
+        model.__qualname__: model.model_computed_fields
+        for model in closure
+        if model.model_computed_fields
+    } == {}
+    assert {
+        cls.__qualname__: hooks
+        for cls in line
+        if (hooks := own_serialisation_hooks(cls))
+    } == {}
 
 
 #: How long the egress drive waits on any one step of the run it holds: the
