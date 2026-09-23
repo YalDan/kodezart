@@ -207,6 +207,14 @@ async def _registrations(
 #: The vendor's own words when a credential holds no scope for a scan.
 DIAGNOSIS = "auth_insufficient_scope: this credential cannot read those"
 
+#: Every boot refusal below is asserted in both HTTP modes.  Debug is the
+#: switch a handler would read to keep serving past a refusal, and a boot
+#: that refuses only outside it degrades in the mode it was not tested in
+#: (KOD-706: no code path degrades, skips a write, or logs and continues).
+EITHER_MODE = pytest.mark.parametrize(
+    "debug", [False, True], ids=["debug-off", "debug-on"]
+)
+
 
 #: What the standing-scope pass is registered under, spelled here rather
 #: than imported: the name is what an operator reads in a log and what a
@@ -574,8 +582,9 @@ async def test_an_operation_with_no_standing_scope_registers_no_heartbeat(
     }
 
 
+@EITHER_MODE
 async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """KOD-151: the silent failure, made the loudest thing a deployment has.
 
@@ -585,12 +594,14 @@ async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(
     first, and dies naming the signal, the pass and the vendor's reason.
     """
     tracker = FakeTrackerPort(scan_refusals={PassSignal.reviews_changed: DIAGNOSIS})
+    runner = FakeAgentRunner(events=[])
 
     with pytest.raises(PassGateCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=tracker,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
+            http={"debug": debug},
             fire_prep_pass_gate_signals=[
                 PassSignal.issues_changed,
                 PassSignal.reviews_changed,
@@ -604,9 +615,17 @@ async def test_a_signal_the_credential_cannot_scan_for_aborts_boot(
     assert PassSignal.issues_changed.value not in named, (
         "a signal the credential can answer is not part of the refusal"
     )
+    # The refusal ends the boot: one probe, and no session after it.
+    assert tracker.capability_probes == [
+        (PassSignal.issues_changed, PassSignal.reviews_changed)
+    ]
+    assert runner.calls == []
 
 
-async def test_two_refused_signals_are_named_in_one_abort(tmp_path: Path) -> None:
+@EITHER_MODE
+async def test_two_refused_signals_are_named_in_one_abort(
+    tmp_path: Path, debug: bool
+) -> None:
     """Every refused signal is named at once, with its pass and its reason.
 
     An operator fixing one scope at a time pays a boot cycle per signal, so
@@ -621,12 +640,14 @@ async def test_two_refused_signals_are_named_in_one_abort(tmp_path: Path) -> Non
             PassSignal.reviews_changed: second,
         }
     )
+    runner = FakeAgentRunner(events=[])
 
     with pytest.raises(PassGateCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=tracker,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
+            http={"debug": debug},
             fire_prep_pass_gate_signals=[
                 PassSignal.issues_changed,
                 PassSignal.reviews_changed,
@@ -642,10 +663,12 @@ async def test_two_refused_signals_are_named_in_one_abort(tmp_path: Path) -> Non
     assert tracker.capability_probes == [
         (PassSignal.issues_changed, PassSignal.reviews_changed)
     ]
+    assert runner.calls == []
 
 
+@EITHER_MODE
 async def test_two_refused_signals_sharing_one_diagnosis_are_each_named(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """Refusals are one per refused signal, however many share a diagnosis.
 
@@ -659,12 +682,14 @@ async def test_two_refused_signals_sharing_one_diagnosis_are_each_named(
             PassSignal.triage_backlog: DIAGNOSIS,
         }
     )
+    runner = FakeAgentRunner(events=[])
 
     with pytest.raises(PassGateCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=tracker,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
+            http={"debug": debug},
             fire_prep_pass_gate_signals=[
                 PassSignal.issues_changed,
                 PassSignal.triage_backlog,
@@ -677,10 +702,15 @@ async def test_two_refused_signals_sharing_one_diagnosis_are_each_named(
         starting = [item for item in refusals if item.startswith(f"{signal.value} ")]
         assert len(starting) == 1, (signal, refusals)
     assert all(DIAGNOSIS in item for item in refusals)
+    assert tracker.capability_probes == [
+        (PassSignal.issues_changed, PassSignal.triage_backlog)
+    ]
+    assert runner.calls == []
 
 
+@EITHER_MODE
 async def test_a_refused_signal_names_every_pass_that_declares_it(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """One signal two passes declare is one refusal naming both passes.
 
@@ -690,12 +720,14 @@ async def test_a_refused_signal_names_every_pass_that_declares_it(
     diagnosis, rather than whichever pass declared it first.
     """
     tracker = FakeTrackerPort(scan_refusals={PassSignal.issues_changed: DIAGNOSIS})
+    runner = FakeAgentRunner(events=[])
 
     with pytest.raises(PassGateCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=tracker,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
+            http={"debug": debug},
             fire_prep_pass_gate_signals=[PassSignal.issues_changed],
             grooming_pass_gate_signals=[PassSignal.issues_changed],
         )
@@ -706,10 +738,12 @@ async def test_a_refused_signal_names_every_pass_that_declares_it(
     assert PromptKey.GROOMING_PASS.value in refusal
     assert DIAGNOSIS in refusal
     assert tracker.capability_probes == [(PassSignal.issues_changed,)]
+    assert runner.calls == []
 
 
+@EITHER_MODE
 async def test_a_refused_dispatch_signal_aborts_naming_the_dispatch_pass(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """The per-issue dispatch pass's signal is probed and refused like any other.
 
@@ -724,12 +758,14 @@ async def test_a_refused_dispatch_signal_aborts_naming_the_dispatch_pass(
     assert not runs_scope_flow(operation)
     assert any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
     tracker = FakeTrackerPort(scan_refusals={PassSignal.approved_changed: DIAGNOSIS})
+    runner = FakeAgentRunner(events=[])
 
     with pytest.raises(PassGateCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=tracker,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
+            http={"debug": debug},
             operation=operation,
             github_api=FakeDeliveryProbe(),
             fire_prep_pass_gate_signals=[],
@@ -741,6 +777,15 @@ async def test_a_refused_dispatch_signal_aborts_naming_the_dispatch_pass(
         f"{PassSignal.approved_changed.value} gates {_DISPATCH_NAME}: {DIAGNOSIS}",
     )
     assert tracker.capability_probes == [(PassSignal.approved_changed,)]
+    assert runner.calls == []
+
+
+@EITHER_MODE
+def test_the_refusal_cases_boot_in_the_mode_they_name(
+    tmp_path: Path, debug: bool
+) -> None:
+    """Non-vacuity for the mode rows: the override reaches the boot's config."""
+    assert _config(tmp_path, http={"debug": debug}).http.debug is debug
 
 
 async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
@@ -778,8 +823,9 @@ async def test_the_shipped_defaults_boot_and_then_run(tmp_path: Path) -> None:
     assert len(runner.calls) == 1
 
 
+@EITHER_MODE
 async def test_a_pass_whose_prompt_has_a_hole_refuses_at_preflight(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """KOD-150: the hole is a boot refusal naming the pass and the placeholders.
 
@@ -795,7 +841,7 @@ async def test_a_pass_whose_prompt_has_a_hole_refuses_at_preflight(
 
     with pytest.raises(PromptRenderError) as caught:
         await verify_pass_preflight(
-            config=_config(tmp_path),
+            config=_config(tmp_path, http={"debug": debug}),
             operation=operation,
             tracker=None,
             github_api=None,
@@ -849,8 +895,9 @@ async def test_the_minimal_floor_boots_and_names_the_roster_it_lacks(
     assert unwired["absent"] == ["teams", "repos"]
 
 
+@EITHER_MODE
 async def test_the_floor_boots_where_the_same_hole_over_a_roster_refuses(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """The boot render still guards every pass that WIRES, and only those.
 
@@ -871,13 +918,16 @@ async def test_the_floor_boots_where_the_same_hole_over_a_roster_refuses(
     )
 
     assert [entry.name for entry in floor.scheduler.passes] == []
+    runner = FakeAgentRunner(events=[])
     with pytest.raises(PromptRenderError):
         await _runtime(
             tmp_path,
             tracker=None,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
             operation=rostered,
+            http={"debug": debug},
         )
+    assert runner.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -952,8 +1002,9 @@ def _mutated(tmp_path: Path, mutate: Callable[[dict[str, object]], None]) -> Pat
     return write_toml(tmp_path, raw)
 
 
+@EITHER_MODE
 async def test_a_knowledge_destination_no_pass_can_reach_aborts_boot(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """Two halves, legal apart, an instruction to nowhere together.
 
@@ -965,13 +1016,16 @@ async def test_a_knowledge_destination_no_pass_can_reach_aborts_boot(
     the ``knowledge`` map's keys among them, and the tracker-side one is not
     among them.
     """
+    runner = FakeAgentRunner(events=[])
     with pytest.raises(PassKnowledgeCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=None,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
+            http={"debug": debug},
             **UNGRANTED,
         )
+    assert runner.calls == []
 
     named = str(caught.value)
     for entry in KNOWLEDGE_ENTRIES:
@@ -1059,8 +1113,9 @@ def _fire_record_knowledge_side(raw: dict[str, object]) -> None:
     }
 
 
+@EITHER_MODE
 async def test_a_fire_log_the_fires_own_session_cannot_reach_aborts_boot(
-    tmp_path: Path,
+    tmp_path: Path, debug: bool
 ) -> None:
     """KOD-265: the capability question is asked of every session, not one.
 
@@ -1072,14 +1127,17 @@ async def test_a_fire_log_the_fires_own_session_cannot_reach_aborts_boot(
     is missing, and names only the surface that session was owed.
     """
     operation = load_operation_config(_mutated(tmp_path, _fire_record_knowledge_side))
+    runner = FakeAgentRunner(events=[])
 
     with pytest.raises(PassKnowledgeCapabilityError) as caught:
         await _runtime(
             tmp_path,
             tracker=None,
-            runner=FakeAgentRunner(events=[]),
+            runner=runner,
             operation=operation,
+            http={"debug": debug},
         )
+    assert runner.calls == []
 
     named = str(caught.value)
     assert SessionType.TICKET_FIRE.value in named
