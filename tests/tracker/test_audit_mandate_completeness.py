@@ -157,6 +157,54 @@ async def test_a_failed_restamp_mandate_keeps_the_raw_trace_and_its_reason(
     assert tracker_writes() == before
 
 
+@pytest.mark.parametrize("restamp", [False, True], ids=["claim", "beside-a-restamp"])
+async def test_a_failed_claim_mandate_keeps_the_evidence_and_its_reason(
+    setup, tracker, server, tracker_writes, restamp
+):
+    """A claim hunt that fails keeps what the arm observed beside the reason.
+
+    The criterion is under review and its claim refuted, so the claim is
+    hunted; that hunt fails.  The observation keeps the evidence the claim
+    stands on, the restamp trace and, where the restamp's own hunt ran
+    first and completed, its report, beside the reason, and no claim
+    report.  Nothing is written.
+    """
+    build, executor, *_ = setup
+    if restamp:
+        await refuted_restamp(tracker, server, "current")
+    else:
+        await state(tracker, server, CHILD, "In Review", WorkflowStateKind.STARTED)
+    executor.verdict = "refuted"
+    hunts = []
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+            hunts.append(kwargs["prompt"])
+            if len(hunts) == (2 if restamp else 1):
+                raise AgentSDKError(
+                    "claim mandate session unavailable", error_kind="fixture"
+                )
+
+    executor.during = during
+    before = tracker_writes()
+    observation = (await build().run()).observations[0]
+
+    assert len(hunts) == (2 if restamp else 1)
+    assert observation.claim is None
+    assert observation.evidence is not None
+    assert observation.evidence.verdict is AuditVerdict.REFUTED
+    assert observation.evidence.current_claim.judgment.verdict is AuditVerdict.REFUTED
+    assert observation.unavailable_reason.startswith("AgentSDKError: ")
+    assert "claim mandate session unavailable" in observation.unavailable_reason
+    if restamp:
+        assert observation.restamp.verdict is AuditVerdict.REFUTED
+        assert observation.restamp_report.trace == observation.restamp
+        assert observation.restamp_report.mandate.verdict is AuditVerdict.REFUTED
+    else:
+        assert observation.restamp_report is None
+    assert tracker_writes() == before
+
+
 async def refuted_arm(arm, setup, tracker, server, tracker_writes):
     """A real sweep observation whose *arm* is REFUTED and complete.
 

@@ -317,15 +317,25 @@ class AuditReadSweep:
         else:
             # No Evidence row was read, so there is no restamp to trace.
             claim = await self._claims.verify(request)
-        report = await self._mandates.complete(
-            AuditMandateRequest(
-                claim=claim,
-                defect_class=f"violation of the current Check: {claim.check}",
-                surfaces=surfaces,
-                repo_url=request.repo_url,
-                cache_key=request.cache_key,
+        try:
+            report = await self._mandates.complete(
+                AuditMandateRequest(
+                    claim=claim,
+                    defect_class=f"violation of the current Check: {claim.check}",
+                    surfaces=surfaces,
+                    repo_url=request.repo_url,
+                    cache_key=request.cache_key,
+                )
             )
-        )
+        except AUDIT_READ_FAILURES as exc:
+            # What the arm observed stays beside the reason its hunt failed.
+            return AuditReadObservation(
+                target,
+                evidence=evidence,
+                restamp=restamp,
+                restamp_report=restamp_report,
+                unavailable_reason=f"{type(exc).__name__}: {exc}",
+            )
         return AuditReadObservation(
             target,
             claim=report,
