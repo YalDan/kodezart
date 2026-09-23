@@ -36,6 +36,7 @@ from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import (
     CrossOffState,
     RederivationClass,
+    StickyClassError,
     UndemonstratedReason,
 )
 from kodezart.types.domain.gating import RepoVisibility
@@ -2294,6 +2295,48 @@ async def test_a_prefixless_path_bound_declaration_holds_as_cheap_across_iterati
         for iteration in iterations
     ]
     assert declared == [RederivationClass.expensive, RederivationClass.cheap]
+
+
+@pytest.mark.parametrize("second_verdict", ["passed", "failed"])
+async def test_a_cheap_class_re_derived_as_expensive_raises(second_verdict):
+    """A criterion that held cheap may not be re-derived as expensive.
+
+    The first grading fails one criterion and declares nothing, so it holds
+    the cheap class; a failed grading is re-derived, and the second grading
+    declares it expensive over a prefix. Whether that second grading passes
+    or fails the criterion, the class changed, and the loop refuses before
+    the second iteration's verdict reaches the writer (KOD-694, KOD-890).
+    """
+    lane = Lane(
+        evaluations=[
+            criteria_echo(keys=OWED_KEYS, passed=()),
+            criteria_echo(
+                keys=OWED_KEYS,
+                passed={CARRIED} if second_verdict == "passed" else (),
+                declared={
+                    CARRIED: {
+                        "rederivationClass": "expensive",
+                        "exercisedPaths": [TOUCHED_PREFIX],
+                    }
+                },
+            ),
+        ],
+        max_iterations=2,
+    )
+    unwritten = lane.port.issues[CARRIED].body
+    verdicts = recording(lane)
+
+    with pytest.raises(
+        StickyClassError,
+        match="holds the cheap re-derivation class and cannot be declared expensive",
+    ):
+        await lane.run()
+
+    assert len(lane.executor.evaluation_prompts) == 2
+    # Only the first iteration's verdict was handed to the writer.
+    assert verdicts == [tuple(CrossOffState.failed for _ in OWED_KEYS)]
+    assert lane.port.issues[CARRIED].body == unwritten
+    assert lane.port.issues[CARRIED].state_kind is WorkflowStateKind.UNSTARTED
 
 
 # ---------------------------------------------------------------------------
