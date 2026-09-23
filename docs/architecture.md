@@ -105,7 +105,7 @@ does not exist.
 | WriteBackJudge | FreshWriteBackJudge | Judges the artifact that landed, in a session that wrote none of it |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
-| NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and ruling records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication, and refuses a commit that loses an assertion a pinned record designates, leaving the mark as a criterion on the lane |
+| NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and pinned records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication, and refuses a commit that loses an assertion a pinned record it holds designates, leaving the mark as a criterion on the lane |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
 | QualityGate       | RalphLoop                | LangGraph iterative execute/evaluate loop            |
 | TicketGenerator   | TicketGenerationLoop     | LangGraph draft/review loop                          |

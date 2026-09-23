@@ -73,13 +73,18 @@ loss mints one `criterion` sub-issue on the lane, gated exactly as derived
 content under that lane's criterion child-set lease, so the lane's rollup
 carries the obligation and cannot converge while it stands, and publication is
 refused. The mark names the test and the record that designates it, and no
-assertion text leaves the repository. A comparison that cannot be made refuses with no mark: an unreadable
-designation is not evidence that the assertions survived.
+assertion text leaves the repository. A comparison that cannot be made refuses
+with no mark: an unreadable designation is not evidence that the assertions
+survived. Deleting, renaming or moving a designated test, or its file, leaves
+nothing to compare, so publication is refused with no mark.
+
+The reading compares which assertions a designated test carries, not whether
+they run: an assertion moved where it no longer runs still reads as carried.
+That covers an inner definition nothing calls, a branch that never runs, code
+after a `return`, and a handler that swallows `AssertionError`. A skip mark on
+a designated test is the census's concern, not this reading's.
 
 `RecordedAssertionDriftDetector`, which addresses a designation by its comment
 identity and rereads the criterion family around the comparison, is not
-constructed anywhere in the composition root. It is carried as an owed
-obligation on its own lane, which decides whether to wire it or delete it, and
-the static reach assertion in `tests/test_composition_reach.py` names it until
-that is settled. The current ruling-node producer and historical declaration
-migration remain separate work.
+constructed anywhere in the composition root. The current pinned-record
+producer and historical declaration migration remain separate work.
