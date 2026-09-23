@@ -157,7 +157,12 @@ def test_the_shipped_pre_approval_row_gates_on_the_triage_member() -> None:
     namespace, key = split_label_key(rows[0].spec.gate_label_key)
     assert namespace is OrganizeLabelNamespace.SCOPE
     assert key == ScopeLabel.TRIAGE.value
-    assert rows[0].gate_label == loaded.scope_labels[ScopeLabel.TRIAGE.value]
+    triage = loaded.scope_labels[ScopeLabel.TRIAGE.value]
+    assert triage not in {
+        loaded.scope_labels[ScopeLabel.PROPOSED.value],
+        loaded.scope_labels[ScopeLabel.APPROVED.value],
+    }
+    assert rows[0].gate_label == triage
 
 
 def test_the_shipped_file_names_the_criteria_stage_the_adapter_is_built_with():
