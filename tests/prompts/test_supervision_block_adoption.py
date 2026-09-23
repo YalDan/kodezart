@@ -27,7 +27,9 @@ longer states.
   (KOD-577) and the one sentence that says a verification push is never
   work started on an issue, and neither section carries a word of the
   cadence list the pass templates are held to.  Its limit: a temporal
-  phrase that is on neither the table nor that list is not seen.
+  phrase that is on neither the table nor that list is not seen.  Read
+  without the table, neither section names a ``## `` heading of the block
+  that the template does not head.
 * Every adopted section sits between the base's top-level ``<tag>`` sections
   and never inside one, so adopting a section cannot edit a base section;
   the file is never replaced by the block.  The layout, every top-level tag
@@ -385,6 +387,24 @@ def test_the_by_effect_sections_carry_no_cadence_word():
         section = template_section(text, name).lower()
         carried = [word for word in CADENCE_WORDS + restated if word in section]
         assert carried == [], name
+
+
+def test_no_by_effect_section_names_a_block_section_the_template_does_not_head():
+    """KOD-574: a reference to a block section the base lacks fails on its own.
+
+    The names are the block file's own ``## `` headings, read from it; the
+    ones the template heads are adopted sections and may be named.  This
+    does not read the REPOINTED table, so a block cross-reference restored
+    together with the deletion of its row still fails here.
+    """
+    text = template_text()
+    headed = set(re.findall(r"^## (.+)$", text, re.MULTILINE))
+    absent = [name for name in block_sections() if name not in headed]
+    assert absent
+    for name in BY_EFFECT:
+        section = template_section(text, name).casefold()
+        named = [heading for heading in absent if heading.casefold() in section]
+        assert named == [], name
 
 
 def test_every_tag_a_repointed_reference_names_is_a_top_level_template_section():
