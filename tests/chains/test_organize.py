@@ -881,6 +881,7 @@ def incoherent_snapshot(malformed):
     elif malformed == "orphan_criterion":
         revisions = (child,)
     else:
+        assert malformed == "empty_marker"
         marker = "  "
     return revisions, admissions, marker
 
@@ -985,38 +986,52 @@ def superseded_criterion(key=SUBJECT):
 
 
 def scope_fixture(name):
-    """One scope snapshot with the admissions standing over it."""
+    """One scope snapshot with the admissions and open findings standing over it."""
     parent, check = organized_family()
     deliverable = gap_revision(
         DELIVERABLE, parent_key=SUBJECT, issue_labels=[BODY_MARKER]
     )
     match name:
         case "at_rest":
-            return (*organized_family(), *organized_family("other/17")), None
+            return (*organized_family(), *organized_family("other/17")), None, ()
         case "open_criterion":
-            return open_criterion_family(), None
+            return open_criterion_family(), None, ()
         case "open_criterion_under_deliverable":
             return (
-                parent,
-                check,
-                deliverable,
-                gap_revision(
-                    f"{DELIVERABLE}/check",
-                    parent_key=DELIVERABLE,
-                    issue_labels=["criterion"],
+                (
+                    parent,
+                    check,
+                    deliverable,
+                    gap_revision(
+                        f"{DELIVERABLE}/check",
+                        parent_key=DELIVERABLE,
+                        issue_labels=["criterion"],
+                    ),
                 ),
-            ), None
+                None,
+                (),
+            )
         case "deliverable_child_without_criterion":
-            return (parent, check, deliverable), None
+            return (parent, check, deliverable), None, ()
         case "canceled_criterion_superseded":
-            return (parent, superseded_criterion(), check), None
+            return (parent, superseded_criterion(), check), None, ()
         case "canceled_criterion_alone":
-            return (parent, superseded_criterion()), None
+            return (parent, superseded_criterion()), None, ()
+        case "open_finding_on_organized_scope":
+            # Organized and admitted throughout, but an open finding names
+            # its criterion child, which routes to the parent.
+            finding = SpecFinding(
+                issue_id=check.issue.issue_key,
+                defect_class="missing-evidence",
+                evidence="The Check references an unavailable observation.",
+                role=DefectRole.INSTANCE,
+            )
+            return (parent, check, *organized_family("other/17")), None, (finding,)
     assert name == "criterion_body_moved_on"
     judged = open_criterion_family()
     admissions = tuple(gap_admission(revision) for revision in judged)
     moved = judged[1].model_copy(update={"body_digest": "later criterion body"})
-    return (judged[0], moved), admissions
+    return (judged[0], moved), admissions, ()
 
 
 #: Every scope shape in the table, with the issues its gap holds.
@@ -1028,24 +1043,27 @@ SCOPE_FIXTURES = {
     "canceled_criterion_alone": (SUBJECT,),
     "criterion_body_moved_on": (SUBJECT,),
     "deliverable_child_without_criterion": (DELIVERABLE,),
+    "open_finding_on_organized_scope": (SUBJECT,),
 }
 
 
 @pytest.mark.parametrize("name", sorted(SCOPE_FIXTURES))
 def test_the_pre_query_answers_the_gap_cardinality_over_each_scope(name):
-    revisions, admissions = scope_fixture(name)
+    revisions, admissions, findings = scope_fixture(name)
     before = tuple(revision.model_dump_json() for revision in revisions)
-    gap = gap_of(revisions, admissions=admissions)
+    gap = gap_of(revisions, admissions=admissions, findings=findings)
     assert tuple(item.issue_key for item in gap) == SCOPE_FIXTURES[name]
-    assert at_rest_of(revisions, admissions=admissions) is (gap == ())
+    assert at_rest_of(revisions, admissions=admissions, findings=findings) is (
+        gap == ()
+    )
     assert tuple(revision.model_dump_json() for revision in revisions) == before
 
 
 def test_the_scope_table_answers_both_ways_so_the_agreement_is_not_vacuous():
     answered = set()
     for name in SCOPE_FIXTURES:
-        revisions, admissions = scope_fixture(name)
-        answered.add(at_rest_of(revisions, admissions=admissions))
+        revisions, admissions, findings = scope_fixture(name)
+        answered.add(at_rest_of(revisions, admissions=admissions, findings=findings))
     assert answered == {True, False}
 
 
@@ -2294,21 +2312,25 @@ async def test_a_finding_outside_the_admitted_scope_stays_a_refusal(monkeypatch)
 class RosterReads:
     """Every ``organize_gap`` call the owner makes, over the reads before it.
 
-    At each call the roster listings already on the board's log are counted,
-    so a listing made between a stage's snapshot and its gap call shows up
-    as a higher count. The inputs and the answer are kept whole, so the
-    pre-query can be asked the same question the gap was asked.
+    At each call the roster listings and the issue reads already on the
+    board's log are counted, so a listing or a revision read made between a
+    stage's snapshot and its gap call shows up as a higher count. The inputs
+    and the answer are kept whole, so the pre-query can be asked the same
+    question the gap was asked.
     """
 
     def __init__(self, monkeypatch, board):
         self.at_gap = []
+        self.reads_at_gap = []
         self.inputs = []
         self.answers = []
         computed = organize_owner.organize_gap
 
         def recorded(**kwargs):
             answer = computed(**kwargs)
-            self.at_gap.append([name for name, _ in board.calls].count("list_issues"))
+            names = [name for name, _ in board.calls]
+            self.at_gap.append(names.count("list_issues"))
+            self.reads_at_gap.append(names.count("get_issue"))
             self.inputs.append(kwargs)
             self.answers.append(tuple(answer))
             return answer
@@ -2321,21 +2343,34 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
 ):
     """The tick reads the roster once per stage and asks the gap over it.
 
-    A heartbeat over a converged scope: each stage takes one snapshot, asks
-    the gap over exactly that snapshot, and the barrier that follows is the
-    stage's only further listing. The pre-query is not a second read — it is
+    A heartbeat over a converged scope. The tick lists the roster four
+    times: the ticket snapshot, the ticket barrier, the criteria snapshot and
+    the criteria barrier. Each stage asks the gap over exactly its own
+    snapshot, with nothing read between them but that snapshot's revision
+    reads and the scope labels. The pre-query is not a second read — it is
     the cardinality of the answer the gap already gave.
     """
     h = owner_harness()
     owner, board, _executor = h.two_lane_board()
     assert (await h.run_owner(owner)).halt is None
     second, board, executor = h.factory(under_approval=True, board=board)
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    reader = board.tracker()
     board.calls.clear()
-    await board.tracker().scope_issues(
-        ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
-    )
+    members = await reader.scope_issues(ref=scope)
     per_read = [name for name, _ in board.calls].count("list_issues")
+    listing_reads = [name for name, _ in board.calls].count("get_issue")
     board.calls.clear()
+    for member in members:
+        await reader.read_issue_revision(issue_key=member.issue_key)
+    revision_reads = [name for name, _ in board.calls].count("get_issue")
+    board.calls.clear()
+    await reader.read_scope_labels(ref=scope)
+    label_reads = [name for name, _ in board.calls].count("get_issue")
+    board.calls.clear()
+    # One read per member: the unit a re-read of the snapshot would add.
+    assert revision_reads == len(members)
+    snapshot_reads = listing_reads + revision_reads + label_reads
     probe = RosterReads(monkeypatch, board)
     report = await h.run_owner(second)
 
@@ -2344,6 +2379,7 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     # The stage's own snapshot, then that stage's barrier and the next
     # stage's snapshot: no listing sits between a snapshot and its gap call.
     assert probe.at_gap == [per_read, 3 * per_read]
+    assert probe.reads_at_gap == [snapshot_reads, 3 * snapshot_reads]
     assert [name for name, _ in board.calls].count("list_issues") == 4 * per_read
     assert len(probe.at_gap) == len(report.completed_phases) == 2
     assert all(
