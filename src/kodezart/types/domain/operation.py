@@ -510,6 +510,19 @@ class RecordDestination(OperationModel):
                 raise ValueError("the outcome property must have its own record column")
         return self
 
+    def records_structured(self, kind: RunKind) -> bool:
+        """Whether a *kind* row here is written from declared structure.
+
+        A declared outcome mapping makes every row structured, and declared
+        columns make a fire row structured.  A fire destination that declares
+        neither is the v0.2 shape (KOD-903): its row is the record's title
+        line, exactly as v0.2 wrote it, and a session is given no clause
+        naming columns the destination does not have.
+        """
+        return self.outcome_mapping is not None or (
+            kind is RunKind.FIRE and self.columns is not None
+        )
+
 
 def check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
     """Every structural failure in one repository's check chain.

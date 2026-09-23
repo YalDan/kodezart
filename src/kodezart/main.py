@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.adapters.job_registry import InMemoryJobRegistry
-from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.adapters.toml_operation_config import read_operation_file
 from kodezart.api.v1.router import v1_router
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
@@ -78,11 +78,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         github_api = build_forge_client(config=config)
         if github_api is not None:
             cleanup.push_async_callback(observed_release("forge", github_api.close))
-        declared = (
-            load_operation_config(Path(config.operation_config))
-            if config.operation_config is not None
-            else None
-        )
+        declared = None
+        if config.operation_config is not None:
+            path = Path(config.operation_config)
+            loaded = read_operation_file(path)
+            declared = loaded.config
+            if loaded.ignored or loaded.defaulted:
+                # A v0.2 file boots as it is (KOD-903); one line says what it
+                # was given, so nothing about the exception is silent.
+                await log.ainfo(
+                    "operation_file_v02_accepted",
+                    path=str(path),
+                    ignored=list(loaded.ignored),
+                    defaulted=list(loaded.defaulted),
+                )
         # Reconciliation comes FIRST, because everything below binds to the
         # config it produces (KOD-57 R9). A document the operation owns has no
         # id until boot adopts one, so a registry bound to the declared copy

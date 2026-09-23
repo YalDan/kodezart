@@ -3847,13 +3847,18 @@ class LinearFireDispatchTracker(
         """
         now = self._clock()
         target = _CLAIM_ADDRESSING.target(issue_key)
+        # Refuse absent addressing configuration before any native read.
+        _ = self._markers.grant_pattern
+        wires = await self._comment_wires(target.key, parent_field=target.field)
         markers = [
             marker
-            for marker in (await self._markers_on(_GrantKind.CLAIM, targets=(target,)))
+            for marker in self._markers_from_wires(
+                _GrantKind.CLAIM, target=target, wires=wires
+            )
             if marker.state is _GrantState.HELD and marker.deadline > now
         ]
         if not markers:
-            return None
+            return self._v02_claim(issue_key, wires, now)
         earliest = min(markers, key=lambda marker: marker.order)
         tying = {
             marker.holder
@@ -3871,6 +3876,48 @@ class LinearFireDispatchTracker(
                 for marker in markers
                 if marker.holder == earliest.holder
             ),
+        )
+
+    def _v02_claim(
+        self,
+        issue_key: str,
+        wires: Sequence[LinearCommentEntryWire],
+        now: datetime,
+    ) -> ClaimResult | None:
+        """A live claim v0.2 left on the issue, by v0.2's own rule (KOD-903).
+
+        Read only where no live grant is on the issue, so a claim written
+        today always wins: v0.2's HTML comment is honoured until its
+        ``expires-at`` and never written again. Among unexpired v0.2 claims
+        the earliest by the backend's creation stamp, then comment key, holds
+        the issue, until the latest expiry that holder wrote.
+        """
+        pattern = self._markers.v02_claim_pattern
+        live: list[tuple[datetime, str, str, datetime]] = []
+        for wire in wires:
+            match = pattern.search(wire.body)
+            if match is None:
+                continue
+            try:
+                expires_at = datetime.fromisoformat(match["expires_at"])
+            except ValueError:
+                raise self._malformed_marker(
+                    wire, detail=f"expires-at {match['expires_at']!r}"
+                ) from None
+            if expires_at.tzinfo is None:
+                raise self._malformed_marker(
+                    wire, detail=f"expires-at {match['expires_at']!r} has no zone"
+                )
+            if expires_at > now:
+                live.append((wire.created_at, wire.id, match["holder"], expires_at))
+        if not live:
+            return None
+        _, _, holder, _ = min(live, key=lambda claim: (claim[0], claim[1]))
+        return ClaimResult(
+            issue_key=issue_key,
+            status=ClaimStatus.GRANTED,
+            holder=holder,
+            expires_at=max(claim[3] for claim in live if claim[2] == holder),
         )
 
     async def record_base_spec(self, *, issue_key: str, spec: BaseSpec) -> None:

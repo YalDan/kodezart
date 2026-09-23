@@ -33,6 +33,19 @@ class LinearMarkers:
             re.DOTALL | re.MULTILINE,
         )
 
+    @property
+    def v02_claim_pattern(self) -> re.Pattern[str]:
+        """v0.2's claim wire form, read only (KOD-903).
+
+        The HTML comment v0.2 claimed an issue with, under the configured claim
+        prefix.  Read so that a claim v0.2 left on an issue is honoured until it
+        lapses; nothing here writes that form again.
+        """
+        return self._pattern(
+            "claim",
+            r'\s+holder="(?P<holder>[^"]+)"\s+expires-at="(?P<expires_at>[^"]+)"\s*-->',
+        )
+
     def grant_body(self, *, lines: Mapping[str, str], addresses: Sequence[str]) -> str:
         """One grant marker: its declared fields, then one address per line."""
         stated = "\n".join(f"{name}: {value}" for name, value in lines.items())

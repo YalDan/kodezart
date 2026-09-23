@@ -91,8 +91,10 @@ the adapter choice moves into it as `BACKEND`.
 | `TRACKER_SURFACE_LEASE_SECONDS` | `TRACKER__SURFACE_LEASE_SECONDS` |
 
 The composed lifecycle outcome writer uses the surface duration for acquisition
-and explicit renewal. Add a distinct `run_outcome` entry to `[marker_prefixes]`;
-this identifies the per-job terminal comment and has no fallback when absent.
+and explicit renewal. A declared `[marker_prefixes]` table must name a distinct
+`run_outcome` entry for the per-issue path; it identifies the per-job terminal
+comment and has no fallback in a declared table. A file that declares no
+`[marker_prefixes]` table at all is covered in [4c](#4c-a-v02-operation-file).
 Existing `run_state` and `run_event` markers keep their own payload contracts.
 
 ### Knowledge
@@ -237,6 +239,69 @@ The organize tick no longer takes the grooming pass's cadence when its own is
 unset. Setting one half of a pair without the other refuses at load, naming
 both; a pass that should not run is left unset rather than parked on a long
 interval.
+
+## 4c. A v0.2 operation file
+
+A v0.2 operation file boots on v0.3 unchanged. Everywhere else a member the
+configuration leaves out refuses at the point of use and nothing is supplied in
+its place; a v0.2 file is the one exception, and the exception is limited to
+what such a file can carry:
+
+- **`[[initiatives]]` is accepted and ignored.** Initiative membership and
+  target dates are read from the tracker at run time, and team scope is the
+  declared boundary, so the roster is dropped unread. Every other key v0.3
+  does not know is still refused, and so are the keys v0.3 itself retired.
+- **A file that declares no `[marker_prefixes]` table** gets the markers v0.2
+  wrote, for each purpose the per-issue path needs:
+
+  | Purpose | Marker |
+  | --- | --- |
+  | `claim` | `kodezart-claim` |
+  | `work_ref` | `kodezart-workref` |
+  | `base_spec` | `kodezart-basespec` |
+  | `repository` | `kodezart-repo` |
+  | `run_outcome` | `run-outcome` |
+
+  v0.2 wrote no outcome marker, so `run_outcome` takes the shipped example's.
+  A declared table is never extended: once the table is present, even empty,
+  it is taken exactly as written, and a purpose it leaves out refuses at use.
+  The scope path's purposes are never supplied; a deployment that walks scopes
+  declares its table.
+- **A `records.fire` destination that declares neither `columns` nor
+  `outcome_mapping`** is a v0.2 fire log. Its row is the run's title line, as
+  v0.2 wrote it, and the fire session is given no record clause, because there
+  are no columns for one to name. Declaring either keeps the structured row and
+  its rules.
+
+Boot logs `operation_file_v02_accepted` once when the exception applied, with
+`ignored` naming each table it dropped and `defaulted` naming each member it
+supplied. A file written for v0.3 logs nothing of the kind.
+
+What v0.2 already wrote on your issues is still read:
+
+- A v0.2 claim (the `kodezart-claim` HTML comment) holds its issue until its
+  `expires-at`, by v0.2's own rule, where no claim written since is live. It is
+  never written again: every new claim is the fenced block.
+- Work refs, base specs and repository markers are read as they are. A work ref
+  v0.2 wrote carries no landing fact, and reads as unknown.
+
+Running a v0.2 process and a v0.3 process against one board at the same time
+is not supported: the two do not arbitrate claims with each other.
+
+## 4d. What v0.3 changes on the per-issue path on purpose
+
+A v0.2 file boots into the same per-issue flow, with these deliberate changes:
+
+- A stalled pull request is watched for its checks like any other.
+- A red check is classified before remediation is attempted.
+- The pull request body ends with a `Tracker issue:` line naming the issue
+  (KOD-739).
+- A granted `ticket_fire` session gets the fire record clause where
+  `records.fire` declares its columns (KOD-742).
+- A verified merge moves the issue's queue state to done and no longer moves
+  its workflow state to Done.
+- The terminal outcome is one comment per job under the `run_outcome` marker,
+  rewritten in place, where v0.2 posted a new plain comment.
 
 ## 5. Removed with no replacement
 

@@ -70,6 +70,10 @@ def fire_record_template(
     destination = operation.records.get(RunKind.FIRE.value)
     if destination is None or destination.system is not DocumentSystem.KNOWLEDGE:
         return None
+    if not destination.records_structured(RunKind.FIRE):
+        # A fire log declared the v0.2 way takes the title-line row, so there
+        # are no columns for a clause to name (KOD-903).
+        return None
     if destination.columns is None:
         raise OperationMemberAbsentError(
             missing="records.fire.columns",

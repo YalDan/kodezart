@@ -68,6 +68,8 @@ hosts = []
 # Stable tracker identities. Preserve the existing prefixes when adopting
 # a tracker with recorded work: changing one addresses a different marker.
 # Every used purpose needs an entry; an absent purpose is refused at use.
+# A file with no [marker_prefixes] table at all takes the v0.2 markers for the
+# per-issue path (see docs/migration-v0.2-to-v0.3.md).
 [marker_prefixes]
 ruling = "kodezart-ruling"
 claim = "kodezart-claim"
@@ -387,7 +389,7 @@ cloudflare_docs_mcp = "https://example.invalid/docs-mcp"
 notion_connector = "example-notion-connector-id"
 
 # Initiative membership and target dates are read from the tracker at run time.
-# A copied [[initiatives]] roster is rejected; team scope is the declared boundary.
+# A v0.2 [[initiatives]] roster is accepted and ignored; team scope is the declared boundary.
 
 # Optional. A declared table must be total — every event kind names an effect,
 # or loading the file refuses. Dialling the tracker does not consult it. These
