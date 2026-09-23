@@ -135,8 +135,10 @@ class Scanned:
     *modules* carries each imported module and, for a first-party ``from``
     import, the dotted name of every alias too, so ``from kodezart import
     adapters`` is seen as ``kodezart.adapters`` rather than as ``kodezart``.
-    *plain* carries the modules imported as whole modules, which is how a role
-    can be reached without its name ever appearing in an import.
+    *plain* carries the modules imported as whole modules, by a plain import
+    or by a first-party ``from`` import whose alias is itself a module of the
+    tree (``from kodezart.core import protocols``), which is how a role can be
+    reached without its name ever appearing in an import.
     *carrier_calls* carries every attribute called on the clock-carrying name,
     so the rule about it is "nothing through this name" rather than a list of
     the attributes somebody thought of.
@@ -157,7 +159,7 @@ def _module_path(module: str, *, root: pathlib.Path) -> pathlib.Path | None:
     return package if package.exists() else None
 
 
-def _scan(path: pathlib.Path, *, first_party: str) -> Scanned:
+def _scan(path: pathlib.Path, *, first_party: str, root: pathlib.Path) -> Scanned:
     """Every module and name this file imports, and every call target in it."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     modules: set[str] = set()
@@ -170,7 +172,11 @@ def _scan(path: pathlib.Path, *, first_party: str) -> Scanned:
             modules.add(node.module)
             names.update(alias.name for alias in node.names)
             if node.module.startswith(first_party):
-                modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+                for alias in node.names:
+                    dotted = f"{node.module}.{alias.name}"
+                    modules.add(dotted)
+                    if _module_path(dotted, root=root) is not None:
+                        plain.add(dotted)
         elif isinstance(node, ast.Import):
             modules.update(alias.name for alias in node.names)
             plain.update(alias.name for alias in node.names)
@@ -218,7 +224,7 @@ def closure(
         path = _module_path(module, root=root)
         if path is None:
             continue
-        found = _scan(path, first_party=first_party)
+        found = _scan(path, first_party=first_party, root=root)
         scanned[module] = found
         if module in leaves:
             continue
@@ -236,8 +242,9 @@ def test_the_supervisor_reaches_no_adapter_no_process_and_no_repository_role():
     path, which this slice left on the whole port; that allowance is derived
     from the walker's own closure rather than listed, so it cannot quietly
     cover a module nothing reaches from there. A plain import of a first-party
-    module is refused outright, because it puts every name in that module
-    within reach while the import names none of them. And the process and file
+    module is refused outright, and so is a ``from`` import that binds one,
+    because either puts every name in that module within reach while the
+    import names none of them. And the process and file
     calls are asserted as call targets rather than as forbidden modules,
     because the module that carries most of them is held legitimately by the
     scheduler and the owned-task settle inside this closure.
@@ -316,6 +323,26 @@ def test_the_closure_walker_flags_an_adapter_reached_through_one_more_import(tmp
         )
 
 
+def test_a_module_bound_by_a_from_import_is_a_plain_import(tmp_path):
+    """``from pkg import module`` reaches every name in it, as ``import`` does.
+
+    The control for the plain-import rule's second form: a module bound by a
+    ``from`` import is carried as a whole-module import, while a name bound
+    the same way from inside a module is not.
+    """
+    package = tmp_path / "probe"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "entry.py").write_text(
+        "from probe import inner\nfrom probe.inner import Role\n", encoding="utf-8"
+    )
+    (package / "inner.py").write_text("class Role:\n    pass\n", encoding="utf-8")
+
+    scanned = closure(("probe.entry",), root=tmp_path, first_party="probe")
+
+    assert scanned["probe.entry"].plain == frozenset({"probe.inner"})
+
+
 def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
     """The tick waits for nothing and times nothing: the scheduler does both.
 
@@ -335,7 +362,7 @@ def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
     for module in OWN_MODULES:
         path = _module_path(module, root=SOURCE_ROOT)
         assert path is not None, module
-        found = _scan(path, first_party="kodezart")
+        found = _scan(path, first_party="kodezart", root=SOURCE_ROOT)
 
         assert found.modules.isdisjoint(CLOCK_MODULES), (
             module,
