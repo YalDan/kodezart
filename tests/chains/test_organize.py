@@ -27,6 +27,7 @@ from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.organize import (
     AdmissionJudgment,
     AdmissionResult,
+    AdmissionRoute,
     AdmissionVerdict,
     DefectRole,
     MandateKind,
@@ -1761,6 +1762,17 @@ async def test_an_unverifiable_admission_marks_the_ticket_only_on_a_real_in_scop
             "pending_blocker_id": named,
         },
     )
+    # The owner's own routing call, observed: the verdict it was handed and
+    # the route it chose, so a row passes only on the route the edge earns.
+    routed = []
+    choose = organize_owner.admission_route
+
+    def observed_route(result, **kwargs):
+        route_taken = choose(result, **kwargs)
+        routed.append((result.issue_id, result.verdict, route_taken))
+        return route_taken
+
+    monkeypatch.setattr(organize_owner, "admission_route", observed_route)
     report = await h.run_owner(owner)
     labels = board.server.issues[CLAIMED_ISSUE].labels
     escalations = [
@@ -1770,7 +1782,16 @@ async def test_an_unverifiable_admission_marks_the_ticket_only_on_a_real_in_scop
     ]
     _assessed, _verified, authored = h.sessions(executor, 0)
     assert answered
-    assert {answer["verdict"] for answer in answered} == {"unverifiable"}
+    expected_route = (
+        AdmissionRoute.MARK_COMPLETE
+        if route == "edge_in_scope"
+        else AdmissionRoute.REAUTHOR
+    )
+    assert [entry for entry in routed if entry[0] == CLAIMED_ISSUE] and all(
+        entry == (CLAIMED_ISSUE, AdmissionVerdict.UNVERIFIABLE, expected_route)
+        for entry in routed
+        if entry[0] == CLAIMED_ISSUE
+    )
     if route == "edge_in_scope":
         assert report.halt is None
         assert report.completed_phases == (MandateKind.TICKET,)
