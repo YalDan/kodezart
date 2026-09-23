@@ -78,7 +78,7 @@ from kodezart.domain.fire_spec import (
 )
 from tests.domain.test_criterion_cross_off import callers_of, source_tree
 from tests.identity_guards import _constructor_names
-from tests.name_resolution import module_namespace
+from tests.name_resolution import module_namespace, referencing_definitions
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 #: Where the criterion template grammar is written, and so the one module
@@ -327,16 +327,14 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
 
     assert set(found) == {RULE_MODULE}
     # Not vacuous, and closed inside the owner too: the owner's own matching
-    # scopes are exactly the two the grammar is written as — the field reader
-    # and the row locator the amendment edit addresses rows through — read off
-    # the functions rather than spelled. A third scope inside the owner is a
+    # scope is exactly the one row walker the field reader, the duplicate
+    # check and the amendment edit all read rows through, read off the
+    # function rather than spelled. A second scope inside the owner is a
     # second statement of the grammar as much as one in another module is.
-    assert found[RULE_MODULE] == sorted(
-        {criterion_field_bodies.__name__, _criterion_rows.__name__}
-    )
+    assert found[RULE_MODULE] == [_criterion_rows.__name__]
     # A scope name is not enough to close the owner, because a second
-    # statement of the grammar matched inside one of those two scopes adds no
-    # third name.  The names this syntactic reading binds to a compiled
+    # statement of the grammar matched inside the walker adds no second
+    # name.  The names this syntactic reading binds to a compiled
     # criterion-shaped pattern must be exactly the names that denote the one
     # grammar object, so a rename moves both sides at once.  It sees only a
     # ``<module>.compile`` call over a literal, bound by assignment.  The pins
@@ -609,19 +607,18 @@ EVIDENCE_ROW_TEXT = r"^\s*\*\*(Evidence):\*\*(.*)$"
 #: owner, as the module texts it would arrive as, with what it must add to
 #: the literals and to the compiled patterns read above.
 PLANTED_ROW_GRAMMARS = {
-    "evidence parser compiled elsewhere and imported into the reader": (
+    "evidence parser compiled elsewhere and imported into the walker": (
         {
             "domain/evidence_rows.py": "import re\n"
             f"EVIDENCE_ROW = re.compile(r'{EVIDENCE_ROW_TEXT}')\n",
             RULE_MODULE: source_tree()[RULE_MODULE].replace(
-                "        row = _CRITERION_ROW.match(line)\n"
-                "        if row is not None:\n"
-                "            if active:\n",
-                "        from kodezart.domain.evidence_rows import EVIDENCE_ROW as _E\n"
+                "            row = None if delimiter is not None"
+                " else _CRITERION_ROW.match(line)\n",
+                "            from kodezart.domain.evidence_rows"
+                " import EVIDENCE_ROW as _E\n"
                 "\n"
-                "        row = _CRITERION_ROW.match(line) or _E.match(line)\n"
-                "        if row is not None:\n"
-                "            if active:\n",
+                "            row = None if delimiter is not None"
+                " else _CRITERION_ROW.match(line) or _E.match(line)\n",
             ),
         },
         [("domain/evidence_rows.py", "<module>", EVIDENCE_ROW_TEXT)],
@@ -700,9 +697,9 @@ def test_the_owner_states_its_row_grammar_once():
     the grammar's own text once, at module level, so a second pattern written
     anywhere in the owner, a sanctioned scope included, adds a literal.  What
     is read: the grammar object is read only as the receiver of ``match`` in
-    the two sanctioned scopes, the field reader and the row locator the
-    amendment edit addresses rows through, so a pattern derived from its
-    text, the object handed on under another name, or the object reached by a
+    the one row walker the field reader, the duplicate check and the
+    amendment edit all read rows through, so a pattern derived from its text,
+    the object handed on under another name, or the object reached by a
     string spelling its name, reds.
 
     Not seen: a grammar assembled at call time from pieces none of which is a
@@ -714,9 +711,83 @@ def test_the_owner_states_its_row_grammar_once():
     assert len(GRAMMAR_NAMES) == 1
     assert compiled == sorted(GRAMMAR_NAMES)
     assert literals == [("<module>", _CRITERION_ROW.pattern)]
-    assert uses == sorted(
-        (scope, "match")
-        for scope in (criterion_field_bodies.__name__, _criterion_rows.__name__)
+    assert uses == [(_criterion_rows.__name__, "match")]
+
+
+@cache
+def _grammar_referrers_of(module: str, source: str) -> tuple[str, ...]:
+    """The definitions of one module that refer to the grammar object."""
+    return tuple(
+        name
+        for name, _ in referencing_definitions(
+            module,
+            ast.parse(source),
+            module_namespace(module, source),
+            wanted=(_CRITERION_ROW,),
+        )
+    )
+
+
+def grammar_referrers(sources: dict[str, str]) -> list[tuple[str, str]]:
+    """Every definition of *sources* that refers to the grammar object, by module.
+
+    Read by identity, the way ``referencing_definitions`` reads it: a name an
+    import anywhere in the module binds to the object, an attribute that is
+    the object, a string naming it, called or handed on — so a bound
+    ``match`` of it mapped over a body's lines is a reference like a call.
+    """
+    return sorted(
+        (module, name)
+        for module, source in sorted(sources.items())
+        for name in _grammar_referrers_of(module, source)
+    )
+
+
+def test_the_walker_is_the_one_definition_referring_to_the_grammar():
+    """Over the whole tree, the grammar object is referred to by the walker alone.
+
+    Every definition of every module that refers to the object, read by what
+    its names denote rather than how they are spelled, is exactly the one row
+    walker the field reader, the duplicate check and the amendment edit read
+    rows through.
+    """
+    assert grammar_referrers(source_tree()) == [(RULE_MODULE, _criterion_rows.__name__)]
+
+
+#: Each way the grammar object could be reused outside the walker, as the
+#: module text it would arrive as, with the definition it adds.
+GRAMMAR_REUSES = {
+    "bound match mapped over lines after a function-level import": (
+        "services/evidence_reader.py",
+        "def evidence(body):\n"
+        f"    from {criterion_field_bodies.__module__} import _CRITERION_ROW\n"
+        "\n"
+        "    return [\n"
+        "        found[2]\n"
+        "        for found in map(_CRITERION_ROW.match, body.splitlines())\n"
+        "        if found and found[1] == 'Evidence'\n"
+        "    ]\n",
+        "evidence",
+    ),
+    "aliased at module level and matched": (
+        "services/evidence_reader.py",
+        f"from {criterion_field_bodies.__module__} import _CRITERION_ROW as ROW\n"
+        "\n"
+        "def evidence(body):\n"
+        "    return [ROW.match(line) for line in body.splitlines()]\n",
+        "evidence",
+    ),
+}
+
+
+@pytest.mark.parametrize("planted", sorted(GRAMMAR_REUSES))
+def test_a_reuse_of_the_grammar_outside_the_walker_is_a_referring_definition(planted):
+    module, text, definition = GRAMMAR_REUSES[planted]
+    sources = {**source_tree(), module: text}
+    assert module not in source_tree()
+
+    assert grammar_referrers(sources) == sorted(
+        [(RULE_MODULE, _criterion_rows.__name__), (module, definition)]
     )
 
 
@@ -724,7 +795,7 @@ ROW_TEXT = r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$"
 EVIDENCE_TEXT = r"^ {0,3}\*\*Evidence:\*\*(.*)$"
 GENERIC_ROW_TEXT = r"^ {0,3}\*\*(\w+):\*\*(.*)$"
 #: Each way a second statement of the row grammar can be written into the
-#: owner: appended at module level, or put in place of a sanctioned read.
+#: owner: appended at module level, or put in place of the walker's one read.
 SECOND_GRAMMARS = {
     "keyword compile": (
         None,
@@ -749,11 +820,11 @@ SECOND_GRAMMARS = {
         f"_ROW_AGAIN = re.compile(r'{ROW_TEXT}')\n",
     ),
     "alias of the grammar object": (None, "_ROW = _CRITERION_ROW\n"),
-    "inline in a sanctioned scope": (
+    "inline in the walker": (
         "_CRITERION_ROW.match(line)",
         f"re.compile(pattern=r'{ROW_TEXT}').match(line)",
     ),
-    "recompiled in a sanctioned scope": (
+    "recompiled in the walker": (
         "_CRITERION_ROW.match(line)",
         "re.compile(_CRITERION_ROW.pattern).match(line)",
     ),
@@ -788,7 +859,7 @@ def test_a_second_row_grammar_in_the_owner_changes_what_it_states(planted):
     if anchor is None:
         changed = source + "\n" + text
     else:
-        assert source.count(anchor) == 2
+        assert source.count(anchor) == 1
         changed = source.replace(anchor, text, 1)
 
     assert owner_grammar_readings(changed) != owner_grammar_readings(source)
