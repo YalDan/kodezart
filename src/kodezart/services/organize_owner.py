@@ -1248,6 +1248,11 @@ class OrganizeOwner:
                 )
                 declared = phase_surfaces(member_keys=declared_keys, role=phase.role)
                 residuals: list[SpecFinding] = []
+                # Findings of a judgement this round left behind when its
+                # subject's write became a residual or took the subject out
+                # of the scope. Held for a halt later in the round only:
+                # the next round judges again, so they never feed it.
+                interrupted: list[SpecFinding] = []
                 # Subjects this round verified clean after working them: a
                 # finding an earlier round formed on one of them is repaired,
                 # and a halt later in the round does not write it.
@@ -1346,6 +1351,7 @@ class OrganizeOwner:
                                             declared=phase.role.write_surfaces,
                                         )
                                     )
+                                    interrupted.extend(result.findings)
                                     break
                                 except OrganizeDecisionRequiredError as exc:
                                     raise _HaltRequestError(
@@ -1382,6 +1388,7 @@ class OrganizeOwner:
                                 }
                                 if request.issue_key not in members:
                                     admissions.pop(request.issue_key, None)
+                                    interrupted.extend(result.findings)
                                     break
                                 result = await self._admission.verify(request)
                                 route = await self._route(
@@ -1541,10 +1548,13 @@ class OrganizeOwner:
                         # Every finding still open: the last dry round's,
                         # less those on a subject this round verified clean,
                         # the residuals this round formed before it halted,
-                        # and those of the judgement the halt interrupted.
+                        # those of the judgements a residual or a removed
+                        # subject interrupted, and those of the judgement
+                        # the halt interrupted.
                         findings=(
                             *(f for f in findings if f.issue_id not in cleared),
                             *residuals,
+                            *interrupted,
                             *request.findings,
                         ),
                         phase=phase,

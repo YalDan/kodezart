@@ -541,8 +541,9 @@ A finding the row forms is held while the phase converges, not written when
 it is formed: a finding the next round repairs never reaches the tracker.
 Every finding still open when the row halts on a judgement — the last dry
 round's, less those on a subject the halting round verified clean, the
-residuals of the round that halted, and those the halting judgement carries —
-is written before the halt report returns, after the round's lease is
+residuals of the round that halted, those of a judgement in that round whose
+subject's write became a residual or left the scope, and those the halting
+judgement carries — is written before the halt report returns, after the round's lease is
 released, as its own record on the item it names: one escalation per item and
 question, carrying the finding's evidence and the pass's interim reading, so
 two classes on one item are two records and one class raised twice is one
