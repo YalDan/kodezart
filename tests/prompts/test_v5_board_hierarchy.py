@@ -93,10 +93,10 @@ MISPLACEMENT_SENTENCE = (
 #: both registers below. The two sentences that decide the route and the
 #: four sentences of the standard are the constants above.
 OPENING = (
-    "Assess whether the issue can be implemented from its own specification "
-    "without inventing a decision, and demonstrated in the declared grading "
-    "environment. Work alone. Return the requested structured admission result "
-    "and defect findings; write nothing to the tracker or repository."
+    "Assess whether the issue satisfies the supplied mandate rubric from its own "
+    "specification, without inventing a decision. Work alone. Return the "
+    "requested structured admission result and defect findings; write nothing to "
+    "the tracker or repository."
 )
 VERDICTS = (
     "Preserve the three admission verdicts: buildable, not_buildable, "
@@ -106,6 +106,18 @@ VERDICTS = (
     "finding in concrete evidence. Where a mandate causes a defect, identify its "
     "role as mandate and quote the mandate text verbatim; an instance finding "
     "carries no mandate text."
+)
+#: The gradability paragraph (KOD-365): a deliverable no declared
+#: environment can demonstrate is the member's second repairable gap, beside
+#: the misplacement, and routes to the author the same way.
+GRADABILITY = (
+    "Ask gradability as well as buildability. The declared environments below "
+    "are the ones this operation states its work is built and demonstrated in. "
+    "A deliverable no declared environment can demonstrate is not_buildable "
+    f"with a repairable {SPEC_GAP}: name in the evidence the demonstration that "
+    "cannot run and where it has to move to, and never admit it for a later run "
+    "to absorb. Do not assume a command, service or credential the declarations "
+    "do not state."
 )
 HIERARCHY = " ".join((*SENTENCES, MISPLACEMENT_SENTENCE))
 RUBRIC = (
@@ -124,6 +136,29 @@ DEFECT_LEAD = (
     "evidence of recurrence, never an exhaustive work list. Inspect the whole "
     "rubric and report new classes as well as surviving ones."
 )
+#: The declared environments block (KOD-365), as the member composes it
+#: with every ``{{...}}`` unresolved, and as the fixed case renders it.
+ENVIRONMENTS_TEMPLATE = (
+    "{{#if repos}}<declared_environments> {{#each repos}}- {{this.name}} "
+    "(trunk {{this.trunk}}): {{#if this.checks}}{{#each this.checks}} - check "
+    "{{this.name}}: `{{this.command}}` {{/each}}{{/if}}{{#if this.checks_absent}} "
+    "- no check chain is declared: the repository's own CI is its gate, read "
+    "in-repo at the supplied base ref {{/if}}{{#if this.runner_environment}}"
+    "{{#each this.runner_environment}} - {{this.name}}: {{#if this.available}}"
+    "available{{/if}}{{#if this.unavailable}}unavailable{{/if}} {{/each}}{{/if}}"
+    "{{#if this.runner_environment_absent}} - no runner environment fact is "
+    "declared {{/if}}{{/each}}</declared_environments> {{/if}}"
+)
+ENVIRONMENTS_RENDER = (
+    "<declared_environments> - example-repo (trunk main): - check install: "
+    "`make install` - check typecheck: `make type-check` - check lint: "
+    "`make lint` - check build: `make build` - check test: `make test` - check "
+    "test-integration: `make test-integration` - no runner environment fact is "
+    "declared - second-repo (trunk main): - check format: `make format-check` - "
+    "check lint: `make lint` - check build: `make build` - check test: "
+    "`make test` - no runner environment fact is declared "
+    "</declared_environments>"
+)
 #: Written out rather than read from its fragment, so a sentence added to
 #: the fragment is a change here too.
 DEPTH = (
@@ -138,6 +173,7 @@ DEPTH = (
 JUDGE_TEMPLATE: tuple[str, ...] = (
     OPENING,
     VERDICTS,
+    GRADABILITY,
     HIERARCHY,
     RUBRIC,
     "<mandate_rubric> {{mandate_rubric}} </mandate_rubric>",
@@ -151,6 +187,7 @@ JUDGE_TEMPLATE: tuple[str, ...] = (
     "<criterion_issue_bodies> {{#each criterion_issue_bodies}}<criterion_issue> "
     "{{this}} </criterion_issue> {{/each}}</criterion_issue_bodies>",
     "<base_ref>{{base_ref}}</base_ref>",
+    ENVIRONMENTS_TEMPLATE,
     DEFECT_LEAD
     + " <defect_classes> {{#each defect_classes}}{{this}} {{/each}}</defect_classes>",
     DEPTH,
@@ -162,6 +199,7 @@ JUDGE_TEMPLATE: tuple[str, ...] = (
 JUDGE_PROMPT: tuple[str, ...] = (
     OPENING,
     VERDICTS,
+    GRADABILITY,
     HIERARCHY,
     RUBRIC,
     "<mandate_rubric> Golden mandate rubric </mandate_rubric>",
@@ -176,13 +214,17 @@ JUDGE_PROMPT: tuple[str, ...] = (
     "<criterion_issue_bodies> <criterion_issue> Golden criterion issue body "
     "</criterion_issue> </criterion_issue_bodies>",
     "<base_ref>main</base_ref>",
+    ENVIRONMENTS_RENDER,
     DEFECT_LEAD + " <defect_classes> Golden defect class </defect_classes>",
     DEPTH,
 )
 
 #: The descriptions three admission shapes share.
 ISSUE_ID = "Exact native tracker key of the issue assessed."
-EVIDENCE = "Concrete current source evidence supporting this buildability judgment."
+EVIDENCE = (
+    "Concrete current source evidence supporting this judgment against the "
+    "supplied mandate rubric."
+)
 FINDINGS = (
     "Observed defects under the configured rubric, retaining their owning issue keys."
 )
@@ -202,8 +244,8 @@ ADMISSION_SCHEMA: dict[str, object] = {
                 "verdict": {
                     "const": "buildable",
                     "description": (
-                        "The current issue can be built without inventing a decision "
-                        "or missing evidence."
+                        "The current issue satisfies the supplied mandate rubric "
+                        "without inventing a decision or missing evidence."
                     ),
                     "title": "Verdict",
                     "type": "string",
@@ -389,7 +431,8 @@ ADMISSION_SCHEMA: dict[str, object] = {
                 "verdict": {
                     "const": "unverifiable",
                     "description": (
-                        "A named unavailable artifact prevents a buildability judgment."
+                        "A named unavailable artifact prevents judging the current "
+                        "issue against the supplied mandate rubric."
                     ),
                     "title": "Verdict",
                     "type": "string",
@@ -485,9 +528,9 @@ REFUSAL_KIND_PATH = "#/$defs/RefusedAdmission/properties/refusalKind"
 #: depth block a fragment composes in.
 HALT_LICENSED: dict[str, tuple[str, str]] = {
     "alternative_before_the_colon": (
-        f"with a repairable {SPEC_GAP}:\n",
-        f"with a repairable {SPEC_GAP} or a\n{HUMAN_DECISION}, whichever you "
-        "judge it to be:\n",
+        f"outside that tree is not_buildable with a repairable {SPEC_GAP}:\n",
+        f"outside that tree is not_buildable with a repairable {SPEC_GAP} or a\n"
+        f"{HUMAN_DECISION}, whichever you judge it to be:\n",
     ),
     "every_gap_classed_as_a_decision": (
         f"distinguishes a repairable\n{SPEC_GAP} from a {HUMAN_DECISION}.",
@@ -709,9 +752,9 @@ def test_the_judge_names_misplacement_as_a_repairable_gap() -> None:
     )
     assert judge_paragraphs(rendered) == JUDGE_PROMPT
     assert CLASSIFYING_SENTENCE in JUDGE_TEMPLATE[1]
-    assert JUDGE_TEMPLATE[2].endswith(MISPLACEMENT_SENTENCE)
+    assert JUDGE_TEMPLATE[3].endswith(MISPLACEMENT_SENTENCE)
     assert CLASSIFYING_SENTENCE in JUDGE_PROMPT[1]
-    assert JUDGE_PROMPT[2].endswith(MISPLACEMENT_SENTENCE)
+    assert JUDGE_PROMPT[3].endswith(MISPLACEMENT_SENTENCE)
     assert organize_chain.ORGANIZE_ADMISSION_SCHEMA is ORGANIZE_ADMISSION_SCHEMA
     assert schema_leaves(ORGANIZE_ADMISSION_SCHEMA) == schema_leaves(ADMISSION_SCHEMA)
 
