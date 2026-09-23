@@ -43,7 +43,10 @@ from collections.abc import Mapping
 import pytest
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
+from kodezart.core import protocols
+from kodezart.core.protocols import TrackerPort
 from tests.domain.test_criterion_cross_off import source_tree
+from tests.fakes import FakeTrackerPort
 from tests.tracker.role_register import (
     AGGREGATE,
     EXEMPT_UNTIL_KOD_390,
@@ -78,16 +81,37 @@ DELETED_ISSUE_WRITES = frozenset({"create_issue", "update_issue", "upsert_issue"
 
 
 def deleted_member_sites(tree: Mapping[str, str]) -> list[str]:
-    """Every module in *tree* that defines or calls a deleted issue write."""
+    """Every module in *tree* that defines, binds or calls a deleted issue write."""
     return sorted(
         path
         for path, text in tree.items()
         if any(
             call_pattern(name).search(text)
             or re.search(rf"\bdef\s+{re.escape(name)}\b", text)
+            or re.search(rf"^\s+{re.escape(name)}\s*[:=]", text, re.MULTILINE)
             for name in DELETED_ISSUE_WRITES
         )
     )
+
+
+def classes_holding_a_deleted_write() -> dict[str, tuple[str, ...]]:
+    """Every live class of the port, adapter or double that binds a deleted write.
+
+    Read off the objects rather than the text, so a write bound by
+    assignment, or under a name built at runtime, is seen as well as a
+    ``def``.
+    """
+    classes = {
+        *TrackerPort.__mro__,
+        *(getattr(protocols, role) for role in roles(port_module_text())),
+        *LinearMcpTracker.__mro__,
+        *FakeTrackerPort.__mro__,
+    }
+    return {
+        cls.__qualname__: held
+        for cls in classes
+        if (held := tuple(sorted(DELETED_ISSUE_WRITES & set(vars(cls)))))
+    }
 
 
 def test_no_port_member_lacks_a_production_caller_beyond_the_exemptions():
@@ -168,12 +192,20 @@ def test_the_deleted_issue_writes_are_neither_defined_nor_called_anywhere():
     assert deleted_member_sites(tree_under_tests()) == []
 
 
+def test_no_class_of_the_port_adapter_or_double_holds_a_deleted_write():
+    assert classes_holding_a_deleted_write() == {}
+    for whole in (TrackerPort, LinearMcpTracker, FakeTrackerPort):
+        assert not any(hasattr(whole, name) for name in DELETED_ISSUE_WRITES)
+
+
 @pytest.mark.parametrize("name", sorted(DELETED_ISSUE_WRITES))
-@pytest.mark.parametrize("form", ["call", "definition"])
+@pytest.mark.parametrize("form", ["call", "definition", "assignment", "annotation"])
 def test_a_revived_issue_write_is_reported(name, form):
     text = {
         "call": f"async def seed(tracker):\n    await tracker.{name}(issue_key='k')\n",
         "definition": f"class Revived:\n    async def {name}(self):\n        ...\n",
+        "assignment": f"class Revived(Base):\n    {name} = Base._write\n",
+        "annotation": f"class Revived:\n    {name}: Callable[..., None]\n",
     }[form]
     tree = {"tracker/revived.py": text}
 
