@@ -9,8 +9,12 @@ between roles moves the guard with it and a member declared twice is named.
 The second half is the caller question. A member no production module calls
 is a capability nothing uses, carried
 on every implementation for no consumer. The list of such members is
-derived: every member of the whole port, matched as a member call across
-the shipped tree outside the port module and the vendor adapters. It holds
+derived: every member of the whole port, found as a member call in the
+parsed modules of the shipped tree outside the port module and the vendor
+adapters, so a member spelled only in a comment, a docstring or a string
+has no caller. A caller in a module the run does not reach still counts,
+as the criterion words it, and the reachability of its role is pinned
+separately. It holds
 nothing but two named exemptions — the four run-record members KOD-798
 decides, and the authorship read KOD-390 names as landed — and the three
 issue writes that had no caller are gone from every tree, tests included,
@@ -41,16 +45,15 @@ import pytest
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from tests.domain.test_criterion_cross_off import source_tree
 from tests.tracker.role_register import (
-    ADAPTERS,
     AGGREGATE,
     EXEMPT_UNTIL_KOD_390,
-    PORT_MODULE,
     RUN_RECORD_EXEMPTION,
     UNWIRED_CONSUMER_ROLES,
     adapter_importers,
     aggregate_annotations,
     annotation_names,
     call_pattern,
+    called_members,
     composed,
     declaring_roles,
     defaulted_role_parameters,
@@ -59,6 +62,7 @@ from tests.tracker.role_register import (
     own_declarations,
     port_members,
     port_module_text,
+    production_modules,
     redeclared_from_a_base,
     roles,
     tree_under_tests,
@@ -103,27 +107,48 @@ def test_every_exempted_member_is_a_member_of_the_port_today():
     assert EXEMPT_UNTIL_KOD_390 <= port_members()
 
 
-def test_a_member_whose_only_caller_goes_is_reported():
-    sources = source_tree()
-    members = port_members()
+def single_caller(sources: Mapping[str, str]) -> tuple[str, str]:
+    """A member one production module calls, and that module."""
     callers = {
         name: [
             path
-            for path, text in sources.items()
-            if path != PORT_MODULE
-            and not path.startswith(f"{ADAPTERS}/")
-            and call_pattern(name).search(text)
+            for path, text in production_modules(sources).items()
+            if name in called_members(text)
         ]
-        for name in sorted(members)
+        for name in sorted(port_members())
     }
-    name, modules = next(
-        (name, modules) for name, modules in callers.items() if len(modules) == 1
+    return next(
+        (name, modules[0]) for name, modules in callers.items() if len(modules) == 1
     )
+
+
+def test_a_member_whose_only_caller_goes_is_reported():
+    sources = source_tree()
+    members = port_members()
+    name, module = single_caller(sources)
     assert name not in zero_callers(sources, members)
 
-    del sources[modules[0]]
+    del sources[module]
 
     assert name in zero_callers(sources, members)
+
+
+#: The ways a module can spell a member without calling it.
+PLANTED_MENTIONS = {
+    "a comment": "# was: await tracker.{name}(issue_key=key)\nVALUE = 1\n",
+    "a docstring": '"""Calls ``tracker.{name}(issue_key=key)`` once."""\n',
+    "a string": 'NOTE = "await tracker.{name}(issue_key=key)"\n',
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_MENTIONS))
+def test_a_member_spelled_but_not_called_has_no_caller(form):
+    sources = source_tree()
+    name, module = single_caller(sources)
+    sources[module] = PLANTED_MENTIONS[form].format(name=name)
+
+    assert call_pattern(name).search(sources[module])
+    assert name in zero_callers(sources, port_members())
 
 
 def test_a_caller_of_the_exempted_read_empties_its_exemption():
