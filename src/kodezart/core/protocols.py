@@ -1460,10 +1460,9 @@ class TrackerPort(
         *lease_seconds* from now. Returns ``None``, extending nothing, when
         *holder* does not hold every one of them live: renewal EXTENDS and
         never acquires, so a lapsed lease stays lapsed and its surfaces stay
-        free. A marker of *holder*'s own standing for exactly this set on
-        only part of it is no hold: the refusing renewal takes that marker
-        down, so the board never names *holder* as writing what it does not
-        hold whole.
+        free. A standing hold of *holder*'s on only part of the set is no
+        hold, and the refusing renewal withdraws it, so *holder* is left
+        holding nothing of that set.
         """
         ...
 

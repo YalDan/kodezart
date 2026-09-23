@@ -1278,6 +1278,35 @@ class TestSurfaceLease:
         )
         assert taken.holder == JOB_B
 
+    async def test_a_refused_renewal_leaves_the_holder_nothing_of_that_set(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A hold on part of a set is no hold, and the refusal withdraws it.
+
+        The holder takes a pair and gives one of them back, so what stands
+        of the set is its remnant on the other.  Renewing the pair is
+        refused, and the refusal leaves the holder holding nothing of it:
+        another holder asking for the remnant's surface is granted.
+        """
+        pair = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=pair, holder=JOB_A, lease_seconds=LEASE_SECONDS
+        )
+        await tracker.release_surfaces(surfaces=frozenset({MARKER_A}), holder=JOB_A)
+
+        renewed = await tracker.renew_surfaces(
+            surfaces=pair, holder=JOB_A, lease_seconds=LEASE_SECONDS
+        )
+
+        assert renewed is None
+        taken = await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION}),
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert taken.holder == JOB_B
+
     async def test_same_holder_reacquisition_is_not_contention(
         self,
         tracker: TrackerPort,
