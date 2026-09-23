@@ -15,9 +15,11 @@ the real tree and never instead of it.
 
 import json
 from collections.abc import Mapping
+from typing import Any
 
 import pytest
 
+from kodezart import main
 from kodezart.composition import write_adoption
 from kodezart.composition.write_adoption import (
     NO_WRITE_FOUND,
@@ -85,10 +87,21 @@ async def test_a_deployment_with_an_unadopted_write_path_refuses_to_boot_naming_
     that answered from what it saw first rather than from the tree in front
     of it would boot the planted one too.  The refused boot answered no tool
     call, opened no tracker session and reconciled nothing, which is what
-    places the refusal before every dial and every write.
+    places the refusal before every dial and every write.  The forge client
+    is built on the clean boot and never on the refused one, so the refusal
+    comes before that too.
     """
     server = deployment(monkeypatch)
+    built: list[object] = []
+    forge_client = main.build_forge_client
+
+    def recording_forge_client(**kwargs: Any) -> Any:
+        built.append(kwargs)
+        return forge_client(**kwargs)
+
+    monkeypatch.setattr(main, "build_forge_client", recording_forge_client)
     await boots(capsys)
+    assert len(built) == 1
 
     installed_with(monkeypatch, {"planted/direct.py": DIRECT})
     calls, lifecycle = len(server.calls), list(server.lifecycle)
@@ -98,6 +111,7 @@ async def test_a_deployment_with_an_unadopted_write_path_refuses_to_boot_naming_
 
     assert refused.value.paths == (DIRECT_PATH,)
     assert DIRECT_PATH in str(refused.value)
+    assert len(built) == 1
     assert server.calls[calls:] == []
     assert server.lifecycle == lifecycle
     assert logged(capsys.readouterr().out, "tracker_mappings_reconciled") == []
