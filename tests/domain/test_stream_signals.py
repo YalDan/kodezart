@@ -463,6 +463,28 @@ def test_one_session_per_invocation_across_many_invocations_is_not_substituted()
     )
 
 
+def test_a_substituted_invocation_beside_clean_ones_is_substituted():
+    """One invocation over its declaration raises, whatever its neighbours did.
+
+    The stream carries clean invocations too: another single-session node that
+    opened one, and a fan-out that opened what it declared.
+    """
+    fan_out = invocation("fan-out-1", declared=2)
+
+    alarm = substituted(
+        opened(
+            (invocation("evaluation-0"), "session-z"),
+            (SINGLE, "session-a"),
+            (SINGLE, "session-b"),
+            (fan_out, "session-c"),
+            (fan_out, "session-d"),
+        )
+    )
+
+    assert alarm is not None
+    assert alarm.signal is AlarmSignal.COMPOSITION_SUBSTITUTED
+
+
 def test_a_repeated_opening_of_one_session_is_one_session():
     assert substituted(opened((SINGLE, "session-a"), (SINGLE, "session-a"))) is None
 
@@ -483,7 +505,23 @@ def test_a_session_reading_about_something_else_refuses(name):
     if name == "another lane's stream":
         readings = opened((SINGLE, "session-a"), source="LANE-8")
     elif name == "another kind":
-        readings = (account(CROSSED_OFF),)
+        # A well-formed opening key under another kind: only the kind can
+        # refuse it.
+        readings = (
+            AlarmReading(
+                source_ref=LANE,
+                value=RunEventsEvidence(
+                    value=(
+                        RunEventProjection(
+                            kind=RunEventKind.ISSUE_CROSSED_OFF,
+                            subject_key=NodeSessionKey(
+                                invocation=SINGLE, session_id="session-a"
+                            ).model_dump_json(by_alias=True),
+                        ),
+                    )
+                ),
+            ),
+        )
     elif name in {"an opening keyed to nothing", "a key that is not an opening"}:
         readings = (
             AlarmReading(
@@ -505,5 +543,7 @@ def test_a_session_reading_about_something_else_refuses(name):
     else:
         readings = ()
 
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(
+        RunShapeReadError, match="another event" if name == "another kind" else None
+    ):
         substituted(readings, on=on)
