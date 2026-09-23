@@ -62,8 +62,12 @@ baseline only: a deviation belongs to the ruling source, and does not itself
 refute that criterion. Neither the recorded Evidence test string nor a dispatch
 base is interpreted as a protection declaration.
 
-The current ruling-node producer, historical declaration migration, complete
-scheduled audit invocation and claim publication remain separate work. Returned
+The scheduled audit runs this comparison for every criterion target and carries
+each claim on the scope report's raw observations. An unavailable comparison
+refuses that subject's coverage, as the audit's other arms do. A claim reopens
+nothing and moves no state. The producer of protected-test designations (none
+records one today, so the scheduled arm is quiet in a run), historical
+declaration migration and claim publication remain separate work. Returned
 claims are observations, not audit judgments or permission to rewrite assertions.
 This reader introduces no tracker write or protection enforcement; any eventual
 record publication must use the authorized lease and outbound gate boundaries.

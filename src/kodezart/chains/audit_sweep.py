@@ -10,7 +10,7 @@ from kodezart.chains.audit_pass import AuditClaimVerifier, AuditMandateHunt
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_issues
-from kodezart.services.audit_failures import AUDIT_READ_FAILURES
+from kodezart.services.audit_failures import AUDIT_READ_FAILURES, DRIFT_READ_FAILURES
 from kodezart.services.audit_requests import (
     AuditRequestReader,
     AuditRequestSnapshot,
@@ -18,7 +18,9 @@ from kodezart.services.audit_requests import (
 )
 from kodezart.services.audit_terminal import AuditTerminalReader
 from kodezart.services.git_observations import read_remote_head
+from kodezart.services.recorded_assertion_drift import RecordedAssertionDriftDetector
 from kodezart.services.repo_observations import ensure_repository
+from kodezart.types.domain.assertion_drift import AssertionDeviationClaim
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
     AuditClaimObservation,
@@ -70,6 +72,8 @@ class AuditReadObservation:
     forge_report: AuditClaimReport | None = None
     forge_unavailable_reason: str | None = None
     restamp: AuditRestampTrace | None = None
+    assertion_drift: tuple[AssertionDeviationClaim, ...] | None = None
+    drift_unavailable_reason: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -159,6 +163,7 @@ class AuditReadSweep:
         overclaims: AuditOverclaimVerifier | None = None,
         removals: DetectorRemovalVerifier | None = None,
         forge: AuditForgeVerifier | None = None,
+        drift: RecordedAssertionDriftDetector | None = None,
     ) -> None:
         self._scope = scope
         self._requests = AuditRequestReader(tracker=tracker, operation=operation)
@@ -174,6 +179,7 @@ class AuditReadSweep:
         self._overclaims = overclaims
         self._removals = removals
         self._forge = forge
+        self._drift = drift
 
     async def _observe(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
@@ -314,6 +320,20 @@ class AuditReadSweep:
             reports.append(DetectorRemovalReportEntry(finding=finding, report=report))
         return DetectorRemovalReport(observation=observed, reports=tuple(reports))
 
+    async def _observe_drift(
+        self, target: AuditRequestTarget
+    ) -> tuple[AssertionDeviationClaim, ...]:
+        request = target.request
+        if not isinstance(request, AuditClaimRequest):
+            raise AuditClaimReadError(
+                "assertion-drift comparison requires a native criterion request"
+            )
+        if self._drift is None:
+            raise AuditClaimReadError(
+                "the assertion-drift comparison is not configured"
+            )
+        return await self._drift.compare(request)
+
     async def _observe_forge(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
     ) -> tuple[AuditForgeObservation, AuditClaimReport | None, str | None]:
@@ -390,6 +410,8 @@ class AuditReadSweep:
             heads.add(observation.overclaims.observation.head_sha)
         if observation.detector_removal is not None:
             heads.add(observation.detector_removal.observation.head_sha)
+        # A quiet comparison carries no head; a claim carries the one it read.
+        heads.update(claim.head_sha for claim in observation.assertion_drift or ())
         # Forge checks grade a historical Evidence SHA. Their mandate report
         # retains that SHA and cannot participate in current-head equality.
         if not heads:
@@ -445,6 +467,8 @@ class AuditReadSweep:
         forge = None
         forge_report = None
         forge_reason = None
+        drift = None
+        drift_reason = None
         if "criterion" in target.issue.issue_labels:
             try:
                 overclaims = await self._observe_overclaims(target, surfaces)
@@ -460,6 +484,10 @@ class AuditReadSweep:
                 )
             except AUDIT_READ_FAILURES as exc:
                 forge_reason = f"{type(exc).__name__}: {exc}"
+            try:
+                drift = await self._observe_drift(target)
+            except DRIFT_READ_FAILURES as exc:
+                drift_reason = f"{type(exc).__name__}: {exc}"
         return AuditReadObservation(
             target=observation.target,
             claim=observation.claim,
@@ -477,6 +505,8 @@ class AuditReadSweep:
             # This method rebuilds the observation field by field, so a field
             # not listed here is dropped before anything composed sees it.
             restamp=observation.restamp,
+            assertion_drift=drift,
+            drift_unavailable_reason=drift_reason,
         )
 
     async def run(self) -> AuditReadSweepResult:

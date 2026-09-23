@@ -393,6 +393,7 @@
   "tests/tracker/test_alarm_independent.py": 4,
   "tests/tracker/test_artifact_native_fields.py": 9,
   "tests/tracker/test_artifact_split_identity_independent.py": 10,
+  "tests/tracker/test_assertion_drift_sweep.py": 7,
   "tests/tracker/test_audit_claim.py": 49,
   "tests/tracker/test_audit_claim_replacements.py": 15,
   "tests/tracker/test_audit_combined_review.py": 24,
@@ -5552,6 +5553,11 @@
   "tests/tracker/test_artifact_split_identity_independent.py": [
    "test_a_split_artifact_never_pairs_identity_with_another_body",
    "test_a_foreign_identity_read_cannot_supply_the_split_receipt"
+  ],
+  "tests/tracker/test_assertion_drift_sweep.py": [
+   "test_a_sweep_with_no_comparison_refuses_the_criterion_by_name",
+   "test_a_target_that_is_not_a_criterion_is_not_compared",
+   "test_a_claim_about_another_head_refuses_the_read_as_current"
   ],
   "tests/tracker/test_audit_claim.py": [
    "test_actual_session_reads_current_check_and_live_head",

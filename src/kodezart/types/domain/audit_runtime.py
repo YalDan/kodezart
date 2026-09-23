@@ -6,6 +6,7 @@ from typing import Annotated, Literal, Self
 from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.assertion_drift import AssertionDeviationClaim
 from kodezart.types.domain.audit import (
     AuditClaimReport,
     AuditCoverageResult,
@@ -192,7 +193,8 @@ class _AuditScopeReport(CamelCaseModel):
         | AuditForgeObservation
         | AuditTerminalObservation
         | AuditOverclaimObservation
-        | DetectorRemovalObservation,
+        | DetectorRemovalObservation
+        | AssertionDeviationClaim,
         ...,
     ] = ()
 

@@ -26,6 +26,7 @@ from kodezart.services.audit_requests import AuditRequestSnapshot
 from kodezart.services.git_observations import read_remote_head
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.services.tracker_artifacts import read_tracker_artifact
+from kodezart.types.domain.assertion_drift import AssertionDeviationClaim
 from kodezart.types.domain.audit import (
     AuditCandidate,
     AuditCoverageResult,
@@ -206,7 +207,8 @@ def _raw_observations(
     | AuditForgeObservation
     | AuditTerminalObservation
     | AuditOverclaimObservation
-    | DetectorRemovalObservation,
+    | DetectorRemovalObservation
+    | AssertionDeviationClaim,
     ...,
 ]:
     return tuple(
@@ -223,6 +225,9 @@ def _raw_observations(
             None
             if observation.detector_removal is None
             else observation.detector_removal.observation,
+            # A deviation is evidence, not a verdict: it is carried on the
+            # report and publishes, escalates and reopens nothing.
+            *(observation.assertion_drift or ()),
         )
         if item is not None
     )
@@ -395,6 +400,7 @@ class AuditScheduledPass:
                         observation.overclaim_unavailable_reason,
                         observation.removal_unavailable_reason,
                         observation.forge_unavailable_reason,
+                        observation.drift_unavailable_reason,
                     )
                     for reason in reasons:
                         if reason is not None:
