@@ -14,9 +14,10 @@ from kodezart.types.domain.tracker import TrackerIssue, is_open
 def in_gap(criterion: TrackerIssue) -> bool:
     """True iff *criterion* is still owed.
 
-    The arithmetic reads state alone: Done closes, Canceled and Duplicate
-    count for nothing, every other kind is owed (KOD-794). Nothing else is
-    consulted, so two readers of one criterion cannot disagree about it.
+    The arithmetic reads the state kind alone: a completed criterion is
+    closed, a canceled or duplicate one counts for nothing, and every other
+    kind is owed (KOD-794). Nothing else is consulted, so two readers of one
+    criterion cannot disagree about it.
     """
     if "criterion" not in criterion.issue_labels:
         raise ValueError("gap membership requires a criterion sub-issue")
