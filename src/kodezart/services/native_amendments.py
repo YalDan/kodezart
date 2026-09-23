@@ -77,6 +77,7 @@ from kodezart.types.domain.tracker import (
     TrackerComment,
     TrackerIssue,
     WorkflowStateKind,
+    is_non_counting,
 )
 
 # The single branch-writing SDK stage is reused by implementation and both
@@ -191,8 +192,12 @@ class NativeAmendments:
             issue.issue_key for issue in criterion_issues
         }:
             raise NativeWriteRefusalError("A named native criterion left the subtree")
+        # The membership stays whole for the fact comparison; only a
+        # criterion that counts has its Check read, as at the spec read: one
+        # the board Canceled or closed as a Duplicate refuses nothing (KOD-794).
         for issue in criterion_issues:
-            criterion_check(criterion=issue, issue_key=spec.subject)
+            if not is_non_counting(issue.state_kind):
+                criterion_check(criterion=issue, issue_key=spec.subject)
         rulings: list[tuple[TrackerComment, Ruling]] = []
         for key in sorted(members):
             try:
