@@ -13,7 +13,11 @@ from datetime import UTC, datetime
 import pytest
 
 from kodezart.composition import organize as organize_composition
-from kodezart.domain.errors import OrganizeWriteRefusalError, ScopeNotApprovedError
+from kodezart.domain.errors import (
+    OrganizeWriteRefusalError,
+    ScopeNotApprovedError,
+    SurfaceLeaseError,
+)
 from kodezart.types.domain.agent import SystemEvent
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import ScopeLabel
@@ -306,4 +310,61 @@ async def test_an_approved_scope_runs_its_stages_and_the_grooming_tick_takes_no_
     # the journals are what show the tick took none at all.
     assert gained(port, tick, "lease_writes") == []
     assert gained(port, tick, "lease_releases") == []
+    assert port.leases == {}
+
+
+async def test_a_run_admitted_while_grooming_holds_its_set_is_refused_at_its_stage(
+    monkeypatch,
+):
+    """The one window the invariant leaves, and what a run admitted in it does.
+
+    Approval lands during a grooming session, while that round still holds
+    its declared set. A run started right then passes its approval reading,
+    and its first stage acquisition is refused naming the grooming holder,
+    so it writes nothing. Once the tick has ended, a later run stages every
+    member and walks.
+    """
+    port = triaged(standing_board(LANES))
+    operation = standing_operation()
+    harness = staging_runtime(
+        port, LANES, monkeypatch=monkeypatch, builds=[], operation=operation
+    )
+    original = harness.executor.stream
+    window = {}
+
+    async def run_inside(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        if title == "AdmissionJudgment" and not window and port.leases:
+            window["holders"] = {lease.holder for lease in port.leases.values()}
+            approve(port)
+            window["before"] = before(port)
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await bounded_walk(harness, job="window-run")
+            window["refusal"] = refused.value
+            window["gained_labels"] = gained_labels(port, window["before"])
+            window["gained"] = {
+                name: gained(port, window["before"], name) for name in LOGS
+            }
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(harness.executor, "stream", run_inside)
+    # The grooming round reads approval before anything it would write next,
+    # so it ends having written nothing after the approval landed.
+    assert await grooming(harness, operation).run(NOW) is PassRun.RAN
+    assert window, "no grooming session ran while the round held its set"
+    (holder,) = window["holders"]
+    assert window["refusal"].current_holder == holder
+    assert holder != "window-run"
+    assert window["gained_labels"] == dict.fromkeys(LANES, frozenset())
+    assert window["gained"] == {name: [] for name in LOGS}
+    assert_wrote_only(port, window["before"], {})
+    assert gained(port, window["before"], "issue_writes") == []
+    assert port.leases == {}
+
+    monkeypatch.setattr(harness.executor, "stream", original)
+    run = before(port)
+    events = await bounded_walk(harness, job="after-the-tick")
+    assert errors(events) == []
+    assert_wrote_only(port, run, dict.fromkeys(LANES, (TICKET_MARKER, STAGED)))
     assert port.leases == {}
