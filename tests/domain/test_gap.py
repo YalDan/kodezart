@@ -6,6 +6,7 @@ import inspect
 import pytest
 
 from kodezart.domain import gap
+from kodezart.domain.criterion_cross_off import LAPSE_POINTER, lapse_observation
 from kodezart.domain.criterion_evidence import (
     parse_criterion_evidence,
     render_evidence_field,
@@ -40,10 +41,10 @@ def criterion(key="criterion-key", state=WorkflowStateKind.UNSTARTED, body=""):
     )
 
 
-def graded_body(sha: str) -> str:
+def graded_body(sha: str, test: str = GRADED_TEST) -> str:
     """A criterion body whose Evidence row records one complete grading."""
     return "**Check:** The contract.\n**Do:** The mechanism.\n" + render_evidence_field(
-        CriterionEvidence(graded_sha=sha, test=GRADED_TEST)
+        CriterionEvidence(graded_sha=sha, test=test)
     )
 
 
@@ -141,6 +142,35 @@ def test_the_lapse_and_the_never_graded_are_one_membership_told_apart_by_the_sha
     )
     with pytest.raises(ValueError, match="Evidence"):
         parse_criterion_evidence(never.body)
+
+
+def test_a_lapse_and_a_reopened_grading_are_owed_and_told_apart_by_the_lapse_pointer():
+    """The sha stays in both rows; only the lapse writes its pointer beside it.
+
+    The lapse row is the one the cross-off writer builds when a standing
+    grading no longer holds: the graded sha kept, and the grading's own test
+    pointer carried under the lapse pointer. A grading reopened or refuted
+    keeps the sha with no such pointer.
+    """
+    lapsed = criterion(
+        "lapsed",
+        body=graded_body(GRADED_SHA, lapse_observation(observation=GRADED_TEST)),
+    )
+    reopened = criterion("reopened", body=graded_body(GRADED_SHA))
+
+    assert gap.gap_membership(lapsed) is GapMembership.OWED
+    assert gap.gap_membership(reopened) is GapMembership.OWED
+    computed = gap.compute_gap([lapsed, reopened])
+    assert computed == CriterionGap(owed=(lapsed, reopened), excluded=())
+    assert [issue.body for issue in computed.owed] == [lapsed.body, reopened.body]
+    from_lapse, from_reopen = (
+        parse_criterion_evidence(issue.body) for issue in computed.owed
+    )
+    assert from_lapse.graded_sha == from_reopen.graded_sha == GRADED_SHA
+    assert from_lapse.test == lapse_observation(observation=GRADED_TEST)
+    assert from_reopen.test == GRADED_TEST
+    assert LAPSE_POINTER in computed.owed[0].body
+    assert LAPSE_POINTER not in computed.owed[1].body
 
 
 def test_empty_gap_and_noncriterion_or_duplicate_inputs():
