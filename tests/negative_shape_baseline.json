@@ -317,7 +317,7 @@
   "tests/services/lane_tally_fixtures.py": 10,
   "tests/services/test_agent_service.py": 5,
   "tests/services/test_amendment_interrupted_writes.py": 17,
-  "tests/services/test_applied_native_amendments.py": 144,
+  "tests/services/test_applied_native_amendments.py": 145,
   "tests/services/test_assertion_drift.py": 30,
   "tests/services/test_audit_coverage.py": 22,
   "tests/services/test_audit_reopen.py": 26,
