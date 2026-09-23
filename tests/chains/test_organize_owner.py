@@ -753,17 +753,29 @@ async def test_a_groom_row_gated_on_another_member_opens_on_that_member_alone(
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
 
 
+@pytest.mark.parametrize(
+    "children", [0, 1, 2], ids=["alone", "one-child", "two-children"]
+)
 async def test_the_scope_gate_is_resolved_once_per_reading_by_the_one_resolver(
-    monkeypatch,
+    monkeypatch, children
 ):
     """Every resolution is the addressed scope's, with the row's own member.
 
     A member is a property of the scope and of the containers above it, so the
     count follows the readings the pass makes and not the number of members it
     has: a resolution per member issue would be the per-issue materialization
-    the trigger must not be.
+    the trigger must not be. The scope is read with one, two and three
+    members, and every reading resolves exactly once on each.
     """
+    from tests.fakes import FakeMcpIssue
+
     owner, board, _ = factory()
+    for index in range(children):
+        board.server.issues[f"groom-child-{index}"] = FakeMcpIssue(
+            id=f"groom-child-{index}",
+            parent_id=CLAIMED_ISSUE,
+            description="Missing specification",
+        )
     original = organize_owner.scope_carries
     seen = []
 
@@ -771,20 +783,34 @@ async def test_the_scope_gate_is_resolved_once_per_reading_by_the_one_resolver(
         seen.append((ref, member))
         return await original(ref=ref, member=member, tracker=tracker)
 
+    reading = organize_owner.OrganizeOwner._carried_members
+    readings = []
+
+    async def counted(self, scope, phase):
+        readings.append(scope)
+        return await reading(self, scope, phase)
+
     monkeypatch.setattr(organize_owner, "scope_carries", recording)
+    monkeypatch.setattr(organize_owner.OrganizeOwner, "_carried_members", counted)
     report = await run_owner(owner)
     assert [phase.value for phase in report.completed_phases] == ["groom"]
-    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
-    assert {ref for ref, _ in seen} == {scope}
-    assert {member for _, member in seen} == {ScopeLabel.TRIAGE}
-    # Observed, then written: two readings inside the convergence rounds (the
-    # round's own gate reading and the marker sweep's), one at the barrier,
-    # and seven pre-write re-checks across the author write and the marker
-    # write, each of which re-asks the gate before it touches the board.
-    assert len(seen) == 10
     members = {
         issue.id for issue in board.server.issues.values() if issue.id != CLAIMED_ISSUE
     }
+    assert len(members) >= children
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    assert {ref for ref, _ in seen} == {scope}
+    assert {member for _, member in seen} == {ScopeLabel.TRIAGE}
+    # One resolution per reading, whatever the number of members.
+    assert readings
+    assert len(seen) == len(readings)
+    if not children:
+        # Observed, then written: two readings inside the convergence rounds
+        # (the round's own gate reading and the marker sweep's), one at the
+        # barrier, and seven pre-write re-checks across the author write and
+        # the marker write, each of which re-asks the gate before it touches
+        # the board.
+        assert len(seen) == 10
     assert not {ref.key for ref, _ in seen} & members
 
 
