@@ -38,14 +38,15 @@ import json
 import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from typing import Protocol
+from dataclasses import dataclass, field, make_dataclass
+from typing import Protocol, get_type_hints
 
 import pytest
 
 from kodezart.adapters.linear.status_update import LinearScopeStatusUpdates
 from kodezart.chains import write_back_verifier as verifier_module
 from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.composition import write_adoption as write_adoption_composition
 from kodezart.composition.write_adoption import (
     drive_entry,
     installed_sources,
@@ -53,7 +54,12 @@ from kodezart.composition.write_adoption import (
     tracker_write_roles,
     verify_write_adoption,
 )
-from kodezart.core.protocols import ScopeStatusUpdates, TrackerPort, WriteBackStep
+from kodezart.core.protocols import (
+    ScopeStatusUpdates,
+    TrackerPort,
+    WriteBackJudge,
+    WriteBackStep,
+)
 from kodezart.domain.errors import UnverifiedWritePathError
 from kodezart.domain.source_resolution import SourceIndex
 from kodezart.domain.write_adoption import (
@@ -66,7 +72,12 @@ from kodezart.domain.write_adoption import (
 from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
-from kodezart.types.domain.write_adoption import CallSite, Source, WriteCensus
+from kodezart.types.domain.write_adoption import (
+    CallSite,
+    DriveEntry,
+    Source,
+    WriteCensus,
+)
 from kodezart.types.domain.write_back import WriteBackFinding
 from tests.chains import test_organize_owner as organize_suite
 from tests.chains.test_native_fire import DIRECT_OWED
@@ -144,6 +155,68 @@ def step_members(step: type = WriteBackStep) -> frozenset[str]:
     return frozenset(name for name in dir(step) if not name.startswith("_"))
 
 
+class RenamedStep(Protocol):
+    """A step protocol whose one member is not called ``write``."""
+
+    @property
+    def surface(self) -> WritableSurface: ...
+
+    async def perform(self, *, finding: WriteBackFinding | None) -> None: ...
+
+
+class JobVerifier:
+    """A verifier taking its step under a parameter not called ``step``."""
+
+    async def write_back(self, *, job: WriteBackStep, ref: str) -> None: ...
+
+
+class RenamedStepVerifier:
+    """A verifier taking the renamed step protocol."""
+
+    async def write_back(self, *, step: RenamedStep, ref: str) -> None: ...
+
+
+def standing_in(monkeypatch, verifier: type, step: type = WriteBackStep) -> None:
+    """Put *verifier* and *step* where the drive entry reads them.
+
+    The stand-ins are defined in this module, outside the package, so their
+    address is read by a stand-in addressing that says which object it was
+    handed rather than where the package would keep it.
+    """
+    monkeypatch.setattr(write_adoption_composition, "WriteBackVerifier", verifier)
+    monkeypatch.setattr(write_adoption_composition, "WriteBackStep", step)
+    monkeypatch.setattr(
+        write_adoption_composition,
+        "source_address",
+        lambda subject: Source(module="stand-in.py", function=subject.__qualname__),
+    )
+
+
+def test_the_drive_entry_follows_the_verifier_it_is_read_from(monkeypatch):
+    """Rename the verifier's step parameter and the entry names the new one.
+
+    The entry is the address of the verifier's write-back and the parameter
+    annotated as a step, both read off the class, so a verifier that took
+    its step as ``job`` is entered through ``job``.
+    """
+    standing_in(monkeypatch, JobVerifier)
+    assert drive_entry() == DriveEntry(
+        verifier=Source(
+            module="stand-in.py", function=JobVerifier.write_back.__qualname__
+        ),
+        step_parameter="job",
+        step_method="write",
+    )
+
+
+def test_the_drive_entry_follows_the_step_protocol_it_is_read_from(monkeypatch):
+    """Rename the step protocol's one member and the entry drives that member."""
+    standing_in(monkeypatch, RenamedStepVerifier, RenamedStep)
+    entry = drive_entry()
+    assert entry.step_method == "perform"
+    assert entry.step_parameter == "step"
+
+
 @functools.cache
 def census(*planted: tuple[str, str]) -> WriteCensus:
     """One census of the installed tree, with any planted module beside it.
@@ -173,6 +246,29 @@ def test_the_write_surface_covers_the_roles_dialled_beside_the_port():
         "post_status_update"
     }
     assert "post_status_update" in WRITES
+
+
+def test_the_dialled_roles_follow_the_dialled_tracker(monkeypatch):
+    """A role added to the dialled tracker is a role the surface is read off.
+
+    The dialled tracker is grown by one field typed with a protocol that is
+    not a role today.  The roles read off it are today's roles and that
+    protocol after them, so no list of roles kept anywhere can stand in for
+    the reading.
+    """
+    grown = make_dataclass(
+        "GrownDialledTracker",
+        [
+            *get_type_hints(write_adoption_composition.DialledTracker).items(),
+            ("judge", WriteBackJudge),
+        ],
+    )
+    assert WriteBackJudge not in ROLES
+    monkeypatch.setattr(write_adoption_composition, "DialledTracker", grown)
+    roles = tracker_write_roles()
+    assert WriteBackJudge in roles
+    assert ScopeStatusUpdates in roles
+    assert roles == (*ROLES, WriteBackJudge)
 
 
 def test_every_class_that_dials_the_tracker_writes_only_through_the_dialled_roles():
