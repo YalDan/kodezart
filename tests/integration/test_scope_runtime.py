@@ -2006,12 +2006,20 @@ async def test_a_consolidated_lane_keeps_its_reaped_branch_associations():
     """The loop branch and the recovery ref are deleted; both stay recorded.
 
     One lane, one criterion, one accepted iteration. The persist recovered a
-    divergence, so its backup ref is recorded beside the loop branch; the
-    consolidation then deletes the loop branch and the backup cleanup reaps
-    the backup ref. The association query over the record read back
-    afterwards still names both, the recovery row still names the loop branch
-    as its parent, the record was not written after the reap, and the remote
-    read is what reports both absent.
+    divergence, so its backup ref is recorded beside the loop branch under
+    this walk's run; the consolidation then deletes the loop branch and the
+    backup cleanup reaps the backup ref. The association query over the
+    record read back afterwards still names both, the recovery row still names
+    the loop branch as its parent and this walk's job as its run, and the
+    record was not written after the reap.
+
+    Absence is not asked of this walk's git double, which would only read back
+    what its own reap removed. The production remote read reports an absent
+    branch as ``None``
+    (``tests/adapters/test_subprocess_git.py::test_remote_branch_sha_returns_none_when_absent``),
+    and the production audit reader, handed a record whose recovery ref is
+    reaped, is what reports it absent
+    (``tests/chains/test_audit_pass.py::test_a_reaped_branch_is_enumerated_and_reported_absent_by_the_remote_read``).
     """
     repos = WalkRepos()
     port = board(lanes=("A",))
@@ -2030,7 +2038,7 @@ async def test_a_consolidated_lane_keeps_its_reaped_branch_associations():
         max_iterations=1,
         evaluations=one_check_echoes("A"),
     )
-    events = await bounded_walk(harness)
+    events = await bounded_walk(harness, job=REAPING_JOB)
 
     assert lane_failures(events) == ()
     assert len(ticks_of(events)) == TICKS_OF_A_REAPED_WALK
@@ -2042,19 +2050,21 @@ async def test_a_consolidated_lane_keeps_its_reaped_branch_associations():
     assert repos.head_of(backup) is None
     associated = associated_branches(record=record)
     assert {loop, backup} <= associated
-    assert (backup, BranchRole.RECOVERY, loop) in {
-        (item.branch, item.role, item.derived_from) for item in record.associations
+    assert (backup, BranchRole.RECOVERY, loop, REAPING_JOB) in {
+        (item.branch, item.role, item.derived_from, item.run_id)
+        for item in record.associations
     }
     # No write of the record follows the reap: the body the board holds is
     # the one it held the instant before the first ref was deleted.
     assert snapshots
     assert run_state_comments(port, "A") == snapshots[0]
-    for branch in (loop, backup):
-        assert await harness.git.remote_branch_sha("/w", repos.remote, branch) is None
 
 
 #: The ticks one single-criterion lane's accepted walk observes.
 TICKS_OF_A_REAPED_WALK = 2
+
+#: The job the reaping walk runs under, which its record's rows carry as run.
+REAPING_JOB = "reaping-job"
 
 
 async def test_a_ticks_identity_resolves_to_its_evidence_row_and_its_records_commit():
