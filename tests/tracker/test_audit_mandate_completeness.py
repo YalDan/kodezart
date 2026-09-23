@@ -1,8 +1,9 @@
 """Every refutation the sweep produces carries a mandate verdict (KOD-516).
 
 The range is the verdict-bearing fields of the sweep's observation: every
-field whose type holds a model declaring a verdict, found at any depth of
-that type (inside an optional, a tuple or a root model).  Each such arm is
+field whose type holds a model declaring a verdict, as a field or as a
+property reading one nested in it, found at any depth of that type (inside
+an optional, a tuple or a root model).  Each such arm is
 either completed by its mandate-completed report or stands beside the
 reason its hunt could not run; the observation refuses to be built any
 other way, and that refusal is the sweep's own completeness assertion.
@@ -11,6 +12,7 @@ an arm added later is under the rule the moment it exists rather than when
 somebody remembers to list it.
 """
 
+import inspect
 from collections.abc import Iterator
 from dataclasses import replace
 from typing import get_args, get_type_hints
@@ -24,14 +26,19 @@ from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import AuditClaimReport, AuditVerdict
 from kodezart.types.domain.audit_evidence import restamp_defect_class
+from kodezart.types.domain.audit_overclaim import OverclaimKind
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.tracker.test_audit_forge import forge
 from tests.tracker.test_audit_forge_sweep import selected_operation, verifier
+from tests.tracker.test_audit_overclaim_sweep import payload as overclaim_payload
 from tests.tracker.test_audit_sweep import BODY, CHILD, HEAD, LANE, PRIOR, ROOT, state
 from tests.tracker.test_audit_sweep import server as server
 from tests.tracker.test_audit_sweep import setup as setup
 from tests.tracker.test_audit_terminal_mandate import terminal_ready
+from tests.tracker.test_detector_removal_sweep import RevisionSource
+from tests.tracker.test_detector_removal_sweep import payload as removal_payload
+from tests.tracker.test_detector_removal_sweep import ready as removal_ready
 
 #: A commit the lane's stream records a grading at and no Evidence row names.
 ELSEWHERE = "c" * 40
@@ -176,6 +183,20 @@ async def refuted_arm(arm, setup, tracker, server, tracker_writes):
         await refuted_restamp(tracker, server, "current")
         before = tracker_writes()
         observation = (await build().run()).observations[0]
+    elif arm == "overclaim_reading":
+        await state(tracker, server, CHILD, "Done", WorkflowStateKind.COMPLETED)
+        executor.overclaim_output = overclaim_payload(
+            OverclaimKind.SELF_RULE, verdict="refuted"
+        )
+        before = tracker_writes()
+        observation = (await build(include_overclaims=True).run()).observations[0]
+    elif arm == "removal_reading":
+        await removal_ready(tracker, server)
+        executor.removal_output = removal_payload("refuted")
+        before = tracker_writes()
+        observation = (
+            await build(include_removals=True, selected_source=RevisionSource()).run()
+        ).observations[0]
     else:
         executor.verdict = "refuted"
         await state(tracker, server, CHILD, "In Review", WorkflowStateKind.STARTED)
@@ -193,6 +214,8 @@ ARMS = (
     ("forge", "forge_report", "forge_unavailable_reason"),
     ("restamp", "restamp_report", "unavailable_reason"),
     ("evidence", "claim", "unavailable_reason"),
+    ("overclaim_reading", "overclaims", "overclaim_unavailable_reason"),
+    ("removal_reading", "detector_removal", "removal_unavailable_reason"),
 )
 
 
@@ -281,14 +304,17 @@ def verdict_models(hint: object) -> Iterator[type[BaseModel]]:
 
     A container or union is read through its arguments, and a root model
     through its root, so ``tuple[X, ...] | None`` holds ``X`` as surely as
-    ``X`` does.
+    ``X`` does.  A model declares a verdict as a field, or as a property
+    reading the verdict of what it nests.
     """
     for member in get_args(hint):
         yield from verdict_models(member)
     if isinstance(hint, type) and issubclass(hint, BaseModel):
         if issubclass(hint, RootModel):
             yield from verdict_models(hint.model_fields["root"].annotation)
-        elif "verdict" in hint.model_fields:
+        elif "verdict" in hint.model_fields or isinstance(
+            inspect.getattr_static(hint, "verdict", None), property
+        ):
             yield hint
 
 
@@ -308,5 +334,12 @@ def test_every_verdict_bearing_arm_is_under_the_completeness_assertion():
     to the observation without a row would carry refutations the rule never
     sees, which is how the restamp trace once escaped it.
     """
-    assert verdict_bearing_fields() == {"terminal", "forge", "restamp", "evidence"}
+    assert verdict_bearing_fields() == {
+        "terminal",
+        "forge",
+        "restamp",
+        "evidence",
+        "overclaim_reading",
+        "removal_reading",
+    }
     assert verdict_bearing_fields() == {row[0] for row in MANDATED_ARMS}

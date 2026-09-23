@@ -119,6 +119,11 @@ class DetectorRemovalObservation(CamelCaseModel):
     record_ref: str = Field(min_length=1)
     check: str = Field(min_length=1)
 
+    @property
+    def verdict(self) -> AuditVerdict:
+        """The detector judgment's own verdict."""
+        return self.judgment.verdict
+
     def claim(self, finding: DeletedDetectionFinding | None) -> AuditClaimObservation:
         """Carry one exact finding to the existing mandate-completion boundary."""
         if finding is None:

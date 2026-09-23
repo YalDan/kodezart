@@ -134,6 +134,8 @@ class NativeExecutor(RecordingExecutor):
         #: entry falls back to ``claim_verdict``.
         self.claim_verdicts = {}
         self.overclaim_verdict = "holds"
+        #: Detector losses the removal session reports; none reads as holds.
+        self.removal_findings = []
         self.write_verdict = "holds"
         self.claim_key = None
         self.instruction = False
@@ -225,9 +227,9 @@ class NativeExecutor(RecordingExecutor):
         elif schema == DETECTOR_REMOVAL_SCHEMA:
             payload = {
                 "criterionKey": self.subject(kwargs["prompt"]),
-                "verdict": "holds",
+                "verdict": "refuted" if self.removal_findings else "holds",
                 "evidence": "Compared actual committed revisions.",
-                "findings": [],
+                "findings": self.removal_findings,
             }
         elif schema == AUDIT_MANDATE_SCHEMA:
             payload = {
@@ -898,20 +900,34 @@ async def test_a_refutation_whose_mandate_hunt_fails_leaves_the_audit_run_incomp
     assert terminal_records(server) == []
 
 
-@pytest.mark.parametrize("arm", ["restamp", "forge"])
+#: A detector loss the fixture repository really holds: the graded commit's
+#: check file says what the head's no longer does.
+REMOVED_AT_HEAD = {
+    "mechanism": {"path": "check.txt", "line": 1, "text": "prior committed contents\n"},
+    "detector": {"path": "check.txt", "line": 1, "text": "prior committed"},
+    "absence_demonstration": "The prior contents are gone at the current head.",
+}
+
+
+@pytest.mark.parametrize("arm", ["restamp", "forge", "overclaim", "removal"])
 async def test_a_lapse_whose_mandate_hunt_fails_leaves_the_audit_run_incomplete(
     repository, server, tmp_path, arm
 ):
     """A lapsed criterion whose refutation lost its hunt is refused, not deferred.
 
     CHILD's grading is behind the head, which alone defers it.  Here it also
-    carries a refutation, the restamp trace or the forge reading at its
-    graded commit, whose mandate hunt failed, so the refutation stands with
-    no mandate verdict.  The runtime refuses CHILD on that reason and the
-    tick ends incomplete, with no deferral recorded for it.
+    carries a refutation, the restamp trace, the forge reading at its graded
+    commit, an over-claim reading or a detector loss, whose mandate hunt
+    failed, so the refutation stands with no mandate verdict.  The runtime
+    refuses CHILD on that reason and the tick ends incomplete, with no
+    deferral recorded for it, and the raw refutation is reported.
     """
     from kodezart.domain.errors import AgentSDKError
+    from kodezart.types.domain.audit_detection_removal import (
+        DetectorRemovalObservation,
+    )
     from kodezart.types.domain.audit_forge import AuditForgeObservation
+    from kodezart.types.domain.audit_overclaim import AuditOverclaimObservation
 
     _remote, _author, _observer, prior, head = repository
     red = FakeCIMonitor(
@@ -940,6 +956,10 @@ async def test_a_lapse_whose_mandate_hunt_fails_leaves_the_audit_run_incomplete(
                 graded_sha=head,
             ),
         )
+    elif arm == "overclaim":
+        executor.overclaim_verdict = "refuted"
+    elif arm == "removal":
+        executor.removal_findings = [REMOVED_AT_HEAD]
     session = executor.stream
 
     async def stream(**kwargs):
@@ -961,7 +981,12 @@ async def test_a_lapse_whose_mandate_hunt_fails_leaves_the_audit_run_incomplete(
         if "lapse mandate session unavailable" in row.reason
     ] == [CHILD], [row.model_dump() for row in scope.unavailable]
     assert CHILD not in {row.subject.key for row in scope.deferred}
-    raw = AuditRestampTrace if arm == "restamp" else AuditForgeObservation
+    raw = {
+        "restamp": AuditRestampTrace,
+        "forge": AuditForgeObservation,
+        "overclaim": AuditOverclaimObservation,
+        "removal": DetectorRemovalObservation,
+    }[arm]
     assert [row.verdict for row in scope.raw_observations if isinstance(row, raw)] == [
         AuditVerdict.REFUTED
     ]
