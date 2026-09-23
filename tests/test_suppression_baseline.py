@@ -44,23 +44,28 @@ place of it.  That shape has no directive to count and no roster can see
 it; it is a diff the code review has to catch.  A fourth is out of it: the
 type checker's own switches are read in two shapes only -- the
 `no_type_check` decorator of `typing` or `typing_extensions`, through the
-module's bindings, and an `if` or `elif` block whose test the checker folds
-to false through a negated `TYPE_CHECKING` or `MYPY`, matched by name as the
-checker matches it -- and not in the others the checker honours.  Unread
-are the else and elif arms below a block under the flag itself, a
-conditional expression on the negated flag, a `match` guard on it, the flag
-compared rather than negated, a block under a version or platform test the
-checker takes as false, alone or folded with the flag, and the decorator
-reached the ways the resolver states it does not follow.
+module's bindings, and a block the checker's own reachability pass skips,
+asked of the checker itself on its own parse of each file under the
+project's version and platform -- and not in the others the checker
+honours.  Unread are a conditional expression on the flag, which is no
+block, the decorator reached the ways the resolver states it does not
+follow, and code the checker's later passes take as unreachable (after a
+return, a raise or a call that never returns), which it skips without a
+word because the gate does not ask it to warn.
 
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
 that needs it, with its reason written there.
 """
 
+import ast
 import json
+import re
+import sys
+import tomllib
 from pathlib import Path
 
+import mypy.reachability
 import pytest
 
 from tests import negative_shape
@@ -404,9 +409,8 @@ TYPE_CHECK_CONTROLS: tuple[tuple[str, str], ...] = (
     ),
 )
 
-#: A block the checker folds to false through the negated flag, in each
-#: shape a module can bind or spell the flag, as (the test reported, the
-#: module).
+#: A block the checker's reachability pass skips, in each shape a module can
+#: spell one, as (the block reported, the module).
 UNCHECKED_BLOCK_CONTROLS: tuple[tuple[str, str], ...] = (
     (
         "not TYPE_CHECKING",
@@ -417,9 +421,9 @@ UNCHECKED_BLOCK_CONTROLS: tuple[tuple[str, str], ...] = (
         "import typing\nif not typing.TYPE_CHECKING:\n    x: int = 'x'\n",
     ),
     (
-        "not CHECKING",
-        "from typing import TYPE_CHECKING as CHECKING\n"
-        "def f() -> None:\n    if not CHECKING:\n        x: int = 'x'\n",
+        "not TYPE_CHECKING",
+        "from typing import TYPE_CHECKING\n"
+        "def f() -> None:\n    if not TYPE_CHECKING:\n        x: int = 'x'\n",
     ),
     # The negated flag folded into a boolean ``and``: false for the checker.
     (
@@ -455,16 +459,52 @@ UNCHECKED_BLOCK_CONTROLS: tuple[tuple[str, str], ...] = (
         "import settings\nif not settings.TYPE_CHECKING:\n    x: int = 'x'\n",
     ),
     # The flag as ``typing_extensions`` re-exports it, spelled through the
-    # module and bound under a name of its own.
+    # module.
     (
         "not typing_extensions.TYPE_CHECKING",
         "import typing_extensions\n"
         "if not typing_extensions.TYPE_CHECKING:\n    x: int = 'x'\n",
     ),
+    # The two names the checker takes by name as a version, whatever they
+    # are bound to: ``PY2`` false and ``PY3`` true, alone and folded with
+    # the flag under a negation.
+    ("PY2", "PY2 = False\nif PY2:\n    x: int = 'x'\n"),
+    ("not PY3", "PY3 = True\nif not PY3:\n    x: int = 'x'\n"),
     (
-        "not CHECKING",
-        "from typing_extensions import TYPE_CHECKING as CHECKING\n"
-        "if not CHECKING:\n    x: int = 'x'\n",
+        "not (TYPE_CHECKING and PY3)",
+        "from typing import TYPE_CHECKING\nPY3 = True\n"
+        "if not (TYPE_CHECKING and PY3):\n    x: int = 'x'\n",
+    ),
+    # A version and a platform the project's own options rule out.
+    (
+        "sys.version_info < (3, 12)",
+        "import sys\nif sys.version_info < (3, 12):\n    x: int = 'x'\n",
+    ),
+    (
+        "sys.platform == 'win32'",
+        "import sys\nif sys.platform == 'win32':\n    x: int = 'x'\n",
+    ),
+    # The arms below a test the checker takes as true, a case guard it
+    # takes as false, and what follows an assertion it takes as failing.
+    (
+        "else of TYPE_CHECKING",
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n    pass\nelse:\n    x: int = 'x'\n",
+    ),
+    (
+        "else of sys.version_info >= (3, 12)",
+        "import sys\nif sys.version_info >= (3, 12):\n    pass\n"
+        "elif __debug__:\n    x: int = 'x'\n",
+    ),
+    (
+        "case _ if not TYPE_CHECKING",
+        "from typing import TYPE_CHECKING\ndef f(y: int) -> None:\n"
+        "    match y:\n        case _ if not TYPE_CHECKING:\n"
+        "            x: int = 'x'\n",
+    ),
+    (
+        "after assert sys.platform == 'win32'",
+        "import sys\nassert sys.platform == 'win32'\nx: int = 'x'\n",
     ),
     # An ``elif`` is an ``if`` nested in the arm above it.
     (
@@ -474,10 +514,12 @@ UNCHECKED_BLOCK_CONTROLS: tuple[tuple[str, str], ...] = (
     ),
 )
 
-#: Tests the checker does not fold to false, so it reads their blocks: the
+#: Tests the checker does not take as false, so it reads their blocks: the
 #: negated flag in an ``or`` whose other side it cannot decide, the flag
-#: inside an ``and`` that is negated whole, the flag doubly negated, and a
-#: name that only contains the flag's.
+#: inside an ``and`` that is negated whole, the flag doubly negated, a name
+#: that only contains the flag's, the flag bound under a name of its own
+#: (the checker matches the name, not the object), a version test the
+#: project's options take as true, and a platform it cannot rule out.
 CHECKED_BLOCK_CONTROLS: tuple[str, ...] = (
     "from typing import TYPE_CHECKING\nENABLED = True\n"
     "if not TYPE_CHECKING or ENABLED:\n    x: int = 1\n",
@@ -485,6 +527,12 @@ CHECKED_BLOCK_CONTROLS: tuple[str, ...] = (
     "if not (TYPE_CHECKING and ENABLED):\n    x: int = 1\n",
     "from typing import TYPE_CHECKING\nif not not TYPE_CHECKING:\n    x: int = 1\n",
     "NOT_TYPE_CHECKING = False\nif not NOT_TYPE_CHECKING:\n    x: int = 1\n",
+    "from typing import TYPE_CHECKING as CHECKING\n"
+    "def f() -> None:\n    if not CHECKING:\n        x: int = 1\n",
+    "from typing_extensions import TYPE_CHECKING as CHECKING\n"
+    "if not CHECKING:\n    x: int = 1\n",
+    "import sys\nif sys.version_info >= (3, 12):\n    x: int = 1\n",
+    "import sys\nif sys.platform != 'win32':\n    x: int = 1\n",
 )
 
 #: The files a tool discovers instead of, or ahead of, the project file.
@@ -669,23 +717,58 @@ def test_a_block_under_the_negated_flag_is_read_in_each_binding(
 
 @pytest.mark.parametrize("control", CHECKED_BLOCK_CONTROLS)
 def test_a_block_the_checker_reads_is_not_an_unchecked_one(control: str) -> None:
-    """The fold is the checker's: a test it cannot decide leaves the block read."""
+    """The reading is the checker's: a test it does not rule out is read."""
     assert negative_shape.unchecked_blocks(Source.of("control.py", control)) == ()
 
 
-def test_every_flag_name_and_origin_is_controlled() -> None:
-    """A name or an origin added to the flag without a control is one nothing proves."""
-    controls = "".join(control for _, control in UNCHECKED_BLOCK_CONTROLS)
+def checker_names() -> frozenset[str]:
+    """Every name the checker decides a test by, read off its own source.
 
-    assert negative_shape.TYPE_CHECKING_NAMES
-    assert negative_shape.TYPE_CHECKING_FLAGS
-    assert all(
-        f"not {name}:" in controls for name in negative_shape.TYPE_CHECKING_NAMES
+    The literals ``infer_condition_value`` compares a name with, parsed out
+    of the locked checker's ``mypy/reachability.py``, so a name the checker
+    starts matching is a name this census must hold a control for.
+    """
+    source = Path(mypy.reachability.__file__).parent / "reachability.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    return frozenset(
+        comparator.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        and isinstance(node.left, ast.Name)
+        and node.left.id == "name"
+        for comparator in node.comparators
+        if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str)
     )
+
+
+def test_every_flag_name_and_origin_is_controlled() -> None:
+    """A name the checker decides by, with no control, is one nothing proves.
+
+    Read off the checker's own source, so the names are the checker's and
+    not a list kept here; each must head a block a control reports.
+    """
+    names = checker_names()
+    reported = [test for test, _ in UNCHECKED_BLOCK_CONTROLS]
+
+    assert names
+    assert names >= {"TYPE_CHECKING", "MYPY", "PY2", "PY3"}
     assert all(
-        flag.rpartition(".")[0] in controls
-        for flag in negative_shape.TYPE_CHECKING_FLAGS
+        any(re.search(rf"\b{name}\b", test) for test in reported) for name in names
     )
+
+
+def test_the_checker_is_asked_under_the_projects_own_options() -> None:
+    """The version and platform a test is decided against are the project's.
+
+    Read here from the project file on their own, so a census asking the
+    checker under this interpreter's version instead reds.
+    """
+    with (REPO_ROOT / "pyproject.toml").open("rb") as handle:
+        table = tomllib.load(handle)["tool"]["mypy"]
+    options = negative_shape.checker_options()
+
+    assert ".".join(map(str, options.python_version)) == table["python_version"]
+    assert options.platform == table.get("platform", sys.platform)
 
 
 def test_the_typing_root_reports_only_what_is_rostered() -> None:
