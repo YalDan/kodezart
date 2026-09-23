@@ -1,13 +1,15 @@
 """A v0.2 operation file boots as it is (KOD-903).
 
 The file is the v0.2.0 example exactly as it shipped, read from the object
-store by its blob id and never copied into the tree: it names no marker table,
-carries an initiative roster and declares its fire log the v0.2 way. It boots,
-schedules the per-issue passes, and every purpose the per-issue path needs is
-answered by the markers v0.2 wrote.
+store by its blob id and never copied into the tree: it names no marker table
+and carries an initiative roster. It boots, schedules the per-issue passes, and
+every purpose the per-issue path needs is answered by the markers v0.2 wrote.
+That example declares no fire log, so the fire-log cases build one in v0.2's
+``RecordDestination`` shape: neither ``columns`` nor ``outcome_mapping``.
 """
 
 import asyncio
+import re
 import subprocess
 from dataclasses import replace
 from datetime import timedelta
@@ -112,7 +114,7 @@ def v020_example(tmp_path: Path) -> Path:
             "clone's object store; run `git fetch --tags` and run again"
         )
     body = fetched.stdout
-    assert b"[[initiatives]]" in body
+    assert re.search(rb"^\[\[initiatives\]\]$", body, re.MULTILINE)
     assert not any(line.strip() == b"[marker_prefixes]" for line in body.splitlines())
     path = tmp_path / "operation.toml"
     path.write_bytes(body)

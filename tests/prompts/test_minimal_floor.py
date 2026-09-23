@@ -9,7 +9,10 @@ never loaded is a claim, not a floor.
 
 from pathlib import Path
 
-from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.adapters.toml_operation_config import (
+    V02_MARKER_PREFIXES,
+    load_operation_config,
+)
 from kodezart.core.prompt_namespaces import bindings_for
 from kodezart.types.domain.operation import OperationConfig
 
@@ -47,13 +50,7 @@ def test_the_minimal_fixture_declares_nothing_beyond_the_floor() -> None:
     ):
         assert len(getattr(config, field)) == 0, field
     assert config.private_surface is None
-    assert config.marker_prefixes == {
-        "claim": "kodezart-claim",
-        "work_ref": "kodezart-workref",
-        "base_spec": "kodezart-basespec",
-        "repository": "kodezart-repo",
-        "run_outcome": "run-outcome",
-    }
+    assert config.marker_prefixes == V02_MARKER_PREFIXES
 
 
 def test_the_minimal_fixture_yields_a_boot_ready_binding_namespace() -> None:
