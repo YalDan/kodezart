@@ -89,6 +89,7 @@ def drive_entry() -> DriveEntry:
         raise ValueError("the verifier takes exactly one step, with one member")
     return DriveEntry(
         verifier=source_address(WriteBackVerifier.write_back),
+        step=source_address(WriteBackStep),
         step_parameter=annotated[0],
         step_method=members[0],
     )

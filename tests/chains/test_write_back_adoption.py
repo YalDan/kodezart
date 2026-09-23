@@ -205,15 +205,21 @@ def test_the_drive_entry_follows_the_verifier_it_is_read_from(monkeypatch):
         verifier=Source(
             module="stand-in.py", function=JobVerifier.write_back.__qualname__
         ),
+        step=Source(module="stand-in.py", function=WriteBackStep.__qualname__),
         step_parameter="job",
         step_method="write",
     )
 
 
 def test_the_drive_entry_follows_the_step_protocol_it_is_read_from(monkeypatch):
-    """Rename the step protocol's one member and the entry drives that member."""
+    """Rename the step protocol's one member and the entry drives that member.
+
+    The protocol itself is read off the stand-in too, which is where a call
+    typed as the step protocol is weighed against every granted step.
+    """
     standing_in(monkeypatch, RenamedStepVerifier, RenamedStep)
     entry = drive_entry()
+    assert entry.step == Source(module="stand-in.py", function=RenamedStep.__qualname__)
     assert entry.step_method == "perform"
     assert entry.step_parameter == "step"
 
@@ -1566,6 +1572,147 @@ def test_a_driven_writer_something_else_calls_is_not_driven(case):
         )
         in found.driven
     )
+
+
+#: A step handed to the real verifier whose applier writes, bound to a local
+#: so the very instance handed over can be reached again after its window.
+APPLIER_STEP = """
+from dataclasses import dataclass
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort, WriteBackStep
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    apply: object
+
+    async def write(self, *, finding):
+        await self.apply(finding)
+{member}
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort, verifier: WriteBackVerifier) -> None:
+        self._tracker, self._verifier = tracker, verifier
+
+    async def publish(self) -> None:
+        async def put(finding):
+            await self._tracker.post_comment(issue_key="K", body="b")
+
+        step = Step(None, put)
+        await self._verifier.write_back(step=step, ref="r")
+{bypass}"""
+#: A step handed to the real verifier that writes in its own member, and
+#: subclasses a base declaring that member.
+WRITING_STEP = """
+from dataclasses import dataclass
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort, WriteBackStep
+
+
+class BaseStep:
+    async def write(self, *, finding) -> None:
+        return None
+
+
+@dataclass(frozen=True)
+class Step(BaseStep):
+    surface: object
+    tracker: TrackerPort
+
+    async def write(self, *, finding):
+        await self.tracker.post_comment(issue_key="K", body="b")
+{member}
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort, verifier: WriteBackVerifier) -> None:
+        self._tracker, self._verifier = tracker, verifier
+
+    async def publish(self) -> None:
+        await self._verifier.write_back(step=Step(None, self._tracker), ref="r")
+{bypass}"""
+#: Each way a step the verifier drives is run again with no window around
+#: it, spelled so the call does not resolve to the concrete member: typed as
+#: the step protocol (the same instance, or a fresh one), typed as a nominal
+#: base, held in an annotated local, or reached through the step's own field
+#: or a sibling member of the step.
+RUN_OUTSIDE = {
+    "through-the-protocol": (
+        APPLIER_STEP,
+        "",
+        "        await self.shortcut(step)\n\n"
+        "    async def shortcut(self, step: WriteBackStep) -> None:\n"
+        "        await step.write(finding=None)\n",
+        "Writer.publish.put",
+    ),
+    "a-fresh-step-through-the-protocol": (
+        WRITING_STEP,
+        "",
+        "\n    async def shortcut(self) -> None:\n"
+        "        await self.bypass(Step(None, self._tracker))\n\n"
+        "    async def bypass(self, step: WriteBackStep) -> None:\n"
+        "        await step.write(finding=None)\n",
+        "Step.write",
+    ),
+    "through-a-nominal-base": (
+        WRITING_STEP,
+        "",
+        "\n    async def shortcut(self, step: BaseStep) -> None:\n"
+        "        await step.write(finding=None)\n",
+        "Step.write",
+    ),
+    "through-an-annotated-local": (
+        WRITING_STEP,
+        "",
+        "\n    async def shortcut(self) -> None:\n"
+        "        step: Step = Step(None, self._tracker)\n"
+        "        await step.write(finding=None)\n",
+        "Step.write",
+    ),
+    "through-the-step-field": (
+        APPLIER_STEP,
+        "",
+        "        await step.apply(None)\n",
+        "Writer.publish.put",
+    ),
+    "through-a-sibling-member": (
+        APPLIER_STEP,
+        "\n    async def flush(self):\n        await self.apply(None)\n",
+        "        await step.flush()\n",
+        "Writer.publish.put",
+    ),
+}
+
+
+@pytest.mark.parametrize("bypass", [False, True], ids=["window-only", "run-outside"])
+@pytest.mark.parametrize("case", sorted(RUN_OUTSIDE))
+def test_a_step_run_outside_its_window_loses_its_grant_however_it_is_typed(
+    case, bypass
+):
+    """A granted step or applier run with no window around it is refused.
+
+    The step is still handed to the real verifier.  With nothing else in the
+    planting, its write is driven, which is the control.  With one more
+    call that runs it outside the window, typed as the step protocol, as a
+    base the step subclasses, through an annotated local, or reaching the
+    applier through the step's field or another member of the step, the
+    write runs unverified at run time, so it is refused.
+    """
+    template, member, outside, function = RUN_OUTSIDE[case]
+    module = "planted/run_outside.py"
+    text = template.format(
+        member=member if bypass else "", bypass=outside if bypass else ""
+    )
+    found = census((module, text))
+    site = CallSite(module=module, function=function, method="post_comment")
+    assert site in found.sites
+    if bypass:
+        assert site in found.unadopted
+        assert site not in found.driven
+    else:
+        assert site in found.driven
 
 
 #: A port write taken as a value rather than called on the spot: bound to

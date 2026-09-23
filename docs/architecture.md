@@ -2163,8 +2163,8 @@ A call site is every call of an artifact write through a receiver other than
 handed to a partial, passed as a callback); one taken at module or class
 level is a site of the module. Driven is proven by declared types, never by a name or a shape: a
 call resolves only through the enclosing scopes, the module's own
-definitions, its `kodezart` imports, annotated parameters, locals every
-assignment of which constructs one class, `self` attributes typed by their
+definitions, its `kodezart` imports, annotated parameters, locals typed by
+their own annotation or every assignment of which constructs one class, `self` attributes typed by their
 class annotation or by every `__init__` assignment, and constructor calls.
 From the verifier's step parameter, read off the real method and the step
 protocol's one member, a step constructed into a sink grounds its class and
@@ -2178,7 +2178,10 @@ widening it. A call resolved to a method counts as a call of every override
 of it as well. Construction alone is never the whole grant: a granted
 applier or step member that any undriven function calls loses its grant, and
 so does an applier mentioned anywhere but in a call or the constructor
-argument that granted it.
+argument that granted it. A call of a step member is weighed however it is
+typed: resolved to the member, to a base member it overrides, or to the step
+protocol's own member anywhere but in the verifier; and a read of the step
+field an applier was handed to counts as a call of that applier.
 
 A write no verifier drives is admissible only under
 `@derived_writes("<method>", …)` on the function that makes it
