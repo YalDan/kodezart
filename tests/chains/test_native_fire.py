@@ -8,6 +8,7 @@ carried alongside that read stands in for it.
 """
 
 import ast
+import collections
 import functools
 import importlib.util
 import inspect
@@ -2693,6 +2694,15 @@ def _attribute_classes(klass, namespace, modules):
 
 def _calls_in(module, tree, functions):
     """The holder of each call in *module* whose callee IS one of *functions*."""
+    return [holder for holder, _, _ in _located_calls_in(module, tree, functions)]
+
+
+def _located_calls_in(module, tree, functions):
+    """Each call in *module* to *functions*: its holder, the call, the holder's node.
+
+    The holder's node is the outermost function's definition, or nothing for
+    a call recorded by its line.
+    """
     namespace = vars(module)
     # Resolved by identity, not by spelling: an aliased import and a
     # module-level rebinding both leave a name whose value is the function.
@@ -2830,13 +2840,14 @@ def _calls_in(module, tree, functions):
             if outer is None and isinstance(
                 child, (ast.FunctionDef, ast.AsyncFunctionDef)
             ):
-                here = ".".join((*prefix, child.name))
+                here = (".".join((*prefix, child.name)), child)
                 if isinstance(parent, ast.ClassDef):
                     inner = (receiver_of(prefix, parent, child), *scope[1:])
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
                 inner = scope_of(child, inner[0], inner)
             if isinstance(child, ast.Call) and is_function(child.func, inner):
-                found.append((module.__name__, here or f"module line {child.lineno}"))
+                holder = here[0] if here else f"module line {child.lineno}"
+                found.append(((module.__name__, holder), child, here and here[1]))
             walk(child, path, here, inner)
 
     walk(tree, (), None, scope_of(tree, None, (None, frozenset(names), {}, modules)))
@@ -2853,6 +2864,112 @@ def calls_to(*functions):
         for module, tree in _package_modules()
         for holder in _calls_in(module, tree, functions)
     )
+
+
+#: The statements after which a block does not go on to what follows it.
+_EXITS = (ast.Return, ast.Raise, ast.Continue, ast.Break)
+
+
+def _holds(node, targets):
+    """Whether one of the *targets* nodes is *node* or lies inside it."""
+    return any(inner is target for inner in ast.walk(node) for target in targets)
+
+
+def _blocks_of(statement):
+    """The statement lists a compound statement holds, each a block."""
+    parts = [
+        statement,
+        *(
+            child
+            for child in ast.iter_child_nodes(statement)
+            if isinstance(child, (ast.excepthandler, ast.match_case))
+        ),
+    ]
+    return [
+        value
+        for part in parts
+        for _, value in ast.iter_fields(part)
+        if isinstance(value, list) and value and isinstance(value[0], ast.stmt)
+    ]
+
+
+def _ifs_in(statement):
+    """The outermost ``if`` statements of *statement*, looking through blocks."""
+    if isinstance(statement, ast.If):
+        return [statement]
+    return [
+        found
+        for block in _blocks_of(statement)
+        for inner in block
+        for found in _ifs_in(inner)
+    ]
+
+
+def _acts_after_a_route(block, routed):
+    """Whether *block* goes on past one of its *routed* calls and falls through.
+
+    Such a branch rejoins the node with something done since its own check,
+    which the path around it never did.  A branch that ends in a return,
+    a raise, a ``continue`` or a ``break`` never rejoins at all.
+    """
+    if not block or isinstance(block[-1], _EXITS):
+        return False
+    return any(_holds(statement, routed) for statement in block[:-1]) or any(
+        _acts_after_a_route(inner, routed) for inner in _blocks_of(block[-1])
+    )
+
+
+def _arms_into(call, function, routed):
+    """How many arms of *function* reach *call*, read off its source.
+
+    Every branch of an earlier ``if`` that acts after a *routed* call and
+    then falls through is an arm of its own into *call*; the path that takes
+    none of them is one more, when every such ``if`` can be passed some other
+    way.  An ``if`` is earlier when it comes before *call* in a block that
+    holds *call*, at any depth, looking through ``with``, ``for``, ``try``
+    and ``match`` blocks to the ``if`` statements inside them.  Each block
+    holding *call* is read once, so the walk is bounded by the function.
+    """
+    acting, around = 0, True
+    block = function.body
+    while block:
+        index = next(
+            i for i, statement in enumerate(block) if _holds(statement, [call])
+        )
+        for earlier in block[:index]:
+            for branching in _ifs_in(earlier):
+                branches = [branching.body, branching.orelse]
+                own = [_acts_after_a_route(branch, routed) for branch in branches]
+                acting += sum(own)
+                around = around and any(
+                    not taken and not (branch and isinstance(branch[-1], _EXITS))
+                    for branch, taken in zip(branches, own, strict=True)
+                )
+        block = next(
+            (
+                inner
+                for inner in _blocks_of(block[index])
+                if any(_holds(statement, [call]) for statement in inner)
+            ),
+            None,
+        )
+    return acting + around
+
+
+def routes_to(*functions):
+    """Each holder's routes to *functions*: one per (call, arm that reaches it).
+
+    A call is a route on every arm of its holder that reaches it, since what
+    the node did since its last check differs from arm to arm (see
+    ``_arms_into``).  A call recorded by its line is one route.
+    """
+    routes = collections.Counter()
+    for module, tree in _package_modules():
+        located = _located_calls_in(module, tree, functions)
+        for holder, call, function in located:
+            routed = [other for _, other, owner in located if owner is function]
+            routes[holder] += _arms_into(call, function, routed) if function else 1
+    return dict(routes)
 
 
 def callers_of(*functions):
