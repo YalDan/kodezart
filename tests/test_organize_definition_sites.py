@@ -235,33 +235,97 @@ def test_the_halt_sites_live_in_the_convergence_loop_in_source_order() -> None:
         (
             _keyword_name(node, "cause"),
             _bound_loop(node),
+            _guard(tree, node),
         )
-        for _, _, node in ordered
+        for _, tree, node in ordered
     ] == [
-        ("StageHaltCause.HUMAN_DECISION", None),
-        ("StageHaltCause.HUMAN_DECISION", None),
-        ("StageHaltCause.ADMISSION_EXHAUSTED", "write_back"),
-        ("StageHaltCause.ADMISSION_EXHAUSTED", "admission"),
-        ("StageHaltCause.CONVERGENCE_EXHAUSTED", "convergence"),
+        (
+            "StageHaltCause.HUMAN_DECISION",
+            None,
+            "if route is AdmissionRoute.ESCALATE",
+        ),
+        (
+            "StageHaltCause.HUMAN_DECISION",
+            None,
+            "except OrganizeDecisionRequiredError",
+        ),
+        (
+            "StageHaltCause.ADMISSION_EXHAUSTED",
+            "write_back",
+            "if verified_write.verdict is not AuditVerdict.HOLDS",
+        ),
+        (
+            "StageHaltCause.ADMISSION_EXHAUSTED",
+            "admission",
+            "else of for range(self._policy.max_admission_rounds)",
+        ),
+        (
+            "StageHaltCause.CONVERGENCE_EXHAUSTED",
+            "convergence",
+            "else of for range(self._policy.max_convergence_rounds)",
+        ),
     ]
-    # The two exhaustion causes are the loop's to report and nobody else's.
-    # Their own module is where the halt variants declare them, which is the
-    # one definition site; every other naming of them is a report, and the
-    # loop is the only thing that reports one. STAGE_INCOMPLETE is
-    # deliberately absent: the barrier reports it too, through the one report
-    # builder both it and the loop call.
-    exhaustion = {"ADMISSION_EXHAUSTED", "CONVERGENCE_EXHAUSTED"}
+    # The three causes the loop raises are the loop's to report and nobody
+    # else's. Their own module declares them, and there the halt variants
+    # name them in a ``Literal[...]`` annotation; every other naming of them
+    # is a report, and the loop is the only thing that reports one.
+    # STAGE_INCOMPLETE is deliberately absent: the barrier reports it too,
+    # through the one report builder both it and the loop call.
+    raised = {"HUMAN_DECISION", "ADMISSION_EXHAUSTED", "CONVERGENCE_EXHAUSTED"}
     named = {
         (module, scope_of(tree, node))
         for module, tree in trees.items()
-        if module != CAUSES
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute)
-        and node.attr in exhaustion
+        and node.attr in raised
         and isinstance(node.value, ast.Name)
         and node.value.id == "StageHaltCause"
+        and not (module == CAUSES and _in_literal(tree, node))
     }
     assert named == {("services/organize_owner.py", LOOP)}, named
+
+
+def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
+    return {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+
+
+def _in_literal(tree: ast.AST, target: ast.AST) -> bool:
+    """Whether *target* sits inside a ``Literal[...]`` subscript."""
+    parents = _parents(tree)
+    node = target
+    while node in parents:
+        node = parents[node]
+        if (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "Literal"
+        ):
+            return True
+    return False
+
+
+def _guard(tree: ast.AST, target: ast.AST) -> str:
+    """The innermost branch that leads to *target*: an ``if``, a handler, an else.
+
+    Two raise sites with one cause and no bound differ in what led to them,
+    so it is the branch that tells them apart and fixes their order.
+    """
+    parents = _parents(tree)
+    node = target
+    while node in parents:
+        parent = parents[node]
+        if isinstance(parent, ast.If) and node in parent.body:
+            return f"if {ast.unparse(parent.test)}"
+        if isinstance(parent, ast.ExceptHandler) and parent.type is not None:
+            return f"except {ast.unparse(parent.type)}"
+        if isinstance(parent, (ast.For, ast.AsyncFor)) and node in parent.orelse:
+            return f"else of for {ast.unparse(parent.iter)}"
+        node = parent
+    return ""
 
 
 def _keyword_name(call: ast.Call, arg: str) -> str | None:
