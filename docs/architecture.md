@@ -877,9 +877,15 @@ That reading precedes the round's lease, so an approved scope costs the
 pre-approval row no lease at all, and it precedes every write, so approval
 landing during one of its sessions refuses the write that follows and releases
 the round's declared set with it. Those two readings — no pre-approval write
-after approval, no act of a run before it — are the whole of the boundary: no
-member is both under a live run and under the pre-approval row's lease, and
-neither side reads a mark of the other.
+after approval, no act of a run before it — are the whole of the boundary, and
+it is exact up to one session: no member is both under a live run and under the
+pre-approval row's lease, except while approval lands during a grooming
+session. A run admitted in that window is refused at its first stage
+acquisition by the grooming round's lease and writes nothing; that lease is
+the one mark of the other side a run ever reads, and only in that window.
+Withdrawing approval during a run reopens the pre-approval row while a lane
+already admitted finishes: exclusion is the approval label, not a liveness
+read (KOD-788).
 
 ## Workflow Pipeline
 
