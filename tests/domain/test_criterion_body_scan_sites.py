@@ -43,6 +43,11 @@ argument; a matcher called with keyword arguments, such as
 ``re.search(pattern=…, string=…)``, because only a call's positional
 arguments are read; and any matcher reached by reflection.
 
+Who reads the one row traversal is derived tree-wide from calls, imports
+and string constants that name it. Outside that reach: a name built at run
+time, a value handed across a function boundary where the other function is
+not resolved at this site, and a binding made only when a function runs.
+
 Under every spelling this layer does not see lies the behavioural floor,
 which is where a fallback that mints membership out of a parent's prose
 actually dies: ``test_criterion_reader.py`` at
@@ -68,7 +73,12 @@ from kodezart.domain.fire_spec import (
     replace_criterion_fields,
     tracker_spec_from_issues,
 )
-from tests.domain.test_criterion_cross_off import callers_of, source_tree
+from tests.domain.test_criterion_cross_off import (
+    called_name,
+    callers_of,
+    qualified_names,
+    source_tree,
+)
 from tests.identity_guards import _constructor_names
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
@@ -321,6 +331,72 @@ def grammar_readers(
     return frozenset(readers), consumers
 
 
+def called_inside(tree: ast.Module, *, name: str) -> set[str]:
+    """Every name the module-level definition *name* in *tree* calls."""
+    (definition,) = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name == name
+    ]
+    return {
+        called
+        for node in ast.walk(definition)
+        if isinstance(node, ast.Call) and (called := called_name(node)) is not None
+    }
+
+
+def traversal_callers(
+    sources: dict[str, str], *, traversal: str
+) -> set[tuple[str, str]]:
+    """Every (module, scope) in *sources* that reaches *traversal* directly.
+
+    A call counts however its callee is spelled, plain or as an attribute.
+    An import of the traversal counts as a call, because a module that
+    imports a private row walker has no other use for it; and a string
+    constant naming it (``getattr``, a ``module:attr`` reference) counts as
+    well. A scope that is the module itself is labelled by line.
+    """
+    shaped = re.compile(rf"(?:[\w.]+[.:])?{re.escape(traversal)}")
+    found: set[tuple[str, str]] = set()
+    for module, source in sources.items():
+        tree = ast.parse(source)
+        where = qualified_names(tree)
+        found |= {(module, caller) for caller in callers_of(tree, name=traversal)}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and any(
+                alias.name == traversal for alias in node.names
+            ):
+                found.add((module, where[id(node)] or f"line {node.lineno}"))
+            elif (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and shaped.fullmatch(node.value)
+            ):
+                found.add((module, where[id(node)] or f"line {node.lineno}"))
+    return found
+
+
+def sanctioned_traversal_callers(
+    sources: dict[str, str], *, traversal: str
+) -> set[tuple[str, str]]:
+    """The two readers the traversal has, both named off the owner's parse.
+
+    The field reader, and the one row-offset reader the edit reads its rows
+    through: a function the edit calls that itself calls the traversal and
+    is not the field reader. More than one such function, or none, is not
+    this shape, and fails the unpacking here.
+    """
+    rule = ast.parse(sources[RULE_MODULE])
+    in_rule = set(callers_of(rule, name=traversal))
+    edit_reads = called_inside(rule, name=replace_criterion_fields.__name__)
+    (row_reader,) = (edit_reads & in_rule) - {criterion_field_bodies.__name__}
+    return {
+        (RULE_MODULE, criterion_field_bodies.__name__),
+        (RULE_MODULE, row_reader),
+    }
+
+
 @cache
 def _grammar_pattern_names() -> frozenset[str]:
     """The names the shipped tree binds to a criterion-shaped pattern."""
@@ -364,6 +440,13 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
         reaching = grown
     assert {criterion_field_bodies.__name__, replace_criterion_fields.__name__} <= (
         reaching - {traversal}
+    )
+    # And the traversal has exactly two direct readers in the whole tree: the
+    # field reader, and the row-offset reader the edit reads through. A
+    # second field reader over the same rows, in the owner or anywhere else,
+    # matches nothing itself, and is a second parser all the same.
+    assert traversal_callers(sources, traversal=traversal) == (
+        sanctioned_traversal_callers(sources, traversal=traversal)
     )
 
 
@@ -558,3 +641,109 @@ def test_a_module_that_only_calls_the_reader_is_a_consumer_and_not_a_site():
 
     assert "services/quoter.py" in consumers
     assert "services/quoter.py" not in body_scan_sites(sources)
+
+
+#: Each way a second reader of the one row traversal could arrive, with
+#: ``TRAVERSAL`` standing for the traversal's name as the scan derives it: a
+#: verbatim second field reader in the owner, the same assembly inline in
+#: another module through an import, a call through the owner module's
+#: attribute, and a reach by a literal name.
+PLANTED_READERS = {
+    "second-reader-in-the-owner": (
+        RULE_MODULE,
+        "\n\ndef evidence_field_bodies(body):\n"
+        "    checks = []\n"
+        "    lines = []\n"
+        "    active = False\n"
+        "    for label, _, text in TRAVERSAL(body):\n"
+        "        if label is not None:\n"
+        "            if active:\n"
+        "                checks.append('\\n'.join(lines).strip())\n"
+        "            active = label == 'Evidence'\n"
+        "            lines = [text] if active else []\n"
+        "        elif active:\n"
+        "            lines.append(text)\n"
+        "    return tuple(checks)\n",
+    ),
+    "inline-through-an-import": (
+        "domain/criterion_evidence.py",
+        "\n\ndef evidence(body):\n"
+        f"    from {criterion_field_bodies.__module__} import TRAVERSAL\n"
+        "    return [text for label, _, text in TRAVERSAL(body)"
+        " if label == 'Evidence']\n",
+    ),
+    "import-alone": (
+        "services/audit_failures.py",
+        f"\nfrom {criterion_field_bodies.__module__} import TRAVERSAL as rows\n",
+    ),
+    "owner-attribute": (
+        "services/reader.py",
+        f"import {criterion_field_bodies.__module__} as owner\n"
+        "def evidence(body):\n"
+        "    return list(owner.TRAVERSAL(body))\n",
+    ),
+    "literal-name": (
+        "services/reader.py",
+        f"import {criterion_field_bodies.__module__} as owner\n"
+        "def evidence(body):\n"
+        "    return list(getattr(owner, 'TRAVERSAL')(body))\n",
+    ),
+}
+
+
+def _traversal(sources: dict[str, str]) -> str:
+    """The one row traversal, as the scan finds it in the owner."""
+    (traversal,) = body_scan_sites(sources)[RULE_MODULE]
+    return traversal
+
+
+@pytest.mark.parametrize("planted", sorted(PLANTED_READERS))
+def test_a_second_reader_of_the_row_traversal_fails_the_assertion(planted):
+    sources = source_tree()
+    traversal = _traversal(sources)
+    assert traversal_callers(sources, traversal=traversal) == (
+        sanctioned_traversal_callers(sources, traversal=traversal)
+    )
+
+    module, text = PLANTED_READERS[planted]
+    sources[module] = sources.get(module, "") + text.replace("TRAVERSAL", traversal)
+
+    assert traversal_callers(sources, traversal=traversal) - (
+        sanctioned_traversal_callers(sources, traversal=traversal)
+    )
+
+
+def test_the_edit_reading_through_a_second_row_reader_fails_the_derivation():
+    """Two row-offset readers under the edit are not the one it reads through."""
+    sources = source_tree()
+    traversal = _traversal(sources)
+    rule = sources[RULE_MODULE]
+    edit = f"def {replace_criterion_fields.__name__}("
+    assert rule.count(edit) == 1
+    sources[RULE_MODULE] = rule.replace(
+        edit,
+        f"def _more_rows(body):\n    return tuple({traversal}(body))\n\n\n{edit}",
+    ).replace(
+        "    rows = _criterion_rows(body)\n",
+        "    rows = _criterion_rows(body)\n    _more_rows(body)\n",
+    )
+    assert sources[RULE_MODULE].count("_more_rows(body)") == 2
+
+    with pytest.raises(ValueError, match="too many values to unpack"):
+        sanctioned_traversal_callers(sources, traversal=traversal)
+
+
+def test_a_traversal_name_built_at_run_time_is_outside_the_reach():
+    """The stated limit, held: a name assembled when the code runs is unseen."""
+    sources = source_tree()
+    traversal = _traversal(sources)
+    head, tail = traversal[: len(traversal) // 2], traversal[len(traversal) // 2 :]
+    sources["services/reader.py"] = (
+        f"import {criterion_field_bodies.__module__} as owner\n"
+        "def evidence(body):\n"
+        f"    return list(getattr(owner, {head!r} + {tail!r})(body))\n"
+    )
+
+    assert traversal_callers(sources, traversal=traversal) == (
+        sanctioned_traversal_callers(sources, traversal=traversal)
+    )

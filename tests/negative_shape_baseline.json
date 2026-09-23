@@ -173,7 +173,7 @@
   "tests/domain/test_criteria_feasibility.py": 89,
   "tests/domain/test_criteria_grading.py": 31,
   "tests/domain/test_criterion_amendment_fields.py": 4,
-  "tests/domain/test_criterion_body_scan_sites.py": 14,
+  "tests/domain/test_criterion_body_scan_sites.py": 20,
   "tests/domain/test_criterion_cross_off.py": 37,
   "tests/domain/test_criterion_evidence.py": 8,
   "tests/domain/test_criterion_identity.py": 20,
@@ -2801,7 +2801,10 @@
    "test_naming_criterion_shaped_text_without_matching_it_is_not_a_site",
    "test_one_body_scanning_twice_is_one_site_and_two_bodies_are_two",
    "test_a_second_body_scan_anywhere_in_the_tree_fails_the_assertion",
-   "test_a_module_that_only_calls_the_reader_is_a_consumer_and_not_a_site"
+   "test_a_module_that_only_calls_the_reader_is_a_consumer_and_not_a_site",
+   "test_a_second_reader_of_the_row_traversal_fails_the_assertion",
+   "test_the_edit_reading_through_a_second_row_reader_fails_the_derivation",
+   "test_a_traversal_name_built_at_run_time_is_outside_the_reach"
   ],
   "tests/domain/test_criterion_cross_off.py": [
    "test_exactly_one_site_constructs_a_cross_off_and_its_evidence",
