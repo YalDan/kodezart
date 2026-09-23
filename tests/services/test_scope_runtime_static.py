@@ -156,6 +156,15 @@ def imported_modules(
     return found
 
 
+def submodules_named(node: ast.ImportFrom) -> list[str]:
+    """The modules under the source tree a from-import takes from its package."""
+    return [
+        f"{node.module}.{alias.name}"
+        for alias in node.names
+        if path_of(f"{node.module}.{alias.name}").is_file()
+    ]
+
+
 def path_of(module: str) -> Path:
     return SRC.joinpath(*module.split(".")).with_suffix(".py")
 
