@@ -387,9 +387,10 @@ itself, one of the loop branch's own commits. Either way re-entry resumes there
 and not at the loop tip the best iteration was chosen over. The row is bound to
 the loop branch the best commit was pushed on, which the consolidation step
 writes beside the best commit as `best_iteration_branch`: a remediation round
-draws a loop branch of its own and one that commits nothing is never pushed, so
-a row bound to the run's last loop branch could name a branch the remote does
-not hold. A stall exit with no commit records nothing, and neither does one
+draws a loop branch of its own, and a round that committed nothing may push its
+branch at its cut point, but that push is not an iteration commit and never
+replaces an earlier best, so a row bound to the run's last loop branch would
+re-enter the lane at that cut point and not at its best. A stall exit with no commit records nothing, and neither does one
 whose best commit has no known branch. It writes nothing when the record's
 newest act is already that sha. A lane with no record at all — a commit pushed
 whose record write then failed — has nothing to re-enter from, so the landing

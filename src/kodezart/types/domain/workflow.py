@@ -280,10 +280,12 @@ class WorkflowState(TypedDict):
 
     ``best_iteration_branch`` is the loop branch that commit was made and
     pushed on, written beside it and by the same step. A remediation round
-    draws a loop branch of its own, and one that commits nothing is never
-    pushed, so the branch that holds the best commit is not always the run's
-    current ``ralph_branch``: a row recorded against the current one would
-    name a branch the remote does not hold.
+    draws a loop branch of its own, and a round that committed nothing may
+    push its branch at its cut point, but that push is not an iteration
+    commit and never replaces an earlier best, so the branch that holds the
+    best commit is not always the run's current ``ralph_branch``: a row
+    recorded against the current one would re-enter the lane at that cut
+    point and not at its best.
 
     ``lane_entry`` is how this run entered: ``None`` on the authored arm
     and on a native fire prepared without a walker, which is the same as a

@@ -478,10 +478,12 @@ class RalphWorkflowEngine:
 
         The row is bound to the loop branch the best commit was pushed on,
         which is not the run's current loop branch when a later remediation
-        round committed nothing: that round's branch was never pushed, and a
-        record naming it would be refused at every re-entry as absent from
-        the remote. Where the branch holding the best is not known, nothing
-        is written and the record keeps the association it had.
+        round committed nothing: a round that committed nothing may push its
+        branch at its cut point, but that push is not an iteration commit and
+        never replaces an earlier best, and a record naming that round's
+        branch would re-enter the lane at its cut point and not at its best.
+        Where the branch holding the best is not known, nothing is written
+        and the record keeps the association it had.
         """
         spec = state["fire_spec"]
         if not isinstance(spec, TrackerSpec):
