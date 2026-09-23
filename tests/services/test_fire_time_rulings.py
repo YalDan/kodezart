@@ -2063,7 +2063,7 @@ def subtree_readers(module_name: str, source: str) -> set[str]:
     return readers
 
 
-def test_the_ruling_step_and_the_fire_entry_read_one_subtree_function() -> None:
+def test_the_question_step_and_the_fire_entry_read_one_subtree_function() -> None:
     """The entry and the write read one extent, through one function.
 
     What the pass is shown is composed at the entry, and what an answer may
