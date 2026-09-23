@@ -4818,6 +4818,12 @@ class FakeTrackerPort:
             lease is None or lease.holder != holder or lease.expires_at <= now
             for lease in held
         ):
+            # What stands of this holder's grant for exactly this set is no
+            # hold, and the refusing renewal withdraws it, as the adapter
+            # takes down its own marker for exactly this set.
+            for surface, lease in tuple(self.leases.items()):
+                if lease.holder == holder and lease.surfaces == surfaces:
+                    del self.leases[surface]
             return None
         renewed = SurfaceLease(
             holder=holder,
