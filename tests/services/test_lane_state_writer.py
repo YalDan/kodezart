@@ -2140,7 +2140,7 @@ async def test_a_lapsed_and_a_refuted_lane_check_share_a_state_not_a_stream():
     refuted_row = refuted_port.issues[LANE_CHECK]
     lapsed_row = lapsed_port.issues[LANE_CHECK]
     standing = parse_criterion_evidence(met_port.issues[LANE_CHECK].body).test
-    lapsed_pointer = lapse_observation(observation=standing)
+    lapsed_pointer = f"{standing} — that grading lapsed"
 
     assert refuted_row.state_kind is lapsed_row.state_kind
     assert refuted_row.state_name == lapsed_row.state_name
