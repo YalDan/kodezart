@@ -772,7 +772,8 @@ first target that raises, and the targets after it wait for the next tick.
 That same set is the bound on what the row may write. Every address a
 proposal needs — the subject's own surface and, for a graph change, the graph
 address of every affected peer — is weighed against the held set before any
-renewal or backend call. An address inside the scope and outside the set, such
+renewal or tracker write; the author's session and its tracker reads come
+first. An address inside the scope and outside the set, such
 as a peer that joined after the round's snapshot, is refused there and recorded
 as a finding on the item that owns the address, and the round works on: a next
 round that declares the member writes the same change. A peer outside the scope

@@ -502,7 +502,7 @@ async def test_a_graph_write_naming_a_member_that_joined_late_is_a_finding_on_it
 
     The scope gains the member during the admission session, so the round
     declares every address but that one. The write is refused before any
-    renewal or backend call, and the finding is written to the member that
+    renewal or tracker write, and the finding is written to the member that
     owns the address rather than to the subject the write was authored for.
     """
     owner, board, executor = factory(convergence_bound=1, bound=2)
