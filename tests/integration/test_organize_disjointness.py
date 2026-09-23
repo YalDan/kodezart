@@ -133,8 +133,9 @@ async def test_an_unapproved_scope_is_groomed_and_admits_no_run(monkeypatch):
     """
     port = triaged(standing_board(LANES))
     operation = standing_operation()
+    builds = []
     harness = staging_runtime(
-        port, LANES, monkeypatch=monkeypatch, builds=[], operation=operation
+        port, LANES, monkeypatch=monkeypatch, builds=builds, operation=operation
     )
     groomed = before(port)
     assert await grooming(harness, operation).run(NOW) is PassRun.RAN
@@ -143,9 +144,15 @@ async def test_an_unapproved_scope_is_groomed_and_admits_no_run(monkeypatch):
     spent = len(harness.executor.organize_calls)
 
     refused_at = before(port)
+    organizers = len(builds)
+    workspaces = len(harness.workspace.calls)
     with pytest.raises(ScopeNotApprovedError) as refused:
         await bounded_walk(harness, job="unapproved-run")
     assert refused.value.ref == SCOPE
+    # Refused before it reads: the entry builds no stage organizer, so none
+    # runs, and no workspace is prepared for one.
+    assert len(builds) == organizers
+    assert len(harness.workspace.calls) == workspaces
     assert len(harness.executor.organize_calls) == spent
     assert gained_labels(port, refused_at) == dict.fromkeys(LANES, frozenset())
     for name in LOGS:
