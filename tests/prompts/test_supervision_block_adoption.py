@@ -24,9 +24,8 @@ longer states.
   update is the checkpoint.  The spent Scan Window row carries nothing,
   since the base window has no upper bound.  The table also pins the one
   sentence whose temporal references are restated against this pass
-  (KOD-577) and the one sentence that says a declared verification push is
-  never work started on an issue nor a ref principle 2 sends the pass to
-  build, and neither section carries a word of the
+  (KOD-577) and the one sentence that says a verification push is never
+  work started on an issue, and neither section carries a word of the
   cadence list the pass templates are held to.  Its limit: a temporal
   phrase that is on neither the table nor that list is not seen.  Read
   without the table, neither section names a ``## `` heading of the block
@@ -99,12 +98,10 @@ ADOPTED: tuple[str, ...] = VERBATIM + BY_EFFECT
 #: is carried.  It also holds the one sentence whose temporal references are
 #: restated against this pass (KOD-577): "this loop", "at once" and "the
 #: expected steady state", and the last sentence of Supervision Boundaries,
-#: which adds that a branch pushed for verification, declared before it is
-#: written, is never work started on an issue nor a ref principle 2 sends the
-#: pass to build, so neither the queue-state rule nor principle 2 and step 1
-#: read the pass's own verification pushes as work to act on; the pass knows
-#: such a branch by its own declaration under Writer Discipline.  Asserted
-#: equal to the set of sentences that differ, so it cannot grow unnoticed.
+#: which adds that a branch pushed for verification is never work started on
+#: an issue, so the queue-state rule does not read the pass's own
+#: verification pushes as work started.  Asserted equal to the set of
+#: sentences that differ, so it cannot grow unnoticed.
 REPOINTED: dict[str, str] = {
     "Re-read a surface immediately before writing it, per the Atomicity Guards "
     "above, and abandon the write if it moved after this pass's frozen upper "
@@ -154,8 +151,7 @@ REPOINTED: dict[str, str] = {
     "Push what you composed so a human can look at it; opening the request is "
     "theirs, not yours.": "Push what you composed so a human can look at it; "
     "opening the request is theirs, not yours, and a branch you push for "
-    "verification, declared before you wrote it, is never work started on an "
-    "issue nor a ref principle 2 sends you to build.",
+    "verification is never work started on an issue.",
 }
 
 #: The three prohibitions removed from the base GitHub rule, because
