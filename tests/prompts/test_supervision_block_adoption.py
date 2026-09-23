@@ -17,7 +17,11 @@ three prohibitions the amended base rule no longer states.
   file does not have.  Those are re-pointed at a rule the base states, by its
   tag, or keep the referenced rule's own words inline where the base states
   it nowhere; the spent Scan Window row carries nothing, since the base
-  window has no upper bound and its status update is the checkpoint.
+  window has no upper bound and its status update is the checkpoint.  The
+  table also pins the one sentence whose temporal references are restated
+  against this pass (KOD-577), and neither section carries a word of the
+  cadence list the pass templates are held to.  Its limit: a temporal
+  phrase that is on neither the table nor that list is not seen.
 * Every adopted section sits between the base's top-level ``<tag>`` sections
   and never inside one, so adopting a section cannot edit a base section;
   the file is never replaced by the block.
@@ -40,6 +44,7 @@ import re
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from tests.prompts.sets import OPUS_SET, operation_registry, render_case
+from tests.prompts.test_operation_config import CADENCE_WORDS
 from tests.prompts.test_prompt_wiring import REPO_ROOT
 
 BLOCK = REPO_ROOT / "docs" / "supervision-block.md"
@@ -74,8 +79,10 @@ ADOPTED: tuple[str, ...] = VERBATIM + BY_EFFECT
 #: Transitions, Lifecycle States, Health Mapping, Scan Window).  Each points
 #: only at a rule the base states: the base window has no upper bound and its
 #: status update is the checkpoint, so neither a bound nor a marker advance
-#: is carried.  Asserted equal to the set of sentences that differ, so it
-#: cannot grow unnoticed.
+#: is carried.  It also holds the one sentence whose temporal references are
+#: restated against this pass (KOD-577): "this loop", "at once" and "the
+#: expected steady state".  Asserted equal to the set of sentences that
+#: differ, so it cannot grow unnoticed.
 REPOINTED: dict[str, str] = {
     "Re-read a surface immediately before writing it, per the Atomicity Guards "
     "above, and abandon the write if it moved after this pass's frozen upper "
@@ -112,6 +119,12 @@ REPOINTED: dict[str, str] = {
     "replies the Reply Criteria allow, one status update per initiative, and "
     "the single marker advance.": "Every other write you make is one this "
     "prompt already defines.",
+    "Merging is a human act entirely outside this loop, and several requests "
+    "open at once — in parallel or stacked — is the expected steady state "
+    "rather than a condition to resolve.": "Merging is a human act entirely "
+    "outside this pass, and several requests open during this pass — in "
+    "parallel or stacked — are what this pass expects to find rather than a "
+    "condition to resolve.",
 }
 
 #: The three prohibitions removed from the base GitHub rule, because
@@ -333,6 +346,16 @@ def test_the_by_effect_sections_carry_every_sentence_and_differ_only_where_repoi
         differing |= {line for line in block_sentences if line not in adopted}
         assert adopted == [REPOINTED.get(line, line) for line in block_sentences]
     assert differing == set(REPOINTED)
+
+
+def test_the_by_effect_sections_carry_no_cadence_word():
+    """KOD-577: the authored sections name no cadence; they refer to this pass."""
+    text = template_text()
+    assert CADENCE_WORDS
+    for name in BY_EFFECT:
+        section = template_section(text, name).lower()
+        carried = [word for word in CADENCE_WORDS if word in section]
+        assert carried == [], name
 
 
 def test_every_tag_a_repointed_reference_names_is_a_top_level_template_section():
