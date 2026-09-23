@@ -961,15 +961,102 @@ def implementation_classes(
         )
 
     return {
-        name: frozenset(
-            item.name
-            for item in node.body
-            if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
-            and not item.name.startswith("_")
-        )
+        name: public(bound_in_body(node))
         for name, node in classes.items()
         if name not in {state, whole} and built_over(name)
     }
+
+
+def public(names: frozenset[str]) -> frozenset[str]:
+    """The names of *names* that do not start with an underscore."""
+    return frozenset(name for name in names if not name.startswith("_"))
+
+
+def self_calls(node: ast.ClassDef) -> frozenset[str]:
+    """Every ``self.<name>(...)`` a class body calls, public or private."""
+    return frozenset(
+        call.func.attr
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "self"
+    )
+
+
+def self_assigned(node: ast.ClassDef) -> frozenset[str]:
+    """Every attribute a class body assigns on ``self``."""
+    return frozenset(
+        target.attr
+        for target, _ in assigned_pairs(node)
+        if isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+    )
+
+
+def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ...]]:
+    """Every role class whose bases are not exactly the role classes it needs.
+
+    A role class needs the classes of the declaring roles its role composes,
+    and the class that defines each ``self.<name>`` its own body calls that
+    neither it nor the state defines. The role classes its bases reach must
+    be exactly those and what they reach in turn, and each base must be the
+    state or a role class: nothing wider is inherited and nothing it calls
+    is missing when it is built alone.
+    """
+    register = port_module_text()
+    declaring = declaring_roles(register)
+    classes = class_defs(text)
+    implemented = implementation_classes(text, state=state, whole=whole)
+    role_of = {name: role for role, name in class_per_role(implemented).items()}
+    definer = {
+        member: name for name in implemented for member in bound_in_body(classes[name])
+    }
+    from_state = bound_in_body(classes[state]) | self_assigned(classes[state])
+    bases = {
+        name: tuple(base.id for base in node.bases if isinstance(base, ast.Name))
+        for name, node in classes.items()
+    }
+
+    def reach(names: set[str]) -> set[str]:
+        reached: set[str] = set()
+        frontier = list(names)
+        while frontier:
+            name = frontier.pop()
+            if name in reached or name not in implemented:
+                continue
+            reached.add(name)
+            frontier.extend(bases.get(name, ()))
+        return reached
+
+    report: dict[str, tuple[str, ...]] = {}
+    for name in sorted(implemented):
+        role = role_of.get(name)
+        own = bound_in_body(classes[name])
+        needed = {
+            implemented_role
+            for part in (composed(register, role) if role else frozenset()) & declaring
+            if (implemented_role := class_per_role(implemented).get(part))
+        }
+        findings: list[str] = []
+        for called in sorted(self_calls(classes[name]) - own - from_state):
+            if called in definer:
+                needed.add(definer[called])
+            else:
+                findings.append(f"calls self.{called}, which no role class defines")
+        findings.extend(
+            f"base {base} is neither the state nor a role class"
+            for base in bases[name]
+            if base != state and base not in implemented
+        )
+        extra = sorted(reach(set(bases[name])) - reach(needed))
+        missing = sorted(reach(needed) - reach(set(bases[name])))
+        findings.extend(f"inherits {other}, which it does not need" for other in extra)
+        findings.extend(f"lacks {other}, which it needs" for other in missing)
+        if findings:
+            report[name] = tuple(findings)
+    return report
 
 
 def declared_by_role() -> dict[str, frozenset[str]]:
