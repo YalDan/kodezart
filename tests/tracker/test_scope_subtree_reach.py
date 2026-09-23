@@ -37,6 +37,8 @@ from kodezart.types.domain.scope_ready import (
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.tracker import (
     IssuePriority,
+    IssueRelation,
+    IssueRelationKind,
     TrackerIssue,
     WorkflowStateKind,
 )
@@ -55,6 +57,8 @@ LANE = "REACH-1"
 LANE_CHECK = "REACH-2"
 CHILD = "REACH-3"
 CHILD_CHECK = "REACH-4"
+BLOCKER = "REACH-5"
+BLOCKER_CHECK = "REACH-6"
 
 CRITERION_LABEL = "acceptance-condition"
 APPROVED_LABEL = "execution-consent"
@@ -145,6 +149,7 @@ def _issues(
     ref: ScopeRef = PROJECT,
     child_milestone: str | None = OTHER_MILESTONE,
     approved: bool = True,
+    blocked: bool = False,
 ) -> list[ScopeMcpIssue]:
     """The one board shape every reading and both implementations run on.
 
@@ -154,7 +159,8 @@ def _issues(
     with no owning project is not a shape the backend has — and the child
     leaves the filter by carrying *child_milestone*, which is another
     milestone or no milestone at all.  With *approved* off the lane carries
-    no approval label of its own.
+    no approval label of its own.  With *blocked* on, an in-filter member
+    nobody approved, with an open criterion of its own, blocks the lane.
     """
     by_milestone = ref.kind is ScopeKind.MILESTONE
     lane_milestone = MILESTONE.key if by_milestone else None
@@ -166,11 +172,33 @@ def _issues(
         child_milestone_key = child_milestone if out_of_filter else MILESTONE.key
     child_status, child_kind = CHILD_STATES[child_state]
     graded_status, graded_kind = CHILD_STATES["graded"]
+    open_status, open_kind = CHILD_STATES["open"]
+    blocker_rows = [
+        ScopeMcpIssue(
+            id=BLOCKER,
+            description="an unapproved member the lane is blocked by",
+            status="Todo",
+            status_type="unstarted",
+            project_key=PROJECT.key,
+            milestone_key=lane_milestone,
+        ),
+        ScopeMcpIssue(
+            id=BLOCKER_CHECK,
+            description="the blocker's own criterion, still open",
+            labels=[CRITERION_LABEL],
+            parent_id=BLOCKER,
+            status=open_status,
+            status_type=open_kind,
+            project_key=PROJECT.key,
+            milestone_key=lane_milestone,
+        ),
+    ]
     return [
         ScopeMcpIssue(
             id=LANE,
             description="the lane the walk selects",
             labels=[APPROVED_LABEL] if approved else [],
+            relations=[("blockedBy", BLOCKER)] if blocked else [],
             status="Todo",
             status_type="unstarted",
             project_key=PROJECT.key,
@@ -205,6 +233,7 @@ def _issues(
             project_key=child_project,
             milestone_key=child_milestone_key,
         ),
+        *(blocker_rows if blocked else []),
     ]
 
 
@@ -245,6 +274,11 @@ def _domain_issue(issue: ScopeMcpIssue) -> TrackerIssue:
         project_id=issue.project_key,
         milestone_key=issue.milestone_key,
         parent_key=issue.parent_id,
+        relations=tuple(
+            IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=key)
+            for kind, key in issue.relations
+            if kind == "blockedBy"
+        ),
         created_at=FIXTURE_NOW,
         updated_at=FIXTURE_NOW,
         url=f"https://tracker.invalid/issue/{issue.id}",
@@ -252,7 +286,7 @@ def _domain_issue(issue: ScopeMcpIssue) -> TrackerIssue:
 
 
 def _double(
-    issues: Sequence[ScopeMcpIssue], *, approved: bool = True
+    issues: Sequence[ScopeMcpIssue], *, approved: bool = True, blocked: bool = False
 ) -> FakeTrackerPort:
     """The same board as a domain double, under either container filter.
 
@@ -260,8 +294,11 @@ def _double(
     rows in that project, the milestone's are the rows on that milestone.
     The approval stays on the project, which is the only container level a
     label lives at — a milestone adds none of its own.  With *approved* off
-    no approval is seeded at all.
+    no approval is seeded at all.  With *blocked* on the approval sits on
+    the lane itself, as the adapter's board carries it, because a project
+    approval would also approve the blocker the board leaves unapproved.
     """
+    approval = ScopeRef(kind=ScopeKind.ISSUE, key=LANE) if blocked else PROJECT
     return FakeTrackerPort(
         issues=[_domain_issue(issue) for issue in issues],
         scope_containers=[
@@ -285,7 +322,7 @@ def _double(
             ],
         },
         scope_label_members=(
-            {PROJECT: frozenset({ScopeLabel.APPROVED})} if approved else {}
+            {approval: frozenset({ScopeLabel.APPROVED})} if approved else {}
         ),
     )
 
@@ -305,6 +342,7 @@ def board(
     ref: ScopeRef = PROJECT,
     child_milestone: str | None = OTHER_MILESTONE,
     approved: bool = True,
+    blocked: bool = False,
 ) -> TrackerPort:
     issues = _issues(
         child_state=child_state,
@@ -312,10 +350,11 @@ def board(
         ref=ref,
         child_milestone=child_milestone,
         approved=approved,
+        blocked=blocked,
     )
     if implementation == "linear-mcp":
         return _adapter(ReachMcpServer(issues=issues))
-    return _double(issues, approved=approved)
+    return _double(issues, approved=approved, blocked=blocked)
 
 
 async def test_the_lane_is_not_at_rest_while_the_hidden_descendant_is_open(
@@ -487,6 +526,34 @@ async def test_the_read_names_the_unreachable_criterion_of_a_lane_nobody_approve
     assert ready.ready == ()
     assert ready.unapproved == (LANE,)
     assert CHILD_CHECK in ready.unresolved
+    assert ready.unreachable == (
+        UnreachableCriterion(
+            issue_key=CHILD_CHECK,
+            reason=UnreachableReason.OTHER_PROJECT,
+            container=OTHER_PROJECT,
+        ),
+    )
+
+
+async def test_the_read_names_the_unreachable_criterion_of_a_blocked_lane(
+    implementation: str,
+) -> None:
+    """A lane the walk cannot fire still has its unreachable criterion named.
+
+    The out-of-filter shape with the lane blocked by an in-filter member
+    whose own criterion is open: nothing is ready and the lane is blocked,
+    yet the criterion its filter cannot reach is named with its reason and
+    container, because being blocked defers the obligation and discharges
+    none of it.
+    """
+    tracker = board(
+        implementation, child_state="open", out_of_filter=True, blocked=True
+    )
+
+    ready = await read_scope_ready(ref=PROJECT, tracker=tracker)
+
+    assert ready.ready == ()
+    assert LANE in {entry.issue_key for entry in ready.blocked}
     assert ready.unreachable == (
         UnreachableCriterion(
             issue_key=CHILD_CHECK,
