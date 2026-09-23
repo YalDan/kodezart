@@ -3350,6 +3350,9 @@ def single_writer_writes() -> frozenset[str]:
 #: the parent's own creation surfaces.
 GRAPH_CHILD = "FIX-9"
 GRAPH_PEER = "FIX-10"
+#: A third child, related to the first on both sides from the start, so a
+#: relation removal has an edge to take off.
+GRAPH_RELATED = "FIX-11"
 #: The two addresses for creating membership under one issue, which grant no
 #: edit of any child that already exists there.
 CLAIMED_CRITERION_CHILD_SET = WritableSurface(
@@ -3368,6 +3371,11 @@ PEER_GRAPH = WritableSurface(
     kind=SurfaceKind.ISSUE_GRAPH,
     ref=ScopeRef(kind=ScopeKind.ISSUE, key=GRAPH_PEER),
 )
+RELATED_GRAPH = WritableSurface(
+    kind=SurfaceKind.ISSUE_GRAPH,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=GRAPH_RELATED),
+)
+CLAIMED_GRAPH = WritableSurface(kind=SurfaceKind.ISSUE_GRAPH, ref=CLAIMED_REF)
 #: The alarm record one row writes, and the marker its own address is
 #: composed from: the seam derives the whole address from the subject and
 #: the signal, so the row names it the way the writer does.
@@ -3586,6 +3594,46 @@ SUPPLIED_HOLDER_WRITES: Mapping[str, HolderWrite] = {
 }
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PeerChange:
+    """One change of the child's graph that writes another issue's graph too.
+
+    ``held`` is what the writer holds live; ``peer`` is the one affected
+    address it does not, which the refusal must name.
+    """
+
+    change: Mapping[str, object]
+    held: frozenset[WritableSurface]
+    peer: WritableSurface
+
+
+#: Every kind of graph change whose affected peers go beyond the child: a
+#: relation added, a relation removed, and a parent change, where the old
+#: parent and the new one are both peers and each is left unheld in turn.
+GRAPH_PEER_CHANGES: Mapping[str, PeerChange] = {
+    "related_to_add": PeerChange(
+        change={"kind": "related_to", "add": [GRAPH_PEER]},
+        held=frozenset({CHILD_GRAPH}),
+        peer=PEER_GRAPH,
+    ),
+    "related_to_remove": PeerChange(
+        change={"kind": "related_to", "remove": [GRAPH_RELATED]},
+        held=frozenset({CHILD_GRAPH}),
+        peer=RELATED_GRAPH,
+    ),
+    "parent_new": PeerChange(
+        change={"kind": "parent", "parent_id": GRAPH_PEER},
+        held=frozenset({CHILD_GRAPH, CLAIMED_GRAPH}),
+        peer=PEER_GRAPH,
+    ),
+    "parent_old": PeerChange(
+        change={"kind": "parent", "parent_id": GRAPH_PEER},
+        held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
+        peer=CLAIMED_GRAPH,
+    ),
+}
+
+
 class TestSuppliedHolderWrites:
     """Every ``TrackerPort`` write that supplies a holder refuses one it does not hold.
 
@@ -3606,9 +3654,10 @@ class TestSuppliedHolderWrites:
     def server(self, clock: FixtureClock) -> FakeLinearMcpServer:
         """The fixture workspace plus the members these rows address.
 
-        A finished criterion for the move back, and a child and a peer of
-        the claimable issue for the graph and split rows. Seeded here, so
-        no module built on the shared workspace sees them.
+        A finished criterion for the move back, and three children of the
+        claimable issue for the graph and peer cases, the first and the
+        third related on both sides. Seeded here, so no module built on
+        the shared workspace sees them.
         """
         value = fixture_server(clock=clock)
         value.issues[OWED_CRITERION] = criterion_sub_issue(
@@ -3617,7 +3666,7 @@ class TestSuppliedHolderWrites:
             status="Done",
             status_type="completed",
         )
-        for key in (GRAPH_CHILD, GRAPH_PEER):
+        for key in (GRAPH_CHILD, GRAPH_PEER, GRAPH_RELATED):
             value.issues[key] = FakeMcpIssue(
                 id=key,
                 title=f"an ordinary child {key}",
@@ -3628,6 +3677,8 @@ class TestSuppliedHolderWrites:
                 created_at=FIXTURE_NOW - timedelta(days=2),
                 updated_at=FIXTURE_NOW,
             )
+        value.issues[GRAPH_CHILD].relations = [("relatedTo", GRAPH_RELATED)]
+        value.issues[GRAPH_RELATED].relations = [("relatedTo", GRAPH_CHILD)]
         return value
 
     def test_the_table_is_the_derived_holder_taking_write_surface(self) -> None:
@@ -3705,56 +3756,54 @@ class TestSuppliedHolderWrites:
         assert tracker_writes() == written
         assert await row.effect(tracker) == before
 
+    @pytest.mark.parametrize("change", sorted(GRAPH_PEER_CHANGES))
     @pytest.mark.parametrize("standing", ["unheld", "expired", "foreign"])
     async def test_a_graph_write_is_refused_on_the_peer_it_would_relate(
         self,
         tracker: TrackerPort,
         tracker_writes: Callable[[], tuple[object, ...]],
         clock: FixtureClock,
+        change: str,
         standing: str,
     ) -> None:
-        """A relation writes the peer's graph too, so the peer's address is asked.
+        """A graph change writes each peer's graph too, so each peer's address is asked.
 
-        The child's graph address is held live by the writer; the peer's
-        is unheld, lapsed or a rival's.  Adding a relation from the child
-        to the peer is refused naming the PEER's address and its holder,
-        with nothing written and neither side's relations moved: holding
-        the issue a relation starts from is not holding the one it ends at.
+        The writer holds live every affected address but one peer's, which
+        is unheld, lapsed or a rival's: the peer a relation is added to,
+        the peer a relation is removed from, and the new parent or the old
+        one of a parent change.  The change is refused naming that PEER's
+        address and its holder, with nothing written and no member's graph
+        moved: holding the issue a change starts from is not holding the
+        ones it reaches.
         """
+        row = GRAPH_PEER_CHANGES[change]
         if standing == "expired":
             await tracker.acquire_surfaces(
-                surfaces=frozenset({PEER_GRAPH}),
+                surfaces=frozenset({row.peer}),
                 holder=JOB_A,
                 lease_seconds=LEASE_SECONDS,
             )
             clock.advance(seconds=LEASE_SECONDS + 1)
         elif standing == "foreign":
             await tracker.acquire_surfaces(
-                surfaces=frozenset({PEER_GRAPH}),
+                surfaces=frozenset({row.peer}),
                 holder=JOB_B,
                 lease_seconds=LEASE_SECONDS,
             )
         await tracker.acquire_surfaces(
-            surfaces=frozenset({CHILD_GRAPH}),
+            surfaces=row.held,
             holder=JOB_A,
             lease_seconds=LEASE_SECONDS,
         )
         proposed = GraphProposal.model_validate(
-            {
-                "kind": "graph",
-                "issue_id": GRAPH_CHILD,
-                "changes": [{"kind": "related_to", "add": [GRAPH_PEER]}],
-            }
+            {"kind": "graph", "issue_id": GRAPH_CHILD, "changes": [row.change]}
         )
+        members = (CLAIMED_ISSUE, GRAPH_CHILD, GRAPH_PEER, GRAPH_RELATED)
         before = {
-            key: (await tracker.read_issue(issue_key=key)).relations
-            for key in (GRAPH_CHILD, GRAPH_PEER)
+            key: (await tracker.read_issue(issue_key=key)).relations for key in members
         }
         expected = tuple(
-            [
-                graph_snapshot(await tracker.read_issue(issue_key=key))
-                for key in (CLAIMED_ISSUE, GRAPH_CHILD, GRAPH_PEER)
-            ]
+            [graph_snapshot(await tracker.read_issue(issue_key=key)) for key in members]
         )
         written = tracker_writes()
 
@@ -3774,14 +3823,22 @@ class TestSuppliedHolderWrites:
         ) == (
             SurfaceKind.ISSUE_GRAPH.value,
             ScopeKind.ISSUE.value,
-            GRAPH_PEER,
+            row.peer.ref.key,
             JOB_B if standing == "foreign" else None,
         )
         assert tracker_writes() == written
         assert {
-            key: (await tracker.read_issue(issue_key=key)).relations
-            for key in (GRAPH_CHILD, GRAPH_PEER)
+            key: (await tracker.read_issue(issue_key=key)).relations for key in members
         } == before
+        assert (
+            tuple(
+                [
+                    graph_snapshot(await tracker.read_issue(issue_key=key))
+                    for key in members
+                ]
+            )
+            == expected
+        )
 
     @pytest.mark.parametrize("method", sorted(single_writer_writes()))
     async def test_a_write_that_supplies_no_holder_consults_no_lease(
