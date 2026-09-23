@@ -202,9 +202,19 @@ async def test_a_round_whose_lease_lapsed_in_a_session_writes_nothing_more(
     assert len({nonce for _, nonce, _ in acquisitions(board)}) == 1
 
 
-async def test_no_halt_is_written_while_the_rounds_lease_is_held():
-    """The round's set is gone before the halt's first escalation write."""
-    owner, board, _ = factory(refuse_forever=True, bound=1)
+@pytest.mark.parametrize("route", ["admission_exhausted", "human_decision"])
+async def test_no_halt_is_written_while_the_rounds_lease_is_held(route):
+    """The round's set is gone before the halt's first escalation write.
+
+    ``admission_exhausted``: the subject's refusals outlast its admission
+    rounds. ``human_decision``: its first refusal routes straight to a
+    person.
+    """
+    owner, board, _ = factory(
+        refuse_forever=True,
+        bound=1,
+        refusal={"refusal_kind": route} if route == "human_decision" else None,
+    )
     board.pause = lambda name, args: (
         name == "save_comment"
         and str(args.get("body", "")).startswith("[organize-question")
@@ -220,7 +230,7 @@ async def test_no_halt_is_written_while_the_rounds_lease_is_held():
     finally:
         board.resume.set()
     report = await task
-    assert report.halt.cause == "admission_exhausted"
+    assert report.halt.cause == route
     assert "needs decision" in board.server.issues[CLAIMED_ISSUE].labels
 
 
