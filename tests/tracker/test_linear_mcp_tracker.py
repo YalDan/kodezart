@@ -57,6 +57,7 @@ from tests.tracker.conftest import (
     FIXTURE_NOW,
     ISSUE_LABELS,
     QUEUE_STATE_LABELS,
+    SCOPE_DIAGNOSIS,
     STATE_TYPES,
     TEAM_IDENTIFIERS,
     WORKFLOW_STATE_NAMES,
@@ -386,6 +387,28 @@ class TestCapabilityProbe:
         )
 
         assert refusals == {}
+        assert len(server.tool_calls("list_issues")) == 1
+
+    async def test_every_signal_a_refused_scan_serves_is_refused_with_its_diagnosis(
+        self,
+    ) -> None:
+        """One refused tool is a refusal of each signal it serves, each named.
+
+        The three issue signals share the listing tool, so one refused call
+        answers all three with the same diagnosis.  Each is still its own
+        refusal: a boot abort names every refused signal and the passes each
+        one gates, so a signal folded into another's shared diagnosis would
+        leave its passes unnamed.
+        """
+        server = fixture_server(scope_refusals={"list_issues": SCOPE_DIAGNOSIS})
+
+        refusals = await tracker_over(server).verify_scan_capability(
+            signals=list(PassSignal),
+        )
+
+        assert set(refusals) == set(self.ISSUE_SIGNALS)
+        for signal in self.ISSUE_SIGNALS:
+            assert SCOPE_DIAGNOSIS in refusals[signal], signal
         assert len(server.tool_calls("list_issues")) == 1
 
     async def test_the_probe_asks_for_the_smallest_page_the_tool_takes(self) -> None:
