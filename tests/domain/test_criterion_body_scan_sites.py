@@ -68,14 +68,18 @@ from typing import get_args
 import pytest
 
 from kodezart.domain import fire_spec
+from kodezart.domain.criterion_creation import criterion_body
+from kodezart.domain.criterion_evidence import apply_evidence, evidence_field_value
 from kodezart.domain.fire_spec import (
     _CRITERION_ROW,
     CriterionField,
     _criterion_rows,
     criterion_check,
     criterion_field_bodies,
+    replace_criterion_fields,
     tracker_spec_from_issues,
 )
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from tests.domain.test_criterion_cross_off import callers_of, source_tree
 from tests.identity_guards import _constructor_names
 from tests.name_resolution import module_namespace, referencing_definitions
@@ -347,55 +351,209 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
 
 #: Every field a criterion row can carry, read off the grammar's own field type.
 ROW_FIELDS = get_args(CriterionField)
+#: A full commit identity, the value an Evidence row grades against; forty
+#: hex digits, the shorter of the two lengths ``CriterionEvidence`` admits.
+GRADED_SHA = "548994ad" * 5
+#: The record the Evidence codec writes, as a fenced JSON value.
+RECORDED_EVIDENCE = CriterionEvidence(
+    graded_sha=GRADED_SHA, test="tests/domain/test_gap.py::test_in_gap"
+)
+#: What a row's body holds, one of each kind the writers are handed: a graded
+#: sha, prose, prose that shows a row as an indented example the way a Do
+#: tells its executor what to write, a fenced JSON record, and nothing.
+ROW_BODIES = {
+    "sha": GRADED_SHA,
+    "prose": "The gap answers each criterion by its own key.",
+    "prose showing a row": "Record the graded sha on the criterion's own row, as in"
+    f"\n\n    **Evidence:** {GRADED_SHA}\n\nand nowhere else.",
+    "fenced JSON": evidence_field_value(RECORDED_EVIDENCE),
+    "empty": "",
+}
 
 
-def rendered_row(field: str) -> str:
-    """One criterion row, ``**{field}:** text``, the way the writers render it."""
-    return f"**{field}:** text"
+@cache
+def rendered_bodies() -> tuple[str, ...]:
+    """Every criterion body the writers render, and every row of each alone.
 
-
-def matches_a_rendered_row(pattern: re.Pattern[str] | re.Pattern[bytes]) -> bool:
-    """Whether *pattern* matches a rendered row across its field name and colon.
-
-    Decided by what the pattern does, not by how it is written: a match that
-    takes in a row's field name and the colon after it recognises the row by
-    its label, whatever the pattern's text.  A match of the field word alone,
-    or of text around it, does not.
+    Rendered by the tree's own writers, never spelled here: the creation
+    writer over each kind of body that is not empty (it refuses an empty
+    Check or Do), the field edit setting each field of the grammar to each
+    kind over a created body, and the Evidence codec applied to all of them.
+    Each row is then placed alone as well, cut out of its body along the span
+    the owner's walker reads it at.
     """
+    created = [
+        criterion_body(parent_key="KZ-1", check=text, do=text)
+        for text in ROW_BODIES.values()
+        if text.strip()
+    ]
+    edited = [
+        replace_criterion_fields(body, replacements={field: text})
+        for body in created
+        for field in ROW_FIELDS
+        for text in ROW_BODIES.values()
+    ]
+    bodies = [*created, *edited]
+    bodies += [apply_evidence(body=body, evidence=RECORDED_EVIDENCE) for body in bodies]
+    rows = [
+        body[row.begin : row.end] for body in bodies for row in _criterion_rows(body)
+    ]
+    return tuple(dict.fromkeys([*bodies, *rows]))
+
+
+@cache
+def _label_spots(text: str) -> tuple[tuple[int, int], ...]:
+    """Where each rendered label ``**{field}:**`` begins in *text*, with its name.
+
+    Every occurrence, in a row or in prose that shows one.
+    """
+    spots: list[tuple[int, int]] = []
     for field in ROW_FIELDS:
-        row = rendered_row(field)
-        start = row.index(field)
-        found = (
-            pattern.search(row)
-            if isinstance(pattern.pattern, str)
-            else pattern.search(row.encode("utf-8"))
-        )
-        if (
-            found is not None
-            and found.start() <= start
-            and found.end() > start + len(field)
-        ):
+        label = f"**{field}:**"
+        at = text.find(label)
+        while at >= 0:
+            spots.append((at, len(field)))
+            at = text.find(label, at + 1)
+    return tuple(spots)
+
+
+def covers_a_label(text: str, start: int, end: int) -> bool:
+    """Whether ``text[start:end]`` takes in a rendered label's field name and bold.
+
+    The whole field name, and with it the label's bold on at least one side:
+    the ``**`` before the name, or the colon and a ``*`` after it.  The name
+    alone, or the name and its colon, is a word prose uses as well; the name
+    inside its bold is the label and nothing else.
+    """
+    for at, length in _label_spots(text):
+        name, after = at + 2, at + 2 + length
+        if start <= name and end >= after and (start <= at + 1 or end >= after + 2):
             return True
     return False
 
 
-def is_row_grammar(text: str) -> bool:
-    """Whether a literal is a row grammar: a row label, or a pattern matching a row.
+#: The flags a pattern is also tried under, each added alone to its own: the
+#: ones that change what a row pattern matches in a body, its case and how
+#: its anchors and dots meet the lines.
+TRIED_FLAGS = (re.NOFLAG, re.IGNORECASE, re.MULTILINE, re.DOTALL)
 
-    A text holding a rendered label ``**{field}:**`` is one, the way a
-    ``startswith`` or ``split`` parser holds it.  So is a text that compiles as
-    a regular expression matching a rendered row.  A text ``re`` warns about
-    still compiles, and is read as the pattern it compiles to.
+
+def matches_a_rendered_row(pattern: re.Pattern[str] | re.Pattern[bytes]) -> bool:
+    """Whether *pattern* matches a rendered body across a label.
+
+    Decided by what the pattern does over the bodies the writers render, not
+    by how it is written: any match, in any rendered body or row alone, that
+    covers a label recognises the row by it.  Tried with its own flags, and
+    with each of ``TRIED_FLAGS`` added, so a pattern that parses rows only
+    under a flag handed to it at its call is tried under that flag.
     """
-    if any(f"**{field}:**" in text for field in ROW_FIELDS):
-        return True
+    for extra in TRIED_FLAGS:
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            try:
+                tried = re.compile(pattern.pattern, pattern.flags | extra)
+            except (re.error, ValueError):
+                continue
+        for text in rendered_bodies():
+            subject = text if isinstance(tried.pattern, str) else text.encode("ascii")
+            if any(
+                covers_a_label(text, found.start(), found.end())
+                for found in tried.finditer(subject)  # the rendered texts are ASCII
+            ):
+                return True
+    return False
+
+
+@cache
+def is_row_grammar(text: str, flags: int = 0) -> bool:
+    """Whether a literal is a row grammar: over the rendered bodies, it takes a label.
+
+    Read two ways.  As plain text, the way a ``startswith``, ``split`` or
+    ``==`` parser holds it: some occurrence of it in a rendered body covers a
+    label.  As a pattern, compiled with the flags spelled beside it at its
+    call: ``matches_a_rendered_row``.  A text ``re`` warns about still
+    compiles, and is read as the pattern it compiles to.
+    """
+    for body in rendered_bodies():
+        at = body.find(text) if text else -1
+        while at >= 0:
+            if covers_a_label(body, at, at + len(text)):
+                return True
+            at = body.find(text, at + 1)
     with warnings.catch_warnings(record=True):
         warnings.simplefilter("always")
         try:
-            pattern = re.compile(text)
-        except re.error:
+            pattern = re.compile(text, flags)
+        except (re.error, ValueError):
             return False
     return matches_a_rendered_row(pattern)
+
+
+#: The ``re`` entry points whose first argument is a pattern, each with the
+#: position its flags take when they are passed without a keyword.
+FLAG_POSITIONS = {
+    "compile": 1,
+    "match": 2,
+    "fullmatch": 2,
+    "search": 2,
+    "findall": 2,
+    "finditer": 2,
+    "split": 3,
+    "sub": 4,
+    "subn": 4,
+}
+
+
+def _flag_value(node: ast.expr) -> int:
+    """The ``re`` flags an expression spells: a flag by name, or several or-ed."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _flag_value(node.left) | _flag_value(node.right)
+    word = (
+        node.attr
+        if isinstance(node, ast.Attribute)
+        else node.id
+        if isinstance(node, ast.Name)
+        else None
+    )
+    value = getattr(re, word, None) if word is not None else None
+    return int(value) if isinstance(value, re.RegexFlag) else 0
+
+
+def call_flags(tree: ast.Module) -> dict[int, int]:
+    """The flags spelled beside each pattern argument of an ``re`` call in *tree*.
+
+    Keyed by the pattern argument's node: the first positional argument or
+    ``pattern=``, of a call to one of ``FLAG_POSITIONS`` by attribute or by
+    name, with its ``flags=`` keyword or its flags by position.  Only flags
+    spelled by name are read; a flag value bound to a name first is not.
+    """
+    found: dict[int, int] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        word = (
+            func.attr
+            if isinstance(func, ast.Attribute)
+            else func.id
+            if isinstance(func, ast.Name)
+            else None
+        )
+        if word not in FLAG_POSITIONS:
+            continue
+        keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+        pattern = node.args[0] if node.args else keywords.get("pattern")
+        position = FLAG_POSITIONS[word]
+        flags = (
+            keywords.get("flags")
+            if "flags" in keywords
+            else node.args[position]
+            if len(node.args) > position
+            else None
+        )
+        if pattern is not None and flags is not None:
+            found[id(pattern)] = _flag_value(flags)
+    return found
 
 
 def row_literals(tree: ast.Module) -> list[tuple[str, str]]:
@@ -403,11 +561,13 @@ def row_literals(tree: ast.Module) -> list[tuple[str, str]]:
 
     Whatever it is handed to — a compile call by position or by keyword, a
     name bound earlier, a matcher, a string built for writing — a literal is
-    read where it is written.  Folded the way ``_literal_text`` folds, and
+    read where it is written, and as a pattern under the flags spelled beside
+    it at its ``re`` call.  Folded the way ``_literal_text`` folds, and
     counted once at the widest expression that is one; a literal that is none
     is read part by part.
     """
     found: list[tuple[str, str]] = []
+    flags = call_flags(tree)
 
     def walk(node: ast.AST, label: str) -> None:
         for child in ast.iter_child_nodes(node):
@@ -415,7 +575,7 @@ def row_literals(tree: ast.Module) -> list[tuple[str, str]]:
             if isinstance(child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
                 here = child.name if label == "<module>" else f"{label}.{child.name}"
             text = _literal_text(child) if isinstance(child, ast.expr) else None
-            if text is not None and is_row_grammar(text):
+            if text is not None and is_row_grammar(text, flags.get(id(child), 0)):
                 found.append((here, text))
                 continue
             walk(child, here)
@@ -519,14 +679,26 @@ GRAMMAR_NAMES = frozenset(
 
 
 def test_a_row_grammar_is_what_matches_a_rendered_row():
-    """The rendered rows are rows the owner reads, one per field of the grammar.
+    """The rendered bodies carry every field with every kind of body, as rows.
 
-    So the predicate below speaks for the grammar's own rows, and a field the
-    grammar gains is a row it is asked about.
+    So the predicate below speaks for the rows the writers really render, and
+    a field the grammar gains is a row it is asked about.  Every row is read
+    back through the owner's own field reader with the body it was given,
+    alone and inside its body.  The texts are ASCII, so a bytes pattern is
+    matched at the same offsets as a text pattern.
     """
     assert ROW_FIELDS
+    bodies = rendered_bodies()
+    assert all(text.isascii() for text in bodies)
     for field in ROW_FIELDS:
-        assert criterion_field_bodies(rendered_row(field), field=field) == ("text",)
+        for kind, text in ROW_BODIES.items():
+            read = {
+                body
+                for body in bodies
+                if criterion_field_bodies(body, field=field) == (text.strip(),)
+            }
+            assert any(len(_criterion_rows(body)) == 1 for body in read), kind
+            assert any(len(_criterion_rows(body)) > 1 for body in read), kind
     assert matches_a_rendered_row(_CRITERION_ROW)
 
 
@@ -539,6 +711,16 @@ def test_a_row_grammar_is_what_matches_a_rendered_row():
         (r"Evidence:\*\*", True),
         ("**Evidence:**", True),
         ("**Check:** ", True),
+        ("**Evidence:", True),
+        ("Evidence:**", True),
+        ("**Evidence", True),
+        (r"\*\*evidence:\*\*(.*)", True),
+        (r"\n\*\*Evidence:\*\*(.*)", True),
+        (r"^ {4}\*\*Evidence:\*\*(.*)$", True),
+        (r"(?<=\n)\*\*Evidence:\*\*", True),
+        (r"^\*\*Evidence:\*\*$", True),
+        (r"^\*\*[Ee]vidence:\*\*\s*`?([0-9a-f]{7,40})", True),
+        ("Evidence:", False),
         (fire_spec._FENCE.pattern, False),
         (fire_spec._HEADING.pattern, False),
         (fire_spec._LIST_ITEM.pattern, False),
@@ -552,20 +734,80 @@ def test_a_literal_is_a_row_grammar_by_what_it_matches(text, grammar):
     assert is_row_grammar(text) is grammar
 
 
-#: The literals outside the owner that are a row grammar, each with why it may
-#: be: every one renders rows for a writer, and none reads one.
+#: A pattern that parses rows only under two flags at once, case and lines,
+#: which no single tried flag gives it.
+TWO_FLAG_ROW = r"\n^\*\*evidence:\*\*"
+#: Each way flags are handed to an ``re`` call beside the pattern.
+FLAG_SPELLINGS = {
+    "compile by position": "re.compile(P, re.I | re.M)",
+    "compile by keyword": "re.compile(P, flags=re.IGNORECASE | re.MULTILINE)",
+    "pattern and flags by keyword": "re.compile(pattern=P, flags=re.I | re.M)",
+    "match by position": "re.match(P, body, re.I | re.M)",
+    "search by keyword": "re.search(P, body, flags=re.I | re.M)",
+    "findall by position": "re.findall(P, body, re.I | re.M)",
+    "finditer by position": "re.finditer(P, body, re.I | re.M)",
+    "split by position": "re.split(P, body, 0, re.I | re.M)",
+    "sub by position": "re.sub(P, '', body, 0, re.I | re.M)",
+    "matcher imported by name": "findall(P, body, re.I | re.M)",
+}
+
+
+def test_a_pattern_that_needs_two_flags_is_no_grammar_without_them():
+    assert not is_row_grammar(TWO_FLAG_ROW)
+    assert is_row_grammar(TWO_FLAG_ROW, re.IGNORECASE | re.MULTILINE)
+
+
+@pytest.mark.parametrize("spelling", sorted(FLAG_SPELLINGS))
+def test_the_flags_spelled_at_a_call_decide_its_pattern(spelling):
+    call = FLAG_SPELLINGS[spelling].replace("P", f"r'{TWO_FLAG_ROW}'", 1)
+    source = f"import re\nfrom re import findall\ndef rows(body):\n    return {call}\n"
+    flagless = source.replace("re.I | re.M", "0").replace(
+        "re.IGNORECASE | re.MULTILINE", "0"
+    )
+    assert "re.I" not in flagless
+
+    assert row_literals(ast.parse(source)) == [("rows", TWO_FLAG_ROW)]
+    assert row_literals(ast.parse(flagless)) == []
+
+
+#: Why the creation writer may hold row labels: each of its three is one.
+_CREATION_WRITER = (
+    "Renders a new criterion's three rows, then reads them back through the "
+    "owner's field reader."
+)
+#: The literals outside the owner that are a row grammar because they write
+#: rows, each with why it may be: every one renders rows for a writer, and
+#: none reads one.  The creation writer's template is read part by part,
+#: because no rendered body leaves both its Check and its Do empty.
 ROW_WRITERS = {
-    (
-        "domain/criterion_creation.py",
-        "criterion_body",
-        "**Check:** \n\n**Do:** \n\n**Evidence:**\n",
-    ): "Renders a new criterion's three rows, then reads them back through the "
-    "owner's field reader.",
+    ("domain/criterion_creation.py", "criterion_body", "**Check:** "): (
+        _CREATION_WRITER
+    ),
+    ("domain/criterion_creation.py", "criterion_body", "\n\n**Do:** "): (
+        _CREATION_WRITER
+    ),
+    ("domain/criterion_creation.py", "criterion_body", "\n\n**Evidence:**\n"): (
+        _CREATION_WRITER
+    ),
     (
         "domain/criterion_evidence.py",
         "render_evidence_field",
         "**Evidence:**",
     ): "Renders the Evidence row label the codec writes.",
+}
+#: The literals outside the owner that are a row grammar only by running from
+#: one fenced record to another, each with why it reads no row.
+FENCED_BLOCK_PATTERNS = {
+    (
+        "adapters/linear/markers.py",
+        "LinearMarkers.grant_pattern",
+        r"^```\n(?P<payload>.*?)\n```$",
+    ): "The claim marker's fenced block, compiled with DOTALL and MULTILINE. Read "
+    "with its configured info string folded away, its lazy payload runs from one "
+    "fence line to the next, so over a body with two fenced records it takes in "
+    "the row between them; as compiled it opens only on the claim info string, "
+    "which no criterion body carries, and it reads a marker's payload, never a "
+    "row.",
 }
 
 
@@ -574,8 +816,9 @@ def test_no_literal_outside_the_owner_is_a_row_grammar():
 
     Every literal of the tree is read, and one that is a row grammar — a
     pattern text that matches a rendered row, or a text holding a rendered
-    label — is allowed only as the owner's own grammar, once, or as a writer's
-    row registered with its reason.  A second grammar compiled anywhere,
+    label — is allowed only as the owner's own grammar, once, as a writer's
+    row registered with its reason, or as a fenced-block pattern registered
+    with why it reads no row.  A second grammar compiled anywhere,
     handed on by name, imported into the owner's reader or matched with a
     string method adds a literal, and reds.
 
@@ -589,7 +832,7 @@ def test_no_literal_outside_the_owner_is_a_row_grammar():
         (module, scope, text)
         for module, literals in found.items()
         for scope, text in literals
-    ) == sorted(ROW_WRITERS)
+    ) == sorted([*ROW_WRITERS, *FENCED_BLOCK_PATTERNS])
 
 
 def test_no_module_outside_the_owner_binds_a_row_pattern():
@@ -603,6 +846,13 @@ def test_no_module_outside_the_owner_binds_a_row_pattern():
 
 
 EVIDENCE_ROW_TEXT = r"^\s*\*\*(Evidence):\*\*(.*)$"
+#: An Evidence parser spelled in lower case, which parses rows only under the
+#: case flag handed to it at its call.
+LOWERCASE_EVIDENCE_TEXT = r"^\*\*evidence:\*\*[ \t]*(.*)$"
+#: An Evidence parser that constrains what follows the label to a graded sha.
+GRADED_SHA_TEXT = r"^\*\*[Ee]vidence:\*\*\s*`?([0-9a-f]{7,40})"
+#: The Evidence label alone on its line, the way both writers render it.
+LABEL_ONLY_TEXT = r"^\*\*Evidence:\*\*$"
 #: Each way a second Check or Evidence row parser could arrive outside the
 #: owner, as the module texts it would arrive as, with what it must add to
 #: the literals and to the compiled patterns read above.
@@ -652,6 +902,37 @@ PLANTED_ROW_GRAMMARS = {
         ],
         {},
     ),
+    "lowercase findall with flags at the call in a service": (
+        {
+            "services/evidence_reader.py": "import re\n"
+            "def evidence(body: str) -> list[str]:\n"
+            f"    return re.findall(r'{LOWERCASE_EVIDENCE_TEXT}', body,"
+            " re.IGNORECASE | re.MULTILINE)\n",
+        },
+        [("services/evidence_reader.py", "evidence", LOWERCASE_EVIDENCE_TEXT)],
+        {},
+    ),
+    "sha-constrained pattern compiled at module level": (
+        {
+            "services/evidence_sha.py": "import re\n"
+            f"GRADED_SHA = re.compile(r'{GRADED_SHA_TEXT}', re.MULTILINE)\n"
+            "def graded_sha(body: str) -> str | None:\n"
+            "    found = GRADED_SHA.search(body)\n"
+            "    return found[1] if found else None\n",
+        },
+        [("services/evidence_sha.py", "<module>", GRADED_SHA_TEXT)],
+        {"services/evidence_sha.py": ["GRADED_SHA"]},
+    ),
+    "label alone on its line, compiled by keyword": (
+        {
+            "services/evidence_label.py": "import re\n"
+            f"EVIDENCE_LABEL = re.compile(pattern=r'{LABEL_ONLY_TEXT}', flags=re.M)\n"
+            "def evidence_rows(body: str) -> int:\n"
+            "    return len(EVIDENCE_LABEL.findall(body))\n",
+        },
+        [("services/evidence_label.py", "<module>", LABEL_ONLY_TEXT)],
+        {"services/evidence_label.py": ["EVIDENCE_LABEL"]},
+    ),
 }
 
 
@@ -675,7 +956,7 @@ def test_a_row_parser_planted_outside_the_owner_is_a_literal_and_a_pattern(plant
         (module, scope, text)
         for module, literals in found.items()
         for scope, text in literals
-    ) == sorted([*ROW_WRITERS, *literals])
+    ) == sorted([*ROW_WRITERS, *FENCED_BLOCK_PATTERNS, *literals])
     assert row_patterns(sources) == {
         RULE_MODULE: sorted(GRAMMAR_NAMES),
         **patterns,
@@ -838,6 +1119,12 @@ SECOND_GRAMMARS = {
         "        for found in map(_ANY_ROW.match, body.splitlines())\n"
         "        if found and found.group(1) == 'Evidence'\n"
         "    ]\n",
+    ),
+    "lowercase findall with flags at the call": (
+        None,
+        "def evidence_rows(body: str) -> list[str]:\n"
+        f"    return re.findall(r'{LOWERCASE_EVIDENCE_TEXT}', body,"
+        " re.IGNORECASE | re.MULTILINE)\n",
     ),
     "grammar reached through globals()": (
         None,
