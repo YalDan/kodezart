@@ -19,23 +19,27 @@ a class body, a function, a lambda, a comprehension):
   alias, a dotted name one of whose segments is either (the path
   ``attrgetter`` takes), a ``match`` class pattern keyed on it, or a
   variable annotated as the Evidence record and used whole (iterated,
-  dumped, handed on), which reads every field it has.  Inside that same
-  scope the value is followed through every binding form to a fixed point:
-  assignment, unpacking, a
-  container stored into by subscript, a ``for`` target, ``with ... as``,
-  the walrus, a comprehension target, a ``match`` capture, a default
-  argument whose default carries it, and a closure over a name that
-  carries it (from a function nested in it, or from a method or lambda of
-  a class nested in it).  Every such scope is the rule or a registered row with its
-  reason; a new one is red whatever it does with the value, and a row whose
-  scope no longer reads the value is red too.
+  dumped, handed on), which reads every field it has.  The annotation names
+  the record by the record's own name or by object, through the module's
+  imports: an import under another name, a module alias, and either inside
+  ``Optional`` or ``Annotated``.  Inside that same scope the value is
+  followed through every binding form to a fixed point: assignment,
+  unpacking, a container stored into by subscript, a ``for`` target,
+  ``with ... as``, the walrus, a comprehension target, a ``match`` capture,
+  a default argument whose default carries it, and a closure over a name
+  that carries it (from a function nested in the scope, or from a method or
+  lambda of a class nested in it).  Every such scope is the rule or a
+  registered row with its reason; a new one is red whatever it does with
+  the value, and a row whose scope no longer reads the value is red too.
 * **Where, inside each registered scope, is the value used?**  Every
   statement in which it appears is pinned verbatim in the scope's row, as a
   multiset (a compound statement by its header, its body elided).  A new
   use inside a registered scope is red, whatever the other operand is
   called: a comparison, a rebinding, a default-argument lambda, a container
   built from it.  The rule is the one scope whose uses are not pinned:
-  weighing the pair is its whole job.
+  weighing the pair is its whole job.  Each consultation of it is resolved
+  by object: its callee must be the rule in the rule's own module, so a
+  definition shadowing the rule under the pinned call's text is red.
 
 The field and its alias are read off ``CriterionEvidence.model_fields``; the
 rule's module and name are read off the rule itself; the scanned tree is the
@@ -61,7 +65,10 @@ import copy
 import json
 import sys
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from functools import cache
+from importlib import import_module
+from importlib.util import resolve_name
 from inspect import signature
 from pathlib import Path
 from typing import NamedTuple
@@ -239,22 +246,88 @@ def _spells_the_field(text: object) -> bool:
     ) and not SPELLINGS.isdisjoint(segments)
 
 
-def _names_the_record(annotation: ast.AST | None) -> bool:
+def _package(module: str) -> str:
+    """The package a module of the scanned tree resolves a relative import in."""
+    return ".".join([SOURCE.name, *Path(module).with_suffix("").parts][:-1])
+
+
+def _imports(tree: ast.Module, package: str) -> list[tuple[str, str]]:
+    """Each name the module binds by an import, with the dotted path it names."""
+    bound: list[tuple[str, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                head = alias.name.partition(".")[0]
+                bound.append(
+                    (alias.asname, alias.name) if alias.asname else (head, head)
+                )
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:
+                base = resolve_name("." * node.level + base, package)
+            bound.extend(
+                (alias.asname or alias.name, f"{base}.{alias.name}")
+                for alias in node.names
+                if alias.name != "*"
+            )
+    return bound
+
+
+@cache
+def _resolved(path: str) -> object:
+    """The object a dotted path names, or None when nothing is there.
+
+    The longest prefix that imports is the module; the rest are attributes.
+    """
+    parts = path.split(".")
+    for end in range(len(parts), 0, -1):
+        try:
+            found: object = import_module(".".join(parts[:end]))
+        except ImportError:
+            continue
+        for part in parts[end:]:
+            found = getattr(found, part, None)
+        return found
+    return None
+
+
+def _dotted(node: ast.AST, imports: Mapping[str, str]) -> str | None:
+    """The dotted path a name or an attribute chain names through the imports."""
+    if isinstance(node, ast.Name):
+        return imports.get(node.id)
+    if isinstance(node, ast.Attribute):
+        base = _dotted(node.value, imports)
+        return None if base is None else f"{base}.{node.attr}"
+    return None
+
+
+def _names_the_record(annotation: ast.AST | None, imports: Mapping[str, str]) -> bool:
+    """Whether an annotation names the Evidence record, by its name or by object.
+
+    The record's own name is enough.  So is any name or dotted path the
+    module's imports resolve to the record itself: an import under another
+    name, a module alias, and either one inside ``Optional``, ``Annotated``
+    or a union.
+    """
     return annotation is not None and any(
         (isinstance(node, ast.Name) and node.id == RECORD)
         or (isinstance(node, ast.Attribute) and node.attr == RECORD)
+        or (
+            (path := _dotted(node, imports)) is not None
+            and _resolved(path) is CriterionEvidence
+        )
         for node in ast.walk(annotation)
     )
 
 
-def _annotated(owned: list[ast.AST]) -> frozenset[str]:
+def _annotated(owned: list[ast.AST], imports: Mapping[str, str]) -> frozenset[str]:
     """The names this scope annotates as the Evidence record."""
     return frozenset(
         node.target.id
         for node in owned
         if isinstance(node, ast.AnnAssign)
         and isinstance(node.target, ast.Name)
-        and _names_the_record(node.annotation)
+        and _names_the_record(node.annotation, imports)
     )
 
 
@@ -330,7 +403,8 @@ def _render(clause: ast.AST) -> str:
 class _Module:
     """One module, read for the scopes that read the graded sha directly."""
 
-    def __init__(self, tree: ast.Module) -> None:
+    def __init__(self, tree: ast.Module, module: str) -> None:
+        self.imports = dict(_imports(tree, _package(module)))
         self.parents = {
             child: node
             for node in ast.walk(tree)
@@ -436,11 +510,11 @@ class _Module:
         shadowed = frozenset(parameter.arg for parameter in parameters)
         records = (
             (typed - shadowed)
-            | _annotated(owned)
+            | _annotated(owned, self.imports)
             | frozenset(
                 parameter.arg
                 for parameter in parameters
-                if _names_the_record(parameter.annotation)
+                if _names_the_record(parameter.annotation, self.imports)
             )
         )
         carriers = self._settle(node, owned, (closure - shadowed) | defaulted, records)
@@ -484,7 +558,7 @@ def readers(sources: dict[str, str]) -> dict[str, Counter[str]]:
     """
     found: dict[str, Counter[str]] = {}
     for module, text in sources.items():
-        for label, uses in _Module(ast.parse(text)).readers.items():
+        for label, uses in _Module(ast.parse(text), module).readers.items():
             found[f"{module}::{label}"] = uses
     return found
 
@@ -671,6 +745,11 @@ PLANTS = {
         "for _key, _value in evidence:\n"
         "    if _key == 'graded_sha':\n"
         "        _planted = _value != head_sha\n"
+    ),
+    "iterating-a-record-imported-under-another-name": (
+        f"from {CriterionEvidence.__module__} import {RECORD} as Evidence\n"
+        "_record: Evidence = evidence\n"
+        "_planted = any(_value == head_sha for _, _value in _record)\n"
     ),
     "iterating-a-typed-record": (
         "_record: CriterionEvidence = evidence\n"
@@ -1090,6 +1169,29 @@ BINDINGS = {
         "reader.py::lapsed",
         "return head in dict(evidence).values()",
     ),
+    "a-record-imported-under-another-name": (
+        f"from {CriterionEvidence.__module__} import {RECORD} as Evidence\n"
+        "def lapsed(evidence: Evidence, head_sha):\n"
+        "    return any(value == head_sha for _, value in evidence)\n",
+        "reader.py::lapsed",
+        "return any((value == head_sha for _, value in evidence))",
+    ),
+    "a-record-through-a-module-alias": (
+        f"import {CriterionEvidence.__module__} as records\n"
+        "def lapsed(evidence, head):\n"
+        "    kept: records.CriterionEvidence = evidence\n"
+        "    return head in dict(kept).values()\n",
+        "reader.py::lapsed",
+        "return head in dict(kept).values()",
+    ),
+    "a-record-inside-annotated-and-optional": (
+        "from typing import Annotated, Optional\n"
+        f"from {CriterionEvidence.__module__} import {RECORD} as Evidence\n"
+        "def lapsed(evidence: Annotated[Optional[Evidence], 'kept'], head):\n"
+        "    return head in vars(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head in vars(evidence).values()",
+    ),
 }
 
 
@@ -1159,6 +1261,18 @@ def test_a_class_passes_on_only_the_names_its_enclosing_function_carries():
         {"reader.py::lapsed"},
         frozenset(),
     ]
+
+
+def test_a_name_imported_as_another_class_is_not_the_record():
+    """The widening is by object: the record's own base, aliased, stays out."""
+    base = CriterionEvidence.__mro__[1]
+    assert base is not CriterionEvidence
+    source = (
+        f"from {base.__module__} import {base.__name__} as Evidence\n"
+        "def lapsed(evidence: Evidence, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n"
+    )
+    assert alone(source) == {}
 
 
 def test_naming_the_graded_sha_without_comparing_it_is_not_a_site():
@@ -1349,6 +1463,124 @@ def test_the_rule_is_consulted_from_one_body_in_each_package_that_reads_it():
         packages.setdefault(module.rpartition("/")[0], []).append(site)
     assert packages
     assert all(len(sites) == 1 for sites in packages.values()), packages
+
+
+def _bindings_of(tree: ast.Module, module: str, name: str) -> list[object]:
+    """What each binding of *name* anywhere in the module binds it to.
+
+    An import binds the object its path resolves to.  The rule's own
+    definition, at the top of the rule's own module, binds the rule.  Any
+    other binding -- a definition, a class, an assignment, a parameter, a
+    capture -- binds something that is not the rule, written as None.
+    """
+    found: list[object] = [
+        _resolved(path)
+        for bound, path in _imports(tree, _package(module))
+        if bound == name
+    ]
+    for node in ast.walk(tree):
+        if isinstance(node, (*NAMED, ast.ExceptHandler)) and node.name == name:
+            written_here = module == RULE_MODULE and node in tree.body
+            found.append(graded_state if written_here and name == RULE else None)
+        elif (
+            (
+                isinstance(node, ast.Name)
+                and not isinstance(node.ctx, ast.Load)
+                and node.id == name
+            )
+            or (isinstance(node, ast.arg) and node.arg == name)
+            or (isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name == name)
+        ):
+            found.append(None)
+    return found
+
+
+def _misdirected(module: str, text: str) -> list[str]:
+    """Each consultation of the rule in *module* whose callee is not the rule.
+
+    The callee is resolved by object: its name (or the name its dotted path
+    starts from) must be bound, everywhere in the module, only to the rule or
+    to the module the rule lives in.  A pinned consultation pins the call's
+    text, so a definition shadowing the rule is caught here or nowhere.
+    """
+    tree = ast.parse(text)
+    misdirected: list[str] = []
+    for node in ast.walk(tree):
+        if not _is_rule_call(node):
+            continue
+        assert isinstance(node, ast.Call)
+        attributes: list[str] = []
+        root = node.func
+        while isinstance(root, ast.Attribute):
+            attributes.insert(0, root.attr)
+            root = root.value
+        bound = (
+            _bindings_of(tree, module, root.id) if isinstance(root, ast.Name) else []
+        )
+        callees = [
+            getattr(value, attributes[0], None) if attributes else value
+            for value in bound
+        ]
+        for attribute in attributes[1:]:
+            callees = [getattr(value, attribute, None) for value in callees]
+        if not callees or not all(callee is graded_state for callee in callees):
+            misdirected.append(ast.unparse(node))
+    return misdirected
+
+
+def test_every_consultation_calls_the_rule_itself_by_object():
+    """Each pinned ``graded_state(...)`` resolves to the rule in its home module."""
+    consulting = sorted({site.partition("::")[0] for site in CALLERS})
+    assert consulting
+    assert {module: _misdirected(module, SHIPPED[module]) for module in consulting} == {
+        module: [] for module in consulting
+    }
+    assert [
+        module
+        for module, text in SHIPPED.items()
+        if module not in consulting
+        and any(map(_is_rule_call, ast.walk(ast.parse(text))))
+    ] == []
+
+
+#: A definition that shadows the imported rule, appended to a caller.
+SHADOWING_RULE = (
+    f"def {RULE}(**reading: str) -> GradedState:\n"
+    "    recorded, head = reading.values()\n"
+    "    return GradedState.counted if recorded == head else GradedState.lapsed\n"
+)
+
+
+def test_a_definition_shadowing_the_rule_in_a_caller_is_reported():
+    """The pinned text still matches, and the call no longer reaches the rule."""
+    module = "chains/audit_evidence.py"
+    shadowed = SHIPPED[module] + "\n\n" + SHADOWING_RULE
+    assert findings(readers({module: shadowed}), REGISTERED) == []
+    assert _misdirected(module, SHIPPED[module]) == []
+    assert _misdirected(module, shadowed) == [
+        f"{RULE}({GRADED}=evidence.{GRADED}, head_sha=head)"
+    ]
+
+
+def test_a_consultation_is_resolved_through_whatever_import_binds_it():
+    """The rule's module under an alias resolves; another object so named does not."""
+    call = f"{RULE}({GRADED}=evidence.{GRADED}, head_sha=head)"
+    home = graded_state.__module__
+    package, _, leaf = home.rpartition(".")
+    through_the_module = (
+        f"from {package} import {leaf} as rules\n"
+        f"def one(evidence, head):\n    return rules.{call}\n"
+    )
+    assert _misdirected("reader.py", through_the_module) == []
+    another = (
+        f"from {home} import GradedState as {RULE}\n"
+        f"def one(evidence, head):\n    return {call}\n"
+    )
+    assert _misdirected("reader.py", another) == [call]
+    written_here = f"def {RULE}(**reading):\n    return None\n" + (
+        f"def one(evidence, head):\n    return {call}\n"
+    )
+    assert _misdirected("reader.py", written_here) == [call]
 
 
 def test_a_second_reader_in_one_package_is_reported(tmp_path):
