@@ -2953,28 +2953,30 @@ async def test_the_rollup_over_the_subtree_answers_one_lane_check_four_ways(
         assert open_criteria(closure.criteria(LANE), ref=closure.ref) == ()
 
 
-async def test_a_lapsed_and_a_refuted_lane_check_leave_one_board_and_two_streams():
+async def test_a_lapsed_and_a_refuted_lane_check_share_a_state_not_a_stream():
     """Ungraded rather than failed is a fact the writer leaves, not one authored.
 
     Both arms leave the lane check in the same state, with a body identical
-    outside its Evidence row and an Evidence row of the same shape, and both
-    reopen the fire by the rollup; only the stream tells them apart, with one
-    refutation for the failed grading and none for the lapsed one.  The two
-    Evidence rows are not byte-equal: each carries the sha its own arm
-    graded at, which the four-way rollup test asserts row by row.  The
-    writer's own side of the distinction is pinned by
-    ``test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra``.
+    outside its Evidence row, and both reopen the fire by the rollup.  The
+    Evidence row and the stream tell them apart.  The lapse keeps the
+    standing grading's sha and points its ``test`` at that grading, marked
+    as lapsed; the refutation points at the refuting grading, at the sha it
+    graded.  The stream holds one refutation for the failed grading and none
+    for the lapsed one.  The writer's own side of the distinction is pinned
+    by ``test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra``.
     """
+    met_port, _ = await rollup_board("met")
     refuted_port, refuted_closure = await rollup_board("refuted")
     lapsed_port, lapsed_closure = await rollup_board("lapsed")
     refuted_row = refuted_port.issues[LANE_CHECK]
     lapsed_row = lapsed_port.issues[LANE_CHECK]
+    standing = parse_criterion_evidence(met_port.issues[LANE_CHECK].body).test
+    lapsed_pointer = lapse_observation(observation=standing)
 
     assert refuted_row.state_kind is lapsed_row.state_kind
     assert refuted_row.state_name == lapsed_row.state_name
-    assert type(parse_criterion_evidence(refuted_row.body)) is type(
-        parse_criterion_evidence(lapsed_row.body)
-    )
+    assert parse_criterion_evidence(lapsed_row.body).test == lapsed_pointer
+    assert parse_criterion_evidence(refuted_row.body).test != lapsed_pointer
     assert without_evidence(refuted_row.body) == without_evidence(lapsed_row.body)
     assert [row.issue_key for row in refuted_closure.gap(LANE)] == [
         row.issue_key for row in lapsed_closure.gap(LANE)
