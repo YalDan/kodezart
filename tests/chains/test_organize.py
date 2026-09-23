@@ -2744,43 +2744,104 @@ async def test_a_later_round_lists_the_roster_once_before_its_gap(monkeypatch):
 
     The refutation entry re-runs the owner that converged the scope, so its
     admissions are retained, and its criteria stage takes two rounds. Every
-    roster listing the backend serves is counted at each gap call; the
+    board call the backend serves is counted by name at each gap call. The
     listings between two gap calls are exact multiples of one read.
+
+    Between the two criteria gaps, round one's sessions and its dry pass
+    read the board, and then round two opens on its snapshot. From that
+    snapshot to round two's gap the whole tally is one snapshot (the
+    listing, one revision read per member and the scope labels), one
+    approval reading per lane in the round's roster, and one freshness read
+    per body-live retained admission, each unit measured here by running the
+    real reader. Any other board read before round two's gap, of any name,
+    breaks the tally.
     """
     h = owner_harness()
-    listed = []
+    served = []
     serve = FakeLinearMcpServer.call_tool
 
     async def counted(self, *, name, arguments):
-        if name == "list_issues":
-            listed.append(name)
+        served.append(name)
         return await serve(self, name=name, arguments=arguments)
 
     monkeypatch.setattr(FakeLinearMcpServer, "call_tool", counted)
+    snapshot_at = []
+    taken = organize_owner.OrganizeOwner._snapshot
+
+    async def snapshotting(self, scope):
+        snapshot_at.append(len(served))
+        return await taken(self, scope)
+
+    monkeypatch.setattr(organize_owner.OrganizeOwner, "_snapshot", snapshotting)
+    round_start = []
+    unlabelled = organize_owner.stage_unlabelled
+
+    def opening(**kwargs):
+        # The loop reads the stage's unlabelled members right after its own
+        # snapshot and scope labels, so that snapshot opens the round.
+        round_start.append(snapshot_at[-1])
+        return unlabelled(**kwargs)
+
+    monkeypatch.setattr(organize_owner, "stage_unlabelled", opening)
     at_gap = []
+    since_round_start = []
+    admitted = []
     computed = organize_owner.organize_gap
 
     def recorded(**kwargs):
-        at_gap.append(len(listed))
+        at_gap.append(Counter(served))
+        since_round_start.append(Counter(served[round_start[-1] :]))
+        admitted.append({result.issue_id for result in kwargs["admissions"]})
         return computed(**kwargs)
 
     monkeypatch.setattr(organize_owner, "organize_gap", recorded)
     spy, board, _executor, report = await h.entry_refutation(monkeypatch)
-    before = len(listed)
-    await board.tracker().scope_issues(
-        ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    reader = board.tracker()
+    board.calls.clear()
+    members = await reader.scope_issues(ref=scope)
+    listing = board_tally(board)
+    per_read = listing["list_issues"]
+    for member in members:
+        await reader.read_issue_revision(issue_key=member.issue_key)
+    await reader.read_scope_labels(ref=scope)
+    snapshot = listing + board_tally(board)
+    approval = Counter()
+    for lane in h.LANES:
+        await reader.execution_approved(issue_key=lane)
+        approval += board_tally(board)
+    await reader.read_issue_revision(issue_key=CLAIMED_ISSUE)
+    await OrganizeContextReader(tracker=reader, operation=declared_operation()).read(
+        scope=scope, member_keys=[member.issue_key for member in members]
     )
-    per_read = len(listed) - before
+    liveness = board_tally(board)
     rounds = at_gap[-len(spy.calls) :]
     assert report.halt is None
+    assert per_read >= 1
     # Ticket gap to criteria round one: the ticket barrier and the criteria
     # snapshot. Round one to round two: the listings round one's sessions and
     # its dry pass make, measured by running, then round two's one snapshot.
     # A further listing anywhere before round two's gap adds one read.
-    assert [later - earlier for earlier, later in pairwise(rounds)] == [
+    assert [
+        later["list_issues"] - earlier["list_issues"]
+        for earlier, later in pairwise(rounds)
+    ] == [
         2 * per_read,
         17 * per_read,
     ]
+    # Round one re-authored the lane the refutation took the label from, so
+    # its admission is spent; every other member's is retained, and none of
+    # their bodies has changed since.
+    reopened = "second"
+    assert admitted[-2:] == [
+        {member.issue_key for member in members},
+        {member.issue_key for member in members} - {reopened},
+    ]
+    # Round two's roster is both lanes: the one still owing the label and
+    # the one the refutation's finding names.
+    assert since_round_start[-1] == (
+        snapshot + approval + scaled(liveness, len(admitted[-1]))
+    )
 
 
 def unavailable_network_operation():
