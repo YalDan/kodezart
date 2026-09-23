@@ -2519,10 +2519,12 @@ async def test_an_undemonstrable_deliverable_is_refused_and_relocated_on_the_boa
 ):
     """A deliverable no declared environment can demonstrate is not admitted.
 
-    The stage's own prompt carries the declared check chain, the refusal is
-    a repairable spec gap, the relocation it names is put to the author as
-    the repair, and it is readable back on the board as the escalation of
-    the bounded halt. Nothing is marked and no criterion child is created.
+    The stage's own prompt carries the declared check chain. The refusal is
+    scripted: a repairable spec gap whose evidence names the relocation, as
+    the admission prompt asks. The relocation is put to the author as the
+    repair through that evidence, and it is readable back on the board as
+    the escalation of the bounded halt. Nothing is marked and no criterion
+    child is created.
     """
     h = owner_harness()
     owner, board, executor = h.factory(
@@ -2535,7 +2537,7 @@ async def test_an_undemonstrable_deliverable_is_refused_and_relocated_on_the_boa
         payload={
             "verdict": "not_buildable",
             "refusal_kind": "spec_gap",
-            "evidence": UNDEMONSTRABLE_EVIDENCE,
+            "evidence": f"{UNDEMONSTRABLE_EVIDENCE} {RELOCATION}",
             "invented_decision": RELOCATION,
         },
     )
@@ -2550,12 +2552,10 @@ async def test_an_undemonstrable_deliverable_is_refused_and_relocated_on_the_boa
     assert halt.cause == "admission_exhausted"
     assert halt.bound.value == halt.bound.rounds_used == 1
     assert [r.refusal_kind for r in halt.admission_results] == [RefusalKind.SPEC_GAP]
-    # The re-author is put the refusal's own evidence, which is what the
-    # author role is given; the relocation it names reaches the board with
-    # the escalation below.
-    assert any(
-        UNDEMONSTRABLE_EVIDENCE in prompt for prompt in subject_proposals(executor)
-    )
+    # The re-author is put the refusal's own evidence, and the evidence names
+    # the relocation, so the role whose repair it is reads where the
+    # demonstration has to move to.
+    assert any(RELOCATION in prompt for prompt in subject_proposals(executor))
     escalations = [
         comment
         for comment in board.server.comments
