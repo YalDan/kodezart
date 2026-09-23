@@ -861,6 +861,65 @@ async def test_a_refused_acquisition_takes_its_own_markers_back_off() -> None:
     assert [comment.id for comment in server.comments] == standing
 
 
+class _HidesTheContainersConfirmation:
+    """Answer the container's comment listings without any HELD marker.
+
+    The hidden-confirmation race, measured on the real board: a holder's
+    confirmation edit landed, and the log it then read did not show it.
+    Veiling only the container leaves the issue's confirmation readable,
+    so the read-back finds the set confirmed on one of its two targets.
+    """
+
+    def __init__(self, server: FakeLinearMcpServer) -> None:
+        self._server = server
+        self.veiled = True
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        result = await self._server.call_tool(name=name, arguments=arguments)
+        if not self.veiled or name != "list_comments" or "projectId" not in arguments:
+            return result
+        assert isinstance(result, Mapping)
+        comments = result["comments"]
+        assert isinstance(comments, list)
+        return {
+            **result,
+            "comments": [
+                entry
+                for entry in comments
+                if "state: held" not in str(entry["body"]).splitlines()
+            ],
+        }
+
+
+async def test_a_confirmation_read_back_on_part_of_the_set_holds_nothing() -> None:
+    """A set confirmed on only some of its targets is not granted.
+
+    The grant is the whole set or nothing, so the read-back after the
+    confirmation edits must find every target confirmed.  One target's
+    confirmation hidden from it is a refusal naming no holder, with every
+    marker of the requester's taken back, and the set free for the next
+    holder once the log shows it whole again.
+    """
+    board = _Board()
+    veil = _HidesTheContainersConfirmation(board.server)
+    spanning = frozenset({CONTAINER, ISSUE_DESCRIPTION})
+
+    with pytest.raises(SurfaceLeaseError) as refused:
+        await board.holder(caller=veil).acquire_surfaces(
+            surfaces=spanning, holder="job-one", lease_seconds=LEASE_SECONDS
+        )
+
+    assert refused.value.current_holder is None
+    assert _standing(board.server) == []
+    veil.veiled = False
+    rival = await board.holder().acquire_surfaces(
+        surfaces=spanning, holder="job-two", lease_seconds=LEASE_SECONDS
+    )
+    assert (rival.holder, rival.surfaces) == ("job-two", spanning)
+
+
 class _RefusesOneWithdrawal:
     """Turn the first deletion down, and answer everything after it.
 
