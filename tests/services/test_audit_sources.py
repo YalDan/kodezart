@@ -1,5 +1,6 @@
 """Native source reads preserve grading and branch identity without a session."""
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock
 
 import pytest
@@ -10,11 +11,20 @@ from kodezart.domain.lane_record import render_lane_record
 from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
+from tests.artifact_trap import nothing_read_under_the_directory
 from tests.tracker import test_audit_evidence as fixtures
 from tests.tracker.conftest import clock as clock
 from tests.tracker.conftest import tracker as tracker
 from tests.tracker.conftest import tracker_writes as tracker_writes
 from tests.tracker.lease_fixtures import leased_comment
+
+
+@pytest.fixture(autouse=True)
+def _artifact_directory_trap() -> Iterator[None]:
+    """KOD-707: an audit's source read reads nothing under the artifact directory."""
+    with nothing_read_under_the_directory():
+        yield
+
 
 claim_setup = fixtures.claim_setup
 setup = fixtures.setup

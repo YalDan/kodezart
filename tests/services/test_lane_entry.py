@@ -7,6 +7,8 @@ anything, and what the reader says out loud when the record and the remote
 disagree about the head (KOD-684).
 """
 
+from collections.abc import Iterator
+
 import pytest
 import structlog.testing
 
@@ -18,8 +20,17 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
 from kodezart.types.domain.lane_entry import ResumedLane
 from kodezart.types.domain.run_state import LaneCommit, LaneRunState
+from tests.artifact_trap import nothing_read_under_the_directory
 from tests.chains.test_native_fire import native_operation
 from tests.fakes import FakeGitService, FakeTrackerPort, make_tracker_issue
+
+
+@pytest.fixture(autouse=True)
+def _artifact_directory_trap() -> Iterator[None]:
+    """KOD-708: a lane's entry is gathered reading nothing under the directory."""
+    with nothing_read_under_the_directory():
+        yield
+
 
 LANE = "KOD-684"
 BASE = "trunk"
