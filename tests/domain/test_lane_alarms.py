@@ -122,6 +122,28 @@ def test_a_criterion_moved_back_without_an_account_is_one_regression_record():
     assert records[0].raised_at_sha == HEAD
 
 
+def test_a_refutation_of_another_member_does_not_quiet_this_one():
+    """Each criterion is read by the lane's account of IT, not of its neighbour.
+
+    The lane crossed off both criteria and then refuted the second; the first
+    stands back in Todo with nothing said about it since. Read with the
+    second's refutation as its own last word, the first would be quiet.
+    """
+    records = compose(
+        standing=Ready(roster=MOVED_BACK, gap=MOVED_BACK),
+        criteria=MOVED_BACK,
+        events=(
+            said(CROSSED_OFF, FIRST),
+            said(CROSSED_OFF, SECOND),
+            said(REFUTED, SECOND),
+        ),
+    )
+
+    assert [(r.subject, r.signal) for r in records] == [
+        (at(FIRST), AlarmSignal.TALLY_REGRESSED)
+    ]
+
+
 def test_a_raise_and_its_clear_rewrite_the_one_record():
     """Once raised, the address says so; once it ends, it says that once."""
     raised = compose(

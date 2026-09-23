@@ -214,8 +214,19 @@ def test_a_lapse_on_a_lane_that_is_not_ready_is_undischarged(kind):
     assert alarm.bound is None
 
 
-def test_the_identical_lapse_on_a_ready_lane_raises_nothing():
-    on, _, clean = LAPSE_PAIR
+@pytest.mark.parametrize(
+    "kind",
+    [WorkflowStateKind.UNSTARTED, WorkflowStateKind.STARTED],
+    ids=["back in Todo", "held in review"],
+)
+def test_the_identical_lapse_on_a_ready_lane_raises_nothing(kind):
+    """The clean twin of each firing case above: the same lapse, the lane ready.
+
+    A lapse held in review is as open as one back in Todo, so a ready lane
+    discharges both, and neither state is read as anything but open.
+    """
+    on = LAPSE_PAIR[0]
+    clean = (state(kind), account(CROSSED_OFF, LAPSED), rederived(True))
 
     assert undischarged(clean, on=on) is None
 
