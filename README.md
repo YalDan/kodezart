@@ -398,19 +398,25 @@ excluded structurally: the model is `extra="forbid"`, so a stray token key
 fails the load.
 
 Only `operation_name` and `workspace` are required. Every collection defaults
-empty and an empty board boots; a consumer that needs an absent member — a
-role, a queue key, the checkpoint document — refuses at the point of need with
-a typed error naming what is missing and what stops working, never as a boot
-failure. Structural validation applies to what IS present.
+empty, except that a file with no `[marker_prefixes]` table is given the markers
+v0.2 wrote for the per-issue path (see `docs/migration-v0.2-to-v0.3.md`), and an
+empty board boots; a consumer that needs an absent member — a role, a queue
+key, the checkpoint document — refuses at the point of need with a typed error
+naming what is missing and what stops working, never as a boot failure.
+Structural validation applies to what IS present.
 
 Tracker carriers take their identity prefixes from `marker_prefixes`. Copy the
 whole `[marker_prefixes]` table of `docs/operation.example.toml` into the
 operation: that table is the complete list of purposes this tree writes under,
 and a test derives the purposes from the source and fails when the table
 declares fewer than the code needs, so there is no second list to consult and
-no purpose to work out by reading the code. A purpose the table omits is not a
-boot failure — it is refused at the point it is read or written, so a partial
-table starts and then refuses mid-run. A tracker-native lane needs both
+no purpose to work out by reading the code. The one exception is a file that
+declares no table at all, which is given v0.2's markers for `claim`,
+`work_ref`, `base_spec`, `repository` and `run_outcome` and nothing else; a
+declared table, even an empty one, is taken as written. A purpose the table
+omits is refused at boot when a pass this deployment schedules can ask for it,
+every missing key named at once; any other omitted purpose is refused at the
+point it is read or written. A tracker-native lane needs both
 `run_state`, the one record it rewrites in place, and `run_event`, the stream
 it appends its first push to. The values are addresses: when upgrading an
 operation that already has recorded work, keep the prefixes it stored, because
@@ -738,9 +744,12 @@ records are only added to.
 *Observable result:* a `[documents.checkpoint]` block and one
 `[records.<kind>]` block per recorded run kind, each naming its `system`.
 
-A knowledge Fire Log requires an explicit outcome select mapping. Each key
-names its observed source, for example `"workflow.pr_opened" = "PR opened"`
-or `"run.failed" = "Failed"` under `[records.fire.outcome_mapping.options]`;
+A knowledge Fire Log that declares neither `columns` nor an outcome mapping is
+written in v0.2's shape, one title-line row with no record clause, and boot
+names it in `operation_file_v02_accepted`. A structured Fire Log requires an
+explicit outcome select mapping. Each key names its observed source, for
+example `"workflow.pr_opened" = "PR opened"` or `"run.failed" = "Failed"`
+under `[records.fire.outcome_mapping.options]`;
 `[records.fire.outcome_mapping]` declares the destination `property` name.
 These are example options, not an assumed destination vocabulary. A completed
 runner does not imply a PR: declare workflow outcomes individually when that
