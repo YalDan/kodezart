@@ -3289,34 +3289,22 @@ class LinearDescriptionWriter(
         if await self._body_authorship(wire) is SurfaceAuthorship.PRINCIPAL_AUTHORED:
             raise PrincipalAuthoredSurfaceError(surface=surface)
 
-    async def _patch_issue(
-        self,
-        *,
-        issue_key: str,
-        title: str | None = None,
-        body: str | None = None,
-    ) -> TrackerIssue:
-        """Update the given fields; ``None`` leaves a field untouched."""
-        arguments: dict[str, object] = {"id": issue_key}
-        if title is not None:
-            arguments["title"] = title
-        if body is not None:
-            current = await self._read_issue_wire(issue_key)
-            await self._require_machine_authored(
-                surface=WritableSurface(
-                    kind=SurfaceKind.ISSUE_DESCRIPTION,
-                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
-                ),
-                wire=current,
-            )
-            identity = self._issue_identity.decode(
-                current.description or "", issue_key=issue_key
-            )
-            if identity is not None:
-                body = self._issue_identity.encode(
-                    identity, body=body, issue_key=issue_key
-                )
-            arguments["description"] = body
+    async def _patch_issue(self, *, issue_key: str, body: str) -> TrackerIssue:
+        """Replace the issue's description, refusing a body written elsewhere."""
+        current = await self._read_issue_wire(issue_key)
+        await self._require_machine_authored(
+            surface=WritableSurface(
+                kind=SurfaceKind.ISSUE_DESCRIPTION,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+            ),
+            wire=current,
+        )
+        identity = self._issue_identity.decode(
+            current.description or "", issue_key=issue_key
+        )
+        if identity is not None:
+            body = self._issue_identity.encode(identity, body=body, issue_key=issue_key)
+        arguments: dict[str, object] = {"id": issue_key, "description": body}
         payload = await self._call(_TOOL_SAVE_ISSUE, arguments)
         return self._saved_issue(payload, written=arguments)
 
