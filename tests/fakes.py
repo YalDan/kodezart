@@ -3600,13 +3600,19 @@ class FakeTrackerPort:
     #: instance is whatever name the method's own definition gives it; a
     #: local bound from it — by a plain, a chained or an annotated
     #: assignment, a walrus, a tuple unpacking or ``self or None`` — counts
-    #: as it, a local bound from ``self.<log>`` counts as the log, and
+    #: as it, a local bound from ``self.<log>`` by an assignment statement
+    #: counts as the log (a walrus of a log is a read where it stands), and
     #: ``getattr(self, "<log>")`` with the log's name written out counts as
-    #: ``self.<log>``.  Outside its reach: a value handed across a function
-    #: boundary (a module function or a nested function handed ``self``),
-    #: a name built at run time, a binding made only when the function runs
-    #: (``setattr``, ``self.__dict__``) and a binding through a loop or a
-    #: context-manager target.  A read log that recorded a write, or
+    #: ``self.<log>``.  Outside that source reading: a value handed across
+    #: a function boundary (a module function or a nested function handed
+    #: ``self``), a name built at run time, a binding made only when the
+    #: function runs (``setattr``, ``self.__dict__``) and a binding through
+    #: a loop or a context-manager target.  Those spellings are held at run
+    #: time instead: the census also runs every case with each log replaced
+    #: by a trap that records every read of itself with the stack that made
+    #: it, and no read may run under a method of the double, whatever
+    #: spelling fetched the log; the trap's one limit is a call on the base
+    #: type that skips the override.  A read log that recorded a write, or
     #: decided an answer, fails there.
     READ_LOGS: ClassVar[frozenset[str]] = frozenset(
         {
