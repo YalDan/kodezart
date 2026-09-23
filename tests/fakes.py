@@ -10,7 +10,6 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import ClassVar
 from unittest.mock import patch
 from urllib.parse import quote, urlsplit
 from weakref import WeakKeyDictionary
@@ -3614,7 +3613,7 @@ class FakeTrackerPort:
     #: spelling fetched the log; the trap's one limit is a call on the base
     #: type that skips the override.  A read log that recorded a write, or
     #: decided an answer, fails there.
-    READ_LOGS: ClassVar[frozenset[str]] = frozenset(
+    READ_LOGS = frozenset(
         {
             "issue_reads",
             "scans",
