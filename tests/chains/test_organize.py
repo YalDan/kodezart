@@ -1877,11 +1877,13 @@ def second_surface_regrowth(monkeypatch, *, body):
     """A ticket stage whose fix defects a surface the round did not author.
 
     The subject's assessment names the class on the subject while its body
-    is still the draft. The author carries any mandating sentence forward,
-    so once the fix lands the same class is named again on the criterion
-    child: a second surface, reached only by the fresh verification that
-    follows the round. Every scripted finding is recorded as
-    ``(issue_id, defect_class)``.
+    is still the draft. The author carries any mandating sentence forward.
+    The criterion child is named with the same class only when its
+    verification reads a parent that holds both the grounded body and the
+    mandating sentence, that is, only once the carried sentence has landed.
+    Every scripted finding is recorded as ``(issue_id, defect_class)``, and
+    the parent's description is recorded at every verification of the
+    criterion child, whether or not it is named.
     """
     import re
 
@@ -1899,6 +1901,7 @@ def second_surface_regrowth(monkeypatch, *, body):
         labels=["check"],
     )
     observed = []
+    examined = []
     original = executor.stream
 
     def mandate_finding(issue_id):
@@ -1915,6 +1918,13 @@ def second_surface_regrowth(monkeypatch, *, body):
         title = kwargs["output_format"]["schema"].get("title")
         keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
         parent = board.server.issues[CLAIMED_ISSUE].description
+        verifies_second = (
+            title == "AdmissionJudgment"
+            and keys[-1:] == [SECOND_SURFACE]
+            and h.VERIFY_OPENING in kwargs["prompt"]
+        )
+        if verifies_second:
+            examined.append(parent)
         async for event in original(**kwargs):
             payload = event.structured_output
             if title == "OrganizeProposal" and payload.get("kind") == "body":
@@ -1944,10 +1954,9 @@ def second_surface_regrowth(monkeypatch, *, body):
                     }
                 )
             elif (
-                title == "AdmissionJudgment"
-                and keys[-1:] == [SECOND_SURFACE]
-                and h.VERIFY_OPENING in kwargs["prompt"]
+                verifies_second
                 and h.GROUNDED_BODY in parent
+                and h.MANDATE_SENTENCE in parent
             ):
                 event = result(
                     structured_output={
@@ -1958,7 +1967,7 @@ def second_surface_regrowth(monkeypatch, *, body):
             yield event
 
     monkeypatch.setattr(executor, "stream", scripted)
-    return owner, board, executor, observed
+    return owner, board, executor, observed, examined
 
 
 def subject_proposals(executor):
@@ -1981,15 +1990,19 @@ async def test_a_fix_that_defects_a_second_surface_is_worked_in_the_next_round(
 
     The class the assessment named on the subject is repaired, and the fix
     carries the mandating sentence that makes the criterion child restate
-    the class. Only the fresh verification after the round reaches that
-    child; its finding is worked in round two, and a mandate that keeps
-    regrowing halts at the convergence bound with its surviving finding.
+    the class. The criterion child is first verified over the landed fix,
+    never over the draft, so its finding is one the fix introduced; it is
+    worked in round two, and a mandate that keeps regrowing halts at the
+    convergence bound with its surviving finding.
     """
     h = owner_harness()
-    owner, board, executor, observed = second_surface_regrowth(
+    owner, board, executor, observed, examined = second_surface_regrowth(
         monkeypatch, body=f"{h.MANDATE_SENTENCE} {h.DRAFT_BODY}"
     )
     report = await h.run_owner(owner)
+    fixed = f"{h.MANDATE_SENTENCE} {h.GROUNDED_BODY}"
+    assert examined[0] == fixed
+    assert board.server.issues[CLAIMED_ISSUE].description == fixed
     assert observed == [
         (CLAIMED_ISSUE, h.REGROWTH_CLASS),
         (SECOND_SURFACE, h.REGROWTH_CLASS),
@@ -2006,9 +2019,10 @@ async def test_a_fix_that_defects_a_second_surface_is_worked_in_the_next_round(
     assert halt.bound.setting == "organize.max_convergence_rounds"
     assert halt.bound.loop == "convergence"
     assert halt.bound.value == halt.bound.rounds_used == 2
-    assert [(f.issue_id, f.role, f.mandate_text) for f in halt.surviving_findings] == [
-        (SECOND_SURFACE, DefectRole.MANDATE, h.MANDATE_SENTENCE)
-    ]
+    assert [
+        (f.issue_id, f.role, f.mandate_text, f.defect_class)
+        for f in halt.surviving_findings
+    ] == [(SECOND_SURFACE, DefectRole.MANDATE, h.MANDATE_SENTENCE, h.REGROWTH_CLASS)]
     assert report.completed_phases == ()
     assert not {"body complete", "criteria complete"} & set(
         board.server.issues[CLAIMED_ISSUE].labels
@@ -2024,7 +2038,9 @@ async def test_a_round_that_writes_nothing_does_not_terminate(monkeypatch):
     """
     h = owner_harness()
     body = f"{h.MANDATE_SENTENCE} {h.GROUNDED_BODY}"
-    owner, board, executor, _observed = second_surface_regrowth(monkeypatch, body=body)
+    owner, board, executor, _observed, _examined = second_surface_regrowth(
+        monkeypatch, body=body
+    )
     report = await h.run_owner(owner)
     assert subject_proposals(executor)
     assert [
