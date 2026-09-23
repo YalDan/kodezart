@@ -72,11 +72,14 @@ carries is a loss; an added, reordered or reformatted assertion is not. Each
 loss mints one `criterion` sub-issue on the lane, gated exactly as derived
 content under that lane's criterion child-set lease, so the lane's rollup
 carries the obligation and cannot converge while it stands, and publication is
-refused. The mark names the test and the record that designates it, and no
-assertion text leaves the repository. A comparison that cannot be made refuses
-with no mark: an unreadable designation is not evidence that the assertions
-survived. Deleting, renaming or moving a designated test, or its file, leaves
-nothing to compare, so publication is refused with no mark.
+refused. The mark names the test, the record that designates it and the
+writer's starting head, and no assertion text leaves the repository. A replay
+from the same starting head finds the mark that already stands; a weakening
+from a later starting head mints a new one, whatever state the earlier mark is
+in. A comparison that cannot be made refuses with no mark: an unreadable
+designation is not evidence that the assertions survived. Deleting, renaming
+or moving a designated test, or its file, leaves nothing to compare, so
+publication is refused with no mark.
 
 The reading compares which assertions a designated test carries, not whether
 they run: an assertion moved where it no longer runs still reads as carried.

@@ -96,13 +96,16 @@ def weakening_mark(
 ) -> CriterionProposal:
     """The criterion a lost designated assertion is carried by.
 
-    The text is rendered from the pinned record's own identifiers alone —
-    the test's path and qualified name and the record's source reference —
-    so no assertion source, before or after, leaves the repository, and no
-    commit identity or count appears. A replay of the same loss, and any
-    later loss in the same test, therefore render the same bytes, and the
-    mint's own identity — exact parent plus current Check — answers them
-    with the child that already stands.
+    The text is rendered from the pinned record's own identifiers — the
+    test's path and qualified name and the record's source reference — and
+    the writer's starting head the comparison was made against, so no
+    assertion source, before or after, leaves the repository, and neither
+    the refused commit's identity nor a count appears. A replay of the same
+    run starts from the same head and renders the same bytes, and the mint's
+    own identity — exact parent plus current Check — answers it with the
+    child that already stands. A weakening from a later starting head
+    renders a different Check, so it mints a fresh child even when the
+    earlier mark for the same test has been crossed off.
     """
     if not lost:
         raise ValueError("a weakening mark names at least one lost assertion")
@@ -113,7 +116,7 @@ def weakening_mark(
             f"The designated test `{reference.path}::{reference.qualified_name}`, "
             f"which pinned record `{reference.source_ref}` designates, carries "
             "at the head of this lane's branch every assertion it carries at the "
-            "writer's starting head."
+            f"writer's starting head `{claim.graded_sha}`."
         ),
         do=(
             "Restore those assertions; a designated test changes only through a "

@@ -850,8 +850,12 @@ async def weaken(title, payload, kwargs):
     target.write_text(WEAKENED_BODY)
 
 
-def rendered_mark(pinned):
-    """The mark the loss of this designation's only assertion renders."""
+def rendered_mark(pinned, start):
+    """The mark the loss of this designation's only assertion renders.
+
+    *start* is the writer's starting head, the commit the comparison reads
+    the assertions at; the refused commit's own sha is not part of the mark.
+    """
     lost = protected_assertions(
         source=PROTECTED_BODY.encode(),
         path=PROTECTED_PATH,
@@ -860,7 +864,7 @@ def rendered_mark(pinned):
     return weakening_mark(
         claim=AssertionDeviationClaim(
             protected_test=pinned.protected_tests[0],
-            graded_sha="a" * 40,
+            graded_sha=start,
             head_sha="b" * 40,
             graded_blob_sha="c" * 40,
             head_blob_sha="d" * 40,
@@ -886,6 +890,7 @@ async def test_a_weakened_designated_assertion_marks_the_lane_and_is_never_pushe
     repo = repository[0]
     port = tracker()
     pinned = await designated_repository(repo, port)
+    start = await git(repo, "rev-parse", "main")
     before = set(port.issues)
     executor = Executor(claim=False, mutate=weaken)
     service, guard, workspace, port = await build(repository, executor, port=port)
@@ -911,11 +916,12 @@ async def test_a_weakened_designated_assertion_marks_the_lane_and_is_never_pushe
         assert minted[key].state_kind is WorkflowStateKind.UNSTARTED
         assert caught.value.marks == (key,)
         assert caught.value.lane_key == SUBJECT
-        # The Check is the rendered mark, byte for byte, and it names the test
-        # and the record, and neither the assertion that went nor the one that
-        # replaced it.
+        # The Check is the rendered mark, byte for byte, and it names the test,
+        # the record and the writer's starting head, and neither the assertion
+        # that went nor the one that replaced it.
         check = criterion_field_bodies(minted[key].body, field="Check")[0]
-        assert check == rendered_mark(pinned).check
+        assert check == rendered_mark(pinned, start).check
+        assert start in check
         assert PROTECTED_PATH in check
         assert PROTECTED_NAME in check
         assert pinned.ruling_id in check
@@ -1023,12 +1029,13 @@ async def test_the_mark_keeps_the_lane_out_of_convergence_until_it_is_done(repos
 
 
 async def test_a_second_weakening_of_the_same_assertion_finds_the_same_mark(repository):
-    """The mark names no sha, so the same loss twice is the same obligation.
+    """A replay from the same starting head is the same obligation.
 
     The second run cuts its branch afresh from the same starting point and
-    makes the same edit, so the rendered Check is the same bytes and the
-    mint's own identity — exact parent plus current Check — answers with the
-    child that already stands rather than a second one.
+    makes the same edit, so the rendered Check, which names that starting
+    head and not the refused commit, is the same bytes and the mint's own
+    identity — exact parent plus current Check — answers with the child that
+    already stands rather than a second one.
     """
     repo = repository[0]
     port = tracker()
@@ -1053,6 +1060,68 @@ async def test_a_second_weakening_of_the_same_assertion_finds_the_same_mark(repo
         assert criterion_children(port) == after_first
         assert second.value.marks == first.value.marks
         assert len(second.value.marks) == 1
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_weakening_after_the_mark_was_crossed_off_is_marked_again(repository):
+    """A crossed-off mark does not answer a later weakening of the same test.
+
+    The first weakening is refused and marked, and the mark is crossed off,
+    which is the normal course because the weakened commit never reached the
+    remote. The lane then moves on to a later head, and a later writer
+    starting there weakens the same test again. Its Check names that later
+    starting head, so the mint finds no child and the lane carries a fresh,
+    open mark in its gap while the push is still refused.
+    """
+    repo = repository[0]
+    port = tracker()
+    pinned = await designated_repository(repo, port)
+    service, guard, workspace, port = await build(
+        repository, Executor(claim=False, mutate=weaken), port=port
+    )
+    try:
+        with pytest.raises(AssertionWeakenedError) as first:
+            await drive(service, guard, repository)
+    finally:
+        await cleanup(workspace)
+    (crossed,) = first.value.marks
+    port.issues[crossed] = port.issues[crossed].model_copy(
+        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+    )
+    await git(repo, "branch", "-D", "native-test")
+    Path(repo, "later.py").write_text("Work the lane published after the mark.\n")
+    await git(repo, "add", ".")
+    await git(repo, "commit", "-m", "later work on the lane")
+    later = await git(repo, "rev-parse", "main")
+    between = set(port.issues)
+    service, guard, workspace, port = await build(
+        repository, Executor(claim=False, mutate=weaken), port=port
+    )
+    try:
+        with pytest.raises(AssertionWeakenedError) as second:
+            await drive(service, guard, repository)
+
+        minted = new_issues(port, between)
+        assert len(minted) == 1
+        (key,) = minted
+        assert key != crossed
+        assert second.value.marks == (key,)
+        assert minted[key].parent_key == SUBJECT
+        assert "criterion" in minted[key].issue_labels
+        assert minted[key].state_kind is WorkflowStateKind.UNSTARTED
+        check = criterion_field_bodies(minted[key].body, field="Check")[0]
+        assert check == rendered_mark(pinned, later).check
+        standing = {
+            issue.issue_key
+            for issue in gap.compute_gap(
+                criteria=await port.read_criteria(issue_key=SUBJECT),
+                supersession_refs={},
+            )
+        }
+        assert key in standing
+        assert crossed not in standing
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
     finally:
         await cleanup(workspace)
 

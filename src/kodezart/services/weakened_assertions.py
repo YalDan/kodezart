@@ -3,8 +3,10 @@
 The whole memory of this refusal is the criterion it leaves on the lane, so
 a killed run that commits the same loss again finds that criterion rather
 than minting a second one: the text is rendered from the pinned record's own
-identifiers alone, and the mint's own identity — exact parent plus
-current Check — answers a replay with the child that already stands.
+identifiers and the writer's starting head, and the mint's own identity —
+exact parent plus current Check — answers a replay from that head with the
+child that already stands. A weakening from a later starting head is a new
+obligation and mints a new child, whatever state the earlier one is in.
 
 What the mark is made of is arithmetic over two pinned Git objects and a
 pinned record, so nothing here is authored and nothing here is a second

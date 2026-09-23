@@ -181,26 +181,35 @@ def test_a_reformatted_assertion_loses_nothing():
 
 
 def test_the_mark_names_the_test_and_the_record_and_no_assertion_text_or_sha():
+    """The Check names the writer's starting head and no other commit.
+
+    The refused commit's sha never appears, so a replay of the same run —
+    same starting head, whatever commit it makes — renders the same bytes,
+    while a weakening from a later starting head renders a different Check.
+    """
     before = assertions(
         "def test_behavior():\n    assert calls == 1\n    assert seen == 'x'\n"
     )
     after = assertions("def test_behavior():\n    assert replaced is not None\n")
     lost = lost_assertions(before=before, after=after)
     first = claim(before=before, after=after)
-    second = claim(before=before, after=after, graded="e" * 40, head="f" * 40)
+    replay = claim(before=before, after=after, head="f" * 40)
+    later = claim(before=before, after=after, graded="e" * 40, head="f" * 40)
 
     mark = weakening_mark(claim=first, lost=lost)
     text = mark.title + mark.check + mark.do
 
     assert lost == before
-    assert mark == weakening_mark(claim=second, lost=lost)
+    assert mark == weakening_mark(claim=replay, lost=lost)
+    assert weakening_mark(claim=later, lost=lost).check != mark.check
+    assert f"`{'e' * 40}`" in weakening_mark(claim=later, lost=lost).check
     assert "tests/protected.py::test_behavior" in mark.check
     assert "owning-record/native-id" in mark.check
+    assert f"`{'a' * 40}`" in mark.check
     # No assertion source leaves the repository: neither the conditions that
     # went nor the one that replaced them.
     for row in (*before, *after):
         assert row.expression not in text
-    assert "a" * 40 not in text
     assert "b" * 40 not in text
 
 
