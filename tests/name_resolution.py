@@ -797,7 +797,9 @@ def _produces(
     function, a descriptor its function, and a collection its members.  A
     package class hands back what its own fields and members state, and those
     of every package class it inherits from; a package function or method
-    hands back its return annotation, never a parameter's.  Any
+    hands back its return annotation, never a parameter's, and a bound
+    method — a pydantic one included, or one a partial holds — hands back
+    what the object it is bound to does.  Any
     other instance hands back its type and its own attributes, which is how
     a ``TypeAdapter`` built at module level hands back the type it adapts.
     """
@@ -835,6 +837,12 @@ def _produces(
                 if not name.startswith("__")
             )
     elif inspect.isroutine(value):
+        owner = getattr(value, "__self__", None)
+        if owner is not None and not isinstance(owner, ModuleType):
+            # A bound method hands back what its owner does:
+            # ``Holder.model_validate`` its class, and
+            # ``TypeAdapter(Holder).validate_python`` the adapter over it.
+            yield owner
         if _ours(value):
             scope = getattr(value, "__globals__", {})
             returned = inspect.get_annotations(value).get("return")
@@ -915,18 +923,33 @@ _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _unspelled(tree: ast.Module) -> set[int]:
-    """``id`` of every node inside an annotation or a docstring.
+    """``id`` of every node inside an annotation only the type check reads,
+    or inside a docstring.
 
-    An annotation states a type for the type check and a docstring states
-    prose: neither is a use of the value it names.
+    A parameter or return annotation of an undecorated function, and the
+    annotation of a variable anywhere but a class body, state a type for the
+    type check alone.  A class body's annotation is read at run time —
+    pydantic, a ``TypedDict``, a dataclass and a ``NamedTuple`` build their
+    fields from it, in a class defined inside a function too — and so is a
+    decorated function's signature (``validate_call`` parses the arguments
+    by it), so both are spellings.  A docstring states prose.
     """
+    fields = {
+        id(statement)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+        for statement in node.body
+    }
     skipped: set[int] = set()
     for node in ast.walk(tree):
         annotations: list[ast.expr | None] = []
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+        if (
+            isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and not node.decorator_list
+        ):
             annotations.append(node.returns)
             annotations.extend(one.annotation for one in parameters_of(node))
-        elif isinstance(node, ast.AnnAssign):
+        elif isinstance(node, ast.AnnAssign) and id(node) not in fields:
             annotations.append(node.annotation)
         for annotation in annotations:
             if annotation is not None:
@@ -949,13 +972,15 @@ def spelled_sites(
 ) -> tuple[tuple[str, str], ...]:
     """Every place *tree* spells one of *words*, as ``(definition, word)``.
 
-    A name, an attribute, an import's imported or bound name, and an
-    identifier inside a string literal all spell the word; an annotation and
-    a docstring do not.  However a module reaches an object — a from-import,
-    a module attribute, ``importlib`` or ``sys.modules`` and an attribute
-    off what they return, a package ``__init__``, a relative import, a
-    re-export, ``getattr`` or a mapping lookup with a literal — the word is
-    spelled at the use.  A word built at run time is not.
+    A name, an attribute, an import's imported or bound name, an identifier
+    inside a string literal, a class-body field's annotation and a decorated
+    function's signature all spell the word; an annotation only the type
+    check reads, and a docstring, do not.  However a module reaches an
+    object — a from-import, a module attribute, ``importlib`` or
+    ``sys.modules`` and an attribute off what they return, a package
+    ``__init__``, a relative import, a re-export, ``getattr`` or a mapping
+    lookup with a literal — the word is spelled at the use.  A word built at
+    run time is not.
     """
     wanted = frozenset(words)
     skipped = _unspelled(tree)

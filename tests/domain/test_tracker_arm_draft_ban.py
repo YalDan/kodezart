@@ -35,32 +35,62 @@ A draft parsed through a carrier — ``AuthoredSpec.model_validate({"ticket":
 the register reports it nowhere.  Its stop stands at every place the arm has a
 tracker body in hand, derived from the composition that captures the subject:
 the composition's own module, every module that calls it, and every module
-holding the concrete read whose result a caller hands the composition as its
-subject.  None of them may spell a carrier beyond what it spells at head.  A
-carrier is read off the objects, not off how their source is written: every
-word the package binds to an object a draft can be had from — a class holding
-one in a field, a union, an alias, a ``NewType`` or a type variable over one,
-a function or a method returning one, an adapter or a partial built over one
-— to a fixed point.  So the partition's union, the workflow state and a
-remediation request are carriers, and a new alias is one without a line here.
-However a module reaches a carrier — by name, through its module, through a
-package ``__init__`` or the whole dotted path, through ``importlib`` or
-``sys.modules``, by a relative import, through a module that re-exports it, or
-by a string naming it — it spells the carrier's word where it uses it; the
-planted rows put each route at each place.
+holding the concrete read whose result a caller binds to a word and hands the
+composition as its subject.  None of them may spell a carrier beyond what it
+spells at head.  A carrier is read off the objects, not off how their source
+is written: every word the package binds to an object a draft can be had from
+— a class holding one in a field, a union, an alias, a ``NewType`` or a type
+variable over one, a function or a method returning one, an adapter or a
+partial built over one, and a bound method of one (``AuthoredSpec.
+model_validate``, an adapter's ``validate_python``) bound at module level or
+held in a partial — to a fixed point.  So the partition's union, the workflow
+state and a remediation request are carriers, and a new alias is one without a
+line here.  However a module reaches a carrier — by name, through its module,
+through a package ``__init__`` or the whole dotted path, through
+``importlib`` or ``sys.modules``, by a relative import, through a module that
+re-exports it, by a string naming it, or in an annotation read at run time (a
+class-body field of a model, a ``TypedDict`` or a dataclass, defined inside a
+function or not, and a decorated signature such as ``validate_call``'s) — it
+spells the carrier's word where it uses it; the planted rows put each route at
+each place.  An annotation only the type check reads — an undecorated
+function's parameter or return, a variable outside a class body — is not a
+spelling, and a control holds that too.
 
 The floor lines below still state, by the shared import walk, that neither the
-composition's module nor the adapter holds the draft at head; that walk
-counts a carrier imported by name or through its declaring module, and the
-spelling stop above is the one that holds for every route.
+composition's module nor the adapter holds the draft at head.  That walk
+counts a carrier declared by ``def`` or ``class`` and imported by name or
+through its declaring module, and nothing else: the union bound by an
+assignment, ``importlib``, ``sys.modules``, the package ``__init__``, the
+whole dotted path and a relative import leave the floor green, and only the
+spelling stop holds for them.
 
-Stated limits.  A method is read by its word on any receiver, so a method of
+A behavioural pin stands beside the static stop: a tracker subject whose body
+is a whole ticket draft, serialised, is captured through the real adapter and
+the criteria stage as the tracker arm with that body unchanged, and the
+formatter renders it back byte for byte.
+
+Over-inclusion.  A method is read by its word on any receiver, so a method of
 the same name on an unrelated class is recorded rather than resolved (the
-audit sweep's own ``prepare``); that over-includes on the red side.  A body
-handed out of these modules to a helper elsewhere that parses it into a draft
-and hands back nothing a draft can be had from is not seen, because the
-helper's module holds no tracker body of its own.  A word built at run time,
-and ``eval``/``exec``, are out of reach.
+audit sweep's own ``prepare``); that errs on the red side.
+
+Stated limit.  Outside this stop's reach: a value handed across a function
+boundary, where the other function is not resolved at this site (returned from
+a helper, stored on an object and read elsewhere, or passed through a container
+built elsewhere); a name built at run time; a binding made only when a
+function runs (``setattr`` or ``globals()`` inside a function body).  The
+shapes of the first kind this stop meets: a body handed out of these modules
+to a helper elsewhere that parses it into a draft and hands back nothing a
+draft can be had from, a validator on the models every entry read goes through
+included (``LinearIssueWire.description`` in ``adapters/linear/wire.py`` and
+``TrackerIssue.body`` in ``types/domain/tracker.py``); and a subject a caller
+hands the composition off an object built elsewhere — the audit sweep hands
+``target.source.issue``, so ``services/audit_requests.py``, which reads the
+owner that object carries, is outside the stop, as is
+``services/scope_membership.py``, which reads the issues handed on as
+``criteria``.  Of the second kind: a word built at run time, and
+``eval``/``exec``.  ``STATED_LIMIT_SHAPES`` holds one row of each kind green,
+and every caller of the composition is either followed or named as handing
+its subject off an object.
 """
 
 import ast
@@ -74,12 +104,16 @@ from types import ModuleType
 import pytest
 from pydantic import TypeAdapter
 
+from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.fire_spec import tracker_spec_from_issues
+from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain import fire_spec as partition
 from kodezart.types.domain.agent import TicketDraftOutput
-from kodezart.types.domain.fire_spec import AuthoredSpec, FireSpec
+from kodezart.types.domain.fire_spec import AuthoredSpec, FireSpec, TrackerSpec
 from kodezart.types.domain.tracker import TrackerIssue
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowState
+from tests.domain.test_fire_spec_formatter import tickets
+from tests.fakes import FakeMcpIssue
 from tests.identity_guards import model_value_sites, value_holders
 from tests.name_resolution import (
     SOURCE_ROOT,
@@ -90,6 +124,13 @@ from tests.name_resolution import (
     source_tree,
     spelled_sites,
 )
+from tests.tracker.conftest import (
+    FIRE_ENTRY_LABELS,
+    FIXTURE_NOW,
+    STATE_TYPES,
+    fixture_server,
+)
+from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 DRAFT = TicketDraftOutput.__name__
 #: The partition's carrier of the draft and the module declaring it, read off
@@ -215,12 +256,13 @@ def test_the_tracker_arm_modules_are_on_the_scanned_surface():
     and names no draft — and neither is the adapter the subject is read
     through, so the reddening plants below import the class, which is the
     natural form a bypass would take.  Those two assertions are statements of
-    head rather than bans: any carrier or class import into either module reds
+    head rather than bans: a carrier declared by ``def`` or ``class`` and
+    imported into either module by name or through its declaring module reds
     them, and their message is what tells a reader who adds a legitimate one
-    that the surface moved.  The adapter's also reds a tracker body parsed
-    into a draft through a carrier at the arm's own entry read, by the two
-    import routes the shared walk counts; the spelling stop below holds for
-    every route.
+    that the surface moved.  The union bound by an assignment, ``importlib``,
+    ``sys.modules``, the package ``__init__``, the whole dotted path and a
+    relative import leave both lines green: they are stopped only by
+    ``test_where_the_arm_holds_a_tracker_body_it_reaches_no_carrier``.
     """
     holders = value_holders(source_tree(), identity=DRAFT)
 
@@ -360,17 +402,17 @@ def _concrete_definitions(words: set[str]) -> set[str]:
     return found
 
 
-def _tracker_body_modules() -> frozenset[str]:
-    """Where the arm has a tracker body in hand, derived from the composition.
+def _subject_readers() -> dict[str, frozenset[str]]:
+    """Each module calling the composition, with the reads it hands on.
 
-    The composition's own module; every module that calls it; and every
-    module holding the concrete read whose result a caller hands the
-    composition as its subject.
+    The callee words whose result the caller binds to a word and hands the
+    composition as its subject.  A caller that hands the subject off an
+    object built elsewhere contributes none: that is the stated limit, and
+    ``SUBJECT_OFF_AN_OBJECT`` names each such caller.
     """
-    modules = {COMPOSITION_HOME}
-    readers: set[str] = set()
+    found: dict[str, set[str]] = {}
     for site in call_sites(PARSED, names={COMPOSITION.__name__}):
-        modules.add(site.module)
+        readers = found.setdefault(site.module, set())
         tree = PARSED[site.module]
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call) or node.lineno != site.line:
@@ -378,10 +420,33 @@ def _tracker_body_modules() -> frozenset[str]:
             for keyword in node.keywords:
                 if keyword.arg == SUBJECT and isinstance(keyword.value, ast.Name):
                     readers |= _reader_words(tree, keyword.value.id)
-    return frozenset(modules | _concrete_definitions(readers))
+    return {module: frozenset(readers) for module, readers in found.items()}
+
+
+SUBJECT_READERS = _subject_readers()
+
+
+def _tracker_body_modules() -> frozenset[str]:
+    """Where the arm has a tracker body in hand, derived from the composition.
+
+    The composition's own module; every module that calls it; and every
+    module holding the concrete read whose result a caller hands the
+    composition as its subject.
+    """
+    readers = {word for words in SUBJECT_READERS.values() for word in words}
+    return frozenset(
+        {COMPOSITION_HOME, *SUBJECT_READERS} | _concrete_definitions(readers)
+    )
 
 
 TRACKER_BODY_MODULES = _tracker_body_modules()
+
+#: The callers that hand the composition a subject off an object built
+#: elsewhere (``subject=target.source.issue``), which the stated limit puts
+#: out of reach, and the modules that hold such a body upstream of the
+#: composition and so stand outside the stop.
+SUBJECT_OFF_AN_OBJECT = frozenset({"chains/audit_sweep.py"})
+UNSTOPPED_HOLDERS = ("services/audit_requests.py", "services/scope_membership.py")
 
 #: What each module holding a tracker body spells of the carriers at head, by
 #: the definition that spells it.  The criteria stage imports the workflow
@@ -401,10 +466,11 @@ def test_where_the_arm_holds_a_tracker_body_it_reaches_no_carrier():
     """No module holding a tracker body spells a carrier beyond the register.
 
     However a module reaches a carrier — by name, through its module, the
-    package, ``importlib``, ``sys.modules``, a relative import, a re-export
-    or a string naming it — it spells the carrier's word where it uses it,
-    and the word comes from the objects, so an alias or a union over a
-    carrier is one.
+    package, ``importlib``, ``sys.modules``, a relative import, a re-export,
+    a string naming it, or an annotation read at run time (a class-body field,
+    a decorated signature) — it spells the carrier's word where it uses it,
+    and the word comes from the objects, so an alias, a union or a bound
+    method over a carrier is one.
     """
     assert {
         path: spelled_sites(PARSED[path], words=CARRIER_WORDS)
@@ -424,6 +490,124 @@ def test_every_derived_list_of_the_carrier_stop_is_populated():
     assert TRACKER_BODY_MODULES >= {module for module, *_ in BODY_PLANT_SITES}
     assert TRACKER_MODULE in TRACKER_BODY_MODULES
     assert REEXPORT
+    assert SUBJECT_READERS
+    assert any(SUBJECT_READERS.values())
+    assert STATED_LIMIT_SHAPES
+
+
+def test_every_caller_of_the_composition_is_followed_or_named_as_the_limit():
+    """No caller drops out of the derivation silently.
+
+    A caller that binds the subject to a word hands on the read that word
+    came from, and that read's module joins the stop.  A caller that hands
+    the subject off an object built elsewhere contributes no read, and is
+    named here as the stated limit's shape, so a new caller of either kind
+    moves this test.
+    """
+    assert {
+        module for module, readers in SUBJECT_READERS.items() if not readers
+    } == SUBJECT_OFF_AN_OBJECT
+
+
+def test_a_body_held_upstream_of_a_subject_off_an_object_is_outside_the_stop():
+    """The stated limit, held as a fact of the tree rather than a sentence.
+
+    The audit sweep hands the composition ``target.source.issue``, an object
+    ``services/audit_requests.py`` builds from the owner it reads, and
+    ``services/scope_membership.py`` reads the issues a caller hands on as
+    ``criteria``.  Both hold a tracker body, and neither is on the stop.
+    """
+    for holder in UNSTOPPED_HOLDERS:
+        assert holder in PACKAGE
+        assert holder not in TRACKER_BODY_MODULES
+    audit = next(iter(SUBJECT_OFF_AN_OBJECT))
+    handed = [
+        keyword.value
+        for node in ast.walk(PARSED[audit])
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name | ast.Attribute)
+        and (node.func.id if isinstance(node.func, ast.Name) else node.func.attr)
+        == COMPOSITION.__name__
+        for keyword in node.keywords
+        if keyword.arg == SUBJECT
+    ]
+    assert handed
+    assert all(isinstance(one, ast.Attribute) for one in handed)
+
+
+#: One plant per shape the stated limit puts out of reach, each leaving the
+#: stop green: a helper beside the wire model every entry read goes through
+#: that parses a body into a carrier and hands back ``object`` (a value
+#: handed across a function boundary, as a validator there would be), a
+#: carrier's word built at run time, and a carrier bound only when a function
+#: runs.  Each is ``(module, anchor, planted lines)``, the anchor ``None`` for
+#: an appended module-level plant.
+STATED_LIMIT_SHAPES = {
+    "a_helper_beside_the_wire_model_parsing_a_body": (
+        (
+            "adapters/linear/wire.py",
+            None,
+            (
+                f"from {CARRIER_HOME} import {CARRIER}\n",
+                "",
+                "def _parsed_description(value: str) -> object:\n"
+                f"    return {CARRIER}.model_validate("
+                "{'ticket': {'title': value}})\n",
+            ),
+        ),
+    ),
+    "a_carrier_word_built_at_run_time": (
+        (
+            TRACKER_MODULE,
+            TRACKER_ANCHOR,
+            (
+                "import importlib\n",
+                "",
+                f"getattr(importlib.import_module('{CARRIER_HOME}'), "
+                f"'{CARRIER[:4]}' + '{CARRIER[4:]}').model_validate("
+                "{'ticket': {'title': subject.body}})",
+            ),
+        ),
+    ),
+    "a_carrier_bound_only_when_a_function_runs": (
+        (
+            "domain/ticket.py",
+            None,
+            (
+                f"from {CARRIER_HOME} import {CARRIER}\n",
+                "",
+                "def _bind_late() -> None:\n"
+                f"    globals()['late_parse'] = {CARRIER}.model_validate\n",
+            ),
+        ),
+        (
+            TRACKER_MODULE,
+            TRACKER_ANCHOR,
+            (
+                "import kodezart.domain.ticket as _late_home\n",
+                "",
+                "_late_home.late_parse({'ticket': {'title': subject.body}})",
+            ),
+        ),
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(STATED_LIMIT_SHAPES))
+def test_each_shape_the_stated_limit_names_leaves_the_stop_green(shape):
+    """The limit is a fact the rows hold: each shape is unseen by the stop."""
+    sources = dict(PACKAGE)
+    for module, anchor, planted in STATED_LIMIT_SHAPES[shape]:
+        if anchor is None:
+            imports, _prelude, appended = planted
+            sources[module] = imports + sources[module] + "\n\n" + appended
+        else:
+            _plant(sources, module, anchor, planted)
+
+    assert {
+        path: spelled_sites(ast.parse(sources[path]), words=CARRIER_WORDS)
+        for path in sorted(TRACKER_BODY_MODULES)
+    } == SPELLED
 
 
 UNION = next(name for name, value in vars(partition).items() if value is FireSpec)
@@ -459,13 +643,46 @@ BODY_PLANT_SITES = (
 )
 
 
-def planted_carrier(route: str, module: str, body: str) -> tuple[str, str]:
-    """The import a route needs, and the expression that parses *body* into a
-    draft through a carrier reached that way."""
+def planted_carrier(route: str, module: str, body: str) -> tuple[str, str, str]:
+    """What a route plants: the module-level lines it needs, the statements
+    it needs where the body is held, and the expression that parses *body*
+    into a draft through a carrier reached that way."""
     data = f"{{'ticket': {{'title': {body}}}}}"
     parse = f".model_validate({data})"
     depth = module.count("/") + 1
     relative = "." * depth + CARRIER_HOME.partition(".")[2]
+    relative_package = "." * depth + CARRIER_PACKAGE.partition(".")[2]
+    local_models = {
+        # A model defined where the body is held, its field annotated with
+        # the carrier reached through the carrier's module.
+        "function_local_model_over_the_carrier": (
+            "from pydantic import BaseModel\n"
+            f"from {CARRIER_PACKAGE} import {CARRIER_LEAF} as _fs\n",
+            f"class _Envelope(BaseModel):\n    carried: _fs.{CARRIER}\n",
+            f"_Envelope.model_validate({{'carried': {data}}})",
+        ),
+        # The same over the partition's union, the module bound by a
+        # relative import.
+        "function_local_model_over_the_union_by_relative_import": (
+            "from pydantic import BaseModel\n"
+            f"from {relative_package} import {CARRIER_LEAF} as fs\n",
+            f"class _Carried(BaseModel):\n    carried: fs.{UNION}\n",
+            f"_Carried.model_validate({{'carried': {data}}})",
+        ),
+        # A module-level function whose decorator parses its arguments by
+        # the signature's annotations.
+        "validate_call_signature": (
+            "from pydantic import validate_call\n"
+            f"from {CARRIER_PACKAGE} import {CARRIER_LEAF} as _fs\n\n\n"
+            "@validate_call\n"
+            f"def _as_spec(carried: _fs.{CARRIER}) -> None:\n"
+            "    return None\n\n\n",
+            "",
+            f"_as_spec({data})",
+        ),
+    }
+    if route in local_models:
+        return local_models[route]
     routes = {
         "carrier_by_name": (f"from {CARRIER_HOME} import {CARRIER}\n", CARRIER + parse),
         "partition_union_by_name": (
@@ -512,7 +729,8 @@ def planted_carrier(route: str, module: str, body: str) -> tuple[str, str]:
             f"{ADAPTERS[0][1]}.validate_python({data})",
         ),
     }
-    return routes[route]
+    imports, expression = routes[route]
+    return imports, "", expression
 
 
 CARRIER_PLANT_ROUTES = (
@@ -528,7 +746,24 @@ CARRIER_PLANT_ROUTES = (
     "workflow_state_already_in_scope",
     "method_returning_a_carrier",
     "adapter_built_elsewhere",
+    "function_local_model_over_the_carrier",
+    "function_local_model_over_the_union_by_relative_import",
+    "validate_call_signature",
 )
+
+
+def _plant(
+    sources: dict[str, str], module: str, anchor: str, planted: tuple[str, str, str]
+) -> None:
+    """Put a route's lines in *module*: its imports on top, its statements and
+    the parse where *anchor* holds the body, at the anchor's own indent."""
+    imports, prelude, expression = planted
+    assert sources[module].count(anchor) == 1
+    indent = anchor[: len(anchor) - len(anchor.lstrip())]
+    lines = [*prelude.splitlines(), f"draft = {expression}"]
+    sources[module] = imports + sources[module].replace(
+        anchor, "".join(f"{indent}{line}\n" for line in lines) + anchor
+    )
 
 
 @pytest.mark.parametrize("route", CARRIER_PLANT_ROUTES)
@@ -547,16 +782,41 @@ def test_a_body_parsed_through_a_carrier_where_the_arm_holds_it_is_reported(
     route reached it.
     """
     sources = dict(PACKAGE)
-    assert sources[module].count(anchor) == 1
-    imports, expression = planted_carrier(route, module, f"{receiver}.body")
-    indent = anchor[: len(anchor) - len(anchor.lstrip())]
-    sources[module] = imports + sources[module].replace(
-        anchor, f"{indent}draft = {expression}\n{anchor}"
-    )
+    _plant(sources, module, anchor, planted_carrier(route, module, f"{receiver}.body"))
 
     planted = spelled_sites(ast.parse(sources[module]), words=CARRIER_WORDS)
 
     assert set(planted) - set(SPELLED[module])
+
+
+def test_a_second_spelling_of_a_word_the_module_already_spells_is_reported():
+    """The register is compared as written, duplicates included.
+
+    ``chains/criteria.py`` already spells the workflow state at module level;
+    a second module-level spelling of it adds no new pair of definition and
+    word, and it still moves the register, because the register is a tuple
+    of every spelling rather than a set of them.
+    """
+    module = "chains/criteria.py"
+    anchor = "        spec = tracker_spec_from_issues(\n"
+    data = "{'fire_spec': {'ticket': {'title': subject.body}}}"
+    sources = dict(PACKAGE)
+    _plant(
+        sources,
+        module,
+        anchor,
+        (
+            "from pydantic import TypeAdapter\n"
+            f"_STATE_ADAPTER = TypeAdapter({WorkflowState.__name__})\n",
+            "",
+            f"_STATE_ADAPTER.validate_python({data})",
+        ),
+    )
+
+    planted = spelled_sites(ast.parse(sources[module]), words=CARRIER_WORDS)
+
+    assert set(planted) == set(SPELLED[module])
+    assert planted != SPELLED[module]
 
 
 #: One module-level binding per kind of object a draft can be had from, and
@@ -611,6 +871,10 @@ Bound_later = functools.partial(returns)
 Adapter = TypeAdapter({DRAFT})
 Table = {{"one": Holder}}
 Unrelated = int
+parse = Holder.model_validate
+validate = TypeAdapter(Holder).validate_python
+parse_later = functools.partial(Holder.model_validate)
+unrelated_bound = {{"one": 1}}.get
 """
 #: A holder defined in another module, which the control names only for the
 #: type check: the walk finds it where it is defined.
@@ -639,8 +903,19 @@ REACHED = {
     "Bound_later",
     "Adapter",
     "Table",
+    "parse",
+    "validate",
+    "parse_later",
 }
-UNREACHED = {"use", "takes", "Unrelated", "functools", "BaseModel", "TypeAdapter"}
+UNREACHED = {
+    "use",
+    "takes",
+    "Unrelated",
+    "functools",
+    "BaseModel",
+    "TypeAdapter",
+    "unrelated_bound",
+}
 
 
 def _loaded(root: Path, name: str, text: str) -> ModuleType:
@@ -669,3 +944,84 @@ def test_every_kind_of_object_a_draft_can_be_had_from_is_a_carrier(tmp_path):
 
     assert reached >= REACHED
     assert not reached & UNREACHED
+
+
+#: One source per kind of annotation, and whether the spelling stop counts
+#: it: the annotations pydantic, a ``TypedDict``, a dataclass or a decorator
+#: read at run time count, and those only the type check reads do not.
+ANNOTATION_CONTROLS = {
+    "a_class_body_field": (f"class Envelope:\n    carried: {CARRIER}\n", True),
+    "a_field_of_a_class_defined_inside_a_function": (
+        f"def f():\n    class Envelope:\n        carried: {CARRIER}\n",
+        True,
+    ),
+    "a_decorated_signature": (
+        f"@validate_call\ndef f(carried: {CARRIER}) -> None:\n    return None\n",
+        True,
+    ),
+    "a_decorated_return": (
+        f"@validate_call\ndef f() -> {CARRIER}:\n    raise NotImplementedError\n",
+        True,
+    ),
+    "an_undecorated_parameter": (
+        f"def f(carried: {CARRIER}) -> None:\n    return None\n",
+        False,
+    ),
+    "an_undecorated_return": (
+        f"def f() -> {CARRIER}:\n    raise NotImplementedError\n",
+        False,
+    ),
+    "a_variable_inside_a_function": (
+        f"def f():\n    held: {CARRIER} | None = None\n    return held\n",
+        False,
+    ),
+    "a_module_level_variable": (f"held: {CARRIER} | None = None\n", False),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(ANNOTATION_CONTROLS))
+def test_an_annotation_spells_a_carrier_exactly_where_it_is_read_at_run_time(kind):
+    """Each kind of annotation, counted or not, one row each."""
+    source, counted = ANNOTATION_CONTROLS[kind]
+    spelled = spelled_sites(ast.parse(source), words={CARRIER})
+    assert bool(spelled) is counted
+
+
+async def test_a_tracker_body_that_is_a_whole_ticket_draft_is_captured_as_text():
+    """The behaviour the stop guards, pinned through the adapter and the stage.
+
+    The subject's body is a complete ticket draft, serialised: the one body a
+    parse into a draft would succeed on.  The criteria stage, reading through
+    the real adapter, still captures the tracker arm with the body unchanged,
+    and the formatter renders it back byte for byte.
+    """
+    draft = next(iter(tickets()))
+    body = draft.model_dump_json(by_alias=True)
+    server = fixture_server()
+    subject, criterion = "subject/draft-shaped", "condition/draft-shaped"
+    server.issues.update(
+        {
+            subject: FakeMcpIssue(
+                id=subject,
+                labels=FIRE_ENTRY_LABELS,
+                description=body,
+                updated_at=FIXTURE_NOW,
+            ),
+            criterion: FakeMcpIssue(
+                id=criterion,
+                parent_id=subject,
+                labels=["acceptance-condition"],
+                description="**Check:** The behavior is observable.",
+                status="Todo",
+                status_type=STATE_TYPES["Todo"],
+            ),
+        }
+    )
+
+    spec, _ = await TrackerCriteria(tracker=tracker_over(server)).read_entry(
+        issue_key=subject
+    )
+
+    assert type(spec) is TrackerSpec
+    assert spec.body == body
+    assert format_fire_spec(spec) == body
