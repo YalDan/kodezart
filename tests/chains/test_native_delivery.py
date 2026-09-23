@@ -1,7 +1,7 @@
 """The production native constructor runs the actual fire/delivery graph."""
 
+import collections
 import json
-from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -57,12 +57,14 @@ from tests.chains.test_native_fire import (
     CountingTracker,
     NativeExecutor,
     NativeSourceReader,
-    callers_of,
+    calls_to,
     change_tracker,
     engine,
+    function_at,
     native_evaluation,
     node_of,
     persisted_artifact,
+    reached_through_callers,
 )
 from tests.chains.test_native_fresh_boundaries import prepare
 from tests.fakes import (
@@ -605,17 +607,33 @@ async def test_paused_terminal_requires_current_pr_without_repeating_delivery(da
 # ---------------------------------------------------------------------------
 
 #: Every node whose effect waits on the snapshot barrier, derived from the
-#: shipped tree: every function that calls it, however it is spelled.  A
-#: node that goes through a helper is recorded as the helper, which is what
-#: the other nodes call (KOD-652).
-SNAPSHOT_GATED_NODES = callers_of(require_current_native_snapshot)
+#: shipped tree: every function that calls it, however it is spelled, and
+#: every function that calls one of those.  A node that reaches the barrier
+#: through a helper is a gated node too, beside the helper (KOD-652).
+SNAPSHOT_GATED_NODES = reached_through_callers(require_current_native_snapshot)
+
+#: How many calls in each gated node reach the barrier: a call to the
+#: barrier itself, or to another gated node.  Each such call is a route by
+#: which a carried-in set can meet the barrier, so each needs its own reach.
+SNAPSHOT_GATED_ROUTES = dict(
+    collections.Counter(
+        calls_to(
+            require_current_native_snapshot,
+            *filter(None, map(function_at, SNAPSHOT_GATED_NODES)),
+        )
+    )
+)
 
 #: The lane's open pull request, as a delivery that opened it records it.
 GATED_PR = LanePR(url="https://github.com/owner/repo/pull/17", number=17, state="open")
 
 
-def work_defect_delivery() -> LaneDelivery:
-    """A completed delivery whose red checks await one work-defect round."""
+def work_defect_delivery(*, remediation_pending: bool = True) -> LaneDelivery:
+    """A completed delivery whose red checks are a work defect.
+
+    Pending one round by default; without one it is the terminal a lane
+    whose rounds are spent completes with.
+    """
     observation = ObservedChecks(
         commit_sha=SHA,
         checks_passed=False,
@@ -628,7 +646,7 @@ def work_defect_delivery() -> LaneDelivery:
         "red_class": CheckRedClass.WORK_DEFECT,
         "no_run_at_ref": False,
         "stalled": False,
-        "remediation_pending": True,
+        "remediation_pending": remediation_pending,
     }
     return LaneDelivery(
         lane_key=SUBJECT,
@@ -644,48 +662,190 @@ def work_defect_delivery() -> LaneDelivery:
     )
 
 
-#: How each gated node is driven, one hand-written line per node.  Which
-#: nodes exist is read off the tree; requiring the two to agree is what
-#: makes the refusal below a statement about every gated node.
-SNAPSHOT_GATED_REACH = {
-    node_of(RalphWorkflowEngine._merge_to_feature): lambda at: (
-        at.lane.fire._merge_to_feature(at.state, at.config)
-    ),
-    node_of(RalphWorkflowEngine._land_best_iteration): lambda at: (
-        at.lane.fire._land_best_iteration(at.state, at.config)
-    ),
-    node_of(RalphWorkflowEngine._complete_node): lambda at: at.lane.fire._complete_node(
-        at.state, at.config
-    ),
-    node_of(NativeLaneWorkflow._deliver): lambda at: at.lane._deliver(
-        at.state, at.config
-    ),
-    node_of(NativeLaneWorkflow._remediate): lambda at: at.lane._remediate(
-        {**at.state, "delivery": CompletedLaneDelivery(result=work_defect_delivery())},
-        at.config,
-    ),
-    node_of(NativeLaneWorkflow._complete): lambda at: at.lane._complete(
-        {
-            **at.state,
-            "delivery": SkippedLaneDelivery(
-                outcome=WorkflowOutcome.zero_commit_no_pr,
-                reason="The fire stopped before delivery",
-            ),
-        },
-        at.config,
-    ),
-    node_of(LaneDeliveryCoordinator.deliver): lambda at: at.lane._delivery.deliver(
+class GatedLane:
+    """One composed lane, and the moment a persisted set reaches its state.
+
+    The state starts on the tracker's own roster, so every barrier a route
+    passes before the set arrives holds.  ``arrive`` puts the persisted
+    document in its place and records everything outward so far; the
+    refusal is then checked against that record, so nothing outward may
+    happen between the arrival and the refusal.
+    """
+
+    def __init__(self, *, lane, state, config, wire, executor, tracker, lane_state):
+        self.lane, self.state, self.config = lane, state, config
+        self.context = ExecutionContext.from_configurable(config)
+        self.wire, self.executor = wire, executor
+        self.tracker, self.lane_state = tracker, lane_state
+        self.events = []
+        self.arrived = None
+
+    def outward(self):
+        """Every effect beyond the node, as far as the fixture observes it."""
+        consolidation = self.lane.fire.consolidation
+        return {
+            "consolidations": list(consolidation._merger.calls),
+            "landed refs": list(consolidation._ref_publisher.calls),
+            "forge requests": list(self.wire.requests),
+            "remote git reads": list(self.lane._delivery._git.calls),
+            "lane records": list(self.lane_state.pull_requests),
+            "remediation drafts": list(self.executor.remediation_prompts),
+            "stream events": list(self.events),
+            "tracker issues": dict(self.tracker.issues),
+            "tracker reads": (self.tracker.spec_reads, self.tracker.subtree_reads),
+        }
+
+    def arrive(self):
+        """The persisted set reaches the state, here and now."""
+        self.state["criterion_set"] = persisted_artifact()
+        self.arrived = self.outward()
+
+    def entered(self):
+        """The state as it enters a node that holds the set from the start."""
+        self.arrive()
+        return self.state
+
+
+class ArrivingGate(PassThroughGate):
+    """The content gate, as the persisted set arrives on clearing *destination*."""
+
+    def __init__(self, at: GatedLane, destination: OutboundDestination) -> None:
+        super().__init__()
+        self.at, self.destination = at, destination
+
+    async def gate(self, **kwargs):
+        cleared = await super().gate(**kwargs)
+        if kwargs["destination"] is self.destination:
+            self.at.arrive()
+        return cleared
+
+
+def deliver_through(at, *, remediation_available=True):
+    """The coordinator's delivery of the lane state *at* holds."""
+    return at.lane._delivery.deliver(
         state=at.state,
         context=at.context,
         stalled=False,
-        remediation_available=True,
-    ),
-    node_of(LaneDeliveryCoordinator._require_current): lambda at: (
-        at.lane._delivery._require_current(at.state, at.context, GATED_PR)
-    ),
-    node_of(LaneDeliveryCoordinator._open_pr): lambda at: at.lane._delivery._open_pr(
-        at.state, at.context
-    ),
+        remediation_available=remediation_available,
+    )
+
+
+def deliver_entering(at):
+    """The set is in the state from the start of the delivery."""
+    at.entered()
+    return deliver_through(at)
+
+
+def deliver_opening_the_pr(at):
+    """The set arrives as the new PR's body clears, before it is created."""
+    at.lane._delivery._gate = ArrivingGate(at, OutboundDestination.PR_BODY)
+    return deliver_through(at)
+
+
+def deliver_commenting_on_red_checks(at):
+    """Red checks with no round left: the set arrives as the comment clears."""
+    at.wire.red_first = True
+    at.lane._delivery._gate = ArrivingGate(at, OutboundDestination.PR_COMMENT)
+    return deliver_through(at, remediation_available=False)
+
+
+def deliver_returning_green_checks(at):
+    """Green checks: the set arrives once they are observed, before the return."""
+    ci = at.lane._delivery._ci
+    watch = ci.wait_for_checks
+
+    async def watched(**kwargs):
+        observed = await watch(**kwargs)
+        at.arrive()
+        return observed
+
+    ci.wait_for_checks = watched
+    return deliver_through(at)
+
+
+def deliver_step_handing_to_the_coordinator(at):
+    """A reviewed, merged fire: the set arrives as the step hands it over."""
+    coordinator = at.lane._delivery
+    deliver = coordinator.deliver
+
+    async def handed(**kwargs):
+        at.arrive()
+        return await deliver(**kwargs)
+
+    coordinator.deliver = handed
+    at.state.update(merged=True, review_passed=True)
+    return at.lane._deliver(at.state, at.config)
+
+
+#: How each gated node is driven, one hand-written entry per route.  Which
+#: nodes exist and how many routes each has are read off the tree; requiring
+#: the reach table to agree with both is what makes the refusal below a
+#: statement about every route of every gated node.
+#:
+#: The routes were found by reading each node: every call in it that reaches
+#: the barrier, directly or through another gated node, and the arm of the
+#: node that takes it.  A route whose call comes first is driven with the set
+#: in the state from the start; a later one is driven through the node's
+#: earlier barriers on the tracker's roster, with the set arriving just
+#: before that call.
+SNAPSHOT_GATED_REACH = {
+    node_of(RalphWorkflowEngine._merge_to_feature): {
+        "entry": lambda at: at.lane.fire._merge_to_feature(at.entered(), at.config),
+    },
+    node_of(RalphWorkflowEngine._land_best_iteration): {
+        "entry": lambda at: at.lane.fire._land_best_iteration(at.entered(), at.config),
+    },
+    node_of(RalphWorkflowEngine._complete_node): {
+        "entry": lambda at: at.lane.fire._complete_node(at.entered(), at.config),
+    },
+    node_of(NativeLaneWorkflow._deliver): {
+        "entry": lambda at: at.lane._deliver(at.entered(), at.config),
+        "coordinator": deliver_step_handing_to_the_coordinator,
+    },
+    node_of(NativeLaneWorkflow._remediate): {
+        "entry": lambda at: at.lane._remediate(
+            {
+                **at.entered(),
+                "delivery": CompletedLaneDelivery(result=work_defect_delivery()),
+            },
+            at.config,
+        ),
+    },
+    node_of(NativeLaneWorkflow._complete): {
+        "completed": lambda at: at.lane._complete(
+            {
+                **at.entered(),
+                "delivery": CompletedLaneDelivery(
+                    result=work_defect_delivery(remediation_pending=False)
+                ),
+            },
+            at.config,
+        ),
+        "skipped": lambda at: at.lane._complete(
+            {
+                **at.entered(),
+                "delivery": SkippedLaneDelivery(
+                    outcome=WorkflowOutcome.zero_commit_no_pr,
+                    reason="The fire stopped before delivery",
+                ),
+            },
+            at.config,
+        ),
+    },
+    node_of(LaneDeliveryCoordinator.deliver): {
+        "entry": deliver_entering,
+        "opening the PR": deliver_opening_the_pr,
+        "comment on red checks": deliver_commenting_on_red_checks,
+        "return on green checks": deliver_returning_green_checks,
+    },
+    node_of(LaneDeliveryCoordinator._require_current): {
+        "entry": lambda at: at.lane._delivery._require_current(
+            at.entered(), at.context, GATED_PR
+        ),
+    },
+    node_of(LaneDeliveryCoordinator._open_pr): {
+        "entry": lambda at: at.lane._delivery._open_pr(at.entered(), at.context),
+    },
 }
 
 
@@ -700,52 +860,65 @@ def test_every_derived_gated_node_has_a_reach_and_every_reach_a_node():
     assert set(SNAPSHOT_GATED_NODES) == set(SNAPSHOT_GATED_REACH)
 
 
-@pytest.mark.parametrize("node", sorted(SNAPSHOT_GATED_REACH), ids=":".join)
+def test_every_route_to_the_barrier_has_its_own_reach():
+    """Each gated node has one reach per call of its that reaches the barrier.
+
+    A new arm that reaches the barrier by its own call, directly or through
+    a helper, needs its own entry; an arm that stops reaching it leaves one
+    behind (KOD-652).
+    """
+    assert {
+        node: len(routes) for node, routes in SNAPSHOT_GATED_REACH.items()
+    } == SNAPSHOT_GATED_ROUTES
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        (*node, arm)
+        for node in sorted(SNAPSHOT_GATED_REACH)
+        for arm in SNAPSHOT_GATED_REACH[node]
+    ],
+    ids=":".join,
+)
 async def test_a_persisted_set_is_refused_at_every_snapshot_gated_node(
-    node, monkeypatch
+    route, monkeypatch
 ):
     """No gated node lands, delivers or writes on a carried-in set (KOD-652).
 
-    Each node is driven with the lane's own prepared state, holding the
-    subject's tracker spec and, as its criterion set, a persisted criteria
-    document. The node raises the persisted-set refusal, and nothing outward
-    has happened by then: no consolidation or landed ref, no forge request,
-    no lane record, no remediation draft, no terminal event, and neither a
-    tracker read nor a tracker write.
+    Each route is driven with the lane's own prepared state, holding the
+    subject's tracker spec and the tracker's own roster, until a persisted
+    criteria document takes the roster's place.  The node raises the
+    persisted-set refusal, and nothing outward has happened since the set
+    arrived: no consolidation or landed ref, no forge request, no remote git
+    read, no lane record, no remediation draft, no stream event, and neither
+    a tracker read nor a tracker write.
     """
     lane, state, config, wire, forge, executor, tracker, lane_state = composed(rounds=1)
     try:
-        spec, _ = await lane.fire.criteria.read_entry(issue_key=SUBJECT)
-        state = {
-            **state,
-            "issue_key": SUBJECT,
-            "fire_spec": spec,
-            "feature_tip_sha": SHA,
-            "criterion_set": persisted_artifact(),
-        }
-        events = []
-        for module in (native_delivery, ralph_workflow):
-            monkeypatch.setattr(module, "get_stream_writer", lambda: events.append)
-        issues = dict(tracker.issues)
-        reads = (tracker.spec_reads, tracker.subtree_reads)
-        at = SimpleNamespace(
+        spec, roster = await lane.fire.criteria.read_entry(issue_key=SUBJECT)
+        at = GatedLane(
             lane=lane,
-            state=state,
+            state={
+                **state,
+                "issue_key": SUBJECT,
+                "fire_spec": spec,
+                "feature_tip_sha": SHA,
+                "criterion_set": roster,
+            },
             config=config,
-            context=ExecutionContext.from_configurable(config),
+            wire=wire,
+            executor=executor,
+            tracker=tracker,
+            lane_state=lane_state,
         )
+        for module in (native_delivery, ralph_workflow):
+            monkeypatch.setattr(module, "get_stream_writer", lambda: at.events.append)
 
         with pytest.raises(PersistedCriterionSetError):
-            await SNAPSHOT_GATED_REACH[node](at)
+            await SNAPSHOT_GATED_REACH[route[:2]][route[2]](at)
 
-        assert lane.fire.consolidation._merger.calls == []
-        assert lane.fire.consolidation._ref_publisher.calls == []
-        assert wire.requests == []
-        assert lane._delivery._git.calls == []
-        assert lane_state.pull_requests == []
-        assert executor.remediation_prompts == []
-        assert events == []
-        assert tracker.issues == issues
-        assert (tracker.spec_reads, tracker.subtree_reads) == reads
+        assert at.arrived is not None, "the persisted set never reached the node"
+        assert at.outward() == at.arrived
     finally:
         await forge.close()
