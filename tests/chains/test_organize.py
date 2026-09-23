@@ -2,6 +2,7 @@
 
 import ast
 import functools
+import importlib
 import inspect
 from collections import Counter
 from collections.abc import AsyncIterator, Sequence
@@ -18,9 +19,11 @@ from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.domain.errors import (
     OrganizeAdmissionIdentityError,
     OrganizeWriteRefusalError,
+    ScopeReadError,
 )
 from kodezart.domain.gap import compute_gap
-from kodezart.domain.organize import organize_at_rest, organize_gap
+from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
+from kodezart.domain.organize import organize_at_rest, organize_gap, stage_unlabelled
 from kodezart.services import organize_owner
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_sessions import judge_in_workspace
@@ -72,6 +75,7 @@ from tests.fakes import (
 from tests.name_resolution import (
     call_sites,
     defining_module,
+    loaded_values,
     module_namespace,
     modules_reaching,
     parsed,
@@ -1408,6 +1412,26 @@ CHANGE_STAMP_FIELDS = frozenset(
 #: them are not the modules reaching the other, so the exact bound below
 #: reds when either is dropped.
 GAP_ARITHMETIC = (compute_gap, organize_gap)
+
+
+@functools.cache
+def gap_home_functions():
+    """Every function a gap home defines, read off the module objects.
+
+    The homes are the modules defining ``GAP_ARITHMETIC``; every function
+    whose ``__module__`` is one of them is inside the arithmetic — ``in_gap``,
+    ``organize_at_rest`` and each stage helper beside them — so a definition
+    referring to any one of them is a call site of the arithmetic.
+    """
+    homes = sorted({value.__module__ for value in GAP_ARITHMETIC})
+    return tuple(
+        value
+        for home in homes
+        for value in vars(importlib.import_module(home)).values()
+        if inspect.isfunction(value) and value.__module__ == home
+    )
+
+
 #: Every supplied module the reach below finds, re-measured off the tree
 #: rather than chosen.  A change to it is a change to where the gap can be
 #: computed, which is the surface this guard speaks for.
@@ -1443,8 +1467,10 @@ GAP_COMPUTATION_MODULES = frozenset(
 #: arithmetic found by object.  A module that newly spells the stamp arrives
 #: here as a decision with its reason written down, or reds.  The register is
 #: kept per module, so a new read inside a module already here is not seen by
-#: it: the trap below holds it when the arithmetic runs it, and the call-site
-#: scan holds it when the reading function refers to the arithmetic.
+#: it: the trap below holds it when the arithmetic, or a call site the
+#: fixtures can run, runs it; and the call-site scan holds it when the
+#: reading function refers to a function of a gap home, by the stamp's
+#: spelling or by the value a name it loads is bound to.
 CHANGE_STAMP_READERS = {
     "adapters/linear/tracker.py": "The adapter: it reads the stamp off the wire "
     "and exposes it, and scans by recency, which the Check allows.",
@@ -1613,16 +1639,36 @@ def test_every_module_that_reads_the_change_stamp_is_registered_with_its_reason(
     assert readers.keys().isdisjoint(gap_computation_sites(source_tree()))
 
 
+def change_stamp_values(relative, tree, namespace, node):
+    """The stamp fields a definition reads by value: a name bound to one.
+
+    Every loaded name and attribute inside *node*, resolved through the
+    module's globals and its imports (``loaded_values``); one bound to a
+    string that is a change-stamp field is a read of it, however the name is
+    spelled — a constant in the module, or one imported from another.
+    """
+    return {
+        value
+        for value in loaded_values(relative, tree, namespace, node)
+        if isinstance(value, str) and value in CHANGE_STAMP_FIELDS
+    }
+
+
 @functools.cache
 def _arithmetic_sites_of(relative, source):
     """One module's call sites of the arithmetic, with what each reads."""
+    tree = _parsed_once(source)
+    namespace = module_namespace(relative, source)
     return tuple(
-        (name, frozenset(change_stamp_reads(node)))
+        (
+            name,
+            frozenset(
+                change_stamp_reads(node)
+                | change_stamp_values(relative, tree, namespace, node)
+            ),
+        )
         for name, node in referencing_definitions(
-            relative,
-            _parsed_once(source),
-            module_namespace(relative, source),
-            wanted=GAP_ARITHMETIC,
+            relative, tree, namespace, wanted=gap_home_functions()
         )
     )
 
@@ -1630,15 +1676,20 @@ def _arithmetic_sites_of(relative, source):
 def arithmetic_call_sites(sources):
     """``(module, definition)`` -> what it reads of the stamp, per call site.
 
-    A call site is a definition whose text refers to a member of
-    ``GAP_ARITHMETIC`` by object, called or not: under an aliased import, an
-    import inside the function, a relative import, a module-level rebinding,
-    a ``functools.partial``, a static method, loaded as a value and handed
-    on, or named by a string constant as ``module:attr`` or ``module.attr``
-    (``referencing_definitions``).  Each is scanned whole for a read of the
-    stamp.  Out of reach: a function handed the arithmetic or its answer
-    across a call — by argument, attribute or callback — and a name built at
-    run time.
+    A call site is a definition whose text refers to a function of a gap
+    home by object (``gap_home_functions``), called or not: under an aliased
+    import, an import inside the function, a relative import, a module-level
+    rebinding, a ``functools.partial``, a static method, loaded as a value
+    and handed on, named by a string constant as ``module:attr`` or
+    ``module.attr``, or taken as an attribute off a call handed a string
+    naming its module (``referencing_definitions``).  Each is scanned whole
+    for the stamp's spelling (``change_stamp_reads``) and for a loaded name
+    bound to a stamp field, in its module or through an import
+    (``change_stamp_values``).  Out of reach: a function handed the
+    arithmetic or its answer across a call — by argument, attribute or
+    callback — a name built at run time, and a read through a model property
+    or method, which only running the site shows; the call sites the
+    fixtures can run are run under the trap below.
     """
     return {
         (relative, name): reads
@@ -1659,8 +1710,9 @@ def test_no_call_site_of_the_arithmetic_found_by_object_reads_the_change_stamp()
     """The arithmetic's call sites are found by the objects, and read no stamp.
 
     Every call site is inside the gap's reach, which ties the two readings
-    together: a site the reach misses — one that names the arithmetic by a
-    string constant rather than importing it — reds here.  No registered
+    together: a site the reach misses reds here.  A string naming a function
+    of a gap home, or its module, is an import edge of the reach as well as a
+    reference, so the two readings see it alike.  No registered
     reader of the stamp is a call site: a module kept on the register for a
     reason of its own that starts to refer to the arithmetic reds, whatever
     it reads.
@@ -1733,6 +1785,23 @@ CALL_SITE_ROUTES = {
     "def plan(criteria, since):\n"
     "    window = pkgutil.resolve_name('kodezart.domain.organize.organize_gap')\n"
     "    return [c for c in window(**criteria){READ}]\n",
+    "predicate_named_as_module_colon_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    still_open = pkgutil.resolve_name('kodezart.domain.gap:in_gap')\n"
+    "    return [\n"
+    "        c for c in criteria if still_open(c, supersession_ref=None){READ}\n"
+    "    ]\n",
+    "attribute_off_the_resolving_call": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = pkgutil.resolve_name('kodezart.domain:gap').compute_gap\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "at_rest_named_as_module_dot_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since, board):\n"
+    "    at_rest = pkgutil.resolve_name('kodezart.domain.organize.organize_at_rest')\n"
+    "    return [c for c in criteria if at_rest(**board){READ}]\n",
 }
 
 
@@ -1760,13 +1829,28 @@ def test_a_call_site_of_the_arithmetic_is_found_by_object_and_scanned(route, rea
     )
 
 
-def test_a_registered_reader_that_refers_to_the_arithmetic_is_a_call_site():
+#: Each way a registered reader can name a function of a gap home without
+#: importing it: the text that binds ``window`` inside the planted function.
+REGISTERED_READER_REFERENCES = {
+    "compute_gap as module:attr": "pkgutil.resolve_name("
+    "'kodezart.domain.gap:compute_gap')",
+    "in_gap as module:attr": "pkgutil.resolve_name('kodezart.domain.gap:in_gap')",
+    "organize_at_rest as module.attr": "pkgutil.resolve_name("
+    "'kodezart.domain.organize.organize_at_rest')",
+    "attribute off the call naming its module": "pkgutil.resolve_name("
+    "'kodezart.domain:gap').compute_gap",
+}
+
+
+@pytest.mark.parametrize("reference", sorted(REGISTERED_READER_REFERENCES))
+def test_a_registered_reader_that_refers_to_the_arithmetic_is_a_call_site(reference):
     """A module on the register reds the moment it refers to the arithmetic.
 
-    The planted function names the arithmetic by a string constant, so it
-    imports nothing the reach could follow, and it sits in a module that
-    already spells the stamp, so the register's keys do not move.  Found by
-    object, it is a call site, which a registered reader may not hold.
+    The planted function names a function of a gap home by a string
+    constant, so it imports nothing, and it sits in a module that already
+    spells the stamp, so the register's keys do not move.  Found by object,
+    it is a call site, which a registered reader may not hold; and the
+    string names the home's module, so the reach takes the reader in too.
     """
     sources = source_tree()
     sources["services/pass_gate.py"] += (
@@ -1774,18 +1858,76 @@ def test_a_registered_reader_that_refers_to_the_arithmetic_is_a_call_site():
         "def recent_gap(criteria, since):\n"
         "    import pkgutil\n"
         "\n"
-        "    window = pkgutil.resolve_name('kodezart.domain.gap:compute_gap')\n"
-        "    return [\n"
-        "        c for c in window(criteria, supersession_refs={})"
-        " if c.updated_at > since\n"
-        "    ]\n"
+        f"    window = {REGISTERED_READER_REFERENCES[reference]}\n"
+        "    return [c for c in criteria if window and c.updated_at > since]\n"
     )
 
     assert registered_readers_holding_a_call_site(sources) == ["services/pass_gate.py"]
     assert arithmetic_call_sites(sources)[
         ("services/pass_gate.py", "recent_gap")
     ] == frozenset({"updated_at"})
-    assert "services/pass_gate.py" not in gap_computation_sites(sources)
+    assert "services/pass_gate.py" in gap_computation_sites(sources)
+
+
+#: Each way a call site reads a stamp field through a name bound to it, as
+#: the definition text; ``{FIELD}`` is where a constant is named, and the
+#: rows' second text is the same definition naming a field that is no stamp.
+STAMP_VALUE_ROUTES = {
+    "constant in the module": (
+        "STAMP_FIELD = 'updated_at'\n"
+        "\n"
+        "def plan(criteria):\n"
+        "    return sorted(\n"
+        "        compute_gap(criteria, supersession_refs={}),\n"
+        "        key=lambda c: getattr(c, STAMP_FIELD),\n"
+        "    )\n",
+        "updated_at",
+    ),
+    "constant imported inside the function": (
+        "def plan(criteria):\n"
+        "    from kodezart.adapters.linear.tracker import _ORDER_BY_UPDATED_AT\n"
+        "\n"
+        "    return [\n"
+        "        getattr(c, _ORDER_BY_UPDATED_AT)\n"
+        "        for c in compute_gap(criteria, supersession_refs={})\n"
+        "    ]\n",
+        "updatedAt",
+    ),
+    "attribute of an imported module": (
+        "import kodezart.adapters.linear.tracker as wire\n"
+        "\n"
+        "def plan(criteria):\n"
+        "    return [\n"
+        "        getattr(c, wire._ORDER_BY_UPDATED_AT)\n"
+        "        for c in compute_gap(criteria, supersession_refs={})\n"
+        "    ]\n",
+        "updatedAt",
+    ),
+}
+
+
+@pytest.mark.parametrize("route", sorted(STAMP_VALUE_ROUTES))
+def test_a_call_site_reading_the_stamp_through_a_bound_name_reads_it(route):
+    """A name bound to a stamp field is a read of the field, by its value.
+
+    Planted beside an import of the arithmetic, so the definition is a call
+    site; its own text never spells the stamp.  The same definition with
+    the name bound to a field that is no stamp reads nothing.
+    """
+    text, field = STAMP_VALUE_ROUTES[route]
+    header = "from kodezart.domain.gap import compute_gap\n\n"
+    other = text.replace("'updated_at'", "'body_digest'").replace(
+        "_ORDER_BY_UPDATED_AT", "_ORDER_BY_BODY"
+    )
+    planted = {**source_tree(), "services/planted.py": header + text}
+    control = {**source_tree(), "services/planted.py": header + other}
+
+    definition = next(
+        node for node in ast.walk(ast.parse(text)) if isinstance(node, ast.FunctionDef)
+    )
+    assert change_stamp_reads(definition) == set()
+    assert arithmetic_call_sites(planted)[("services/planted.py", "plan")] == {field}
+    assert arithmetic_call_sites(control)[("services/planted.py", "plan")] == set()
 
 
 class ChangeStampRead(BaseException):
@@ -2018,10 +2160,14 @@ def arithmetic_cases(stamp):
 
 
 def arithmetic_outcome(entry, arguments, records):
-    """What one entry point answers: its records by position, or its refusal."""
+    """What one entry point answers: its records by position, or its refusal.
+
+    A record answered by its key is read at the position of the record
+    carrying that key; a subtree read refuses as a scope read error.
+    """
     try:
         answer = entry(**arguments)
-    except ValueError as refusal:
+    except (ValueError, ScopeReadError) as refusal:
         return ("refused", str(refusal))
     if isinstance(answer, bool):
         return ("answered", answer)
@@ -2031,7 +2177,7 @@ def arithmetic_outcome(entry, arguments, records):
             position
             for item in answer
             for position, each in enumerate(records)
-            if each is item
+            if each is item or (isinstance(item, str) and each.issue_key == item)
         ),
     )
 
@@ -2153,6 +2299,206 @@ def test_the_arithmetic_answers_alike_whatever_the_change_stamp_holds(case, vari
     assert reads == []
 
 
+def call_site_cases(stamp):
+    """Each call site found by object that runs on the arithmetic's fixtures.
+
+    ``case -> (call site, keyword arguments, records)``, read as
+    ``arithmetic_cases`` is, every record's change stamp ``stamp(n)``.  The
+    arms reached.  ``open_criteria``: open and completed criteria, two of
+    each state kind so an order the stamp imposes shows; an empty family;
+    and its refusal of a canceled or duplicate criterion with no supersession
+    reader.  ``SubtreeClosure.open_criterion_keys``, run on a closure over a
+    subject and a criterion of every state kind.  ``stage_unlabelled``: a
+    member owing the marker, one carrying it, and a criterion and a tracker
+    record that owe none; and its two refusals, a blank marker and a member
+    twice.
+    """
+    built = iter(range(1_000))
+
+    def record(key, **changes):
+        fixture = issue(key, f"Body for {key}", **changes)
+        return fixture.model_copy(update={"updated_at": stamp(next(built))})
+
+    kinds = tuple(
+        record(
+            f"criterion/{kind.value}/{copy}",
+            parent_key=SUBJECT,
+            issue_labels=["criterion"],
+            state_kind=kind,
+            state_name=kind.value,
+        )
+        for kind in WorkflowStateKind
+        for copy in (1, 2)
+    )
+    settled = tuple(
+        each
+        for each in kinds
+        if each.state_kind
+        not in {WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE}
+    )
+    subject = record(SUBJECT)
+    ref = ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
+    closure = SubtreeClosure(
+        facts={each.issue_key: each for each in (subject, *kinds)}, ref=ref
+    )
+    members = (
+        subject,
+        record("marked/1", issue_labels=[BODY_MARKER]),
+        record("tracker/1", issue_labels=["tracker"]),
+        kinds[0],
+        record("unmarked/1"),
+    )
+    return {
+        "open_criteria: open and completed criteria": (
+            open_criteria,
+            {"criteria": settled, "ref": ref},
+            settled,
+        ),
+        "open_criteria: an empty family": (
+            open_criteria,
+            {"criteria": (), "ref": ref},
+            (),
+        ),
+        "open_criteria refuses an unresolved supersession": (
+            open_criteria,
+            {"criteria": kinds, "ref": ref},
+            kinds,
+        ),
+        "SubtreeClosure.open_criterion_keys: every state kind": (
+            SubtreeClosure.open_criterion_keys,
+            {"self": closure},
+            (subject, *kinds),
+        ),
+        "stage_unlabelled: owing, carrying and exempt members": (
+            stage_unlabelled,
+            {"issues": members, "marker": BODY_MARKER},
+            members,
+        ),
+        "stage_unlabelled refuses a blank marker": (
+            stage_unlabelled,
+            {"issues": members, "marker": " "},
+            members,
+        ),
+        "stage_unlabelled refuses a member twice": (
+            stage_unlabelled,
+            {"issues": (*members, members[0]), "marker": BODY_MARKER},
+            members,
+        ),
+    }
+
+
+#: What each call-site case answers over records carrying ``BASELINE_STAMP``,
+#: written out as ``ARITHMETIC_OUTCOMES`` is.
+CALL_SITE_OUTCOMES = {
+    "open_criteria: open and completed criteria": (
+        "answered",
+        (0, 1, 2, 3, 4, 5, 6, 7),
+    ),
+    "open_criteria: an empty family": ("answered", ()),
+    "open_criteria refuses an unresolved supersession": (
+        "refused",
+        "criterion supersession resolution is unavailable: criterion/canceled/1, "
+        "criterion/canceled/2, criterion/duplicate/1, criterion/duplicate/2 "
+        "(scope: issue:subject/42)",
+    ),
+    "SubtreeClosure.open_criterion_keys: every state kind": (
+        "answered",
+        (1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14),
+    ),
+    "stage_unlabelled: owing, carrying and exempt members": ("answered", (0, 4)),
+    "stage_unlabelled refuses a blank marker": (
+        "refused",
+        "a stage roster requires a nonempty marker key",
+    ),
+    "stage_unlabelled refuses a member twice": (
+        "refused",
+        "a stage roster requires one record per issue",
+    ),
+}
+#: The call sites found by object that the arithmetic's fixtures cannot run,
+#: each with why; the trap does not reach them, and the call-site scan above
+#: is what reads them.
+CALL_SITES_NOT_RUN = {
+    ("chains/organize.py", "OrganizeAdmission.is_live"): "Async; reads the "
+    "current revision through the tracker port.",
+    ("composition/organize.py", "build_scope_organizer"): "The composition "
+    "root: it reads stage_rows over the configured mandates while it wires the "
+    "organizer, and needs the whole application configuration and its ports.",
+    ("services/mandate_graph.py", "observe_ruling_growth"): "Async; reads "
+    "criteria and ruling projections through the tracker port.",
+    ("services/organize_owner.py", "OrganizeOwner._proof_live"): "Async; a "
+    "method of the organize service, reading a snapshot through its ports.",
+    ("services/organize_owner.py", "OrganizeOwner._roster"): "A method of the "
+    "organize service, run on its resolved mandate and configuration.",
+    ("services/organize_owner.py", "OrganizeOwner._route"): "Async; a method "
+    "of the organize service, routing through its ports.",
+    ("services/organize_owner.py", "OrganizeOwner.run"): "Async; the organize "
+    "service's whole pass over its tracker, agent and gate ports.",
+    ("services/run_shape.py", "read_barren_tick"): "Async; reads criteria "
+    "through the tracker port.",
+    ("services/scope_tally.py", "observe_scope_tally"): "Async; reads the "
+    "scope through the tracker port.",
+}
+
+
+def call_site_objects(sources):
+    """Each call site found by object, as the object its module binds it to."""
+    found = {}
+    for module, name in arithmetic_call_sites(sources):
+        head, *rest = name.split(".")
+        found[(module, name)] = functools.reduce(
+            lambda value, part: getattr(value, part, None),
+            rest,
+            module_namespace(module, sources[module]).get(head),
+        )
+    return found
+
+
+def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
+    """The call sites outside the entry points are run where the fixtures can run them.
+
+    Every call site found by object that is not an entry point the trap
+    already runs is either a case of ``call_site_cases`` — ``open_criteria``,
+    ``SubtreeClosure.open_criterion_keys`` and ``stage_unlabelled`` — or named
+    in ``CALL_SITES_NOT_RUN`` with why: ``OrganizeAdmission.is_live``,
+    ``build_scope_organizer``, ``observe_ruling_growth``, the organize
+    service's ``_proof_live``, ``_roster``, ``_route`` and ``run``,
+    ``read_barren_tick`` and ``observe_scope_tally``, each of which needs a
+    tracker port, a service instance or the composition's wiring.  A new call
+    site reds here until it is one or the other.  Each case answers what it
+    was built for over the baseline stamp.
+    """
+    points = arithmetic_entry_points()
+    cases = call_site_cases(lambda _position: BASELINE_STAMP)
+    run = {id(entry) for entry, _arguments, _records in cases.values()}
+    sites = call_site_objects(source_tree())
+    outside = {site for site, value in sites.items() if id(value) not in points}
+
+    assert run <= {id(sites[site]) for site in outside}
+    assert {site for site in outside if id(sites[site]) not in run} == (
+        CALL_SITES_NOT_RUN.keys()
+    )
+    assert {
+        case: arithmetic_outcome(*arguments) for case, arguments in cases.items()
+    } == CALL_SITE_OUTCOMES
+
+
+@pytest.mark.parametrize("variant", STAMP_VARIANTS)
+@pytest.mark.parametrize("case", sorted(CALL_SITE_OUTCOMES))
+def test_a_call_site_answers_alike_whatever_the_change_stamp_holds(case, variant):
+    """A call site the fixtures can run never reads the change stamp.
+
+    Run the way the arithmetic is: with the stamp trapped, far in the past
+    and far in the future, each answers the same and no operation touches
+    the trap.
+    """
+    reads = []
+    entry, arguments, records = call_site_cases(stamp_variant(variant, reads))[case]
+
+    assert arithmetic_outcome(entry, arguments, records) == CALL_SITE_OUTCOMES[case]
+    assert reads == []
+
+
 @pytest.mark.parametrize(
     ("relative", "anchor", "planted"),
     [
@@ -2226,6 +2572,16 @@ IMPORT_ROUTES = {
     "def plan(criteria, since):\n"
     "    gap = importlib.import_module('kodezart.domain.gap')\n"
     "    return gap.compute_gap([c for c in criteria{READ}])\n",
+    "module_named_as_package_colon_module": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    arithmetic = pkgutil.resolve_name('kodezart.domain:gap')\n"
+    "    return arithmetic.compute_gap([c for c in criteria{READ}])\n",
+    "object_named_as_module_colon_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    still_open = pkgutil.resolve_name('kodezart.domain.gap:in_gap')\n"
+    "    return [c for c in criteria if still_open(c, supersession_ref=None){READ}]\n",
     "two_hops": "from kodezart.services.planted_helper import window\n"
     "\n"
     "def plan(criteria, since):\n"
