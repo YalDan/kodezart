@@ -4312,6 +4312,119 @@ async def test_a_lane_that_landed_its_best_re_enters_from_it_on_a_fresh_loop_bra
         await forge.close()
 
 
+async def test_a_stall_that_could_not_land_re_enters_at_its_best_iteration(monkeypatch):
+    """A second process resumes a stall that landed nothing, at its best commit.
+
+    Run one stalls lane A over two iterations of equal grading, so the best of
+    its two commits is the first and not the loop branch's tip. The stall exit
+    publishes that commit, and the consolidation answers that the branches
+    diverged, so the deliverable branch does not move: it still stands at its
+    base tip, which is this case's premise, observed by sha. The best commit
+    is one of the loop branch's own, and the stall exit records it as the
+    lane's next act. Run two shares only the board and the remote. Its entry
+    resolves the head from the record, finds the loop branch standing past it,
+    and cuts a fresh loop branch FROM THAT COMMIT, leaving the old loop branch
+    where it stands (KOD-705, KOD-96). Driven through the real composition,
+    so the arm is observed and not read off the code (KOD-875).
+    """
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    port = board(lanes=("A",))
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+
+    def cut_at_the_base(issue_key):
+        # The lane's deliverable branch stands on the remote from its mint, at
+        # the base tip it was cut from, so where it stands after the landing is
+        # a sha this walk holds and not a branch the remote lacks.
+        feature, loop = mint_lane_branches(issue_key)
+        committing = repos.current
+        repos.of(feature).publish()
+        repos.committing = committing
+        return feature, loop
+
+    monkeypatch.setattr(
+        "kodezart.chains.ralph_workflow.mint_lane_branches", cut_at_the_base
+    )
+    try:
+        publisher = WalkRefPublisher(repos)
+        first = resumable(
+            port=port,
+            repos=repos,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            merger=DivergentConsolidation(repos),
+            ref_publisher=publisher,
+            max_iterations=2,
+            evaluations=[
+                criteria_echo(keys=("A/check",), passed=set())
+                for _ in range(STALLED_TWO_ITERATION_GRADINGS)
+            ],
+        )
+        stalled = await bounded_walk(first, job="first-job", origin=FORGE_ORIGIN)
+
+        assert lane_failures(stalled) == ()
+        before = await lane_record(port, "A")
+        loop = before.branch
+        shas = repos.branches[loop].shas
+        deliverable = recorded_branches(record=before).deliverable_branch
+        # The premise, by sha: what the landing published is the loop's first
+        # commit and not its tip, the record's last act is that commit, and
+        # the deliverable branch still stands at the base tip it was cut from.
+        published = publisher.calls[0]["commit_sha"]
+        assert published == shas[0] != shas[-1]
+        assert before.commits[-1].sha == published
+        assert repos.head_of(deliverable) == TRUNK_SHA
+
+        minted = mint_spy(monkeypatch)
+        loop_names = loop_name_spy(monkeypatch)
+        second = resumable(
+            port=port,
+            repos=repos,
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            evaluations=one_check_echoes("A", rounds=4),
+        )
+        deliverable_heads: list[str | None] = []
+
+        async def mark() -> TickMark:
+            deliverable_heads.append(repos.head_of(deliverable))
+            return TickMark(
+                acquisitions=len(second.workspace.acquisitions),
+                prompts=len(second.executor.execution_prompts),
+                lane_mints=len(minted),
+                loop_names=len(loop_names),
+                record=await recorded_so_far(port, "A"),
+            )
+
+        events, marks = await walk_marking(
+            second, job="second-job", origin=FORGE_ORIGIN, mark=mark
+        )
+
+        assert lane_failures(events) == ()
+        entered = marks[0]
+        assert entered.record == before
+        # The deliverable branch still stood at its base tip when run two
+        # entered: the premise held at the entry, not only after run one.
+        assert deliverable_heads[0] == TRUNK_SHA
+        # The loop's first acquisition in run two is a CUT, from the best
+        # commit, onto a name that is not the recorded loop branch.
+        opened = opened_branch(
+            second.workspace.acquisitions, after=entered.acquisitions
+        )
+        assert opened["create_branch"] is True
+        assert opened["ref"] == published
+        assert opened["branch_name"] != loop
+        # One loop name drawn, from the recorded deliverable, and no lane mint.
+        assert loop_names == [deliverable]
+        assert minted == []
+        # The old loop branch did not move: nothing rewound or deleted it.
+        assert repos.branches[loop].head == shas[-1]
+    finally:
+        await forge.close()
+
+
 async def test_a_put_back_that_cannot_be_written_rests_that_lane_and_the_walk_goes_on(
     monkeypatch,
 ):
