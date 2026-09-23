@@ -995,6 +995,36 @@ def self_assigned(node: ast.ClassDef) -> frozenset[str]:
     )
 
 
+def consumer_classes(text: str, *, state: str, whole: str) -> dict[str, str]:
+    """Every empty-bodied class over *state*, with the consumer role it composes.
+
+    A class that declares nothing answers for a role that declares nothing:
+    the one whose composed declaring roles are exactly the ones its bases'
+    roles are and compose. A class matching no such role is left out, and
+    the one-role report names it.
+    """
+    register = port_module_text()
+    declaring = declaring_roles(register)
+    implemented = implementation_classes(text, state=state, whole=whole)
+    role_of = {name: role for role, name in class_per_role(implemented).items()}
+    by_closure = {
+        frozenset(composed(register, role) & declaring): role
+        for role in roles(register) - declaring
+    }
+    found: dict[str, str] = {}
+    for name, node in class_defs(text).items():
+        if name not in implemented or implemented[name]:
+            continue
+        answered: set[str] = set()
+        for base in node.bases:
+            if isinstance(base, ast.Name) and base.id in role_of:
+                role = role_of[base.id]
+                answered |= {role, *composed(register, role)} & declaring
+        if (consumer_role := by_closure.get(frozenset(answered))) is not None:
+            found[name] = consumer_role
+    return found
+
+
 def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ...]]:
     """Every role class whose bases are not exactly the role classes it needs.
 
@@ -1009,7 +1039,10 @@ def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ..
     declaring = declaring_roles(register)
     classes = class_defs(text)
     implemented = implementation_classes(text, state=state, whole=whole)
-    role_of = {name: role for role, name in class_per_role(implemented).items()}
+    role_of = {
+        **{name: role for role, name in class_per_role(implemented).items()},
+        **consumer_classes(text, state=state, whole=whole),
+    }
     definer = {
         member: name for name in implemented for member in bound_in_body(classes[name])
     }
@@ -1068,13 +1101,18 @@ def declared_by_role() -> dict[str, frozenset[str]]:
 
 def classes_outside_one_role(
     classes: Mapping[str, frozenset[str]],
+    consumers: Mapping[str, str] | None = None,
 ) -> dict[str, tuple[str, ...]]:
-    """Every class whose declared members are not exactly one role's."""
+    """Every class whose declared members are not exactly one role's.
+
+    A class *consumers* matches to a consumer role by composition answers
+    for that role and declares nothing, which is exactly its role's own.
+    """
     registers = set(declared_by_role().values())
     return {
         name: tuple(sorted(members))
         for name, members in sorted(classes.items())
-        if members not in registers
+        if members not in registers and name not in (consumers or {})
     }
 
 
