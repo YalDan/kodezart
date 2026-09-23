@@ -2885,8 +2885,9 @@ def routes_to(*functions):
 def callers_of(*functions):
     """Every function in the package that calls *functions*, found by identity.
 
-    A call counts when its callee resolves to the function object itself.
-    Followed, each held by a control over ``RESOLVER_PROBE`` below:
+    A call counts when its callee resolves to the function object itself,
+    in a ``def`` and an ``async def`` alike.  Followed, each held by a
+    control over ``RESOLVER_PROBE`` below:
 
     - a direct call, through a name whose module-level value IS the function
       (so an aliased import or a module-level rebinding counts);
@@ -2899,19 +2900,21 @@ def callers_of(*functions):
       ``self.<attribute>``, or an assignment from an annotated parameter;
     - a plain ``import a.b.c`` inside a function, which binds ``a`` to the
       top-level package, from which ``a.b.c.<function>`` reaches the
-      function attribute by attribute; ``import a.b as m`` and
-      ``from ... import <function> as x`` inside a function; and a module
-      alias;
-    - a name bound, in the calling function or one enclosing it, to any of
-      these by plain, chained or annotated assignment, by unpacking a tuple
-      into one of equal length with no starred target, by a walrus (and a
-      walrus as the callee), by a ``for`` or comprehension target over a
-      literal tuple or list, or by a positional or keyword-only parameter
-      default, followed to a fixed point;
+      function attribute by attribute; ``import a.b as m``,
+      ``from ... import <module> as m`` and ``from ... import <function> as
+      x`` inside a function; and a module alias;
+    - a name bound, in the calling function or one enclosing it (the call
+      made in a nested ``def``, ``async def`` or lambda), to any of these by
+      plain, chained or annotated assignment, by unpacking a tuple into one
+      of equal length with no starred target, by a walrus (and a walrus as
+      the callee), by a ``for`` or comprehension target over a literal
+      tuple or list, or by a positional or keyword-only parameter default,
+      followed to a fixed point;
     - a bound method held in a local (``check = self._require_current``,
       ``check = self._delivery._require_current``, or by a walrus), and an
       attribute narrowed through a local (``delivery = self._delivery``,
-      then ``delivery._require_current(...)``).
+      then ``delivery._require_current(...)``), in the calling function or
+      one enclosing it.
 
     A binding holds only in its own scope, so a same-named local of another
     function, a method of another class with the same name, and a
@@ -2919,10 +2922,10 @@ def callers_of(*functions):
 
     Not seen, and held unseen by the same control: a conditional
     expression; starred unpacking; a ``for`` over a name bound to a
-    sequence; a module bound to a local name; an instance held anywhere but
-    ``self``, a declared ``self`` attribute, or a local narrowed from one (a
-    parameter, a local it was built into); a mapping; ``functools.partial``;
-    and anything assembled at run time.
+    sequence; a module bound to a local name by assignment; an instance
+    held anywhere but ``self``, a declared ``self`` attribute, or a local
+    narrowed from one (a parameter, a local it was built into); a mapping;
+    ``functools.partial``; and anything assembled at run time.
 
     Each caller is recorded as ``(module, qualified name of the outermost
     function)``, so two modules or two classes never merge into one name,
@@ -3134,6 +3137,13 @@ class Gate:
     def walrus_method(self):
         (check := self._require_current)()
 
+    async def async_bound_method(self):
+        check = self._require_current
+        await check()
+
+    async def async_walrus_method(self):
+        await (check := self._require_current)()
+
 
 class Other:
     def _require_current(self):
@@ -3159,6 +3169,39 @@ class Piped:
         if gate is None:
             raise ValueError("no gate")
         gate._require_current()
+
+    async def async_bound_attribute_method(self):
+        check = self._gate._require_current
+        await check()
+
+    async def async_narrowed_attribute(self):
+        gate = self._gate
+        if gate is None:
+            raise ValueError("no gate")
+        await gate._require_current()
+
+    async def closure(self):
+        check = self._gate._require_current
+
+        async def inner():
+            await check()
+
+        await inner()
+
+    async def lambda_closure(self):
+        check = self._gate._require_current
+        run = lambda: check()
+        await run()
+
+    async def narrowed_closure(self):
+        gate = self._gate
+        if gate is None:
+            raise ValueError("no gate")
+
+        async def inner():
+            await gate._require_current()
+
+        await inner()
 
 
 class OptionalDeclared:
@@ -3204,6 +3247,19 @@ def direct(state):
     require_current_native_snapshot(state, reader=None)
 
 
+async def async_direct(state):
+    await require_current_native_snapshot(state, reader=None)
+
+
+async def async_assignment(state):
+    check = require_current_native_snapshot
+    await check(state, reader=None)
+
+
+async def async_default(state, check=require_current_native_snapshot):
+    await check(state, reader=None)
+
+
 def module_alias(state):
     _criteria.require_current_native_snapshot(state, reader=None)
 
@@ -3224,6 +3280,12 @@ def local_from_import(state):
     from kodezart.chains.criteria import require_current_native_snapshot as ask
 
     ask(state, reader=None)
+
+
+def local_module_from_import(state):
+    from kodezart.chains import criteria as crit
+
+    crit.require_current_native_snapshot(state, reader=None)
 
 
 def assignment(state):
@@ -3349,6 +3411,25 @@ RESOLVER_FOLLOWS = {
     "Gate.bound_method": "a bound method held in a local",
     "Gate.walrus_method": "a bound method held by a walrus",
     "Piped.narrowed_attribute": "an attribute narrowed through a local",
+    "local_module_from_import": "a from-import of a module inside a function",
+    "async_direct": "a direct call in an async function",
+    "async_assignment": "assignment, in an async function",
+    "async_default": "a positional default, in an async function",
+    "Gate.async_bound_method": "a bound method held in a local, in an async method",
+    "Gate.async_walrus_method": "a bound method held by a walrus, in an async method",
+    "Piped.async_bound_attribute_method": (
+        "self.<attribute>.<method> held in a local, in an async method"
+    ),
+    "Piped.async_narrowed_attribute": (
+        "an attribute narrowed through a local, in an async method"
+    ),
+    "Piped.closure": "a bound method held by the enclosing function, in a nested def",
+    "Piped.lambda_closure": (
+        "a bound method held by the enclosing function, in a lambda"
+    ),
+    "Piped.narrowed_closure": (
+        "an attribute narrowed by the enclosing function, in a nested def"
+    ),
 }
 
 #: The functions of the probe that must stay out: a same-named thing that is
