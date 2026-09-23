@@ -3,10 +3,10 @@
 ``docs/supervision-block.md`` is the block's text of record (KOD-872).  Both
 the block and the grooming template are read from disk here, so no text is
 copied into this module except the re-pointed references, which are the one
-place the template is allowed to differ from the block, the two amended base
-lines, each pinned whole as it is and as the base had it, the base's sha256,
-the template's layout, and the three prohibitions the amended base rule no
-longer states.
+place the template is allowed to differ from the block, the sha256 of each
+by-effect section, the two amended base lines, each pinned whole as it is and
+as the base had it, the base's sha256, the template's layout, and the three
+prohibitions the amended base rule no longer states.
 
 * Seven self-contained sections occur in the template byte for byte, heading
   and body: each one's whole extent, up to the next heading or top-level
@@ -29,7 +29,11 @@ longer states.
   cadence list the pass templates are held to.  Its limit: a temporal
   phrase that is on neither the table nor that list is not seen.  Read
   without the table, neither section names a ``## `` heading of the block
-  that the template does not head.
+  that the template does not head.  Each section is also pinned whole by
+  the sha256 of its extent: the table explains each difference from the
+  block, and the digest makes any change to either section, whatever its
+  spelling, a deliberate edit of this module, so a sentence and its row
+  cannot change together unseen.
 * Every adopted section sits between the base's top-level ``<tag>`` sections
   and never inside one, so adopting a section cannot edit a base section;
   the file is never replaced by the block.  The layout, every top-level tag
@@ -152,6 +156,18 @@ REPOINTED: dict[str, str] = {
     "theirs, not yours.": "Push what you composed so a human can look at it; "
     "opening the request is theirs, not yours, and a branch you push for "
     "verification is never work started on an issue.",
+}
+
+#: sha256 of each by-effect section's whole extent in the template, the
+#: extent the byte-identity test compares: heading, body and the blank line
+#: that follows.  REPOINTED explains each difference from the block; this
+#: pin makes any change to either section a deliberate edit of this module,
+#: whatever its spelling and whether or not its row changes with it.
+BY_EFFECT_SHA256: dict[str, str] = {
+    "Writer Discipline": (
+        "ff4541aac8cb17ea366631d2a976e3bb42740b8c735adb8faf3e499778704534"
+    ),
+    BOUNDARIES: "ee6b660e161d1b06cb7132e450a496f72cbe6881b8faaf42c9bf4fe9d9f4ecdf",
 }
 
 #: The three prohibitions removed from the base GitHub rule, because
@@ -371,6 +387,23 @@ def test_the_by_effect_sections_carry_every_sentence_and_differ_only_where_repoi
         differing |= {line for line in block_sentences if line not in adopted}
         assert adopted == [REPOINTED.get(line, line) for line in block_sentences]
     assert differing == set(REPOINTED)
+
+
+def test_the_by_effect_sections_are_pinned_whole():
+    """KOD-573, KOD-574: neither by-effect section changes with its row unseen.
+
+    The table and the checks beside it catch a sentence that differs from
+    the block without a row, and the spellings they name.  An edit made to
+    a sentence and to its row alike passes them; here it fails, whatever
+    its spelling, because each section's whole extent is pinned by its
+    sha256.
+    """
+    text = template_text()
+    digests = {
+        name: hashlib.sha256(template_section(text, name).encode("utf-8")).hexdigest()
+        for name in BY_EFFECT
+    }
+    assert digests == BY_EFFECT_SHA256
 
 
 def test_the_by_effect_sections_carry_no_cadence_word():
