@@ -708,20 +708,26 @@ def test_no_field_can_carry_a_session_observed_probe_outcome():
 
     Undemonstrability is resolved from configuration alone, so no model a session
     fills in may offer a seat for what a session claims to have observed about
-    this environment. The exact field names of every such model are pinned, so a
-    new field cannot appear unnoticed; the closing half is derived rather than
-    listed, because the shape to forbid is what a probe outcome IS: across these
-    models the only field that mentions the capability vocabulary at all is the
-    typed claim, which names a capability and no truth value; and across the whole
-    types package the only field pairing capabilities with truth values is the
-    repository's own declared environment, which is configuration.
+    this environment. The session-facing set is the closure of every model
+    reachable from the roots a session fills, nested ones included, and the exact
+    field names of every model in that closure are pinned, so a new field on a
+    root, a citation, a demonstration or a cost claim cannot appear unnoticed.
 
-    The session-facing set is the closure of every model reachable from those
-    roots, nested ones included, so a seat added to a citation, a demonstration
-    or a cost claim is seen; and within it no field may be a mapping to truth
-    values, whatever it is keyed by.
+    The snapshot is the net because the shape of a probe outcome cannot be told
+    apart from legitimate session-observed truth values by type alone: a
+    demonstration's satisfied_at_base and a cost measurement's affordable are
+    both booleans a session reports. The derived clauses below stay as a second
+    net and as the reason a new field must be read before the snapshot is
+    widened: across the closure the only field that mentions the capability
+    vocabulary at all is the typed claim, which names a capability and no truth
+    value; no field in the closure is a mapping to truth values, whatever it is
+    keyed by; and across the models declared in `kodezart.types.domain` the only
+    field pairing capabilities with truth values is the repository's own
+    declared environment, which is configuration.
     """
-    assert {model.__name__: set(model.model_fields) for model in SESSION_ROOTS} == {
+    session_models = _reachable_models(SESSION_ROOTS)
+    assert session_models
+    assert {model.__name__: set(model.model_fields) for model in session_models} == {
         "AmendmentClaim": {
             "subject",
             "stage",
@@ -752,10 +758,21 @@ def test_no_field_can_carry_a_session_observed_probe_outcome():
             "forbidden_class",
             "undeclared_switch_arms",
         },
+        "BaseCitation": {"path", "quote"},
+        "BaseDemonstration": {"command", "satisfied_at_base"},
+        "CostClaim": {"assertion", "measurement"},
+        "CostMeasurement": {"affordable", "observed"},
+        "CriterionSubject": {"kind", "id"},
+        "RulingSubject": {"kind", "id"},
+        "RecordedRefusal": {"kind", "record"},
+        "EscalatedRefusal": {"kind", "record", "escalation"},
+        "TrackerArtifact": {"native_ref", "surface", "content"},
+        "WriteBackFinding": {"verdict", "cited_refs", "evidence"},
+        "WriteBackResult": {"verdict", "rounds", "artifact"},
     }
     session_facing = {
         (model.__name__, name): field.annotation
-        for model in _reachable_models(SESSION_ROOTS)
+        for model in session_models
         for name, field in model.model_fields.items()
     }
     assert {
