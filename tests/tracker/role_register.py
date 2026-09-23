@@ -278,6 +278,54 @@ def roles(text: str) -> frozenset[str]:
     )
 
 
+def port_objects() -> dict[str, type]:
+    """The aggregate and every role, as the live classes the port module defines."""
+    module = importlib.import_module(TrackerPort.__module__)
+    return {
+        name: getattr(module, name)
+        for name in sorted(roles(port_module_text()) | {AGGREGATE})
+    }
+
+
+def surfaces_outside_the_port(
+    modules: Iterable[ModuleType] | None = None,
+) -> dict[str, tuple[str, ...]]:
+    """Every protocol outside the port module that is a second tracker surface.
+
+    Read by object over every module of the shipped tree but the port
+    module: a protocol class a module defines is a second surface when its
+    MRO holds the aggregate or a role, whatever name it was imported or
+    declared under, or when its own ``vars()`` or annotations bind a public
+    member of the port. The first is a monolith or a role grown outside the
+    register; the second is a copy of a role under a consumer's own name.
+    The report names what each one composes and binds.
+    """
+    found = (
+        [
+            module
+            for module in shipped_modules()
+            if module.__name__ != TrackerPort.__module__
+        ]
+        if modules is None
+        else modules
+    )
+    held = {cls: name for name, cls in port_objects().items()}
+    surface = port_members()
+    report: dict[str, tuple[str, ...]] = {}
+    for cls in sorted(
+        classes_defined_in(found), key=lambda cls: (cls.__module__, cls.__qualname__)
+    ):
+        if not is_protocol(cls) or cls.__module__ == TrackerPort.__module__:
+            continue
+        own = frozenset(vars(cls)) | frozenset(inspect.get_annotations(cls))
+        reasons = tuple(
+            f"composes {held[base]}" for base in cls.__mro__ if base in held
+        ) + tuple(f"binds {member}" for member in sorted(public(own) & surface))
+        if reasons:
+            report[f"{cls.__module__}.{cls.__qualname__}"] = reasons
+    return report
+
+
 def monoliths(text: str) -> frozenset[str]:
     """Every role but the aggregate that answers the whole surface.
 

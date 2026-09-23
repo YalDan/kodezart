@@ -5,6 +5,10 @@ aggregate declares none of its own, and no role declares a member one of the
 roles it composes already declares. The register is derived from the port
 module's own text and from the aggregate's live member set, so a member moved
 between roles moves the guard with it and a member declared twice is named.
+Outside the port module no protocol is a second surface: every module of the
+shipped tree is imported and each protocol it defines is read by object, so
+one whose MRO holds the aggregate or a role, or whose own body binds a
+member of the port, is named whatever it is called and wherever it lives.
 
 The second half is the caller question. A member no production module calls
 is a capability nothing uses, carried on every implementation for no
@@ -43,12 +47,15 @@ gate over ``src/`` refuses already.
 """
 
 import importlib
+import importlib.util
 import re
+import sys
 from collections.abc import Mapping
+from pathlib import Path
 from types import ModuleType
 
 import pytest
-from typing_extensions import get_protocol_members
+from typing_extensions import get_protocol_members, is_protocol
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.protocols import (
@@ -58,6 +65,7 @@ from kodezart.core.protocols import (
     ScopeWalkTracker,
     TrackerPort,
 )
+from kodezart.types.domain.tracker import TrackerIssue
 from tests.chains.test_write_back_adoption import write_methods
 from tests.domain.test_criterion_cross_off import source_tree
 from tests.fakes import FakeTrackerPort
@@ -94,7 +102,9 @@ from tests.tracker.role_register import (
     roles_off_the_aggregate,
     runtime_checkable_classes,
     scanned_members,
+    shipped_modules,
     stray_classes,
+    surfaces_outside_the_port,
     tree_under_tests,
     twice_declared,
     uncredited_roles,
@@ -426,6 +436,115 @@ def test_every_declaring_role_is_composed_into_the_aggregate():
 
 def test_no_role_but_the_aggregate_answers_the_whole_surface():
     assert monoliths(port_module_text()) == frozenset()
+
+
+def test_no_protocol_outside_the_port_module_is_a_second_tracker_surface():
+    """Every protocol of the shipped tree is read, not only the port module's."""
+    outside = [
+        cls
+        for cls in classes_defined_in(shipped_modules())
+        if is_protocol(cls) and cls.__module__ != TrackerPort.__module__
+    ]
+
+    assert outside
+    assert surfaces_outside_the_port() == {}
+
+
+#: The header every planted surface module starts from: what a consumer
+#: module would import to spell a tracker surface of its own.
+PLANTED_SURFACE_IMPORTS = (
+    "from collections.abc import Awaitable, Callable, Sequence\n"
+    "from dataclasses import dataclass\n"
+    "from typing import Protocol\n\n"
+    "from {port_module} import {aggregate}\n"
+    "from {issue_module} import TrackerIssue\n\n\n"
+)
+
+#: Each way a module outside the port can declare a second tracker surface,
+#: and the class the report must name.
+PLANTED_SURFACES = {
+    "a monolith named for its consumer": (
+        "class OrganizeTracker({aggregate}, Protocol):\n"
+        '    """The organize pass tracker."""\n\n\n'
+        "def admit(*, tracker: OrganizeTracker) -> None:\n    return None\n",
+        "OrganizeTracker",
+    ),
+    "a private whole tracker": (
+        "class _WholeTracker({aggregate}, Protocol):\n"
+        '    """Every member of the port again."""\n\n\n'
+        "async def read_any(*, tracker: _WholeTracker, issue_key: str) -> None:\n"
+        "    await tracker.read_issue(issue_key=issue_key)\n",
+        "_WholeTracker",
+    ),
+    "a copied narrow role": (
+        "class _IssueRead(Protocol):\n"
+        "    async def read_issue(self, *, issue_key: str) -> TrackerIssue: ...\n\n\n"
+        "async def peek(*, tracker: _IssueRead, issue_key: str) -> TrackerIssue:\n"
+        "    return await tracker.read_issue(issue_key=issue_key)\n",
+        "_IssueRead",
+    ),
+    "a copied role under a consumer's name": (
+        "class CriteriaSource(Protocol):\n"
+        "    async def read_criteria(\n"
+        "        self, *, issue_key: str\n"
+        "    ) -> Sequence[TrackerIssue]: ...\n\n\n"
+        "@dataclass(frozen=True)\nclass Resolver:\n    tracker: CriteriaSource\n",
+        "CriteriaSource",
+    ),
+    "an annotated copy of a member": (
+        "class _AnnotatedRead(Protocol):\n"
+        "    read_issue: Callable[..., Awaitable[TrackerIssue]]\n",
+        "_AnnotatedRead",
+    ),
+}
+
+
+def planted_module(tmp_path: Path, name: str, text: str) -> ModuleType:
+    """*text* as a module of a temporary package, imported and registered."""
+    package = tmp_path / "planted_surfaces"
+    package.mkdir(exist_ok=True)
+    path = package / f"{name}.py"
+    path.write_text(text)
+    spec = importlib.util.spec_from_file_location(f"planted_surfaces.{name}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        del sys.modules[spec.name]
+    return module
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_SURFACES))
+def test_a_second_surface_outside_the_port_module_is_reported(form, tmp_path):
+    text = port_module_text()
+    planted, name = PLANTED_SURFACES[form]
+    body = PLANTED_SURFACE_IMPORTS.format(
+        port_module=TrackerPort.__module__,
+        aggregate=AGGREGATE,
+        issue_module=TrackerIssue.__module__,
+    ) + planted.format(aggregate=AGGREGATE)
+    module = planted_module(
+        tmp_path, f"surface_{sorted(PLANTED_SURFACES).index(form)}", body
+    )
+    sources = source_tree()
+    sources["services/planted_surface.py"] = body
+
+    reports = (
+        surfaces_outside_the_port([module]),
+        monoliths(text),
+        stray_classes(text),
+        twice_declared(text),
+        redeclared_from_a_base(text),
+        aggregate_annotations(sources),
+        uncredited_roles(sources),
+        defaulted_role_parameters(sources),
+        adapter_importers(sources),
+    )
+
+    assert set(surfaces_outside_the_port([module])) == {f"{module.__name__}.{name}"}
+    assert [bool(report) for report in reports].count(True) == 1
 
 
 def test_a_second_whole_surface_composite_is_reported():
