@@ -25,13 +25,21 @@ a class body, a function, a lambda, a comprehension):
   keyed on it, or a
   variable annotated as the Evidence record and used whole (iterated,
   dumped, handed on), which reads every field it has.  The annotation names
-  the record by the record's own name or by object: each name in it is
-  resolved in the module's own namespace after import, and through the
-  module's imports for a name the running module does not bind (an import
-  made only under ``TYPE_CHECKING``).  So an import under another name, a
-  module alias, a ``type`` alias, a plain or ``TypeAlias`` alias the module
-  binds, a string annotation, and any of these inside ``Optional``,
-  ``Annotated`` or a union, each name it.  Inside that same scope the value is
+  the record by the record's own name or by object: a function's
+  annotations are read off the imported function as the running program
+  evaluated them, each name in an annotation is resolved in the enclosing
+  class namespaces and then in the module's own namespace after import,
+  and a name the running module does not bind is read through the
+  module's imports (an import made only under ``TYPE_CHECKING``) and
+  through the aliases written under ``TYPE_CHECKING``, in an enclosing
+  class body, or as a bounded type parameter.  What it resolves to is the
+  record when it is the record or a class derived from it, a ``NewType``
+  over it, a ``TypeVar`` bound or constrained to it, a ``type`` alias, a
+  plain or ``TypeAlias`` alias or a string spelling any of these, or any
+  of these inside ``Optional``, ``Annotated`` or a union.  So an import
+  under another name, a module alias, a subclass, a class-body alias used
+  in a method's signature and a ``TYPE_CHECKING`` alias each name it, and a
+  type derived from the record's base does not.  Inside that same scope the value is
   followed through every binding form to a fixed point: assignment,
   unpacking, a container stored into by subscript, a ``for`` target,
   ``with ... as``, the walrus, a comprehension target, a ``match`` capture,
@@ -89,21 +97,23 @@ import json
 import re
 import sys
 import typing
-from collections import Counter
-from collections.abc import Callable, Iterator, Mapping
+from collections import ChainMap, Counter
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from functools import cache
 from importlib import import_module
 from importlib.abc import SourceLoader
 from importlib.util import resolve_name
-from inspect import signature
+from inspect import get_annotations, signature
 from pathlib import Path
 from string import Formatter, Template
-from types import ModuleType
+from types import MappingProxyType, ModuleType
 from typing import (
     Annotated,
     ForwardRef,
     NamedTuple,
+    NewType,
     TypeAliasType,
+    TypeVar,
     get_args,
     get_origin,
 )
@@ -146,8 +156,9 @@ SPELLINGS = frozenset(
 RECORD = CriterionEvidence.__name__
 OTHER_FIELDS = frozenset(CriterionEvidence.model_fields) - {GRADED}
 
-FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
-NAMED = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+FUNCTIONS = (*DEFINITIONS, ast.Lambda)
+NAMED = (*DEFINITIONS, ast.ClassDef)
 COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)
 SCOPES = (*FUNCTIONS, ast.ClassDef, *COMPREHENSIONS)
 #: The scopes whose names a nested scope closes over.  A class body's names
@@ -462,34 +473,101 @@ def _parsed(text: str) -> list[ast.AST]:
         return []
 
 
+def _alias_statements(body: Sequence[ast.stmt]) -> dict[str, ast.AST]:
+    """Each type a body writes under another name, by that name.
+
+    A ``type`` statement, a plain assignment to a name and a ``TypeAlias``
+    annotation: the three ways a module body, a ``TYPE_CHECKING`` block or
+    a class body aliases a type.
+    """
+    found: dict[str, ast.AST] = {}
+    for statement in body:
+        if isinstance(statement, ast.TypeAlias) and isinstance(
+            statement.name, ast.Name
+        ):
+            found[statement.name.id] = statement.value
+        elif isinstance(statement, ast.Assign):
+            found.update(
+                (target.id, statement.value)
+                for target in statement.targets
+                if isinstance(target, ast.Name)
+            )
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and statement.value is not None
+        ):
+            found[statement.target.id] = statement.value
+    return found
+
+
+def _type_checking_aliases(
+    tree: ast.Module, imports: Mapping[str, str]
+) -> dict[str, ast.AST]:
+    """The aliases written under ``if TYPE_CHECKING:``, which never run."""
+    found: dict[str, ast.AST] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If) and (
+            (isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING")
+            or _dotted(node.test, imports) == "typing.TYPE_CHECKING"
+        ):
+            found.update(_alias_statements(node.body))
+    return found
+
+
+def _bounds(node: ScopeNode) -> dict[str, ast.AST]:
+    """Each bounded type parameter a ``def`` or ``class`` declares, to its bound."""
+    return {
+        parameter.name: parameter.bound
+        for parameter in getattr(node, "type_params", [])
+        if isinstance(parameter, ast.TypeVar) and parameter.bound is not None
+    }
+
+
+NO_ALIASES: Mapping[str, ast.AST] = MappingProxyType({})
+
+
 def _names_the_record(
     annotation: ast.AST | None,
     imports: Mapping[str, str],
     namespace: Callable[[], Mapping[str, object]],
+    aliases: Mapping[str, ast.AST] = NO_ALIASES,
+    declared: object = None,
 ) -> bool:
     """Whether an annotation names the Evidence record, by its name or by object.
 
     The record's own name is enough.  So is any name or dotted path the
     module's imports resolve to the record itself.  Every name and dotted
     path is also resolved in the module's own namespace after import (see
-    ``_namespace``), and what it resolves to is unwrapped: a ``type``
-    alias to its value, ``Annotated`` to what it annotates, ``Optional``, a
-    union and any other generic to its arguments, and a string (a string
+    ``_namespace``; for a method, the enclosing class namespaces first),
+    and what it resolves to is unwrapped: a ``type`` alias to its value, a
+    ``NewType`` to its supertype, a ``TypeVar`` to its bound and its
+    constraints, ``Annotated`` to what it annotates, ``Optional``, a union
+    and any other generic to its arguments, and a string (a string
     annotation, a forward reference) to the expression it spells, resolved
     the same way.  The annotation names the record when anything it
-    unwraps to is the record.  A name the running module does not bind (an
-    import made only under ``TYPE_CHECKING``) is resolved through the
-    imports alone.
+    unwraps to is the record, or a class derived from it: every value of
+    a subclass carries the field.
 
-    The walk ends: each node, each string and each object is taken once,
-    and the annotation, the strings it spells and the objects the namespace
-    holds are finite.
+    *declared* is the object the running program holds for the annotation
+    (``inspect.get_annotations`` of the real function), unwrapped the same
+    way.  *aliases* are the names the running module does not bind, each
+    to the expression it stands for: the aliases under ``TYPE_CHECKING``,
+    the aliases of an enclosing class body, and the bounded type parameters
+    of the enclosing definitions.  A name the namespace does not bind is
+    read through them, whatever ``typing`` binds under it; an import made
+    only under ``TYPE_CHECKING`` is resolved through the imports alone.
+
+    The walk ends: each node, each string, each alias and each object is
+    taken once, and the annotation, the strings it spells and the objects
+    the namespace holds are finite.
     """
     if annotation is None:
         return False
     nodes: list[ast.AST] = [annotation]
-    objects: list[object] = []
+    objects: list[object] = [] if declared is None else [declared]
     spelled: set[str] = set()
+    expanded: set[str] = set()
     met: list[object] = []
     while nodes or objects:
         if nodes:
@@ -506,16 +584,29 @@ def _names_the_record(
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 objects.append(node.value)
             elif isinstance(node, (ast.Name, ast.Attribute)):
-                objects.append(_looked_up(node, namespace()))
+                found = _looked_up(node, namespace())
+                if (
+                    isinstance(node, ast.Name)
+                    and node.id in aliases
+                    and node.id not in namespace()
+                    and node.id not in expanded
+                ):
+                    expanded.add(node.id)
+                    nodes.append(aliases[node.id])
+                objects.append(found)
             nodes.extend(ast.iter_child_nodes(node))
             continue
         item = objects.pop()
         if any(item is seen for seen in met):
             continue
         met.append(item)
-        if item is CriterionEvidence:
-            return True
-        if isinstance(item, str):
+        if isinstance(item, type):
+            try:
+                if issubclass(item, CriterionEvidence):
+                    return True
+            except TypeError:
+                pass
+        elif isinstance(item, str):
             if item not in spelled:
                 spelled.add(item)
                 nodes.extend(_parsed(item))
@@ -524,6 +615,13 @@ def _names_the_record(
         elif isinstance(item, TypeAliasType):
             try:
                 objects.append(item.__value__)
+            except Exception:
+                objects.append(None)
+        elif isinstance(item, NewType):
+            objects.append(item.__supertype__)
+        elif isinstance(item, TypeVar):
+            try:
+                objects.extend([item.__bound__, *item.__constraints__])
             except Exception:
                 objects.append(None)
         elif isinstance(item, (list, tuple)):
@@ -539,6 +637,7 @@ def _annotated(
     owned: list[ast.AST],
     imports: Mapping[str, str],
     namespace: Callable[[], Mapping[str, object]],
+    aliases: Mapping[str, ast.AST],
 ) -> frozenset[str]:
     """The names this scope annotates as the Evidence record."""
     return frozenset(
@@ -546,7 +645,7 @@ def _annotated(
         for node in owned
         if isinstance(node, ast.AnnAssign)
         and isinstance(node.target, ast.Name)
-        and _names_the_record(node.annotation, imports, namespace)
+        and _names_the_record(node.annotation, imports, namespace, aliases)
     )
 
 
@@ -634,13 +733,72 @@ class _Module:
             for child in ast.iter_child_nodes(node)
         }
         self.readers: dict[str, Counter[str]] = {}
-        self._scope(tree, MODULE, frozenset(), frozenset(), frozenset())
+        self._scope(
+            tree,
+            MODULE,
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            _type_checking_aliases(tree, self.imports),
+        )
 
     def namespace(self) -> Mapping[str, object]:
         """The module's namespace after import, read once and only if asked."""
         if self._namespace is None:
             self._namespace = _namespace(self._module, self._text)
         return self._namespace
+
+    def _bound_at(self, path: Sequence[str]) -> list[object]:
+        """What the running module binds along a dotted label, outermost first.
+
+        The first name is read in the module's namespace and each next one
+        off the object before it; the walk stops at the first name that is
+        bound to nothing, which is where a class or a function nested in a
+        function begins.
+        """
+        found: list[object] = []
+        owner: object = None
+        for depth, name in enumerate(path):
+            owner = (
+                self.namespace().get(name) if depth == 0 else getattr(owner, name, None)
+            )
+            if owner is None:
+                break
+            found.append(owner)
+        return found
+
+    def _within(self, owners: Sequence[str]) -> Callable[[], Mapping[str, object]]:
+        """The namespace an annotation is evaluated in, inside *owners*.
+
+        A class body's names are visible to the annotations written in it
+        and in its methods' signatures, so each enclosing class the running
+        module binds is read, innermost first, before the module's names.
+        """
+
+        def within() -> Mapping[str, object]:
+            classes = [
+                vars(held) for held in self._bound_at(owners) if isinstance(held, type)
+            ]
+            return ChainMap(*reversed(classes), self.namespace())
+
+        return within
+
+    def _declared(self, path: Sequence[str]) -> Mapping[str, object]:
+        """The annotations the running module holds for the function at *path*.
+
+        Read off the function object as the running program has it, strings
+        evaluated: a class-body alias is already the object it named when
+        the method was defined, and a type parameter is the TypeVar it
+        declares.  A function the module does not bind after import, or an
+        annotation that will not evaluate, gives nothing here.
+        """
+        bound = self._bound_at(path)
+        if len(bound) != len(path):
+            return {}
+        try:
+            return dict(get_annotations(bound[-1], eval_str=True))
+        except Exception:
+            return {}
 
     def _reads(self, node: ast.AST, records: frozenset[str]) -> bool:
         """Whether *node* reads the graded sha directly."""
@@ -733,17 +891,34 @@ class _Module:
         closure: frozenset[str],
         typed: frozenset[str],
         defaulted: frozenset[str],
+        aliases: Mapping[str, ast.AST],
     ) -> None:
         owned, nested = _owned(_split(node)[1])
         parameters = _parameters(node)
         shadowed = frozenset(parameter.arg for parameter in parameters)
+        path = () if label == MODULE else tuple(label.split("."))
+        aliases = {**aliases, **_bounds(node)}
+        if isinstance(node, ast.ClassDef):
+            aliases = {**aliases, **_alias_statements(node.body)}
+        namespace = self._within(path if isinstance(node, ast.ClassDef) else path[:-1])
+        declared: Mapping[str, object] = {}
+        if isinstance(node, DEFINITIONS) and any(
+            parameter.annotation is not None for parameter in parameters
+        ):
+            declared = self._declared(path)
         records = (
             (typed - shadowed)
-            | _annotated(owned, self.imports, self.namespace)
+            | _annotated(owned, self.imports, namespace, aliases)
             | frozenset(
                 parameter.arg
                 for parameter in parameters
-                if _names_the_record(parameter.annotation, self.imports, self.namespace)
+                if _names_the_record(
+                    parameter.annotation,
+                    self.imports,
+                    namespace,
+                    aliases,
+                    declared.get(parameter.arg),
+                )
             )
         )
         carriers = self._settle(node, owned, (closure - shadowed) | defaulted, records)
@@ -775,6 +950,7 @@ class _Module:
                     for parameter, default in _defaults(child)
                     if self._carries(default, carriers, records)
                 ),
+                aliases,
             )
 
 
@@ -1591,6 +1767,153 @@ BINDINGS = {
         "reader.py::lapsed",
         "return head_sha in dict(evidence).values()",
     ),
+    # The record declared by the module as a type of its own: each is the
+    # record by object, because every value of the type carries the field.
+    "a-record-through-a-subclass": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"class Recorded({RECORD}):\n    pass\n"
+        "def lapsed(evidence: Recorded, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-newtype": (
+        "from typing import NewType\n"
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"Recorded = NewType('Recorded', {RECORD})\n"
+        "def lapsed(evidence: Recorded, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-typevar-bound": (
+        "from typing import TypeVar\n"
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"T = TypeVar('T', bound={RECORD})\n"
+        "def lapsed(evidence: T, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-typevar-constraint": (
+        "from typing import TypeVar\n"
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"T = TypeVar('T', {RECORD}, int)\n"
+        "def lapsed(evidence: T, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-type-parameter": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"def lapsed[T: {RECORD}](evidence: T, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-type-parameter-of-a-nested-function": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        "def outer():\n"
+        f"    def lapsed[T: {RECORD}](evidence: T, head_sha):\n"
+        "        return head_sha in dict(evidence).values()\n"
+        "    return lapsed\n",
+        "reader.py::outer.lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-class-type-parameter": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"class Probe[T: {RECORD}]:\n"
+        "    def lapsed(self, evidence: T, head_sha):\n"
+        "        return head_sha in dict(evidence).values()\n",
+        "reader.py::Probe.lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    # A class body's names are the namespace a method's signature is
+    # evaluated in: an alias written there is the record for the method.
+    "a-record-through-a-class-body-type-statement": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        "class Probe:\n"
+        f"    type Recorded = {RECORD}\n"
+        "    def lapsed(self, evidence: Recorded, head_sha):\n"
+        "        return head_sha in dict(evidence).values()\n",
+        "reader.py::Probe.lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-class-attribute": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        "class Probe:\n"
+        f"    Recorded = {RECORD}\n"
+        "    def lapsed(self, evidence: Recorded, head_sha):\n"
+        "        return head_sha in dict(evidence).values()\n",
+        "reader.py::Probe.lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    # Bound by unpacking and spelled as a string: neither the function's own
+    # evaluated annotations nor the alias statements say what it is, and only
+    # the imported class's namespace does.
+    "a-record-through-a-class-body-name-in-a-string": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        "class Probe:\n"
+        f"    Recorded, Other = {RECORD}, int\n"
+        "    def lapsed(self, evidence: 'Recorded', head_sha):\n"
+        "        return head_sha in dict(evidence).values()\n",
+        "reader.py::Probe.lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    # Neither the class nor its method is bound after import; the alias is
+    # read off the class body as written.
+    "a-record-through-a-class-body-alias-inside-a-function": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        "def outer():\n"
+        "    class Probe:\n"
+        f"        type Recorded = {RECORD}\n"
+        "        def lapsed(self, evidence: Recorded, head_sha):\n"
+        "            return head_sha in dict(evidence).values()\n"
+        "    return Probe\n",
+        "reader.py::outer.Probe.lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    # Only the running program knows what this annotation evaluates to.
+    "a-record-looked-up-when-the-def-runs": (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"RECORDS = {{'evidence': {RECORD}}}\n"
+        "def lapsed(evidence: RECORDS['evidence'], head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    # An alias one step past a TYPE_CHECKING import: the running module binds
+    # neither name, and the alias is read as written.
+    "a-record-through-a-type-checking-type-statement": (
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        f"    from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"    type Recorded = {RECORD}\n"
+        "def lapsed(evidence: 'Recorded', head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-type-checking-assignment": (
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        f"    from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"    Recorded = {RECORD}\n"
+        "def lapsed(evidence: 'Recorded', head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
+    "a-record-through-a-type-checking-typealias": (
+        "from typing import TYPE_CHECKING, TypeAlias\n"
+        "if TYPE_CHECKING:\n"
+        f"    from {CriterionEvidence.__module__} import {RECORD}\n"
+        f"    Recorded: TypeAlias = {RECORD}\n"
+        "def lapsed(evidence: 'Recorded', head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n",
+        "reader.py::lapsed",
+        "return head_sha in dict(evidence).values()",
+    ),
 }
 
 
@@ -1686,6 +2009,40 @@ RECORD_ALIASES = {
         "_Recorded",
     ),
     "a-string-annotation": ("", f"'{RECORD}'"),
+    "a-subclass": (f"class _Recorded({RECORD}):\n    pass\n", "_Recorded"),
+    "a-newtype": (
+        f"from typing import NewType\n_Recorded = NewType('_Recorded', {RECORD})\n",
+        "_Recorded",
+    ),
+    "a-typevar-bound": (
+        "from typing import TypeVar\n"
+        f"_Recorded = TypeVar('_Recorded', bound={RECORD})\n",
+        "_Recorded",
+    ),
+    "a-typevar-constraint": (
+        "from typing import TypeVar\n"
+        f"_Recorded = TypeVar('_Recorded', {RECORD}, int)\n",
+        "_Recorded",
+    ),
+    "a-class-body-alias": (
+        f"class _Probe:\n    type Recorded = {RECORD}\n",
+        "_Probe.Recorded",
+    ),
+    "a-type-checking-type-statement": (
+        "from typing import TYPE_CHECKING\n"
+        f"if TYPE_CHECKING:\n    type _Recorded = {RECORD}\n",
+        "'_Recorded'",
+    ),
+    "a-type-checking-assignment": (
+        "from typing import TYPE_CHECKING\n"
+        f"if TYPE_CHECKING:\n    _Recorded = {RECORD}\n",
+        "'_Recorded'",
+    ),
+    "a-type-checking-typealias": (
+        "from typing import TYPE_CHECKING, TypeAlias\n"
+        f"if TYPE_CHECKING:\n    _Recorded: TypeAlias = {RECORD}\n",
+        "'_Recorded'",
+    ),
 }
 
 
@@ -1737,6 +2094,91 @@ def test_a_record_named_through_an_alias_in_any_registered_reader_is_reported(fo
         if not findings(planted(site, block, module_lines=header), REGISTERED)
     ]
     assert missed == []
+
+
+#: A method typed by its class body's alias and a function typed by its own
+#: type parameter, each written inside the lane reader, where the running
+#: module binds neither the class nor the function.
+NESTED_DECLARATIONS = {
+    "domain/lapse.py::held_standing._Probe.lapsed": (
+        "class _Probe:\n"
+        f"    type Recorded = {RECORD}\n"
+        "    def lapsed(self, evidence: Recorded, head):\n"
+        "        return head in dict(evidence).values()\n"
+    ),
+    "domain/lapse.py::held_standing._lapsed": (
+        f"def _lapsed[T: {RECORD}](evidence: T, head):\n"
+        "    return head in dict(evidence).values()\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("reader", list(NESTED_DECLARATIONS))
+def test_a_record_declared_inside_the_lane_reader_is_reported(reader):
+    """A type declared where nothing runs is still read as the record."""
+    site = "domain/lapse.py::held_standing"
+    assert reader.startswith(f"{site}.")
+    header = f"from {CriterionEvidence.__module__} import {RECORD}\n"
+    found = findings(
+        planted(site, NESTED_DECLARATIONS[reader], module_lines=header), REGISTERED
+    )
+    assert found == [f"{reader} reads the graded sha and is not registered"]
+
+
+def test_a_declared_type_that_is_not_the_record_stays_out():
+    """By object: the record's base, declared in every widened shape, stays out.
+
+    The base lacks the field, so a value of a type derived from it, a
+    ``NewType`` over it, a ``TypeVar`` bound or constrained to it, a type
+    parameter bound to it, a class-body or ``TYPE_CHECKING`` alias of it and
+    a lookup evaluating to it are not reads of the graded sha; nor is an
+    unbounded ``TypeVar`` or type parameter.
+    """
+    base = CriterionEvidence.__mro__[1]
+    assert not issubclass(base, CriterionEvidence)
+    other = base.__name__
+    importing = f"from {base.__module__} import {other}\n"
+    checking = "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n" + _indented(
+        importing
+    )
+    whole = "return head_sha in dict(evidence).values()\n"
+
+    def read(annotation: str) -> str:
+        return f"def lapsed(evidence: {annotation}, head_sha):\n    {whole}"
+
+    def method(annotation: str) -> str:
+        return _indented(
+            f"def lapsed(self, evidence: {annotation}, head_sha):\n    {whole}"
+        )
+
+    sources = (
+        importing + f"class Other({other}):\n    pass\n" + read("Other"),
+        importing
+        + f"from typing import NewType\nOther = NewType('Other', {other})\n"
+        + read("Other"),
+        importing
+        + f"from typing import TypeVar\nT = TypeVar('T', bound={other})\n"
+        + read("T"),
+        importing
+        + f"from typing import TypeVar\nT = TypeVar('T', {other}, int)\n"
+        + read("T"),
+        "from typing import TypeVar\nT = TypeVar('T')\n" + read("T"),
+        importing + f"def lapsed[T: {other}](evidence: T, head_sha):\n    {whole}",
+        f"def lapsed[T](evidence: T, head_sha):\n    {whole}",
+        importing + f"class Probe[T: {other}]:\n" + method("T"),
+        importing + f"class Probe:\n    type Other = {other}\n" + method("Other"),
+        importing
+        + f"class Probe:\n    Other, Another = {other}, int\n"
+        + method("'Other'"),
+        importing
+        + "def outer():\n"
+        + _indented(f"class Probe:\n    type Other = {other}\n" + method("Other"))
+        + "    return Probe\n",
+        importing + f"KINDS = {{'evidence': {other}}}\n" + read("KINDS['evidence']"),
+        checking + f"    type Other = {other}\n" + read("'Other'"),
+        checking + f"    Other = {other}\n" + read("'Other'"),
+    )
+    assert [source for source in sources if alone(source)] == []
 
 
 def test_an_alias_or_a_string_naming_another_class_is_not_the_record():
