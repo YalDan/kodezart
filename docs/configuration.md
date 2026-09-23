@@ -647,7 +647,11 @@ criterion refutations and returns its mandate-completed terminal report. It
 passes the native discrepancy and PR facts at that exact head, without creating
 a criterion judgment for an issue. Missing-branch observations retain an
 explicit unavailable reason; a historical lane-record head does not supply the
-missing verification context. A failed hunt likewise retains the original
+missing verification context. A loop branch that consolidation merged into the
+deliverable branch of the same run and then deleted is not missing: when that
+deliverable branch's remote head contains the record's head, the observation
+carries no missing-branch discrepancy, and its branch head stays empty rather
+than taking the deliverable head. A failed hunt likewise retains the original
 terminal observation without claiming a complete report. Final terminal and
 scope reads still refuse changed source facts. Independent readable targets
 continue after a target fails.

@@ -11,8 +11,10 @@ from kodezart.types.domain.audit_terminal import (
     AuditTerminalRequest,
     TerminalDiscrepancy,
 )
+from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.pr_state import PRLifecycle
+from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 
@@ -21,6 +23,12 @@ class AuditTerminalReader:
 
     The full sweep's selection, claim execution and publication remain separate.
     Read failures or changing observations raise; none is a healthy terminal.
+
+    A lane delivered the ordinary way no longer has its loop branch on the
+    remote: consolidation merges it into the deliverable branch and deletes
+    it. So a missing loop branch is a discrepancy only when the deliverable
+    branch the record associates with the same run does not contain the
+    record's head either.
     """
 
     def __init__(
@@ -60,6 +68,39 @@ class AuditTerminalReader:
             raise AuditClaimReadError("remote branch returned an empty commit identity")
         return observed
 
+    @staticmethod
+    def _deliverable(record: LaneRunState) -> str | None:
+        """The DELIVERABLE branch of the run the recorded loop branch belongs to.
+
+        Bounded by the record's own association list. ``None`` when that run
+        records no deliverable; more than one candidate is an unreadable
+        record, never a choice.
+        """
+        runs = {
+            item.run_id
+            for item in record.associations
+            if item.role is BranchRole.LOOP and item.branch == record.branch
+        }
+        branches = {
+            item.branch
+            for item in record.associations
+            if item.role is BranchRole.DELIVERABLE and item.run_id in runs
+        }
+        if len(branches) > 1:
+            raise AuditClaimReadError(
+                "the recorded loop branch has more than one deliverable branch"
+            )
+        return next(iter(branches), None)
+
+    async def _contains(self, repository: str, head_sha: str, head: str) -> bool:
+        """Whether *head* holds *head_sha*, read after fetching the remote."""
+
+        async def read() -> bool:
+            await self._git.fetch(repository)
+            return await self._git.is_ancestor(repository, head_sha, head)
+
+        return await settle(read())
+
     async def observe(self, request: AuditTerminalRequest) -> AuditTerminalObservation:
         issue = await self._tracker.read_issue(issue_key=request.issue_key)
         if issue.issue_key != request.issue_key:
@@ -79,8 +120,16 @@ class AuditTerminalReader:
         )
         branch_head = await self._head(repository, record.branch)
         discrepancies: list[TerminalDiscrepancy] = []
+        deliverable = None
+        deliverable_head = None
         if branch_head is None:
-            discrepancies.append(TerminalDiscrepancy.NO_BRANCH)
+            deliverable = self._deliverable(record)
+            if deliverable is not None:
+                deliverable_head = await self._head(repository, deliverable)
+            if deliverable_head is None or not await self._contains(
+                repository, record.head_sha, deliverable_head
+            ):
+                discrepancies.append(TerminalDiscrepancy.NO_BRANCH)
         pr = None
         pr_head = None
         if record.pr is None:
@@ -117,6 +166,11 @@ class AuditTerminalReader:
         ):
             raise AuditClaimReadError("tracker terminal changed during observation")
         if await self._head(repository, record.branch) != branch_head:
+            raise AuditClaimReadError("recorded branch changed during observation")
+        if (
+            deliverable is not None
+            and await self._head(repository, deliverable) != deliverable_head
+        ):
             raise AuditClaimReadError("recorded branch changed during observation")
         if pr is not None:
             if (

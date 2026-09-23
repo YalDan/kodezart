@@ -227,6 +227,116 @@ async def test_missing_branch_is_measured_from_remote_not_recorded_sha(setup):
     assert result.branch_head is None
 
 
+#: The deliverable branch ``record_data`` associates with the loop branch's run,
+#: and the head a consolidation left it at.
+DELIVERABLE = "has-ralph-in-its-name"
+DELIVERED = "d" * 40
+
+
+def delivered(git, forge, record, *, contains=True, branch=DELIVERABLE):
+    """The lane as consolidation leaves it: loop branch merged and deleted."""
+    git._remote_branch_shas[BRANCH] = None
+    git._remote_branch_shas[branch] = DELIVERED
+    if contains:
+        git._ancestor_pairs.add((record.head_sha, DELIVERED))
+    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+        update={"head_branch": branch, "head_sha": DELIVERED}
+    )
+
+
+async def rewrite(tracker, comment, record):
+    await leased_comment(
+        tracker,
+        target=ISSUE,
+        marker=comment.body.splitlines()[0],
+        body=render_lane_record(record=record, marker_prefixes=PREFIXES).partition(
+            "\n"
+        )[2],
+    )
+
+
+async def test_a_loop_branch_consolidated_into_its_deliverable_is_not_missing(
+    setup, forge
+):
+    reader, git, record, _ = setup
+    delivered(git, forge, record)
+    result = await reader.observe(REQUEST)
+    assert result.verdict is AuditVerdict.HOLDS
+    assert result.discrepancies == ()
+    assert result.branch_head is None
+    kinds = [call[0] for call in git.calls]
+    assert kinds.index("fetch") < kinds.index("is_ancestor")
+    assert ("is_ancestor", "/tmp/fake-cache", record.head_sha, DELIVERED) in git.calls
+
+
+async def test_a_deliverable_without_the_recorded_head_leaves_the_branch_missing(
+    setup, forge
+):
+    reader, git, record, _ = setup
+    delivered(git, forge, record, contains=False)
+    result = await reader.observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    assert result.discrepancies == (TerminalDiscrepancy.NO_BRANCH,)
+
+
+async def test_an_absent_deliverable_leaves_the_branch_missing(setup, forge):
+    reader, git, record, _ = setup
+    delivered(git, forge, record)
+    git._remote_branch_shas[DELIVERABLE] = None
+    result = await reader.observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    assert TerminalDiscrepancy.NO_BRANCH in result.discrepancies
+    assert not any(call[0] == "is_ancestor" for call in git.calls)
+
+
+async def test_a_deliverable_of_another_run_never_stands_for_the_loop_branch(
+    setup, tracker, forge
+):
+    reader, git, record, comment = setup
+    loop, other = (
+        next(item for item in record.associations if item.branch == branch)
+        for branch in (BRANCH, "earlier-deliverable")
+    )
+    assert loop.run_id != other.run_id
+    await rewrite(
+        tracker, comment, record.model_copy(update={"associations": [loop, other]})
+    )
+    delivered(git, forge, record, branch=other.branch)
+    result = await reader.observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    assert result.discrepancies == (TerminalDiscrepancy.NO_BRANCH,)
+
+
+async def test_a_loop_branch_of_two_runs_with_two_deliverables_is_unreadable(
+    setup, tracker, forge
+):
+    reader, git, record, comment = setup
+    loop = next(item for item in record.associations if item.branch == BRANCH)
+    again = loop.model_copy(update={"run_id": "run-earlier"})
+    await rewrite(
+        tracker,
+        comment,
+        record.model_copy(update={"associations": [*record.associations, again]}),
+    )
+    delivered(git, forge, record)
+    with pytest.raises(AuditClaimReadError, match="more than one deliverable"):
+        await reader.observe(REQUEST)
+
+
+async def test_a_deliverable_that_moves_during_the_read_is_never_healthy(setup, forge):
+    reader, git, record, _ = setup
+    delivered(git, forge, record)
+    # The pull request stands on another recorded branch, so only the
+    # deliverable read and its re-read see the move.
+    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+        update={"head_branch": "reaped-ref", "head_sha": HEAD}
+    )
+    git._remote_branch_shas["reaped-ref"] = HEAD
+    git._remote_branch_sha_sequences[DELIVERABLE] = [DELIVERED, "e" * 40]
+    with pytest.raises(AuditClaimReadError, match=r"^recorded branch changed"):
+        await reader.observe(REQUEST)
+
+
 async def test_pr_head_outside_recorded_associations_is_unresolved(setup, forge):
     reader, git, *_ = setup
     git._remote_branch_shas["unassociated"] = HEAD
