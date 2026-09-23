@@ -389,9 +389,14 @@ iteration: when the landing put that work on the deliverable branch, the row
 names the tip the deliverable then stands at, and otherwise — a consolidation
 that did not integrate, or a forge-less landing — it names the best commit
 itself, one of the loop branch's own commits. Either way re-entry resumes there
-and not at the loop tip the best iteration was chosen over. A stall exit with no
-commit records nothing. It writes nothing when the record's newest act is
-already that sha.
+and not at the loop tip the best iteration was chosen over. The row is bound to
+the loop branch the best commit was pushed on, which the consolidation step
+writes beside the best commit as `best_iteration_branch`: a remediation round
+draws a loop branch of its own and one that commits nothing is never pushed, so
+a row bound to the run's last loop branch could name a branch the remote does
+not hold. A stall exit with no commit records nothing, and neither does one
+whose best commit has no known branch. It writes nothing when the record's
+newest act is already that sha.
 
 `write_cross_offs` is another call. `RalphLoop._evaluate_node` makes it once
 per iteration, after the grade and before the iteration event is emitted, so a

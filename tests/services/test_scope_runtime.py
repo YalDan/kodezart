@@ -615,6 +615,7 @@ def lane_state(issue_key: str):
             "remediation_ticket": None,
             "remediation_entry": None,
             "best_iteration_sha": None,
+            "best_iteration_branch": None,
             "repo_url": URL,
             "repo_visibility": RepoVisibility.PRIVATE,
             "trajectory": None,

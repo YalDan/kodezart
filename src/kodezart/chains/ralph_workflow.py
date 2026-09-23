@@ -472,6 +472,13 @@ class RalphWorkflowEngine:
         branch's own commits. A stall exit with no commit records nothing, and
         neither does a lane whose subject is not a tracker one, which has no
         record at all.
+
+        The row is bound to the loop branch the best commit was pushed on,
+        which is not the run's current loop branch when a later remediation
+        round committed nothing: that round's branch was never pushed, and a
+        record naming it would be refused at every re-entry as absent from
+        the remote. Where the branch holding the best is not known, nothing
+        is written and the record keeps the association it had.
         """
         spec = state["fire_spec"]
         if not isinstance(spec, TrackerSpec):
@@ -481,7 +488,8 @@ class RalphWorkflowEngine:
             if landed.get("feature_branch") == state["feature_branch"]
             else state["best_iteration_sha"]
         )
-        if not isinstance(landed_sha, str):
+        loop_branch = state["best_iteration_branch"]
+        if not isinstance(landed_sha, str) or loop_branch is None:
             return
         ctx = ExecutionContext.from_configurable(config)
         if ctx.surface_holder is None:
@@ -496,7 +504,7 @@ class RalphWorkflowEngine:
             lane=LaneBinding(
                 lane_key=spec.subject,
                 body_digest=body_digest(spec.body),
-                loop_branch=state["ralph_branch"],
+                loop_branch=loop_branch,
                 deliverable_branch=state["feature_branch"],
                 base_ref=ctx.base_branch,
                 repo_url=ctx.repo_url,
@@ -681,6 +689,7 @@ class RalphWorkflowEngine:
             "remediation_ticket": None,
             "remediation_entry": None,
             "best_iteration_sha": None,
+            "best_iteration_branch": None,
             "repo_url": resolved_url,
             "repo_visibility": RepoVisibility.UNKNOWN,
             "trajectory": None,
