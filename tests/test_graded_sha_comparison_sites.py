@@ -65,15 +65,33 @@ rule's module and name are read off the rule itself; the scanned tree is the
 package the rule is packaged in.  The register lives beside this file in
 ``graded_sha_readers.json``.
 
-The static assertion's reach, as the Check states it: it covers every scope
-that reads the graded sha directly (the evidence field or its alias, and any
-value bound from them inside that same scope) and pins every statement there
-that touches the value, whatever the other operand is called.
+The static assertion's reach, stated once: it covers every scope that reads
+the graded sha directly (the evidence field or its alias, and any value
+bound from them inside that same scope) and pins every statement there
+that touches the value, whatever the other operand is called.  The guard
+reads every module's syntax and resolves every name, attribute, annotation
+and callee to the object it names, in the module's own namespace after
+import.  A literal that names the field or its alias counts wherever it
+appears, in every formatting mini-language: a ``str.format`` field, a
+printf mapping key, a ``Template`` placeholder, as much as a ``getattr`` or
+subscript key or an ``attrgetter`` path.  A value annotated as the record,
+or as any type the module declares that resolves to the record by object,
+is read whole.
 
-The guard reads every module's syntax and resolves names in the module's own
-namespace after import. Outside it: a value handed across a function
-boundary (returned, passed, or stored on an object), a name built at run
-time, and a binding made only when a function runs.
+Outside it, the one general limit: a value handed across a function
+boundary, where the other function is not resolved at this site (returned
+from a helper, stored on an object and read elsewhere, or passed through a
+container built elsewhere); a name built at run time; and a binding made
+only when a function runs (``setattr`` or ``globals()`` inside a function
+body).
+
+Beside this static guard, ``test_graded_sha_trap`` pins the behaviour, which
+no spelling can get round: it hands the composed readers a graded sha and a
+head sha that record every comparison made of them, and holds that every
+comparison those readers make at run time happens in the rule, or at a
+statement a registered row pins.  Its one limit, held there as a fact, is a
+value copied into a plain ``str`` on both sides before the comparison.  The
+whole reach is the general limit above, plus that copy.
 
 A record read whole through a value whose type the module does not declare
 -- ``model_dump()``, ``dict(...)``, ``vars(...)`` or iteration on an
