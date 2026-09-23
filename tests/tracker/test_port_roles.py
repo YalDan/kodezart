@@ -57,7 +57,7 @@ from tests.tracker.role_register import (
     annotation_names,
     call_pattern,
     called_members,
-    composed,
+    declared_bases,
     declaring_roles,
     defaulted_role_parameters,
     first_party_closure,
@@ -68,6 +68,7 @@ from tests.tracker.role_register import (
     production_modules,
     redeclared_from_a_base,
     roles,
+    roles_off_the_aggregate,
     tree_under_tests,
     twice_declared,
     uncredited_roles,
@@ -234,10 +235,26 @@ def test_every_member_of_the_surface_is_declared_on_exactly_one_role():
 
 
 def test_every_declaring_role_is_composed_into_the_aggregate():
-    """A role the aggregate does not reach would answer for no adapter at all."""
+    """A role the aggregate does not name would answer for no adapter at all.
+
+    The roles are found by what the adapter answers, not by what the
+    aggregate composes, so a role dropped from it is still found and named.
+    """
     text = port_module_text()
 
-    assert declaring_roles(text) <= composed(text, AGGREGATE)
+    assert roles_off_the_aggregate(text) == frozenset()
+    assert declaring_roles(text) <= set(declared_bases(text)[AGGREGATE])
+
+
+def test_a_role_dropped_from_the_aggregate_is_reported():
+    text = port_module_text()
+    role = min(declared_bases(text)[AGGREGATE])
+    line = f"\n    {role},\n"
+    start = text.index(f"class {AGGREGATE}(")
+    assert line in text[start:]
+    grown = text[:start] + text[start:].replace(line, "\n", 1)
+
+    assert roles_off_the_aggregate(grown) == frozenset({role})
 
 
 @pytest.mark.parametrize(
