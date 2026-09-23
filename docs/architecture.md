@@ -1366,11 +1366,15 @@ re-read take membership and dependencies through
 the rest of the arithmetic is the walker's. A scope whose walk is held on an
 open decision is therefore still observed rather than failed; the walker's own
 read keeps the barriers and still refuses it. A member its own lapse question
-classified for decision is carried in `ScopeReadySet.held` with every criterion
-of its subtree. It is observed as waiting, so its tally is not composed and its
-stream is still read, and its questions are aged: a held lane is waiting on a
-person, and the ageing alarm is the alarm for that. A tally raise standing on it
-stays as it stood until the lane is ready again.
+classified for decision, and which has criterion children, is carried in
+`ScopeReadySet.held` with every criterion of its subtree. The closure is handed
+these keys and reads them as lanes, not record issues: a lane a held lane blocks
+is blocked while the held lane owes criteria, and a parent member's gap includes
+the held lane's open criteria. A decision issue with no criterion children stays
+a record issue. A held lane is observed as waiting, so its tally is not composed
+and its stream is still read, and its questions are aged: a held lane is waiting
+on a person, and the ageing alarm is the alarm for that. A tally raise standing
+on it stays as it stood until the lane is ready again.
 
 One lane's failure is that lane's. Each scope read and each lane observation
 is contained, logged as `supervisor_scope_failed` or `supervisor_lane_failed`,

@@ -106,8 +106,9 @@ class ScopeReadySet:
     a statement about it could not tell a set-aside obligation from one that
     was never there (KOD-794).
 
-    ``held`` carries the members classified for decision, with their
-    criteria, when the read was taken without the walker's stage barriers.
+    ``held`` carries the members classified for decision that have
+    criterion children, with their criteria, when the read was taken without
+    the walker's stage barriers.
     The walker's own read refuses such a scope, so for it ``held`` is empty.
     """
 
