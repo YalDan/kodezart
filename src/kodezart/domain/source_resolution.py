@@ -49,7 +49,7 @@ class SourceIndex:
         self._parent: dict[Source, Source | None] = {}
         self._owner: dict[Source, Source | None] = {}
         self._calls: dict[Source, list[ast.Call]] = {}
-        self._assigns: dict[Source, list[ast.Assign]] = {}
+        self._assigns: dict[Source, list[ast.Assign | ast.AnnAssign]] = {}
         self._references: dict[str, list[tuple[Source | None, ast.expr]]] = {}
         self._unheld: dict[int, str] = {}
         self._calls_by_callee: dict[int, ast.Call] = {}
@@ -134,7 +134,7 @@ class SourceIndex:
             isinstance(child, ast.Assign)
             and len(child.targets) == 1
             and isinstance(child.targets[0], ast.Name)
-        ):
+        ) or (isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name)):
             self._assigns[body].append(child)
 
     def _import(self, module: str, node: ast.ImportFrom) -> None:
@@ -297,13 +297,25 @@ class SourceIndex:
         if positional and positional[0].arg in OWN_RECEIVERS:
             names[positional[0].arg] = self._owner.get(holder)
         bindings: dict[str, list[ast.expr]] = {}
+        declared: dict[str, list[ast.expr]] = {}
         for statement in self._assigns[holder]:
+            if isinstance(statement, ast.AnnAssign):
+                if isinstance(statement.target, ast.Name):
+                    name = statement.target.id
+                    declared.setdefault(name, []).append(statement.annotation)
+                    if statement.value is not None:
+                        bindings.setdefault(name, []).append(statement.value)
+                continue
             target = statement.targets[0]
             if isinstance(target, ast.Name):
                 bindings.setdefault(target.id, []).append(statement.value)
         for name, values in bindings.items():
             constructed = {self._constructed(module, value, {}) for value in values}
             names[name] = next(iter(constructed)) if len(constructed) == 1 else None
+        # A local's own annotation states its type for every assignment.
+        for name, annotations in declared.items():
+            typed = {self.annotated(module, annotation) for annotation in annotations}
+            names[name] = next(iter(typed)) if len(typed) == 1 else None
         return _Scope(
             names=names,
             bindings=bindings,

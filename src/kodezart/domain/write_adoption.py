@@ -271,9 +271,12 @@ class _Grant:
     *appliers* keeps each applier a grounded constructor was handed beside
     the node that handed it, because that one mention is the grant and any
     other mention of the applier's name is a use the grant cannot vouch for.
+    *handed* keeps the step class each applier was handed to and the
+    parameter it was handed under, because the step's field holding it is
+    another way to reach it.
     """
 
-    __slots__ = ("appliers", "driven", "grounded", "sinks")
+    __slots__ = ("appliers", "driven", "grounded", "handed", "sinks")
 
     def __init__(
         self,
@@ -282,17 +285,19 @@ class _Grant:
         driven: frozenset[Source],
         sinks: frozenset[tuple[Source, str]],
         appliers: frozenset[tuple[Source, int]] = frozenset(),
+        handed: frozenset[tuple[Source, Source, str]] = frozenset(),
     ) -> None:
         self.grounded = grounded
         self.driven = driven
         self.sinks = sinks
         self.appliers = appliers
+        self.handed = handed
 
 
 class _Growth:
     """One fixed point of the grants: what is driven, and by which grant."""
 
-    __slots__ = ("appliers", "driven", "steps")
+    __slots__ = ("appliers", "driven", "handed", "steps")
 
     def __init__(
         self,
@@ -300,10 +305,12 @@ class _Growth:
         driven: frozenset[Source],
         appliers: Mapping[Source, frozenset[int]],
         steps: frozenset[Source],
+        handed: Mapping[Source, frozenset[tuple[Source, str]]],
     ) -> None:
         self.driven = driven
         self.appliers = appliers
         self.steps = steps
+        self.handed = handed
 
 
 def _driven_functions(index: SourceIndex, entry: DriveEntry) -> frozenset[Source]:
@@ -322,18 +329,23 @@ def _driven_functions(index: SourceIndex, entry: DriveEntry) -> frozenset[Source
     Construction alone is never the whole grant.  Once the grants have
     grown, a granted applier or step member that any undriven function
     calls loses its grant, and so does an applier whose name is mentioned
-    anywhere but in a call or the constructor argument that granted it.
-    The growth is then taken again without it, until nothing more is
-    withdrawn, because a withdrawn grant can take delegations resting on it
-    down too.
+    anywhere but in a call or the constructor argument that granted it.  A
+    call is weighed against a step member however it is typed: resolved to
+    the member itself, to a nominal base's member it overrides, or to the
+    step protocol's member anywhere but in the verifier.  An applier is
+    also reached through the step field holding it, so a read of that field
+    counts its function as a caller of the applier.  The growth is then
+    taken again without what was withdrawn, until nothing more is, because
+    a withdrawn grant can take delegations resting on it down too.
     """
     handed = _handed_arguments(index)
-    delegations = _delegations(index)
+    overrides = _overrides(index)
+    delegations = _delegations(index, overrides)
     callers = _resolved_callers(index)
     withheld: frozenset[Source] = frozenset()
     while True:
         growth = _grow(index, entry, handed, delegations, withheld)
-        withdrawn = _withdrawn(index, growth, callers)
+        withdrawn = _withdrawn(index, entry, growth, callers, overrides)
         if withdrawn <= withheld:
             return growth.driven
         withheld |= withdrawn
@@ -351,6 +363,7 @@ def _grow(
     grounded: set[Source] = set()
     driven: set[Source] = set()
     appliers: dict[Source, set[int]] = {}
+    handed_to: dict[Source, set[tuple[Source, str]]] = {}
     steps: set[Source] = set()
     spent: set[tuple[Source, str]] = set()
     settled: set[Source] = set()
@@ -370,6 +383,9 @@ def _grow(
                     if applier not in withheld:
                         appliers.setdefault(applier, set()).add(mention)
                         driven.add(applier)
+                for applier, owner, parameter in grant.handed:
+                    if applier not in withheld:
+                        handed_to.setdefault(applier, set()).add((owner, parameter))
         for owner in tuple(grounded):
             if owner in settled:
                 continue
@@ -389,24 +405,49 @@ def _grow(
         driven=frozenset(driven),
         appliers={applier: frozenset(ids) for applier, ids in appliers.items()},
         steps=frozenset(steps),
+        handed={applier: frozenset(to) for applier, to in handed_to.items()},
     )
 
 
 def _withdrawn(
     index: SourceIndex,
+    entry: DriveEntry,
     growth: _Growth,
     callers: Mapping[Source, frozenset[Source]],
+    overrides: Mapping[Source, frozenset[Source]],
 ) -> frozenset[Source]:
     """The grants *growth* made that something outside a write-back uses.
 
     A step member is reached by name all over the tree, through the
-    protocol, so only its resolved calls are weighed.  An applier is a
-    local, so every mention of its name where it is visible is weighed too.
+    protocol, so only its resolved calls are weighed: those resolved to it,
+    to a base member it overrides, and to the step protocol's own member
+    from anywhere but the verifier, since that call may be this step at
+    run time.  An applier is a local, so every mention of its name where it
+    is visible is weighed too, and so is every read of the step field it
+    was handed to, whose function is a caller of it.
     """
+    protocol = Source(
+        module=entry.step.module, function=f"{entry.step.function}.{entry.step_method}"
+    )
+    overridden: dict[Source, set[Source]] = {}
+    for base, below in overrides.items():
+        for override in below:
+            overridden.setdefault(override, set()).add(base)
+
+    def weighed(target: Source) -> frozenset[Source]:
+        found = callers.get(target, frozenset())
+        return found - {entry.verifier} if target == protocol else found
+
     withdrawn: set[Source] = set()
     for granted in (*growth.appliers, *growth.steps):
-        if not callers.get(granted, frozenset()) <= growth.driven:
+        reached = {granted, *overridden.get(granted, ())}
+        if granted in growth.steps:
+            reached.add(protocol)
+        if not all(weighed(target) <= growth.driven for target in reached):
             withdrawn.add(granted)
+    for applier, handed in growth.handed.items():
+        if not _field_readers(index, handed) <= growth.driven:
+            withdrawn.add(applier)
     for applier, granting in growth.appliers.items():
         name = applier.function.rsplit(".", 1)[-1]
         for holder, reference in index.references(name):
@@ -435,6 +476,59 @@ def _resolved_callers(index: SourceIndex) -> Mapping[Source, frozenset[Source]]:
     return {target: frozenset(holders) for target, holders in found.items()}
 
 
+def _field_readers(
+    index: SourceIndex, handed: frozenset[tuple[Source, str]]
+) -> frozenset[Source]:
+    """Every function reading a step field that holds an applier.
+
+    The field is the parameter the applier was handed under, or, where the
+    step has an initializer, every attribute that initializer stores that
+    parameter in.  A read counts only on a receiver typed as that step, its
+    own methods' ``self`` included.
+    """
+    readers: set[Source] = set()
+    for owner, parameter in handed:
+        initializer = index.functions.get(
+            Source(module=owner.module, function=f"{owner.function}.__init__")
+        )
+        fields = (
+            {parameter}
+            if initializer is None
+            else _holding_attributes(initializer, parameter)
+        )
+        for field in fields:
+            for holder, reference in index.references(field):
+                if (
+                    holder is not None
+                    and isinstance(reference, ast.Attribute)
+                    and isinstance(reference.ctx, ast.Load)
+                    and index.type_of(holder, reference.value) == owner
+                ):
+                    readers.add(holder)
+    return frozenset(readers)
+
+
+def _holding_attributes(
+    initializer: ast.FunctionDef | ast.AsyncFunctionDef, parameter: str
+) -> set[str]:
+    """The attributes *initializer* stores its *parameter* in."""
+    held: set[str] = set()
+    for statement in ast.walk(initializer):
+        if not isinstance(statement, ast.Assign):
+            continue
+        for target in statement.targets:
+            for part, value in paired(target, statement.value):
+                if (
+                    isinstance(part, ast.Attribute)
+                    and isinstance(part.value, ast.Name)
+                    and part.value.id in OWN_RECEIVERS
+                    and isinstance(value, ast.Name)
+                    and value.id == parameter
+                ):
+                    held.add(part.attr)
+    return held
+
+
 def _handed_arguments(
     index: SourceIndex,
 ) -> Mapping[tuple[Source, str], tuple[tuple[Source, ast.expr], ...]]:
@@ -460,6 +554,7 @@ def _grant(index: SourceIndex, holder: Source, argument: ast.expr) -> _Grant:
     """What handing *argument* to a sink says about the tree around it."""
     grounded: set[Source] = set()
     appliers: set[tuple[Source, int]] = set()
+    handed: set[tuple[Source, Source, str]] = set()
     sinks: set[tuple[Source, str]] = set()
     parameters_here = index.parameter_names(holder)
     bindings = index.bindings(holder)
@@ -475,14 +570,14 @@ def _grant(index: SourceIndex, holder: Source, argument: ast.expr) -> _Grant:
             if target is None or target not in index.classes:
                 continue
             grounded.add(target)
-            for passed in (
-                *expression.args,
-                *(word.value for word in expression.keywords),
-            ):
+            for parameter, passed in index.arguments(target, expression):
                 if isinstance(passed, ast.Name):
                     local = index.nested(holder, passed.id)
-                    if local is not None:
-                        appliers.add((local, id(passed)))
+                    if local is None:
+                        continue
+                    appliers.add((local, id(passed)))
+                    if parameter is not None:
+                        handed.add((local, target, parameter))
         elif isinstance(expression, ast.Name):
             if expression.id in parameters_here:
                 sinks.add((holder, expression.id))
@@ -493,6 +588,7 @@ def _grant(index: SourceIndex, holder: Source, argument: ast.expr) -> _Grant:
         driven=frozenset(applier for applier, _ in appliers),
         sinks=frozenset(sinks),
         appliers=frozenset(appliers),
+        handed=frozenset(handed),
     )
 
 
@@ -545,7 +641,9 @@ def _held_parameters(
     return held
 
 
-def _delegations(index: SourceIndex) -> Mapping[Source, frozenset[Source]]:
+def _delegations(
+    index: SourceIndex, overrides: Mapping[Source, frozenset[Source]]
+) -> Mapping[Source, frozenset[Source]]:
     """For each function whose every reference resolves, who calls it.
 
     A reference nothing resolves keeps the function undriven however its
@@ -557,7 +655,6 @@ def _delegations(index: SourceIndex) -> Mapping[Source, frozenset[Source]]:
     method: typed as the base, it may be the override that answers at run
     time, so the override carries that caller too.
     """
-    overrides = _overrides(index)
     delegations: dict[Source, frozenset[Source]] = {}
     for holder, node in index.functions.items():
         if node.name.startswith("__"):

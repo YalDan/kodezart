@@ -38,13 +38,16 @@ class DriveEntry:
     """Where a step enters the verifier, read off the real classes.
 
     Nothing here is spelled by hand: the caller derives the verifier's
-    address, the parameter it takes its step on and the member that step
-    must answer, so a verifier that renamed either would be read as it is
-    rather than as this census once believed it to be.
+    address, the step protocol and the parameter it takes a step on, and
+    the member that step must answer, so a verifier that renamed any of
+    them would be read as it is rather than as this census once believed
+    it to be.
     """
 
     verifier: Source
     """The method a step is handed to."""
+    step: Source
+    """The step protocol that method takes, whose member every step answers."""
     step_parameter: str
     """The parameter of that method annotated as a step."""
     step_method: str
