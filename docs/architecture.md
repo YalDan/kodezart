@@ -254,7 +254,16 @@ arithmetic reads the criterion's own state kind and nothing else, so no second
 input and no inferred reference decides what an abandoned criterion means.
 A member whose every criterion is Canceled or Duplicate owes nothing and reads
 closed at the readiness read, while a fire entered on such a subject is refused
-as empty at the spec read.
+as empty at the spec read. The readers that ask the one predicate,
+`is_non_counting`, are the spec read, the native writer's authority read,
+`existing_criterion` and the criteria stage's `needs_criteria`; the gap and
+readiness read asks `is_open`, which closes the same kinds. The organize readers
+in `domain/organize.py` and `services/organize_owner.py` that still name
+Canceled themselves are the known exception. A static scan holds the Duplicate
+kind to the enum's own module in the shapes it sees: the `DUPLICATE` attribute,
+or a subscript by the member's name, on the enum spelled by its own name, by a
+from-import alias or as a module attribute, and a string constant equal to the
+kind's value.
 Full walker dispatch and pre-loop revalidation remain separate;
 valid scoped entries still raise the explicit unavailable-walker error after
 recording the current ready and blocked keys.
@@ -1170,8 +1179,13 @@ tracker only through the port's criterion read. `create_criterion_if_absent`
 is called from the criteria stage alone and implemented by one adapter method
 under the criterion child-set surface. A checklist a person wrote in the body is
 adopted by the criteria author, one criterion per item with the item's text
-quoted verbatim as its Check; the body is left as it is, and a re-run mints
-nothing because a criterion's identity is its exact Check text. A native
+quoted verbatim as its Check; the body is left as it is. The stage is owed while
+no child counts or while a checklist item has no criterion: an item is covered
+by any child whose Check states it, whatever that child's state, so a criterion
+a person canceled is not minted again. The task-list items are read by
+`checklist_items`, beside the row grammar in `domain/fire_spec.py`. A re-run
+mints nothing because check-before-create compares the Check text with outer
+whitespace stripped. A native
 identity is the sub-issue key and nothing else: removing one criterion and
 renumbering the `AC-n` tokens of the remainder moves no key, and the retired key
 resolves to nothing rather than to the criterion that took its number. The
@@ -1300,8 +1314,12 @@ it does not itself publish a tracker remediation record or scope terminal.
 The returned remediation supplies no fabricated record reference and no
 terminal outcome; the scope terminal derives its outcome from criterion states
 alone. The terminal holds no union collaborator and reads no union value, and a
-static assertion over its import closure, and over the modules of the types its
-signatures take and give, reports any module of it that reaches one.
+static assertion reports any module of it that reaches one: over its import
+closure, the modules it imports directly, and the modules of the classes its
+signatures take and give and of every class their fields reach. The assertion
+does not see an untyped method body, nor anything that closure does not reach,
+such as a type named only in a collaborator's method signatures or an
+annotation that is not a class.
 
 
 ## Current-head audit claim sessions

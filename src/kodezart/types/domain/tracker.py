@@ -107,7 +107,15 @@ def is_non_counting(kind: WorkflowStateKind) -> bool:
     A criterion the board Canceled or closed as a Duplicate is work nobody
     owes any more: it joins no gap, no specification and no unresolved list,
     and it refuses no read it is present in (KOD-794).  Completion is not
-    one of these kinds — a Done criterion counts, and counts as discharged.
+    one of these kinds — a completed criterion counts, and counts as
+    discharged.
+
+    Asked by the spec read, the native writer's authority read,
+    ``existing_criterion`` and the criteria stage's ``needs_criteria``; the
+    gap and readiness read asks ``is_open``, which closes the same kinds.
+    The organize readers in ``domain/organize.py`` and
+    ``services/organize_owner.py`` that still name Canceled themselves are
+    the known exception.
     """
     return kind in _NON_COUNTING_STATE_KINDS
 
