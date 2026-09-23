@@ -26,15 +26,21 @@ module binds is disjoint from every name it imports from the domain types.
 That register reads syntax. What a name resolves to at run time is pinned by
 object on the dispatch path below.
 
-The dispatch path is derived from the live function that makes a rank: every
-definition that hands it rows or that it hands on to, found by what their
-reads resolve to, not by name. Each definition on it is pinned by the ``def``
-its live code object was compiled from, with its decorators, its whole body
-and the home of every object it reads. So a size table cannot sit in front
-of a rank in the orderings, in the producer's pass, in its scan or in the
-domain order one call deeper, and a decorator, a rebinding, a ``globals()``
-or ``setattr`` write, or a module-level ``def`` of an imported word moves
-what a name resolves to. The path test states its own limits.
+The dispatch path is derived from the live function that makes a rank: the
+orderings that call it, the producer's pass that hands them its rows, the
+scan that pass takes them from, and the package functions and written
+methods those reference, found by what their reads resolve to, not by name.
+It stops at the selection: what the pass hands the selection on to, and the
+eligibility clauses, are not on it. Each definition on it is pinned by the
+``def`` its live code object was compiled from, with its decorators, its
+whole body and the home of every object it reads. So a size table cannot sit
+in front of a rank in the orderings, in the producer's pass, in its scan or
+in the domain order one call deeper, and a decorator, a rebinding, a
+``globals()`` or ``setattr`` write that has run by the time the objects are
+read, or a module-level ``def`` of an imported word moves what a name
+resolves to. The path test states its own limits. The decision itself — which
+issues are claimed and enqueued, in what order — is pinned by behaviour in
+``test_dispatch_decision.py``, not here.
 
 Two weaker nets sit outside the shape pins. One collects every ``len(...)``
 whose argument is an attribute and asserts none of those attributes is a text
@@ -1584,29 +1590,38 @@ def test_every_definition_on_the_dispatch_path_runs_exactly_what_is_registered()
     """What reaches a rank, pinned by what executes rather than what is spelled.
 
     The path is derived from the live function that makes a rank, so no list
-    of names is kept by hand: whatever reaches it — the orderings that call
-    it, the producer's pass that hands them its rows, the scan those rows
-    come from, and everything each of those calls in the package — is on it.
-    Each definition is pinned by the ``def`` its live code was compiled
-    from: its decorators, its whole body after the docstring, and the home
-    of every object its reads resolve to. So a size table cannot be put
-    before any of these ranks under any spelling that runs: in a body it
-    moves the body, and anywhere else — a decorator, a rebinding, a write to
-    the module's globals, a ``def`` of the same word — it moves what a name
-    resolves to. The derived path is compared with the register by
-    equality, so a walk rule undone shrinks it and reds here.
+    of names is kept by hand. What it reaches is the register below and no
+    more: the function that makes a rank, the comparison, the domain order,
+    the two orderings that call the rank, the producer's pass that hands
+    them its rows, and the scan those rows come from. Each definition is
+    pinned by the ``def`` its live code was compiled from: its decorators,
+    its whole body after the docstring, and the home of every object its
+    reads resolve to. So a size table cannot be put before any of these
+    ranks inside one of these definitions: in a body it moves the body, and
+    a decorator, a rebinding, a write to the module's globals or a ``def``
+    of the same word, each as it stands when the objects are read, moves
+    what a name resolves to. The derived path is compared with the register
+    by equality, so a walk rule undone shrinks it and reds here.
 
-    Limits, stated. Rows are made by the tracker adapter behind the port the
-    scan calls, and that port is not walked. A supplier reached through a
-    collaborator attribute (``self._tracker``), a method replaced on the
-    instance, and a function reached through a container or an instance are
-    not followed. A filter reads rows without changing them, since the rows
-    are frozen models, and the eligibility clauses are outside the walk. The
-    injected tie-break draw is not walked. A method a class decorator or a
-    metaclass generates is compiled from no file of the tree and is not on
-    the path; the rank's own fields are pinned above. A name built at run
-    time for ``getattr``, ``importlib`` or ``__dict__``, and ``eval`` or
-    ``exec``, are deliberate evasion and out of scope.
+    Limits, stated. The walk stops at the selection: the methods the pass
+    hands the selection and its rows on to (``_claim_and_enqueue`` and
+    ``launch``) and the eligibility clauses (``_exclude`` and each clause
+    method) are not on the path. Rows are made by the tracker adapter behind
+    the port the scan calls, and that port is not walked; the row type's own
+    validators are not read. A supplier reached through a collaborator
+    attribute (``self._tracker``), a method replaced on the instance, an
+    override in a subclass the composition root builds, and a function
+    reached through a container or an instance are not followed. A write
+    made after the objects are read — a ``setattr`` inside a function that
+    runs at boot — is not seen. The injected tie-break draw is not walked. A
+    method a class decorator or a metaclass generates is compiled from no
+    file of the tree, and a function written outside a class body and
+    assigned into it (a ``__post_init__`` among them) is not a method that
+    class writes; neither is on the path. A name built at run time for
+    ``getattr``, ``importlib`` or ``__dict__``, and ``eval`` or ``exec``,
+    are deliberate evasion and out of scope. Every route in these limits
+    that reads a size off the board changes the decision the composition
+    root composes, which ``test_dispatch_decision.py`` pins by behaviour.
     """
     functions = package_functions()
     assert functions

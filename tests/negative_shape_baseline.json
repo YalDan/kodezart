@@ -180,6 +180,7 @@
   "tests/domain/test_criterion_lifecycle.py": 119,
   "tests/domain/test_deliverables_section.py": 9,
   "tests/domain/test_detector_removal_report.py": 5,
+  "tests/domain/test_dispatch_decision.py": 14,
   "tests/domain/test_dispatch_predicate.py": 36,
   "tests/domain/test_dispatch_rank_inputs.py": 48,
   "tests/domain/test_escalation_ageing.py": 26,
@@ -2924,6 +2925,12 @@
    "test_source_identity_and_mandate_cannot_be_lost",
    "test_refuted_observation_cannot_be_projected_without_its_finding",
    "test_unobserved_finding_cannot_enter_a_quiet_result"
+  ],
+  "tests/domain/test_dispatch_decision.py": [
+   "test_the_row_is_partitioned_into_rank_eligibility_and_varied_fields",
+   "test_the_composed_dispatcher_drains_the_board_in_rank_order",
+   "test_the_port_answers_the_varied_subtree",
+   "test_the_decision_does_not_move_when_a_size_moves"
   ],
   "tests/domain/test_dispatch_predicate.py": [
    "TestClauseOneInTeam.test_an_issue_on_a_declared_team_holds",

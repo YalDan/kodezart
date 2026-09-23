@@ -621,10 +621,13 @@ def references(function: types.FunctionType) -> dict[str, object]:
     builtin, an import inside the definition, an attribute of a module
     reached any of those ways, and ``getattr`` of a module or
     ``importlib.import_module`` with a string literal. So an alias, a
-    rebinding, a ``globals()`` or ``setattr`` write and a module-level
-    ``def`` of the same word are each read as the object the function
-    will call. A read through a receiver that is no module — an attribute
-    of ``self``, of a parameter or of a class — is not resolved.
+    rebinding and a module-level ``def`` of the same word are each read as
+    the object the function will call, and so is a ``globals()`` or
+    ``setattr`` write that has already run — one made at import. The
+    namespace is read as it stands when this is called: a write made later,
+    inside a function that runs at boot, is not seen. A read through a
+    receiver that is no module — an attribute of ``self``, of a parameter
+    or of a class — is not resolved.
     """
     node = compiled_def(function)
     namespace = function.__globals__
@@ -703,7 +706,9 @@ def written_methods(owner: type) -> tuple[types.FunctionType, ...]:
     A ``staticmethod``, a ``classmethod`` and each function of a
     ``property`` are the function written. A method a class decorator or a
     metaclass generates — a dataclass's ``__eq__``, a model's validator
-    wrapper — is compiled from no file of the tree and is not one.
+    wrapper — is compiled from no file of the tree and is not one. Nor is a
+    function written outside the class body and assigned into it: it keeps
+    its own qualified name, so the body does not write it.
     """
     found: list[types.FunctionType] = []
     for value in vars(owner).values():
