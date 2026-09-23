@@ -1847,39 +1847,135 @@ async def test_the_criteria_barrier_names_a_member_left_unlabelled(monkeypatch):
     assert "criteria complete" not in labels
 
 
-async def test_a_halt_in_the_second_run_stage_reports_the_stage_before_it(
-    monkeypatch,
-):
-    """A halt raised inside the second stage's rounds carries the first stage.
+def _refused_after_the_ticket_marker(board, executor, monkeypatch, refuses):
+    """Refuse each admission judgment *refuses* picks once the ticket marker lands.
 
-    The ticket stage runs through and lands its marker; every admission read
-    after that marker is a refusal, so the criteria stage exhausts its one
-    admission round. The halt is the convergence loop's own, not the
-    barrier's, and the report it returns still names the ticket stage as
-    completed.
+    The ticket marker on the board is what dates a session to the criteria
+    stage, so the first stage runs through untouched. Returns the session
+    counts at which a refusal was answered.
     """
-    owner, board, executor = factory(under_approval=True, body=PREPARED_BODY, bound=1)
     original = executor.stream
     refused_at = []
 
     async def refused(**kwargs):
         marked = "body complete" in board.server.issues[CLAIMED_ISSUE].labels
-        if (
+        executor.refuse_forever = (
             marked
             and kwargs["output_format"]["schema"].get("title") == "AdmissionJudgment"
-        ):
-            executor.refuse_forever = True
+            and refuses(kwargs["prompt"])
+        )
+        if executor.refuse_forever:
             refused_at.append(len(executor.calls))
         async for event in original(**kwargs):
             yield event
 
     monkeypatch.setattr(executor, "stream", refused)
+    return refused_at
+
+
+def _the_dry_round_verification():
+    """Pick the criteria stage's dry-round verification of the parent.
+
+    The stage verifies the parent twice: once inside its admission round,
+    after the criterion child is written, and once more in the dry round
+    that would settle the stage. Only the second is refused, so the
+    admission round settles and the one convergence round does not.
+    """
+    seen = []
+
+    def refuses(prompt):
+        key = re.findall(r"<issue_key>(.*?)</issue_key>", prompt)[-1]
+        if "Adversarially verify the current issue" in prompt and key == CLAIMED_ISSUE:
+            seen.append(key)
+            return len(seen) == 2
+        return False
+
+    return refuses
+
+
+#: Every report arm of the convergence loop, each reached in the second run
+#: stage: the factory arguments, a maker of what the criteria stage's
+#: admission judgments refuse (None: nothing is refused), and the halt the
+#: arm reports.
+LATER_STAGE_ARMS = {
+    "admission-exhausted": (
+        {},
+        lambda: lambda _prompt: True,
+        StageHaltCause.ADMISSION_EXHAUSTED,
+    ),
+    "escalate": (
+        {"refusal": {"refusal_kind": "human_decision"}},
+        lambda: lambda _prompt: True,
+        StageHaltCause.HUMAN_DECISION,
+    ),
+    "convergence-exhausted": (
+        {"convergence_bound": 1},
+        _the_dry_round_verification,
+        StageHaltCause.CONVERGENCE_EXHAUSTED,
+    ),
+    "stage-incomplete": ({}, None, StageHaltCause.STAGE_INCOMPLETE),
+}
+
+
+@pytest.mark.parametrize("arm", list(LATER_STAGE_ARMS))
+async def test_a_halt_in_the_second_run_stage_reports_the_stage_before_it(
+    monkeypatch, arm
+):
+    """A halt raised inside the second stage's rounds carries the first stage.
+
+    The ticket stage runs through and lands its marker; then the criteria
+    stage halts on one arm of its own convergence loop — an admission that
+    exhausts its one round, a refusal that asks a person, a dry round that
+    never settles within the one convergence round, or a member that arrives
+    at the stage without the ticket marker. The halt is the loop's own, not
+    the barrier's, and the report every arm returns still names the ticket
+    stage as completed.
+    """
+    arguments, refuses, cause = LATER_STAGE_ARMS[arm]
+    owner, board, executor = factory(
+        under_approval=True, body=PREPARED_BODY, bound=1, **arguments
+    )
+    if refuses is None:
+        from tests.fakes import FakeMcpIssue
+
+        # A member that joins the scope between the two stages: the ticket
+        # stage and its barrier never saw it, and the criteria stage finds it
+        # without the ticket marker on its first reading.
+        converge = owner._converge
+
+        async def joined(**kwargs):
+            if kwargs["phase"].spec.kind is MandateKind.CRITERIA:
+                board.server.issues["late"] = FakeMcpIssue(
+                    id="late", parent_id=CLAIMED_ISSUE, description=PREPARED_BODY
+                )
+            return await converge(**kwargs)
+
+        monkeypatch.setattr(owner, "_converge", joined)
+        refused_at = None
+    else:
+        refused_at = _refused_after_the_ticket_marker(
+            board, executor, monkeypatch, refuses()
+        )
     report = await run_owner(owner)
 
-    assert refused_at, "the run never reached the criteria stage's admission"
+    assert refused_at is None or refused_at, (
+        "the run never reached the criteria stage's admission"
+    )
     assert report.halt is not None
-    assert report.halt.cause is StageHaltCause.ADMISSION_EXHAUSTED
-    assert report.halt.bound.loop == "admission"
+    assert report.halt.cause is cause
+    if cause is StageHaltCause.STAGE_INCOMPLETE:
+        assert report.halt.phase is MandateKind.CRITERIA
+        assert report.halt.unlabelled_issue_ids == ("late",)
+    elif cause is StageHaltCause.HUMAN_DECISION:
+        assert report.halt.bound is None
+    else:
+        assert (
+            report.halt.bound.loop
+            == {
+                StageHaltCause.ADMISSION_EXHAUSTED: "admission",
+                StageHaltCause.CONVERGENCE_EXHAUSTED: "convergence",
+            }[cause]
+        )
     assert report.completed_phases == (MandateKind.TICKET,)
     labels = set(board.server.issues[CLAIMED_ISSUE].labels)
     assert "body complete" in labels
