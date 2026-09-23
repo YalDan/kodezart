@@ -181,24 +181,63 @@ async def test_the_pre_approval_row_declares_no_member_that_reads_approved():
     assert GROOM_MARKER not in board.server.issues[approved].labels
 
 
+def lapsing(arm, monkeypatch):
+    """The owner and board for one write arm, with a lease the session outlasts.
+
+    ``body``: the pre-approval row rewrites the subject's body. ``graph``: it
+    adds a ``blocked_by`` edge to a member. ``split``: the ticket stage
+    splits the subject into two children. ``criteria``: the criteria stage
+    creates the subject's criterion child.
+    """
+    lapse = settings(lease_seconds=60.0)
+    if arm == "split":
+        owner, board, executor = factory(
+            settings=lapse, under_approval=True, phases=lambda rows: rows[:1]
+        )
+        splitting(board, executor, monkeypatch)
+    elif arm == "criteria":
+        owner, board, executor = factory(
+            settings=lapse,
+            under_approval=True,
+            body="Prepared body grounded in the source.",
+            phases=lambda rows: rows[1:],
+        )
+        board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+    else:
+        owner, board, executor = factory(settings=lapse)
+        if arm == "graph":
+            member(board, SIBLING)
+            edging(board, executor, monkeypatch, SIBLING)
+    return owner, board, executor
+
+
+@pytest.mark.parametrize("arm", ["body", "graph", "split", "criteria"])
 async def test_a_round_whose_lease_lapsed_in_a_session_writes_nothing_more(
-    monkeypatch,
+    monkeypatch, arm
 ):
-    """A lapse inside a session is read at the next write, never re-acquired."""
-    owner, board, executor = factory(settings=settings(lease_seconds=60.0))
+    """A lapse inside a session is read at the next write, never re-acquired.
+
+    Every write arm renews the round's lease before it writes, so the lapse
+    raises there and no write of the arm lands after it.
+    """
+    owner, board, executor = lapsing(arm, monkeypatch)
     original = executor.stream
+    lapsed = []
 
     async def stream(**kwargs):
         if kwargs["output_format"]["schema"].get("title") == "OrganizeProposal":
             # The board's clock crosses the whole lease while the session runs.
             board.advance(120)
+            lapsed.append(kwargs)
         async for event in original(**kwargs):
             yield event
 
     monkeypatch.setattr(executor, "stream", stream)
     with pytest.raises(SurfaceLeaseLostError):
         await run_owner(owner)
-    assert not [args for name, args in board.calls if name == "save_issue"]
+    assert lapsed
+    # Nothing but the round's own lease records, before the lapse or after.
+    assert written(board) == []
     assert len({nonce for _, nonce, _ in acquisitions(board)}) == 1
 
 
