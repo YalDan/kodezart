@@ -3510,15 +3510,17 @@ class FakeTrackerPort:
     #: module runs every read the port declares on its full board and holds
     #: the attributes those reads move, only ever by appending, equal to this
     #: set, and it shows every write moving the state outside the logs.  It
-    #: also reads the source of each method defined on the class line of
-    #: this double and of each subclass that declares ``READ_LOGS`` and is
-    #: imported when the census runs.  There it finds each log moved, as a
-    #: direct ``self.<log>`` target or a mutating call on one, inside the
-    #: port's reads alone, and read for nothing but the append or extend that
-    #: records it; a local bound from ``self.<log>`` counts as the log.  It
-    #: does not see ``setattr``, ``self.__dict__`` or a name built at run
-    #: time.  A read log that recorded a write, or decided an answer, fails
-    #: there.
+    #: runs every read on a full board of each subclass that declares
+    #: ``READ_LOGS`` or that a test module calls ``nothing_written`` on, and
+    #: reads the source of each method defined on the class line of each of
+    #: those.  There it finds each log moved, as a direct ``self.<log>``
+    #: target or a mutating call on one, inside the port's reads alone, and
+    #: read for nothing but the append or extend that records it; a local
+    #: bound from ``self.<log>`` counts as the log, and a local bound from
+    #: ``self`` counts as ``self``.  It does not see ``setattr``,
+    #: ``self.__dict__``, a name built at run time or a module function
+    #: handed ``self``.  A read log that recorded a write, or decided an
+    #: answer, fails there.
     READ_LOGS: ClassVar[frozenset[str]] = frozenset(
         {
             "issue_reads",

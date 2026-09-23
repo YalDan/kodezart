@@ -32,12 +32,17 @@ that case is below as well, with its journal shown empty.
 """
 
 import ast
+import importlib
 import inspect
 import textwrap
 from collections.abc import Awaitable, Callable, Mapping, Sized
 from dataclasses import dataclass
+from datetime import timedelta
+from pathlib import Path
+from typing import get_type_hints
 
 import pytest
+from pydantic import BaseModel
 
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
@@ -140,7 +145,7 @@ def criterion_source() -> str:
     return criterion_body(parent_key=ISSUE, check="a criterion holds", do="hold it")
 
 
-def board() -> FakeTrackerPort:
+def board(double: type[FakeTrackerPort] = FakeTrackerPort) -> FakeTrackerPort:
     """A board handed over with three issues on it and nothing else seeded.
 
     No issue carries a queue state or a classification, so the writes below
@@ -148,8 +153,13 @@ def board() -> FakeTrackerPort:
     mapping value is held, so the ensures create rather than adopting.  The
     two started issues leave exactly one unstarted team state, which is what
     a criterion put back to pending resolves to.
+
+    For a subclass *double*, the same board in an instance of that class:
+    built the way the class builds itself, with no arguments, then holding
+    this board's state in every attribute the double declares, so its own
+    attributes stay its own and every read runs through its overrides.
     """
-    return FakeTrackerPort(
+    seed = FakeTrackerPort(
         issues=[
             make_tracker_issue(ISSUE, queue_states=()),
             make_tracker_issue(
@@ -170,6 +180,11 @@ def board() -> FakeTrackerPort:
         ],
         marker_prefixes=PREFIXES,
     )
+    if double is FakeTrackerPort:
+        return seed
+    port = double()
+    vars(port).update(vars(seed))
+    return port
 
 
 def issue_surface(kind: SurfaceKind, issue_key: str = ISSUE) -> WritableSurface:
@@ -949,20 +964,75 @@ WRITES = sorted(name for name, row in CASES.items() if row.journals)
 REPO = "https://example.invalid/fixture-repo"
 
 
-async def full_board() -> FakeTrackerPort:
+def paged_parameter(method: str) -> tuple[str, type[BaseModel]] | None:
+    """The parameter through which the port's *method* asks for a page, if any.
+
+    Read off the port's own annotations: a parameter typed by a model that
+    declares a ``page_size``.  Bounded by the method's parameters.
+    """
+    hints = get_type_hints(getattr(TrackerPort, method))
+    for name, kind in hints.items():
+        if (
+            name != "return"
+            and isinstance(kind, type)
+            and issubclass(kind, BaseModel)
+            and "page_size" in kind.model_fields
+        ):
+            return name, kind
+    return None
+
+
+async def paged_queries(
+    double: type[FakeTrackerPort],
+) -> dict[str, tuple[str, BaseModel]]:
+    """Each read case that asks for a page, with the query it asks, read off the double.
+
+    Each such case runs alone on a fresh :func:`board` of *double*, and the
+    query is what the double's read logs recorded for it: the one entry of
+    the parameter's own type.  So the page the census board has to exceed is
+    the one the reads ask for, not a size written here.
+    """
+    found: dict[str, tuple[str, BaseModel]] = {}
+    for case in READS:
+        row = CASES[case]
+        paged = paged_parameter(row.method)
+        if paged is None:
+            continue
+        name, kind = paged
+        port = board(double)
+        await row.call(port)
+        (query,) = [
+            entry
+            for log in double.READ_LOGS
+            if isinstance(logged := getattr(port, log), list)
+            for entry in logged
+            if isinstance(entry, kind)
+        ]
+        found[case] = (name, query)
+    return found
+
+
+async def full_board(
+    double: type[FakeTrackerPort] = FakeTrackerPort,
+) -> FakeTrackerPort:
     """The census board: every attribute but the read logs holds something.
 
-    :func:`board`, then one of each write the census declares, each after
-    its own setup, then by hand whatever those writes leave empty: the
-    project with a member and an initiative, the fire entry's stage label
-    and approval, an asset, a review, a recorded repository, a body's
-    authorship and held writer, a refused scan, the approval aliases and a
-    comment read refusal.  A read that moves any attribute — empties the
-    reviews, drops a lease, rebinds the clock — therefore moves something
-    on it.  Held to that by
-    :func:`test_the_census_board_holds_something_in_every_attribute`.
+    :func:`board` of *double*, then one of each write the census declares,
+    each after its own setup, then by hand whatever those writes leave
+    empty: the project with a member and an initiative, the fire entry's
+    stage label and approval, an asset, the reviews, a recorded repository,
+    a body's authorship and held writer, a refused scan, the approval
+    aliases and a comment read refusal.  Every paged collection — the issues
+    and the reviews — holds one more entry than the largest page any read
+    case asks the double for, so a paged read always leaves something it
+    paged past.  A read that moves any attribute — empties the reviews,
+    prunes what it paged past, drops a lease, rebinds the clock — therefore
+    moves something on it.  Held to that by
+    :func:`test_the_census_board_holds_something_in_every_attribute` and
+    :func:`test_every_paged_read_leaves_something_past_its_page`.
     """
-    port = board()
+    page = max(query.page_size for _, query in (await paged_queries(double)).values())
+    port = board(double)
     for case in WRITES:
         row = CASES[case]
         if row.setup is not None:
@@ -979,8 +1049,15 @@ async def full_board() -> FakeTrackerPort:
             url="https://example.invalid/asset/fixture-asset",
         ),
     )
+    for index in range(page + 1 - len(port.issues)):
+        key = f"PAGE-{index}"
+        port.issues[key] = make_tracker_issue(key, queue_states=())
     port.reviews[REPO] = [
-        TrackerReview(review_key="fixture-review", updated_at=FIXTURE_EPOCH)
+        TrackerReview(
+            review_key=f"fixture-review-{index}",
+            updated_at=FIXTURE_EPOCH - timedelta(minutes=index),
+        )
+        for index in range(page + 1)
     ]
     port.recorded_repositories[ISSUE] = REPO
     port.body_authorship[ISSUE] = SurfaceAuthorship.MACHINE_AUTHORED
@@ -992,18 +1069,85 @@ async def full_board() -> FakeTrackerPort:
     return port
 
 
-async def case_board(case: str) -> FakeTrackerPort:
+async def case_board(
+    case: str, double: type[FakeTrackerPort] = FakeTrackerPort
+) -> FakeTrackerPort:
     """The board *case* runs on, its setup done.
 
-    A read runs on the full census board, so whatever it could move is
-    there to move; a write runs on :func:`board`, whose empty journals are
-    what its case's journals are compared against.
+    A read runs on the full census board of *double*, so whatever it could
+    move is there to move; a write runs on :func:`board`, whose empty
+    journals are what its case's journals are compared against.
     """
     row = CASES[case]
-    port = board() if row.journals else await full_board()
+    port = board(double) if row.journals else await full_board(double)
     if row.setup is not None:
         await row.setup(port)
     return port
+
+
+def declaring_doubles() -> list[type[FakeTrackerPort]]:
+    """The double and every subclass of it that declares read logs of its own.
+
+    Walked over ``__subclasses__``, each class once, so bounded by the
+    classes defined; the counting board the lane's delivery is driven on is
+    imported above and is always among them.
+    """
+    found: list[type[FakeTrackerPort]] = []
+    seen: set[type[FakeTrackerPort]] = set()
+    pending: list[type[FakeTrackerPort]] = [FakeTrackerPort]
+    while pending:
+        double = pending.pop()
+        if double in seen:
+            continue
+        seen.add(double)
+        pending.extend(double.__subclasses__())
+        if "READ_LOGS" in vars(double):
+            found.append(double)
+    return found
+
+
+def written_on() -> set[type[FakeTrackerPort]]:
+    """Every double a test module builds where it asks ``nothing_written``.
+
+    Read off the test modules' own source: each module under ``tests/``
+    whose code calls ``nothing_written`` is imported, and every class it
+    constructs by a name that is the double or a subclass of it is taken.
+    Bounded by the files under ``tests/``.
+    """
+    root = Path(__file__).parent
+    found: set[type[FakeTrackerPort]] = set()
+    for path in sorted(root.rglob("*.py")):
+        source = path.read_text()
+        if "nothing_written(" not in source:
+            continue
+        tree = ast.parse(source)
+        calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+        if not any(
+            isinstance(call.func, ast.Name) and call.func.id == "nothing_written"
+            for call in calls
+        ):
+            continue
+        parts = path.relative_to(root.parent).with_suffix("").parts
+        module = importlib.import_module(".".join(parts))
+        for call in calls:
+            if isinstance(call.func, ast.Name):
+                built = getattr(module, call.func.id, None)
+                if isinstance(built, type) and issubclass(built, FakeTrackerPort):
+                    found.add(built)
+    return found
+
+
+def census_doubles() -> list[type[FakeTrackerPort]]:
+    """Every double the read census runs on: declaring logs, or claimed over.
+
+    The double and each subclass that declares read logs of its own, and
+    every double a test module calls ``nothing_written`` on, the counting
+    board the lane's delivery is driven on among them.  In a stable order.
+    """
+    return sorted(
+        {*declaring_doubles(), *written_on()},
+        key=lambda double: (double.__module__, double.__qualname__),
+    )
 
 
 def holds_nothing(value: object) -> bool:
@@ -1023,7 +1167,10 @@ def holds_nothing(value: object) -> bool:
     return value is None or (isinstance(value, Sized) and len(value) == 0)
 
 
-async def test_the_census_board_holds_something_in_every_attribute() -> None:
+@pytest.mark.parametrize("double", census_doubles(), ids=lambda double: double.__name__)
+async def test_the_census_board_holds_something_in_every_attribute(
+    double: type[FakeTrackerPort],
+) -> None:
     """The board every read case runs on leaves no attribute empty.
 
     The read cases compare the whole state, and that is only as strong as
@@ -1032,9 +1179,11 @@ async def test_the_census_board_holds_something_in_every_attribute() -> None:
     holds something here.  The only attribute a case's own setup lifts is
     the comment read refusal, for the one read that answers with it.  The
     read cases hold the flag that makes a read move an issue's stamp at
-    its default, off.
+    its default, off.  The board is the double's own: every double the
+    census runs on gets one of its class.
     """
-    port = await full_board()
+    port = await full_board(double)
+    assert type(port) is double
     held = {
         name: value
         for name, value in vars(port).items()
@@ -1042,6 +1191,29 @@ async def test_the_census_board_holds_something_in_every_attribute() -> None:
     }
     assert held != {}
     assert sorted(name for name, value in held.items() if holds_nothing(value)) == []
+
+
+@pytest.mark.parametrize("double", census_doubles(), ids=lambda double: double.__name__)
+async def test_every_paged_read_leaves_something_past_its_page(
+    double: type[FakeTrackerPort],
+) -> None:
+    """Every paged collection on the census board holds more than a page.
+
+    Each read case that asks for a page is asked again, on the double's
+    full board, with the query it asks: it answers a whole page, and the
+    same query one entry larger answers one more.  So something lies past
+    the page each paged read asks for, and a read that prunes what it paged
+    past moves it.
+    """
+    paged = await paged_queries(double)
+    assert paged != {}
+    for case, (name, query) in paged.items():
+        port = await full_board(double)
+        read = getattr(port, CASES[case].method)
+        page = query.page_size
+        wider = query.model_copy(update={"page_size": page + 1})
+        assert len(await read(**{name: query})) == page, case
+        assert len(await read(**{name: wider})) == page + 1, case
 
 
 def port_members() -> frozenset[str]:
@@ -1138,8 +1310,11 @@ def read_logs(port: FakeTrackerPort) -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize("double", census_doubles(), ids=lambda double: double.__name__)
 @pytest.mark.parametrize("case", READS)
-async def test_a_read_through_any_port_method_moves_no_state(case: str) -> None:
+async def test_a_read_through_any_port_method_moves_no_state(
+    case: str, double: type[FakeTrackerPort]
+) -> None:
     """One read, through one port method, and the double stands still.
 
     Run on the full census board, so every attribute holds something the
@@ -1148,10 +1323,12 @@ async def test_a_read_through_any_port_method_moves_no_state(case: str) -> None:
     out only the read logs.  A read whose double rewrites an issue, appends
     a comment, empties the reviews, rebinds the clock or moves any other
     attribute fails here, naming the read, and ``nothing_written`` answers
-    False for it, because it makes the same comparison.
+    False for it, because it makes the same comparison.  Run on every
+    double the census covers, each on its own full board, so a read a
+    subclass overrides is held to the same claim.
     """
     row = CASES[case]
-    port = await case_board(case)
+    port = await case_board(case, double)
     unwritten = nothing_written(port)
     before = written_state(port)
 
@@ -1256,40 +1433,19 @@ def moved_in(function: Callable[..., object]) -> frozenset[str]:
     return frozenset(moved)
 
 
-def declaring_doubles() -> list[type[FakeTrackerPort]]:
-    """The double and every subclass of it that declares read logs of its own.
-
-    Walked over ``__subclasses__``, each class once, so bounded by the
-    classes defined; the counting board the lane's delivery is driven on is
-    imported above and is always among them.
-    """
-    found: list[type[FakeTrackerPort]] = []
-    seen: set[type[FakeTrackerPort]] = set()
-    pending: list[type[FakeTrackerPort]] = [FakeTrackerPort]
-    while pending:
-        double = pending.pop()
-        if double in seen:
-            continue
-        seen.add(double)
-        pending.extend(double.__subclasses__())
-        if "READ_LOGS" in vars(double):
-            found.append(double)
-    return found
-
-
 def test_a_read_log_is_moved_by_the_port_s_reads_alone() -> None:
     """Read in the code: a read log is moved inside a port read and nowhere else.
 
-    For the double and for every subclass that declares read logs of its
-    own, every method along its class line is read, and each one that moves
+    For every double the census runs on, every method along its class line
+    is read, and each one that moves
     a read log must be a member the census classifies as a read; every log
     it declares must be moved by one of those reads.  A write that records
     itself in a read log — directly, not by calling a read — fails here,
     naming the method and the log, and so does a log nothing fills.
     """
     reads = {CASES[case].method for case in READS}
-    assert CountingTracker in declaring_doubles()
-    for double in declaring_doubles():
+    assert CountingTracker in census_doubles()
+    for double in census_doubles():
         filled: set[str] = set()
         line = [
             cls
@@ -1311,16 +1467,49 @@ def test_a_read_log_is_moved_by_the_port_s_reads_alone() -> None:
 RECORDERS = frozenset({"append", "extend"})
 
 
-def own_log(node: ast.AST, logs: frozenset[str]) -> str | None:
-    """The log *node* is, when it is ``self.<log>`` for one of *logs*."""
+def own_log(node: ast.AST, logs: frozenset[str], selves: frozenset[str]) -> str | None:
+    """The log *node* is, when it is ``<self>.<log>`` for one of *logs*.
+
+    *selves* are the names that hold the instance: ``self`` and every local
+    bound from it.
+    """
     if (
         isinstance(node, ast.Attribute)
         and isinstance(node.value, ast.Name)
-        and node.value.id == "self"
+        and node.value.id in selves
         and node.attr in logs
     ):
         return node.attr
     return None
+
+
+def selves_in(tree: ast.AST) -> frozenset[str]:
+    """``self`` and every local name *tree* binds to it, however many hops.
+
+    ``port = self``, an annotated ``port: X = self``, a ``port := self`` and
+    a name bound from one of those in turn.  Each pass over the tree adds a
+    name or ends the walk, so it is bounded by the names the tree binds.
+    """
+    selves = {"self"}
+    while True:
+        bound = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target, value = node.targets[0], node.value
+            elif isinstance(node, ast.AnnAssign | ast.NamedExpr):
+                target, value = node.target, node.value
+            else:
+                continue
+            if (
+                isinstance(target, ast.Name)
+                and isinstance(value, ast.Name)
+                and value.id in selves
+                and target.id not in selves
+            ):
+                bound.add(target.id)
+        if not bound:
+            return frozenset(selves)
+        selves |= bound
 
 
 def logs_read_in(function: Callable[..., object], logs: frozenset[str]) -> set[str]:
@@ -1329,18 +1518,20 @@ def logs_read_in(function: Callable[..., object], logs: frozenset[str]) -> set[s
     Read off the source.  A load of ``self.<log>`` is allowed in two places
     only: as the receiver of an ``.append(...)`` or ``.extend(...)`` call,
     and as the whole value assigned to a local name, which then counts as
-    the log, so each load of that name is held to the same rule.  An
-    augmented assignment to ``self.<log>`` — a counter's ``+= 1`` — is a
-    store and records.  Every other load is a read of the log.  Bounded by
-    the body's syntax tree.
+    the log, so each load of that name is held to the same rule.  A local
+    bound from ``self`` counts as ``self``, so ``port = self`` and then
+    ``port.<log>`` is a load of the log too.  An augmented assignment to
+    ``self.<log>`` — a counter's ``+= 1`` — is a store and records.  Every
+    other load is a read of the log.  Bounded by the body's syntax tree.
     """
     tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    selves = selves_in(tree)
     aliases: dict[str, str] = {}
     recording: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None:
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            log = own_log(node.value, logs)
+            log = own_log(node.value, logs, selves)
             if log is not None and len(targets) == 1:
                 (target,) = targets
                 if isinstance(target, ast.Name):
@@ -1358,7 +1549,7 @@ def logs_read_in(function: Callable[..., object], logs: frozenset[str]) -> set[s
         if id(node) in recording:
             continue
         if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
-            log = own_log(node, logs)
+            log = own_log(node, logs, selves)
             if log is not None:
                 read.add(log)
         elif (
@@ -1399,14 +1590,14 @@ def class_line_functions(
 def test_a_read_log_decides_no_answer() -> None:
     """Read in the code: a read log is history, and no method reads it.
 
-    For the double and every imported subclass that declares read logs of
-    its own, every function on its class line is read, and none may read a
+    For every double the census runs on, every function on its class line
+    is read, and none may read a
     log for anything but the append or extend that records it.  A read
     that answers differently once its key is in the log — which moves the
     board's answers while the state the census compares stands still —
     fails here, naming the method and the log.
     """
-    doubles = declaring_doubles()
+    doubles = census_doubles()
     assert CountingTracker in doubles
     for double in doubles:
         functions = class_line_functions(double)
@@ -1433,6 +1624,12 @@ class _LogUses:
         log.append(key)
         return len(log)
 
+    def decided_through_an_alias_of_self(self, key: str) -> int:
+        port = self
+        me = port
+        port.issue_reads.append(key)
+        return len(me.issue_reads)
+
 
 def test_the_log_pass_reads_a_log_through_a_local_and_passes_a_record() -> None:
     """The control for the pass: each planted use is classified as it is."""
@@ -1440,6 +1637,9 @@ def test_the_log_pass_reads_a_log_through_a_local_and_passes_a_record() -> None:
     assert logs_read_in(_LogUses.recorded, logs) == set()
     assert logs_read_in(_LogUses.decided, logs) == {"issue_reads"}
     assert logs_read_in(_LogUses.decided_through_a_local, logs) == {"issue_reads"}
+    assert logs_read_in(_LogUses.decided_through_an_alias_of_self, logs) == {
+        "issue_reads"
+    }
 
 
 async def test_an_ensure_that_adopts_a_defined_value_writes_nothing() -> None:
