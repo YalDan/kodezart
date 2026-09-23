@@ -350,9 +350,10 @@ async def build_prompt_passes(
         return []
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
-    # Read only where a gate will actually be built: naming the operation's
-    # teams REFUSES when it declares none, and a deployment whose passes are
-    # all ungated has no scan for that refusal to be about.
+    # Read only where some row is gated, because only a built gate scans. The
+    # boards it scans are the per-issue teams' alone, never a board a scope
+    # walks (KOD-846); an operation that declares no team at all was already
+    # turned away above by absent_roster.
     gated = dialled is not None and any(row.signals for row in schedule.values())
     team_keys = operation.per_issue_teams() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
