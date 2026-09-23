@@ -798,7 +798,8 @@ state (KOD-806, KOD-755).
 
 A finding the row forms is held while the phase converges, not written when
 it is formed: a finding the next round repairs never reaches the tracker.
-Every finding still open when the row halts — the last dry round's, the
+Every finding still open when the row halts on a judgement — the last dry
+round's, less those on a subject the halting round verified clean, the
 residuals of the round that halted, and those the halting judgement carries —
 is written before the halt report returns, after the round's lease is
 released, as its own record on the item it names: one escalation per item and
@@ -811,7 +812,14 @@ named in the unrecorded halt instead, while the halt's other records still
 land.
 Whether the judgement behind the halt is still current is read once, before
 the first record, because each record's decision label is itself a change to
-the scope that judgement was bound to.
+the scope that judgement was bound to. Two exits write none of the findings
+they hold. A round that starts blocked ends in a report-shaped halt that
+spends no judgement and names the members holding the stage; the findings
+are formed again by the judgement of the entry that works those members.
+Approval landing between two rounds of the
+pre-approval row ends that row with nothing admitted, and the row writes
+nothing after approval. A write refused mid-round is not a halt at all: the
+run raises, and the next entry judges again.
 
 Because approval admits a member to a run stage instead of ending it, a
 run-stage row may name `scope_labels.approved` as its gate by that exact
