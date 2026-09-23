@@ -4187,6 +4187,54 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
         await forge.close()
 
 
+async def test_a_lane_that_progressed_and_then_closes_nothing_halts_on_the_bound():
+    """A barren fire after a productive one halts the lane all the same.
+
+    A owes two criteria. Its first fire closes one of them and stalls on the
+    other, which is progress, so the tick after it offers A again. Its second
+    fire closes nothing, and the tick after that reads it as a plateau: A
+    rests, the plateau is logged for A, and the walk's terminal reports A as
+    a lane that is not done. What is measured is every fire the lane takes,
+    not only its first.
+    """
+    repos = WalkRepos()
+    port = board(lanes=("A",), checks={"A": ("check", "second")})
+    harness = resumable(
+        port=port,
+        repos=repos,
+        max_iterations=1,
+        evaluations=[
+            *(
+                criteria_echo(keys=("A/check", "A/second"), passed={"A/check"})
+                for _ in range(STALLING_FIRE_GRADINGS)
+            ),
+            *(
+                criteria_echo(keys=("A/second",), passed=set())
+                for _ in range(STALLED_FIRE_GRADINGS)
+            ),
+        ],
+    )
+    with structlog.testing.capture_logs() as logs:
+        events = await bounded_walk(harness, job="progress-then-plateau-job")
+
+    # Three ticks: the first fire, the tick that reads it closed something and
+    # fires A again, and the tick that reads the second fire closed nothing.
+    assert len(ticks_of(events)) == 3
+    assert lane_failures(events) == ()
+    assert ticks_of(events)[-1].dispatched == ("A", "A")
+    assert port.workflow_writes == [("A/check", LifecycleStage.DONE)]
+    assert port.issues["A/second"].state_kind is WorkflowStateKind.UNSTARTED
+    # A rests from the tick after its second fire, and not before.
+    assert [tick.rested_lanes for tick in ticks_of(events)] == [(), (), ("A",)]
+    assert [
+        event["lane"] for event in logs if event.get("event") == "scope_lane_plateaued"
+    ] == ["A"]
+    terminal = events[-1]
+    assert isinstance(terminal, ScopeTerminalEvent)
+    assert [(entry.issue, entry.done) for entry in terminal.lanes] == [("A", False)]
+    assert terminal.outcome is WorkflowOutcome.scope_stopped_short
+
+
 async def test_a_put_back_that_cannot_be_written_rests_that_lane_and_the_walk_goes_on(
     monkeypatch,
 ):
