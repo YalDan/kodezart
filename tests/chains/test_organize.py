@@ -1401,9 +1401,9 @@ def gap_computation_sites(sources):
     route, an assignment alias, a declaration, a bare or attribute spelling.
     A string constant is not a route, so the terminal vocabulary's ``in_gap``
     label stays out and the module list above stays the upper bound.
-    ``in_gap`` is the seed_issue that keeps that negative live: the one module
-    spelling a seed_issue name inside a string constant spells ``in_gap``, so a
-    string constant read as a route would pull it in.  Dropping the seed_issue
+    ``in_gap`` is the seed that keeps that negative live: the one module
+    spelling a seed name inside a string constant spells ``in_gap``, so a
+    string constant read as a route would pull it in.  Dropping the seed
     changes no discovered module at head, and nothing here claims it would.
 
     Two shapes are no route here, neither of them in the package at head: a
@@ -1447,7 +1447,7 @@ def test_the_discovered_gap_sites_are_the_upper_bound_exactly():
     """The derived surface is the whole bound, not merely inside it.
 
     The guard above bounds the discovered set from above and holds a
-    three-module floor, so a seed_issue dropped from ``GAP_ARITHMETIC_NAMES`` can
+    three-module floor, so a seed dropped from ``GAP_ARITHMETIC_NAMES`` can
     take a gap consumer off the scanned surface while both still hold:
     ``chains/scope_walker.py`` is reached by ``SubtreeClosure`` alone and
     consumes the gap through it. Equality is what reds then.

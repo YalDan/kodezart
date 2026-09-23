@@ -3545,7 +3545,7 @@ class _FakeTrackerState:
         #: the recorded target repository for a staged fire (KOD-169).
         self.recorded_repositories: dict[str, str] = dict(recorded_repositories or {})
         #: Initiative names-and-ids per project id, for the scope clause.
-        #: A project the fixture does not seed_issue belongs to no initiative,
+        #: A project the fixture does not seed belongs to no initiative,
         #: which is a real tracker answer.
         self.initiative_identifiers_by_project: dict[str, frozenset[str]] = dict(
             initiative_identifiers or {},
@@ -5583,7 +5583,7 @@ def seed_fake_issue(
 
     Setup, never one of the port's writes: nothing is journalled and nothing
     lands in this process's own write ledger, so a case counting the writes
-    a consumer makes starts from the board the seed_issue left. The stamp moves as
+    a consumer makes starts from the board the seed left. The stamp moves as
     the backend's would, forward only. ``None`` leaves a field untouched.
     """
     issue = port.issues[issue_key]
@@ -5603,7 +5603,7 @@ def seed_server_issue(
     title: str | None = None,
     body: str | None = None,
 ) -> None:
-    """The same seed_issue on the vendor workspace, written into it through no tool.
+    """The same seed on the vendor workspace, written into it through no tool.
 
     No tool call is recorded, so the adapter arm's write observation — the
     mutation tools in the server's call log — does not grow either.

@@ -2357,7 +2357,7 @@ class TestAThreadedRecordIsNotAnEvent:
     adapters' input: no port write takes a parent, so a threaded comment
     cannot be produced through the surface under test.
 
-    Both cases seed_issue the SAME bytes — the body a real posted event was
+    Both cases seed the SAME bytes — the body a real posted event was
     written with, read back off the log — so the only difference between
     them is the reply link.  Nothing else can be what excluded it.
     """
