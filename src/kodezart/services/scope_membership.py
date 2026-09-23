@@ -33,6 +33,29 @@ async def read_scope_members(
     return members
 
 
+async def read_subtree_criteria(
+    *, tracker: TrackerPort, subject: str
+) -> dict[str, TrackerIssue]:
+    """Every criterion sub-issue under *subject*, keyed and at head.
+
+    The one subtree reading. The extent every reading of a fire's criteria
+    is taken over: what the entry captures is this roster entire, what the
+    fire owes is a selection from it by state, what a lane delivers on is
+    all of it, and what an answer may address at the write is read here
+    too. Two definitions of the extent could answer two different rosters
+    for one subject, and the barrier that compares their selections would
+    refuse a lane nothing is wrong with.
+    """
+    subtree = await read_scope_members(
+        tracker=tracker, scope=ScopeRef(kind=ScopeKind.ISSUE, key=subject)
+    )
+    return {
+        key: issue
+        for key, issue in subtree.items()
+        if "criterion" in issue.issue_labels
+    }
+
+
 async def read_member_subtrees(
     *, tracker: TrackerPort, scope: ScopeRef, members: Mapping[str, TrackerIssue]
 ) -> dict[str, TrackerIssue]:

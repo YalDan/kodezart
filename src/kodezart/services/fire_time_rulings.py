@@ -72,6 +72,7 @@ from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.services.run_surface_lease import RunSurfaceLease
+from kodezart.services.scope_membership import read_subtree_criteria
 from kodezart.types.domain.agent import (
     RULING_SCHEMA,
     Ruling,
@@ -311,13 +312,15 @@ class FireTimeRulings:
             )
         prefixes = dict(self._operation.marker_prefixes)
         configured_marker_prefix(prefixes, purpose="ruling")
-        # Two readings of the same set, and neither substitutes for the other.
-        # Where this fire has already written is a question about the set it
-        # entered on, asked before the pass and shown to it as the registry.
+        # Two readings at two moments, and neither substitutes for the other.
+        # Where this fire has already written is a question about the set as
+        # the pass opens, asked before it and shown to it as the registry.
         # Which identities an answer may address is a question about the set at
-        # the moment of writing, so it is read again below.
-        addressable = addressable_issues(subject=spec.subject, criteria=spec.criteria)
-        recorded = await self._recorded(addressable)
+        # the moment of writing, so it is read again below. Both moments read
+        # one extent, the subject's whole subtree, so a record pinned on a
+        # criterion the specification no longer counts is still one this fire
+        # holds and is not owed again.
+        recorded = await self._recorded(await self._resolvable(subject=spec.subject))
         answers = await self._answers(
             spec=spec,
             criteria=criteria,
@@ -330,7 +333,7 @@ class FireTimeRulings:
         owed = owed_rulings(
             subject=spec.subject,
             answers=answers.rulings,
-            addressable=await self._resolvable(spec=spec),
+            addressable=await self._resolvable(subject=spec.subject),
             recorded=tuple(record.ruling_id for record in recorded),
         )
         # After the arithmetic above, never before it: an answer addressed
@@ -387,18 +390,19 @@ class FireTimeRulings:
             )
         return tuple(sorted(records, key=lambda record: record.ruling_id))
 
-    async def _resolvable(self, *, spec: TrackerSpec) -> frozenset[str]:
+    async def _resolvable(self, *, subject: str) -> frozenset[str]:
         """The identities an answer may address, read at the moment of writing.
 
-        The set the fire entered on is not it: a criterion sub-issue the board
-        removed or reparented while the pass ran no longer resolves. A read
-        that fails propagates, for the reason ``_recorded``'s does — nothing has
-        been written yet, so an unreadable family is a fact about the tracker.
+        The subject and every criterion sub-issue of the subject's subtree, its
+        own and recursively its deliverable children's, read through the one
+        subtree reading the entry composes its spec from. The set the fire
+        entered on is not it: a criterion sub-issue the board removed or
+        reparented while the pass ran no longer resolves. A read that fails
+        propagates, for the reason ``_recorded``'s does — nothing has been
+        written yet, so an unreadable subtree is a fact about the tracker.
         """
-        rows = await self._tracker.read_criteria(issue_key=spec.subject)
-        return addressable_issues(
-            subject=spec.subject, criteria=(row.issue_key for row in rows)
-        )
+        rows = await read_subtree_criteria(tracker=self._tracker, subject=subject)
+        return addressable_issues(subject=subject, criteria=rows.keys())
 
     async def _answers(
         self,

@@ -22,7 +22,7 @@ from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_issues
 from kodezart.domain.gap import compute_gap, gap_membership
 from kodezart.domain.lane_entry import require_unamended_subject
 from kodezart.domain.workflow_state import recorded_native_roster
-from kodezart.services.scope_membership import read_scope_members
+from kodezart.services.scope_membership import read_subtree_criteria
 from kodezart.types.domain.criteria import (
     CriterionId,
     ExecutionCriterion,
@@ -32,7 +32,6 @@ from kodezart.types.domain.criteria import (
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gap import GapMembership
 from kodezart.types.domain.lane_entry import DeliverOnlyLane
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from kodezart.types.domain.workflow import WorkflowState
 
@@ -137,26 +136,6 @@ class TrackerCriteria:
         _, current = await self.read_entry(issue_key=issue_key)
         return {criterion.id: criterion.text for criterion in current.criteria}
 
-    async def _read_subtree(self, issue_key: str) -> dict[str, TrackerIssue]:
-        """Every criterion sub-issue under *issue_key*, keyed and at head.
-
-        The one subtree reading. The extent every reading of this fire's
-        criteria is taken over: what the entry captures is this roster
-        entire, what the fire owes is a selection from it by state, and what
-        a lane delivers on is all of it. Two definitions of the extent could
-        answer two different rosters for one subject, and the barrier that
-        compares their selections would refuse a lane nothing is wrong with.
-        """
-        subtree = await read_scope_members(
-            tracker=self._tracker,
-            scope=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
-        )
-        return {
-            key: issue
-            for key, issue in subtree.items()
-            if "criterion" in issue.issue_labels
-        }
-
     async def _read_subtree_criteria(
         self, spec: TrackerSpec
     ) -> dict[str, TrackerIssue]:
@@ -168,7 +147,9 @@ class TrackerCriteria:
         is caught: a criterion the spec names that the subtree no longer holds
         refuses here rather than shrinking the roster quietly.
         """
-        criteria = await self._read_subtree(spec.subject)
+        criteria = await read_subtree_criteria(
+            tracker=self._tracker, subject=spec.subject
+        )
         for named in spec.criteria:
             if named not in criteria:
                 raise InvalidFireCriterionError(
@@ -196,7 +177,9 @@ class TrackerCriteria:
         """
         try:
             subject = await self._tracker.read_fire_subject(issue_key=issue_key)
-            criteria = await self._read_subtree(subject.issue_key)
+            criteria = await read_subtree_criteria(
+                tracker=self._tracker, subject=subject.issue_key
+            )
         except _TRANSPORT_FAILURES as exc:
             raise FireSpecEntryError(
                 issue_key=issue_key,

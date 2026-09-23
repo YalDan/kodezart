@@ -4984,10 +4984,13 @@
    "test_a_key_the_criterion_family_does_not_hold_is_refused_before_any_write",
    "test_keys_an_answer_names_only_in_its_prose_are_prose_and_are_not_resolved",
    "test_a_reference_lost_between_the_session_and_the_write_is_refused",
+   "test_an_answer_to_a_nested_criterion_is_recorded_on_that_criterion",
+   "test_a_nested_criterion_unlabelled_while_the_pass_ran_no_longer_resolves",
    "test_a_criterion_the_answer_does_not_address_leaving_still_records",
    "test_an_identity_a_successor_absorbed_is_still_addressable_at_the_write",
    "test_the_family_is_read_again_after_the_session_and_before_the_write",
-   "test_a_family_read_that_fails_at_the_write_records_nothing_and_says_so"
+   "test_a_family_read_that_fails_at_the_write_records_nothing_and_says_so",
+   "test_the_ruling_step_and_the_fire_entry_read_one_subtree_function"
   ],
   "tests/services/test_git_source_lookup.py": [
    "test_actual_deleted_file_is_absent_only_at_the_selected_revision",
