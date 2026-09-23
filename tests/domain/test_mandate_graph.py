@@ -133,24 +133,24 @@ def graph_reading(snapshot: LaneGraphSnapshot) -> AlarmReading:
     return AlarmReading(source_ref="lane-graph", value=GraphEvidence(value=snapshot))
 
 
+def uncrossing_child(state: WorkflowStateKind) -> TrackerIssue:
+    """The one child the structural cases open under the fire, in *state*."""
+    return issue("CHILD", state, parent="FIRE")
+
+
 #: ``STRUCTURAL_WRITE_UNCROSSES_MILESTONE`` as a pair one fact apart: a child
 #: opened under the completed fire, and the same child completed. Named here
-#: so the signal's own module owns the pair every other test reads.
+#: so the signal's own module owns the pair every other test reads; its cases
+#: below open the same child.
 UNCROSSED_PAIR = (
     SUBJECT,
     (
         graph_reading(graph()),
-        graph_reading(
-            graph(children=(issue("CHILD", WorkflowStateKind.STARTED, parent="FIRE"),))
-        ),
+        graph_reading(graph(children=(uncrossing_child(WorkflowStateKind.STARTED),))),
     ),
     (
         graph_reading(graph()),
-        graph_reading(
-            graph(
-                children=(issue("CHILD", WorkflowStateKind.COMPLETED, parent="FIRE"),)
-            )
-        ),
+        graph_reading(graph(children=(uncrossing_child(WorkflowStateKind.COMPLETED),))),
     ),
 )
 
@@ -261,7 +261,7 @@ def test_ruling_sources_and_configuration_name_are_exact(index: int) -> None:
 def test_open_new_child_under_completed_fire_is_structural(
     state: WorkflowStateKind,
 ) -> None:
-    after = graph(children=(issue("CHILD", state, parent="FIRE"),))
+    after = graph(children=(uncrossing_child(state),))
     alarm = graph_alarm(graph(), after)
     assert (alarm is not None) is (state is not WorkflowStateKind.COMPLETED)
     if alarm is not None:
@@ -296,7 +296,7 @@ def test_same_child_under_noncompleted_fire_stays_quiet(
             graph(fire_state=state),
             graph(
                 fire_state=state,
-                children=(issue("CHILD", WorkflowStateKind.STARTED, parent="FIRE"),),
+                children=(uncrossing_child(WorkflowStateKind.STARTED),),
             ),
         )
         is None

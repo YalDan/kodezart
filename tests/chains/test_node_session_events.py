@@ -5,6 +5,7 @@ import json
 from datetime import UTC, datetime
 
 import pytest
+import structlog.testing
 from claude_agent_sdk import ResultMessage, SystemMessage
 from pydantic import ValidationError
 
@@ -355,6 +356,59 @@ async def test_each_evaluations_openings_are_handed_to_the_lanes_recorder(
     assert [len(started) for _, started in sessions.calls] == recorded
     assert [event for _, started in sessions.calls for event in started] == starts
     assert {lane for lane, _ in sessions.calls} == ({LANE} if recorded else set())
+
+
+class RefusingFirstSessions(RecordingSessions):
+    """A recorder whose first hand-over the tracker refuses."""
+
+    async def record_node_sessions(self, *, lane, started):
+        await super().record_node_sessions(lane=lane, started=started)
+        if len(self.calls) == 1:
+            raise RuntimeError("the tracker refused the openings")
+
+
+async def test_a_refused_hand_over_never_replaces_the_drains_own_failure(monkeypatch):
+    """The drain's transient drives the retry; the recorder's refusal is logged.
+
+    The first evaluation opens a session and its drain fails with a
+    ``ConnectionError``; the recorder then refuses that evaluation's opening
+    with an error the retry policy does not retry. The refusal is logged as
+    ``node_sessions_unrecorded``, the drain's own failure is what reaches the
+    retry, and the lane reaches its second evaluation, whose opening is handed
+    over too.
+    """
+    state = {
+        "clients": [],
+        "closed": [],
+        "mode": "retry",
+        "evaluations": 0,
+        "opened": asyncio.Event(),
+    }
+    monkeypatch.setattr(
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
+        lambda **kwargs: SDKClient(**kwargs, state=state),
+    )
+    executor = ClaudeClientExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES, knowledge_grant=NO_KNOWLEDGE_GRANT
+    )
+    with structlog.testing.capture_logs() as logs:
+        loop = _make_loop(
+            executor=executor,
+            workspace=FakeWorkspaceProvider(),
+            retry_initial_interval=0.001,
+        )
+        sessions = RefusingFirstSessions()
+        loop._node_sessions = sessions
+        monkeypatch.setattr(loop, "_lane_binding", lambda _ctx: LANE)
+        async with asyncio.timeout(10):
+            async for _ in loop.run(**_run_kwargs(), run_identity=RUN):
+                pass
+
+    assert state["evaluations"] == 2
+    assert [len(started) for _, started in sessions.calls] == [1, 1]
+    assert [
+        entry["site"] for entry in logs if entry["event"] == "node_sessions_unrecorded"
+    ] == ["ralph_evaluator"]
 
 
 async def test_openings_are_recorded_before_malformed_evidence_refuses(monkeypatch):
