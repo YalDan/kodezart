@@ -1608,10 +1608,12 @@ async def test_the_three_stops_stay_distinct_and_none_shadows_another() -> None:
     assert stalled[-1].iteration == 3 < 5
     assert stalled[-1].trajectory.plateaued is True
 
-    # The fourth stop: a criterion the sweep judged unverifiable takes no seat,
-    # so the two graded ones clear the gate on the first round, well below the
-    # ceiling, and the verdict is clamped to ship_with_flags rather than held
-    # open by the one demonstration that was never possible.
+    # A fourth arm of the cleared-gate stop: a criterion the sweep judged
+    # unverifiable takes no seat, so the two graded ones clear the gate on the
+    # first round, well below the ceiling, and the verdict is clamped to
+    # ship_with_flags rather than held open by the one demonstration that was
+    # never possible. The ungraded criterion is answered as passing, so the
+    # passed count of two shows its seat is not in the numerator either.
     flagged_criteria = [
         *_THREE_CRITERIA[:2],
         _THREE_CRITERIA[2].model_copy(
@@ -1625,7 +1627,7 @@ async def test_the_three_stops_stay_distinct_and_none_shadows_another() -> None:
         ),
     ]
     flagged_loop = _make_loop(
-        executor=_ScriptedLoopExecutor(flagged_criteria, [[True, True, False]]),
+        executor=_ScriptedLoopExecutor(flagged_criteria, [[True, True, True]]),
         max_iterations=5,
     )
     flagged = [
