@@ -739,66 +739,84 @@ class RalphLoop:
             skills = self._prompts.session_skills(PromptKey.EVALUATION, self._skills)
             policy = self._prompts.session_policy(PromptKey.EVALUATION)
             observe = None if observer is None else observer.observe
-            if native_ref is None:
-                result_event, rate_limit_rejected = await drain(
-                    self._service.stream(
-                        prompt=eval_prompt,
-                        repo_path=ctx.repo_path,
-                        repo_url=ctx.repo_url,
-                        branch=evaluation_ref,
-                        permission_mode=EVAL_PERMISSION_MODE,
-                        allowed_tools=ToolPreset.EVALUATION,
-                        skills=skills,
-                        session_type=SessionType.TICKET_FIRE,
-                        run_identity=ctx.run_identity,
-                        # Evaluative: no lens is dispatched from here. Asking a
-                        # template not to fan out is a request; an empty
-                        # definition list is a guarantee.
-                        agents=NO_SUBAGENTS,
-                        session_policy=policy,
-                        output_format={
-                            "type": "json_schema",
-                            "schema": ACCEPTANCE_CRITERIA_SCHEMA,
-                        },
-                        cache_key=ctx.cache_key,
-                    ),
-                    site="ralph_evaluator",
-                    observe=observe,
-                )
-            else:
-                # The loop owns the tree the verdict will be stamped for, so
-                # the two facts that make the stamp true are read off that
-                # tree before it is released: a workspace holding changes the
-                # sha does not, or standing at another head, was graded as
-                # somebody's working copy and not as the branch.
-                async with owned_workspace(
-                    self._evaluation_workspace(),
-                    ref=native_ref,
-                    repo_path=cwd,
-                    cache_key=ctx.cache_key,
-                ) as graded_in_path:
+            # What the observer saw open is put on the lane's stream whether
+            # the drain returned or raised: a drain that opened sessions and
+            # then failed is retried under another evaluation attempt, so its
+            # openings would otherwise be counted by nobody.
+            try:
+                if native_ref is None:
                     result_event, rate_limit_rejected = await drain(
-                        self._service.stream_in_workspace(
+                        self._service.stream(
                             prompt=eval_prompt,
-                            workspace_path=graded_in_path,
+                            repo_path=ctx.repo_path,
+                            repo_url=ctx.repo_url,
+                            branch=evaluation_ref,
                             permission_mode=EVAL_PERMISSION_MODE,
                             allowed_tools=ToolPreset.EVALUATION,
                             skills=skills,
                             session_type=SessionType.TICKET_FIRE,
                             run_identity=ctx.run_identity,
+                            # Evaluative: no lens is dispatched from here. Asking a
+                            # template not to fan out is a request; an empty
+                            # definition list is a guarantee.
                             agents=NO_SUBAGENTS,
                             session_policy=policy,
                             output_format={
                                 "type": "json_schema",
                                 "schema": ACCEPTANCE_CRITERIA_SCHEMA,
                             },
+                            cache_key=ctx.cache_key,
                         ),
                         site="ralph_evaluator",
                         observe=observe,
                     )
-                    workspace_stood = await read_workspace_head(
-                        git=self._git, workspace=graded_in_path
-                    ) == (native_ref, False)
+                else:
+                    # The loop owns the tree the verdict will be stamped for, so
+                    # the two facts that make the stamp true are read off that
+                    # tree before it is released: a workspace holding changes the
+                    # sha does not, or standing at another head, was graded as
+                    # somebody's working copy and not as the branch.
+                    async with owned_workspace(
+                        self._evaluation_workspace(),
+                        ref=native_ref,
+                        repo_path=cwd,
+                        cache_key=ctx.cache_key,
+                    ) as graded_in_path:
+                        result_event, rate_limit_rejected = await drain(
+                            self._service.stream_in_workspace(
+                                prompt=eval_prompt,
+                                workspace_path=graded_in_path,
+                                permission_mode=EVAL_PERMISSION_MODE,
+                                allowed_tools=ToolPreset.EVALUATION,
+                                skills=skills,
+                                session_type=SessionType.TICKET_FIRE,
+                                run_identity=ctx.run_identity,
+                                agents=NO_SUBAGENTS,
+                                session_policy=policy,
+                                output_format={
+                                    "type": "json_schema",
+                                    "schema": ACCEPTANCE_CRITERIA_SCHEMA,
+                                },
+                            ),
+                            site="ralph_evaluator",
+                            observe=observe,
+                        )
+                        workspace_stood = await read_workspace_head(
+                            git=self._git, workspace=graded_in_path
+                        ) == (native_ref, False)
+            except Exception:
+                if observer is not None and self._node_sessions is not None:
+                    try:
+                        await self._node_sessions.record_node_sessions(
+                            lane=self._lane_binding(ctx), started=tuple(started)
+                        )
+                    except Exception:
+                        # The drain's own failure is what propagates; the
+                        # recorder's is said here and never replaces it.
+                        await self._log.aexception(
+                            "node_sessions_unrecorded", site="ralph_evaluator"
+                        )
+                raise
             if observer is not None:
                 if self._node_sessions is not None:
                     await self._node_sessions.record_node_sessions(

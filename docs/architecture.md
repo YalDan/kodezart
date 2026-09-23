@@ -8,7 +8,11 @@ opening frame is not a second session. Missing or malformed opening evidence
 is refused after draining the executor, preserving its cleanup. Generic calls
 without a fire identity retain their existing stream. On the scoped arm each
 evaluation's observed openings are also posted on the lane's own stream once
-the drain is over and before malformed evidence is refused — one
+the drain is over, whether it returned or raised, and before malformed evidence
+is refused. A drain that opened sessions and then failed is retried under
+another invocation, so its openings are posted before its failure propagates;
+a recorder failure at that point is logged and never replaces the drain's own
+failure, and a cancelled drain posts nothing. The writer posts one
 `node_session_started` event per opening the stream does not already hold,
 keyed to the whole invocation and the session it opened
 (`TrackerLaneStateWriter.record_node_sessions`, through the

@@ -172,6 +172,8 @@ class SDKClient:
             yield init(session_id)
         if mode == "two-sessions":
             yield init("second-native-session")
+        if mode == "opening-then-malformed":
+            yield init(None)
         if mode == "retry" and state["evaluations"] == 1:
             raise ConnectionError("native transient after opening")
         if mode == "cancel":
@@ -296,7 +298,13 @@ LANE = LaneBinding(
 
 @pytest.mark.parametrize(
     ("mode", "recorded"),
-    [("one", [1]), ("two-sessions", [2]), ("iterations", [1, 1]), ("untracked", [])],
+    [
+        ("one", [1]),
+        ("two-sessions", [2]),
+        ("iterations", [1, 1]),
+        ("retry", [1, 1]),
+        ("untracked", []),
+    ],
 )
 async def test_each_evaluations_openings_are_handed_to_the_lanes_recorder(
     monkeypatch, mode, recorded
@@ -306,7 +314,9 @@ async def test_each_evaluations_openings_are_handed_to_the_lanes_recorder(
     Once per observed evaluation, with exactly the openings that evaluation
     streamed and nothing inferred: two openings under one invocation are
     handed over together, two iterations hand over one each, and an
-    evaluation nothing observed hands over nothing at all.
+    evaluation nothing observed hands over nothing at all. A drain that
+    opened a session and then failed hands its opening over too, before the
+    evaluation is retried under another attempt.
     """
     state = {
         "clients": [],
@@ -344,4 +354,45 @@ async def test_each_evaluations_openings_are_handed_to_the_lanes_recorder(
     starts = [event for event in events if isinstance(event, NodeSessionStartedEvent)]
     assert [len(started) for _, started in sessions.calls] == recorded
     assert [event for _, started in sessions.calls for event in started] == starts
-    assert {lane for lane, _ in sessions.calls} <= {LANE}
+    assert {lane for lane, _ in sessions.calls} == ({LANE} if recorded else set())
+
+
+async def test_openings_are_recorded_before_malformed_evidence_refuses(monkeypatch):
+    """A drain whose native evidence is malformed still hands over what opened.
+
+    The evaluation opens one session and then reports an opening with no
+    session id. The recorder receives the one opening the observer saw, and
+    only then does the observation error propagate.
+    """
+    state = {
+        "clients": [],
+        "closed": [],
+        "mode": "opening-then-malformed",
+        "evaluations": 0,
+        "opened": asyncio.Event(),
+    }
+    monkeypatch.setattr(
+        "kodezart.adapters.claude.client_executor.ClaudeSDKClient",
+        lambda **kwargs: SDKClient(**kwargs, state=state),
+    )
+    executor = ClaudeClientExecutor(
+        setting_sources=DEFAULT_SETTING_SOURCES, knowledge_grant=NO_KNOWLEDGE_GRANT
+    )
+    loop = _make_loop(
+        executor=executor,
+        workspace=FakeWorkspaceProvider(),
+        retry_initial_interval=0.001,
+    )
+    sessions = RecordingSessions()
+    loop._node_sessions = sessions
+    monkeypatch.setattr(loop, "_lane_binding", lambda _ctx: LANE)
+    events = []
+
+    with pytest.raises(NodeSessionObservationError):
+        async with asyncio.timeout(10):
+            async for event in loop.run(**_run_kwargs(), run_identity=RUN):
+                events.append(event)
+
+    starts = [event for event in events if isinstance(event, NodeSessionStartedEvent)]
+    assert len(starts) == 1
+    assert sessions.calls == [(LANE, tuple(starts))]
