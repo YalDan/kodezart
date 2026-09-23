@@ -15,13 +15,16 @@ import asyncio
 from typing import NoReturn
 
 from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.domain.fire_spec import criterion_field_bodies
+from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import ExclusionClause
 from kodezart.types.domain.operation import RepoEntry, ScopeLabel
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import GapMeasurement, ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
-from kodezart.types.domain.tracker import WorkflowStateKind
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+from tests.chains.test_scope_gap_membership import PHANTOM_CHECKLIST
 from tests.fakes import FakeDeliveryProbe, FakeTrackerPort, make_tracker_issue
 from tests.services.test_scope_runtime import (
     LANE_STATE,
@@ -272,3 +275,60 @@ async def test_the_same_shape_inside_the_filter_names_no_out_of_scope_entry() ->
         GapMeasurement(lane_key="B", criterion_keys=("B1/check", "B/check")),
         GapMeasurement(lane_key="B1", criterion_keys=("B1/check",)),
     )
+
+
+async def test_dispatch_target_resolution_reads_no_lane_body(monkeypatch) -> None:
+    """The walk picks its lane from typed rows; the lane's prose is not read.
+
+    The lane's description is a checklist in the live template grammar, so a
+    selection that consulted it — to skip the lane, to mint a target, to rank
+    it — would have text to act on. A recording trap on ``body`` for every
+    row that is not a criterion is installed over one tick: the ready read,
+    the selection, the turn built from the chosen row, and the readmission
+    the turn asks before its entry. It is lifted when the lane's entry is
+    read, which is where the fire is launched from; the fire's own subject
+    prompt is read after that, and is the fire's input rather than a
+    resolution of which lane to fire.
+
+    The trap sees attribute reads of ``body`` on a ``TrackerIssue``; a read
+    through ``__dict__``, ``vars()`` or ``model_dump()`` is outside it.
+    """
+    assert criterion_field_bodies(PHANTOM_CHECKLIST, field="Check") != ()
+    port = scope_board(criterion_row("A/check"))
+    port.issues["A"] = port.issues["A"].model_copy(update={"body": PHANTOM_CHECKLIST})
+    body_reads: list[str] = []
+    launched: list[str] = []
+    original = TrackerIssue.__getattribute__
+
+    def trapped(issue: TrackerIssue, name: str) -> object:
+        if name == "body" and "criterion" not in original(issue, "issue_labels"):
+            body_reads.append(original(issue, "issue_key"))
+        return original(issue, name)
+
+    read_entry = LaneEntryReader.read
+
+    async def lifting(self: LaneEntryReader, **facts: object):
+        launched.append(str(facts["issue_key"]))
+        monkeypatch.setattr(TrackerIssue, "__getattribute__", original)
+        return await read_entry(self, **facts)
+
+    monkeypatch.setattr(LaneEntryReader, "read", lifting)
+    monkeypatch.setattr(TrackerIssue, "__getattribute__", trapped)
+    walk = walk_over(port, RestingLane())
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        observations = [
+            event.observation
+            async for event in walk
+            if isinstance(event, ScopeWalkEvent)
+        ]
+
+    assert body_reads == []
+    # The tick really reached the launch: the lane was selected, readmitted
+    # and entered, and its turn ended in the fire's own preparation.
+    assert launched == ["A"]
+    assert observations[0].ready == ("A",)
+    assert [
+        failure.issue_key
+        for failure in observations[-1].failed_lanes
+        if failure.error.error_kind == FireNotUnderTestError.__name__
+    ] == ["A"]

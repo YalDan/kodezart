@@ -364,7 +364,7 @@
   "tests/services/test_scope_runtime.py": 56,
   "tests/services/test_scope_runtime_static.py": 10,
   "tests/services/test_scope_terminal.py": 80,
-  "tests/services/test_scope_walk_invariants.py": 17,
+  "tests/services/test_scope_walk_invariants.py": 22,
   "tests/services/test_session_grant_threading.py": 13,
   "tests/services/test_structured_run_records.py": 55,
   "tests/services/test_supervisor_pass.py": 18,
@@ -5147,7 +5147,8 @@
    "test_the_walk_lists_the_excluded_criteria_beside_each_gap",
    "test_an_open_criterion_the_filter_cannot_reach_is_named_with_its_reason",
    "test_the_same_shape_inside_the_filter_names_no_out_of_scope_entry",
-   "test_every_tick_names_the_out_of_reach_criteria_of_every_ready_lane"
+   "test_every_tick_names_the_out_of_reach_criteria_of_every_ready_lane",
+   "test_dispatch_target_resolution_reads_no_lane_body"
   ],
   "tests/services/test_session_grant_threading.py": [
    "test_stream_carries_the_session_type_to_the_executor",
