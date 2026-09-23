@@ -2142,11 +2142,14 @@ keeps its own session type and requires no Git dependency for this reuse.
 
 ### Write-back adoption
 
-Every tracker write that leaves an artifact a later reader reads back is
-either driven by `WriteBackVerifier.write_back` or declared derived beside
-the function that makes it; nothing else may reach the tracker.
+Every call of the dialled roles' artifact-write surface — every tracker
+write through those roles that leaves an artifact a later reader reads back —
+is either driven by `WriteBackVerifier.write_back` or declared derived beside
+the function that makes it.
 `kodezart.domain.write_adoption.take_census` states that over the installed
-source rather than over a list.
+source rather than over a list. The census covers the roles `DialledTracker`
+is dialled as; a writer that reaches the tracker session through another
+port is not part of that surface and is not censused here.
 
 The write surface is read off the roles the tracker is dialled as: the
 fields of `DialledTracker` whose type is declared in `kodezart.core.protocols`,
@@ -2156,7 +2159,9 @@ mutating verb is a write; a write that takes more than addresses and lease
 bookkeeping is an artifact write.
 
 A call site is every call of an artifact write through a receiver other than
-`self`. Driven is proven by declared types, never by a name or a shape: a
+`self`, and every place such a write is taken as a value (bound to a name,
+handed to a partial, passed as a callback); one taken at module or class
+level is a site of the module. Driven is proven by declared types, never by a name or a shape: a
 call resolves only through the enclosing scopes, the module's own
 definitions, its `kodezart` imports, annotated parameters, locals every
 assignment of which constructs one class, `self` attributes typed by their
@@ -2169,7 +2174,11 @@ constructor parameter makes that parameter a sink. A function is driven by
 delegation only when every reference to its name anywhere in the tree is a
 resolved call, at least one resolves to it, and every such call stands in a
 driven function, so an unresolved reference withholds the grant rather than
-widening it.
+widening it. A call resolved to a method counts as a call of every override
+of it as well. Construction alone is never the whole grant: a granted
+applier or step member that any undriven function calls loses its grant, and
+so does an applier mentioned anywhere but in a call or the constructor
+argument that granted it.
 
 A write no verifier drives is admissible only under
 `@derived_writes("<method>", …)` on the function that makes it
