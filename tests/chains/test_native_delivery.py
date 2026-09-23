@@ -59,6 +59,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.stall_report import DO_NOT_MERGE_PREFIX
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     ResultEvent,
@@ -283,7 +284,13 @@ def composed(
     evaluations=None,
     forge_present=True,
     loop=None,
+    record_writer=False,
 ):
+    """The native lane graph over one fire, as composition assembles it.
+
+    *record_writer* hands the delivering step the fire's own record writer,
+    the one composition hands both seats, instead of the recording double.
+    """
     tracker = CountingTracker()
     executor = NativeExecutor(
         evaluations or [native_evaluation(), native_evaluation()] * (rounds + 1)
@@ -314,7 +321,7 @@ def composed(
     wire = ForgeWire(red_first=red)
     wire.current_sha = lambda: NEXT_SHA if len(merger.calls) > 1 else SHA
     forge = _make_client(wire) if forge_present else None
-    lane_state = RecordingLaneState()
+    lane_state = fire._lane_state if record_writer else RecordingLaneState()
     lane = build_native_lane_workflow(
         fire=fire,
         lane_state=lane_state,
@@ -484,6 +491,51 @@ async def test_a_stalled_lane_opens_and_watches_its_pull_request_like_any_other(
         assert all(
             DO_NOT_MERGE_PREFIX not in wire.creates[0][key]
             for key in ("title", "body", "head", "base")
+        )
+    finally:
+        await forge.close()
+
+
+async def test_a_stalled_lane_with_no_record_delivers_through_the_record_writer():
+    """The delivery write on a lane with no record is skipped like the landing.
+
+    Composition hands one record writer to the fire and to the lane, so the
+    delivering step here writes through the same writer the landing did. The
+    lane has no record: the landing act is skipped and logged, the pull
+    request is opened and watched, and the pull-request write is skipped and
+    logged the same way, naming the lane and the pull request. The delivery
+    completes and no first record is composed out of either (KOD-705).
+    """
+    lane, state, config, wire, forge, _, tracker, lane_state = composed(
+        loop=stalled_loop(), record_writer=True
+    )
+    try:
+        assert lane_state is lane.fire._lane_state
+        assert isinstance(lane_state, TrackerLaneStateWriter)
+        with structlog.testing.capture_logs() as logs:
+            reports, _, final = await run(lane, state, config)
+        assert len(reports) == 1
+        assert isinstance(final["delivery"], CompletedLaneDelivery)
+        result = reports[0].delivery.result
+        assert result.outcome is WorkflowOutcome.stalled_pr_opened
+        assert len(wire.creates) == 1
+        assert len(wire.watches) == 1
+        assert [
+            (entry["lane"], entry["landed_sha"])
+            for entry in logs
+            if entry["event"] == "lane_landing_not_recorded"
+        ] == [(SUBJECT, result.final_commit_sha)]
+        assert [
+            (entry["lane"], entry["pull_request"])
+            for entry in logs
+            if entry["event"] == "lane_pull_request_not_recorded"
+        ] == [(result.lane_key, result.pr.url)]
+        assert result.lane_key == SUBJECT
+        assert (
+            await LaneRecordReader(tracker=tracker, operation=native_operation()).find(
+                issue_key=SUBJECT, lane_key=SUBJECT
+            )
+            is None
         )
     finally:
         await forge.close()

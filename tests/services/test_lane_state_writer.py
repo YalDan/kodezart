@@ -198,22 +198,31 @@ RECORD_MARKER = compose_comment_marker(
 async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
     """Where a delivery is retained is the record, edited where it stands.
 
-    A lane with no record refuses rather than composing a first one out of a
-    delivery; the pull request is then set on the record the commit left, in
-    the one comment that record lives in, naming that comment as the edit's
-    precondition, and setting the same one again writes nothing at all — a
-    second delivery of the same head is not a second write.
+    A lane with no record gets no first record composed out of a delivery:
+    the write is skipped, no comment is minted, and a log line names the lane
+    and the pull request, so the delivery completes rather than failing after
+    its pull request was opened (KOD-705). The pull request is then set on
+    the record the commit left, in the one comment that record lives in,
+    naming that comment as the edit's precondition, and setting the same one
+    again writes nothing at all — a second delivery of the same head is not
+    a second write.
     """
     port, repo = board(), lane_repo()
     lane_state = writer(port, repo)
     upserts = comment_upserts(port)
 
-    with pytest.raises(LaneRecordWriteError, match="no record of this lane"):
-        await lane_state.record_pull_request(
+    with structlog.testing.capture_logs() as logs:
+        skipped = await lane_state.record_pull_request(
             lane_key=LANE, pr=PR, visibility=binding().visibility
         )
+    assert skipped is None
     assert port.comments == []
     assert upserts == []
+    assert [
+        (entry["lane"], entry["pull_request"])
+        for entry in logs
+        if entry["event"] == "lane_pull_request_not_recorded"
+    ] == [(LANE, PR.url)]
 
     committed = await make_commit(lane_state, repo, 1)
     recorded = record_comments(port)[0]
@@ -224,11 +233,16 @@ async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
     # nothing about the repeat below.
     assert upserts == [(RECORD_MARKER, None)]
 
-    carried = await lane_state.record_pull_request(
-        lane_key=LANE, pr=PR, visibility=binding().visibility
-    )
+    with structlog.testing.capture_logs() as logs:
+        carried = await lane_state.record_pull_request(
+            lane_key=LANE, pr=PR, visibility=binding().visibility
+        )
 
+    assert carried is not None
     assert carried.pr == PR
+    assert [
+        entry for entry in logs if entry["event"] == "lane_pull_request_not_recorded"
+    ] == []
     # The edit named the comment the writer had just read, so a record another
     # writer changed in between is refused rather than overwritten.
     assert upserts[-1] == (RECORD_MARKER, recorded.comment_key)
