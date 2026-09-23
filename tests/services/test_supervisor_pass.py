@@ -53,7 +53,7 @@ LANES = ("LANE-B", "LANE-C")
 every_write_of_a_tick_is_inside_the_declared_set = declared_set_fixture()
 
 
-def ready_set(*, ref=REF, lanes=LANES, closed=(), blocked=()):
+def ready_set(*, ref=REF, lanes=LANES, closed=(), blocked=(), unapproved=()):
     """One scope reading in the shape the walker's own read composes it in."""
     return ScopeReadySet(
         scope=ResolvedScope(ref=ref, issues=()),
@@ -67,14 +67,20 @@ def ready_set(*, ref=REF, lanes=LANES, closed=(), blocked=()):
             for lane in lanes
         ),
         blocked=blocked,
-        # Every criterion of the scope, a blocked member's included, as the
-        # walker's own read carries them.
+        # Every criterion of the scope, a blocked or unapproved member's
+        # included, as the walker's own read carries them.
         criteria=tuple(
             row
-            for lane in (*lanes, *closed, *(member.issue_key for member in blocked))
+            for lane in (
+                *lanes,
+                *closed,
+                *(member.issue_key for member in blocked),
+                *unapproved,
+            )
             for row in subtree(lane)
         ),
         closed=tuple(make_tracker_issue(lane) for lane in closed),
+        unapproved=unapproved,
     )
 
 
@@ -355,6 +361,43 @@ async def test_a_lapse_on_a_blocked_lane_is_raised_at_its_criterion_until_it_is_
         *(event.kind for event in accounts),
         RunEventKind.RUN_ALARM_RAISED,
     ]
+
+
+async def test_a_lapse_on_an_unapproved_lane_is_raised_at_its_criterion():
+    """Unapproved is the other waiting member: nothing runs it, so nobody owes it.
+
+    The twin of the blocked case above with the lane carried as unapproved.
+    The lane finished its first criterion and found that grading lapsed; the
+    criterion stands in Todo, and the tick records the lapse at the
+    criterion's own address on the lane and posts nothing.
+    """
+    port = await board(lanes=LANES)
+    lapsed = checks("LANE-B")[0]
+    for kind in (RunEventKind.ISSUE_CROSSED_OFF, RunEventKind.CRITERION_LAPSED):
+        await port.post_run_event(
+            issue_key="LANE-B",
+            event=LaneRunEvent(
+                kind=kind, lane_key="LANE-B", subject_key=lapsed, graded_sha=HEAD
+            ),
+        )
+    accounts = await events_on(port, "LANE-B")
+
+    await pass_over(
+        port,
+        readings={REF: ready_set(lanes=("LANE-C",), unapproved=("LANE-B",))},
+    ).run(FIXTURE_EPOCH)
+
+    records = await port.read_run_alarms(issue_key="LANE-B")
+    assert [(row.subject, row.signal) for row in records] == [
+        (
+            CriterionSubject(
+                scope_key=SCOPE, issue_id="LANE-B", member_id=lapsed, lane_key="LANE-B"
+            ),
+            AlarmSignal.LAPSE_UNDISCHARGED,
+        )
+    ]
+    assert records[0].bound is None
+    assert await events_on(port, "LANE-B") == accounts
 
 
 @pytest.mark.parametrize("stopped", ["the lane observation", "the scope read"])
