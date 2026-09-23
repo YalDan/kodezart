@@ -95,7 +95,7 @@ does not exist.
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
 | ContainerMetadataReader | LinearMcpTracker | What a container is, read on its own; composed into the approval read and taken by the tracker-artifact reader |
 | ExecutionApprovalReader | LinearMcpTracker | The one approval question an entry asks, composed into the approval read and into the scope-ready read the walker takes |
-| IssueReader | LinearMcpTracker | One issue, whole; the read the audit runtime and the native amendment arm make and the base of seven composed roles |
+| IssueReader | LinearMcpTracker | One issue, whole; the read the audit runtime and the native amendment arm make, and a base of the composed roles that read an issue |
 | PlanningIssueReader | LinearMcpTracker | One issue with complete relations; composed into the scope-plan read, the lane escalation writer and the artifact reader |
 | IssueRevisionReader | LinearMcpTracker | One issue and its body digest; the read the organize author round and the organize owner make |
 | IssueScanReader | LinearMcpTracker | The board scan the pass gate and the fire dispatcher select on |
@@ -1224,7 +1224,7 @@ the key and its owning issue; no text matching, checkbox address or cached
 criterion set participates. Duplicate pagination of the same native object is
 still handled by the adapter's existing enumeration contract. The audit claim,
 Evidence, repository-source and forge consumers take the role — not
-`TrackerPort.read_criteria` — and retain their own state eligibility and final
+`TrackerCriteriaReader.read_criteria` — and retain their own state eligibility and final
 source-coherence checks, so none of them holds a roster it could search itself.
 A consumer that genuinely needs the whole family takes `TrackerCriteriaReader`
 instead; that is the different read surface the role exists to separate out. The
