@@ -427,12 +427,15 @@ same refusal occurrence that keys that record, on that same sub-issue, which is
 then classified `decision`. A cost never reaches this reason: a departure resting
 on a cost claim is settled by its own measurement and returns a measured reason of
 its own. The machine moves no state, so the subtree still reads and the lane goes
-on owing that criterion until a person cancels it with a supersession; and
+on owing that criterion until a person revives it or cancels it with a
+supersession; and
 `CrossOffState.undemonstrated` above keeps its own workspace-hygiene meaning and
 is not used for this. Because the plan read refuses while any open issue in a
-member's subtree carries `decision`, the scope tick after such an escalation ends
-the run naming that criterion, which is the barrier holding the walk until a
-person answers.
+member's subtree carries `decision`, the scope tick after such an escalation for
+an open criterion ends the run naming it, which is the barrier holding the walk
+until a person answers. Reviving it therefore takes both declaring the capability
+in the repository's runner environment and removing the `decision`
+classification from that sub-issue, then firing again.
 
 `render_lane_record` places one readable JSON value under that marker, followed
 by fixed re-entry guidance. The record preserves three-state remote head facts,

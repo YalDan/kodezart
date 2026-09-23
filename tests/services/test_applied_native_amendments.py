@@ -391,9 +391,14 @@ async def test_undemonstrable_refusal_escalates_once_and_a_replay_writes_nothing
         # The question, read off the board rather than off the verdict: the
         # capability, what the demonstration lacks, what would revive the
         # criterion, and the alternative open to a person.
-        assert "network" in posted.question
+        assert (
+            f"missing capability {CheckPrerequisite.NETWORK.value} for {DIRECT_OWED}"
+            in posted.question
+        )
         assert UNVERIFIABLE_HERE["missing_resource"] in posted.question
         assert "runner environment" in posted.question
+        assert "removing the decision classification" in posted.question
+        assert "revives" in posted.question
         assert "supersession" in posted.question
         assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
             "NativeWriterOutput",

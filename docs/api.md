@@ -365,8 +365,8 @@ discriminated by `verdict`. An `upheld` entry retains the original claim, reason
 cited judgment and verified owning-issue refusal record; that departure was not
 committed. A refusal at a reason a person must settle — a measured uneconomic cost, or a
 capability the declared runner environment lacks — also carries its verified
-escalation, on the criterion's own sub-issue, and that sub-issue is then
-classified `decision`.
+escalation, on the refused subject's own issue (for a criterion, its own
+sub-issue), and that issue is then classified `decision`.
 An `amended` entry retains the exact prior tracker artifact, its verified archive,
 and the verified applied native amendment. Criterion amendments retire prior
 Evidence and Class and reset the existing criterion before changing its Check.
