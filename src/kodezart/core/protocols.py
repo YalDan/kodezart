@@ -1398,7 +1398,8 @@ class TrackerPort(
 
         Returns the claim as it now stands — expiring no earlier than
         *lease_seconds* from now — when *holder* holds a live claim on the
-        issue.  Returns ``None``, writing NOTHING, when it does not.
+        issue.  Returns ``None``, extending nothing, when it does not; a
+        marker of *holder*'s own that has lapsed is taken back.
 
         Renewal EXTENDS and never acquires.  A claim that has already
         lapsed stays lapsed and the issue stays claimable: the lapse is how
