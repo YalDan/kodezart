@@ -14,7 +14,12 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.fire_spec import TrackerSpec
-from tests.fakes import FakeLinearMcpServer, FakeMcpIssue, FakeTrackerPort
+from tests.fakes import (
+    FakeLinearMcpServer,
+    FakeMcpIssue,
+    FakeTrackerPort,
+    nothing_written,
+)
 from tests.tracker.conftest import (
     FIRE_ENTRY_LABELS,
     FIXTURE_NOW,
@@ -107,11 +112,18 @@ async def test_the_fire_spec_criterion_read_acquires_no_write_lease(
     to it for the whole of the run the spec opens.
     """
     writes = tracker_writes()
+    # Every journal the fake declares a write can land in, not the handful
+    # the shared write reading compares.
+    unwritten = (
+        nothing_written(tracker) if isinstance(tracker, FakeTrackerPort) else None
+    )
     spec, _ = await TrackerCriteria(tracker=tracker).read_entry(issue_key=SUBJECT)
     assert spec.criteria == (CRITERION, "grandchild/1")
     assert tracker_writes() == writes
     if isinstance(tracker, FakeTrackerPort):
         assert tracker.lease_acquisitions == []
+        assert unwritten is not None
+        assert unwritten()
         assert tracker.leases == {}
     else:
         assert server.tool_calls("save_comment") == []
