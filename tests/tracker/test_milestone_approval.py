@@ -61,26 +61,31 @@ async def test_a_milestone_label_cannot_approve_its_project_or_members(
     assert await scope_approved(ref=MILESTONE, tracker=approval.tracker) is True
 
 
-async def test_a_milestone_resolves_its_projects_triage_as_it_resolves_its_approval(
-    approval: ApprovalFixture,
+@pytest.mark.parametrize(
+    "member", [ScopeLabel.TRIAGE, ScopeLabel.PROPOSED], ids=lambda m: m.value
+)
+async def test_a_milestone_resolves_its_projects_member_as_it_resolves_its_approval(
+    approval: ApprovalFixture, member: ScopeLabel
 ) -> None:
-    """One walk, asked with the member: a milestone's triage is its project's.
+    """One walk, asked with the member: a milestone's member is its project's.
 
-    The port method stays an exact-node read — a milestone reports no members
-    of its own — so the answer can only have come from the chain above it.
+    Asked for every configured member other than approval, over each port:
+    the resolver is handed the member it answers for, so a fault particular
+    to one member shows on that member's row. The port method stays an
+    exact-node read — a milestone reports no members of its own — so the
+    answer can only have come from the chain above it.
     """
     approval.fake.scope_containers[MILESTONE] = _container(MILESTONE, PROJECT)
-    triage = ScopeLabel.TRIAGE
 
     assert (
-        await scope_carries(ref=MILESTONE, member=triage, tracker=approval.tracker)
+        await scope_carries(ref=MILESTONE, member=member, tracker=approval.tracker)
         is False
     )
 
-    approval.labels(PROJECT, triage)
+    approval.labels(PROJECT, member)
     assert await approval.tracker.read_scope_labels(ref=MILESTONE) == frozenset()
     assert (
-        await scope_carries(ref=MILESTONE, member=triage, tracker=approval.tracker)
+        await scope_carries(ref=MILESTONE, member=member, tracker=approval.tracker)
         is True
     )
     # The same chain, asked for the approval member instead: absent here.
@@ -89,17 +94,19 @@ async def test_a_milestone_resolves_its_projects_triage_as_it_resolves_its_appro
     # Planted on the milestone's own backing data, which no adapter call can
     # read or write. The answer does not move.
     approval.labels(PROJECT)
-    approval.fake.scope_label_members[MILESTONE] = frozenset({triage})
-    approval.server.milestones[PROJECT.key][0]["labels"] = [APPROVAL_LABELS["triage"]]
+    approval.fake.scope_label_members[MILESTONE] = frozenset({member})
+    approval.server.milestones[PROJECT.key][0]["labels"] = [
+        APPROVAL_LABELS[member.value]
+    ]
     assert (
-        await scope_carries(ref=MILESTONE, member=triage, tracker=approval.tracker)
+        await scope_carries(ref=MILESTONE, member=member, tracker=approval.tracker)
         is False
     )
 
     # Carried on the initiative above the owning project: the walk continues.
-    approval.labels(INITIATIVE, triage)
+    approval.labels(INITIATIVE, member)
     assert (
-        await scope_carries(ref=MILESTONE, member=triage, tracker=approval.tracker)
+        await scope_carries(ref=MILESTONE, member=member, tracker=approval.tracker)
         is True
     )
     assert not approval.fake.issue_writes

@@ -80,7 +80,6 @@ async def test_a_non_initiative_container_parent_refuses() -> None:
         )
 
 
-@pytest.mark.parametrize("member", list(ScopeLabel), ids=[m.value for m in ScopeLabel])
 @pytest.mark.parametrize(
     ("carrier", "answer", "visited"),
     [
@@ -90,18 +89,20 @@ async def test_a_non_initiative_container_parent_refuses() -> None:
     ],
     ids=["on-the-project", "on-the-initiative-only", "nowhere"],
 )
-async def test_the_one_walk_resolves_any_configured_member(
-    member: ScopeLabel,
+async def test_the_one_walk_visits_the_chain_in_order_and_stops_at_the_carrier(
     carrier: ScopeRef | None,
     answer: bool,
     visited: list[ScopeRef],
 ) -> None:
-    """The member is the caller's; the chain and its order are the walk's.
+    """The walk's node order and its short circuit, and nothing about members.
 
-    The predicate asks one configured member per node, so the same walk that
-    answers approval answers every other member with the same node order and
-    the same short circuit.
+    The walk never receives a member: the caller's per-node predicate carries
+    it, so which member is asked is not this walk's to pin. What is pinned
+    here is the chain it visits, in order, and that it stops at the first
+    node the predicate answers yes for. Each configured member is asked of
+    the resolver at the tracker level instead.
     """
+    member = ScopeLabel.TRIAGE
     members = {PROJECT: set(), INITIATIVE: set(), MILESTONE: {member}}
     if carrier is not None:
         members[carrier] = {member}
