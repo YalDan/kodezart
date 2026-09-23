@@ -100,6 +100,7 @@ from tests.chains.test_native_fire import (
     CountingTracker,
     NativeExecutor,
     NativeSourceReader,
+    bypasses_to,
     change_tracker,
     engine,
     function_at,
@@ -657,9 +658,19 @@ SNAPSHOT_GATED_NODES = reached_through_callers(require_current_native_snapshot)
 
 #: How many routes each gated node has to the barrier: one per call that
 #: reaches it -- to the barrier itself, or to another gated node -- and per
-#: arm of the node that reaches that call.  Each such route is a way a
-#: carried-in set can meet the barrier, so each needs its own reach.
+#: arm of the node that reaches that call, the skip side of each guard
+#: with no else around that call among them.  Each arm into a call is a
+#: way a carried-in set can meet the barrier, so each needs its own reach.
 SNAPSHOT_GATED_ROUTES = routes_to(
+    require_current_native_snapshot,
+    *filter(None, map(function_at, SNAPSHOT_GATED_NODES)),
+)
+
+#: How many of those routes are skip sides, on which the call is not made:
+#: no arrival can meet the barrier there, so a skip side has no reach, and
+#: the drive below, which runs every input, takes both sides of every such
+#: guard.
+SNAPSHOT_GATED_BYPASSES = bypasses_to(
     require_current_native_snapshot,
     *filter(None, map(function_at, SNAPSHOT_GATED_NODES)),
 )
@@ -897,10 +908,12 @@ def deliver_step_handing_to_the_coordinator(at):
     return at.lane._deliver(at.state, at.config)
 
 
-#: How each gated node is driven, one hand-written entry per route.  Which
-#: nodes exist and how many routes each has are read off the tree; requiring
-#: the reach table to agree with both is what makes the refusal below a
-#: statement about every route of every gated node.
+#: How each gated node is driven, one hand-written entry per route into a
+#: call.  Which nodes exist and how many routes each has are read off the
+#: tree; requiring the reach table to agree with both is what makes the
+#: refusal below a statement about every route of every gated node.  The
+#: skip side of a guard around a call is the one route with no entry here:
+#: the call is not made on it, and the drive further below takes it.
 #:
 #: The routes were found by reading each node: every call in it that reaches
 #: the barrier, directly or through another gated node, and each arm of the
@@ -997,15 +1010,20 @@ def test_every_derived_gated_node_has_a_reach_and_every_reach_a_node():
 
 
 def test_every_route_to_the_barrier_has_its_own_reach():
-    """Each gated node has one reach per route of its to the barrier.
+    """Each gated node has one reach per route of its into the barrier.
 
     A route is a call that reaches the barrier, directly or through a
-    helper, on one arm of the node that reaches that call.  A new call, or a
-    new arm into an existing call, needs its own entry; one that stops
-    reaching the barrier leaves one behind (KOD-652).
+    helper, on one arm of the node that reaches that call, or the skip side
+    of a guard with no else around that call.  A new call, or a new arm
+    into an existing call, needs its own entry; one that stops reaching the
+    barrier leaves one behind.  A skip side is no way to meet the barrier,
+    so it has no entry: it is counted apart, and the drive below takes it
+    (KOD-652).
     """
+    assert set(SNAPSHOT_GATED_BYPASSES) <= set(SNAPSHOT_GATED_ROUTES)
     assert {
-        node: len(routes) for node, routes in SNAPSHOT_GATED_REACH.items()
+        node: len(routes) + SNAPSHOT_GATED_BYPASSES.get(node, 0)
+        for node, routes in SNAPSHOT_GATED_REACH.items()
     } == SNAPSHOT_GATED_ROUTES
 
 
