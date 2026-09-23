@@ -82,6 +82,7 @@ from kodezart.domain.errors import (
     OrganizeWriteRefusalError,
     PrincipalAuthoredSurfaceError,
     ScopeReadError,
+    SurfaceContendedError,
     SurfaceLeaseError,
     SurfaceWriteAttributionError,
     TransientAPIError,
@@ -2974,7 +2975,7 @@ class LinearMcpTracker:
             lease_seconds=lease_seconds,
         )
         if isinstance(outcome, _Refused):
-            raise SurfaceLeaseError(
+            raise SurfaceContendedError(
                 (
                     "surface set intersects a live lease"
                     if outcome.settled

@@ -36,6 +36,7 @@ from kodezart.domain.errors import (
     OrganizeDecisionRequiredError,
     OrganizeWriteRefusalError,
     OutboundContentBlockedError,
+    SurfaceContendedError,
     SurfaceLeaseError,
     WriteBackReadError,
 )
@@ -1322,23 +1323,22 @@ class OrganizeOwner:
                                 completed_phases=tuple(completed), halt=halt
                             )
                         )
-                    except SurfaceLeaseError as unheld:
-                        if unheld.current_holder is None:
-                            # The port names no competing holder, so there
-                            # is no other run this surface belongs to and
-                            # no fact here to carry as a finding. The
-                            # write's own failure stands.
-                            raise
-                        # Another holder owns a surface this write needs,
-                        # inside the admitted scope (membership and the gate
-                        # were re-asked before the write). The round repairs
-                        # nothing here; the dry round reports the class
-                        # again and the bound reports it with its finding.
+                    except SurfaceContendedError as unheld:
+                        # Another run holds, or is bidding for, a surface
+                        # this write needs. The subject's membership and
+                        # gate were re-asked before its lease was taken,
+                        # and graph peers are re-asked under the lease. A
+                        # lease this run itself lost is not this case: it
+                        # is the base SurfaceLeaseError and stops the run.
+                        # The round repairs nothing here; the dry round
+                        # reports the class again and the bound reports it
+                        # with its finding.
                         await self._log.awarning(
                             "organize_surface_unheld",
                             issue_key=request.issue_key,
                             phase=phase.spec.kind.value,
                             surface_kind=unheld.surface_kind,
+                            scope_key=unheld.scope_key,
                             current_holder=unheld.current_holder,
                         )
                         break
