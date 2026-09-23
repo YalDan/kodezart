@@ -705,8 +705,9 @@ def _verify_knowledge_destinations(
     Every affected entry is named at once, with the session type each one
     needs, because an operator moving one surface at a time pays a boot
     cycle per entry.  A document or record in the TRACKER system is
-    untouched — a session reaches the tracker through the server the host
-    attaches, whatever the knowledge grant says.
+    untouched, whatever the knowledge grant says: kodezart attaches the
+    tracker server to the scheduled-pass sessions when a tracker token is
+    configured, and to no other session kind.
     """
     if operation is None:
         return

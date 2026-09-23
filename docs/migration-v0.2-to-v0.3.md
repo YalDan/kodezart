@@ -282,6 +282,12 @@ A v0.2 file boots into the same per-issue flow, with these deliberate changes:
 - A fire log's title line spells its start instant in v0.3's ISO form, with
   sub-second precision, where v0.2 wrote it to the second.
 
+Beyond the per-issue path, a v0.2 deployment sees two changes: the boot log's
+`scheduled_passes_not_wired` event names the dispatch setting,
+`dispatch_workflow`, where it named declared scopes, and whenever
+`KODEZART_TRACKER__TOKEN` is set the scheduled passes (grooming, fire prep and
+the audit judges) are given kodezart's own Linear MCP server.
+
 ## 5. Removed with no replacement
 
 Delete these assignments. Each is refused at startup, from every source, and no

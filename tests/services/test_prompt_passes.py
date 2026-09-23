@@ -965,6 +965,49 @@ async def test_a_fire_log_the_fires_own_session_cannot_reach_aborts_boot(
     )
 
 
+#: The organize tick's own log, in the knowledge store.
+ORGANIZE_LOG_NAME = "Example Organize Log"
+
+
+def _organize_record_knowledge_side(raw: dict[str, object]) -> None:
+    """Declare the organize tick's record destination in the knowledge system."""
+    registry = raw["records"]
+    assert isinstance(registry, dict)
+    registry[RunKind.ORGANIZE.value] = {
+        "system": DocumentSystem.KNOWLEDGE.value,
+        "name": ORGANIZE_LOG_NAME,
+        "id": "example-organize-log-destination-id",
+        "append_only": True,
+    }
+
+
+async def test_a_knowledge_side_organize_log_needs_the_organize_grant(
+    tmp_path: Path,
+) -> None:
+    """The organize session writes its log, so its grant is the one asked.
+
+    The scheduled passes hold the knowledge grant and the organize session
+    does not: boot refuses, naming the organize log and ``organize_pass``
+    alone, as docs/configuration.md says.
+    """
+    operation = load_operation_config(
+        _mutated(tmp_path, _organize_record_knowledge_side)
+    )
+
+    with pytest.raises(PassKnowledgeCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=None,
+            runner=FakeAgentRunner(events=[]),
+            operation=operation,
+        )
+
+    assert caught.value.destinations == (
+        f"records.{RunKind.ORGANIZE.value} ({ORGANIZE_LOG_NAME}) "
+        f"→ {SessionType.ORGANIZE_PASS.value}",
+    )
+
+
 async def test_the_same_operation_boots_once_the_fire_is_granted_too(
     tmp_path: Path,
 ) -> None:

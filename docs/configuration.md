@@ -859,7 +859,11 @@ configuration refuses scheduling. Retired flat Organize bound spellings remain
 rejected. The native tick is scheduled as `organize_pass` on the grooming
 cadence and budget and reports under its own run kind, `organize`: declare
 `records.organize` for its log, and none of its rows lands in the grooming log,
-whose newest row is the grooming session's window. Each tick resolves the
+whose newest row is the grooming session's window. The organize session writes
+that log, so a knowledge-side `[records.organize]` (`system = "knowledge"`)
+needs `organize_pass` in `KODEZART_KNOWLEDGE__SESSION_GRANTS`; without it boot
+refuses with `PassKnowledgeCapabilityError`, and a tracker-side one needs no
+grant. Each tick resolves the
 configured repository trunk to a fresh immutable remote commit before
 assessment.
 
