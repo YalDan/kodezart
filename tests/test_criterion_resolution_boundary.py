@@ -101,8 +101,8 @@ import pytest
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.protocols import CriterionResolver, TrackerCriteriaReader
 from kodezart.domain.criterion_creation import existing_criterion
+from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.criterion_sources import NativeCriterionResolver
-from kodezart.services.tally_supervisor import TallySupervisor
 from kodezart.types.domain.criteria import CriterionId
 from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.tracker import TrackerIssue
@@ -487,23 +487,15 @@ def _handed_resolution_sites(found: Reading, module: str) -> list[Site]:
 #: handed a parent key and a Check text, two strings exactly as a renamed
 #: resolution would be, and answers whether the criterion about to be
 #: created is already there: it addresses no identity, because there is none
-#: yet.  The lane's tally observation is handed the lane's roster, gap and
-#: criteria and keyed by its scope and lane, two strings again: it counts
-#: rows toward the lane's alarm record and addresses no criterion.  Asserted
-#: both ways below as a list, so the register cannot go stale and a second
-#: definition under either name, or either one handed another parameter, is
-#: a site.
+#: yet.  Asserted both ways below as a list, so the register cannot go stale
+#: and a second definition under the name, or the lookup handed another
+#: parameter, is a site.
 HANDED_LOOKUPS: dict[Site, str] = {
     (
         _module_of(existing_criterion),
         existing_criterion.__qualname__,
         tuple(inspect.signature(existing_criterion).parameters),
     ): "the create-if-absent lookup by Check text under a parent",
-    (
-        _module_of(TallySupervisor),
-        TallySupervisor.observe.__qualname__,
-        tuple(inspect.signature(TallySupervisor.observe).parameters),
-    ): "the lane's tally observation keyed by scope and lane",
 }
 
 
@@ -1176,13 +1168,14 @@ def test_a_second_site_reading_the_family_is_counted(form: str) -> None:
     assert SECOND in _sites_in(sources)
 
 
-#: A definition beside a registered lookup that the register must not cover:
-#: a second function under the lookup's own word in its module, and the
-#: lookup itself handed the criterion parameter as well.
+#: A definition the register must not cover: a function named after the
+#: lane's alarm observation, in a module the reading does not register, that
+#: looks a criterion up by text, and the registered lookup itself handed the
+#: criterion parameter as well.
 REGISTER_CONTROLS = {
-    "a same-named function beside the registered observation": (
-        _module_of(TallySupervisor),
-        f"{_ROWS}def {TallySupervisor.observe.__name__}(rows: Sequence[{ROW}],"
+    "a same-named function in a module the reading does not register": (
+        _module_of(AlarmSupervisor),
+        f"{_ROWS}def {AlarmSupervisor.observe_lane.__name__}(rows: Sequence[{ROW}],"
         f" {CRITERION_PARAMETER}: str) -> {ROW}:\n"
         f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n",
     ),
