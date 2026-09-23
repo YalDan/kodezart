@@ -134,7 +134,7 @@ def test_the_same_move_followed_by_its_refutation_does_not_regress():
 
 
 def test_the_last_account_decides():
-    """Crossed off, refuted, crossed off again, and now back in Todo.
+    """Refuted, then crossed off again, and now back in Todo.
 
     The refutation was the lane's word about the earlier grading; the later
     crossing-off is its word about the current one, and nothing took that
@@ -142,7 +142,7 @@ def test_the_last_account_decides():
     """
     readings = (
         state(WorkflowStateKind.UNSTARTED),
-        account(CROSSED_OFF, REFUTED, CROSSED_OFF),
+        account(REFUTED, CROSSED_OFF),
     )
 
     alarm = regressed(readings)
