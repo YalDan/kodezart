@@ -20,11 +20,12 @@ Construction-form detection is not restated: ``identity_guards``'s
 ``model_value_sites`` already answers it with its own controls, and a guard
 that needs it imports it from there.
 
-Blind spots, stated once: a tuple-unpacking target binds nothing here, a
-starred argument lands on no parameter, and a string constant is a value,
-never a route to a name.  The receiver offset applies when the first parameter
-is spelled ``self`` or ``cls``, and assumes the receiver fills it, so an
-unbound method called with an explicit instance —
+Blind spots, stated once: a tuple-unpacking target binds nothing in
+``resolve`` or ``bound_names`` (``unpacking_bindings`` lists what it binds, for
+a guard that wants it), a starred argument lands on no parameter, and a string
+constant is a value, never a route to a name.  The receiver offset applies
+when the first parameter is spelled ``self`` or ``cls``, and assumes the
+receiver fills it, so an unbound method called with an explicit instance —
 ``Reader._own_text(reader, spec)`` — hands that instance to the parameter
 after the receiver's own and every later argument lands one place late, on the
 parameter after its own, or off the end.  Only an absolute ``kodezart.``
@@ -496,6 +497,211 @@ def parameters_receiving(
                     if yields(module, argument):
                         received.setdefault((home, function.name), set()).add(parameter)
     return {key: frozenset(found) for key, found in received.items()}
+
+
+def _target_positions(target: ast.expr) -> tuple[tuple[str, int | None], ...]:
+    """Each name an unpacking target binds, with its index when it has one.
+
+    A name standing directly in a flat tuple or list target, before any
+    starred name, is bound to that element; a nested or starred name, or one
+    after a star, has no fixed index.  An attribute or subscript target
+    stores into a value rather than binding a name, so it binds nothing.
+    """
+    if not isinstance(target, ast.Tuple | ast.List):
+        return ()
+    found: list[tuple[str, int | None]] = []
+    fixed = True
+    for index, one in enumerate(target.elts):
+        if isinstance(one, ast.Starred):
+            fixed = False
+        if isinstance(one, ast.Name):
+            found.append((one.id, index if fixed else None))
+        else:
+            found.extend((name, None) for name in _stored_names(one))
+    return tuple(found)
+
+
+def _stored_names(target: ast.expr) -> tuple[str, ...]:
+    """Every name a target binds, however deeply it nests."""
+    if isinstance(target, ast.Name):
+        return (target.id,)
+    if isinstance(target, ast.Starred):
+        return _stored_names(target.value)
+    if isinstance(target, ast.Tuple | ast.List):
+        return tuple(name for one in target.elts for name in _stored_names(one))
+    return ()
+
+
+@dataclass(frozen=True)
+class Unpacked:
+    """One name an unpacking target binds, and where its value comes from."""
+
+    name: str
+    #: The value unpacked: the assigned value, or the iterable a loop or a
+    #: comprehension walks, or the context a ``with`` enters.
+    value: ast.expr
+    #: The element's index in what is unpacked, or ``None`` when no index is
+    #: fixed (nested, starred, or after a star).
+    index: int | None
+    #: True when each element of ``value`` is unpacked (a loop or a
+    #: comprehension), False when ``value`` itself is.
+    walks: bool
+
+
+def unpacking_bindings(tree: ast.Module) -> tuple[Unpacked, ...]:
+    """Every name an unpacking target binds.
+
+    The targets ``_binding`` leaves out: a tuple, list or starred target of
+    an assignment, a loop, a comprehension or a ``with``.  ``a, b = pair``
+    binds ``a`` at index 0 of ``pair``; ``for key, one in items`` binds
+    ``one`` at index 1 of each element of ``items``.  A name with no fixed
+    index comes with ``None``: which element lands on it is decided at run
+    time, so a guard reads it as the whole value.
+    """
+    found: list[Unpacked] = []
+    for node in ast.walk(tree):
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        walks = isinstance(node, ast.For | ast.AsyncFor | ast.comprehension)
+        if isinstance(node, ast.Assign):
+            targets, value = list(node.targets), node.value
+        elif isinstance(node, ast.For | ast.AsyncFor | ast.comprehension):
+            targets, value = [node.target], node.iter
+        elif isinstance(node, ast.withitem) and node.optional_vars is not None:
+            targets, value = [node.optional_vars], node.context_expr
+        if value is None:
+            continue
+        for target in targets:
+            for name, index in _target_positions(target):
+                found.append(Unpacked(name, value, index, walks))
+    return tuple(found)
+
+
+@dataclass(frozen=True)
+class PatternStep:
+    """One step from a match subject toward the value a capture binds.
+
+    ``"class"``: the value at this position is matched against one of
+    ``classes`` (an ``|`` of class patterns under one ``as`` states several).
+    ``"field"``: the value is the position's attribute or mapping entry named
+    ``field``.  ``"part"``: the value is reached from the position without a
+    field name: a sequence item or starred rest, a mapping value under a key
+    that is no string, a mapping's ``**rest``, or a class pattern's positional
+    sub-pattern.
+    """
+
+    kind: str
+    field: str | None = None
+    classes: tuple[ast.expr, ...] = ()
+
+
+def _asserted_classes(pattern: ast.pattern | None) -> tuple[ast.expr, ...]:
+    """The classes a pattern matches the value at its own position against."""
+    if isinstance(pattern, ast.MatchClass):
+        return (pattern.cls,)
+    if isinstance(pattern, ast.MatchAs):
+        return _asserted_classes(pattern.pattern)
+    if isinstance(pattern, ast.MatchOr):
+        return tuple(cls for one in pattern.patterns for cls in _asserted_classes(one))
+    return ()
+
+
+def pattern_captures(
+    pattern: ast.pattern,
+) -> tuple[tuple[str, tuple[PatternStep, ...]], ...]:
+    """Every name a case pattern binds, with the steps from the subject to it.
+
+    Every pattern form is descended: ``as`` captures and bare words, ``|``
+    alternatives, a class pattern's keyword and positional sub-patterns, a
+    sequence's items and starred rest, and a mapping's values and ``**rest``.
+    A name is paired with the path its value takes from the subject, so a
+    guard decides what the name holds from where it stands rather than from
+    which pattern node spelled it.  A value or singleton pattern binds
+    nothing.
+    """
+    found: list[tuple[str, tuple[PatternStep, ...]]] = []
+
+    def walk(node: ast.pattern, path: tuple[PatternStep, ...]) -> None:
+        if isinstance(node, ast.MatchAs):
+            if node.pattern is not None:
+                walk(node.pattern, path)
+            if node.name is not None:
+                asserted = _asserted_classes(node.pattern)
+                found.append(
+                    (
+                        node.name,
+                        (*path, PatternStep("class", classes=asserted))
+                        if asserted
+                        else path,
+                    )
+                )
+        elif isinstance(node, ast.MatchStar):
+            if node.name is not None:
+                found.append((node.name, path))
+        elif isinstance(node, ast.MatchOr):
+            for one in node.patterns:
+                walk(one, path)
+        elif isinstance(node, ast.MatchClass):
+            here = (*path, PatternStep("class", classes=(node.cls,)))
+            for sub in node.patterns:
+                walk(sub, (*here, PatternStep("part")))
+            for field, sub in zip(node.kwd_attrs, node.kwd_patterns, strict=True):
+                walk(sub, (*here, PatternStep("field", field=field)))
+        elif isinstance(node, ast.MatchSequence):
+            for sub in node.patterns:
+                walk(sub, (*path, PatternStep("part")))
+        elif isinstance(node, ast.MatchMapping):
+            for key, sub in zip(node.keys, node.patterns, strict=True):
+                named = isinstance(key, ast.Constant) and isinstance(key.value, str)
+                step = (
+                    PatternStep("field", field=key.value)
+                    if named and isinstance(key, ast.Constant)
+                    else PatternStep("part")
+                )
+                walk(sub, (*path, step))
+            if node.rest is not None:
+                found.append((node.rest, (*path, PatternStep("part"))))
+
+    walk(pattern, ())
+    return tuple(found)
+
+
+def through_partials(trees: Mapping[str, ast.Module]) -> dict[str, ast.Module]:
+    """The same modules, each ``functools.partial(f, ...)`` also written as a call.
+
+    ``partial(f, a, k=b)`` hands ``a`` and ``b`` to ``f``'s parameters exactly
+    as ``f(a, k=b)`` would, so a walk that follows a value into the parameter
+    a call hands it to (``parameters_receiving``) follows it through the
+    partial too.  ``partial`` is resolved through ``functools`` itself — a
+    from-import under any alias, or the attribute of a module alias — so a
+    local definition of the same word is not it.  The original nodes are
+    reused, so a guard's own reading of an argument answers for the call it
+    stands in.
+    """
+    rewritten: dict[str, ast.Module] = {}
+    for path, tree in trees.items():
+        resolution = resolve(tree, names={"partial"}, from_module="functools")
+
+        def is_partial(func: ast.expr, resolution: Resolution = resolution) -> bool:
+            return resolution.denotes(func) == "partial" or (
+                isinstance(func, ast.Attribute)
+                and func.attr == "partial"
+                and _spelling(func.value) in resolution.modules
+            )
+
+        calls = [
+            ast.Expr(
+                value=ast.Call(
+                    func=node.args[0], args=node.args[1:], keywords=node.keywords
+                )
+            )
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and node.args and is_partial(node.func)
+        ]
+        rewritten[path] = (
+            ast.Module(body=[*tree.body, *calls], type_ignores=[]) if calls else tree
+        )
+    return rewritten
 
 
 def bound_names(
