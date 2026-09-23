@@ -99,7 +99,7 @@ does not exist.
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers |
 | FireCriteriaSource | TrackerCriteria | Composes the typed native subject specification from the admitted subject and its subtree's criteria, and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
-| TrackerScopeApprovalReader | LinearMcpTracker | The three reads a scope-member question needs — a node's own labels, its parent edge, the per-issue cascade — narrowed out of the port; a scope run's entry, the heartbeat and the organize owner depend on it alone |
+| TrackerScopeApprovalReader | LinearMcpTracker | The three reads a scope-member question needs — a node's own labels, its parent edge, the per-issue cascade — narrowed out of the port; a scope run's entry and the heartbeat depend on it alone, and the organize owner's gate reading (`scope_carries`) is typed on it |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
 | ScopeStatusWriter | LinearScopeStatusUpdates | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
