@@ -1594,18 +1594,18 @@ reading in which the subject's own criterion children alone admit or refuse a
 fire (KOD-790). The question step asks one read-only pass under the
 `fire_time_ruling` role what the subject text and the current Checks leave open,
 pins each answer on the issue whose text raised it, reads it back, and only then
-enters the loop. The identities an answer may address are the subject and its
-criterion sub-issues, read from the tracker again after that pass and before the
-write, so a sub-issue the board removed or reparented while the pass ran no
-longer resolves and an answer addressed to one ends the fire
-`ruling_unrecorded` with nothing written. An open question whose answer cannot be
-confirmed on the tracker ends the fire `ruling_unrecorded`, with the loop
-un-entered. An answer that names work the subject's own `Deliverables` section
-does not state is not pinned at all: it is raised on the issue whose text raised
-the question, inside the same leased and verified window a pinned answer is
-written in, and the fire then ends `ruling_unrecorded`. Unlike the retired stack
-this one has a consumer: the loop's own
-writer contract renders the pinned answers it reads back.
+enters the loop. The identities an answer may address are the subject and every
+criterion sub-issue of its subtree, read again after that pass through the same
+membership read the entry takes and before the write, so a sub-issue the board
+removed or reparented while the pass ran no longer resolves and an answer
+addressed to one ends the fire `ruling_unrecorded` with nothing written. An open
+question whose answer cannot be confirmed on the tracker ends the fire
+`ruling_unrecorded`, with the loop un-entered. An answer that names work the
+subject's own `Deliverables` section does not state is not pinned at all: it is
+raised on the issue whose text raised the question, inside the same leased and
+verified window a pinned answer is written in, and the fire then ends
+`ruling_unrecorded`. Unlike the retired stack this one has a consumer: the
+loop's own writer contract renders the pinned answers it reads back.
 
 The scheduled pass gate keeps its vendor timestamp window for reply and
 mention scanning. Atomic issue-write responses can identify their own

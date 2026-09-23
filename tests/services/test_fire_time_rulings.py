@@ -6,11 +6,20 @@ pass are facts about the component, and a graph around it would only make
 them harder to read.
 """
 
+import ast
+import inspect
+from pathlib import Path
+from types import UnionType
+from typing import Union, get_args, get_origin, get_type_hints
+
 import pytest
 
+import kodezart
 from kodezart.adapters.git.service import SubprocessGitService
+from kodezart.chains import criteria as criteria_module
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.core.prompt_rendering import PromptTemplate
+from kodezart.core.protocols import TrackerPort
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import CriterionReadError, RulingUnrecordedError
@@ -24,10 +33,12 @@ from kodezart.domain.rulings import (
     ruling_marker,
 )
 from kodezart.domain.ticket import format_fire_spec
+from kodezart.services import scope_membership, scope_resolution
 from kodezart.services.agent_service import AgentService
 from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.ruling_records import RulingRecordReader
+from kodezart.services.scope_membership import read_subtree_criteria
 from kodezart.types.domain.agent import (
     Ruling,
     RulingAnswer,
@@ -54,12 +65,14 @@ from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import (
     IssueRelation,
     IssueRelationKind,
+    TrackerIssue,
     WorkflowStateKind,
 )
 from tests.chains.test_native_fire import (
     DELIVERABLE_CHILD,
     DIRECT_OWED,
     DIRECT_OWED_TOO,
+    NESTED_OWED,
     SUBJECT,
     check_of,
     criterion_body,
@@ -1362,25 +1375,36 @@ def absorb(port, key, *, successor) -> None:
 
 
 @pytest.mark.parametrize(
-    "offending",
-    [DELIVERABLE_CHILD, ABSENT_KEY, DIRECT_OWED.upper()],
-    ids=["subtree-not-a-criterion", "absent", "case-differs"],
+    ("offending", "resolving"),
+    [
+        (DELIVERABLE_CHILD, None),
+        (ABSENT_KEY, None),
+        (DIRECT_OWED.upper(), DIRECT_OWED),
+        (NESTED_OWED.upper(), NESTED_OWED),
+    ],
+    ids=["subtree-not-a-criterion", "absent", "case-differs", "nested-case-differs"],
 )
 async def test_a_key_the_criterion_family_does_not_hold_is_refused_before_any_write(
-    repository, offending
+    repository, offending, resolving
 ) -> None:
-    """Three keys that do not resolve, none of which reaches the board.
+    """Four keys that do not resolve, none of which reaches the board.
 
     An issue of the subject's subtree that is no criterion, a key no issue
-    carries, and a key differing from a real one only in case. Each is refused
-    under the fire's subject with the offending key in the reason, and the
-    board is equal in every key — including the lease journal, because the
-    refusal is ahead of the lease.
+    carries, and a key differing only in case from a real criterion, direct
+    or nested. Each is refused under the fire's subject with the offending
+    key in the reason, and the board is equal in every key — including the
+    lease journal, because the refusal is ahead of the lease.
     """
     executor = Executor([[one_answer(issueRef=offending)]])
     step, spec, current, _, port, gate, repo_path, base = await build(
         repository, executor
     )
+    # Per row: the offending key is no criterion of the subtree, and a case
+    # row's own key is one, so its refusal is about case and not absence.
+    subtree = await read_subtree_criteria(tracker=port, subject=SUBJECT)
+    assert offending not in subtree
+    if resolving is not None:
+        assert resolving in subtree
     before = board_state(port)
 
     with pytest.raises(RulingUnrecordedError) as caught:
@@ -1468,6 +1492,59 @@ async def test_a_reference_lost_between_the_session_and_the_write_is_refused(
     assert gate.content_classes == []
 
 
+async def test_an_answer_to_a_nested_criterion_is_recorded_on_that_criterion(
+    repository,
+) -> None:
+    """The write resolves against the subtree the pass was shown its criteria from.
+
+    The criterion sits under a deliverable child, so the subject's direct
+    family does not hold it while the specification the pass is shown does.
+    An answer to a question its Check raises is pinned on that criterion and
+    on nothing else.
+    """
+    answer = one_answer(issueRef=NESTED_OWED)
+    executor = Executor([[answer]])
+    step, spec, current, _, port, _, repo_path, base = await build(repository, executor)
+    # Non-vacuous: outside the direct family, inside what the pass is shown.
+    assert NESTED_OWED not in {
+        row.issue_key for row in await port.read_criteria(issue_key=SUBJECT)
+    }
+    assert NESTED_OWED in set(spec.criteria)
+    before = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    record = await pinned_record(port, answer, before=before)
+    assert record.issue_ref == NESTED_OWED
+    assert [record for _, record in await cold_records(port, NESTED_OWED)] == [record]
+    assert list(await cold_records(port, SUBJECT)) == []
+
+
+async def test_a_nested_criterion_unlabelled_while_the_pass_ran_no_longer_resolves(
+    repository,
+) -> None:
+    """The subtree is read again at the write, so a nested loss is refused too."""
+    port = tracker(bodies={DIRECT_OWED: ambiguous_body()})
+    executor = MovesTheBoard(
+        [[one_answer(issueRef=NESTED_OWED)]], move=lambda: unlabel(port, NESTED_OWED)
+    )
+    step, spec, current, _, port, gate, repo_path, base = await build(
+        repository, executor, port=port
+    )
+    # Non-vacuous: the nested key was in the set the fire entered on.
+    assert NESTED_OWED in set(spec.criteria)
+    before = board_state(port)
+
+    with pytest.raises(RulingUnrecordedError) as caught:
+        await run(step, spec, current, repo_path, base)
+
+    assert caught.value.issue_key == SUBJECT
+    assert NESTED_OWED in caught.value.reason
+    assert board_state(port) == before
+    assert executor.judged_artifacts == []
+    assert gate.content_classes == []
+
+
 async def test_a_criterion_the_answer_does_not_address_leaving_still_records(
     repository,
 ) -> None:
@@ -1509,7 +1586,7 @@ async def test_an_identity_a_successor_absorbed_is_still_addressable_at_the_writ
     answer = one_answer()
     port = tracker(bodies={DIRECT_OWED: ambiguous_body()})
     absorb(port, DIRECT_OWED, successor=DIRECT_OWED_TOO)
-    executor = Executor([[answer]])
+    executor = Executor([[answer], [answer]])
     step, spec, current, _, port, _, repo_path, base = await build(
         repository, executor, port=port
     )
@@ -1563,12 +1640,20 @@ async def test_an_identity_a_successor_absorbed_is_still_addressable_at_the_writ
         issue_key=SUBJECT, criterion_key=DIRECT_OWED_TOO
     )
     assert successor.issue_key == DIRECT_OWED_TOO and successor != superseded
+    # A second pass answering the same question writes nothing: the record on
+    # the absorbed key is one this fire already holds, so it is not owed again.
+    after_first = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    assert len(executor.question_prompts) == 2
+    assert board_state(port) == after_first
 
 
 async def test_the_family_is_read_again_after_the_session_and_before_the_write(
     repository,
 ) -> None:
-    """The ordering is observable: the family read follows the answering pass."""
+    """The ordering is observable: the subtree read follows the answering pass."""
     order: list[str] = []
 
     class RecordsTheSession(Executor):
@@ -1581,41 +1666,203 @@ async def test_the_family_is_read_again_after_the_session_and_before_the_write(
 
     executor = RecordsTheSession([[one_answer()]])
     step, spec, current, _, port, _, repo_path, base = await build(repository, executor)
-    inner = port.read_criteria
+    # Installed after the entry, which reads the same subtree once itself.
+    inner = port.scope_issues
 
-    async def recorded_read(*, issue_key: str):
-        rows = await inner(issue_key=issue_key)
-        order.append("family")
-        return rows
+    async def recorded_read(*, ref: ScopeRef):
+        issues = await inner(ref=ref)
+        order.append("subtree")
+        return issues
 
-    port.read_criteria = recorded_read
+    port.scope_issues = recorded_read
 
     await run(step, spec, current, repo_path, base)
 
-    assert order == ["session", "family"]
+    # Once for the registry the pass is shown, and once more after the pass,
+    # for the set the write resolves against: a set taken before the session
+    # would leave the session last.
+    assert order == ["subtree", "session", "subtree"]
 
 
 async def test_a_family_read_that_fails_at_the_write_records_nothing_and_says_so(
     repository,
 ) -> None:
-    """An unreadable family is a fact about the tracker, so it propagates."""
+    """An unreadable subtree is a fact about the tracker, so it propagates."""
     executor = Executor([[one_answer()]])
     step, spec, current, _, port, gate, repo_path, base = await build(
         repository, executor
     )
     before = board_state(port)
+    inner = port.scope_issues
 
-    async def unreadable(*, issue_key: str):
-        raise CriterionReadError(issue_key=issue_key, reason="the family is unreadable")
+    async def unreadable(*, ref: ScopeRef):
+        # Readable for the registry the pass is shown, unreadable at the write.
+        if ref.key == SUBJECT and executor.question_prompts:
+            raise CriterionReadError(
+                issue_key=ref.key, reason="the subtree is unreadable"
+            )
+        return await inner(ref=ref)
 
-    port.read_criteria = unreadable
+    port.scope_issues = unreadable
 
     with pytest.raises(CriterionReadError) as caught:
         await run(step, spec, current, repo_path, base)
 
     assert caught.value.issue_key == SUBJECT
+    # The pass ran, so the read that failed is the one taken at the write.
+    assert len(executor.question_prompts) == 1
     # It is not reported as an answer this pass failed to record, and nothing
     # was written: no fallback to the set the fire entered on.
     assert not isinstance(caught.value, RulingUnrecordedError)
     assert board_state(port) == before
     assert gate.content_classes == []
+
+
+# ---------------------------------------------------------------------------
+# One subtree reading, at the entry and at the write.
+# ---------------------------------------------------------------------------
+
+#: The package the scan below reads, located by the package itself.
+SOURCE_ROOT = Path(kodezart.__file__).resolve().parent
+
+#: The one reading every surface below must take its criteria through.
+SUBTREE_READING = read_subtree_criteria.__name__
+
+
+def called_names(tree: ast.AST) -> frozenset[str]:
+    """Every name *tree* calls, bare or as an attribute."""
+    return frozenset(
+        node.func.id if isinstance(node.func, ast.Name) else node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name | ast.Attribute)
+    )
+
+
+def subtree_reading_surface() -> dict[str, str]:
+    """The entry's module and every module that builds an addressable set.
+
+    Derived from symbols, not paths: the module ``TrackerCriteria`` lives in,
+    and every module under the package whose own source calls
+    ``addressable_issues``, each mapped to its source.
+    """
+    surface = {TrackerCriteria.__module__: inspect.getsource(criteria_module)}
+    for path in sorted(SOURCE_ROOT.rglob("*.py")):
+        source = path.read_text()
+        if addressable_issues.__name__ in called_names(ast.parse(source)):
+            relative = path.relative_to(SOURCE_ROOT.parent).with_suffix("")
+            surface[".".join(relative.parts)] = source
+    return surface
+
+
+def returns_issue_collection(member: object) -> bool:
+    """Whether a port member answers with many tracker issues rather than one."""
+    returned = get_type_hints(member).get("return")
+    origin = get_origin(returned)
+    return (
+        origin is not None
+        and origin not in (Union, UnionType)
+        and TrackerIssue in get_args(returned)
+    )
+
+
+def forbidden_reads() -> frozenset[str]:
+    """Every other way of reading issue membership, derived from its owners.
+
+    The public functions of the membership and resolution modules other than
+    the one subtree reading, and every tracker port member that answers with
+    a collection of issues.
+    """
+    helpers = {
+        name
+        for module in (scope_membership, scope_resolution)
+        for name, function in inspect.getmembers(module, inspect.isfunction)
+        if function.__module__ == module.__name__ and not name.startswith("_")
+    }
+    port_reads = {
+        name
+        for name, member in inspect.getmembers(TrackerPort, inspect.isfunction)
+        if returns_issue_collection(member)
+    }
+    return frozenset((helpers | port_reads) - {SUBTREE_READING})
+
+
+def subtree_reading_sites(source: str, *, forbidden: frozenset[str]) -> list[str]:
+    """Every place *source* reads membership other than through the one reading.
+
+    A call to a forbidden name, and a ``"criterion" in <x>.issue_labels``
+    comparison, which is the label filter a private copy of the reading has
+    to spell whatever it reads through.
+    """
+    sites = sorted(called_names(ast.parse(source)) & forbidden)
+    sites.extend(
+        "criterion label filter"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Compare)
+        and isinstance(node.left, ast.Constant)
+        and node.left.value == "criterion"
+        and any(isinstance(op, ast.In) for op in node.ops)
+        and any(
+            isinstance(comparator, ast.Attribute) and comparator.attr == "issue_labels"
+            for comparator in node.comparators
+        )
+    )
+    return sites
+
+
+#: The write-time reading this criterion retired: the direct family, read
+#: through the port member that answers the subject's own children only.
+RETIRED_RESOLVABLE = """
+async def _resolvable(self, *, spec):
+    rows = await self._tracker.read_criteria(issue_key=spec.subject)
+    return addressable_issues(
+        subject=spec.subject, criteria=(row.issue_key for row in rows)
+    )
+"""
+
+#: A private copy of the reading beside a call to the shared one: the entry
+#: reads the subtree for itself, inline, while the barrier still delegates.
+INLINE_COPY = """
+async def _capture(self, issue_key):
+    subject = await self._tracker.read_fire_subject(issue_key=issue_key)
+    scoped = await self._tracker.scope_issues(
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=subject.issue_key)
+    )
+    return {i.issue_key: i for i in scoped if "criterion" in i.issue_labels}
+
+
+async def _read_subtree_criteria(self, spec):
+    return await read_subtree_criteria(tracker=self._tracker, subject=spec.subject)
+"""
+
+
+def test_the_ruling_step_and_the_fire_entry_read_one_subtree_function() -> None:
+    """The entry and the write read one extent, through one function.
+
+    What the pass is shown is composed at the entry, and what an answer may
+    address is read at the write; both are the subtree only while both are
+    read through the same function.  Each module on the surface calls it, and
+    none reads membership any other way.
+    """
+    surface = subtree_reading_surface()
+    forbidden = forbidden_reads()
+
+    # Non-vacuous: the surface holds both readers, and the forbidden set holds
+    # the direct-family read, the membership helpers and the port's own
+    # subtree read, but not the one-issue subject read the entry keeps.
+    assert {TrackerCriteria.__module__, FireTimeRulings.__module__} <= set(surface)
+    assert {"read_criteria", "read_scope_members", "resolve_scope", "scope_issues"} <= (
+        forbidden
+    )
+    assert "read_fire_subject" not in forbidden
+    assert subtree_reading_sites(RETIRED_RESOLVABLE, forbidden=forbidden) == [
+        "read_criteria"
+    ]
+    assert subtree_reading_sites(INLINE_COPY, forbidden=forbidden) == [
+        "scope_issues",
+        "criterion label filter",
+    ]
+
+    for module, source in surface.items():
+        assert SUBTREE_READING in called_names(ast.parse(source)), module
+        assert subtree_reading_sites(source, forbidden=forbidden) == [], module
