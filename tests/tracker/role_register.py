@@ -69,19 +69,25 @@ def call_pattern(name: str) -> re.Pattern[str]:
     return re.compile(rf"\.{re.escape(name)}\s*\(")
 
 
-def production_text(sources: Mapping[str, str]) -> str:
-    """The shipped tree a caller counts in: all of it but the port and adapters."""
-    return "\n".join(
-        text
+def production_modules(sources: Mapping[str, str]) -> dict[str, str]:
+    """The shipped modules a caller counts in: all of them but the port and adapters."""
+    return {
+        path: text
         for path, text in sources.items()
         if path != PORT_MODULE and not path.startswith(f"{ADAPTERS}/")
-    )
+    }
 
 
 def zero_callers(sources: Mapping[str, str], members: frozenset[str]) -> frozenset[str]:
-    """Every one of *members* that no production module calls."""
-    text = production_text(sources)
-    return frozenset(name for name in members if not call_pattern(name).search(text))
+    """Every one of *members* that no production module calls.
+
+    A caller is a member call in a module's parsed tree, so a member spelled
+    only in a comment, a docstring or a string calls nothing.
+    """
+    called = frozenset().union(
+        *(called_members(text) for text in production_modules(sources).values())
+    )
+    return members - called
 
 
 def tree_under_tests() -> dict[str, str]:
