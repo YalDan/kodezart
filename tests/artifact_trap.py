@@ -32,9 +32,19 @@ The one writer's own writes are permitted and nothing else is: an
 ``GitArtifactPersister`` is defined in is on the stack.  The frame's module
 is read off the frame, and the writer's module off the class.
 
-The reach is what the wrapped flows do: a read in a module or on a flow
-that no wrapped test drives is not observed (a committed test holds that),
-and neither is what a child process does beyond its own command line.
+The trap observes every open, listing and subprocess the wrapped flows
+make, whatever the spelling: the flows are those of ``test_lane_entry.py``
+(lane entry, KOD-96-AC-30), ``test_scope_runtime.py``,
+``test_lane_records.py``, ``test_lane_state_writer.py`` and
+``test_audit_sources.py`` (a run and its records, KOD-96-AC-29), each under
+an autouse fixture, and the writer's own ``persist`` driven in
+``test_artifact_trap.py``.  The static guard beside it
+(``tests/test_artifact_directory_sites.py``) follows the reach stated for
+every static guard.  The one general limit of the two together is that
+guard's, plus a read on a flow no wrapped test drives, such as a module no
+wrapped flow calls (``test_artifact_trap.py`` holds it as unrecorded).  What
+a child process does beyond its own command line is seen only through
+that command line.
 """
 
 import contextlib
