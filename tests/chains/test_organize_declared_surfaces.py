@@ -16,7 +16,7 @@ from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from tests.chains.test_organize import result
-from tests.chains.test_organize_owner import factory, run_owner
+from tests.chains.test_organize_owner import factory, run_owner, written
 from tests.fakes import FakeMcpIssue
 from tests.tracker.conftest import CLAIMED_ISSUE
 
@@ -121,7 +121,9 @@ async def test_a_contended_declared_set_writes_nothing_and_opens_no_session():
         ) == (rival.kind.value, SIBLING, "rival-holder")
         assert [holder for holder, _, _ in held(board)] == ["rival-holder"]
     assert executor.calls == []
-    assert not [args for name, args in board.calls if name == "save_issue"]
+    # Nothing at all beside the refused acquisition: no issue, label or
+    # comment write of the round's own.
+    assert written(board) == []
 
 
 async def test_a_round_whose_lease_lapsed_in_a_session_writes_nothing_more(
