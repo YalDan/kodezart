@@ -13,7 +13,6 @@ from kodezart.domain.run_alarm_table import (
 from kodezart.domain.stream_signals import tally_regressed
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.run_alarm import AlarmBound, AlarmSignal, RunAlarm
-from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.domain import test_barren_tick as barren
 from tests.domain import test_escalation_ageing as ageing
 from tests.domain import test_lane_tally as lane_tally
@@ -147,12 +146,6 @@ MEMBER_VALUES = {
 }
 
 _SURFACE = contention.address()
-_OPEN_CHILD = mandate.graph(
-    children=(mandate.issue("CHILD", WorkflowStateKind.STARTED, parent="FIRE"),)
-)
-_CLOSED_CHILD = mandate.graph(
-    children=(mandate.issue("CHILD", WorkflowStateKind.COMPLETED, parent="FIRE"),)
-)
 
 #: Per member: its subject, a reading that makes its fold return an alarm, and
 #: a near-identical reading — one fact apart — that must return none. Built
@@ -202,34 +195,14 @@ FOLD_PAIRS = {
         mandate.ruling_inputs(),
         mandate.ruling_inputs(closed=("criterion/open",)),
     ),
-    AlarmSignal.STRUCTURAL_WRITE_UNCROSSES_MILESTONE: (
-        mandate.SUBJECT,
-        (mandate.graph_reading(mandate.graph()), mandate.graph_reading(_OPEN_CHILD)),
-        (
-            mandate.graph_reading(mandate.graph()),
-            mandate.graph_reading(_CLOSED_CHILD),
-        ),
-    ),
+    AlarmSignal.STRUCTURAL_WRITE_UNCROSSES_MILESTONE: mandate.UNCROSSED_PAIR,
 }
 
-#: The two widenings, each an extra pair on the member it widens.
+#: The two widenings, each an extra pair on the member it widens, imported
+#: from the module that owns the arm.
 WIDENINGS = {
-    "scope arm": (
-        AlarmSignal.TALLY_UNMOVED,
-        scope_tally.SUBJECT,
-        scope_tally.inputs(),
-        scope_tally.inputs(
-            labels={"one": ["criteria-ready", "body-ready"], "two": ["body-ready"]}
-        ),
-    ),
-    "cross-run": (
-        AlarmSignal.SURFACE_CONTENDED,
-        contention.subject(_SURFACE),
-        contention.readings(
-            _SURFACE, holders=("run-1/holder-a", "run-1/holder-a", "run-2/holder-b")
-        ),
-        contention.readings(_SURFACE, holders=("run-1/holder-a", "run-1/holder-a")),
-    ),
+    "scope arm": (AlarmSignal.TALLY_UNMOVED, *scope_tally.SCOPE_ARM_PAIR),
+    "cross-run": (AlarmSignal.SURFACE_CONTENDED, *contention.CROSS_RUN_PAIR),
 }
 
 

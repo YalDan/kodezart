@@ -45,6 +45,18 @@ def inputs(*, roster=("one", "two"), labels=None):
     )
 
 
+#: The scope arm of ``TALLY_UNMOVED`` as a pair one fact apart: one member has
+#: entered the next stage while the other carries no marker of the current
+#: one, and the quiet twin differs only in that member carrying the current
+#: stage's marker too. Named here so the arm's own module owns the pair every
+#: other test reads.
+SCOPE_ARM_PAIR = (
+    SUBJECT,
+    inputs(labels={"one": ["criteria-ready", "body-ready"], "two": []}),
+    inputs(labels={"one": ["criteria-ready", "body-ready"], "two": ["body-ready"]}),
+)
+
+
 def observe(readings, subject=SUBJECT):
     return tally_unmoved(
         subject=subject,
