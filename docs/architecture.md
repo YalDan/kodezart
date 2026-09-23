@@ -362,7 +362,10 @@ retained is the record and not a graph checkpoint: it reads the record through
 the same reader, refuses a lane that has none rather than composing a first
 record out of a delivery, writes nothing when the record already carries that
 pull request, and otherwise edits the one marker comment in place under the
-prior body it just read.
+prior body it just read. On the tracker-native arm the lane graph is also the
+caller that reaps its fire's divergence backups: after an accepted,
+consolidated fire, and before the graph ends, it runs
+`FireConsolidation.cleanup_backups` under the same guard the authored arm uses.
 
 `write_cross_offs` is the third call. `RalphLoop._evaluate_node` makes it once
 per iteration, after the grade and before the iteration event is emitted, so a
