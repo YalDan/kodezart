@@ -294,33 +294,127 @@ ENGINEERING_PRINCIPLE_LABELS: frozenset[str] = frozenset(
 #: What the standard puts between a principle's name and its reading.
 DASH = " — "
 
-#: Exact. Every sentence of the append OUTSIDE the standard's own paragraph
-#: that uses that separator — measured, not assumed: the closing paragraph
-#: states one, and the other three paragraphs state none. The register is
-#: this shape rather than an empty list because that one sentence is real,
-#: and pinning it by its text is what keeps a ninth principle from arriving
-#: behind it.
-DASHED_OUTSIDE_THE_STANDARD: tuple[str, ...] = (
-    "Your turn is complete only when you have produced the required structured "
-    "output — if you notice yourself ending with a plan or a promise about work "
-    "not yet done, do that work now.",
+#: Exact. Every paragraph of the append OUTSIDE the standard's own, in the
+#: order the fragment states them, each as prose — measured, not assumed:
+#: the append's heading and the three paragraphs after the standard. Pinned
+#: by their whole text, so a sentence added to any of them, or a paragraph
+#: added between them, is a change here whatever it is spelled with.
+OUTSIDE_THE_STANDARD: tuple[str, ...] = (
+    "kodezart house rules:",
+    "Hard prohibitions: no mocked or hardcoded values outside tests, no silent "
+    "fallbacks, no backwards-compatibility shims, no fabricated success signals "
+    "(returning OK without doing the work, swallowing errors, catching "
+    "exceptions to pretend nothing happened). The linter and type checker are "
+    "never disabled or suppressed.",
+    "Cross-component conventions (naming patterns, branch formats, message "
+    "schemas) belong in typed domain models, never in string literals or "
+    "implicit contracts between files.",
+    "Act as soon as you have enough information. Your turn is complete only "
+    "when you have produced the required structured output — if you notice "
+    "yourself ending with a plan or a promise about work not yet done, do that "
+    "work now.",
 )
 
+#: The opening words of the standard's own paragraph.
+STANDARD_OPENING = "Engineering standard:"
 
-def house_rules_paragraphs() -> list[str]:
-    """The append's paragraphs, in the order the fragment states them."""
-    return fragment("house_rules").split("\n\n")
+#: A ninth principle, planted into the shipped append in each ordinary
+#: placement and spelling, as ``anchor -> planted``. The first group lands
+#: outside the standard's paragraph — adjacent behind a lead-in line, one
+#: paragraph further out, inside an existing paragraph, and as a second
+#: paragraph opening like the standard — with an em dash (spaced and not),
+#: an en dash, a hyphen or a colon between the name and its reading. The
+#: second group lands inside the standard's own paragraph.
+NINTH_OUTSIDE: dict[str, tuple[str, str]] = {
+    "adjacent_on_a_later_line": (
+        "task requires.\n\nHard prohibitions:",
+        "task requires.\n\nAlso required of every change:\nYAGNI — Build nothing "
+        "until it is asked for.\n\nHard prohibitions:",
+    ),
+    "adjacent_unspaced_em_dash": (
+        "task requires.\n\nHard prohibitions:",
+        "task requires.\n\nAlso required of every change:\nYAGNI—Build nothing "
+        "until it is asked for.\n\nHard prohibitions:",
+    ),
+    "further_out_em_dash": (
+        "\nCross-component conventions (naming patterns,",
+        "\nYAGNI — Build nothing until it is asked for.\n\nCross-component "
+        "conventions (naming patterns,",
+    ),
+    "further_out_colon": (
+        "\nCross-component conventions (naming patterns,",
+        "\nYAGNI: Build nothing until it is asked for.\n\nCross-component "
+        "conventions (naming patterns,",
+    ),
+    "further_out_en_dash": (
+        "\nCross-component conventions (naming patterns,",
+        "\nYAGNI \N{EN DASH} Build nothing until it is asked for.\n\nCross-component "
+        "conventions (naming patterns,",
+    ),
+    "further_out_hyphen": (
+        "\nCross-component conventions (naming patterns,",
+        "\nYAGNI - Build nothing until it is asked for.\n\nCross-component "
+        "conventions (naming patterns,",
+    ),
+    "inside_an_outside_paragraph": (
+        "implicit contracts between files.",
+        "implicit contracts between files. YAGNI: build nothing until it is\n"
+        "asked for.",
+    ),
+    "behind_the_closing_clause": (
+        "do that work now.",
+        "do that work now. YAGNI — build nothing until it is asked for.",
+    ),
+    "second_standard_paragraph": (
+        "\nCross-component conventions (naming patterns,",
+        "\nEngineering standard: YAGNI — Build nothing until it is asked for."
+        "\n\nCross-component conventions (naming patterns,",
+    ),
+}
+NINTH_INSIDE: dict[str, tuple[str, str]] = {
+    "standard_colon": (
+        "task requires.\n",
+        "task requires. YAGNI: Build nothing until it is asked for.\n",
+    ),
+    "standard_en_dash": (
+        "task requires.\n",
+        "task requires. YAGNI \N{EN DASH} Build nothing until it is asked for.\n",
+    ),
+    "standard_unspaced_em_dash": (
+        "task requires.\n",
+        "task requires. YAGNI—Build nothing until it is asked for.\n",
+    ),
+}
+
+
+def standard_paragraphs(rules: str) -> list[str]:
+    """Every paragraph of *rules* that opens as the standard does, as prose."""
+    return [
+        prose(block)
+        for block in rules.split("\n\n")
+        if block.startswith(STANDARD_OPENING)
+    ]
 
 
 def engineering_standard() -> str:
     """The standard's own paragraph of the append, as one line of prose."""
-    paragraphs = [
-        block
-        for block in house_rules_paragraphs()
-        if block.startswith("Engineering standard:")
-    ]
+    paragraphs = standard_paragraphs(fragment("house_rules"))
     assert len(paragraphs) == 1, "the append states its standard in one paragraph"
-    return prose(paragraphs[0])
+    return paragraphs[0]
+
+
+def outside_the_standard(rules: str) -> tuple[str, ...]:
+    """Every paragraph of *rules* but the standard's, in order, each as prose.
+
+    Whole paragraphs, compared by their text: nothing here recognises a
+    principle, so nothing here depends on how one is spelled. Blank
+    paragraphs are dropped, so an extra blank line is not a change.
+    """
+    return tuple(
+        prose(block)
+        for block in rules.split("\n\n")
+        if block.strip() and not block.startswith(STANDARD_OPENING)
+    )
 
 
 def sentences(text: str) -> tuple[str, ...]:
@@ -332,21 +426,18 @@ def sentences(text: str) -> tuple[str, ...]:
     )
 
 
-def dashed_sentences(paragraph: str) -> tuple[str, ...]:
-    """Every sentence of *paragraph* that uses the standard's own separator.
+def unread_sentences(standard: str) -> tuple[str, ...]:
+    """Every sentence of the standard's paragraph that is no registered reading.
 
-    Read off the paragraph's PROSE, so where the wrapping happens to fall
-    is not part of the question: a name on the paragraph's second line
-    reads a principle to the session exactly as a name on its first line
-    does, and a first-line scan never sees it.
-
-    This says what shape a sentence has, not which principle it names; the
-    label equality above is what decides that. A sentence that uses the
-    separator for anything else is registered by its own text rather than
-    excused by this function.
+    Its label, when it has one, is taken off first, so a sentence is refused
+    unless what it says is one of the readings: a ninth principle is refused
+    here whatever stands between its name and its reading.
     """
+    body = standard.removeprefix(f"{STANDARD_OPENING} ")
     return tuple(
-        sentence for sentence in sentences(prose(paragraph)) if DASH in sentence
+        sentence
+        for sentence in sentences(body)
+        if sentence.split(DASH, 1)[-1] not in ENGINEERING_READINGS
     )
 
 
@@ -380,31 +471,30 @@ def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
     declared name is found, so an eighth cannot be dropped silently; the names
     put in front of a reading are exactly the declared labels, so a ninth
     cannot arrive as a label; the paragraph is CLOSED, so a ninth cannot
-    arrive as a bare sentence either; and EVERY other paragraph of the append
-    is registered sentence by sentence, so a ninth cannot arrive as its own
-    paragraph anywhere in the text every session carries. A ninth smuggled
-    into the opening sentence's list instead breaks that sentence's own
-    reading pin.
+    arrive as a sentence of it; and every OTHER paragraph of the append is
+    pinned by its whole text, so a ninth cannot arrive anywhere else in the
+    text every session carries. A ninth smuggled into the opening sentence's
+    list instead breaks that sentence's own reading pin.
 
-    The closure halves are the ones that need saying. Counting the declared
-    names found in the text detects a name going missing and never a name
-    arriving: the list it counts is this module's own. Requiring every
-    sentence to be a declared reading closes the paragraph itself — but the
-    paragraph is only the block starting `Engineering standard:`, so a
-    labelled principle anywhere else in the append is read by every session
-    inside the same text while being neither counted nor refused.
+    The closure halves are the ones that need saying, and neither recognises
+    a principle by how it is written. Counting the declared names found in
+    the text detects a name going missing and never a name arriving: the
+    list it counts is this module's own. So the standard's paragraph is
+    closed by requiring every sentence, its label taken off, to be one of
+    the registered readings — whatever separates a name from its reading,
+    a sentence that is no reading is refused. And every other paragraph is
+    compared to the register of the shipped paragraphs by equality, so any
+    sentence added to one of them, and any paragraph added between them,
+    reds whatever it spells. A second paragraph opening as the standard does
+    reds the one-paragraph assertion. Each closure carries its own control
+    below, over the planted placements and spellings.
 
-    That last half is stated over every paragraph and every line, with no
-    index arithmetic: the two paragraphs flanking the standard are not the
-    only ones the append has, and a name on a paragraph's second line reads
-    the same as a name on its first. What it compares is the register of
-    sentences outside the standard that use the standard's own separator,
-    which the shipped fragment satisfies with exactly one — the closing
-    paragraph's early-stopping clause, pinned by its text. It carries its own
-    controls, because a shape test that recognises nothing would pass it
-    silently, and the positive one puts the separator on a later line so the
-    control exercises the shape that would otherwise escape.
+    The append is the reach claimed. The ``design_review`` fragment names
+    the principles again in a parenthesis; it is composed into the two
+    changeset graders rather than carried by every session, and its own
+    clause tests pin it (KOD-883), not this one.
     """
+    rules = fragment("house_rules")
     paragraph = engineering_standard()
     named = [
         principle
@@ -413,33 +503,42 @@ def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
     ]
     assert len(named) == 8
     assert principle_labels(paragraph) == ENGINEERING_PRINCIPLE_LABELS
+    assert sentences(paragraph.removeprefix(f"{STANDARD_OPENING} "))
+    assert unread_sentences(paragraph) == ()
+    assert outside_the_standard(rules) == OUTSIDE_THE_STANDARD
 
-    body = paragraph.removeprefix("Engineering standard: ")
-    for sentence in sentences(body):
-        assert sentence.split(DASH, 1)[-1] in ENGINEERING_READINGS, sentence
 
-    assert dashed_sentences(
-        "Also required of every change:\nYAGNI — Build nothing until it is asked for.",
-    ) == (
-        "Also required of every change: YAGNI — Build nothing until it is asked for.",
-    )
-    assert dashed_sentences("A paragraph that names no principle.") == ()
-    blocks = house_rules_paragraphs()
-    standard = next(
-        index
-        for index, block in enumerate(blocks)
-        if block.startswith("Engineering standard:")
-    )
-    assert dashed_sentences(blocks[standard])
-    assert (
-        tuple(
-            sentence
-            for index, block in enumerate(blocks)
-            if index != standard
-            for sentence in dashed_sentences(block)
-        )
-        == DASHED_OUTSIDE_THE_STANDARD
-    )
+def test_a_ninth_principle_is_refused_in_every_placement_and_spelling() -> None:
+    """The control for both closures, over the planted append.
+
+    Each case is planted into the shipped fragment and read through the same
+    functions the count test reads. Outside the standard, the register of
+    whole paragraphs moves while the standard's paragraph stays closed, so
+    the paragraph register is what catches it — and a second paragraph
+    opening as the standard does is caught by counting those paragraphs.
+    Inside the standard, the reading closure refuses the sentence while the
+    register stays equal. The separators differ from case to case, so a
+    check that recognised a principle by one of them would fail this test.
+    """
+    rules = fragment("house_rules")
+    assert NINTH_OUTSIDE
+    assert NINTH_INSIDE
+    for case, (anchor, planted) in NINTH_OUTSIDE.items():
+        assert rules.count(anchor) == 1, case
+        mutated = rules.replace(anchor, planted)
+        if case == "second_standard_paragraph":
+            assert len(standard_paragraphs(mutated)) == 2, case
+            assert outside_the_standard(mutated) == OUTSIDE_THE_STANDARD, case
+            continue
+        assert standard_paragraphs(mutated) == [engineering_standard()], case
+        assert outside_the_standard(mutated) != OUTSIDE_THE_STANDARD, case
+    for case, (anchor, planted) in NINTH_INSIDE.items():
+        assert rules.count(anchor) == 1, case
+        mutated = rules.replace(anchor, planted)
+        (standard,) = standard_paragraphs(mutated)
+        assert unread_sentences(standard) != (), case
+        assert principle_labels(standard) == ENGINEERING_PRINCIPLE_LABELS, case
+        assert outside_the_standard(mutated) == OUTSIDE_THE_STANDARD, case
 
 
 @pytest.mark.parametrize("reading", ENGINEERING_READINGS)
