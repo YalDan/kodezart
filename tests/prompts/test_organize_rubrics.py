@@ -22,14 +22,28 @@ from tests.prompts.test_prompt_wiring import load_registry
 
 SETS = [OPUS_SET, V5_SET]
 
-#: The four parts of the organizational predicate, each by a phrase the rubric
-#: states it in and no line wraps. A part reworded away is a part nothing asks
-#: for.
+#: The four parts of the organizational predicate, each by the phrases the
+#: rubric states its substance in and no line wraps. A part reworded away is a
+#: part nothing asks for, and a part whose substance is weakened — an edge
+#: that need not cross a container, a choice merely visible to its owner, a
+#: criterion a member only may carry — is a different predicate.
 FOUR_PARTS = (
     "blocking edge",
+    "including edges that cross a container",
+    "is assigned to the person",
     "accountable",
     "Target dates are ordered",
-    "at least one criterion",
+    "already carries at least one criterion",
+)
+
+#: The four parts are a conjunction: every one must hold.
+CONJUNCTION = "only when all four conditions below hold"
+
+#: What the pre-approval rubric states it does not judge, and that it refuses
+#: on the four parts alone.
+EXCLUSION = (
+    "is no part of this mandate",
+    "Refuse here only on the four conditions above",
 )
 
 #: What a pre-approval accept condition may not say. Every one of these was in
@@ -72,6 +86,9 @@ def test_the_shipped_pre_approval_rubric_states_the_four_parts(set_name: str) ->
     rubric = rendered_rubric(set_name, rows[0].spec.rubric_prompt_key)
     for part in FOUR_PARTS:
         assert part in rubric, part
+    assert CONJUNCTION in rubric
+    for exclusion in EXCLUSION:
+        assert exclusion in rubric, exclusion
     assert "{{" not in rubric
 
 
