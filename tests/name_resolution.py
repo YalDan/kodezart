@@ -62,10 +62,10 @@ import pkgutil
 import re
 import sys
 import types
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import get_args
+from typing import Any, get_args
 
 import kodezart
 
@@ -1372,3 +1372,687 @@ def referencing_definitions(
 
     walk(tree, (), bound)
     return tuple(sorted(found.values(), key=lambda pair: pair[0]))
+
+
+# ---------------------------------------------------------------------------
+# Resolution by identity: which definition a spelling IS, across the modules.
+#
+# Separate from the functions above and with limits of its own, stated in
+# each function's docstring: unlike them, it resolves a relative import, a
+# star import and an import written inside a function, and it reads a
+# tuple-unpacking target as binding each name.
+# ---------------------------------------------------------------------------
+
+#: A definition of the tree, by the module it is written in and its dotted
+#: name there: ``("domain/fire_spec.py", "criterion_ref")``, or
+#: ``("core/protocols.py", "TrackerPort.create_criterion_if_absent")`` for a
+#: method.  A module-level binding is a definition too, whatever its value.
+Key = tuple[str, str]
+
+
+def object_key(obj: Any) -> Key:
+    """The definition a shipped object is, read off the object itself."""
+    module = sys.modules[obj.__module__]
+    path = Path(module.__file__ or "").resolve()
+    return path.relative_to(SOURCE_ROOT.resolve()).as_posix(), obj.__qualname__
+
+
+def _module_home(dotted: str, trees: Mapping[str, ast.Module]) -> str | None:
+    """The key of the module *dotted* names in *trees*, a package or a file."""
+    parts = dotted.split(".")
+    if parts[0] != SOURCE_ROOT.name:
+        return None
+    inner = "/".join(parts[1:])
+    for path in (f"{inner}.py", f"{inner}/__init__.py") if inner else ("__init__.py",):
+        if path in trees:
+            return path
+    return None
+
+
+def _dotted_module(path: str) -> str:
+    """The dotted name the module keyed *path* is imported under."""
+    parts = path.removesuffix(".py").split("/")
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join((SOURCE_ROOT.name, *parts))
+
+
+def _imported_from(path: str, node: ast.ImportFrom) -> str | None:
+    """The dotted module a from-import in *path* names, relative ones resolved."""
+    if not node.level:
+        return node.module
+    package = _dotted_module(path).split(".")
+    if not path.endswith("__init__.py"):
+        package = package[:-1]
+    package = package[: len(package) - (node.level - 1)]
+    return ".".join((*package, *((node.module,) if node.module else ())))
+
+
+def _module_statements(body: list[ast.stmt]) -> Iterator[ast.stmt]:
+    """Every statement run at import time, through ``if``/``try``/``with``."""
+    for statement in body:
+        yield statement
+        if isinstance(statement, ast.If | ast.Try | ast.TryStar | ast.With):
+            for block in (
+                getattr(statement, "body", []),
+                getattr(statement, "orelse", []),
+                getattr(statement, "finalbody", []),
+                *(handler.body for handler in getattr(statement, "handlers", [])),
+            ):
+                yield from _module_statements(block)
+
+
+def _target_words(target: ast.expr) -> Iterator[str]:
+    """Every name a binding target binds, through tuple and list unpacking."""
+    if isinstance(target, ast.Name):
+        yield target.id
+    elif isinstance(target, ast.Tuple | ast.List):
+        for element in target.elts:
+            yield from _target_words(element)
+    elif isinstance(target, ast.Starred):
+        yield from _target_words(target.value)
+
+
+@dataclass(frozen=True)
+class IdentityIndex:
+    """Every definition of a map of modules, and what each spelling denotes."""
+
+    trees: Mapping[str, ast.Module]
+    #: Every definition by its key, to the statement that makes it.
+    units: Mapping[Key, ast.AST]
+    #: ``id(statement)`` -> the definitions that statement makes.
+    starts: Mapping[int, tuple[Key, ...]]
+    #: Module -> each top-level word it defines itself.
+    defined: Mapping[str, frozenset[str]]
+    #: Module -> each spelling one of its imports binds: a module key, or the
+    #: ``(module, word)`` it imports.
+    imported: Mapping[str, Mapping[str, str | Key]]
+    #: Module -> the modules it star-imports.
+    starred: Mapping[str, tuple[str, ...]]
+    #: Method name -> every method of that name.
+    methods: Mapping[str, frozenset[Key]]
+
+
+def identity_index(trees: Mapping[str, ast.Module]) -> IdentityIndex:
+    """Index *trees* once for every identity walk below.
+
+    A definition is a top-level ``def``, ``class`` or bound name — through
+    ``if``, ``try`` and ``with`` blocks and tuple unpacking — and each method
+    a top-level class states.  An import binds its spelling wherever in the
+    module it is written, inside a function included, and a relative import
+    is resolved against the module's own package.
+    """
+    units: dict[Key, ast.AST] = {}
+    starts: dict[int, tuple[Key, ...]] = {}
+    defined: dict[str, frozenset[str]] = {}
+    imported: dict[str, dict[str, str | Key]] = {}
+    starred: dict[str, tuple[str, ...]] = {}
+    methods: dict[str, set[Key]] = {}
+    for module, tree in trees.items():
+        words: set[str] = set()
+        for statement in _module_statements(tree.body):
+            made: list[Key] = []
+            if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef):
+                made.append((module, statement.name))
+            elif isinstance(statement, ast.ClassDef):
+                made.append((module, statement.name))
+                for member in statement.body:
+                    if isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef):
+                        key = (module, f"{statement.name}.{member.name}")
+                        units[key] = member
+                        starts[id(member)] = (key,)
+                        methods.setdefault(member.name, set()).add(key)
+            elif isinstance(statement, ast.Assign):
+                made.extend(
+                    (module, word)
+                    for target in statement.targets
+                    for word in _target_words(target)
+                )
+            elif isinstance(statement, ast.AnnAssign | ast.AugAssign):
+                made.extend((module, word) for word in _target_words(statement.target))
+            elif isinstance(statement, ast.TypeAlias):
+                made.extend((module, word) for word in _target_words(statement.name))
+            for key in made:
+                units[key] = statement
+                words.add(key[1])
+            if made:
+                starts[id(statement)] = tuple(made)
+        defined[module] = frozenset(words)
+        bound: dict[str, str | Key] = {}
+        stars: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    spelled = alias.name if alias.asname else alias.name.split(".")[0]
+                    home = _module_home(spelled, trees)
+                    if home is not None:
+                        bound[alias.asname or spelled] = home
+            elif isinstance(node, ast.ImportFrom):
+                dotted = _imported_from(module, node)
+                source = None if dotted is None else _module_home(dotted, trees)
+                if dotted is None or source is None:
+                    continue
+                for alias in node.names:
+                    if alias.name == "*":
+                        stars.append(source)
+                        continue
+                    submodule = _module_home(f"{dotted}.{alias.name}", trees)
+                    bound[alias.asname or alias.name] = (
+                        submodule if submodule is not None else (source, alias.name)
+                    )
+        imported[module] = bound
+        starred[module] = tuple(stars)
+    return IdentityIndex(
+        trees=trees,
+        units=units,
+        starts=starts,
+        defined=defined,
+        imported=imported,
+        starred=starred,
+        methods={name: frozenset(keys) for name, keys in methods.items()},
+    )
+
+
+def _lookup(
+    index: IdentityIndex, module: str, word: str, seen: frozenset[Key] = frozenset()
+) -> tuple[frozenset[Key], str | None]:
+    """What *word* denotes in *module*: definitions, or a module key.
+
+    Its own definition first, then the import that binds it, followed into
+    the module it came from, then a star import.  *seen* bounds a cycle of
+    re-exports.
+    """
+    if (module, word) in seen:
+        return frozenset(), None
+    seen = seen | {(module, word)}
+    if word in index.defined.get(module, frozenset()):
+        return frozenset({(module, word)}), None
+    bound = index.imported.get(module, {}).get(word)
+    if isinstance(bound, str):
+        return frozenset(), bound
+    if bound is not None:
+        return _lookup(index, bound[0], bound[1], seen)
+    for source in index.starred.get(module, ()):
+        found = _lookup(index, source, word, seen)
+        if found != (frozenset(), None):
+            return found
+    return frozenset(), None
+
+
+def _reflected(node: ast.Call) -> tuple[ast.expr, str] | None:
+    """``getattr(receiver, "word")`` as the attribute it reaches."""
+    if (
+        isinstance(node.func, ast.Name)
+        and node.func.id == getattr.__name__
+        and len(node.args) >= 2
+        and isinstance(node.args[1], ast.Constant)
+        and isinstance(node.args[1].value, str)
+    ):
+        return node.args[0], node.args[1].value
+    return None
+
+
+def denoted(
+    index: IdentityIndex, module: str, node: ast.expr
+) -> tuple[frozenset[Key], str | None]:
+    """The definitions an expression in *module* IS, or the module it is.
+
+    A word through its module's own definitions and imports; an attribute of
+    a module through that module's, a submodule included; an attribute of a
+    class through the class's own method; ``getattr`` with a literal word as
+    that attribute; ``importlib.import_module`` with a literal name as that
+    module.  A value of any other origin — a parameter, an instance, a
+    subscript, a call's result — denotes nothing here.
+    """
+    if isinstance(node, ast.Name):
+        return _lookup(index, module, node.id)
+    receiver: ast.expr | None = None
+    word = ""
+    if isinstance(node, ast.Attribute):
+        receiver, word = node.value, node.attr
+    elif isinstance(node, ast.Call):
+        reflected = _reflected(node)
+        if reflected is not None:
+            receiver, word = reflected
+        elif (
+            _spelling(node.func) in {"importlib.import_module", "import_module"}
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            return frozenset(), _module_home(node.args[0].value, index.trees)
+    if receiver is None:
+        return frozenset(), None
+    keys, route = denoted(index, module, receiver)
+    if route is not None:
+        submodule = _module_home(f"{_dotted_module(route)}.{word}", index.trees)
+        if submodule is not None:
+            return frozenset(), submodule
+        return _lookup(index, route, word)
+    return frozenset(
+        (home, f"{name}.{word}")
+        for home, name in keys
+        if (home, f"{name}.{word}") in index.units
+    ), None
+
+
+@dataclass(frozen=True)
+class Reference:
+    """One place a module names a definition, by identity."""
+
+    module: str
+    line: int
+    key: Key
+    #: The dotted definition the reference sits inside, ``"<module>"`` at top.
+    definition: str
+    #: The definitions whose own text holds it: a top-level one and, inside
+    #: a method, that method as well.
+    within: tuple[Key, ...]
+    #: Whether it is the callee of a call rather than a value handed on.
+    called: bool
+    #: ``"value"``, ``"annotation"`` for a parameter or variable annotation,
+    #: or ``"return"`` for a declared return.
+    position: str
+
+
+def references(
+    index: IdentityIndex, *, members: Collection[str] = ()
+) -> tuple[Reference, ...]:
+    """Every place in the indexed modules that names a definition of them.
+
+    Each name, attribute, ``getattr`` and from-import is resolved by
+    :func:`denoted` — so an alias, a re-export, a module alias or a local
+    import names the definition it binds, and a word that merely spells the
+    same name does not.  An attribute on a value whose origin is not
+    resolved names nothing, except an attribute spelled like one of
+    *members*, which names every method of that name, as does a string
+    constant spelling one of them: a member is reached through the instance
+    that holds it, so its spelling is all there is to key on.
+    """
+    wanted = frozenset(members)
+    found: list[Reference] = []
+    for module, tree in sorted(index.trees.items()):
+        stack: list[tuple[ast.AST, tuple[str, ...], tuple[Key, ...], bool, str]] = [
+            (tree, (), (), False, "value")
+        ]
+        while stack:
+            node, scope, within, called, position = stack.pop()
+            within = (*within, *index.starts.get(id(node), ()))
+            keys: Collection[Key] = ()
+            if isinstance(node, ast.Name | ast.Attribute | ast.Call):
+                keys, _ = denoted(index, module, node)
+                word = node.attr if isinstance(node, ast.Attribute) else None
+                if isinstance(node, ast.Call) and (reflected := _reflected(node)):
+                    word = reflected[1]
+                if not keys and word in wanted:
+                    keys = index.methods.get(word or "", frozenset())
+            elif isinstance(node, ast.Constant) and node.value in wanted:
+                keys = index.methods.get(str(node.value), frozenset())
+            elif isinstance(node, ast.ImportFrom):
+                dotted = _imported_from(module, node)
+                source = None if dotted is None else _module_home(dotted, index.trees)
+                if source is not None:
+                    keys = frozenset().union(
+                        *(_lookup(index, source, alias.name)[0] for alias in node.names)
+                    )
+            found.extend(
+                Reference(
+                    module=module,
+                    line=getattr(node, "lineno", 0),
+                    key=key,
+                    definition=".".join(scope) if scope else "<module>",
+                    within=within,
+                    called=called,
+                    position=position,
+                )
+                for key in sorted(keys)
+            )
+            inner = scope
+            if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+                inner = (*scope, node.name)
+            for field, value in ast.iter_fields(node):
+                here = position
+                if field == "annotation" and isinstance(node, ast.arg | ast.AnnAssign):
+                    here = "annotation"
+                elif field == "returns":
+                    here = "return"
+                for child in value if isinstance(value, list) else (value,):
+                    if isinstance(child, ast.AST):
+                        stack.append(
+                            (
+                                child,
+                                inner,
+                                within,
+                                isinstance(node, ast.Call) and child is node.func,
+                                here,
+                            )
+                        )
+    return tuple(found)
+
+
+def reaching(
+    index: IdentityIndex,
+    seeds: Collection[Key],
+    *,
+    found: Collection[Reference] | None = None,
+) -> frozenset[Key]:
+    """*seeds*, and every definition that reaches one, to a fixed point.
+
+    A definition reaches one when its own text names it anywhere but in an
+    annotation — called or handed on, in a body, a default, a decorator, a
+    binding's value — or when its declared return names it.  A class reaches
+    what any of its methods does.  Bounded by the definition count: every
+    round adds one or stops.
+    """
+    body: dict[Key, set[Key]] = {}
+    for reference in references(index) if found is None else found:
+        if reference.position == "annotation":
+            continue
+        for owner in reference.within:
+            body.setdefault(owner, set()).add(reference.key)
+    reached = frozenset(seeds)
+    for _ in range(len(index.units) + 1):
+        grown = reached | {
+            owner for owner, named in body.items() if not named.isdisjoint(reached)
+        }
+        if grown == reached:
+            break
+        reached = grown
+    return reached
+
+
+#: Where a value can be held: a name or parameter of a definition, a declared
+#: field ``self.<word>`` of a class a call constructs, or an attribute
+#: ``self.<word>`` assigned on any receiver — keyed ``("", "")``, because
+#: the receiver's class is not resolved, so it stands for every class and a
+#: subclass in another module reads it as its base wrote it.
+Holder = tuple[Key, str]
+
+
+@dataclass(frozen=True)
+class Carried:
+    """Where the values of some definitions are handed on to."""
+
+    holders: frozenset[Holder]
+    #: Every definition that returns one of the values.
+    returners: frozenset[Key]
+
+
+#: The scope a module's own top-level statements run in.
+_TOP = "<module>"
+
+#: The statements and expressions a value can be handed on at.
+_BINDING_SITES = (
+    ast.FunctionDef,
+    ast.AsyncFunctionDef,
+    ast.ClassDef,
+    ast.Assign,
+    ast.AnnAssign,
+    ast.AugAssign,
+    ast.NamedExpr,
+    ast.For,
+    ast.AsyncFor,
+    ast.Return,
+    ast.Call,
+)
+
+#: The calls that hand back one of their own arguments, by the position of
+#: that argument: a ``partial`` is the function it binds, a ``cast`` is the
+#: value it casts.
+_WRAPPED = {"partial": 0, "partialmethod": 0, "cast": 1}
+
+
+def _scope_of(key: Key) -> Key:
+    """The class a method's ``self`` belongs to, or the key itself."""
+    module, name = key
+    return (module, name.split(".")[0]) if "." in name else key
+
+
+def carried(index: IdentityIndex, keys: Collection[Key]) -> Carried:
+    """Every holder a value of *keys* is handed to, to a fixed point.
+
+    The value itself, not what calling it returns: ``mint = criterion_ref``
+    hands the mint on, ``key = criterion_ref(row)`` hands on an identity.  A
+    value is handed on by an assignment, annotated assignment, ``for``
+    target or walrus to a name or an attribute; by a positional or keyword
+    argument to the parameter it lands on — ``def``, a class's ``__init__``,
+    or a class's declared fields when it has none; by a parameter default;
+    and by ``return``, which makes every call of that definition a value of
+    it.  An expression carries a value when it is one, or is a conditional,
+    boolean operation, tuple, list, set or dict display, subscript, starred
+    value, walrus or ``await`` over one that does, or ``partial`` or
+    ``cast`` of one, or a call of a definition that returns one; a lambda or
+    nested ``def`` whose body names one carries it as well.  Any other call
+    carries nothing, whatever its arguments.  An attribute assigned on any
+    receiver, ``self`` included, is that attribute of every class.  A call
+    through a receiver whose class is not resolved lands on every method of
+    that name.  Each round adds a holder or a returner or stops, so the walk
+    is bounded by the binding sites.
+    """
+    wanted = frozenset(keys)
+    holders: set[Holder] = set()
+    returners: set[Key] = set()
+    everywhere: Key = ("", "")
+
+    def fields_of(node: ast.ClassDef) -> list[str]:
+        return [
+            statement.target.id
+            for statement in node.body
+            if isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+        ]
+
+    def held(module: str, node: ast.expr, scope: Key) -> bool:
+        if isinstance(node, ast.Name):
+            return (scope, node.id) in holders
+        spelled = _spelling(node)
+        if spelled is not None and spelled.startswith("self."):
+            owner = _scope_of(scope)
+            return (owner, spelled) in holders or (everywhere, spelled) in holders
+        return False
+
+    def names(module: str, node: ast.AST, scope: Key) -> bool:
+        annotated = {
+            id(inner)
+            for outer in ast.walk(node)
+            for annotation in (
+                (outer.annotation,)
+                if isinstance(outer, ast.arg | ast.AnnAssign)
+                else (outer.returns,)
+                if isinstance(outer, ast.FunctionDef | ast.AsyncFunctionDef)
+                else ()
+            )
+            if annotation is not None
+            for inner in ast.walk(annotation)
+        }
+        return any(
+            isinstance(inner, ast.Name | ast.Attribute | ast.Call)
+            and id(inner) not in annotated
+            and (
+                not denoted(index, module, inner)[0].isdisjoint(wanted | returners)
+                or (not isinstance(inner, ast.Call) and held(module, inner, scope))
+            )
+            for inner in ast.walk(node)
+        )
+
+    def carries(module: str, node: ast.expr, scope: Key) -> bool:
+        if isinstance(node, ast.Lambda):
+            return names(module, node.body, scope)
+        if isinstance(node, ast.IfExp):
+            return carries(module, node.body, scope) or carries(
+                module, node.orelse, scope
+            )
+        parts: list[ast.expr | None] = []
+        if isinstance(node, ast.BoolOp):
+            parts = list(node.values)
+        elif isinstance(node, ast.Tuple | ast.List | ast.Set):
+            parts = list(node.elts)
+        elif isinstance(node, ast.Dict):
+            parts = list(node.values)
+        elif isinstance(node, ast.Starred | ast.NamedExpr | ast.Await | ast.Subscript):
+            parts = [node.value]
+        elif isinstance(node, ast.Call) and _reflected(node) is None:
+            if not denoted(index, module, node.func)[0].isdisjoint(returners):
+                return True
+            spelled = _spelling(node.func) or ""
+            position = _WRAPPED.get(spelled.rsplit(".", 1)[-1])
+            if position is not None and len(node.args) > position:
+                parts = [node.args[position]]
+        elif isinstance(node, ast.Name | ast.Attribute | ast.Call):
+            return not denoted(index, module, node)[0].isdisjoint(wanted) or (
+                not isinstance(node, ast.Call) and held(module, node, scope)
+            )
+        return any(carries(module, part, scope) for part in parts if part is not None)
+
+    def bind(targets: Collection[ast.expr], scope: Key) -> set[Holder]:
+        bound: set[Holder] = set()
+        for target in targets:
+            bound |= {(scope, word) for word in _target_words(target)}
+            if isinstance(target, ast.Attribute):
+                bound.add((everywhere, f"self.{target.attr}"))
+        return bound
+
+    def callees(module: str, call: ast.Call) -> list[tuple[Key, ast.AST, bool]]:
+        found: list[tuple[Key, ast.AST, bool]] = []
+        keys_, _ = denoted(index, module, call.func)
+        for key in keys_:
+            node = index.units.get(key)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                found.append((key, node, False))
+            elif isinstance(node, ast.ClassDef):
+                init = (key[0], f"{key[1]}.__init__")
+                found.append(
+                    (init, index.units[init], True)
+                    if init in index.units
+                    else (key, node, False)
+                )
+        if not keys_ and isinstance(call.func, ast.Attribute):
+            found.extend(
+                (key, index.units[key], True)
+                for key in index.methods.get(call.func.attr, frozenset())
+            )
+        return found
+
+    def handed(
+        call: ast.Call, key: Key, node: ast.AST, receiver: bool
+    ) -> dict[Holder, ast.expr]:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            return {
+                (key, parameter): value
+                for parameter, value in _handed(
+                    call, node, through_receiver=receiver
+                ).items()
+            }
+        # A class without ``__init__``: its declared fields, in order.
+        fields = fields_of(node) if isinstance(node, ast.ClassDef) else []
+        by_field = dict(zip(fields, call.args, strict=False))
+        by_field.update({word.arg: word.value for word in call.keywords if word.arg})
+        return {(key, f"self.{field}"): value for field, value in by_field.items()}
+
+    def module_level(tree: ast.Module) -> Iterator[ast.AST]:
+        stack: list[ast.AST] = list(tree.body)
+        while stack:
+            node = stack.pop()
+            yield node
+            if not isinstance(
+                node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+            ):
+                stack.extend(ast.iter_child_nodes(node))
+
+    #: Each binding site once, with the module and scope it is read in: a
+    #: parameter default, a nested definition, an assignment, a ``for``, a
+    #: ``return`` and a call.  Collected in one walk, then re-read each round.
+    work: list[tuple[str, Key, ast.AST]] = []
+    for key, node in index.units.items():
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        arguments = node.args
+        positional = [*arguments.posonlyargs, *arguments.args]
+        for parameter, default in (
+            *zip(
+                positional[len(positional) - len(arguments.defaults) :],
+                arguments.defaults,
+                strict=True,
+            ),
+            *zip(arguments.kwonlyargs, arguments.kw_defaults, strict=True),
+        ):
+            if default is not None:
+                work.append(
+                    (key[0], key, ast.keyword(arg=parameter.arg, value=default))
+                )
+        work.extend(
+            (key[0], key, inner)
+            for inner in ast.walk(node)
+            if inner is not node and isinstance(inner, _BINDING_SITES)
+        )
+    for module, tree in index.trees.items():
+        work.extend(
+            (module, (module, _TOP), inner)
+            for inner in module_level(tree)
+            if isinstance(inner, _BINDING_SITES)
+            and not isinstance(
+                inner, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+            )
+        )
+    # Each round adds a holder or a returner or stops, and every one of them
+    # is named by one binding site, so the rounds cannot outnumber the sites.
+    for _ in range(len(work) + 1):
+        before = (len(holders), len(returners))
+        for module, scope, node in work:
+            value: ast.expr | None = None
+            targets: list[ast.expr] = []
+            if isinstance(node, ast.keyword) and node.arg is not None:
+                if carries(module, node.value, scope):
+                    holders.add((scope, node.arg))
+            elif isinstance(
+                node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+            ):
+                if names(module, node, scope):
+                    holders.add((scope, node.name))
+            elif isinstance(node, ast.Assign):
+                value, targets = node.value, node.targets
+            elif isinstance(node, ast.AnnAssign | ast.AugAssign | ast.NamedExpr):
+                value, targets = node.value, [node.target]
+            elif isinstance(node, ast.For | ast.AsyncFor):
+                value, targets = node.iter, [node.target]
+            elif isinstance(node, ast.Return) and node.value is not None:
+                if carries(module, node.value, scope):
+                    returners.add(scope)
+            elif isinstance(node, ast.Call) and any(
+                carries(module, argument, scope)
+                for argument in (*node.args, *(word.value for word in node.keywords))
+            ):
+                for key, callee, receiver in callees(module, node):
+                    for holder, argument in handed(node, key, callee, receiver).items():
+                        if carries(module, argument, scope):
+                            holders.add(holder)
+            if value is not None and carries(module, value, scope):
+                holders |= bind(targets, scope)
+        if (len(holders), len(returners)) == before:
+            break
+    return Carried(holders=frozenset(holders), returners=frozenset(returners))
+
+
+def holding(
+    index: IdentityIndex, found: Carried, modules: Collection[str]
+) -> frozenset[Holder]:
+    """The holders of *found* that sit in one of *modules*.
+
+    A holder whose definition is written there, and an attribute assigned
+    on any receiver, wherever a class of one of *modules* reads that
+    ``self.<word>``: a subclass there reads what a base elsewhere assigned.
+    """
+    inside = frozenset(modules)
+    held = {holder for holder in found.holders if holder[0][0] in inside}
+    unresolved = {word for (scope, word) in found.holders if scope == ("", "")}
+    for key, node in index.units.items():
+        if key[0] not in inside or not isinstance(node, ast.ClassDef):
+            continue
+        read = {
+            spelled
+            for inner in ast.walk(node)
+            if isinstance(inner, ast.Attribute)
+            and (spelled := _spelling(inner)) in unresolved
+        }
+        held |= {(key, word) for word in read}
+    return frozenset(held)

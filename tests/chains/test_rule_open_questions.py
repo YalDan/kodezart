@@ -7,8 +7,13 @@ graph is untouched, and no generation node runs on either path through here.
 """
 
 import ast
+import functools
+import inspect
 import json
+import textwrap
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import MappingProxyType, ModuleType
 
 import pytest
 
@@ -24,17 +29,23 @@ from kodezart.core.errors import (
 from kodezart.domain import fire_spec
 from kodezart.domain.agent import mint_ruling_id
 from kodezart.domain.amendment import NativeWriteRefusalError
+from kodezart.domain.criteria import mint_criteria, mint_criterion_id
+from kodezart.domain.criterion_cross_off import cross_offs_for
 from kodezart.domain.errors import (
     FireSpecEntryError,
     SurfaceLeaseError,
     TransientAPIError,
 )
 from kodezart.domain.rulings import EMPTY_REGISTRY, pinned_registry
+from kodezart.services.fire_time_rulings import FireTimeRulings
 from kodezart.services.ruling_records import RulingRecordReader
+from kodezart.types.domain import criteria as criteria_types
+from kodezart.types.domain import fire_spec as fire_spec_types
 from kodezart.types.domain.agent import ResultEvent, WorkflowCompleteEvent
 from kodezart.types.domain.branch import trunk_base
-from kodezart.types.domain.criteria import CriterionId
+from kodezart.types.domain.criteria import CriterionId, CriterionIdItem
 from kodezart.types.domain.criterion_ref import CriterionRef
+from kodezart.types.domain.fire_spec import CriterionRefItem
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -68,6 +79,20 @@ from tests.fakes import (
     FakeGitService,
     FakeTrackerPort,
     FakeWorkspaceProvider,
+)
+from tests.name_resolution import (
+    SOURCE_ROOT,
+    IdentityIndex,
+    Key,
+    Reference,
+    carried,
+    holding,
+    identity_index,
+    object_key,
+    parsed,
+    reaching,
+    references,
+    source_tree,
 )
 from tests.services.test_fire_time_rulings import (
     ARTIFACT_CHECK,
@@ -1014,21 +1039,16 @@ async def test_the_question_step_mints_a_pinned_answer_identity_and_no_criterion
         await source.read_entry(issue_key=SUBJECT)
 
 
-#: The mint the ruling path must never reach, and the tree it is scanned over.
-#: The word is the shipped function's own, so a rename moves the guard.
+#: The mint the question path must never reach, by the shipped function's own
+#: word, so a rename moves the census below with the code.
 CRITERION_MINT = fire_spec.criterion_ref.__name__
-SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 
-#: Every spelling a criterion identity is brought into being under, each read
-#: off the shipped object: the mint function, the native identity that mint
-#: itself returns, and the authored identity. Both identity types are
+#: The criterion identities themselves, each read off the shipped type: the
+#: native identity the mint returns and the authored one. Both are
 #: ``NewType``s constructed bare wherever a key is captured, so constructing
-#: one is minting one, and the native one is what the question path would
-#: reach for. Derived from the objects rather than listed here, so neither a
-#: rename nor a hand-typed twin can leave a spelling out (KOD-639).
-CRITERION_IDENTITIES = frozenset(
-    {CRITERION_MINT, CriterionRef.__name__, CriterionId.__name__}
-)
+#: one is minting one. Every other definition that mints is derived from
+#: these two over the tree rather than listed here (KOD-639).
+IDENTITY_TYPES = frozenset({object_key(CriterionRef), object_key(CriterionId)})
 
 #: Every module of the pre-loop question path: the node, the component it
 #: drives, the arithmetic that component does, and the reader of what it wrote.
@@ -1046,72 +1066,83 @@ RULING_PATH = (
 MINT_CALLERS = {"domain/criterion_cross_off.py"}
 
 
+@functools.cache
+def _shipped_sources() -> Mapping[str, str]:
+    """Every shipped module's text by its tree-relative path, read once."""
+    return MappingProxyType(source_tree())
+
+
+@functools.cache
+def _shipped_trees() -> Mapping[str, ast.Module]:
+    """The same modules parsed once; no walk below changes a tree."""
+    return MappingProxyType(parsed(_shipped_sources()))
+
+
 def _source_trees() -> dict[str, ast.Module]:
     """Every shipped module by its tree-relative path, parsed once."""
-    return {
-        str(module.relative_to(SOURCE_ROOT)): ast.parse(
-            module.read_text(encoding="utf-8")
-        )
-        for module in SOURCE_ROOT.rglob("*.py")
+    return dict(_shipped_trees())
+
+
+def _planted(edits: Mapping[str, str]) -> dict[str, ast.Module]:
+    """The shipped tree with each module of *edits* extended by its text.
+
+    A module the tree does not have is created with that text alone.
+    """
+    trees = _source_trees()
+    for module, text in edits.items():
+        trees[module] = ast.parse(_shipped_sources().get(module, "") + "\n" + text)
+    return trees
+
+
+def _bound_key(module: ModuleType, value: object) -> Key:
+    """The definition a module-level value is, by the one word binding it."""
+    (word,) = [name for name, bound in vars(module).items() if bound is value]
+    home = Path(module.__file__ or "").resolve().relative_to(SOURCE_ROOT.resolve())
+    return home.as_posix(), word
+
+
+def _minting(index: IdentityIndex, found: Sequence[Reference]) -> frozenset[Key]:
+    """Every definition of the tree that brings a criterion identity into being.
+
+    The two identity types, and every definition whose own text names one of
+    them — or names a definition that does — outside an annotation, or whose
+    declared return names one, to a fixed point. So the native mint, the
+    authored mint, a function that mints for every row it captures, a ``def``
+    wrapping any of them, a type alias over an identity, and a module-level
+    alias of any of these, however it is written, are each found without
+    being named here.
+    """
+    return reaching(index, IDENTITY_TYPES, found=found)
+
+
+def question_path_mints(trees: Mapping[str, ast.Module]) -> list[str]:
+    """Every way a module of the question path reaches a criterion mint.
+
+    Two readings over one index of the tree, each resolved by identity. A
+    path module NAMES a minting definition — as a callee, a value, an import
+    or an annotation, under any word an import, alias or re-export gives it.
+    Or a path module HOLDS one handed in from elsewhere: a parameter, a name,
+    a declared field or an instance attribute of the path that a minting
+    value reaches by a positional or keyword argument, a parameter default,
+    an assignment, a ``for`` target, a walrus or the return of a function it
+    passes through, carried by a conditional, a boolean fallback, a tuple or
+    dict display, a subscript, ``await``, a lambda or nested ``def``,
+    ``functools.partial`` or ``cast``, through any number of calls. Each of
+    those is a row of the control below.
+    """
+    index = identity_index(trees)
+    found = references(index)
+    mints = _minting(index, found)
+    named = {
+        f"{reference.module}:{reference.line} names {reference.key[1]}"
+        for reference in found
+        if reference.module in RULING_PATH and reference.key in mints
     }
-
-
-def _bound_to(tree: ast.Module, known: frozenset[str]) -> set[str]:
-    """Every name this module binds to one of *known* itself.
-
-    The value rather than what it returns: ``address_one = criterion_ref``
-    hands the mint out under a second word, while ``key = criterion_ref(row)``
-    hands out the identity it minted, which is an ordinary value. An aliased
-    import is the same re-binding written as an import.
-    """
-
-    def resolves(value: ast.expr) -> bool:
-        return (isinstance(value, ast.Name) and value.id in known) or (
-            isinstance(value, ast.Attribute) and value.attr in known
-        )
-
-    bound: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and resolves(node.value):
-            bound |= {
-                target.id for target in node.targets if isinstance(target, ast.Name)
-            }
-        elif (
-            isinstance(node, ast.AnnAssign)
-            and node.value is not None
-            and isinstance(node.target, ast.Name)
-            and resolves(node.value)
-        ):
-            bound.add(node.target.id)
-        elif isinstance(node, ast.ImportFrom):
-            bound |= {
-                alias.asname
-                for alias in node.names
-                if alias.asname is not None and alias.name in known
-            }
-    return bound
-
-
-def _identity_names(trees: dict[str, ast.Module]) -> frozenset[str]:
-    """The identity spellings, plus every word the tree re-binds one to.
-
-    Pooled over the whole tree before any module is judged, because a
-    re-export lands in a module that may name the mint and is imported by one
-    that may not, and a set of names would then be answered by handing the
-    mint out under a third word. Grown hop by hop so an alias of an alias is
-    the same value again, bounded by the module count — a chain can cross a
-    module boundary at most once per module — and stopped as soon as a round
-    binds nothing new.
-    """
-    known = CRITERION_IDENTITIES
-    for _ in range(len(trees) + 1):
-        grown = known
-        for tree in trees.values():
-            grown |= _bound_to(tree, grown)
-        if grown == known:
-            break
-        known = grown
-    return known
+    held = {
+        f"{scope[0]} {scope[1]} holds {word}"
+        for scope, word in holding(index, carried(index, mints), RULING_PATH)
+    }
+    return sorted(named | held)
 
 
 def _names_the_mint(tree: ast.Module, wanted: frozenset[str]) -> bool:
@@ -1144,7 +1175,7 @@ def _naming(trees: dict[str, ast.Module], wanted: frozenset[str]) -> set[str]:
 
 
 def test_no_module_on_the_ruling_path_names_the_criterion_mint() -> None:
-    """The negative clause, against every import spelling (KOD-639).
+    """The negative clause, by identity rather than by word (KOD-639).
 
     The behavioural guard above replaces the mint in the module dict, so it
     sees a call reached as ``fire_spec.criterion_ref(...)`` and nothing of a
@@ -1154,32 +1185,54 @@ def test_no_module_on_the_ruling_path_names_the_criterion_mint() -> None:
     ``str``, so a mint added on this path changes no value a test could read:
     the naming site is the only observable thing there is.
 
-    Read statically, and as a census rather than a spot check, so a new naming
-    site is reported wherever it lands and however it is imported.
+    So it is read statically, over the whole shipped tree, and keyed on the
+    definitions themselves rather than on their words. What counts as a mint
+    is derived: the two identity types, then every definition that names one
+    outside an annotation or declares one as its return, to a fixed point —
+    the native mint, the authored mint, ``tracker_spec_from_issues``, the
+    ``Annotated`` aliases over either type, the classes whose methods mint,
+    and anything that wraps, re-binds or re-exports one of them. A path
+    module then may neither name any of them nor hold one handed in; see
+    ``question_path_mints`` for what each reading follows. A mint written onto
+    the path in each of those ways is a case of the control below.
 
-    Two name sets, because the two assertions want different reach. The path
-    clause takes EVERY identity spelling, each derived from the shipped object:
-    constructing either ``NewType`` bare mints an identity just as surely as
-    calling the mint does, and being a ``NewType`` it is even less observable —
-    so a path module naming any of them has crossed the line, and none does
-    today. That set is then grown by every word the tree binds one of those
-    values to, pooled over the whole tree, so a re-export handing the mint out
-    under a second name is the mint where it is called. The census takes the
-    function alone, since the identity types are legitimately named across
-    ``types/``, ``chains/criteria.py`` and ``domain/criteria.py`` and a total
-    census over them would say nothing.
+    The census stays on the mint function's word alone, since the identity
+    types are legitimately named across ``types/``, ``chains/criteria.py``
+    and ``domain/criteria.py`` and a total census over them would say
+    nothing.
 
-    What this does not see: a value fetched by reflection, and a wrapper that
-    mints inside a function it hands back rather than binding the mint to a
-    name — both of which are reflection-shaped and neither of which any module
-    of this tree writes.
+    What this does not see. A method called through an instance whose class
+    the calling module does not name — ``self._criteria.read_entry()`` on an
+    attribute typed by a protocol — because the receiver's class is not
+    resolved; a class whose method mints is itself a mint, so a path module
+    constructing or annotating it is reported, but one that holds it under a
+    protocol's name is not. A value put into a container by a method call
+    rather than written in its display, or wrapped by a call other than
+    ``functools.partial`` and ``cast``. A definition fetched by ``getattr``,
+    ``importlib`` or ``__dict__`` under a name built at run time, and
+    ``eval``/``exec``.
     """
     trees = _source_trees()
-    identities = _naming(trees, _identity_names(trees))
-    naming = _naming(trees, frozenset({CRITERION_MINT}))
+    index = identity_index(trees)
+    mints = _minting(index, references(index))
 
-    # Non-vacuous: the scan finds the sites there are, and the module that
-    # defines the mint is derived rather than named.
+    # Non-vacuous, and derived rather than listed: the set is more than the
+    # two types it grows from, and it holds each shipped mint, read off the
+    # objects, without having been told any of them.
+    assert mints > IDENTITY_TYPES
+    assert {
+        object_key(fire_spec.criterion_ref),
+        object_key(fire_spec.tracker_spec_from_issues),
+        object_key(mint_criterion_id),
+        object_key(mint_criteria),
+        _bound_key(criteria_types, CriterionIdItem),
+        _bound_key(fire_spec_types, CriterionRefItem),
+    } <= mints
+    # And the handing-on walk the clause's second reading rests on finds the
+    # holders the shipped tree has, off the path, so an empty walk reddens here.
+    assert carried(index, mints).holders
+
+    # The module that defines the mint is derived rather than named.
     (definer,) = {
         path
         for path, tree in trees.items()
@@ -1189,16 +1242,292 @@ def test_no_module_on_the_ruling_path_names_the_criterion_mint() -> None:
             for node in ast.walk(tree)
         )
     }
-    assert definer == "domain/fire_spec.py"
+    assert definer == object_key(fire_spec.criterion_ref)[0] == "domain/fire_spec.py"
 
-    # The clause: no module of the question path names an identity mint at
-    # all, under any spelling or any word the tree binds one to.
-    assert identities.isdisjoint(RULING_PATH), sorted(
-        identities.intersection(RULING_PATH)
-    )
+    # The clause: no module of the question path names a mint or holds one.
+    assert question_path_mints(trees) == []
     # And the census over the mint function is total, so a naming site
     # anywhere else is reported too.
-    assert naming == {definer} | MINT_CALLERS
+    assert _naming(trees, frozenset({CRITERION_MINT})) == {definer} | MINT_CALLERS
+
+
+def _held_attribute() -> str:
+    """The first attribute the question service holds on itself, off its code."""
+    init = ast.parse(textwrap.dedent(inspect.getsource(FireTimeRulings.__init__)))
+    return next(
+        target.attr
+        for node in ast.walk(init)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+    )
+
+
+#: The modules a planted mint lands in, each read off a definition it holds:
+#: the question service and its arithmetic on the path, the one module
+#: licensed to name the mint, and a module the tree does not have.
+_SERVICE = object_key(FireTimeRulings)[0]
+_ARITHMETIC = object_key(pinned_registry)[0]
+_LICENSED = object_key(cross_offs_for)[0]
+_ELSEWHERE = "services/second_wiring.py"
+_ELSEWHERE_MODULE = f"{SOURCE_ROOT.name}.services.second_wiring"
+#: The words a plant spells, each the shipped object's own.
+_MINT = f"from {fire_spec.__name__} import {CRITERION_MINT}\n"
+_REF = f"from {CriterionRef.__module__} import {CriterionRef.__name__}\n"
+_AUTHORED = f"from {mint_criterion_id.__module__} import {mint_criterion_id.__name__}\n"
+_ITEM = _bound_key(criteria_types, CriterionIdItem)[1]
+_PACKAGE, _MODULE = fire_spec.__name__.rsplit(".", 1)
+#: A path function that calls a value handed to it, and a path class that
+#: holds one on itself and calls it — the two ways in for a handed mint.
+_TAKES = (
+    "def _address(key, mint):\n"
+    "    return mint(key)\n"
+    "class _Addresser:\n"
+    "    def __init__(self, mint):\n"
+    "        self._mint = mint\n"
+    "    def use(self, mint):\n"
+    "        return mint('k')\n"
+)
+_TAKEN = f"from {pinned_registry.__module__} import _address, _Addresser\n"
+#: A path function calling a word re-exported from the licensed module.
+_CALLS_ALIAS = (
+    f"from {cross_offs_for.__module__} import address_one\n"
+    "def _minted(key):\n"
+    "    return address_one(key)\n"
+)
+
+#: Each way a criterion mint could reach the question path: the modules it
+#: arrives in and the text each is extended by. Every row is an ordinary
+#: spelling, not reflection over a built name, and every one must be
+#: reported (KOD-639).
+PLANTED_PATH_MINTS: dict[str, dict[str, str]] = {
+    "the native identity constructed bare on the path": {
+        _ARITHMETIC: f"{_REF}def _addressed(key):\n"
+        f"    return {CriterionRef.__name__}(key)\n",
+    },
+    "the authored mint called on the path": {
+        _ARITHMETIC: f"{_AUTHORED}def _authored(index):\n"
+        f"    return {mint_criterion_id.__name__}(index)\n",
+    },
+    "a type alias over an identity validated on the path": {
+        _ARITHMETIC: "from pydantic import TypeAdapter\n"
+        f"from {criteria_types.__name__} import {_ITEM}\n"
+        "def _validated(key):\n"
+        f"    return TypeAdapter({_ITEM}).validate_python(key)\n",
+    },
+    "a shipped function that mints each row, called on the path": {
+        _SERVICE: f"from {_PACKAGE} import {_MODULE} as _spec\n"
+        "def _captured(subject, rows):\n"
+        f"    return _spec.{fire_spec.tracker_spec_from_issues.__name__}("
+        "subject=subject, criteria=rows)\n",
+    },
+    "a re-export of the mint under a second word": {
+        _LICENSED: f"address_one = {CRITERION_MINT}\n",
+        _SERVICE: _CALLS_ALIAS,
+    },
+    "a def wrapping the mint in the licensed module": {
+        _LICENSED: f"def address_one(key):\n    return {CRITERION_MINT}(key)\n",
+        _SERVICE: _CALLS_ALIAS,
+    },
+    "a partial of the mint in the licensed module": {
+        _LICENSED: "from functools import partial\n"
+        f"address_one = partial({CRITERION_MINT})\n",
+        _SERVICE: _CALLS_ALIAS,
+    },
+    "a tuple-unpacking alias of the mint": {
+        _LICENSED: f"(address_one,) = ({CRITERION_MINT},)\n",
+        _SERVICE: _CALLS_ALIAS,
+    },
+    "a conditional alias of the mint": {
+        _LICENSED: f"address_one = {CRITERION_MINT} if {CRITERION_MINT} else None\n",
+        _SERVICE: _CALLS_ALIAS,
+    },
+    "a re-export chain two modules long": {
+        _LICENSED: f"address_one = {CRITERION_MINT}\n",
+        _ELSEWHERE: f"from {cross_offs_for.__module__} import "
+        "address_one as address_two\n",
+        _SERVICE: f"from {_ELSEWHERE_MODULE} import address_two\n"
+        "def _minted(key):\n"
+        "    return address_two(key)\n",
+    },
+    "a mint handed back by a licensed function": {
+        _LICENSED: f"def address_one():\n    return {CRITERION_MINT}\n",
+        _SERVICE: f"from {cross_offs_for.__module__} import address_one\n"
+        "def _minted(key):\n"
+        "    return address_one()(key)\n",
+    },
+    "the mint read as an attribute of a module alias": {
+        _SERVICE: f"import {fire_spec.__name__} as _spec\n"
+        "def _minted(key):\n"
+        f"    return _spec.{CRITERION_MINT}(key)\n",
+    },
+    "the mint fetched by getattr with a literal word": {
+        _SERVICE: f"import {fire_spec.__name__} as _spec\n"
+        "def _minted(key):\n"
+        f"    return getattr(_spec, {CRITERION_MINT!r})(key)\n",
+    },
+    "the mint imported inside a function": {
+        _SERVICE: "def _minted(key):\n"
+        f"    from {fire_spec.__name__} import {CRITERION_MINT} as mint\n"
+        "    return mint(key)\n",
+    },
+    "the mint imported relatively": {
+        _SERVICE: f"from ..{_PACKAGE.split('.', 1)[1]}.{_MODULE} "
+        f"import {CRITERION_MINT}\n"
+        "def _minted(key):\n"
+        f"    return {CRITERION_MINT}(key)\n",
+    },
+    "the native identity reached through a star import": {
+        _ARITHMETIC: f"from {CriterionRef.__module__} import *\n"
+        "def _addressed(key):\n"
+        f"    return {CriterionRef.__name__}(key)\n",
+    },
+    "the native identity handed to a path function": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key):\n"
+        f"    return _address(key, {CriterionRef.__name__})\n",
+    },
+    "the native identity handed to a path constructor": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire():\n"
+        f"    return _Addresser({CriterionRef.__name__})\n",
+    },
+    "the native identity handed on through a second function": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def relay(key, mint):\n"
+        "    return _address(key, mint)\n"
+        "def wire(key):\n"
+        f"    return relay(key, {CriterionRef.__name__})\n",
+    },
+    "the native identity imported inside a function and handed to the path": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}def wire(key):\n"
+        f"    from {CriterionRef.__module__} import {CriterionRef.__name__} as ref\n"
+        "    return _address(key, ref)\n",
+    },
+    "a lambda over the mint handed to a path function": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_MINT}def wire(key):\n"
+        f"    return _address(key, lambda value: {CRITERION_MINT}(value))\n",
+    },
+    "the native identity handed to a path method through an instance": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_REF}def wire(addresser):\n"
+        f"    return addresser.use({CriterionRef.__name__})\n",
+    },
+    "the native identity assigned onto an attribute the path holds": {
+        _ELSEWHERE: f"{_REF}def rewire(service):\n"
+        f"    service.{_held_attribute()} = {CriterionRef.__name__}\n",
+    },
+    "the native identity bound on self by a base class another module holds": {
+        _ELSEWHERE: f"{_REF}class Base:\n"
+        "    def __init__(self, mint):\n"
+        "        self._mint = mint\n"
+        "def wire():\n"
+        f"    return Base({CriterionRef.__name__})\n",
+        _ARITHMETIC: f"from {_ELSEWHERE_MODULE} import Base\n"
+        "class _Addressing(Base):\n"
+        "    def use(self, key):\n"
+        "        return self._mint(key)\n",
+    },
+    # The shapes a handed value is carried through on its way in, one row
+    # each, so undoing any one reading of the walk reddens its row.
+    "a nested def over the mint handed to a path function": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_MINT}def wire(key):\n"
+        "    def mint(value):\n"
+        f"        return {CRITERION_MINT}(value)\n"
+        "    return _address(key, mint)\n",
+    },
+    "the native identity handed by keyword": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key):\n"
+        f"    return _address(key, mint={CriterionRef.__name__})\n",
+    },
+    "the native identity handed through a conditional": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key):\n"
+        f"    return _address(key, {CriterionRef.__name__} if key else None)\n",
+    },
+    "the native identity handed as a fallback": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key, override):\n"
+        f"    return _address(key, override or {CriterionRef.__name__})\n",
+    },
+    "the native identity handed out of a tuple display": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key):\n"
+        f"    return _address(key, ({CriterionRef.__name__},)[0])\n",
+    },
+    "the native identity handed out of a dict display": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key):\n"
+        f"    return _address(key, {{'mint': {CriterionRef.__name__}}}['mint'])\n",
+    },
+    "the native identity handed through a walrus": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key):\n"
+        f"    return _address(key, (mint := {CriterionRef.__name__}))\n",
+    },
+    "the native identity bound by an annotated assignment and handed on": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key):\n"
+        f"    mint: object = {CriterionRef.__name__}\n"
+        "    return _address(key, mint)\n",
+    },
+    "the native identity handed as a partial": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}from functools import partial\n"
+        "def wire(key):\n"
+        f"    return _address(key, partial({CriterionRef.__name__}))\n",
+    },
+    "the native identity handed through a cast": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}from typing import Any, cast\n"
+        "def wire(key):\n"
+        f"    return _address(key, cast(Any, {CriterionRef.__name__}))\n",
+    },
+    "the native identity returned by a helper and awaited on the way in": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}async def _ready(value):\n"
+        "    return value\n"
+        "async def wire(key):\n"
+        f"    return _address(key, await _ready({CriterionRef.__name__}))\n",
+    },
+    "the native identity as a parameter default handed on": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key, mint={CriterionRef.__name__}):\n"
+        "    return _address(key, mint)\n",
+    },
+    "the native identity bound by a for loop and handed on": {
+        _ARITHMETIC: _TAKES,
+        _ELSEWHERE: f"{_TAKEN}{_REF}def wire(key):\n"
+        f"    for mint in ({CriterionRef.__name__},):\n"
+        "        return _address(key, mint)\n",
+    },
+    "the native identity handed to a declared field of a path class": {
+        _ARITHMETIC: "from dataclasses import dataclass\n"
+        "@dataclass\n"
+        "class _Held:\n"
+        "    mint: object\n",
+        _ELSEWHERE: f"from {pinned_registry.__module__} import _Held\n"
+        f"{_REF}def wire():\n"
+        f"    return _Held({CriterionRef.__name__})\n",
+    },
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_PATH_MINTS))
+def test_each_way_a_mint_reaches_the_question_path_is_reported(form: str) -> None:
+    """Every row reddens the clause, and each is a control on one widening.
+
+    Undoing the fixed point over bodies, the alias forms, the import forms or
+    the handing-on walk each leaves one of these rows unreported. The
+    shipped tree reporting nothing is asserted once, in the case above.
+    """
+    assert question_path_mints(_planted(PLANTED_PATH_MINTS[form]))
 
 
 # ---------------------------------------------------------------------------
