@@ -181,11 +181,12 @@ def test_a_reformatted_assertion_loses_nothing():
 
 
 def test_the_mark_names_the_test_and_the_record_and_no_assertion_text_or_sha():
-    """The Check names the writer's starting head and no other commit.
+    """One mark per designated test and record, whatever the starting head.
 
-    The refused commit's sha never appears, so a replay of the same run —
-    same starting head, whatever commit it makes — renders the same bytes,
-    while a weakening from a later starting head renders a different Check.
+    Neither the starting head nor the refused commit appears, so a weakening
+    of the same test from another starting head, with another commit,
+    renders the same bytes; the writer reopens that one mark rather than
+    minting a second.
     """
     before = assertions(
         "def test_behavior():\n    assert calls == 1\n    assert seen == 'x'\n"
@@ -193,24 +194,25 @@ def test_the_mark_names_the_test_and_the_record_and_no_assertion_text_or_sha():
     after = assertions("def test_behavior():\n    assert replaced is not None\n")
     lost = lost_assertions(before=before, after=after)
     first = claim(before=before, after=after)
-    replay = claim(before=before, after=after, head="f" * 40)
-    later = claim(before=before, after=after, graded="e" * 40, head="f" * 40)
+    second = claim(before=before, after=after, graded="e" * 40, head="f" * 40)
 
     mark = weakening_mark(claim=first, lost=lost)
     text = mark.title + mark.check + mark.do
+    later = weakening_mark(claim=second, lost=lost)
+    later_text = later.title + later.check + later.do
 
     assert lost == before
-    assert mark == weakening_mark(claim=replay, lost=lost)
-    assert weakening_mark(claim=later, lost=lost).check != mark.check
-    assert f"`{'e' * 40}`" in weakening_mark(claim=later, lost=lost).check
+    assert mark == later
     assert "tests/protected.py::test_behavior" in mark.check
     assert "owning-record/native-id" in mark.check
-    assert f"`{'a' * 40}`" in mark.check
     # No assertion source leaves the repository: neither the conditions that
     # went nor the one that replaced them.
     for row in (*before, *after):
         assert row.expression not in text
+    assert "a" * 40 not in text
     assert "b" * 40 not in text
+    assert "e" * 40 not in later_text
+    assert "f" * 40 not in later_text
 
 
 def test_a_claim_that_lost_nothing_renders_no_mark():

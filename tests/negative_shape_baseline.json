@@ -317,7 +317,7 @@
   "tests/services/lane_tally_fixtures.py": 10,
   "tests/services/test_agent_service.py": 5,
   "tests/services/test_amendment_interrupted_writes.py": 17,
-  "tests/services/test_applied_native_amendments.py": 216,
+  "tests/services/test_applied_native_amendments.py": 226,
   "tests/services/test_assertion_drift.py": 30,
   "tests/services/test_audit_coverage.py": 22,
   "tests/services/test_audit_reopen.py": 26,
@@ -4415,7 +4415,8 @@
    "test_a_mint_the_tracker_refuses_still_refuses_the_push",
    "test_a_weakening_after_the_mark_was_crossed_off_is_marked_again",
    "test_a_designated_test_left_with_no_assertion_is_marked",
-   "test_a_loss_in_a_records_second_designation_is_marked"
+   "test_a_loss_in_a_records_second_designation_is_marked",
+   "test_a_weakening_from_the_same_head_after_the_mark_was_crossed_off_reopens_it"
   ],
   "tests/services/test_assertion_drift.py": [
    "test_both_revisions_are_green_but_expected_value_drift_emits_claim",

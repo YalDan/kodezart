@@ -963,6 +963,15 @@ UNVERIFIED_WRITES = frozenset(
             function="WeakenedAssertionMarks.refuse_weakening",
             method="create_criterion_if_absent",
         ),
+        # The same writer's move of the mark the mint answered with back to
+        # unstarted, when it was crossed off. It carries no text at all, only
+        # the state the refused commit's arithmetic calls for, so there is
+        # nothing to verify it against, exactly as for the mint above.
+        CallSite(
+            module="services/weakened_assertions.py",
+            function="WeakenedAssertionMarks.refuse_weakening",
+            method="reset_criterion_pending",
+        ),
     }
 )
 
