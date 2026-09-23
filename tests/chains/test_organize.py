@@ -1696,23 +1696,27 @@ def owner_harness():
     return test_organize_owner
 
 
-def admit_as(monkeypatch, executor, *, key, payload):
+def admit_as(monkeypatch, executor, *, key, payload, verify_only=False):
     """Every admission judgment for *key* answers *payload*, replacing it whole.
 
     Replaced rather than merged: the harness's own refusal payload always
     carries fields another verdict forbids. Every other session passes
-    through untouched. Returns every answer given for *key*, in order.
+    through untouched. With *verify_only*, only the verification sessions
+    are replaced and the assessment keeps the harness's own answer. Returns
+    every answer given for *key*, in order.
     """
     import re
 
+    h = owner_harness()
     answered = []
     original = executor.stream
 
     async def scripted(**kwargs):
         title = kwargs["output_format"]["schema"].get("title")
         keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        chosen = not verify_only or h.VERIFY_OPENING in kwargs["prompt"]
         async for event in original(**kwargs):
-            if title == "AdmissionJudgment" and keys[-1:] == [key]:
+            if title == "AdmissionJudgment" and keys[-1:] == [key] and chosen:
                 answer = {"issue_id": key, **payload}
                 answered.append(answer)
                 event = result(structured_output=answer)
@@ -1812,6 +1816,58 @@ async def test_an_unverifiable_admission_marks_the_ticket_only_on_a_real_in_scop
         comment.issue_id for comment in escalations if MISSING_ARTIFACT in comment.body
     ] == [CLAIMED_ISSUE]
     assert len(escalations) == 1
+
+
+async def test_an_unverifiable_verdict_first_met_in_verification_reaches_the_halt(
+    monkeypatch,
+):
+    """A verdict the assessment never gave is still carried to the halt.
+
+    The assessment answers buildable, so the round authors nothing and the
+    subject reaches the dry verification. That verification answers
+    unverifiable, naming a blocker the subject has no edge to. The route is a
+    re-author, so the round is not dry and the one convergence round is spent:
+    the halt carries the verdict and its escalation quotes the missing artifact.
+    """
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True,
+        phases=h.ticket_only,
+        body=h.PREPARED_BODY,
+        convergence_bound=1,
+    )
+    answered = admit_as(
+        monkeypatch,
+        executor,
+        key=CLAIMED_ISSUE,
+        payload={
+            "verdict": "unverifiable",
+            "evidence": UNVERIFIABLE_EVIDENCE,
+            "missing_artifact": MISSING_ARTIFACT,
+            "pending_blocker_id": "second",
+        },
+        verify_only=True,
+    )
+    report = await h.run_owner(owner)
+    escalations = [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith(h.ESCALATION_MARKER)
+    ]
+    assessed, verified, _authored = h.sessions(executor, 0)
+    assert CLAIMED_ISSUE in assessed
+    assert CLAIMED_ISSUE in verified
+    assert answered
+    assert report.halt.cause == "convergence_exhausted"
+    assert report.halt.bound.value == report.halt.bound.rounds_used == 1
+    assert [
+        (r.issue_id, r.verdict, r.pending_blocker_id)
+        for r in report.halt.admission_results
+    ] == [(CLAIMED_ISSUE, AdmissionVerdict.UNVERIFIABLE, "second")]
+    assert [
+        comment.issue_id for comment in escalations if MISSING_ARTIFACT in comment.body
+    ] == [CLAIMED_ISSUE]
+    assert "body complete" not in board.server.issues[CLAIMED_ISSUE].labels
 
 
 SECOND_SURFACE = "second-surface"
