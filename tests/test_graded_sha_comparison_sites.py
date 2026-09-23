@@ -25,7 +25,8 @@ a class body, a function, a lambda, a comprehension):
   container stored into by subscript, a ``for`` target, ``with ... as``,
   the walrus, a comprehension target, a ``match`` capture, a default
   argument whose default carries it, and a closure over a name that
-  carries it.  Every such scope is the rule or a registered row with its
+  carries it (from a function nested in it, or from a method or lambda of
+  a class nested in it).  Every such scope is the rule or a registered row with its
   reason; a new one is red whatever it does with the value, and a row whose
   scope no longer reads the value is red too.
 * **Where, inside each registered scope, is the value used?**  Every
@@ -108,7 +109,10 @@ NAMED = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)
 SCOPES = (*FUNCTIONS, ast.ClassDef, *COMPREHENSIONS)
 #: The scopes whose names a nested scope closes over.  A class body's names
-#: are not visible to its methods, and a module's are globals.
+#: are not visible to its methods, and a module's are globals.  A class
+#: passes on what it closes over itself: its methods, its lambdas and the
+#: classes inside it see the enclosing function's names, as Python resolves
+#: them past the class body.
 CLOSING = (*FUNCTIONS, *COMPREHENSIONS)
 #: The nodes a use is pinned by: a statement, a ``match`` case or an
 #: ``except`` clause, each rendered with its body elided.
@@ -452,13 +456,17 @@ class _Module:
             uses = self.readers.setdefault(label, Counter())
             uses.update(_render(clause) for clause in clauses.values())
         for child in nested:
-            closes = isinstance(node, CLOSING) or isinstance(child, COMPREHENSIONS)
             name = child.name if isinstance(child, NAMED) else ANONYMOUS[type(child)]
+            inherited, inherited_records = frozenset[str](), frozenset[str]()
+            if isinstance(node, CLOSING) or isinstance(child, COMPREHENSIONS):
+                inherited, inherited_records = carriers, records
+            elif isinstance(node, ast.ClassDef):
+                inherited, inherited_records = closure, typed
             self._scope(
                 child,
                 name if label == MODULE else f"{label}.{name}",
-                carriers if closes else frozenset(),
-                records if closes else frozenset(),
+                inherited,
+                inherited_records,
                 frozenset(
                     parameter.arg
                     for parameter, default in _defaults(child)
@@ -1046,6 +1054,36 @@ BINDINGS = {
         "reader.py::lapsed.against",
         "return recorded != head",
     ),
+    "closure-through-a-nested-class": (
+        "def lapsed(evidence):\n"
+        "    recorded = evidence.graded_sha\n"
+        "    class A:\n"
+        "        def weigh(self, head):\n"
+        "            return recorded != head\n"
+        "    return A\n",
+        "reader.py::lapsed.A.weigh",
+        "return recorded != head",
+    ),
+    "closure-through-a-class-level-lambda": (
+        "def lapsed(evidence):\n"
+        "    recorded = evidence.graded_sha\n"
+        "    class A:\n"
+        "        weigh = staticmethod(lambda head: recorded != head)\n"
+        "    return A\n",
+        "reader.py::lapsed.A.<lambda>",
+        "weigh = staticmethod(lambda head: recorded != head)",
+    ),
+    "closure-through-two-nested-classes": (
+        "def lapsed(evidence):\n"
+        "    recorded = evidence.graded_sha\n"
+        "    class A:\n"
+        "        class B:\n"
+        "            def weigh(self, head):\n"
+        "                return recorded != head\n"
+        "    return A\n",
+        "reader.py::lapsed.A.B.weigh",
+        "return recorded != head",
+    ),
     "a-record-annotated-as-the-evidence": (
         "def lapsed(evidence: CriterionEvidence, head):\n"
         "    return head in dict(evidence).values()\n",
@@ -1062,6 +1100,65 @@ def test_every_binding_form_carries_the_graded_sha_to_its_use(form):
     found = alone(source)
     assert site in found, sorted(found)
     assert use in found[site], found[site]
+
+
+#: A method, a class-level lambda and a nested ``def``, each closing over a
+#: carrier the registered scope already binds, planted into that scope.
+NESTED_CLOSURES = {
+    "domain/criterion_cross_off.py::cross_offs_for": "recorded",
+    "services/assertion_drift.py::AssertionDriftDetector.compare": "resolved_graded",
+}
+
+
+@pytest.mark.parametrize("site", list(NESTED_CLOSURES))
+def test_a_closure_through_a_nested_class_in_a_registered_reader_is_reported(site):
+    """A registered row is not a licence for a class written inside it.
+
+    A method or a lambda of a class nested in the registered function closes
+    over the function's carrier as surely as a nested ``def`` does, and each
+    is a reader of its own.
+    """
+    carrier = NESTED_CLOSURES[site]
+    assert carrier in SHIPPED[site.partition("::")[0]]
+    blocks = {
+        f"{site}._Probe.lapsed": (
+            "class _Probe:\n"
+            "    def lapsed(self, head):\n"
+            f"        return {carrier} != head\n"
+        ),
+        f"{site}._Rule.<lambda>": (
+            f"class _Rule:\n    lapsed = staticmethod(lambda head: {carrier} != head)\n"
+        ),
+        f"{site}._probe": f"def _probe(head):\n    return {carrier} != head\n",
+    }
+    for reader, block in blocks.items():
+        assert findings(planted(site, block), REGISTERED) == [
+            f"{reader} reads the graded sha and is not registered"
+        ], reader
+
+
+def test_a_class_passes_on_only_the_names_its_enclosing_function_carries():
+    """A method's own parameter, and a class at module scope, carry nothing.
+
+    The names a class closes over reach its methods; a parameter spelled
+    like a carrier shadows it, and a module-level class has nothing to pass.
+    """
+    sources = (
+        "def lapsed(evidence):\n"
+        "    recorded = evidence.graded_sha\n"
+        "    class A:\n"
+        "        def weigh(self, recorded, head):\n"
+        "            return recorded != head\n"
+        "    return recorded\n",
+        "class A:\n"
+        "    recorded = 'x'\n"
+        "    def weigh(self, head):\n"
+        "        return recorded != head\n",
+    )
+    assert [frozenset(alone(source)) for source in sources] == [
+        {"reader.py::lapsed"},
+        frozenset(),
+    ]
 
 
 def test_naming_the_graded_sha_without_comparing_it_is_not_a_site():
