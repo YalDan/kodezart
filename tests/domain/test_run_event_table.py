@@ -4,6 +4,14 @@ The table and every surface that consumes it carry the stage and effect
 vocabularies only: a tracker's own state string is resolved at the port
 boundary, through the configured ``workflow_states`` mapping the adapter is
 built with, and nowhere else (KOD-795).
+
+The mapping is also read outside the adapter, at registered reading sites
+only, each with the reason it reads it.
+
+The state strings scanned for are the configured ones: the values the
+shipped operation files declare under a configured mapping.  A board state
+name no shipped file configures (``Todo``, ``Backlog``) is not a token, so
+no scan here sees it.
 """
 
 import ast
@@ -714,15 +722,15 @@ def mapping_sites(sources: Mapping[str, str]) -> tuple[tuple[str, bool], ...]:
 
 
 def _names_configured(expression: ast.expr) -> bool:
-    return any(
-        isinstance(node, ast.Attribute) and node.attr in CONFIGURED
-        for node in ast.walk(expression)
-    )
+    """Whether the adapter is handed the configured field itself, and not an
+    expression built around it."""
+    return isinstance(expression, ast.Attribute) and expression.attr in CONFIGURED
 
 
 def test_a_tracker_state_string_is_resolved_only_through_the_configured_mapping():
     assert CONFIGURED
     assert ADAPTER_MAPPING
+    assert vendor_state_names()
     sources = production_sources()
     assert state_constants(sources, vendor_state_names()) == ()
     sites = mapping_sites(sources)
@@ -748,3 +756,116 @@ def test_a_state_string_constant_or_a_second_mapping_site_is_reported():
     sites = mapping_sites(sources)
     assert len(sites) == 2
     assert ("composition/second.py:1", False) in sites
+
+
+def test_a_mapping_rebuilt_around_the_configured_field_is_not_the_field():
+    (keyword,) = ADAPTER_MAPPING
+    (field,) = sorted(CONFIGURED)
+    planted = {
+        "composition/tracker.py": (
+            f"adapter = Adapter({keyword}={{**operation.{field}, "
+            "LifecycleStage.DONE: 'Closed'})\n"
+        ),
+    }
+    assert mapping_sites(planted) == (("composition/tracker.py:1", False),)
+
+
+#: The reason each audit reader holds the configured mapping.
+REVIEW_STATE = (
+    "compares a board row's state with the operator's configured name for "
+    "the review stage"
+)
+#: Every module outside the adapter and the mapping's own model module that
+#: reads a configured state mapping: the reads it makes, and why it does.
+MAPPING_READERS: dict[str, tuple[tuple[str, ...], str]] = {
+    "chains/audit_evidence.py": (
+        ("self._operation.workflow_states.get(LifecycleStage.IN_REVIEW)",),
+        REVIEW_STATE,
+    ),
+    "chains/audit_sweep.py": (
+        ("operation.workflow_states.get(LifecycleStage.IN_REVIEW)",),
+        REVIEW_STATE,
+    ),
+    "composition/audit.py": (
+        ("LifecycleStage.IN_REVIEW in operation.workflow_states",),
+        "the presence check: configured audit scheduling does not start "
+        "without a configured name for the review stage",
+    ),
+    "composition/tracker.py": (
+        ("workflow_state_names=operation.workflow_states",),
+        "the adapter handoff: the one call that hands the configured mapping "
+        "to the tracker adapter",
+    ),
+    "core/prompt_namespaces.py": (
+        ("config.workflow_states.items()", "not config.workflow_states"),
+        "the prompt resolution site: the one binding that renders the "
+        "configured names into a prompt, which the Check requires to exist",
+    ),
+    "services/audit_runtime.py": (
+        ("operation.workflow_states.get(LifecycleStage.IN_REVIEW)",),
+        REVIEW_STATE,
+    ),
+    "services/audit_sources.py": (
+        ("operation.workflow_states.get(LifecycleStage.IN_REVIEW)",),
+        REVIEW_STATE,
+    ),
+    "services/audit_terminal.py": (
+        ("operation.workflow_states[LifecycleStage.IN_REVIEW]",),
+        REVIEW_STATE,
+    ),
+    "services/tracker_boot.py": (
+        ("config.workflow_states.items()",),
+        "boot validation: every configured state name is handed to the "
+        "resolution pass that checks it exists on the board before any pass "
+        "runs",
+    ),
+}
+
+
+def configured_field_reads(sources: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
+    """Each module's reads of a configured state mapping, outside the adapter
+    package and the mapping's own model module.
+
+    A read is rendered as the expression that uses the field: the call when
+    a method of the mapping is called, otherwise the node that holds it.
+    """
+    reads: dict[str, list[str]] = {}
+    for name, text in sorted(sources.items()):
+        if name.startswith("adapters/") or name == module_path(OperationConfig):
+            continue
+        tree = ast.parse(text)
+        parents = {
+            child: node
+            for node in ast.walk(tree)
+            for child in ast.iter_child_nodes(node)
+        }
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in CONFIGURED:
+                use = parents[node]
+                if isinstance(use, ast.Attribute):
+                    use = parents[use]
+                reads.setdefault(name, []).append(ast.unparse(use))
+    return {name: tuple(sorted(found)) for name, found in reads.items()}
+
+
+def test_every_read_of_the_configured_mapping_outside_the_adapter_is_registered():
+    assert CONFIGURED
+    assert all(reason for _, reason in MAPPING_READERS.values())
+    assert configured_field_reads(production_sources()) == {
+        name: reads for name, (reads, _) in MAPPING_READERS.items()
+    }
+
+
+def test_a_new_read_of_the_configured_mapping_is_reported():
+    (field,) = sorted(CONFIGURED)
+    planted = {
+        "services/lane_state_writer.py": (
+            f"def _done_name(operation):\n"
+            f"    return operation.{field}[LifecycleStage.DONE]\n"
+        ),
+        "adapters/linear/tracker.py": f"names = self.{field}\n",
+        module_path(OperationConfig): f"names = self.{field}\n",
+    }
+    assert configured_field_reads(planted) == {
+        "services/lane_state_writer.py": (f"operation.{field}[LifecycleStage.DONE]",),
+    }
