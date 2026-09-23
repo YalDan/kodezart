@@ -8,6 +8,8 @@ import asyncio
 from dataclasses import dataclass
 from typing import Final, assert_never
 
+from pydantic import SecretStr
+
 from kodezart.adapters.linear.status_update import LinearScopeStatusUpdates
 from kodezart.adapters.linear.tracker import (
     ACCEPTED_CREDENTIAL_SHAPE,
@@ -62,6 +64,21 @@ def tracker_mcp_server(*, settings: TrackerSettings, token: str) -> HttpMcpServe
         url=settings.server_url,
         headers={settings.auth_header: f"{settings.auth_scheme} {token}"},
     )
+
+
+def session_tracker_server(
+    *, settings: TrackerSettings, token: SecretStr | None
+) -> HttpMcpServer | None:
+    """The tracker server the composition root hands the session adapter.
+
+    ``None`` without a credential, so no session is given the tracker; with
+    one, the definition :func:`tracker_mcp_server` renders, looked up at call
+    time so the sessions and the programmatic client can only ever read the
+    one rendering.
+    """
+    if token is None:
+        return None
+    return tracker_mcp_server(settings=settings, token=token.get_secret_value())
 
 
 def make_mcp_tool_caller(

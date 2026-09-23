@@ -23,7 +23,7 @@ from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.records import build_run_recorder
 from kodezart.composition.tracker import (
     boot_tracker,
-    tracker_mcp_server,
+    session_tracker_server,
 )
 from kodezart.composition.workspace import build_git_stack
 from kodezart.config.app import AppConfig
@@ -148,10 +148,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             fire_record=fire_record_template(
                 knowledge=config.knowledge, operation=operation, prompts=prompts
             ),
-            tracker_server=None
-            if tracker_token is None
-            else tracker_mcp_server(
-                settings=config.tracker, token=tracker_token.get_secret_value()
+            tracker_server=session_tracker_server(
+                settings=config.tracker, token=tracker_token
             ),
         )
         gate = await build_outbound_gate(

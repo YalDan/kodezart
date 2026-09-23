@@ -34,14 +34,20 @@ from structlog.typing import EventDict
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
 from kodezart.composition import engine as composition_engine
+from kodezart.composition import tracker as composition_tracker
 from kodezart.composition.passes import (
     build_dispatch_runtime,
     build_gate,
     build_prompt_passes,
 )
 from kodezart.composition.records import _knowledge_caller
-from kodezart.composition.tracker import DialledTracker, make_mcp_tool_caller
+from kodezart.composition.tracker import (
+    DialledTracker,
+    make_mcp_tool_caller,
+    session_tracker_server,
+)
 from kodezart.config.app import AppConfig
+from kodezart.config.tracker import TrackerSettings
 from kodezart.core.errors import McpSessionClosedError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
@@ -62,7 +68,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunOutcome, RunRecord
-from kodezart.types.domain.session import PermissionMode
+from kodezart.types.domain.session import HttpMcpServer, PermissionMode
 from kodezart.types.domain.tracker import TrackerIssue
 from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
@@ -617,14 +623,51 @@ def test_the_declared_output_style_reaches_the_executor_through_composition() ->
 def test_the_tracker_server_reaches_the_executor_through_composition() -> None:
     """A tracker credential gives the scheduled passes the tracker; none, none.
 
-    Built by the one function that renders the tracker's header for the
-    programmatic client too, from the same settings and the same token.
+    Built by the one composition function that reads the definition the
+    programmatic client dials, from the same settings and the same token.
     """
     wired = _executor_keywords()["tracker_server"]
 
-    assert wired.startswith("None if tracker_token is None else tracker_mcp_server(")
-    assert "settings=config.tracker" in wired
-    assert "token=tracker_token.get_secret_value()" in wired
+    assert wired == (
+        "session_tracker_server(settings=config.tracker, token=tracker_token)"
+    )
+
+
+#: A tracker definition no settings object renders: its url, name, header
+#: name and header value are all foreign to ``TrackerSettings``' defaults.
+SENTINEL_TRACKER: HttpMcpServer = HttpMcpServer(
+    name="sentinel-tracker",
+    url="https://sentinel.invalid/tracker",
+    headers={"X-Sentinel-Credential": "sentinel-value"},
+)
+
+
+def test_the_tracker_server_is_rendered_in_one_place_only(monkeypatch) -> None:
+    """The client and the sessions read one rendering, and it is this one.
+
+    With the renderer replaced by a sentinel, the programmatic client dials
+    the sentinel's url with the sentinel's header, and the composition
+    function whose result the root hands the executor (the call pinned
+    above) returns the sentinel. A second copy of the url or the header
+    format anywhere in either path would carry the settings' own values
+    instead.
+    """
+    settings = TrackerSettings()
+    token = "lin_api_" + "S" * 40
+
+    def rendered(*, settings: TrackerSettings, token: str) -> HttpMcpServer:
+        return SENTINEL_TRACKER
+
+    monkeypatch.setattr(composition_tracker, "tracker_mcp_server", rendered)
+    caller = make_mcp_tool_caller(settings=settings, token=token)
+    wired = session_tracker_server(settings=settings, token=SecretStr(token))
+
+    assert isinstance(caller, HttpMcpToolCaller)
+    assert caller._server._url == SENTINEL_TRACKER.url
+    assert caller._server._headers == dict(SENTINEL_TRACKER.headers)
+    assert caller._server.server_name == SENTINEL_TRACKER.name
+    assert wired is SENTINEL_TRACKER
+    assert session_tracker_server(settings=settings, token=None) is None
 
 
 def test_the_executor_keywords_are_read_off_a_real_call() -> None:
