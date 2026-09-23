@@ -1,23 +1,55 @@
 """The production native constructor runs the actual fire/delivery graph."""
 
+import enum
+import functools
+import importlib
+import inspect
+import itertools
 import json
+import types
+import typing
+from typing import ClassVar
 
 import httpx
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
+from typing_extensions import is_protocol
 
-from kodezart.chains import native_delivery, ralph_workflow
+from kodezart.chains import (
+    fire_consolidation,
+    fire_remediation,
+    native_delivery,
+    ralph_workflow,
+)
 from kodezart.chains.criteria import TrackerCriteria, require_current_native_snapshot
 from kodezart.chains.lane_delivery import LaneDeliveryCoordinator
 from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.config.app import AppConfig
+from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.protocols import (
+    AgentRunner,
+    CIMonitor,
+    FireCriteriaReader,
+    FireCriteriaSource,
+    ForgeQuery,
+    GitService,
+    LaneStateWriter,
+    OutboundContentGate,
+    PRCreator,
+    PromptSetProvider,
+    PRStateReader,
+)
 from kodezart.domain.agent import best_iteration_ref
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
+    BaseResolutionError,
+    CheckObservationError,
+    DeliveryHeadError,
     FireSpecEntryError,
     ForgeAPIError,
+    OutboundContentBlockedError,
     PersistedCriterionSetError,
     PRStateReadError,
     TransientAPIError,
@@ -25,19 +57,30 @@ from kodezart.domain.errors import (
 from kodezart.domain.stall_report import DO_NOT_MERGE_PREFIX
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
+    ResultEvent,
     WorkflowCompleteEvent,
 )
-from kodezart.types.domain.check_observation import AbsentChecks, ObservedChecks
+from kodezart.types.domain.check_observation import (
+    AbsentChecks,
+    IncompleteChecks,
+    ObservedChecks,
+)
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.criteria import TrackerCriterionSet
 from kodezart.types.domain.delivery import (
     CheckRedClass,
     LaneDelivery,
     classify_lane_delivery,
 )
-from kodezart.types.domain.gating import OutboundDestination, RepoVisibility
+from kodezart.types.domain.gating import (
+    GateDecision,
+    GateVerdict,
+    OutboundDestination,
+    RepoVisibility,
+)
 from kodezart.types.domain.native_delivery import (
     CompletedLaneDelivery,
     LaneDeliveryEvent,
@@ -46,6 +89,7 @@ from kodezart.types.domain.native_delivery import (
 )
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.types.domain.run_state import LanePR
 from kodezart.types.domain.workflow import ExecutionContext
 from tests.adapters.test_ci_watch_evidence import check
@@ -1013,5 +1057,775 @@ async def test_a_persisted_set_is_refused_at_every_snapshot_gated_node(
 
         assert at.arrived is not None, "the persisted set never reached the node"
         assert at.outward() == at.arrived
+    finally:
+        await forge.close()
+
+
+# ---------------------------------------------------------------------------
+# The behavioural pin: every input a gated node branches on, and the set
+# arriving as each of its awaits completes.  The reaches above drive one
+# arrival per route the tree derives; this drives every path the enumerated
+# inputs reach, whatever a guard around a route is spelled as (KOD-652).
+# ---------------------------------------------------------------------------
+
+
+def _members_of(annotation):
+    """The classes an annotation names: itself, or each side of a union."""
+    if typing.get_origin(annotation) in (types.UnionType, typing.Union):
+        return [
+            member for member in typing.get_args(annotation) if isinstance(member, type)
+        ]
+    return [annotation] if isinstance(annotation, type) else []
+
+
+def class_of(node):
+    """The class a ``(module, qualified name)`` node is a method of, or nothing."""
+    module, qualname = node
+    holder = getattr(importlib.import_module(module), qualname.split(".")[0], None)
+    return holder if isinstance(holder, type) else None
+
+
+#: The classes the gated nodes are methods of, read off the derived nodes.
+GATED_CLASSES = frozenset(filter(None, map(class_of, SNAPSHOT_GATED_NODES)))
+
+
+def own_ports(cls):
+    """Each port *cls* takes, by the constructor parameter's name.
+
+    A port is a constructor parameter whose annotation, or one side of its
+    ``| None``, IS a Protocol.
+    """
+    return {
+        name: member
+        for name, annotation in typing.get_type_hints(cls.__init__).items()
+        for member in _members_of(annotation)
+        if is_protocol(member)
+    }
+
+
+def ports_of(cls, seen=frozenset()):
+    """Every port a node of *cls* can await, by object.
+
+    The ports the constructor takes, and those of every gated class it
+    holds: the lane workflow holds the fire engine and the delivery
+    coordinator, and its nodes await through both.  Each class is read
+    once, so the walk is bounded by the gated classes.
+    """
+    found = set(own_ports(cls).values())
+    for annotation in typing.get_type_hints(cls.__init__).values():
+        for member in _members_of(annotation):
+            if member in GATED_CLASSES and member not in seen | {cls}:
+                found |= ports_of(member, seen | {cls})
+    return frozenset(found)
+
+
+def own_inputs(function):
+    """Each bool or enum parameter of *function*, with every value it can take."""
+    found = {}
+    for name, annotation in typing.get_type_hints(function).items():
+        if name == "return":
+            continue
+        if annotation is bool:
+            found[name] = (False, True)
+        elif isinstance(annotation, type) and issubclass(annotation, enum.Enum):
+            found[name] = tuple(annotation)
+    return found
+
+
+def _awaited(method):
+    """*method*, an async port method, bracketed as one await of the drive."""
+
+    @functools.wraps(method)
+    async def awaited(self, *args, **kwargs):
+        index = self.at.begin(type(self), method.__name__)
+        try:
+            return await method(self, *args, **kwargs)
+        finally:
+            self.at.end(index)
+
+    return awaited
+
+
+class DrivePort:
+    """A port of the drive, holding one of the outcomes it can give a node.
+
+    ``outcomes`` maps each outcome the fake can give to the error the node
+    refuses it with, or ``None`` where the node goes on.  Every async
+    method is one await the drive counts, and one the set may arrive at.
+    """
+
+    outcomes: ClassVar[dict[str, type[BaseException] | None]] = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        for name, value in list(vars(cls).items()):
+            if inspect.iscoroutinefunction(value):
+                setattr(cls, name, _awaited(value))
+
+    def __init__(self, at, outcome):
+        if outcome not in self.outcomes:
+            raise ValueError(f"{type(self).__name__} cannot give {outcome!r}")
+        self.at, self.outcome = at, outcome
+
+
+class DriveCriteria(DrivePort):
+    """The criteria reader: the roster the node holds is current, or changed."""
+
+    outcomes: ClassVar = {"current": None, "changed": FireSpecEntryError}
+
+    async def read_current(self, *, spec, held):
+        if self.outcome == "changed":
+            return TrackerCriterionSet(
+                criteria=[
+                    criterion.model_copy(update={"text": "a changed live Check"})
+                    for criterion in held.criteria
+                ]
+            )
+        return held
+
+    async def read_entry(self, *, issue_key, delivering=False):
+        raise AssertionError("a gated node entered the fire")
+
+
+class DriveChecks(DrivePort):
+    """The check watch: what one watch of the lane head answers.
+
+    Every red set is a work defect here.  The classifier tells a flake or
+    an unclassified red apart only by re-observing the sha, and the drive
+    watches with reruns off, as the composed lane above does; each class a
+    rerun could return joins a path the outcomes here drive already, green
+    or red with no round.
+    """
+
+    outcomes: ClassVar = {
+        "green": None,
+        "red": None,
+        "no run": None,
+        "absent": None,
+        "incomplete": CheckObservationError,
+        "another head": CheckObservationError,
+    }
+
+    def __init__(self, at, outcome):
+        super().__init__(at, outcome)
+        self.reruns = []
+
+    async def wait_for_checks(self, *, repo_url, ref):
+        if self.outcome in ("no run", "absent"):
+            return AbsentChecks(summary="No check run appeared at the lane head")
+        if self.outcome == "incomplete":
+            return IncompleteChecks(
+                commit_shas=frozenset({SHA}),
+                check_names=frozenset({"test"}),
+                failed_check_names=frozenset(),
+                observed_count=0,
+                expected_count=1,
+                summary="The watch expired before the check set completed",
+            )
+        green = self.outcome == "green"
+        return ObservedChecks(
+            commit_sha=NEXT_SHA if self.outcome == "another head" else SHA,
+            checks_passed=green,
+            check_names=frozenset({"test"}),
+            failed_check_names=frozenset() if green else frozenset({"test"}),
+            summary="test passed" if green else "test failed on the lane head",
+        )
+
+    async def checks_declared(self, *, repo_url):
+        return self.outcome == "no run"
+
+    async def rerun_checks(self, *, repo_url, ref):
+        self.reruns.append((repo_url, ref))
+
+
+class DriveForgeQuery(DrivePort):
+    """The forge's answer to what is open on the lane head."""
+
+    outcomes: ClassVar = {"no pull request": None, "an open pull request": None}
+
+    async def open_pr_for_head(self, *, repo_url, head):
+        if self.outcome == "no pull request":
+            return None
+        return (GATED_PR.url, GATED_PR.number)
+
+    def branch_web_url(self, *, repo_url, branch):
+        return f"{repo_url}/tree/{branch}"
+
+
+class DrivePullRequests(DrivePort):
+    """The pull request writer: it posts, or the forge refuses the comment."""
+
+    outcomes: ClassVar = {"posts": None, "the forge refuses the comment": None}
+
+    def __init__(self, at, outcome):
+        super().__init__(at, outcome)
+        self.created, self.comments = [], []
+
+    async def create_pr(self, *, repo_url, title, body, head, base):
+        self.created.append((repo_url, title, body, head, base))
+        return (GATED_PR.url, GATED_PR.number)
+
+    async def comment_on_pr(self, *, repo_url, pr_number, body):
+        self.comments.append((repo_url, pr_number, body))
+        if self.outcome == "the forge refuses the comment":
+            raise ForgeAPIError(
+                "the forge refused the comment",
+                status_code=422,
+                detail=f"POST {repo_url}/pulls/{pr_number}/comments",
+            )
+
+
+class DrivePRState(DrivePort):
+    """The pull request's identity as the forge reports it."""
+
+    outcomes: ClassVar = {"the open head": None, "another head": PRStateReadError}
+
+    async def read_pr_state(self, *, repo_url, pr_number):
+        return PRState(
+            url=GATED_PR.url,
+            number=pr_number,
+            head_repo_url=repo_url,
+            head_branch=self.at.state["feature_branch"],
+            head_sha=NEXT_SHA if self.outcome == "another head" else SHA,
+            base_repo_url=repo_url,
+            base_branch="main",
+            lifecycle=PRLifecycle.OPEN,
+        )
+
+
+class DriveGit(DrivePort):
+    """The remote refs: published as captured, the head moved, or no base."""
+
+    outcomes: ClassVar = {
+        "published": None,
+        "the head moved": DeliveryHeadError,
+        "the base is absent": BaseResolutionError,
+    }
+
+    async def remote_branch_sha(self, cwd, remote, branch):
+        if branch == self.at.state["feature_branch"]:
+            return NEXT_SHA if self.outcome == "the head moved" else SHA
+        return None if self.outcome == "the base is absent" else "b" * 40
+
+
+class DriveRunner(DrivePort):
+    """The agent runner: the description session answers, or has no output.
+
+    The session is the one await ``stream`` opens, counted when the drain
+    starts reading it and complete when the last event has been read.
+    """
+
+    outcomes: ClassVar = {"a description": None, "no output": NoStructuredOutputError}
+
+    def stream(self, **kwargs):
+        return self._session()
+
+    async def _session(self):
+        index = self.at.begin(type(self), "stream")
+        try:
+            yield ResultEvent(
+                subtype="success",
+                duration_ms=0,
+                duration_api_ms=0,
+                is_error=False,
+                num_turns=1,
+                session_id="pr-description",
+                structured_output=None
+                if self.outcome == "no output"
+                else {"title": "Native PR", "description": "What changed, and why."},
+            )
+        finally:
+            self.at.end(index)
+
+
+class DriveGate(DrivePort):
+    """The content gate: it clears the content, or blocks it."""
+
+    outcomes: ClassVar = {"clears": None, "blocks": OutboundContentBlockedError}
+
+    async def gate(self, *, content, **kwargs):
+        verdict = GateVerdict.BLOCKED if self.outcome == "blocks" else GateVerdict.CLEAN
+        return GateDecision(verdict=verdict, content=content)
+
+
+class DrivePrompts(DrivePort):
+    """The prompt registry the fixtures share; it answers nothing asynchronously."""
+
+    outcomes: ClassVar = {"renders": None}
+
+    def __getattr__(self, name):
+        return getattr(self.at.prompts, name)
+
+
+class DriveLaneState(DrivePort):
+    """The lane's record writer, as the delivering step reaches it."""
+
+    outcomes: ClassVar = {"records": None}
+
+    def __init__(self, at, outcome):
+        super().__init__(at, outcome)
+        self.pull_requests = []
+
+    async def record_pull_request(self, *, lane_key, pr, visibility):
+        self.pull_requests.append((lane_key, pr, visibility))
+
+
+#: The fake behind each port, keyed by the port the constructors name by
+#: object.  Both criteria ports are the one reader: the composition hands
+#: the engine's criteria source to the coordinator as its reader.
+PORT_FAKES = {
+    AgentRunner: DriveRunner,
+    GitService: DriveGit,
+    PRCreator: DrivePullRequests,
+    ForgeQuery: DriveForgeQuery,
+    CIMonitor: DriveChecks,
+    FireCriteriaReader: DriveCriteria,
+    FireCriteriaSource: DriveCriteria,
+    PRStateReader: DrivePRState,
+    PromptSetProvider: DrivePrompts,
+    OutboundContentGate: DriveGate,
+    LaneStateWriter: DriveLaneState,
+}
+
+#: The fakes in one order, each at its first outcome unless a drive varies it.
+DRIVE_FAKES = tuple(dict.fromkeys(PORT_FAKES.values()))
+
+#: The configuration the composed lane above is built from, read for what
+#: the coordinator takes beside its ports.
+DRIVE_CONFIG = AppConfig(delivery_red_rerun_max_attempts=0)
+
+#: What the coordinator takes beside its ports, as the composition passes
+#: it: the skills selection every fixture suppresses, no repository
+#: declarations, and the configuration's own base URL and bounds.
+COORDINATOR_SETTINGS = {
+    "skills": SUPPRESS_ALL_SKILLS,
+    "repositories": (),
+    "git_base_url": DRIVE_CONFIG.git.base_url,
+    "max_concurrent_watches": DRIVE_CONFIG.delivery_max_concurrent_watches,
+    "red_rerun_max_attempts": DRIVE_CONFIG.delivery_red_rerun_max_attempts,
+}
+
+
+class DrivenLane:
+    """One composed lane, its ports the drive's, run once per input.
+
+    ``reset`` gives a run its own ports, each holding one outcome, and a
+    fresh copy of the base state; ``begin`` and ``end`` bracket each await
+    a port serves, recording what had been written before and after it.
+    The set arrives as the await ``arrive_at`` completes, or before the
+    node runs when that is -1, and never when it is ``None``.
+    """
+
+    def __init__(self, *, lane, base, config, executor, tracker):
+        self.lane, self.base, self.config = lane, base, config
+        self.context = ExecutionContext.from_configurable(config)
+        self.executor, self.tracker = executor, tracker
+        self.prompts = make_prompt_provider()
+        self.events, self.ports, self.state = [], {}, dict(base)
+        self.awaits, self.before, self.after = [], [], []
+        self.arrive_at, self.arrived, self.initial = None, None, None
+
+    def reset(self, outcomes, arrive_at):
+        """Fresh ports at *outcomes*, a fresh state, and nothing written yet."""
+        self.ports = {fake: fake(self, outcome) for fake, outcome in outcomes.items()}
+        by_port = {port: self.ports[fake] for port, fake in PORT_FAKES.items()}
+        self.lane._delivery = LaneDeliveryCoordinator(
+            **{
+                name: by_port[port]
+                for name, port in own_ports(LaneDeliveryCoordinator).items()
+            },
+            **COORDINATOR_SETTINGS,
+        )
+        self.lane._lane_state = by_port[LaneStateWriter]
+        self.lane.fire.criteria = by_port[FireCriteriaSource]
+        consolidation = self.lane.fire.consolidation
+        for ledger in (
+            consolidation._merger.calls,
+            consolidation._ref_publisher.calls,
+            consolidation._git.calls,
+            self.executor.remediation_prompts,
+            self.tracker.issue_writes,
+            self.tracker.workflow_writes,
+            self.events,
+        ):
+            ledger.clear()
+        self.state = dict(self.base)
+        self.awaits, self.before, self.after = [], [], []
+        self.arrive_at, self.arrived = arrive_at, None
+        self.initial = self.written()
+        if arrive_at == -1:
+            self.arrive()
+
+    def written(self):
+        """Everything written beyond the node, as far as the drive observes it."""
+        consolidation = self.lane.fire.consolidation
+        return {
+            "pull requests": list(self.ports[DrivePullRequests].created),
+            "comments": list(self.ports[DrivePullRequests].comments),
+            "reruns": list(self.ports[DriveChecks].reruns),
+            "lane records": list(self.ports[DriveLaneState].pull_requests),
+            "consolidations": list(consolidation._merger.calls),
+            "landed refs": list(consolidation._ref_publisher.calls),
+            "git calls": list(consolidation._git.calls),
+            "remediation drafts": list(self.executor.remediation_prompts),
+            "stream events": list(self.events),
+            "tracker issue writes": list(self.tracker.issue_writes),
+            "tracker workflow writes": list(self.tracker.workflow_writes),
+        }
+
+    def arrive(self):
+        """The persisted set reaches the state, here and now."""
+        self.state["criterion_set"] = persisted_artifact()
+        self.arrived = self.written()
+
+    def begin(self, port, method):
+        """An await on *port* starts; its index in the run."""
+        self.awaits.append((port, method))
+        self.before.append(self.written())
+        self.after.append(None)
+        return len(self.awaits) - 1
+
+    def end(self, index):
+        """The await *index* completes; the set arrives if it was to arrive here."""
+        self.after[index] = self.written()
+        if index == self.arrive_at:
+            self.arrive()
+
+
+class Run(typing.NamedTuple):
+    """One run of a node: its awaits, what was written around each, its error."""
+
+    awaits: tuple
+    before: tuple
+    after: tuple
+    initial: dict
+    final: dict
+    error: BaseException | None
+
+
+class Combination(typing.NamedTuple):
+    """One input of a node's drive and its run with the set never arriving."""
+
+    own: dict
+    outcomes: dict
+    reference: Run
+
+
+def drive_handed_off(at):
+    """The delivering step on a reviewed, merged fire."""
+    at.state.update(merged=True, review_passed=True)
+    return at.lane._deliver(at.state, at.config)
+
+
+def drive_remediating(at):
+    """The remediating step after a work-defect delivery with a round left."""
+    at.state["delivery"] = CompletedLaneDelivery(result=work_defect_delivery())
+    return at.lane._remediate(at.state, at.config)
+
+
+def drive_completing(at):
+    """The terminal step after a completed delivery."""
+    at.state["delivery"] = CompletedLaneDelivery(
+        result=work_defect_delivery(remediation_pending=False)
+    )
+    return at.lane._complete(at.state, at.config)
+
+
+#: How each gated node is driven: the call, on the lane state the drive
+#: holds, with the node's own bool and enum parameters as keywords.  A node
+#: that branches on the state it is handed is driven in the shape its
+#: first reach above gives it; the other shapes stay with the reaches.
+GATED_DRIVES = {
+    node_of(RalphWorkflowEngine._merge_to_feature): lambda at: (
+        at.lane.fire._merge_to_feature(at.state, at.config)
+    ),
+    node_of(RalphWorkflowEngine._land_best_iteration): lambda at: (
+        at.lane.fire._land_best_iteration(at.state, at.config)
+    ),
+    node_of(RalphWorkflowEngine._complete_node): lambda at: at.lane.fire._complete_node(
+        at.state, at.config
+    ),
+    node_of(NativeLaneWorkflow._deliver): drive_handed_off,
+    node_of(NativeLaneWorkflow._remediate): drive_remediating,
+    node_of(NativeLaneWorkflow._complete): drive_completing,
+    node_of(LaneDeliveryCoordinator.deliver): lambda at, **own: (
+        at.lane._delivery.deliver(state=at.state, context=at.context, **own)
+    ),
+    node_of(LaneDeliveryCoordinator._require_current): lambda at: (
+        at.lane._delivery._require_current(at.state, at.context, GATED_PR)
+    ),
+    node_of(LaneDeliveryCoordinator._open_pr): lambda at: at.lane._delivery._open_pr(
+        at.state, at.context
+    ),
+}
+
+
+async def driven_once(at, drive, own, outcomes, *, arrive_at):
+    """One run of *drive* at *own* and *outcomes*, the set arriving at *arrive_at*."""
+    at.reset(outcomes, arrive_at)
+    error = None
+    try:
+        await drive(at, **own)
+    except AssertionError:
+        raise
+    except Exception as exc:
+        error = exc
+    return Run(
+        awaits=tuple(at.awaits),
+        before=tuple(at.before),
+        after=tuple(at.after),
+        initial=at.initial,
+        final=at.written(),
+        error=error,
+    )
+
+
+async def driven(at, drive, inputs):
+    """Every combination of a node's inputs, each run with the set never arriving.
+
+    The inputs are the product of the node's own parameters, *inputs*, and
+    of the outcomes of every port the node awaits.  Which ports those are
+    is found by running: the first pass holds every port at its first
+    outcome, each port a run awaits joins the product, and the passes end
+    when no run awaits a new port.  Each pass adds a port or ends the loop,
+    so it runs at most once per fake.
+    """
+    varied, found = [], {}
+    while True:
+        pending = []
+        for values in itertools.product(*inputs.values()):
+            own = dict(zip(inputs, values, strict=True))
+            for chosen in itertools.product(*(list(fake.outcomes) for fake in varied)):
+                outcomes = {fake: next(iter(fake.outcomes)) for fake in DRIVE_FAKES}
+                outcomes.update(zip(varied, chosen, strict=True))
+                key = (tuple(own.items()), tuple(outcomes.items()))
+                if key not in found:
+                    pending.append((key, own, outcomes))
+        if not pending:
+            return list(found.values())
+        for key, own, outcomes in pending:
+            reference = await driven_once(at, drive, own, outcomes, arrive_at=None)
+            found[key] = Combination(own, outcomes, reference)
+            for port, _ in reference.awaits:
+                if port not in varied:
+                    varied.append(port)
+
+
+def kinds_of(run):
+    """What each await of *run* is.
+
+    The snapshot read; a write, during which something was written; a
+    check, on a port that can only pass or refuse (one outcome the node
+    goes on from); or an observation, on a port whose answer the node
+    branches on.
+    """
+    kinds = []
+    for index, (port, _) in enumerate(run.awaits):
+        if port is DriveCriteria:
+            kinds.append("read")
+        elif run.after[index] != run.before[index]:
+            kinds.append("write")
+        elif sum(error is None for error in port.outcomes.values()) == 1:
+            kinds.append("check")
+        else:
+            kinds.append("observation")
+    return kinds
+
+
+def gaps_of(run):
+    """Whether something was written between the awaits of *run*.
+
+    One entry per gap: before the first await, between each two, and after
+    the last -- where a collaborator, not a port, writes.
+    """
+    marks = [
+        run.initial,
+        *(mark for pair in zip(run.before, run.after, strict=True) for mark in pair),
+        run.final,
+    ]
+    return [marks[2 * i] != marks[2 * i + 1] for i in range(len(run.awaits) + 1)]
+
+
+def uncovered_writes(run):
+    """Each write of *run* that no snapshot read covers.
+
+    A read covers the writes that follow it until anything but a check
+    comes between: an observation the node acts on, or another write.
+    """
+    kinds, gaps = kinds_of(run), gaps_of(run)
+    since, uncovered = None, []
+    for index in range(len(run.awaits) + 1):
+        covered = since is not None and all(kind == "check" for kind in since)
+        if gaps[index] and not covered:
+            uncovered.append(f"what was written before await {index}")
+        if index == len(run.awaits):
+            return uncovered
+        kind = kinds[index]
+        if kind == "read":
+            since = []
+            continue
+        if kind == "write" and not covered:
+            uncovered.append(f"await {index}, {run.awaits[index][1]}")
+        if since is not None:
+            since.append(kind)
+    return uncovered
+
+
+def ends_with_the_barrier(run):
+    """Whether checks alone follow the last snapshot read of *run*."""
+    kinds, gaps = kinds_of(run), gaps_of(run)
+    reads = [index for index, kind in enumerate(kinds) if kind == "read"]
+    if not reads:
+        return False
+    last = reads[-1]
+    return all(kind == "check" for kind in kinds[last + 1 :]) and not any(
+        gaps[last + 1 :]
+    )
+
+
+def sizes(written):
+    """How much each ledger of *written* holds."""
+    return {ledger: len(entries) for ledger, entries in written.items()}
+
+
+def describe(own, outcomes):
+    """One combination, named by its inputs."""
+    return ", ".join(
+        [
+            *(f"{name}={value}" for name, value in own.items()),
+            *(f"{fake.__name__} {outcome!r}" for fake, outcome in outcomes.items()),
+        ]
+    )
+
+
+def test_every_port_a_gated_class_takes_has_a_fake_and_no_other():
+    """The drive's port table is the gated classes' constructors, by object.
+
+    Not parametrised: a derivation that found no gated class or no port
+    would leave the drive below over no port while reporting green.  Here
+    an empty set fails outright (KOD-652).
+    """
+    assert GATED_CLASSES, "the tree derived no gated class"
+    ports = frozenset().union(*map(ports_of, GATED_CLASSES))
+    assert ports, "the gated classes take no port"
+    assert set(PORT_FAKES) == ports
+
+
+def test_every_derived_gated_node_has_a_drive_and_every_drive_a_node():
+    """The derived gated nodes are the drive table's keys, and never empty."""
+    assert SNAPSHOT_GATED_ROUTES, "the tree derived no snapshot-gated node"
+    assert set(GATED_DRIVES) == set(SNAPSHOT_GATED_ROUTES)
+
+
+@pytest.mark.parametrize("node", sorted(GATED_DRIVES), ids=":".join)
+async def test_every_input_of_a_gated_node_meets_the_set_at_every_await(
+    node, monkeypatch
+):
+    """Every input a node branches on, and the set arriving at every await.
+
+    The inputs are the product of the node's own bool and enum parameters
+    and of the outcomes every port it awaits can give: the ports read off
+    the gated classes' constructors by object, the outcomes off the fakes.
+    Each combination runs once with the set never arriving, which counts
+    the node's awaits on its ports and on the criteria reader; then once
+    entering with the set, and once per await with the persisted set
+    arriving as that await completes -- the generalisation of the arriving
+    gate above, which arrives once its own await has cleared.
+
+    Every run holds one of two things.  A snapshot read after the arrival
+    refuses the set by type, and the node does nothing after the refusal:
+    its awaits are the reference run's up to that read, and what is
+    written is what the reference had written before it.  Or no snapshot
+    read follows the arrival, and the run goes the reference run's way:
+    the same awaits, the same error or none, and each ledger grown by as
+    much -- not byte for byte, since a node reads the set it was handed
+    after the barrier, as the remediation request does.
+
+    Two things hold of every reference run.  Every write is covered: a
+    snapshot read precedes it with nothing between them but checks, the
+    ports that can only pass or refuse (the remote refs before a pull
+    request is created, the pull request's identity before a comment), and
+    never an observation the node acts on or another write.  And a node
+    either revalidates before it returns or acts after its check, on every
+    path alike: its completing runs agree on whether checks alone follow
+    its last snapshot read.  A guard that skips a re-check on one path, a
+    return before it on another, or a re-check moved ahead of the write it
+    covered, breaks one of the two.
+
+    A covered write after the arrival is the design's own shape, not a
+    refusal missed: the barrier reads the set once, before it asks the
+    reader, and a set arriving during the verification that follows is
+    met at the next barrier.  The reach: the static resolver in
+    ``callers_of`` follows the stated forms, each with its control; this
+    drive covers every path the enumerated inputs reach, whatever a guard
+    is spelled as; the one general limit is an input no fake enumerates
+    (KOD-652).
+    """
+    lane, state, config, _, forge, executor, tracker, _ = composed(rounds=1)
+    try:
+        spec, roster = await lane.fire.criteria.read_entry(issue_key=SUBJECT)
+        at = DrivenLane(
+            lane=lane,
+            base={
+                **state,
+                "issue_key": SUBJECT,
+                "fire_spec": spec,
+                "feature_tip_sha": SHA,
+                "criterion_set": roster,
+            },
+            config=config,
+            executor=executor,
+            tracker=tracker,
+        )
+        for module in (
+            native_delivery,
+            ralph_workflow,
+            fire_consolidation,
+            fire_remediation,
+        ):
+            monkeypatch.setattr(module, "get_stream_writer", lambda: at.events.append)
+        drive, inputs = GATED_DRIVES[node], own_inputs(function_at(node))
+
+        combinations = await driven(at, drive, inputs)
+
+        assert combinations, "the node was driven on no input"
+        terminals = {}
+        for own, outcomes, reference in combinations:
+            name = describe(own, outcomes)
+            # The fakes' outcome table against what the node did: the run
+            # ends at an await whose outcome refuses, with the error that
+            # outcome names, and completes when its last await went on.
+            assert reference.awaits, name
+            last = reference.awaits[-1][0]
+            refusal = last.outcomes[outcomes[last]]
+            if refusal is None:
+                assert reference.error is None, (name, reference.error)
+            else:
+                assert isinstance(reference.error, refusal), (name, reference.error)
+            assert not uncovered_writes(reference), (name, uncovered_writes(reference))
+            reads = [
+                index
+                for index, kind in enumerate(kinds_of(reference))
+                if kind == "read"
+            ]
+            if reference.error is None:
+                assert reads, (name, "the node completed without reading the snapshot")
+                terminals.setdefault(ends_with_the_barrier(reference), name)
+            for arrive_at in range(-1, len(reference.awaits)):
+                run = await driven_once(at, drive, own, outcomes, arrive_at=arrive_at)
+                where = f"{name}; the set arriving " + (
+                    "before the node" if arrive_at < 0 else f"at await {arrive_at}"
+                )
+                refusal = next((index for index in reads if index > arrive_at), None)
+                if refusal is None:
+                    assert not isinstance(run.error, PersistedCriterionSetError), where
+                    assert type(run.error) is type(reference.error), where
+                    assert run.awaits == reference.awaits, where
+                    assert sizes(run.final) == sizes(reference.final), where
+                else:
+                    assert isinstance(run.error, PersistedCriterionSetError), where
+                    assert run.awaits == reference.awaits[:refusal], where
+                    assert run.final == reference.before[refusal], where
+        assert len(terminals) <= 1, terminals
     finally:
         await forge.close()
