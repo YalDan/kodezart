@@ -2072,6 +2072,7 @@ def entry_of(kind: str):
         loop_branch=RECORDED_LOOP,
         head_sha=RECORDED_HEAD,
         body_digest=None,
+        base_stale=False,
     )
 
 

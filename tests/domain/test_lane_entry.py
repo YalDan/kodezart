@@ -7,6 +7,7 @@ merely both derived from the same expression.
 
 import pytest
 
+from kodezart.domain import lane_entry as lane_entry_module
 from kodezart.domain.errors import LaneEntryError, SubjectAmendedError
 from kodezart.domain.fire_spec import body_digest
 from kodezart.domain.lane_entry import (
@@ -17,7 +18,14 @@ from kodezart.domain.lane_entry import (
     recorded_commit,
     require_unamended_subject,
 )
-from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.branch import (
+    BaseInput,
+    BaseSpec,
+    BranchAssociation,
+    BranchRole,
+    WorkRefRole,
+    trunk_base,
+)
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.lane_entry import DeliverOnlyLane, NewLane, ResumedLane
 from kodezart.types.domain.run_state import LaneCommit, LanePR, LaneRunState
@@ -41,6 +49,7 @@ def record(
     pr: LanePR | None = None,
     rows: tuple[LaneCommit, ...] | None = None,
     extra: tuple[BranchAssociation, ...] = (),
+    dispatch_base: BaseSpec | None = None,
 ) -> LaneRunState:
     """One lane's record, as the writer leaves it after a pushed commit.
 
@@ -62,6 +71,7 @@ def record(
         ),
         pr=pr,
         body_digest=digest,
+        dispatch_base=dispatch_base,
         associations=[
             BranchAssociation(
                 branch=deliverable,
@@ -95,7 +105,7 @@ def decide(**overrides):
         "recorded": None,
         "remote_loop_head": None,
         "open_criteria": (),
-        "resolved_base": BASE,
+        "implied_base": trunk_base(BASE),
     }
     return decide_lane_entry(**{**facts, **overrides})
 
@@ -118,6 +128,7 @@ ROWS = (
             loop_branch=LOOP,
             head_sha=REMOTE_HEAD,
             body_digest=DIGEST,
+            base_stale=False,
         ),
     ),
     (
@@ -132,6 +143,7 @@ ROWS = (
             loop_branch=LOOP,
             head_sha=REMOTE_HEAD,
             body_digest=DIGEST,
+            base_stale=False,
         ),
     ),
     (
@@ -142,6 +154,7 @@ ROWS = (
             loop_branch=LOOP,
             head_sha=REMOTE_HEAD,
             body_digest=DIGEST,
+            base_stale=False,
         ),
     ),
     (
@@ -283,7 +296,7 @@ def test_a_recorded_base_that_is_no_longer_the_resolved_base_refuses() -> None:
             recorded=recorded(record()),
             remote_loop_head=REMOTE_HEAD,
             open_criteria=("KOD-684/check",),
-            resolved_base="some-blocker-branch",
+            implied_base=trunk_base("some-blocker-branch"),
         )
     assert caught.value.branches == (DELIVERABLE,)
 
@@ -362,3 +375,88 @@ def test_a_loop_association_with_no_derived_from_refuses() -> None:
     )
     with pytest.raises(LaneEntryError, match="deliverable branches, not one"):
         recorded_branches(record=damaged)
+
+
+#: A base one blocker's delivery implies: the arm whose branch name survives
+#: that delivery advancing, so the name check passes and the reading decides.
+DISPATCHED = BaseSpec(
+    inputs=(
+        BaseInput(blocker_issue_id="KOD-1", branch="kodezart/KOD-1-d", sha="1" * 40),
+    ),
+    base_branch="kodezart/KOD-1-d",
+    base_role=WorkRefRole.DELIVERABLE,
+)
+#: The same base after the blocker's delivery advanced by one commit.
+ADVANCED = DISPATCHED.model_copy(
+    update={"inputs": (DISPATCHED.inputs[0].model_copy(update={"sha": "2" * 40}),)}
+)
+
+#: How each lane kind is reached from one record: criteria still open, or
+#: none open and no pull request recorded.
+KINDS = {
+    "resumed": (("KOD-684/check",), ResumedLane),
+    "deliver-only": ((), DeliverOnlyLane),
+}
+
+#: The record's pinned base, the base resolving now, and the reading owed.
+READINGS = {
+    "live": (DISPATCHED, DISPATCHED.model_copy(deep=True), False),
+    "stale": (DISPATCHED, ADVANCED, True),
+    "unpinned": (None, ADVANCED, False),
+}
+
+
+@pytest.mark.parametrize("kind", KINDS)
+@pytest.mark.parametrize("reading", READINGS, ids=[f"{r}-base" for r in READINGS])
+def test_the_entry_reads_the_recorded_dispatch_base_against_the_implied_one(
+    kind, reading
+) -> None:
+    """Live when the pinned base is the one resolving now, stale when it moved.
+
+    Both entry kinds carry the reading, because a deliver-only round runs the
+    loop too. A record that pinned no base reads live whatever resolves now.
+    """
+    open_criteria, entry_kind = KINDS[kind]
+    pinned, implied, stale = READINGS[reading]
+    assert implied.base_branch == DISPATCHED.base_branch
+
+    entry = decide(
+        recorded=recorded(record(base=DISPATCHED.base_branch, dispatch_base=pinned)),
+        remote_loop_head=REMOTE_HEAD,
+        open_criteria=open_criteria,
+        implied_base=implied,
+    )
+
+    assert isinstance(entry, entry_kind)
+    assert entry.base_stale is stale
+
+
+def test_the_entry_reading_is_is_base_stales_answer(monkeypatch) -> None:
+    """The entry asks the landed comparison once and carries what it says.
+
+    The recorder answers the opposite of the real comparison, so an entry that
+    compared the two bases itself would read live here.
+    """
+    calls: list[tuple[BaseSpec, BaseSpec]] = []
+
+    def recorder(recorded_base: BaseSpec, implied_base: BaseSpec) -> bool:
+        calls.append((recorded_base, implied_base))
+        return recorded_base == implied_base
+
+    monkeypatch.setattr(lane_entry_module, "is_base_stale", recorder)
+    source = record(base=DISPATCHED.base_branch, dispatch_base=DISPATCHED)
+    implied = DISPATCHED.model_copy(deep=True)
+
+    entry = decide(
+        recorded=recorded(source),
+        remote_loop_head=REMOTE_HEAD,
+        open_criteria=("KOD-684/check",),
+        implied_base=implied,
+    )
+
+    assert isinstance(entry, ResumedLane)
+    assert entry.base_stale is True
+    assert len(calls) == 1
+    assert calls[0][0] is source.dispatch_base
+    assert calls[0][1] is implied
+    assert calls[0][0] is not calls[0][1]

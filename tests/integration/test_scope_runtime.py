@@ -13,7 +13,9 @@ import structlog.testing
 from langgraph.checkpoint.memory import InMemorySaver
 
 from kodezart.adapters.job_registry import InMemoryJobRegistry
+from kodezart.chains import ralph_loop
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.composition.jobs import build_job_queue
 from kodezart.composition.tracker import criteria_stage_label_key
@@ -41,6 +43,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.git_url import resolve_repo_url
 from kodezart.domain.lane_entry import recorded_branches
+from kodezart.domain.lane_record import parse_lane_record, render_lane_record
 from kodezart.domain.organize import stage_rows
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services import scope_runtime
@@ -58,6 +61,8 @@ from kodezart.types.domain.agent import (
     WorkflowScopeBaseEvent,
 )
 from kodezart.types.domain.branch import (
+    BaseInput,
+    BaseSpec,
     BranchRole,
     WorkRef,
     WorkRefRole,
@@ -75,7 +80,7 @@ from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.run_event import RunEventKind
-from kodezart.types.domain.run_state import LaneRunState
+from kodezart.types.domain.run_state import LaneCommit, LaneRunState
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
 from kodezart.types.domain.scope_terminal import ScopeLaneEntry
@@ -2404,6 +2409,182 @@ async def test_a_subject_amended_between_runs_is_refused_by_digest_not_re_read(
 # KOD-449 — a killed scope re-enters and dispatches exactly the lanes that
 # are left, on their recorded branches, reading no merge state to decide.
 # ---------------------------------------------------------------------------
+
+#: Lane A stands on lane B, so B's recorded delivery is A's whole base: the
+#: one arm whose branch name survives that delivery moving forward.
+STACKED = ("B", "A")
+#: A prefix no commit of this walk touches, which the carried grading of the
+#: second run declares it exercised.
+UNTOUCHED = "docs/"
+
+
+async def stacked_first_fire(port, repos):
+    """Run one: B fires and finishes, then A fires on B's delivery and records.
+
+    B's one criterion passes; A's fire closes A/check and stalls on the other
+    two, so A still owes work and its record exists. Ended at the observation
+    of the tick after A's fire, for the reason ``first_fire`` is.
+    """
+    harness = resumable(
+        port=port,
+        repos=repos,
+        lanes=STACKED,
+        evaluations=[
+            *one_check_echoes("B", rounds=2),
+            *(
+                criteria_echo(keys=A_THREE_KEYS, passed={"A/check"})
+                for _ in range(STALLING_FIRE_GRADINGS)
+            ),
+        ],
+    )
+    stream = drive(harness, job="first-job")
+    events = []
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        async for event in stream:
+            events.append(event)
+            if (
+                isinstance(event, ScopeWalkEvent)
+                and "A" in event.observation.dispatched
+            ):
+                break
+    await stream.aclose()
+    assert lane_failures(events) == ()
+    return events
+
+
+async def advance_recorded_delivery(port, repos, key: str) -> str:
+    """Move lane *key*'s delivery forward one commit, on the remote and its record.
+
+    The record is rewritten through the record's own read and render, the way
+    a later commit of that lane would leave it: its branch gains a commit, is
+    published, and the record's head and pushed head follow. Every unaddressed
+    read keeps answering from the tree it answered from before.
+    """
+    prefixes = native_operation().marker_prefixes
+    record = await lane_record(port, key)
+    before = repos.current
+    branch = repos.of(record.branch)
+    advanced = branch.commit()
+    branch.publish()
+    repos.committing = before
+    moved = record.model_copy(
+        update={
+            "head_sha": advanced,
+            "pushed_head_sha": advanced,
+            "commits": [
+                *record.commits,
+                LaneCommit(sha=advanced, subject="feat: later", issue_id=key),
+            ],
+        }
+    )
+    for index, comment in enumerate(port.comments):
+        if comment.body.startswith(f"[{prefixes['run_state']}:{key}]"):
+            assert (
+                parse_lane_record(
+                    body=comment.body, lane_key=key, marker_prefixes=prefixes
+                )
+                == record
+            )
+            port.comments[index] = comment.model_copy(
+                update={
+                    "body": render_lane_record(record=moved, marker_prefixes=prefixes)
+                }
+            )
+    assert (await lane_record(port, key)).pushed_head_sha == advanced
+    return advanced
+
+
+# Ids apart from the gated `live` marker, which a bare "live" id is read as.
+@pytest.mark.parametrize("arm", ["live", "stale"], ids=["live-base", "stale-base"])
+async def test_a_resumed_lane_reads_its_dispatch_base_live_or_stale_on_the_scope_path(
+    arm, monkeypatch
+):
+    """The record pins the base A was dispatched on, and the entry reads it.
+
+    Run one records A on B's delivery, the singleton arm of base resolution.
+    On the stale arm B's delivery then advances, so A's base resolves under the
+    same branch name with a newer input: the name check passes, and the
+    dispatch base reads stale. Run two resumes A either way — a stale base is
+    not a refusal — and hands the reading down to the one lapse expression. It
+    is observable there: A/second passes at the first iteration over a prefix
+    no later commit touches, so on a live base the second iteration carries it
+    without asking, and on a stale one the grading lapses and is asked again.
+    """
+    repos = WalkRepos()
+    port = board(lanes=STACKED, blocked={"A": ("B",)}, checks=THREE_CHECKS)
+    first = await stacked_first_fire(port, repos)
+
+    blocker = await lane_record(port, "B")
+    delivery = recorded_branches(record=blocker).deliverable_branch
+    dispatched = BaseSpec(
+        inputs=(
+            BaseInput(
+                blocker_issue_id="B", branch=delivery, sha=blocker.pushed_head_sha
+            ),
+        ),
+        base_branch=delivery,
+        base_role=WorkRefRole.DELIVERABLE,
+    )
+    pinned = (await lane_record(port, "A")).dispatch_base
+    assert pinned == dispatched
+    assert bases_of(first)["A"] == delivery
+    assert port.issues["A/second"].state_kind is WorkflowStateKind.UNSTARTED
+    if arm == "stale":
+        advanced = await advance_recorded_delivery(port, repos, "B")
+        assert advanced != dispatched.inputs[0].sha
+
+    stale = arm == "stale"
+    handed: list[bool] = []
+    run = RalphLoop.run
+
+    def recording_run(self, **kwargs):
+        handed.append(kwargs["base_stale"])
+        return run(self, **kwargs)
+
+    read: list[bool] = []
+    partition = ralph_loop.held_standing
+
+    def recording_partition(**kwargs):
+        read.append(kwargs["base_stale"])
+        return partition(**kwargs)
+
+    monkeypatch.setattr(RalphLoop, "run", recording_run)
+    monkeypatch.setattr(ralph_loop, "held_standing", recording_partition)
+    owed = ("A/second", "A/third")
+    second = resumable(
+        port=port,
+        repos=repos,
+        lanes=STACKED,
+        max_iterations=2,
+        evaluations=[
+            criteria_echo(
+                keys=owed,
+                passed={"A/second"},
+                declared={
+                    "A/second": {
+                        "rederivationClass": "expensive",
+                        "exercisedPaths": [UNTOUCHED],
+                    }
+                },
+            ),
+            criteria_echo(keys=owed if stale else owed[1:], passed=set(owed)),
+            *(criteria_echo(keys=owed, passed=set(owed)) for _ in range(4)),
+        ],
+    )
+    events = await bounded_walk(second, job="second-job")
+
+    assert lane_failures(events) == ()
+    assert handed and set(handed) == {stale}
+    assert read and set(read) == {stale}
+    # The reading reached the arithmetic: the second grading asks about the
+    # carried criterion again exactly when the base is stale.
+    prompts = second.executor.evaluation_prompts
+    assert len(prompts) >= 2
+    assert "A/second live Check" in prompts[0]
+    assert ("A/second live Check" in prompts[1]) is stale
+    # Pinned by run one and never re-pinned by run two's writes.
+    assert (await lane_record(port, "A")).dispatch_base == pinned
+
 
 FORGE_ORIGIN = "https://github.com/owner/repo"
 #: Lane C owes two criteria, so the fire killed mid-flight leaves one finished

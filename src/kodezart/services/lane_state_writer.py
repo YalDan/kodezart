@@ -138,7 +138,7 @@ class TrackerLaneStateWriter:
             workspace_path, self._git_remote, lane.loop_branch
         )
         changeset = await self._git.diff_summary(
-            workspace_path, lane.base_ref, head_sha
+            workspace_path, lane.base.base_branch, head_sha
         )
         comments = await self._board(lane)
         first_push = self._first_push(comments=comments, lane=lane)

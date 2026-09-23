@@ -3089,6 +3089,8 @@
    "test_a_record_naming_no_commit_act_refuses_at_re_entry",
    "test_a_recorded_branch_absent_from_the_remote_refuses_and_mints_nothing",
    "test_a_recorded_base_that_is_no_longer_the_resolved_base_refuses",
+   "test_the_entry_reads_the_recorded_dispatch_base_against_the_implied_one",
+   "test_the_entry_reading_is_is_base_stales_answer",
    "test_roles_are_resolved_from_associations_not_names",
    "test_associations_that_do_not_resolve_refuse",
    "test_a_loop_association_with_no_derived_from_refuses"
@@ -3121,6 +3123,8 @@
    "test_next_record_appends_one_row_and_keeps_prior_associations",
    "test_a_record_with_no_digest_is_pinned_by_its_next_write",
    "test_the_digest_a_prior_record_pinned_is_never_re_pinned",
+   "test_the_dispatch_base_is_pinned_by_the_first_write_and_never_re_pinned",
+   "test_a_record_written_before_the_field_parses_with_no_dispatch_base",
    "test_the_pull_request_the_prior_record_carries_survives_the_next_commit",
    "test_a_run_rebound_to_another_deliverable_refuses_before_composing_a_record",
    "test_a_binding_the_record_model_refuses_is_a_typed_write_refusal",
@@ -3166,6 +3170,7 @@
    "test_a_grading_whose_paths_did_not_move_is_carried_and_not_re_derived",
    "test_an_expensive_grading_whose_paths_moved_is_re_derived_not_lapsed",
    "test_an_observed_grading_whose_paths_moved_lapses_and_is_newly_lapsed",
+   "test_held_standing_hands_the_base_reading_to_the_rule",
    "test_a_grading_that_already_lapsed_stays_lapsed_and_is_not_newly_lapsed",
    "test_the_partition_asks_the_rule_once_per_standing_path_bound_grading",
    "test_a_grading_with_no_digest_for_its_own_sha_lapses"
@@ -3872,6 +3877,7 @@
    "test_the_digest_is_pinned_at_the_first_record_write",
    "test_a_record_with_no_digest_is_entered_and_pinned_by_its_next_write",
    "test_a_subject_amended_between_runs_is_refused_by_digest_not_re_read",
+   "test_a_resumed_lane_reads_its_dispatch_base_live_or_stale_on_the_scope_path",
    "test_kill_and_re_enter_dispatches_exactly_the_remaining_lanes",
    "test_a_finished_lane_without_a_pull_request_is_delivered_without_a_loop",
    "test_a_delivery_only_turn_that_reaches_no_pull_request_rests_the_lane",

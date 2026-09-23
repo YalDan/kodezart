@@ -97,7 +97,7 @@ def next_lane_record(
             BranchAssociation(
                 branch=lane.deliverable_branch,
                 role=BranchRole.DELIVERABLE,
-                derived_from=lane.base_ref,
+                derived_from=lane.base.base_branch,
                 run_id=lane.run_id,
             ),
             BranchAssociation(
@@ -127,6 +127,13 @@ def next_lane_record(
                 prior.body_digest
                 if prior is not None and prior.body_digest is not None
                 else lane.body_digest
+            ),
+            # Pinned the same way: the base the first recorded commit was
+            # dispatched on, which a later entry compares, never re-reads.
+            dispatch_base=(
+                prior.dispatch_base
+                if prior is not None and prior.dispatch_base is not None
+                else lane.base
             ),
             associations=associations,
         )
@@ -167,7 +174,7 @@ def _require_one_binding_per_run(
             item.role is BranchRole.DELIVERABLE
             and item.run_id == lane.run_id
             and (item.branch, item.derived_from)
-            != (lane.deliverable_branch, lane.base_ref)
+            != (lane.deliverable_branch, lane.base.base_branch)
         ):
             raise LaneRecordWriteError(
                 lane_key=lane.lane_key,
@@ -175,7 +182,7 @@ def _require_one_binding_per_run(
                     f"run {lane.run_id!r} is recorded as delivering "
                     f"{item.branch!r} from {item.derived_from!r} and this "
                     f"commit binds it to {lane.deliverable_branch!r} from "
-                    f"{lane.base_ref!r}"
+                    f"{lane.base.base_branch!r}"
                 ),
             )
 

@@ -3,9 +3,10 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from kodezart.domain.base_staleness import is_base_stale
 from kodezart.domain.errors import LaneEntryError, SubjectAmendedError
 from kodezart.domain.fire_spec import body_digest
-from kodezart.types.domain.branch import BranchRole
+from kodezart.types.domain.branch import BaseSpec, BranchRole
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.lane_entry import (
     DeliverOnlyLane,
@@ -126,7 +127,7 @@ def decide_lane_entry(
     recorded: tuple[LaneRunState, RecordedBranches] | None,
     remote_loop_head: str | None,
     open_criteria: Sequence[str],
-    resolved_base: str,
+    implied_base: BaseSpec,
 ) -> LaneEntry | None:
     """The one place a lane's entry is decided, from those facts alone.
 
@@ -151,6 +152,14 @@ def decide_lane_entry(
     what the branch contains and the known cause is a commit pushed while its
     record write failed. Refusing would strand exactly that lane; the next
     commit's record write brings the record level again.
+
+    Two questions about the base, and only the first refuses. Which ref the
+    lane stands on is compared by name: a recorded base branch that is not the
+    one resolving now refuses, as above. Whether the gradings the lane took
+    still stand is ``is_base_stale``'s reading of the base the record pinned at
+    dispatch against *implied_base*: a stale base is not a refusal, it is
+    carried on the entry for the loop's lapse to read. A record that pinned no
+    base reads live and is pinned by its next write.
     """
     if recorded is None:
         return NewLane() if open_criteria else None
@@ -161,21 +170,25 @@ def decide_lane_entry(
             reason="the recorded branch is absent from the remote",
             branches=(branches.loop_branch,),
         )
-    if branches.recorded_base != resolved_base:
+    if branches.recorded_base != implied_base.base_branch:
         raise LaneEntryError(
             issue_key=issue_key,
             reason=(
                 f"the recorded base {branches.recorded_base!r} is not the "
-                f"base {resolved_base!r} that resolves now"
+                f"base {implied_base.base_branch!r} that resolves now"
             ),
             branches=(branches.deliverable_branch,),
         )
+    base_stale = record.dispatch_base is not None and is_base_stale(
+        record.dispatch_base, implied_base
+    )
     if open_criteria:
         return ResumedLane(
             deliverable_branch=branches.deliverable_branch,
             loop_branch=branches.loop_branch,
             head_sha=remote_loop_head,
             body_digest=record.body_digest,
+            base_stale=base_stale,
         )
     if record.pr is not None:
         return None
@@ -184,6 +197,7 @@ def decide_lane_entry(
         loop_branch=branches.loop_branch,
         head_sha=remote_loop_head,
         body_digest=record.body_digest,
+        base_stale=base_stale,
     )
 
 

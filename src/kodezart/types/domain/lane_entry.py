@@ -25,6 +25,10 @@ class ResumedLane(CamelCaseModel):
     ``body_digest`` is the subject digest AS RECORDED, and ``None`` on a record
     written before the digest was pinned; the fire compares the text it reads
     at entry against it.
+
+    ``base_stale`` is ``is_base_stale``'s answer for the record's dispatch base
+    against the base resolved at this entry, and ``False`` when the record
+    carries none.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -34,10 +38,16 @@ class ResumedLane(CamelCaseModel):
     loop_branch: str = Field(min_length=1)
     head_sha: str = Field(min_length=1)
     body_digest: str | None
+    base_stale: bool
 
 
 class DeliverOnlyLane(CamelCaseModel):
-    """A record exists, the lane owes no criterion and no pull request is recorded."""
+    """A record exists, the lane owes no criterion and no pull request is recorded.
+
+    ``base_stale`` is ``is_base_stale``'s answer for the record's dispatch base
+    against the base resolved at this entry, and ``False`` when the record
+    carries none.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -46,6 +56,7 @@ class DeliverOnlyLane(CamelCaseModel):
     loop_branch: str = Field(min_length=1)
     head_sha: str = Field(min_length=1)
     body_digest: str | None
+    base_stale: bool
 
 
 type LaneEntry = Annotated[

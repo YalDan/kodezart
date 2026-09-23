@@ -488,7 +488,10 @@ class RalphWorkflowEngine:
         *base_spec* is the lane's recorded base and *implied_base* is the
         base its blockers imply now; the run refuses before any node when
         they differ, because a criterion graded against a base that has
-        moved is about a tree that no longer exists.
+        moved is about a tree that no longer exists.  The scope walker hands
+        no *implied_base*: on that path staleness is read once, at the lane's
+        entry, and reaches the loop's lapse on the entry rather than refusing
+        here.
 
         *entry* is how the walker decided this lane enters.  On the native
         arm ``None`` is read as a new lane, so a native fire started without

@@ -185,6 +185,9 @@ class RalphLoopContext(ExecutionContext):
     #: a clone behind the head the entry read would carry work the criteria
     #: the lane owes were already graded against.
     resumed_head_sha: str | None = None
+    #: Whether the lane's recorded dispatch base differs from the base this
+    #: entry resolved, as the entry read it; ``False`` for a lane with none.
+    base_stale: bool = False
     acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
     tracker_spec: TrackerSpec | None = None
     repo_visibility: RepoVisibility

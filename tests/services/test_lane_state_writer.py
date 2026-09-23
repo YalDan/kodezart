@@ -37,7 +37,7 @@ from kodezart.domain.run_event_stream import (
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import CriterionResult
-from kodezart.types.domain.branch import BranchRole
+from kodezart.types.domain.branch import BranchRole, trunk_base
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.gating import (
@@ -80,7 +80,7 @@ def binding() -> LaneBinding:
         body_digest=SUBJECT_DIGEST,
         loop_branch="ralph/LANE-1",
         deliverable_branch="feature/LANE-1",
-        base_ref="trunk",
+        base=trunk_base("trunk"),
         repo_url=REPO_URL,
         repo_path=None,
         run_id="queue-job-1",
@@ -794,7 +794,7 @@ async def test_a_lane_naming_no_repository_refuses_before_any_read():
         body_digest=SUBJECT_DIGEST,
         loop_branch="ralph/LANE-1",
         deliverable_branch="feature/LANE-1",
-        base_ref="trunk",
+        base=trunk_base("trunk"),
         repo_url=None,
         repo_path=None,
         run_id="queue-job-1",
@@ -827,7 +827,7 @@ async def test_a_run_rebound_to_another_deliverable_leaves_the_board_untouched()
         body_digest=SUBJECT_DIGEST,
         loop_branch=binding().loop_branch,
         deliverable_branch="feature/another",
-        base_ref=binding().base_ref,
+        base=binding().base,
         repo_url=REPO_URL,
         repo_path=None,
         run_id=binding().run_id,

@@ -15,7 +15,7 @@ from kodezart.domain.lane_entry import recorded_branches, recorded_commit
 from kodezart.domain.lane_record import render_lane_record
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.branch import BranchAssociation, BranchRole, trunk_base
 from kodezart.types.domain.lane_entry import ResumedLane
 from kodezart.types.domain.run_state import LaneCommit, LaneRunState
 from tests.chains.test_native_fire import native_operation
@@ -115,7 +115,10 @@ async def test_a_remote_head_past_the_record_resumes_there_and_says_so():
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert entry == ResumedLane(
@@ -123,6 +126,7 @@ async def test_a_remote_head_past_the_record_resumes_there_and_says_so():
         loop_branch=LOOP,
         head_sha=REMOTE_HEAD,
         body_digest=DIGEST,
+        base_stale=False,
     )
     differs = [entry for entry in logs if entry["event"] == "lane_record_head_differs"]
     assert len(differs) == 1
@@ -139,7 +143,10 @@ async def test_a_record_level_with_the_remote_says_nothing():
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert isinstance(entry, ResumedLane)
@@ -174,7 +181,10 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     # What "the deliverable branch still stands at its base tip" means at
@@ -249,7 +259,10 @@ async def test_associations_that_settle_nothing_refuse_before_the_remote_read(
 
     with pytest.raises(LaneEntryError, match=reason):
         await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert git.calls == []

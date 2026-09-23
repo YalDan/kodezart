@@ -19,13 +19,22 @@ from pydantic import BaseModel, ValidationError, create_model
 
 from kodezart.domain.errors import LaneRecordWriteError
 from kodezart.domain.lane_record import (
+    REENTRY_SECTION,
     lane_record_body,
     next_lane_record,
+    parse_lane_record,
     render_lane_record,
 )
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain import run_state
-from kodezart.types.domain.branch import BranchAssociation, BranchRole, WorkRefRole
+from kodezart.types.domain.branch import (
+    BaseInput,
+    BaseSpec,
+    BranchAssociation,
+    BranchRole,
+    WorkRefRole,
+    trunk_base,
+)
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criteria import CriterionId
 from kodezart.types.domain.gating import RepoVisibility
@@ -43,6 +52,21 @@ SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 RECORD = "LaneRunState"
 #: The subject digest a binding carries, pinned on the record it composes.
 DIGEST = "e" * 64
+#: The base a lane's first recorded commit was dispatched on: one blocker's
+#: delivery, which is the arm whose branch name survives that delivery moving.
+DISPATCHED = BaseSpec(
+    inputs=(
+        BaseInput(
+            blocker_issue_id="lane:blocker", branch="blocker-deliverable", sha="1" * 40
+        ),
+    ),
+    base_branch="blocker-deliverable",
+    base_role=WorkRefRole.DELIVERABLE,
+)
+#: The same base resolved again after the blocker's delivery advanced.
+ADVANCED = DISPATCHED.model_copy(
+    update={"inputs": (DISPATCHED.inputs[0].model_copy(update={"sha": "2" * 40}),)}
+)
 
 
 def binding() -> LaneBinding:
@@ -51,7 +75,7 @@ def binding() -> LaneBinding:
         body_digest=DIGEST,
         loop_branch="ordinary-name",
         deliverable_branch="has-ralph-in-its-name",
-        base_ref="trunk",
+        base=trunk_base("trunk"),
         repo_url="https://forge.example/repo",
         repo_path=None,
         run_id="run-current",
@@ -86,6 +110,7 @@ def record_data() -> dict[str, object]:
         ],
         "pr": {"url": "https://forge.example/pr/7", "number": 7, "state": "OPEN"},
         "bodyDigest": DIGEST,
+        "dispatchBase": DISPATCHED.model_dump(mode="json", by_alias=True),
         # One deliverable, two loop and a recovery association for the current
         # run, and the earlier run's own deliverable beside them: the set the
         # enumerability and cardinality rules are stated over (KOD-703).
@@ -136,6 +161,7 @@ def test_record_and_association_have_only_the_declared_fields():
         "commits",
         "pr",
         "body_digest",
+        "dispatch_base",
         "associations",
     }
     assert set(LaneCommit.model_fields) == {"sha", "subject", "issue_id"}
@@ -684,7 +710,7 @@ def test_next_record_appends_one_row_and_keeps_prior_associations():
     assert [
         (item.branch, item.role, item.derived_from) for item in first.associations
     ] == [
-        (lane.deliverable_branch, BranchRole.DELIVERABLE, lane.base_ref),
+        (lane.deliverable_branch, BranchRole.DELIVERABLE, lane.base.base_branch),
         (lane.loop_branch, BranchRole.LOOP, lane.deliverable_branch),
     ]
     assert {item.run_id for item in first.associations} == {lane.run_id}
@@ -723,7 +749,7 @@ def later_run(digest: str = DIGEST) -> LaneBinding:
         body_digest=digest,
         loop_branch="ordinary-name",
         deliverable_branch="has-ralph-in-its-name",
-        base_ref="trunk",
+        base=trunk_base("trunk"),
         repo_url="https://forge.example/repo",
         repo_path=None,
         run_id="run-later",
@@ -752,6 +778,58 @@ def test_a_record_with_no_digest_is_pinned_by_its_next_write():
     )
 
     assert later.body_digest == DIGEST
+
+
+def first_commit(lane: LaneBinding, *, prior=None):
+    """One commit's record over *lane*, the facts other than the base fixed."""
+    return next_lane_record(
+        prior=prior,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="d" * 40,
+        pushed_head_sha="d" * 40,
+        changeset=changeset(),
+        subject="A change",
+    )
+
+
+def test_the_dispatch_base_is_pinned_by_the_first_write_and_never_re_pinned():
+    """The record keeps the base its first commit was cut from.
+
+    A later write binds the base resolving at its own entry, and preferring it
+    would erase the one fact a later entry compares against. A record written
+    before the field existed takes the binding's base at its next write.
+    """
+    first = first_commit(dataclasses.replace(binding(), base=DISPATCHED))
+    assert first.dispatch_base == DISPATCHED
+
+    later = first_commit(dataclasses.replace(later_run(), base=ADVANCED), prior=first)
+    assert later.dispatch_base == DISPATCHED != ADVANCED
+
+    unpinned = LaneRunState.model_validate({**record_data(), "dispatchBase": None})
+    pinned = first_commit(
+        dataclasses.replace(later_run(), base=ADVANCED), prior=unpinned
+    )
+    assert pinned.dispatch_base == ADVANCED
+
+
+def test_a_record_written_before_the_field_parses_with_no_dispatch_base():
+    """A stored record with no ``dispatchBase`` is a record, read as unpinned."""
+    data = {key: value for key, value in record_data().items() if key != "dispatchBase"}
+    payload = json.dumps(data, indent=2)
+    body = (
+        f"[fixture-record:lane%3Aalpha]\n```json\n{payload}\n```\n\n{REENTRY_SECTION}"
+    )
+    assert "dispatchBase" not in body
+
+    parsed = parse_lane_record(
+        body=body,
+        lane_key="lane:alpha",
+        marker_prefixes={"run_state": "fixture-record"},
+    )
+
+    assert parsed.dispatch_base is None
+    assert parsed.body_digest == DIGEST
 
 
 def test_the_digest_a_prior_record_pinned_is_never_re_pinned():
@@ -785,7 +863,7 @@ def test_the_pull_request_the_prior_record_carries_survives_the_next_commit():
         body_digest=DIGEST,
         loop_branch=prior.branch,
         deliverable_branch="has-ralph-in-its-name",
-        base_ref="trunk",
+        base=trunk_base("trunk"),
         repo_url="https://forge.example/repo",
         repo_path=None,
         run_id="run-fix",
@@ -820,7 +898,7 @@ def test_a_run_rebound_to_another_deliverable_refuses_before_composing_a_record(
         body_digest=lane.body_digest,
         loop_branch=lane.loop_branch,
         deliverable_branch="another-deliverable",
-        base_ref=lane.base_ref,
+        base=lane.base,
         repo_url=lane.repo_url,
         repo_path=lane.repo_path,
         run_id=lane.run_id,
@@ -964,7 +1042,7 @@ def test_a_run_rebased_onto_another_base_refuses_before_composing_a_record():
         body_digest=lane.body_digest,
         loop_branch=lane.loop_branch,
         deliverable_branch=lane.deliverable_branch,
-        base_ref="another-base",
+        base=trunk_base("another-base"),
         repo_url=lane.repo_url,
         repo_path=lane.repo_path,
         run_id=lane.run_id,
@@ -982,7 +1060,7 @@ def test_a_run_rebased_onto_another_base_refuses_before_composing_a_record():
         )
     # Both readings, so the refusal says what the record holds as well as
     # what this commit brought: one of them alone names no disagreement.
-    assert lane.base_ref in str(refusal.value)
+    assert lane.base.base_branch in str(refusal.value)
     assert "another-base" in str(refusal.value)
 
 
@@ -1109,7 +1187,7 @@ def test_a_later_run_adds_its_own_association_pair_beside_the_first():
         body_digest=lane.body_digest,
         loop_branch="second-loop",
         deliverable_branch=lane.deliverable_branch,
-        base_ref=lane.base_ref,
+        base=lane.base,
         repo_url=lane.repo_url,
         repo_path=lane.repo_path,
         run_id="run-later",

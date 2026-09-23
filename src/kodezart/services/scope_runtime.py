@@ -651,7 +651,7 @@ class ScopeWorkflowEngine:
                     issue_key=key,
                     open_criteria=[row.issue_key for row in current.gap],
                     repo_path=path,
-                    resolved_base=spec.base_branch,
+                    implied_base=spec,
                 )
                 if entry is None:
                     # The facts leave this lane nothing to do: a record whose
@@ -670,7 +670,6 @@ class ScopeWorkflowEngine:
                     repo_path=path,
                     repo_url=url,
                     base_spec=spec,
-                    implied_base=spec,
                     permission_mode=permission_mode,
                     allowed_tools=allowed_tools,
                     cache_key=lane_key,

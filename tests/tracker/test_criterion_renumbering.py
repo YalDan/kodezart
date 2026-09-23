@@ -29,6 +29,7 @@ from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import RulingProtectedTestRef
 from kodezart.types.domain.audit_forge import AuditForgeRequest
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import DraftedCriterion, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff, CrossOffState
@@ -202,7 +203,7 @@ def lane_of(subject: str) -> LaneBinding:
         lane_key=subject,
         loop_branch=f"loop/{subject}",
         deliverable_branch=f"deliverable/{subject}",
-        base_ref="trunk",
+        base=trunk_base("trunk"),
         body_digest="f" * 64,
         repo_url=REPO_URL,
         repo_path=None,
