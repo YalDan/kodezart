@@ -96,6 +96,26 @@ async def test_a_refuted_restamp_carries_a_mandate_verdict(
     assert tracker_writes() == before
 
 
+async def test_a_restamp_report_must_answer_the_trace_beside_it(setup, tracker, server):
+    """A report completes the trace it was hunted for and no other.
+
+    The observation's refuted trace is swapped for another refuted trace
+    while its report stays, so the mandate verdict beside it answers a
+    refutation the observation no longer carries: refused.
+    """
+    build, *_ = setup
+    await refuted_restamp(tracker, server, "current")
+    observation = (await build().run()).observations[0]
+    other = observation.restamp.model_copy(
+        update={"reason": f"{observation.restamp.reason} (another trace)"}
+    )
+    assert other.verdict is AuditVerdict.REFUTED
+    assert other != observation.restamp
+
+    with pytest.raises(ValueError, match="restamp report differs from the native"):
+        replace(observation, restamp=other)
+
+
 @pytest.mark.parametrize("mode", ["current", "lapse"])
 async def test_a_failed_restamp_mandate_keeps_the_raw_trace_and_its_reason(
     setup, tracker, server, tracker_writes, mode
