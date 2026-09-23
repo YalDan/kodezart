@@ -8,7 +8,9 @@ argument keys, in the order it made them, and compared with the log below,
 which was read off the adapter before it was split into one class per role.
 The split moves code and changes no call, so the same script sends the same
 log after it; a flow that raised is recorded by the error it raised, so a
-refusal that moves is a difference too.
+refusal that moves is a difference too. Each flow is held to the role it is
+labelled with by the members it reaches for on the adapter, so a label is
+never coverage a flow does not give.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -247,7 +249,7 @@ STEPS: tuple[tuple[str, Step], ...] = (
     ("CriterionReopener", criterion_reopen),
     ("RunAlarmTracker", run_alarm),
     (
-        "ClaimHolder",
+        "FireDispatchTracker",
         lambda t: t.claim_issue(
             issue_key=APPROVED_ISSUE, holder=HOLDER, lease_seconds=60.0
         ),
@@ -357,17 +359,36 @@ async def _sync(call: Callable[[], object]) -> object:
 type Entry = tuple[str, str, tuple[str, ...]]
 
 
+class Entered:
+    """The adapter, recording every public member a step reaches for on it."""
+
+    def __init__(self, tracker: object) -> None:
+        self._tracker = tracker
+        self._reached: set[str] = set()
+
+    def __getattr__(self, name: str) -> object:
+        if not name.startswith("_"):
+            self._reached.add(name)
+        return getattr(self._tracker, name)
+
+
 async def run(
     steps: tuple[tuple[str, Step], ...],
     tracker: object,
     calls: list[tuple[str, Mapping[str, object]]],
+    entered: list[tuple[str, frozenset[str]]] | None = None,
 ) -> list[Entry]:
-    """Every tool call *steps* make, then how each step ended, in order."""
+    """Every tool call *steps* make, then how each step ended, in order.
+
+    Each step runs over its own ``Entered`` view of the adapter; the members
+    it reached for are appended to *entered* beside its label.
+    """
     log: list[Entry] = []
     for role, step in steps:
         start = len(calls)
+        view = Entered(tracker)
         try:
-            await step(tracker)
+            await step(view)
         except Exception as error:
             ending: Entry = (role, "raised", (type(error).__name__,))
         else:
@@ -376,10 +397,14 @@ async def run(
             (role, tool, tuple(sorted(arguments))) for tool, arguments in calls[start:]
         )
         log.append(ending)
+        if entered is not None:
+            entered.append((role, frozenset(view._reached)))
     return log
 
 
-async def call_log() -> tuple[Entry, ...]:
+async def call_log(
+    entered: list[tuple[str, frozenset[str]]] | None = None,
+) -> tuple[Entry, ...]:
     """Run the script and return every tool call as (step, tool, argument keys)."""
     board, _ = fixture()
     tracker = tracker_over(
@@ -391,13 +416,27 @@ async def call_log() -> tuple[Entry, ...]:
     )
     scope = ScopeMcpServer()
     return (
-        *await run(STEPS, tracker, board.calls),
-        *await run(SCOPE_STEPS, linear_over_fake_mcp(scope), scope.calls),
+        *await run(STEPS, tracker, board.calls, entered),
+        *await run(SCOPE_STEPS, linear_over_fake_mcp(scope), scope.calls, entered),
     )
 
 
 def test_every_role_that_declares_a_member_has_a_flow():
     assert {role for role, _ in (*STEPS, *SCOPE_STEPS)} == set(declared_by_role())
+
+
+async def test_each_flow_enters_a_member_of_the_role_it_is_labelled_with():
+    """A label is only as good as the member the flow reaches for.
+
+    Each step runs over a view of the adapter that records the public
+    members it touches; one of them must be declared on the step's role.
+    """
+    entered: list[tuple[str, frozenset[str]]] = []
+    await call_log(entered)
+    roles = declared_by_role()
+
+    assert len(entered) == len((*STEPS, *SCOPE_STEPS))
+    assert [role for role, reached in entered if not reached & roles[role]] == []
 
 
 async def test_the_adapter_sends_the_recorded_call_log():
@@ -618,11 +657,11 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("RunAlarmTracker", "list_comments", ("issueId",)),
     ("RunAlarmTracker", "delete_comment", ("id",)),
     ("RunAlarmTracker", "returned", ()),
-    ("ClaimHolder", "save_comment", ("body", "issueId")),
-    ("ClaimHolder", "list_comments", ("issueId",)),
-    ("ClaimHolder", "save_comment", ("body", "id")),
-    ("ClaimHolder", "list_comments", ("issueId",)),
-    ("ClaimHolder", "returned", ()),
+    ("FireDispatchTracker", "save_comment", ("body", "issueId")),
+    ("FireDispatchTracker", "list_comments", ("issueId",)),
+    ("FireDispatchTracker", "save_comment", ("body", "id")),
+    ("FireDispatchTracker", "list_comments", ("issueId",)),
+    ("FireDispatchTracker", "returned", ()),
     ("ClaimHolder", "list_comments", ("issueId",)),
     ("ClaimHolder", "save_comment", ("body", "id")),
     ("ClaimHolder", "list_comments", ("issueId",)),
