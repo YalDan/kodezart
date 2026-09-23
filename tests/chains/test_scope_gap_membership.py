@@ -242,6 +242,12 @@ async def test_the_two_ungraded_readings_are_told_apart_by_the_sha_alone(
     assert from_lapse != from_nothing
 
 
+#: The grading the phantom's Evidence row records: a sha and a test id no
+#: criterion on any board here carries, so a grading read out of a parent's
+#: body cannot pass for the criterion's own.
+PHANTOM_SHA = "d" * 40
+PHANTOM_TEST = "tests/chains/test_scope_gap_membership.py::phantom"
+
 #: A parent body shaped like a criterion checklist, naming a criterion that
 #: exists nowhere on the board. A walk that read criteria out of a parent's
 #: description would mint it; the sub-issue read cannot. Beside the checkbox
@@ -253,9 +259,16 @@ PHANTOM_CHECKLIST = (
     "- [ ] **Check:** phantom\n"
     "AC-9 phantom\n"
     "**Check:** phantom\n\n"
-    + render_evidence_field(CriterionEvidence(graded_sha=GRADED_SHA, test=GRADED_TEST))
+    + render_evidence_field(
+        CriterionEvidence(graded_sha=PHANTOM_SHA, test=PHANTOM_TEST)
+    )
     + "\n"
 )
+
+#: An ungraded criterion directly under the lane, beside the graded one: a
+#: fallback that graded a lane's own criterion out of the lane's body would
+#: have this one to grade.
+LANE_OPEN = "lane-open"
 
 
 def graded_sha_or_none(issue: TrackerIssue) -> str | None:
@@ -274,11 +287,13 @@ async def test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body
 ) -> None:
     """Key, label, state and Evidence come off the criterion sub-issues alone.
 
-    The lane's own criterion is Done and graded, the deep one is open and was
-    never graded, and the lane's description is either a checklist naming a
-    criterion that does not exist or nothing at all. Either way the read
-    returns the same two sub-issues with the same four facts, never reads a
-    body of a row that is not a criterion, and owes only the open one.
+    The lane has one criterion Done and graded and one open and never
+    graded, the deep one is open and was never graded, and the description
+    of the lane and of the deliverable parent above the deep one is either a
+    checklist naming a criterion that does not exist or nothing at all.
+    Either way the read returns the same three sub-issues with the same four
+    facts, never reads a body of a row that is not a criterion, leaves both
+    parents' bodies as they are, and owes only the open ones.
 
     The trap's reach: it sees ``body`` read as an attribute of a
     ``TrackerIssue``. A read through ``__dict__``, ``vars()`` or
@@ -296,6 +311,9 @@ async def test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body
     rows = subtree(kind="unstarted", body=UNGRADED_BODY)
     rows[0].description = lane_body
     rows[1].description = graded_body(GRADED_SHA)
+    rows[2].description = lane_body
+    rows.append(row(LANE_OPEN, parent=LANE, label="criterion", kind="unstarted"))
+    rows[-1].description = UNGRADED_BODY
     fixture = await ready_fixture(rows)
     body_reads: list[str] = []
     original = TrackerIssue.__getattribute__
@@ -312,6 +330,8 @@ async def test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body
     assert body_reads == []
     (lane,) = (item for item in selection.ready if item.issue.issue_key == LANE)
     assert lane.issue.body == lane_body
+    (nested,) = (item for item in selection.ready if item.issue.issue_key == NESTED)
+    assert nested.issue.body == lane_body
     assert [
         (
             criterion.issue_key,
@@ -328,6 +348,7 @@ async def test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body
             GRADED_SHA,
         ),
         (DEEP_CHECK, frozenset({"criterion"}), WorkflowStateKind.UNSTARTED, None),
+        (LANE_OPEN, frozenset({"criterion"}), WorkflowStateKind.UNSTARTED, None),
     ]
     # The ungraded row is read as exactly the row the board holds, not merely
     # as a row no grading could be parsed out of.
@@ -336,6 +357,7 @@ async def test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body
     assert [criterion.issue_key for criterion in selection.criteria] == [
         "lane-check",
         DEEP_CHECK,
+        LANE_OPEN,
     ]
-    assert [criterion.issue_key for criterion in lane.gap] == [DEEP_CHECK]
+    assert [criterion.issue_key for criterion in lane.gap] == [DEEP_CHECK, LANE_OPEN]
     fixture.assert_read_only()
