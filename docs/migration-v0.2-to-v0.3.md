@@ -236,20 +236,23 @@ what such a file can carry:
   | `run_outcome` | `run-outcome` |
 
   v0.2 wrote no outcome marker, so `run_outcome` takes the shipped example's.
-  A declared table is never extended: once the table is present, even empty,
-  it is taken exactly as written, and a purpose it leaves out refuses at use.
-  The scope path's purposes are never supplied; a deployment that walks scopes
-  declares its table.
+  Nothing in a file tells v0.2 from v0.3, so this applies to any file with no
+  table, `docs/operation.minimal.toml` included, and such a file logs the line
+  below. A declared table is never extended: once the table is present, even
+  empty, it is taken exactly as written, and a purpose it leaves out refuses at
+  use. The scope path's own purposes (`run_state`, `run_event` and the rest)
+  are never supplied; a deployment that walks scopes declares its table.
 - **A `records.fire` destination that declares neither `columns` nor
-  `outcome_mapping`** is a v0.2 fire log. Its row is the run's title line, as
-  v0.2 wrote it, and the fire session is given no record clause, because there
+  `outcome_mapping`** is a v0.2 fire log. Its row is the run's title line, in
+  v0.2's shape (see 4c for its spelling), and the fire session is given no record clause, because there
   are no columns for one to name. Declaring either keeps the structured row and
   its rules.
 
 Boot logs `operation_file_v02_accepted` once when the exception applied, with
 `ignored` naming each table it dropped and `defaulted` naming each member it
 supplied: `marker_prefixes` for the table above, and `records.fire` for a fire
-log given the title-line row. A file written for v0.3 logs nothing of the kind.
+log given the title-line row. A file that declares both members logs nothing of
+the kind.
 
 What v0.2 already wrote on your issues is still read:
 
@@ -276,6 +279,8 @@ A v0.2 file boots into the same per-issue flow, with these deliberate changes:
   its workflow state to Done.
 - The terminal outcome is one comment per job under the `run_outcome` marker,
   rewritten in place, where v0.2 posted a new plain comment.
+- A fire log's title line spells its start instant in v0.3's ISO form, with
+  sub-second precision, where v0.2 wrote it to the second.
 
 ## 5. Removed with no replacement
 
