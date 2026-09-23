@@ -187,79 +187,294 @@ FINDINGS = (
     "Observed defects under the configured rubric, retaining their owning issue keys."
 )
 
-#: Exact. Every ``description`` in the judge's structured-output schema,
-#: keyed by its path in that schema. The session is handed the schema as
-#: its output contract, so each of these is text the judge reads.
-ADMISSION_SCHEMA_DESCRIPTIONS: dict[str, str] = {
-    "#": "The agent sees the same discriminated legal states its consumer validates.",
-    "#/$defs/BuildableAdmission": (
-        "No invented decision or unavailable artifact is carried by success."
+#: Exact. The judge's whole structured-output schema, written out. The
+#: session is handed it as its output contract, so every title,
+#: description, default, enum value, const, pattern and required list in
+#: it is text the judge reads.
+ADMISSION_SCHEMA: dict[str, object] = {
+    "$defs": {
+        "BuildableAdmission": {
+            "additionalProperties": False,
+            "description": (
+                "No invented decision or unavailable artifact is carried by success."
+            ),
+            "properties": {
+                "verdict": {
+                    "const": "buildable",
+                    "description": (
+                        "The current issue can be built without inventing a decision "
+                        "or missing evidence."
+                    ),
+                    "title": "Verdict",
+                    "type": "string",
+                },
+                "issueId": {
+                    "description": ISSUE_ID,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Issueid",
+                    "type": "string",
+                },
+                "evidence": {
+                    "description": EVIDENCE,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Evidence",
+                    "type": "string",
+                },
+                "findings": {
+                    "default": [],
+                    "description": FINDINGS,
+                    "items": {
+                        "$ref": "#/$defs/SpecFinding",
+                    },
+                    "title": "Findings",
+                    "type": "array",
+                },
+            },
+            "required": [
+                "verdict",
+                "issueId",
+                "evidence",
+            ],
+            "title": "BuildableAdmission",
+            "type": "object",
+        },
+        "DefectRole": {
+            "description": (
+                "A defect instance or the instruction that makes writers reproduce it."
+            ),
+            "enum": [
+                "instance",
+                "mandate",
+            ],
+            "title": "DefectRole",
+            "type": "string",
+        },
+        "RefusalKind": {
+            "description": (
+                "Whether re-authoring can repair a refusal without a human decision."
+            ),
+            "enum": [
+                SPEC_GAP,
+                HUMAN_DECISION,
+            ],
+            "title": "RefusalKind",
+            "type": "string",
+        },
+        "RefusedAdmission": {
+            "additionalProperties": False,
+            "description": "A refusal names the decision and the route it requires.",
+            "properties": {
+                "verdict": {
+                    "const": "not_buildable",
+                    "description": (
+                        "The current issue requires a specification repair or an "
+                        "unresolved human choice."
+                    ),
+                    "title": "Verdict",
+                    "type": "string",
+                },
+                "issueId": {
+                    "description": ISSUE_ID,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Issueid",
+                    "type": "string",
+                },
+                "evidence": {
+                    "description": EVIDENCE,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Evidence",
+                    "type": "string",
+                },
+                "findings": {
+                    "default": [],
+                    "description": FINDINGS,
+                    "items": {
+                        "$ref": "#/$defs/SpecFinding",
+                    },
+                    "title": "Findings",
+                    "type": "array",
+                },
+                "inventedDecision": {
+                    "description": (
+                        "The exact choice an implementer would otherwise have to "
+                        "invent."
+                    ),
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Inventeddecision",
+                    "type": "string",
+                },
+                "refusalKind": {
+                    "$ref": "#/$defs/RefusalKind",
+                    "description": (
+                        "Whether re-authoring can repair the specification gap or a "
+                        "human must settle the choice."
+                    ),
+                },
+            },
+            "required": [
+                "verdict",
+                "issueId",
+                "evidence",
+                "inventedDecision",
+                "refusalKind",
+            ],
+            "title": "RefusedAdmission",
+            "type": "object",
+        },
+        "SpecFinding": {
+            "additionalProperties": False,
+            "description": (
+                "Evidence for a class in the selected rubric, with any mandate "
+                "verbatim."
+            ),
+            "properties": {
+                "issueId": {
+                    "description": "Tracker key owning the source finding.",
+                    "minLength": 1,
+                    "title": "Issueid",
+                    "type": "string",
+                },
+                "defectClass": {
+                    "description": "Defect class from the selected rubric.",
+                    "minLength": 1,
+                    "title": "Defectclass",
+                    "type": "string",
+                },
+                "evidence": {
+                    "description": "Concrete evidence establishing the finding.",
+                    "title": "Evidence",
+                    "type": "string",
+                },
+                "role": {
+                    "$ref": "#/$defs/DefectRole",
+                    "description": "An instance or the instruction that mandates it.",
+                },
+                "mandateText": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                        },
+                        {
+                            "type": "null",
+                        },
+                    ],
+                    "default": None,
+                    "description": (
+                        "Exact instructing sentence for MANDATE, absent for INSTANCE."
+                    ),
+                    "title": "Mandatetext",
+                },
+            },
+            "required": [
+                "issueId",
+                "defectClass",
+                "evidence",
+                "role",
+            ],
+            "title": "SpecFinding",
+            "type": "object",
+        },
+        "UnverifiableAdmission": {
+            "additionalProperties": False,
+            "description": (
+                "Unavailable evidence retains its named dependency without inventing "
+                "it."
+            ),
+            "properties": {
+                "verdict": {
+                    "const": "unverifiable",
+                    "description": (
+                        "A named unavailable artifact prevents a buildability judgment."
+                    ),
+                    "title": "Verdict",
+                    "type": "string",
+                },
+                "issueId": {
+                    "description": ISSUE_ID,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Issueid",
+                    "type": "string",
+                },
+                "evidence": {
+                    "description": EVIDENCE,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Evidence",
+                    "type": "string",
+                },
+                "findings": {
+                    "default": [],
+                    "description": FINDINGS,
+                    "items": {
+                        "$ref": "#/$defs/SpecFinding",
+                    },
+                    "title": "Findings",
+                    "type": "array",
+                },
+                "missingArtifact": {
+                    "description": (
+                        "The actual unavailable artifact needed to assess the current "
+                        "issue."
+                    ),
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Missingartifact",
+                    "type": "string",
+                },
+                "pendingBlockerId": {
+                    "description": (
+                        "Existing native blocker identity owning the unavailable "
+                        "artifact; never invent one."
+                    ),
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Pendingblockerid",
+                    "type": "string",
+                },
+            },
+            "required": [
+                "verdict",
+                "issueId",
+                "evidence",
+                "missingArtifact",
+                "pendingBlockerId",
+            ],
+            "title": "UnverifiableAdmission",
+            "type": "object",
+        },
+    },
+    "description": (
+        "The agent sees the same discriminated legal states its consumer validates."
     ),
-    "#/$defs/BuildableAdmission/properties/verdict": (
-        "The current issue can be built without inventing a decision or missing "
-        "evidence."
-    ),
-    "#/$defs/BuildableAdmission/properties/issueId": ISSUE_ID,
-    "#/$defs/BuildableAdmission/properties/evidence": EVIDENCE,
-    "#/$defs/BuildableAdmission/properties/findings": FINDINGS,
-    "#/$defs/DefectRole": (
-        "A defect instance or the instruction that makes writers reproduce it."
-    ),
-    "#/$defs/RefusalKind": (
-        "Whether re-authoring can repair a refusal without a human decision."
-    ),
-    "#/$defs/RefusedAdmission": (
-        "A refusal names the decision and the route it requires."
-    ),
-    "#/$defs/RefusedAdmission/properties/verdict": (
-        "The current issue requires a specification repair or an unresolved "
-        "human choice."
-    ),
-    "#/$defs/RefusedAdmission/properties/issueId": ISSUE_ID,
-    "#/$defs/RefusedAdmission/properties/evidence": EVIDENCE,
-    "#/$defs/RefusedAdmission/properties/findings": FINDINGS,
-    "#/$defs/RefusedAdmission/properties/inventedDecision": (
-        "The exact choice an implementer would otherwise have to invent."
-    ),
-    "#/$defs/RefusedAdmission/properties/refusalKind": (
-        "Whether re-authoring can repair the specification gap or a human must "
-        "settle the choice."
-    ),
-    "#/$defs/SpecFinding": (
-        "Evidence for a class in the selected rubric, with any mandate verbatim."
-    ),
-    "#/$defs/SpecFinding/properties/issueId": "Tracker key owning the source finding.",
-    "#/$defs/SpecFinding/properties/defectClass": (
-        "Defect class from the selected rubric."
-    ),
-    "#/$defs/SpecFinding/properties/evidence": (
-        "Concrete evidence establishing the finding."
-    ),
-    "#/$defs/SpecFinding/properties/role": (
-        "An instance or the instruction that mandates it."
-    ),
-    "#/$defs/SpecFinding/properties/mandateText": (
-        "Exact instructing sentence for MANDATE, absent for INSTANCE."
-    ),
-    "#/$defs/UnverifiableAdmission": (
-        "Unavailable evidence retains its named dependency without inventing it."
-    ),
-    "#/$defs/UnverifiableAdmission/properties/verdict": (
-        "A named unavailable artifact prevents a buildability judgment."
-    ),
-    "#/$defs/UnverifiableAdmission/properties/issueId": ISSUE_ID,
-    "#/$defs/UnverifiableAdmission/properties/evidence": EVIDENCE,
-    "#/$defs/UnverifiableAdmission/properties/findings": FINDINGS,
-    "#/$defs/UnverifiableAdmission/properties/missingArtifact": (
-        "The actual unavailable artifact needed to assess the current issue."
-    ),
-    "#/$defs/UnverifiableAdmission/properties/pendingBlockerId": (
-        "Existing native blocker identity owning the unavailable artifact; never "
-        "invent one."
-    ),
+    "discriminator": {
+        "mapping": {
+            "buildable": "#/$defs/BuildableAdmission",
+            "not_buildable": "#/$defs/RefusedAdmission",
+            "unverifiable": "#/$defs/UnverifiableAdmission",
+        },
+        "propertyName": "verdict",
+    },
+    "oneOf": [
+        {
+            "$ref": "#/$defs/BuildableAdmission",
+        },
+        {
+            "$ref": "#/$defs/RefusedAdmission",
+        },
+        {
+            "$ref": "#/$defs/UnverifiableAdmission",
+        },
+    ],
+    "title": "AdmissionJudgment",
 }
 
-#: The refusal-kind description's path, where the halt would be licensed.
+#: The refusal kind's property path, where the halt would be licensed.
 REFUSAL_KIND_PATH = "#/$defs/RefusedAdmission/properties/refusalKind"
 
 #: The halt, licensed in each ordinary place of the rendered judge prompt,
@@ -328,8 +543,19 @@ HALT_BRANCHED: dict[str, tuple[str, str]] = {
     ),
 }
 
-#: The halt, licensed in the judge's output schema instead of its prompt.
+#: The halt, licensed in the judge's output schema instead of its prompt,
+#: as ``keyword -> value`` added to the refusal kind's property: appended
+#: to its description, or set as a title, an example or a default.
 SCHEMA_HALT = f" A misplaced issue is a {HUMAN_DECISION}."
+SCHEMA_HALTS: dict[str, object] = {
+    "description": (
+        "Whether re-authoring can repair the specification gap or a human "
+        f"must settle the choice.{SCHEMA_HALT}"
+    ),
+    "title": f"A misplaced issue is a {HUMAN_DECISION}",
+    "examples": [f"{HUMAN_DECISION} (a misplaced issue is a {HUMAN_DECISION})"],
+    "default": HUMAN_DECISION,
+}
 
 
 def member_files(set_name: str) -> list[str]:
@@ -350,25 +576,29 @@ def judge_paragraphs(rendered: str) -> tuple[str, ...]:
     return tuple(prose(block) for block in rendered.split("\n\n") if block.strip())
 
 
-def schema_descriptions(node: object, path: str = "#") -> dict[str, str]:
-    """Every ``description`` string in a JSON schema, keyed by its path.
+def schema_leaves(node: object, path: str = "#") -> dict[str, object]:
+    """Every leaf of a JSON schema, keyed by its path: the whole schema.
 
-    Walks the schema's own nested mappings and lists, which are finite and
-    hold no cycle (a ``$ref`` is a string), so the walk ends. A property
-    that happens to be named ``description`` is a mapping, not a string,
-    and is walked into rather than read.
+    A leaf is a value that holds no further value: a string, a number, a
+    boolean, null, or an empty mapping or list. Every key the schema holds
+    is a step of some leaf's path (escaped as a JSON pointer escapes it),
+    so two schemas with the same leaves hold the same keys and values, and
+    a keyword added anywhere — a title, an example, a default — is a new
+    path. Walks the schema's own nested mappings and lists, which are
+    finite and hold no cycle (a ``$ref`` is a string), so the walk ends.
     """
-    found: dict[str, str] = {}
-    if isinstance(node, dict):
+    if isinstance(node, dict) and node:
+        found: dict[str, object] = {}
         for key, value in node.items():
-            if key == "description" and isinstance(value, str):
-                found[path] = value
-            else:
-                found.update(schema_descriptions(value, f"{path}/{key}"))
-    elif isinstance(node, list):
+            step = str(key).replace("~", "~0").replace("/", "~1")
+            found.update(schema_leaves(value, f"{path}/{step}"))
+        return found
+    if isinstance(node, list) and node:
+        found = {}
         for index, value in enumerate(node):
-            found.update(schema_descriptions(value, f"{path}/{index}"))
-    return found
+            found.update(schema_leaves(value, f"{path}/{index}"))
+        return found
+    return {path: node}
 
 
 def lens_prompts() -> dict[str, str]:
@@ -456,9 +686,11 @@ def test_the_judge_names_misplacement_as_a_repairable_gap() -> None:
     operation binds, including the branches the fixed case leaves false.
     The render of the fixed case is checked to start from exactly this
     text. Second, that render, which is what the example deployment
-    actually sends. Third, every ``description`` of the structured-output
-    schema the session is handed (``ORGANIZE_ADMISSION_SCHEMA``, the object
-    the organize chain passes as its output schema), keyed by its path. The
+    actually sends. Third, the whole structured-output schema the session
+    is handed (``ORGANIZE_ADMISSION_SCHEMA``, the object the organize chain
+    passes as its output schema): every leaf keyed by its path, so every
+    title, description, example, default, enum value, const, pattern and
+    required entry, and every keyword present at all. The
     two sentences that decide the route — the one that keeps the two
     refusal kinds apart and the one that applies it to a misplacement — are
     each whole inside the template and the render.
@@ -481,9 +713,7 @@ def test_the_judge_names_misplacement_as_a_repairable_gap() -> None:
     assert CLASSIFYING_SENTENCE in JUDGE_PROMPT[1]
     assert JUDGE_PROMPT[2].endswith(MISPLACEMENT_SENTENCE)
     assert organize_chain.ORGANIZE_ADMISSION_SCHEMA is ORGANIZE_ADMISSION_SCHEMA
-    assert schema_descriptions(ORGANIZE_ADMISSION_SCHEMA) == (
-        ADMISSION_SCHEMA_DESCRIPTIONS
-    )
+    assert schema_leaves(ORGANIZE_ADMISSION_SCHEMA) == schema_leaves(ADMISSION_SCHEMA)
 
 
 def test_the_template_pin_refuses_a_halt_licensed_in_a_branch() -> None:
@@ -508,19 +738,32 @@ def test_the_template_pin_refuses_a_halt_licensed_in_a_branch() -> None:
 
 
 def test_the_schema_pin_refuses_a_halt_licensed_in_a_description() -> None:
-    """The control for the schema pin: the halt in the refusal kind's text.
+    """The control for the schema pin: the halt anywhere on the refusal kind.
 
-    The sentence is appended to the refusal kind's description in a copy of
-    the shipped schema and read through the same function the pin reads.
-    The walk is checked to reach that description at all, and to read
-    every description the register holds, so it is not narrowed.
+    Each case sets one keyword of the refusal kind's property, in a copy of
+    the shipped schema, and reads it through the same function the pin
+    reads: the halt appended to its description, or set as its title, an
+    example or a default. The walk is checked to reach the planted value
+    at its own path, and the register to hold the shipped description, so
+    neither side of the pin is narrowed.
     """
-    planted = copy.deepcopy(ORGANIZE_ADMISSION_SCHEMA)
-    kind = planted["$defs"]["RefusedAdmission"]["properties"]["refusalKind"]
-    kind["description"] += SCHEMA_HALT
-    assert REFUSAL_KIND_PATH in ADMISSION_SCHEMA_DESCRIPTIONS
-    assert schema_descriptions(planted) != ADMISSION_SCHEMA_DESCRIPTIONS
-    assert schema_descriptions(planted)[REFUSAL_KIND_PATH].endswith(SCHEMA_HALT)
+    register = schema_leaves(ADMISSION_SCHEMA)
+    assert register[f"{REFUSAL_KIND_PATH}/description"] == (
+        "Whether re-authoring can repair the specification gap or a human must "
+        "settle the choice."
+    )
+    assert SCHEMA_HALTS
+    for keyword, value in SCHEMA_HALTS.items():
+        planted = copy.deepcopy(ORGANIZE_ADMISSION_SCHEMA)
+        planted["$defs"]["RefusedAdmission"]["properties"]["refusalKind"][keyword] = (
+            value
+        )
+        leaves = schema_leaves(planted)
+        assert leaves != register, keyword
+        assert HUMAN_DECISION in str(
+            leaves.get(f"{REFUSAL_KIND_PATH}/{keyword}")
+            or leaves.get(f"{REFUSAL_KIND_PATH}/{keyword}/0")
+        ), keyword
 
 
 def test_the_judge_prompt_pin_refuses_a_halt_licensed_anywhere_in_the_render() -> None:
