@@ -14,6 +14,22 @@ vocabulary must live in — the port, the error, the adapters that implement
 the port, and the preflight itself — and each of those is derived from the
 production object that defines it.
 
+The handler check is "no handler lets it continue", not "no ``try`` encloses
+it", because the composition root's lifespan has one failure path around
+every boot act (``main.py``'s outer ``try`` and its ``except BaseException``):
+it binds the failure, unwinds what boot acquired, and raises the failure
+again, which
+``tests/test_lifespan_cleanup.py::test_partial_startup_releases_every_resource_it_acquired[preflight]``
+shows for a failing preflight.  So a handler around the preflight is allowed
+exactly when it carries the failure out, on Python's own rule: ``except …
+as name`` unbinds ``name`` when the handler ends, so the handler carries the
+failure only if its last statement is an unconditional ``raise`` (bare, or
+of the bound name or an alias of it), or if it unconditionally assigns the
+exception to another name that a ``raise`` in the enclosing function names.
+A ``raise`` under a condition, a loop or a ``try`` inside the handler is a
+path that does not raise.  ``except*`` is a handler too, and a ``with``
+over ``suppress`` is a handler that never raises.
+
 The walk is textual and executes nothing, which is what lets it speak for the
 whole tree.  Its blind spots, which review has to read from the code instead:
 a probe reached through ``getattr`` with a computed name, and a refusal
@@ -22,6 +38,7 @@ without naming either the probe or the error.
 """
 
 import ast
+import contextlib
 import sys
 from pathlib import Path
 
@@ -63,6 +80,14 @@ ADAPTERS = "adapters/"
 ROOT_MODULE = "main.py"
 
 DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+#: A ``try`` and an ``except*`` both hold handlers.
+TRIES = (ast.Try, ast.TryStar)
+WITHS = (ast.With, ast.AsyncWith)
+#: The context manager that swallows what it names, by its own name.
+SUPPRESS = contextlib.suppress.__name__
+
+Guard = ast.Try | ast.TryStar | ast.With | ast.AsyncWith
 
 
 def called_name(node: ast.Call) -> str | None:
@@ -112,50 +137,111 @@ def names(tree: ast.AST) -> frozenset[str]:
     return frozenset(found)
 
 
-def handled_calls(tree: ast.AST, name: str) -> list[ast.Try]:
-    """Every ``try`` with handlers that encloses a call to *name*."""
-    enclosing: list[ast.Try] = []
+def suppresses(item: ast.withitem) -> bool:
+    """Whether this ``with`` item is a call to ``suppress``, bare or qualified."""
+    return (
+        isinstance(item.context_expr, ast.Call)
+        and called_name(item.context_expr) == SUPPRESS
+    )
+
+
+def handled_calls(tree: ast.AST, name: str) -> list[Guard]:
+    """Every handler-holding ``try``, ``except*`` or ``suppress`` around *name*.
+
+    Only the guarded body counts: a call in a handler, an ``else`` or a
+    ``finally`` is not one the guard can swallow.
+    """
+    enclosing: list[Guard] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Try) or not node.handlers:
+        if isinstance(node, TRIES) and node.handlers:
+            guarded: list[ast.stmt] = node.body
+        elif isinstance(node, WITHS) and any(suppresses(item) for item in node.items):
+            guarded = node.body
+        else:
             continue
         if any(
             isinstance(inner, ast.Call) and called_name(inner) == name
-            for guarded in node.body
-            for inner in ast.walk(guarded)
+            for statement in guarded
+            for inner in ast.walk(statement)
         ):
             enclosing.append(node)
     return enclosing
 
 
-def continues_past(handler: ast.ExceptHandler, scope: ast.AST) -> bool:
-    """Whether this handler lets the run go on with the failure unraised.
+def enclosing_function(tree: ast.AST, node: ast.AST) -> ast.AST:
+    """The innermost function holding *node*, or the module when none does."""
+    parents = {
+        id(child): parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    current = parents.get(id(node))
+    while current is not None and not isinstance(current, FUNCTIONS):
+        current = parents.get(id(current))
+    return tree if current is None else current
 
-    The failure is carried if the handler re-raises, or if what it binds the
-    exception to reaches a ``raise`` anywhere in the same scope — a boot that
-    records its failure and raises it after it has unwound is still a boot
-    that dies of it.  Anything else logs and continues.
+
+def carries(handler: ast.ExceptHandler, function: ast.AST) -> bool:
+    """Whether every path out of *handler* raises the failure it caught.
+
+    Its last statement is an unconditional ``raise`` of nothing, the bound
+    name or an alias of it; or one of its own statements assigns the
+    exception to another name, which a ``raise`` in *function* (nested
+    functions included, the handler's own conditional raises excluded)
+    names.  The bound name itself never counts past the handler, because
+    Python unbinds it when the handler ends.
     """
-    carried = {handler.name} if handler.name is not None else set()
-    for node in ast.walk(handler):
-        if isinstance(node, ast.Raise):
-            return False
-        if isinstance(node, ast.Assign) and any(
-            isinstance(value, ast.Name) and value.id in carried
-            for value in ast.walk(node.value)
-        ):
-            carried.update(
-                target.id
-                for target in ast.walk(node)
-                if isinstance(target, ast.Name) and target.ctx.__class__ is ast.Store
+    bound = {handler.name} if handler.name is not None else set()
+    aliases: set[str] = set()
+    for statement in handler.body:
+        value = statement.value if isinstance(statement, ast.Assign) else None
+        if isinstance(statement, ast.AnnAssign):
+            value = statement.value
+        if isinstance(value, ast.Name) and value.id in bound | aliases:
+            targets = (
+                statement.targets
+                if isinstance(statement, ast.Assign)
+                else [statement.target]
+                if isinstance(statement, ast.AnnAssign)
+                else []
             )
-    return not any(
+            aliases.update(
+                target.id for target in targets if isinstance(target, ast.Name)
+            )
+    last = handler.body[-1]
+    if isinstance(last, ast.Raise) and (
+        last.exc is None
+        or (isinstance(last.exc, ast.Name) and last.exc.id in bound | aliases)
+    ):
+        return True
+    inside = {id(node) for node in ast.walk(handler)}
+    return any(
         isinstance(node, ast.Raise)
-        and any(
-            isinstance(raised, ast.Name) and raised.id in carried
-            for raised in ast.walk(node)
-        )
-        for node in ast.walk(scope)
+        and id(node) not in inside
+        and isinstance(node.exc, ast.Name)
+        and node.exc.id in aliases
+        for node in ast.walk(function)
     )
+
+
+def continuing(tree: ast.AST, name: str) -> list[str]:
+    """Every guard around *name* that lets the run go on, by line.
+
+    A ``suppress`` always does; a ``try`` or ``except*`` does through any
+    handler that does not carry the failure out.
+    """
+    found: list[str] = []
+    for guard in handled_calls(tree, name):
+        if isinstance(guard, WITHS):
+            found.append(f"line {guard.lineno}: {SUPPRESS}")
+            continue
+        function = enclosing_function(tree, guard)
+        found.extend(
+            f"line {handler.lineno}: {ast.unparse(handler).splitlines()[0]}"
+            for handler in guard.handlers
+            if not carries(handler, function)
+        )
+    return found
 
 
 def module_trees() -> dict[str, ast.Module]:
@@ -222,11 +308,30 @@ def test_no_handler_lets_the_probe_or_the_boot_refusal_continue():
     trees = module_trees()
     assert handled_calls(trees[PREFLIGHT_MODULE], ASK) == []
     root = trees[ROOT_MODULE]
-    enclosing = handled_calls(root, PREFLIGHT)
-    assert enclosing
-    for guard in enclosing:
-        for handler in guard.handlers:
-            assert not continues_past(handler, root), ast.dump(handler)
+    assert handled_calls(root, PREFLIGHT)
+    assert continuing(root, PREFLIGHT) == []
+
+
+#: The lifespan's own shape around a planted guard: one failure path that
+#: binds the failure, and a nested unwind that raises it again.
+LIFESPAN = (
+    "async def lifespan(app, log, config):\n"
+    "    failure = None\n"
+    "    try:\n"
+    "{guarded}"
+    "        yield\n"
+    "    except BaseException as exc:\n"
+    "        failure = exc\n"
+    "    async def unwind():\n"
+    "        if failure is not None:\n"
+    "            raise failure\n"
+    "    await unwind()\n"
+)
+
+
+def lifespan_around(guarded: str) -> str:
+    """A lifespan whose outer failure path encloses *guarded*."""
+    return LIFESPAN.format(guarded=guarded)
 
 
 @pytest.mark.parametrize(
@@ -258,8 +363,25 @@ def test_no_handler_lets_the_probe_or_the_boot_refusal_continue():
             f"        await tracker.{ASK}(signals=signals)\n"
             "    except Exception as exc:\n"
             "        await log.awarning('capability_probe_failed', error=str(exc))\n",
-            "handler",
+            "probe",
             id="a-probe-that-logs-and-continues",
+        ),
+        pytest.param(
+            "import contextlib\n"
+            "async def preflight(tracker, signals):\n"
+            "    with contextlib.suppress(Exception):\n"
+            f"        await tracker.{ASK}(signals=signals)\n",
+            "probe",
+            id="a-probe-under-suppress",
+        ),
+        pytest.param(
+            "async def preflight(tracker, signals):\n"
+            "    try:\n"
+            f"        await tracker.{ASK}(signals=signals)\n"
+            "    except* Exception:\n"
+            "        pass\n",
+            "probe",
+            id="a-probe-under-except-star",
         ),
         pytest.param(
             "async def lifespan(app, log):\n"
@@ -268,8 +390,60 @@ def test_no_handler_lets_the_probe_or_the_boot_refusal_continue():
             "    except BaseException as exc:\n"
             "        await log.aerror('boot_failed', error=str(exc))\n"
             "    yield\n",
-            "continues",
+            "boot",
             id="a-boot-that-logs-its-refusal-and-serves",
+        ),
+        pytest.param(
+            lifespan_around(
+                "        try:\n"
+                f"            await {PREFLIGHT}(config=config)\n"
+                "        except Exception as exc:\n"
+                "            if not getattr(exc, 'refusals', None):\n"
+                "                raise\n"
+                "            await log.aerror('capability_refused', error=str(exc))\n"
+            ),
+            "boot",
+            id="a-boot-that-raises-all-but-the-refusal",
+        ),
+        pytest.param(
+            lifespan_around(
+                "        try:\n"
+                f"            await {PREFLIGHT}(config=config)\n"
+                "        except Exception as exc:\n"
+                "            if not config.http.debug:\n"
+                "                raise\n"
+                "            await log.awarning('preflight_refused', error=str(exc))\n"
+            ),
+            "boot",
+            id="a-boot-that-raises-only-outside-debug",
+        ),
+        pytest.param(
+            lifespan_around(
+                "        try:\n"
+                f"            await {PREFLIGHT}(config=config)\n"
+                "        except Exception as failure:\n"
+                "            await log.awarning('refused', error=str(failure))\n"
+            ),
+            "boot",
+            id="an-inner-handler-binding-the-raised-name-that-only-logs",
+        ),
+        pytest.param(
+            lifespan_around(
+                "        with contextlib.suppress(Exception):\n"
+                f"            await {PREFLIGHT}(config=config)\n"
+            ),
+            "boot",
+            id="a-boot-under-suppress",
+        ),
+        pytest.param(
+            lifespan_around(
+                "        try:\n"
+                f"            await {PREFLIGHT}(config=config)\n"
+                "        except* Exception:\n"
+                "            pass\n"
+            ),
+            "boot",
+            id="a-boot-under-except-star",
         ),
     ],
 )
@@ -279,8 +453,42 @@ def test_each_detector_reports_a_planted_site(body, detector):
         assert call_sites(tree, ASK)
     elif detector == "name":
         assert {ASK, ABORT} & names(tree)
-    elif detector == "handler":
+    elif detector == "probe":
         assert handled_calls(tree, ASK)
+        assert continuing(tree, ASK)
     else:
-        [guard] = handled_calls(tree, PREFLIGHT)
-        assert any(continues_past(handler, tree) for handler in guard.handlers)
+        assert continuing(tree, PREFLIGHT)
+
+
+@pytest.mark.parametrize(
+    "guarded",
+    [
+        pytest.param(f"        await {PREFLIGHT}(config=config)\n", id="unguarded"),
+        pytest.param(
+            "        try:\n"
+            f"            await {PREFLIGHT}(config=config)\n"
+            "        except Exception as exc:\n"
+            "            await log.aerror('preflight_failed', error=str(exc))\n"
+            "            raise\n",
+            id="logs-then-re-raises",
+        ),
+        pytest.param(
+            "        try:\n"
+            f"            await {PREFLIGHT}(config=config)\n"
+            "        except Exception as exc:\n"
+            "            refused = exc\n"
+            "            raise refused\n",
+            id="raises-an-alias",
+        ),
+    ],
+)
+def test_a_boot_that_carries_its_refusal_out_is_not_reported(guarded):
+    """The lifespan's own shape passes: a handler that carries the failure.
+
+    The outer failure path binds the failure to a name its nested unwind
+    raises, and an inner handler that ends in an unconditional raise carries
+    it too; neither is a boot that runs past its refusal.
+    """
+    tree = ast.parse(lifespan_around(guarded))
+    assert handled_calls(tree, PREFLIGHT)
+    assert continuing(tree, PREFLIGHT) == []
