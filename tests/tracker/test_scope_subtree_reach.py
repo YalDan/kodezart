@@ -662,6 +662,13 @@ def test_every_filter_reason_is_stated_in_its_filters_own_terms() -> None:
         "other_milestone",
         "no_milestone",
     }
+    # And each spelling under its own member, so two swapped values fail.
+    assert {reason.name: reason.value for reason in UnreachableReason} == {
+        "OTHER_PROJECT": "other_project",
+        "NO_PROJECT": "no_project",
+        "OTHER_MILESTONE": "other_milestone",
+        "NO_MILESTONE": "no_milestone",
+    }
 
 
 def test_an_issue_scope_that_omits_an_open_criterion_refuses() -> None:
