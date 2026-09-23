@@ -109,7 +109,7 @@ from tests.identity_guards import _constructor_names
 from tests.name_resolution import (
     Bindings,
     bindings,
-    denoted,
+    denoted_objects,
     module_namespace,
     referencing_definitions,
 )
@@ -573,7 +573,7 @@ def _flag_value(
     """The ``re`` flags an expression is worth, by value.
 
     An int constant is itself; ``|`` and ``+`` are folded over what their
-    sides are worth; a name or an attribute is read through ``denoted`` —
+    sides are worth; a name or an attribute is read through ``denoted_objects`` —
     the module's globals, its import bindings and its locals — to the flag
     value it is bound to, so ``re.I``, a module-level ``_FLAGS`` and a local
     bound to a flag are each their value; and a name bound to a combination
@@ -589,7 +589,7 @@ def _flag_value(
         return value if isinstance(value, int) and not isinstance(value, bool) else 0
     values = [
         int(value)
-        for value in denoted(node, bound)
+        for value in denoted_objects(node, bound)
         if isinstance(value, int) and not isinstance(value, bool)
     ]
     if values:

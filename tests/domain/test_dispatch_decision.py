@@ -194,7 +194,7 @@ from tests.name_resolution import (
     compiled_def,
     home,
     in_package,
-    references,
+    live_references,
     unwrapped,
     written_methods,
 )
@@ -247,7 +247,7 @@ def reached(starts: Iterable[types.FunctionType]) -> tuple[types.FunctionType, .
     while True:
         before = len(path)
         for function in tuple(path.values()):
-            for value in map(unwrapped, references(function).values()):
+            for value in map(unwrapped, live_references(function).values()):
                 if isinstance(value, types.FunctionType) and in_package(value):
                     path.setdefault(id(value), value)
                 elif isinstance(value, type) and in_package(value):
@@ -277,7 +277,7 @@ def field_reads(
     known = frozenset(fields)
     homes: dict[str, set[str]] = {}
     for function in functions:
-        resolved = references(function)
+        resolved = live_references(function)
         for node in ast.walk(compiled_def(function)):
             name = None
             if isinstance(node, ast.Attribute):
@@ -310,7 +310,7 @@ def label_reads(
 
     homes: dict[str, set[str]] = {}
     for function in functions:
-        resolved = references(function)
+        resolved = live_references(function)
         for node in ast.walk(compiled_def(function)):
             labels: set[str] = set()
             if isinstance(node, ast.Compare) and any(
@@ -1041,14 +1041,14 @@ def test_the_scope_register_is_read_from_the_code() -> None:
     """
     assert set(SCOPE_SELECTION) <= set(SCOPE_PATH)
     assert read_scope_ready in map(
-        unwrapped, references(ScopeWorkflowEngine.run).values()
+        unwrapped, live_references(ScopeWorkflowEngine.run).values()
     )
     assert ScopeWorkflowEngine._select in written_methods(ScopeWorkflowEngine)
     assert resolve_execution_approval in map(
-        unwrapped, references(LinearMcpTracker._read_execution_approval).values()
+        unwrapped, live_references(LinearMcpTracker._read_execution_approval).values()
     )
     assert require_fire_entry in map(
-        unwrapped, references(LinearMcpTracker.read_fire_subject).values()
+        unwrapped, live_references(LinearMcpTracker.read_fire_subject).values()
     )
     assert RANK_INPUTS <= set(SCOPE_FIELD_READS)
     assert SCOPE_ELIGIBILITY_INPUTS

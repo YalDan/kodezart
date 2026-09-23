@@ -129,10 +129,10 @@ from tests.name_resolution import (
     definitions,
     home,
     in_package,
+    live_references,
     package_functions,
     parsed,
     planted_module,
-    references,
     resolve,
     source_tree,
     unwrapped,
@@ -746,14 +746,16 @@ def dispatch_path(
     """
     row = row_type(start)
     reached = {
-        id(function): {id(unwrapped(value)) for value in references(function).values()}
+        id(function): {
+            id(unwrapped(value)) for value in live_references(function).values()
+        }
         for function in functions
     }
     path: dict[int, types.FunctionType] = {id(start): start}
     while True:
         before = len(path)
         for function in tuple(path.values()):
-            for value in map(unwrapped, references(function).values()):
+            for value in map(unwrapped, live_references(function).values()):
                 if isinstance(value, types.FunctionType) and in_package(value):
                     path.setdefault(id(value), value)
                 elif isinstance(value, type) and in_package(value):
@@ -792,7 +794,8 @@ def executed(function: types.FunctionType) -> Executed:
         decorators=tuple(ast.unparse(decorator) for decorator in made.decorator_list),
         body=body_text(made),
         reads={
-            spelling: home(value) for spelling, value in references(function).items()
+            spelling: home(value)
+            for spelling, value in live_references(function).items()
         },
     )
 

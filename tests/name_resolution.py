@@ -23,7 +23,7 @@ that needs it imports it from there.
 The last group of functions resolves by object rather than by spelling: they
 read live functions — the ``def`` a code object was compiled from, and what
 each of its reads resolves to in the namespace it runs in — so they import
-what they read. Their own limits are stated on :func:`references`.
+what they read. Their own limits are stated on :func:`live_references`.
 
 Blind spots, stated once: a tuple-unpacking target binds nothing here, a
 starred argument lands on no parameter, and a string constant is a value,
@@ -39,7 +39,7 @@ module receiver — ``from . import b``, then ``b._own_text(spec)`` — spells n
 module of the tree and takes the every-method rule; no module under the
 package writes either form.
 
-``named_object``, ``module_namespace``, ``denoted``, ``loaded_values`` and
+``named_object``, ``module_namespace``, ``denoted_objects``, ``loaded_values`` and
 ``referencing_definitions`` resolve by the object instead of by the word: a
 string constant naming one, a literal name read as an attribute
 (``getattr``, ``operator.attrgetter``, ``vars`` and ``__dict__``) and a local
@@ -48,6 +48,7 @@ assigned inside the definition included, and each states its own reach.
 
 import ast
 import builtins
+import dataclasses
 import dis
 import functools
 import importlib
@@ -62,7 +63,7 @@ import re
 import sys
 import types
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import get_args
 
@@ -624,7 +625,7 @@ def _local_imports(node: ast.AST) -> dict[str, object]:
     return bound
 
 
-def references(function: types.FunctionType) -> dict[str, object]:
+def live_references(function: types.FunctionType) -> dict[str, object]:
     """Spelling -> the object each read of *function* resolves to, live.
 
     Read off the ``def`` its code was compiled from and resolved in the
@@ -1116,7 +1117,7 @@ class Bindings:
 
     namespace: Mapping[str, object]
     imported: Mapping[str, list[object]]
-    assigned: Mapping[str, list[ast.expr]] = field(default_factory=dict)
+    assigned: Mapping[str, list[ast.expr]] = dataclasses.field(default_factory=dict)
 
 
 def bindings(
@@ -1166,7 +1167,7 @@ def _named(name: str, bound: Bindings, following: frozenset[str]) -> list[object
     found.extend(bound.imported.get(name, ()))
     if name not in following:
         for value in bound.assigned.get(name, ()):
-            found.extend(denoted(value, bound, following | {name}))
+            found.extend(denoted_objects(value, bound, following | {name}))
     if not (
         name in bound.namespace or name in bound.imported or name in bound.assigned
     ):
@@ -1184,13 +1185,13 @@ def _looked_up(
         return []
     holder = node.value
     if isinstance(holder, ast.Attribute) and holder.attr == "__dict__":
-        receivers = denoted(holder.value, bound, following)
+        receivers = denoted_objects(holder.value, bound, following)
     elif (
         isinstance(holder, ast.Call)
         and len(holder.args) == 1
-        and _one_of(denoted(holder.func, bound, following), builtins.vars)
+        and _one_of(denoted_objects(holder.func, bound, following), builtins.vars)
     ):
-        receivers = denoted(holder.args[0], bound, following)
+        receivers = denoted_objects(holder.args[0], bound, following)
     else:
         return []
     return [
@@ -1200,7 +1201,9 @@ def _looked_up(
     ]
 
 
-def _called(call: ast.Call, bound: Bindings, following: frozenset[str]) -> list[object]:
+def _called_objects(
+    call: ast.Call, bound: Bindings, following: frozenset[str]
+) -> list[object]:
     """What a call denotes: a named object it is handed, or a literal name it reads."""
     found: list[object] = []
     for argument in (*call.args, *(keyword.value for keyword in call.keywords)):
@@ -1209,24 +1212,24 @@ def _called(call: ast.Call, bound: Bindings, following: frozenset[str]) -> list[
             if named is not None:
                 found.append(named)
     if (
-        _one_of(denoted(call.func, bound, following), builtins.getattr)
+        _one_of(denoted_objects(call.func, bound, following), builtins.getattr)
         and len(call.args) >= 2
         and isinstance(call.args[1], ast.Constant)
         and isinstance(call.args[1].value, str)
     ):
-        for receiver in denoted(call.args[0], bound, following):
+        for receiver in denoted_objects(call.args[0], bound, following):
             found.extend(_attribute_path(receiver, call.args[1].value))
     if isinstance(call.func, ast.Call) and _one_of(
-        denoted(call.func.func, bound, following), operator.attrgetter
+        denoted_objects(call.func.func, bound, following), operator.attrgetter
     ):
         for argument in call.args:
-            for receiver in denoted(argument, bound, following):
+            for receiver in denoted_objects(argument, bound, following):
                 for path in _literal_names(call.func):
                     found.extend(_attribute_path(receiver, path))
     return found
 
 
-def denoted(
+def denoted_objects(
     node: ast.expr, bound: Bindings, following: frozenset[str] = frozenset()
 ) -> tuple[object, ...]:
     """Every object an expression can denote under *bound*, and their stand-ins.
@@ -1256,7 +1259,7 @@ def denoted(
     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
         candidates.extend(_named(node.id, bound, following))
     elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
-        for receiver in denoted(node.value, bound, following):
+        for receiver in denoted_objects(node.value, bound, following):
             candidates.extend(_attribute_path(receiver, node.attr))
     elif isinstance(node, ast.Constant) and isinstance(node.value, str):
         named = named_object(node.value)
@@ -1265,7 +1268,7 @@ def denoted(
     elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
         candidates.extend(_looked_up(node, bound, following))
     elif isinstance(node, ast.Call):
-        candidates.extend(_called(node, bound, following))
+        candidates.extend(_called_objects(node, bound, following))
     return tuple(found for value in candidates for found in _unwrapped(value))
 
 
@@ -1278,7 +1281,7 @@ def loaded_values(
     """Every object a loaded name or attribute inside *within* can denote.
 
     Read the way ``referencing_definitions`` reads a reference
-    (``denoted``): a name through the module's globals, through every import
+    (``denoted_objects``): a name through the module's globals, through every import
     anywhere in *tree* that binds it and through every assignment inside
     *within* that binds it, an attribute through each object its receiver
     denotes.  So a constant a name is bound to — in this module, in the
@@ -1295,7 +1298,7 @@ def loaded_values(
         value
         for node in ast.walk(within)
         if isinstance(node, ast.Name | ast.Attribute) and isinstance(node.ctx, ast.Load)
-        for value in denoted(node, bound)
+        for value in denoted_objects(node, bound)
     )
 
 
@@ -1309,7 +1312,7 @@ def referencing_definitions(
     """Every definition of *tree* whose text refers to one of *wanted*, by identity.
 
     ``(dotted definition, its node)``.  A reference is any expression that
-    denotes the object itself (``denoted``), called or not: a name the
+    denotes the object itself (``denoted_objects``), called or not: a name the
     module's globals or an import anywhere in it binds to the object (an
     aliased import, an import inside a function, a module-level rebinding, a
     re-export), a local assigned inside the definition from any such
@@ -1355,7 +1358,7 @@ def referencing_definitions(
     def walk(node: ast.AST, scopes: tuple[_Scope, ...], bound: Bindings) -> None:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.expr) and any(
-                id(value) in targets for value in denoted(child, bound)
+                id(value) in targets for value in denoted_objects(child, bound)
             ):
                 record(scopes)
             inner, within = scopes, bound
