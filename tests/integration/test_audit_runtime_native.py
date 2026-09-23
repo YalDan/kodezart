@@ -303,9 +303,13 @@ def native_operation(repo_url, *, trunk="ordinary-name"):
 
 
 async def build_native_audit(
-    repository, server, tmp_path, *, gate, trunk="ordinary-name"
+    repository, server, tmp_path, *, gate, trunk="ordinary-name", ci=None
 ):
-    """The composed audit over the native doubles, under the supplied gate."""
+    """The composed audit over the native doubles, under the supplied gate.
+
+    *ci* replaces the checks double, which otherwise answers green at the
+    head and has no run at any other commit.
+    """
     remote, _author, _observer, _prior, head = repository
     operation = native_operation(remote.as_uri(), trunk=trunk)
     server._comment_clock = lambda: FIXTURE_NOW
@@ -346,7 +350,7 @@ async def build_native_audit(
             )
         }
     )
-    ci = FakeCIMonitor(
+    ci = ci or FakeCIMonitor(
         observed_sha_by_ref={head: head}, check_names=frozenset({"test"})
     )
     config = AppConfig(
@@ -892,6 +896,75 @@ async def test_a_refutation_whose_mandate_hunt_fails_leaves_the_audit_run_incomp
     assert [row.verdict for row in raw] == [AuditVerdict.REFUTED]
     assert raw[0].branch_head is None
     assert terminal_records(server) == []
+
+
+@pytest.mark.parametrize("arm", ["restamp", "forge"])
+async def test_a_lapse_whose_mandate_hunt_fails_leaves_the_audit_run_incomplete(
+    repository, server, tmp_path, arm
+):
+    """A lapsed criterion whose refutation lost its hunt is refused, not deferred.
+
+    CHILD's grading is behind the head, which alone defers it.  Here it also
+    carries a refutation, the restamp trace or the forge reading at its
+    graded commit, whose mandate hunt failed, so the refutation stands with
+    no mandate verdict.  The runtime refuses CHILD on that reason and the
+    tick ends incomplete, with no deferral recorded for it.
+    """
+    from kodezart.domain.errors import AgentSDKError
+    from kodezart.types.domain.audit_forge import AuditForgeObservation
+
+    _remote, _author, _observer, prior, head = repository
+    red = FakeCIMonitor(
+        passed=False,
+        failed_names=frozenset({"test"}),
+        observed_sha_by_ref={head: head, prior: prior},
+        check_names=frozenset({"test"}),
+    )
+    audit, executor, server, tracker, *_ = await build_native_audit(
+        repository,
+        server,
+        tmp_path,
+        gate=PassThroughGate(),
+        ci=red if arm == "forge" else None,
+    )
+    server.issues[CHILD].description = criterion_body(
+        check=BASE_CHECK, graded_sha=prior
+    )
+    if arm == "restamp":
+        await tracker.post_run_event(
+            issue_key=ROOT,
+            event=LaneRunEvent(
+                kind=RunEventKind.CRITERION_REFUTED,
+                lane_key=LANE_KEY,
+                subject_key=CHILD,
+                graded_sha=head,
+            ),
+        )
+    session = executor.stream
+
+    async def stream(**kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+            raise AgentSDKError(
+                "lapse mandate session unavailable", error_kind="fixture"
+            )
+        async for event in session(**kwargs):
+            yield event
+
+    executor.stream = stream
+    with pytest.raises(AuditRunIncompleteError) as incomplete:
+        await audit.run(FIXTURE_NOW)
+
+    scope = incomplete.value.report.scopes[0]
+    assert [
+        row.subject.key
+        for row in scope.unavailable
+        if "lapse mandate session unavailable" in row.reason
+    ] == [CHILD], [row.model_dump() for row in scope.unavailable]
+    assert CHILD not in {row.subject.key for row in scope.deferred}
+    raw = AuditRestampTrace if arm == "restamp" else AuditForgeObservation
+    assert [row.verdict for row in scope.raw_observations if isinstance(row, raw)] == [
+        AuditVerdict.REFUTED
+    ]
 
 
 async def test_executor_programming_failure_escapes_the_native_owner(native_audit):

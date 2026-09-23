@@ -160,6 +160,33 @@ def _accept_own_write(
     return current
 
 
+def _unmandated_refutations(observation: AuditReadObservation) -> tuple[str, ...]:
+    """Why a lapsed observation's refutations stand without a mandate verdict.
+
+    A lapse still traces its restamp and reads its forge checks at the
+    graded commit, and each REFUTED reading there is hunted.  One whose hunt
+    failed carries the raw refutation beside the reason and no report, and
+    that is a refutation emitted without its mandate verdict, not a grading
+    behind the head.  A reason with no refutation beside it is not one.
+    """
+    reasons: list[str] = []
+    if (
+        observation.restamp is not None
+        and observation.restamp.verdict is AuditVerdict.REFUTED
+        and observation.restamp_report is None
+        and observation.unavailable_reason is not None
+    ):
+        reasons.append(observation.unavailable_reason)
+    if (
+        observation.forge is not None
+        and observation.forge.verdict is AuditVerdict.REFUTED
+        and observation.forge_report is None
+        and observation.forge_unavailable_reason is not None
+    ):
+        reasons.append(observation.forge_unavailable_reason)
+    return tuple(reasons)
+
+
 def _reports(observation: AuditReadObservation) -> tuple[AuditPublication, ...]:
     found: list[AuditPublication] = []
     if observation.claim is not None:
@@ -372,6 +399,14 @@ class AuditScheduledPass:
                         observation.evidence is not None
                         and observation.evidence.is_lapse
                     ):
+                        # A refutation the lapse carries whose mandate hunt
+                        # failed is refused first: it stands with no mandate
+                        # verdict, so the tick cannot report coverage (KOD-516).
+                        unmandated = _unmandated_refutations(observation)
+                        for why in unmandated:
+                            refuse(subject, why)
+                        if unmandated:
+                            continue
                         # A grading behind the head is the member's own state
                         # saying its claim was made about another commit. It
                         # is decided before the side arms are read, because
