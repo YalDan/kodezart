@@ -1157,6 +1157,86 @@ async def test_the_completion_node_emits_exactly_the_terminal_for_every_native_s
     assert criteria.asked == [native_spec()] * driven
 
 
+#: The completion node and every function its event construction calls,
+#: each with the sha256 of its source text, as they stood when the site was
+#: closed — the way :data:`EGRESS_PATH` pins the path.  The drive above runs
+#: the node over the states it builds; a branch keyed on a state no drive
+#: builds moves a digest here instead, and is made in the commit that
+#: updates the table, which is the review this pin exists to force.  Held
+#: equal to the set derived from the node's own source.
+CONSTRUCTION_SITE: dict[Callable[..., object], str] = {
+    RalphWorkflowEngine._complete_node: (
+        "7dd54a7fdcefc307cae72a65ac8112f18f20a1d7593435886048101486b1346f"
+    ),
+    gate_cleared: "d946d1754e3e827be61ef888723ad0fa88ef5ef5845e4c48409c76ac905426f3",
+    classify_outcome: (
+        "d6bb8236eee686089a804e475ec56791712d7242887343223a6b0656aedb0f35"
+    ),
+}
+
+
+def event_builders(node: Callable[..., object]) -> set[Callable[..., object]]:
+    """Every function *node*'s source calls to build the event it hands the writer.
+
+    By object: the one call handed to the writer is held to be a call of
+    the name ``WorkflowCompleteEvent`` — no conditional expression, no
+    other callable — and every call inside its arguments is of a bare name,
+    resolved in the node's module after import to a function.  Bounded by
+    the node's syntax tree.
+    """
+    module = inspect.getmodule(node)
+    assert module is not None
+    tree = ast.parse(textwrap.dedent(inspect.getsource(node)))
+    handed = [
+        call.args
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == "writer"
+    ]
+    assert len(handed) == 1
+    (event,) = handed[0]
+    assert isinstance(event, ast.Call)
+    assert isinstance(event.func, ast.Name) and event.func.id == "WorkflowCompleteEvent"
+    assert vars(module)["WorkflowCompleteEvent"] is WorkflowCompleteEvent
+    names: set[str] = set()
+    for call in ast.walk(event):
+        if isinstance(call, ast.Call) and call is not event:
+            assert isinstance(call.func, ast.Name), ast.dump(call.func)
+            names.add(call.func.id)
+    found = {vars(module)[name] for name in names}
+    assert all(inspect.isfunction(builder) for builder in found)
+    return found
+
+
+def test_the_completion_node_s_construction_site_is_closed_by_object() -> None:
+    """The node's source, its builders' source and the graph's binding, by object.
+
+    The drive above runs the node over the states it builds.  A branch on
+    a state no drive builds is caught here instead, by pinning the text:
+    the node's own source and the source of every function its event
+    construction calls — derived from the node's syntax tree and resolved
+    in its module — are held to their digests, so ANY change to them is
+    made in the commit that updates the table.  The event handed to the
+    writer is one call of ``WorkflowCompleteEvent`` by name, with no
+    conditional expression.  And the compiled tracker-native graph's
+    ``complete`` node is bound to that very method, the engine's own bound
+    ``RalphWorkflowEngine._complete_node``, so a graph pointed at another
+    callable reds here.
+    """
+    node = RalphWorkflowEngine._complete_node
+    assert CONSTRUCTION_SITE != {}
+    assert {node, *event_builders(node)} == set(CONSTRUCTION_SITE)
+    assert {site: source_digest(site) for site in CONSTRUCTION_SITE} == (
+        CONSTRUCTION_SITE
+    )
+    engine = fire(criteria=HeldCriteria())
+    assert engine.native_graph is not None
+    bound = node_binding(engine.native_graph, "complete")
+    assert bound.__func__ is node
+    assert bound.__self__ is engine
+
+
 #: What a class may define to be rendered some other way than by its
 #: fields: pydantic's own entry points, which ``BaseModel`` defines and a
 #: model overrides by defining one of its own, and the two hooks through
