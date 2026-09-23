@@ -152,32 +152,69 @@ def test_each_consumed_symbol_is_defined_exactly_once(module: str, name: str) ->
     assert qualified_sites(scanned_sources(), name) == [(module, name)]
 
 
-def test_the_configured_convergence_bound_is_declared_once_and_read_in_the_loop() -> (
-    None
-):
-    """The bound is one annotated field, and only the loop it bounds reads it."""
-    trees = scanned_sources()
-    annotations = [
-        f"{module}:{node.lineno}"
-        for module, tree in trees.items()
-        for node in ast.walk(tree)
-        if isinstance(node, ast.AnnAssign)
-        and isinstance(node.target, ast.Name)
-        and node.target.id == BOUND
-    ]
-    assert annotations == ["types/domain/organize_owner.py:159"], annotations
-    reads = [
+def bound_reads(trees: dict[str, ast.Module]) -> list[tuple[str, str, int]]:
+    """Every read of the bound: an attribute access, or ``getattr`` by name."""
+    return [
         (module, scope_of(tree, node), node.lineno)
         for module, tree in trees.items()
         for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute) and node.attr == BOUND
+        if (isinstance(node, ast.Attribute) and node.attr == BOUND)
+        or (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == BOUND
+        )
     ]
+
+
+def test_the_configured_convergence_bound_is_declared_once_and_read_in_the_loop() -> (
+    None
+):
+    """The bound is one field of the policy, and only the loop it bounds reads it."""
+    trees = scanned_sources()
+    assert qualified_sites(trees, BOUND) == [(CAUSES, f"OrganizePolicy.{BOUND}")], (
+        qualified_sites(trees, BOUND)
+    )
+    reads = bound_reads(trees)
     assert {(module, scope) for module, scope, _ in reads} == {
         ("services/organize_owner.py", LOOP)
     }, reads
     # Two readings, both the loop's own: the bound it iterates to, and the
     # value the exhaustion evidence reports. A third would be a second loop.
     assert len(reads) == 2, reads
+
+
+def test_the_scope_a_node_sits_in_is_its_innermost_definition() -> None:
+    """The control for ``scope_of``: a sibling, a nested function, the module."""
+    source = (
+        "class OrganizeOwner:\n"
+        "    async def _converge(self):\n"
+        "        def inner():\n"
+        "            return self._policy.max_convergence_rounds\n"
+        "\n"
+        "    async def _sibling(self):\n"
+        "        await self._halt(cause=None)\n"
+        "\n"
+        "\n"
+        "rounds = getattr(policy, 'max_convergence_rounds')\n"
+    )
+    trees = {"planted.py": ast.parse(source)}
+    tree = trees["planted.py"]
+    halts = [
+        scope_of(tree, node)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "_halt"
+    ]
+    assert halts == ["OrganizeOwner._sibling"]
+    assert sorted(bound_reads(trees)) == [
+        ("planted.py", "", 10),
+        ("planted.py", "OrganizeOwner._converge.inner", 4),
+    ]
 
 
 def test_the_halt_sites_live_in_the_convergence_loop_in_source_order() -> None:
@@ -349,6 +386,10 @@ def test_the_guard_reddens_when_a_consumed_symbol_gains_a_second_home(
     (second / "domain").mkdir()
     (second / "domain" / "organize.py").write_text("def organize_gap():\n    ...\n")
     monkeypatch.setattr("tests.test_organize_definition_sites.SOURCE", second)
+    assert definition_sites(scanned_sources())["organize_gap"] == [
+        "domain/organize.py:1",
+        "elsewhere.py:1",
+    ]
     with pytest.raises(AssertionError):
         test_each_consumed_symbol_is_defined_exactly_once(
             "domain/organize.py", "organize_gap"
