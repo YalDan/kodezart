@@ -10,13 +10,20 @@ from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.services.agent_service import AgentService
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.dispatch import PassRun, PassSignal, SelfWriteLedger
-from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
+from kodezart.types.domain.operation import (
+    DocumentSystem,
+    OperationConfig,
+    OperationMemberAbsentError,
+    RecordDestination,
+    RunKind,
+)
 from kodezart.types.domain.prompts import PromptKey
 from tests.chains.test_organize import RecordingWorkspace
 from tests.chains.test_organize_owner import BoardExecutor
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
+    FakeAgentRunner,
     FakeDeliveryProbe,
     FakeGitService,
     FakeJobQueue,
@@ -27,7 +34,8 @@ from tests.fakes import (
 )
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
-from tests.services.test_prompt_passes import HEARTBEAT_PASS, _config
+from tests.services.test_prompt_passes import HEARTBEAT_PASS, ORGANIZE_PASS, _config
+from tests.services.test_run_recorder import CapturingSink
 from tests.services.test_run_surface_lease import _Board
 from tests.tracker.conftest import CLAIMED_ISSUE
 from tests.tracker.test_linear_mcp_tracker import tracker_over
@@ -110,13 +118,11 @@ async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempoten
         recorder=RunRecorder(records={}, sinks={}),
         log=get_logger(__name__),
     )
-    grooming = [
-        entry
-        for entry in runtime.scheduler.passes
-        if entry.name == PromptKey.GROOMING_PASS.value
+    organize = [
+        entry for entry in runtime.scheduler.passes if entry.name == ORGANIZE_PASS
     ]
-    assert len(grooming) == 1
-    scheduled = grooming[0]
+    assert len(organize) == 1
+    scheduled = organize[0]
     assert scheduled.interval_seconds == config.grooming_pass_interval_seconds
     assert scheduled.timeout_seconds == config.grooming_pass_timeout_seconds
     assert scheduled.report is not None
@@ -228,12 +234,10 @@ async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatc
     async with app.router.lifespan_context(app):
         scheduler = app.state.pass_scheduler
         assert scheduler.running
-        grooming = next(
-            entry
-            for entry in scheduler.passes
-            if entry.name == PromptKey.GROOMING_PASS.value
+        organize = next(
+            entry for entry in scheduler.passes if entry.name == ORGANIZE_PASS
         )
-        await scheduler._tick(grooming)
+        await scheduler._tick(organize)
         assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
         assert any(
             call["output_format"]["schema"]["title"] == "WriteBackFinding"
@@ -251,7 +255,18 @@ async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatc
 # ---------------------------------------------------------------------------
 
 
-async def _runtime_over(config, operation, board, tracker, prompts, ledger, *, forge):
+async def _runtime_over(
+    config,
+    operation,
+    board,
+    tracker,
+    prompts,
+    ledger,
+    *,
+    forge,
+    recorder=None,
+    runner=None,
+):
     """The scheduler this deployment boots with, and every event boot logged."""
     workspace = RecordingWorkspace()
     queue = FakeJobQueue()
@@ -280,9 +295,13 @@ async def _runtime_over(config, operation, board, tracker, prompts, ledger, *, f
                 executor=BoardExecutor(board),
                 workspace=workspace,
                 git_base_url="https://example.invalid",
-            ),
+            )
+            if runner is None
+            else runner,
             skills=SUPPRESS_ALL_SKILLS,
-            recorder=RunRecorder(records={}, sinks={}),
+            recorder=RunRecorder(records={}, sinks={})
+            if recorder is None
+            else recorder,
             log=get_logger(__name__),
         )
     return runtime, logs
@@ -291,6 +310,9 @@ async def _runtime_over(config, operation, board, tracker, prompts, ledger, *, f
 def _logged(logs, name):
     return [entry for entry in logs if entry.get("event") == name]
 
+
+#: The two session passes, in the order the schedule registers them.
+SESSION_PASSES = (PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value)
 
 #: The session run's keywords that are this boot's own objects rather than a
 #: schedule value: each boot builds its own runner.
@@ -305,9 +327,8 @@ async def test_a_scope_deployment_schedules_the_session_passes_beside_the_scope_
     A scope run needs one declared team and one declared repository; a tracker
     is dialled and a delivery probe is configured. The deployment gets the
     observation tick, the organize tick and the standing scopes' heartbeat, and
-    beside them fire prep over the declared roster with the same schedule values
-    the same operation without scope rows gives it. The organize tick still
-    holds grooming's row here, so it is the one entry under grooming's name.
+    beside them fire prep and grooming over the declared roster with the same
+    schedule values the same operation without scope rows gives them.
     """
     config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
     runtime, logs = await _runtime_over(
@@ -315,8 +336,8 @@ async def test_a_scope_deployment_schedules_the_session_passes_beside_the_scope_
     )
     assert [entry.name for entry in runtime.scheduler.passes] == [
         "supervisor",
-        PromptKey.GROOMING_PASS.value,
-        PromptKey.FIRE_PREP_PASS.value,
+        ORGANIZE_PASS,
+        *SESSION_PASSES,
         HEARTBEAT_PASS,
     ]
     assert runtime.lifecycle is None
@@ -327,7 +348,7 @@ async def test_a_scope_deployment_schedules_the_session_passes_beside_the_scope_
     assert withheld[0]["organize_scopes_declared"] is True
     assert _logged(logs, "prompt_passes_not_wired") == []
 
-    # The same operation declaring no scope row schedules fire prep with the
+    # The same operation declaring no scope row schedules both sessions with the
     # same values: cadence, budget, report and every keyword the session is run
     # with but the runner each boot builds for itself.
     unscoped = OperationConfig.model_validate(
@@ -342,20 +363,23 @@ async def test_a_scope_deployment_schedules_the_session_passes_beside_the_scope_
         ledger,
         forge=FakeDeliveryProbe(),
     )
-    name = PromptKey.FIRE_PREP_PASS.value
-    (scoped_entry,) = [e for e in runtime.scheduler.passes if e.name == name]
-    (plain_entry,) = [e for e in plain.scheduler.passes if e.name == name]
-    assert scoped_entry.interval_seconds == config.fire_prep_pass_interval_seconds
-    assert scoped_entry.interval_seconds == plain_entry.interval_seconds
-    assert scoped_entry.timeout_seconds == plain_entry.timeout_seconds
-    assert scoped_entry.report is not None
-    assert plain_entry.report is not None
-    assert scoped_entry.run.func is plain_entry.run.func
-    assert set(scoped_entry.run.keywords) == set(plain_entry.run.keywords)
-    for keyword in set(scoped_entry.run.keywords) - PER_BOOT_KEYWORDS:
-        assert (
-            scoped_entry.run.keywords[keyword] == plain_entry.run.keywords[keyword]
-        ), keyword
+    for name, interval in (
+        (PromptKey.FIRE_PREP_PASS.value, config.fire_prep_pass_interval_seconds),
+        (PromptKey.GROOMING_PASS.value, config.grooming_pass_interval_seconds),
+    ):
+        (scoped_entry,) = [e for e in runtime.scheduler.passes if e.name == name]
+        (plain_entry,) = [e for e in plain.scheduler.passes if e.name == name]
+        assert scoped_entry.interval_seconds == interval, name
+        assert scoped_entry.interval_seconds == plain_entry.interval_seconds, name
+        assert scoped_entry.timeout_seconds == plain_entry.timeout_seconds, name
+        assert scoped_entry.report is not None, name
+        assert plain_entry.report is not None, name
+        assert scoped_entry.run.func is plain_entry.run.func, name
+        assert set(scoped_entry.run.keywords) == set(plain_entry.run.keywords), name
+        for keyword in set(scoped_entry.run.keywords) - PER_BOOT_KEYWORDS:
+            assert (
+                scoped_entry.run.keywords[keyword] == plain_entry.run.keywords[keyword]
+            ), (name, keyword)
 
 
 async def test_the_same_operation_without_organize_scopes_keeps_the_per_issue_passes(
@@ -446,3 +470,93 @@ async def test_preflight_asks_a_scope_deployment_for_its_sessions_and_not_dispat
         [PassSignal.issues_changed]
     ]
     assert recording.rendered == [PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS]
+
+
+def _log(name):
+    """A tracker-side record destination of its own, named *name*."""
+    return RecordDestination(
+        system=DocumentSystem.TRACKER, name=name, id=f"{name}-id", append_only=True
+    )
+
+
+def _named(runtime, name):
+    (entry,) = [entry for entry in runtime.scheduler.passes if entry.name == name]
+    return entry
+
+
+async def _reported(runtime, sink, name):
+    """What one scheduled tick of *name* reported, as (destination, kind, name)."""
+    sink.writes.clear()
+    await runtime.scheduler._tick(_named(runtime, name))
+    return [
+        (destination.name, record.kind, record.name)
+        for destination, record in sink.writes
+    ]
+
+
+async def test_the_organize_tick_never_writes_a_row_into_the_grooming_log(tmp_path):
+    """Two passes, two record kinds, two logs.
+
+    The grooming session reads the newest row of its log as the start of its
+    window, so a row the organize tick left there would move that window. The
+    tick is scheduled under its own name on grooming's cadence and budget, and
+    reports under its own kind to its own log; with no log declared for that
+    kind it is a named absence, as any other kind's is.
+    """
+    config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
+    grooming_log, organize_log = _log("grooming-log"), _log("organize-log")
+    sink = CapturingSink()
+    runtime, _logs = await _runtime_over(
+        config,
+        operation,
+        board,
+        tracker,
+        prompts,
+        ledger,
+        forge=FakeDeliveryProbe(),
+        runner=FakeAgentRunner(events=[]),
+        recorder=RunRecorder(
+            records={
+                RunKind.GROOMING.value: grooming_log,
+                RunKind.ORGANIZE.value: organize_log,
+            },
+            sinks={DocumentSystem.TRACKER: sink},
+        ),
+    )
+    grooming = PromptKey.GROOMING_PASS.value
+    names = [entry.name for entry in runtime.scheduler.passes]
+    assert names.count(ORGANIZE_PASS) == names.count(grooming) == 1
+    organize = _named(runtime, ORGANIZE_PASS)
+    assert organize.interval_seconds == config.grooming_pass_interval_seconds
+    assert organize.timeout_seconds == config.grooming_pass_timeout_seconds
+
+    assert await _reported(runtime, sink, ORGANIZE_PASS) == [
+        ("organize-log", RunKind.ORGANIZE, ORGANIZE_PASS)
+    ]
+    assert await _reported(runtime, sink, grooming) == [
+        ("grooming-log", RunKind.GROOMING, grooming)
+    ]
+
+    # No log declared for the organize kind: nothing is written anywhere, and
+    # the absence is named under the tick's own kind.
+    undeclared_sink = CapturingSink()
+    undeclared, _logs = await _runtime_over(
+        config,
+        operation,
+        board,
+        tracker,
+        prompts,
+        ledger,
+        forge=FakeDeliveryProbe(),
+        runner=FakeAgentRunner(events=[]),
+        recorder=RunRecorder(
+            records={RunKind.GROOMING.value: grooming_log},
+            sinks={DocumentSystem.TRACKER: undeclared_sink},
+        ),
+    )
+    with structlog.testing.capture_logs() as logs:
+        assert await _reported(undeclared, undeclared_sink, ORGANIZE_PASS) == []
+    (absent,) = _logged(logs, "run_record_destination_undeclared")
+    assert absent["kind"] == RunKind.ORGANIZE.value
+    assert absent["name"] == ORGANIZE_PASS
+    assert undeclared_sink.asks == []

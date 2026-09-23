@@ -40,7 +40,7 @@ from tests.integration.test_scope_runtime import (
     lane_record,
     resumable,
 )
-from tests.services.test_prompt_passes import HEARTBEAT_PASS
+from tests.services.test_prompt_passes import HEARTBEAT_PASS, ORGANIZE_PASS
 from tests.tools.scratch_board import ScratchBoardServer
 from tests.tools.scratch_scope import (
     SCRATCH_DECLARATION,
@@ -346,7 +346,8 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
     block boots, reconciles its mappings into the team, schedules the passes that
     read its one scope table — the observation tick that watches each lane's run
     shape, the organize tick and the standing scopes' heartbeat — and beside
-    them the fire-prep session over the declared roster, holds no checkpointer,
+    them the fire-prep and grooming sessions over the declared roster, holds no
+    checkpointer,
     and writes no label onto any issue. Its first
     scoped run is refused by type before a member is read, because nobody has
     approved the project yet, and it leaves the board untouched.
@@ -398,8 +399,9 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         }
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
             "supervisor",
-            PromptKey.GROOMING_PASS.value,
+            ORGANIZE_PASS,
             PromptKey.FIRE_PREP_PASS.value,
+            PromptKey.GROOMING_PASS.value,
             HEARTBEAT_PASS,
         ]
         # The observation tick records each lane's alarm under a configured

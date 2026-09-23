@@ -94,7 +94,7 @@ async def test_environment_bounds_reach_the_tick_and_stop_after_one_author(
         == 1
     )
     identity = RunIdentity(
-        kind=RunKind.GROOMING, name="grooming_pass", started_at=instant
+        kind=RunKind.ORGANIZE, name="organize_pass", started_at=instant
     )
     assert any(
         identity.title() in str(args.get("body", ""))
@@ -103,7 +103,7 @@ async def test_environment_bounds_reach_the_tick_and_stop_after_one_author(
     )
 
 
-async def test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity():
+async def test_actual_tick_uses_fresh_remote_trunk_and_its_own_run_identity():
     tick, board, executor = factory(tick=True)
     instant = datetime(2026, 9, 12, tzinfo=UTC)
     assert await tick.run(instant) is PassRun.RAN
@@ -111,12 +111,20 @@ async def test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity():
         f"<base_ref>{'a' * 40}</base_ref>" in call["prompt"] for call in executor.calls
     )
     identity = RunIdentity(
-        kind=RunKind.GROOMING, name="grooming_pass", started_at=instant
+        kind=RunKind.ORGANIZE, name="organize_pass", started_at=instant
     )
     assert any(
         identity.title() in str(args.get("body", ""))
         for name, args in board.calls
         if name == "save_comment"
+    )
+
+    # Never the grooming session's identity, whose log is its window.
+    grooming = RunIdentity(
+        kind=RunKind.GROOMING, name="grooming_pass", started_at=instant
+    )
+    assert not any(
+        grooming.title() in str(args.get("body", "")) for _name, args in board.calls
     )
 
 

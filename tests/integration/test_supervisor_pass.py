@@ -240,16 +240,12 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     # other. The two sets are named, because a declared roster and an undeclared
     # one do not schedule the same passes: the roster withholds the dispatch
     # pass and adds the organize tick and the heartbeat, both registered before
-    # the observation arm runs, and the session passes run under either. The
-    # organize tick holds grooming's row, so grooming's name stands for it.
-    per_issue = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
+    # the observation arm runs, and the session passes run under either.
+    sessions = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
+    per_issue = set(sessions)
     if dispatching:
         per_issue |= {f"dispatch:{REPO}"}
-    scope_passes = {
-        PromptKey.GROOMING_PASS.value,
-        PromptKey.FIRE_PREP_PASS.value,
-        HEARTBEAT_PASS,
-    }
+    scope_passes = {"organize_pass", HEARTBEAT_PASS} | sessions
     expected = scope_passes if raw_scopes else per_issue
     assert {entry.name for entry in registered} - {"supervisor"} == expected
 

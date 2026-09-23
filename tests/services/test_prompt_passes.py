@@ -211,6 +211,12 @@ DIAGNOSIS = "auth_insufficient_scope: this credential cannot read those"
 #: later pass-set assertion enumerates, so a rename must redden this too.
 HEARTBEAT_PASS = "scope_heartbeat"
 
+#: What the organize tick is registered under, spelled here for the same
+#: reason: ``grooming_pass`` stays the grooming session's name in a deployment
+#: that declares scopes, so the tick carries a name of its own, the organize
+#: session type's spelling.
+ORGANIZE_PASS = "organize_pass"
+
 #: The deployment half of a standing-scope operation: the owner bounds both
 #: passes require, and no gate on either prompt pass, so what the schedule
 #: holds is decided by the declared rows alone.

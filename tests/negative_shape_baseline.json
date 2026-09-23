@@ -2404,7 +2404,7 @@
    "test_bounds_are_both_required_and_positive",
    "test_scope_binding_has_one_declared_repository_and_no_ambiguous_authority",
    "test_environment_bounds_reach_the_tick_and_stop_after_one_author",
-   "test_actual_tick_uses_fresh_remote_trunk_and_existing_run_identity",
+   "test_actual_tick_uses_fresh_remote_trunk_and_its_own_run_identity",
    "test_declared_owner_bindings_without_bounds_refuse_construction"
   ],
   "tests/core/test_outbound_write.py": [

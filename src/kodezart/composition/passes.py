@@ -51,7 +51,11 @@ from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
-from kodezart.services.organize_tick import OrganizeTick
+from kodezart.services.organize_tick import (
+    ORGANIZE_PASS_NAME,
+    ORGANIZE_RUN_KIND,
+    OrganizeTick,
+)
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
@@ -311,11 +315,15 @@ async def build_prompt_passes(
     recorder: RunRecorder,
     organize: OrganizeTick | None,
 ) -> list[ScheduledPass]:
-    """Bind the configured Organize owner and remaining legacy prompt passes.
+    """Bind the configured Organize owner and the grooming and fire-prep passes.
 
-    Organize uses the existing grooming cadence and report identity, with its
-    own fresh scope reads and explicit repository bindings, and is scheduled
-    FIRST so a deployment that keeps nothing else keeps it.
+    Organize runs under its own name and its own record kind, so the grooming
+    session keeps ``grooming_pass`` and a log of its own: that session reads
+    the newest row of its log as the start of its window, and an organize row
+    there would move it. It takes the grooming cadence and budget, because no
+    organize-specific setting exists and the tick grooms what the grooming
+    session prepares, and it is scheduled FIRST so a deployment that keeps
+    nothing else keeps it.
 
     The remaining prompt rows scan whole boards from the declared
     team/repository roster and use their configured signal gates. They wire
@@ -326,15 +334,13 @@ async def build_prompt_passes(
     schedule = prompt_pass_schedule(config)
     scheduled: list[ScheduledPass] = []
     if organize is not None:
-        key = PromptKey.GROOMING_PASS
-        row = schedule.pop(key)
         scheduled.append(
             ScheduledPass(
-                name=key.value,
-                interval_seconds=row.interval_seconds,
-                timeout_seconds=row.timeout_seconds,
+                name=ORGANIZE_PASS_NAME,
+                interval_seconds=config.grooming_pass_interval_seconds,
+                timeout_seconds=config.grooming_pass_timeout_seconds,
                 run=organize.run,
-                report=run_report(recorder, _record_kind_for(key), key.value),
+                report=run_report(recorder, ORGANIZE_RUN_KIND, ORGANIZE_PASS_NAME),
             )
         )
     if not session_passes_wire(operation):
@@ -619,15 +625,18 @@ def _session_running(kind: RunKind) -> SessionType:
     """Which session runs a kind, and therefore reads its record's log.
 
     The two judgment passes are one session type by design — they differ
-    in what their prompt says, not in what kind of session runs them — and
-    a fire is its own.  Exhaustive by ``match``: a fourth run kind cannot
-    be added without answering this question for it.
+    in what their prompt says, not in what kind of session runs them — a
+    fire is its own, and the organize tick's runs are organize sessions.
+    Exhaustive by ``match``: another run kind cannot be added without
+    answering this question for it.
     """
     match kind:
         case RunKind.FIRE_PREP | RunKind.GROOMING | RunKind.AUDIT:
             return SessionType.SCHEDULED_PASS
         case RunKind.FIRE:
             return SessionType.TICKET_FIRE
+        case RunKind.ORGANIZE:
+            return SessionType.ORGANIZE_PASS
 
 
 def _knowledge_surfaces(operation: OperationConfig) -> list[tuple[str, SessionType]]:
