@@ -4,8 +4,9 @@
 the block and the grooming template are read from disk here, so no text is
 copied into this module except the re-pointed references, which are the one
 place the template is allowed to differ from the block, the two amended base
-lines and the base sentences that concern GitHub, each pinned whole, and the
-three prohibitions the amended base rule no longer states.
+lines, each pinned whole as it is and as the base had it, the base's sha256,
+the template's layout, and the three prohibitions the amended base rule no
+longer states.
 
 * Seven self-contained sections occur in the template byte for byte, heading
   and body: each one's whole extent, up to the next heading or top-level
@@ -24,19 +25,22 @@ three prohibitions the amended base rule no longer states.
   phrase that is on neither the table nor that list is not seen.
 * Every adopted section sits between the base's top-level ``<tag>`` sections
   and never inside one, so adopting a section cannot edit a base section;
-  the file is never replaced by the block.
+  the file is never replaced by the block.  The layout, every top-level tag
+  and ``## `` heading in order, is pinned, so a section moved or added
+  outside the base fails with the order it broke.
+* Outside the nine adopted sections the template is the base at a047d1fb
+  byte for byte, except for two amended lines (KOD-567, KOD-573, KOD-574):
+  the remainder, with the base's own text put back on those two lines, is
+  pinned by its sha256.  Any other change to the base fails whatever its
+  wording, a new prohibition, a window bound or a marker advance alike; it
+  is out of this change's reach and needs its own decision.
 * The GitHub boundary has one owner, Supervision Boundaries (KOD-573).  It
   allows verification branches, commits and pushes, so no sentence of the
-  template forbids them outright.  Two base lines are amended, and only
-  those: the ``<authority>`` GitHub rule points at Supervision Boundaries by
-  its heading and adds only what that section does not cover, and the
-  closing ``**Boundary:**`` line no longer restates the boundary.  Both are
-  pinned whole.  Outside Supervision Boundaries, every sentence that names
-  GitHub or an act that section grants (a branch, a commit, a push) is
-  either the pointer sentence or one of the base's own sentences that only
-  reads, pinned whole, so a new prohibition sentence in any of those terms
-  fails.  Its limit: a sentence that forbids a GitHub write without any of
-  those words is not seen.
+  template forbids them outright.  The two amended lines are the
+  ``<authority>`` GitHub rule, which points at Supervision Boundaries by its
+  heading and adds only what that section does not cover, and the closing
+  ``**Boundary:**`` line, which no longer restates the boundary.  Each is
+  read from the template and pinned whole.
 """
 
 import hashlib
@@ -52,6 +56,11 @@ BLOCK = REPO_ROOT / "docs" / "supervision-block.md"
 #: sha256 of ``docs/supervision-block.md``, the text of record (KOD-872).
 BLOCK_SHA256 = "c1778d8d867e3967e8f9f988a7f7a0439b4b792de2836bad954fc398994a8352"
 TEMPLATE = default_sets_root() / OPUS_SET / "grooming_pass.md"
+
+#: sha256 of the grooming template at a047d1fb, the base the block is adopted
+#: into.  Computed once from that commit's blob; the test reads only the
+#: working tree.
+BASE_SHA256 = "0270af8a69f55807ba90612f5afc792e172bc92f7f8f45b3f1014e0fe2345ebc"
 
 #: KOD-566's own list of the sections adopted byte for byte.
 VERBATIM: tuple[str, ...] = (
@@ -152,89 +161,43 @@ BOUNDARY_LINE = (
     "a restored edge a principal removed."
 )
 
-#: With "GitHub" itself, the acts Supervision Boundaries grants ("cut
-#: branches, commit on them, push them"): a sentence naming none of them does
-#: not concern a GitHub write.
-GITHUB_ACTS: tuple[str, ...] = ("branch", "commit", "push")
+#: The base text at a047d1fb of the two lines this change amends, put back
+#: on those lines before the remainder is compared with the base.
+BASE_AUTHORITY_GITHUB_RULE = (
+    "- Write to GitHub in any form: no commits or pushes, no PR/issue "
+    "comments, no reviews, no labels, no branches, no workflow triggers. "
+    "GitHub is read-only for you; all communication happens in Linear. "
+    "(Read-only includes history: a synced issue's past body revisions via "
+    "the mirror's edit history are yours to read.)"
+)
+BASE_BOUNDARY_LINE = (
+    "**Boundary:** you groom to reality and reply in-thread — never an "
+    "approval granted or revoked, never a fire, never a GitHub write, never "
+    "a moved date, never a restored edge a principal removed."
+)
 
-#: Every sentence outside Supervision Boundaries that names GitHub or one of
-#: its acts, other than the pointer sentence, in template order.  Each reads,
-#: describes, or uses the word in another sense; none rules on a GitHub write.
-READING: tuple[str, ...] = (
-    "- Claude Code cloud job with real git/GitHub, whatever build "
-    "toolchains each declared repository's own check chain invokes, `gh`, "
-    "and the Linear MCP ({{workspace}} workspace).",
-    "- **What you can reach:** the repositories this operation declares "
-    "(git/`gh`) and Linear (MCP) — one line each, giving the short name, "
-    "the owner/name form you clone, and the branch a lane with no "
-    "blockers is based on:\n{{#each repos}}  - `{{this.slug}}` — "
-    "{{this.name}}, trunk `{{this.trunk}}`\n{{/each}}  You do NOT have any "
-    "other repo, any local file, or any guaranteed skill from another "
-    "environment — everything you need is in this prompt; never reference "
-    "something you can't open here.",
-    "**Ground against the branch the work is on.** Read the real code at "
-    "the head of the relevant open PR, not just `main` — the work often "
-    "lives unmerged.",
-    "Object once, then commit.",
-    "Clone every declared repository and run its real chain, capturing "
-    "per-check exit codes and HEAD SHAs — on its trunk and on every "
-    "unlanded ref principle 2 sends you to, their composition included, "
-    "and on gate failure apply principle 1a:\n{{#each repos}}- "
-    "{{this.name}} (trunk `{{this.trunk}}`):\n{{#each this.checks}}  - "
-    "{{this.name}} — `{{this.command}}`{{#if this.depends_on}}, after "
-    "{{this.depends_on}}{{/if}}{{#if this.depends_on_absent}}, a gate: "
-    "its failure is a root cause{{/if}}\n{{/each}}{{#if "
-    "this.checks_absent}}  - no chain is declared: the repository's own "
-    "CI defines its gate — read it in-repo and run that chain, "
-    "classifying gates and cascades from what it actually "
-    "is\n{{/if}}{{/each}}Also capture each repo's default-branch history "
-    "since the mention-scan checkpoint (`git log --format='%h %ad %s' "
-    "--stat`) — this commit list is step 2's reconciliation input: every "
-    "commit in it must end the pass mapped to an issue or swept against "
-    "open-issue premises.",
-    "- **Reconcile shipped work** against the verified build + `gh` PR "
-    "state (principles 1, 2, 4), grounded in the actual git history, not "
-    "just PR lists: for each repo, `git log <default-branch> "
-    "--since=<mention-scan checkpoint>` (plus any other branch a fire "
-    "landed on), and account for EVERY commit — map each to its merged PR "
-    "and that PR to its Linear issue (close/advance the issue with the "
-    "SHA as evidence), and treat any commit NOT explained by a reconciled "
-    "PR↔issue pair (direct pushes, chore merges with no issue) as an "
-    "unmapped change: read its diff, then sweep the open issues whose "
-    "premises, frozen-body claims, wrapper fields, or blocking edges "
-    "touch the changed paths — an approved fire whose target files just "
-    "moved is the highest-value catch.",
-    'No commit in the window may end the pass unexplained — "no issue '
-    'references it" is the start of the check, not its conclusion.',
-    "Work started (branch pushed, fire running) → "
-    "{{workflow_states.in_progress}}; open PR → "
-    "{{workflow_states.in_review}}; the work demonstrated in the branch "
-    "that carries it — that branch's own checks run green at a head SHA "
-    "you name — is evidence to verify per branch with `gh`, never "
-    "batch-assumed.",
-    "A parent's finished state is read from its current criterion subtree "
-    "and compliance record, never written from a green build or a merged "
-    "branch.",
-    "Demonstration remains independent of whether the branch is later "
-    "merged, rebased away or superseded.",
-    "(iv) *Approved-readiness integrity* on every "
-    "`{{queue_states.approved}}` issue — they are one tick from firing: "
-    "body present and substantive (an approved issue with an empty or "
-    "gutted body is a fire with no prompt — if the issue is "
-    "GitHub-synced, recover the pre-wipe body read-only from the mirror's "
-    "edit history, `gh api graphql` → `userContentEdits` full snapshots, "
-    "restore it verbatim with a provenance comment; otherwise flag it to "
-    "the CEO as unfireable), base branch resolvable at `gh`, and "
-    "label-vs-body contradictions resolved in the label's favor with a "
-    "comment recording the supersession.",
-    "When the pass surfaced something a principal should act on now — a "
-    "pending decision, a deploy blocker, a principal waiting on a posted "
-    "reply — send a push notification leading with that one sentence; it "
-    "points at the status update, reply, or issue, never replaces them.",
-    "Unmapped commits: a chore merge lands on `main` with no Linear issue "
-    '— "nothing references it" is not the end.',
-    "The sweep is path-driven, not title-driven: the commit message never "
-    "mentioned the fire.",
+#: Every top-level ``<tag>`` and every ``## `` heading outside one, in
+#: template order: where each adopted section sits among the base's.
+LAYOUT: tuple[str, ...] = (
+    "<role>",
+    "<environment>",
+    "<authority>",
+    "## Writer Discipline",
+    "## Supervision Boundaries",
+    "<placement>",
+    "<principles>",
+    "## Verification Posture",
+    "## Claim Admissibility",
+    "## Finding Admissibility",
+    "<ceo_directive>",
+    "<health>",
+    "<process>",
+    "## Supervision Scope",
+    "## Runtime Verification",
+    "## Composition Checks",
+    "## Supervision Record",
+    "<example>",
+    "<notion_logging>",
 )
 
 _HEADING = re.compile(r"^(?=## )", re.MULTILINE)
@@ -243,7 +206,6 @@ _OPENING_LINE = re.compile(r"^<([a-z_]+)>$", re.MULTILINE)
 _SECTION_END = re.compile(r"^(?:## |</?[a-z_]+>$)", re.MULTILINE)
 _SENTENCE_END = re.compile(r"(?<=\.)\s+")
 _TAG_REFERENCE = re.compile(r"<([a-z_]+)>")
-_GITHUB_SUBJECT = re.compile(rf"\b(?:GitHub|{'|'.join(GITHUB_ACTS)})", re.IGNORECASE)
 
 
 def block_text() -> str:
@@ -309,6 +271,51 @@ def top_level_spans(text: str) -> list[tuple[str, int, int]]:
         assert close != -1, f"<{name}> is never closed"
         spans.append((name, match.start(), close + len(closing)))
     return spans
+
+
+def layout(text: str) -> list[str]:
+    """Every top-level ``<tag>`` of *text* and every ``## `` heading outside one."""
+    spans = top_level_spans(text)
+    placed = [(open_, f"<{name}>") for name, open_, _ in spans]
+    placed += [
+        (match.start(), text[match.start() :].split("\n", 1)[0])
+        for match in _TOP_LEVEL_HEADING.finditer(text)
+        if not any(open_ <= match.start() < close for _, open_, close in spans)
+    ]
+    return [entry for _, entry in sorted(placed)]
+
+
+def authority_pointer_line(text: str) -> str:
+    """The one line of the ``<authority>`` section that names Supervision Boundaries."""
+    authority = [
+        text[open_:close]
+        for name, open_, close in top_level_spans(text)
+        if name == "authority"
+    ]
+    assert len(authority) == 1
+    lines = [line for line in authority[0].splitlines() if BOUNDARIES in line]
+    assert len(lines) == 1, lines
+    return lines[0]
+
+
+def closing_boundary_line(text: str) -> str:
+    """The one line of *text* that starts with ``**Boundary:**``."""
+    lines = [line for line in text.splitlines() if line.startswith("**Boundary:**")]
+    assert len(lines) == 1, lines
+    return lines[0]
+
+
+def base_remainder(text: str) -> str:
+    """*text* with the nine adopted sections removed, each by its extent.
+
+    The extent is the one the byte-identity test compares, so it carries the
+    blank line that separates the section from what follows, and the join is
+    what the base had.
+    """
+    for name in ADOPTED:
+        start, end = section_bounds(text, name)
+        text = text[:start] + text[end:]
+    return text
 
 
 def test_the_seven_self_contained_sections_are_byte_identical_in_their_extent():
@@ -382,7 +389,12 @@ def test_every_adopted_section_sits_between_top_level_sections_never_inside_one(
 
 
 def test_the_template_is_not_the_block_and_holds_no_other_top_level_heading():
-    """KOD-567: never a whole-file replacement; only the nine were added."""
+    """KOD-567: never a whole-file replacement, and no stray ``## `` heading.
+
+    Outside the base's top-level tags, the nine adopted sections are the only
+    ``## `` headings.  Any other text added outside them is the remainder
+    pin's to catch, and where each heading sits is the layout's.
+    """
     text = template_text()
     assert text != block_text()
     remaining = text
@@ -430,42 +442,36 @@ def test_no_sentence_of_the_template_forbids_commits_pushes_or_branches():
 
 
 def test_the_github_boundary_lines_are_pinned_whole():
-    """KOD-573: the pointer and the closing Boundary line, each exactly."""
-    text = template_text()
-    authority = [
-        text[open_:close]
-        for name, open_, close in top_level_spans(text)
-        if name == "authority"
-    ]
-    assert len(authority) == 1
-    github = [line for line in authority[0].splitlines() if "GitHub" in line]
-    assert github == [AUTHORITY_GITHUB_RULE]
-    closing = [line for line in text.splitlines() if line.startswith("**Boundary:**")]
-    assert closing == [BOUNDARY_LINE]
+    """KOD-573: the pointer and the closing Boundary line, each exactly.
 
-
-def test_the_github_acts_are_the_ones_supervision_boundaries_grants():
-    """The walk's vocabulary is read off the section that owns the boundary."""
-    boundaries = template_section(template_text(), BOUNDARIES).casefold()
-    assert GITHUB_ACTS
-    for act in GITHUB_ACTS:
-        assert act in boundaries, act
-
-
-def test_every_github_sentence_outside_supervision_boundaries_only_reads():
-    """KOD-573: only Supervision Boundaries rules on a GitHub write.
-
-    Outside it, the one sentence that names a GitHub write is the pointer
-    to it; every other sentence naming GitHub or one of its acts is pinned
-    whole, so a new or amended one fails whatever its wording.
+    Each is read from the template: the ``<authority>`` line that names
+    Supervision Boundaries and the line that starts ``**Boundary:**``.
     """
     text = template_text()
-    outside = text.replace(template_section(text, BOUNDARIES), "", 1)
-    pointer = _SENTENCE_END.split(AUTHORITY_GITHUB_RULE)[0]
-    named = [
-        sentence
-        for sentence in _SENTENCE_END.split(outside)
-        if _GITHUB_SUBJECT.search(sentence)
-    ]
-    assert named.count(pointer) == 1
-    assert [sentence for sentence in named if sentence != pointer] == list(READING)
+    assert authority_pointer_line(text) == AUTHORITY_GITHUB_RULE
+    assert closing_boundary_line(text) == BOUNDARY_LINE
+
+
+def test_outside_the_adopted_sections_the_template_is_the_base_but_two_lines():
+    """KOD-567, KOD-573, KOD-574: the base remainder is pinned whole.
+
+    Outside the nine adopted sections, the template is the base byte for
+    byte except for the two amended lines, each pinned whole in its own
+    test.  Any other change to the base is out of this change's reach and
+    needs its own decision.
+    """
+    remainder = base_remainder(template_text())
+    lines = remainder.split("\n")
+    for amended, base in (
+        (authority_pointer_line(remainder), BASE_AUTHORITY_GITHUB_RULE),
+        (closing_boundary_line(remainder), BASE_BOUNDARY_LINE),
+    ):
+        assert lines.count(amended) == 1, amended
+        lines[lines.index(amended)] = base
+    digest = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+    assert digest == BASE_SHA256, "the base outside the adopted sections changed"
+
+
+def test_the_layout_shows_where_each_adopted_section_sits():
+    """KOD-567: every top-level tag and ``## `` heading, in template order."""
+    assert layout(template_text()) == list(LAYOUT)

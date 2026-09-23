@@ -12,49 +12,68 @@ merge-gated terminal, drops the composition verdict, or installs a second
 scan window beside the base's own fails here instead of passing quietly.
 """
 
+import re
+
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from tests.prompts.sets import OPUS_SET
-from tests.prompts.test_supervision_block_adoption import (
-    ADOPTED,
-    AUTHORITY_GITHUB_RULE,
-    BOUNDARY_LINE,
-    template_section,
-)
 
 GROOMING = default_sets_root() / OPUS_SET / "grooming_pass.md"
 
-#: What the spent Scan Window row would write: a window bound, a marker, a
-#: checkpoint advance.  The base window has none of the first two and its
-#: status update is the checkpoint, so added text states none of them.
-SPENT_ROW_TERMS: tuple[str, ...] = ("upper bound", "marker", "checkpoint")
+#: The base's Scan window sentence, whole: the window runs from the most
+#: recent status update of a prior pass and has no upper bound.
+SCAN_WINDOW = (
+    "- **Mentions & principal comments.** Scan window: issues updated since "
+    "the most recent status update posted by a prior grooming pass (when the "
+    "discovered initiatives have different timestamps, use the oldest; first "
+    "ever pass: 7 days back, once)."
+)
+
+#: The base's step-3 sentence that makes the status update's timestamp the
+#: next pass's checkpoint, whole.  Sentences split at each sentence end, so
+#: the step number ``**3.`` stands apart from it.
+STATUS_UPDATE_CHECKPOINT = (
+    "Post + report.** One **status update per initiative**, posted every pass "
+    "even when nothing changed — this is the traceable per-pass record, the "
+    "single routine surface (no separate report comment; the run logs carry "
+    "the detail), and its timestamp is the next pass's mention-scan "
+    "checkpoint."
+)
+
+_SENTENCE_END = re.compile(r"(?<=\.)\s+")
 
 
 def template() -> str:
     return GROOMING.read_text(encoding="utf-8")
 
 
+def the_sentence_naming(text: str, words: str) -> str:
+    """The one sentence of *text* that carries *words*, read line by line."""
+    found = [
+        sentence
+        for line in text.splitlines()
+        for sentence in _SENTENCE_END.split(line)
+        if words in sentence
+    ]
+    assert len(found) == 1, (words, found)
+    return found[0]
+
+
 def test_scan_window_row_is_spent_and_the_files_own_rule_stands_alone():
     """Spent: the base already rules the window, so nothing is written for it.
 
-    The text this change adds, the nine adopted sections and the two amended
-    base lines, states no window bound and no marker or checkpoint advance,
-    and no line of the template states an upper bound.  Its limit: a bound
-    or an advance stated without any of those words is not seen.
+    The base's Scan window sentence and its step-3 sentence that makes the
+    status update's timestamp the next pass's checkpoint are each pinned
+    whole, read from the template.  With the base remainder pinned whole
+    beside them, a window bound or a marker advance written anywhere in the
+    base fails whatever its wording.
     """
     text = template()
-    added = [template_section(text, name) for name in ADOPTED]
-    added += [AUTHORITY_GITHUB_RULE, BOUNDARY_LINE]
-    assert "upper bound" not in text.casefold()
-    for section in added:
-        for term in SPENT_ROW_TERMS:
-            assert term not in section.casefold(), (term, section[:40])
     assert text.count("Scan window:") == 1
+    assert the_sentence_naming(text, "Scan window:") == SCAN_WINDOW
     assert (
-        "Scan window: issues updated since the most recent status update posted by "
-        "a prior grooming pass" in text
+        the_sentence_naming(text, "its timestamp is the next pass's")
+        == STATUS_UPDATE_CHECKPOINT
     )
-    assert "first ever pass: 7 days back, once" in text
-    assert "its timestamp is the next pass's mention-scan checkpoint" in text
 
 
 def test_build_verification_reports_the_composition_beside_the_per_ref_verdicts():
