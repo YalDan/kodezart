@@ -7,8 +7,10 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.criteria import TrackerCriteria
+from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import CriterionReadError, EmptyFireCriteriaError
 from kodezart.domain.fire_spec import CriterionField, criterion_field_bodies
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_ralph_loop import _make_loop, _run_kwargs
 from tests.fakes import (
@@ -66,6 +68,16 @@ def server():
         "**Check:** A parent's own row cannot mint a child.\n\n**Evidence:** —",
         "",
         *PARENT_TEMPLATE_ROWS,
+        # The live template grammar at column 0, which the one field reader
+        # does read: a Check row and a graded Evidence row on the parent.
+        "**Check:** A parent row naming no sub-issue.\n\n"
+        + render_evidence_field(
+            CriterionEvidence(
+                graded_sha="c" * 40,
+                test="tests/tracker/test_empty_fire_entry.py::test_case",
+            )
+        )
+        + "\n",
     ],
 )
 async def test_parent_heading_shapes_all_read_empty_and_refuse_fire(

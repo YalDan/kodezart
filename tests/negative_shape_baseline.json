@@ -99,7 +99,7 @@
   "tests/chains/test_remediation.py": 19,
   "tests/chains/test_retry_floor_wiring.py": 11,
   "tests/chains/test_rule_open_questions.py": 97,
-  "tests/chains/test_scope_gap_membership.py": 25,
+  "tests/chains/test_scope_gap_membership.py": 29,
   "tests/chains/test_scope_gap_selection.py": 9,
   "tests/chains/test_scope_observations.py": 14,
   "tests/chains/test_scope_ready.py": 54,

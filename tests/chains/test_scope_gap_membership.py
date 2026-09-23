@@ -23,6 +23,7 @@ from kodezart.domain.criterion_evidence import (
     render_evidence_field,
 )
 from kodezart.domain.errors import ScopePlanRefusalError
+from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from tests.chains.test_scope_ready import PROJECT, row
@@ -217,8 +218,18 @@ async def test_the_two_ungraded_readings_are_told_apart_by_the_sha_alone(
 
 #: A parent body shaped like a criterion checklist, naming a criterion that
 #: exists nowhere on the board. A walk that read criteria out of a parent's
-#: description would mint it; the sub-issue read cannot.
-PHANTOM_CHECKLIST = "- [ ] **Check:** phantom\nAC-9 phantom\n"
+#: description would mint it; the sub-issue read cannot. Beside the checkbox
+#: and the ``AC-n`` line it carries rows in the live template grammar — a
+#: Check row and a graded Evidence row at column 0 — which the one sanctioned
+#: field reader does read, so a fallback that mints or grades through that
+#: reader out of a parent's body has something here to find.
+PHANTOM_CHECKLIST = (
+    "- [ ] **Check:** phantom\n"
+    "AC-9 phantom\n"
+    "**Check:** phantom\n\n"
+    + render_evidence_field(CriterionEvidence(graded_sha=GRADED_SHA, test=GRADED_TEST))
+    + "\n"
+)
 
 
 def graded_sha_or_none(issue: TrackerIssue) -> str | None:
@@ -242,7 +253,20 @@ async def test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body
     criterion that does not exist or nothing at all. Either way the read
     returns the same two sub-issues with the same four facts, never reads a
     body of a row that is not a criterion, and owes only the open one.
+
+    The trap's reach: it sees ``body`` read as an attribute of a
+    ``TrackerIssue``. A read through ``__dict__``, ``vars()`` or
+    ``model_dump()``, pydantic's own ``__eq__``, and an adapter's read of its
+    wire model's description before any ``TrackerIssue`` exists are outside
+    it. Those are held by the parent's live-grammar rows, which no read may
+    turn into a criterion, a grading or a key, and by the tree-wide scan in
+    ``tests/domain/test_criterion_body_scan_sites.py``.
     """
+    if lane_body:
+        # The live-grammar rows really are readable by the sanctioned reader,
+        # so a fallback through it would find a Check and an Evidence here.
+        assert criterion_field_bodies(lane_body, field="Check") != ()
+        assert criterion_field_bodies(lane_body, field="Evidence") != ()
     rows = subtree(kind="unstarted", body=UNGRADED_BODY)
     rows[0].description = lane_body
     rows[1].description = graded_body(GRADED_SHA)
@@ -261,22 +285,31 @@ async def test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body
 
     assert body_reads == []
     (lane,) = (item for item in selection.ready if item.issue.issue_key == LANE)
+    assert lane.issue.body == lane_body
     assert [
         (
             criterion.issue_key,
-            "criterion" in criterion.issue_labels,
+            criterion.issue_labels,
             criterion.state_kind,
             graded_sha_or_none(criterion),
         )
         for criterion in lane.criteria
     ] == [
-        ("lane-check", True, WorkflowStateKind.COMPLETED, GRADED_SHA),
-        (DEEP_CHECK, True, WorkflowStateKind.UNSTARTED, None),
+        (
+            "lane-check",
+            frozenset({"criterion"}),
+            WorkflowStateKind.COMPLETED,
+            GRADED_SHA,
+        ),
+        (DEEP_CHECK, frozenset({"criterion"}), WorkflowStateKind.UNSTARTED, None),
     ]
-    assert [
-        criterion.issue_key
-        for criterion in selection.criteria
-        if "phantom" in criterion.issue_key
-    ] == []
+    # The ungraded row is read as exactly the row the board holds, not merely
+    # as a row no grading could be parsed out of.
+    (deep,) = (item for item in lane.criteria if item.issue_key == DEEP_CHECK)
+    assert criterion_field_bodies(deep.body, field="Evidence") == ("—",)
+    assert [criterion.issue_key for criterion in selection.criteria] == [
+        "lane-check",
+        DEEP_CHECK,
+    ]
     assert [criterion.issue_key for criterion in lane.gap] == [DEEP_CHECK]
     fixture.assert_read_only()
