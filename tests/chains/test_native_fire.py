@@ -2780,6 +2780,38 @@ def _located_calls_in(module, tree, functions):
             return tuple(receiver[2].get(node.attr, ()))
         return ()
 
+    # A method reached through its class, ``<Class>.<method>`` with the
+    # class named directly or through a module alias, or through
+    # ``super()`` inside a method, which looks it up in the classes after
+    # the method's own class in that class's MRO.
+    def looked_up(node, attribute, scope):
+        receiver = scope[0]
+        if (
+            receiver is not None
+            and isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "super"
+            and "super" not in namespace
+            and not node.args
+            and not node.keywords
+        ):
+            return [
+                next(
+                    (
+                        inspect.getattr_static(klass, attribute)
+                        for klass in receiver[1].__mro__[1:]
+                        if attribute in vars(klass)
+                    ),
+                    None,
+                )
+            ]
+        named = _value_named_by(node, namespace, scope[3])
+        classes = {
+            *classes_of(node, scope),
+            *([named] if isinstance(named, type) else []),
+        }
+        return [inspect.getattr_static(klass, attribute, None) for klass in classes]
+
     def is_function(value, scope):
         if isinstance(value, ast.NamedExpr):
             return is_function(value.value, scope)
@@ -2791,11 +2823,8 @@ def _located_calls_in(module, tree, functions):
         if owner is not None:
             return _is_one_of(getattr(owner, value.attr, None), functions)
         return any(
-            _is_one_of(
-                _unwrapped(inspect.getattr_static(klass, value.attr, None)),
-                functions,
-            )
-            for klass in classes_of(value.value, scope)
+            _is_one_of(_unwrapped(found), functions)
+            for found in looked_up(value.value, value.attr, scope)
         )
 
     # A local binding exists only in the tree, and only in its own scope: a
@@ -2981,8 +3010,11 @@ def callers_of(*functions):
 
     - a direct call, through a name whose module-level value IS the function
       (so an aliased import or a module-level rebinding counts);
-    - ``self.<method>`` inside the class, and ``self.<attribute>.<method>``
-      where the class declares the attribute's class and that class's
+    - ``self.<method>`` inside the class, ``self.<attribute>.<method>``
+      where the class declares the attribute's class, ``<Class>.<method>``
+      where ``<Class>`` is a module-level name whose value IS a class, and
+      ``super().<method>`` inside a method, looked up in the classes after
+      the method's own class in its MRO; each counts when that class's
       attribute IS the function, a ``staticmethod`` or ``classmethod``
       unwrapped;
     - a declaration by an ``Optional[...]``, ``Union[...]`` or ``|``
@@ -3243,6 +3275,14 @@ class Other:
         self._require_current()
 
 
+class Sub(Gate):
+    def _require_current(self):
+        return None
+
+    def through_super(self):
+        super()._require_current()
+
+
 class Piped:
     def __init__(self, gate: Gate | None):
         self._gate = gate
@@ -3378,6 +3418,14 @@ def local_module_from_import(state):
     crit.require_current_native_snapshot(state, reader=None)
 
 
+def through_the_class(gate):
+    Gate._require_current(gate)
+
+
+def other_through_the_class(other):
+    Other._require_current(other)
+
+
 def assignment(state):
     check = require_current_native_snapshot
     check(state, reader=None)
@@ -3502,6 +3550,8 @@ RESOLVER_FOLLOWS = {
     "Gate.walrus_method": "a bound method held by a walrus",
     "Piped.narrowed_attribute": "an attribute narrowed through a local",
     "local_module_from_import": "a from-import of a module inside a function",
+    "through_the_class": "<Class>.<method>, the class named by object",
+    "Sub.through_super": "super().<method>, the next class in the MRO",
     "async_direct": "a direct call in an async function",
     "async_assignment": "assignment, in an async function",
     "async_default": "a positional default, in an async function",
@@ -3528,6 +3578,7 @@ RESOLVER_DOES_NOT_FOLLOW = {
     "other_local": "a same-named local in another function",
     "Other.other_class_method": "a method of another class with the name",
     "OtherHeld.other_attribute": "that method through a declared attribute",
+    "other_through_the_class": "that method through its own class",
     "conditional": "a conditional expression",
     "starred": "starred unpacking",
     "loop_over_name": "a for over a name bound to a sequence",
