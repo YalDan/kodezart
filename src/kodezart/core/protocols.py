@@ -1898,15 +1898,6 @@ class RecordSignalReader(
 
 
 @runtime_checkable
-class MandateGraphReader(
-    ScopeMemberReader,
-    TrackerCommentReader,
-    Protocol,
-):
-    """The scope family, its criteria and the records a lane's graph is read from."""
-
-
-@runtime_checkable
 class OrganizeOwnerTracker(
     LaneEscalationTracker,
     TrackerArtifactReader,

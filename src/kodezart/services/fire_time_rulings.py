@@ -36,6 +36,7 @@ from kodezart.core.outbound_write import gated_exact
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import (
     AgentRunner,
+    CommentRecordWriter,
     FireRulingTracker,
     GitService,
     OutboundContentGate,
@@ -127,7 +128,7 @@ class _PinStep:
     surface: WritableSurface
     ruling: Ruling
     lane_key: str
-    tracker: FireRulingTracker
+    tracker: CommentRecordWriter
     gate: OutboundContentGate
     log: BoundLogger
     lease: RunSurfaceLease
@@ -196,7 +197,7 @@ class _EscalationStep:
     escalation: DeliverableEscalation
     ruling_id: RulingId
     lane_key: str
-    tracker: FireRulingTracker
+    tracker: CommentRecordWriter
     gate: OutboundContentGate
     log: BoundLogger
     lease: RunSurfaceLease
