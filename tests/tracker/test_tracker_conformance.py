@@ -14,7 +14,7 @@ import sys
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
-from inspect import isawaitable, signature
+from inspect import isawaitable, iscoroutinefunction, signature
 
 import pytest
 
@@ -80,7 +80,7 @@ from kodezart.types.domain.tracker import (
     is_open,
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
-from tests.chains.test_write_back_adoption import artifact_writes, parameters
+from tests.chains.test_write_back_adoption import LEASE_PARAMETERS, parameters
 from tests.fakes import FakeLinearMcpServer, FakeMcpComment, FakeMcpIssue
 from tests.tracker.conftest import (
     ADAPTER_WRITE_TOOLS,
@@ -3339,17 +3339,31 @@ HOLDER_PARAMETERS = frozenset({"holder", "authorization"})
 
 
 def supplied_holder_writes() -> frozenset[str]:
-    """Every port write that can supply a holder, read off the port itself.
+    """Every write of ``TrackerPort`` that can supply a holder, read off it.
 
     Derived rather than listed for the reason the adoption check's own
     surface is: a write that grows a holder parameter and is left out of a
-    table written by hand would be the one nothing ever refused.
+    table written by hand would be the one nothing ever refused.  Every
+    public coroutine of the port with a holder parameter is taken, whatever
+    its name starts with, except the claim and lease bookkeeping, told by
+    derivation: a member whose every parameter is a key or a lease term
+    moves a grant, not content.
+
+    What is scanned is the port.  A write declared on a role outside it —
+    the container status update — is not, and the ``tracker`` fixture
+    cannot dial such a role; that is a recorded limit.
     """
-    return frozenset(
-        method
-        for method in artifact_writes(TrackerPort)
-        if HOLDER_PARAMETERS & set(parameters(method, TrackerPort))
-    )
+    found: set[str] = set()
+    for name in dir(TrackerPort):
+        if name.startswith("_") or not iscoroutinefunction(getattr(TrackerPort, name)):
+            continue
+        taken = parameters(name, TrackerPort)
+        if not HOLDER_PARAMETERS & set(taken):
+            continue
+        if all(item.endswith("_key") or item in LEASE_PARAMETERS for item in taken):
+            continue
+        found.add(name)
+    return frozenset(found)
 
 
 def single_writer_writes() -> frozenset[str]:
@@ -3387,6 +3401,10 @@ CLAIMED_SPLIT_SET = WritableSurface(
 CHILD_GRAPH = WritableSurface(
     kind=SurfaceKind.ISSUE_GRAPH,
     ref=ScopeRef(kind=ScopeKind.ISSUE, key=GRAPH_CHILD),
+)
+PEER_GRAPH = WritableSurface(
+    kind=SurfaceKind.ISSUE_GRAPH,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=GRAPH_PEER),
 )
 #: The alarm record one row writes, and the marker its own address is
 #: composed from: the seam derives the whole address from the subject and
@@ -3607,12 +3625,13 @@ SUPPLIED_HOLDER_WRITES: Mapping[str, HolderWrite] = {
 
 
 class TestSuppliedHolderWrites:
-    """Every port write that supplies a holder refuses one it does not hold.
+    """Every ``TrackerPort`` write that supplies a holder refuses one it does not hold.
 
-    One statement over the whole holder-taking surface of the port, with
-    the surface itself derived from the port's own members: a write that
-    gains a holder and no row here reds the first case, and a row for a
-    write that no longer takes one reds it too.
+    One statement over the holder-taking writes of ``TrackerPort``, with
+    that surface derived from the port's own members: a write that gains a
+    holder and no row here reds the first case, and a row for a write that
+    no longer takes one reds it too.  A role declared outside the port is
+    not scanned.
 
     The refusal is asserted before any backend MUTATION rather than before
     any backend call: a backend with no conditional write cannot know a
@@ -3653,11 +3672,14 @@ class TestSuppliedHolderWrites:
         """The rows ARE the port's holder-taking writes, neither more nor less."""
         assert supplied_holder_writes()
         assert frozenset(SUPPLIED_HOLDER_WRITES) == supplied_holder_writes()
-        assert single_writer_writes() <= supplied_holder_writes()
-        assert single_writer_writes()
+        assert len(supplied_holder_writes()) >= 8
+        assert len(single_writer_writes()) >= 4
+        assert supplied_holder_writes() - single_writer_writes()
 
     @pytest.mark.parametrize("method", sorted(SUPPLIED_HOLDER_WRITES))
-    @pytest.mark.parametrize("standing", ["unheld", "expired", "foreign"])
+    @pytest.mark.parametrize(
+        "standing", ["unheld", "expired", "at_deadline", "foreign"]
+    )
     async def test_a_supplied_holder_that_does_not_hold_is_refused_with_nothing_written(
         self,
         tracker: TrackerPort,
@@ -3668,10 +3690,12 @@ class TestSuppliedHolderWrites:
     ) -> None:
         """Three ways not to hold a surface, and one refusal for all of them.
 
-        Nobody holding it, this holder's own grant lapsed, and a rival
-        holding it live: each raises the typed lease error carrying the
-        whole address as primitives, and the no-lease and lapsed arms name
-        no current holder rather than inventing one. The observed write
+        Nobody holding it, this holder's own grant lapsed — past its
+        deadline, or at the deadline instant itself, since a lease is live
+        only while its expiry is still ahead — and a rival holding it
+        live: each raises the typed lease error carrying the whole address
+        as primitives, and the no-lease and lapsed arms name no current
+        holder rather than inventing one. The observed write
         log is taken AFTER the acquisition, so the marker writes the
         arrangement itself makes are inside the baseline and the refusal
         is shown to add nothing to it; what the seam would have moved is
@@ -3687,6 +3711,11 @@ class TestSuppliedHolderWrites:
                 surfaces=held, holder=JOB_A, lease_seconds=LEASE_SECONDS
             )
             clock.advance(seconds=LEASE_SECONDS + 1)
+        elif standing == "at_deadline":
+            await tracker.acquire_surfaces(
+                surfaces=held, holder=JOB_A, lease_seconds=LEASE_SECONDS
+            )
+            clock.advance(seconds=LEASE_SECONDS)
         elif standing == "foreign":
             await tracker.acquire_surfaces(
                 surfaces=held, holder=JOB_B, lease_seconds=LEASE_SECONDS
@@ -3714,6 +3743,84 @@ class TestSuppliedHolderWrites:
         assert tracker_writes() == written
         assert await row.effect(tracker) == before
 
+    @pytest.mark.parametrize("standing", ["unheld", "expired", "foreign"])
+    async def test_a_graph_write_is_refused_on_the_peer_it_would_relate(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        clock: FixtureClock,
+        standing: str,
+    ) -> None:
+        """A relation writes the peer's graph too, so the peer's address is asked.
+
+        The child's graph address is held live by the writer; the peer's
+        is unheld, lapsed or a rival's.  Adding a relation from the child
+        to the peer is refused naming the PEER's address and its holder,
+        with nothing written and neither side's relations moved: holding
+        the issue a relation starts from is not holding the one it ends at.
+        """
+        if standing == "expired":
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({PEER_GRAPH}),
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+            clock.advance(seconds=LEASE_SECONDS + 1)
+        elif standing == "foreign":
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({PEER_GRAPH}),
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({CHILD_GRAPH}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        proposed = GraphProposal.model_validate(
+            {
+                "kind": "graph",
+                "issue_id": GRAPH_CHILD,
+                "changes": [{"kind": "related_to", "add": [GRAPH_PEER]}],
+            }
+        )
+        before = {
+            key: (await tracker.read_issue(issue_key=key)).relations
+            for key in (GRAPH_CHILD, GRAPH_PEER)
+        }
+        expected = tuple(
+            [
+                graph_snapshot(await tracker.read_issue(issue_key=key))
+                for key in (CLAIMED_ISSUE, GRAPH_CHILD, GRAPH_PEER)
+            ]
+        )
+        written = tracker_writes()
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.update_issue_graph(
+                issue_key=GRAPH_CHILD,
+                expected=expected,
+                changes=proposed.changes,
+                holder=JOB_A,
+            )
+
+        assert (
+            refused.value.surface_kind,
+            refused.value.scope_kind,
+            refused.value.scope_key,
+            refused.value.current_holder,
+        ) == (
+            SurfaceKind.ISSUE_GRAPH.value,
+            ScopeKind.ISSUE.value,
+            GRAPH_PEER,
+            JOB_B if standing == "foreign" else None,
+        )
+        assert tracker_writes() == written
+        assert {
+            key: (await tracker.read_issue(issue_key=key)).relations
+            for key in (GRAPH_CHILD, GRAPH_PEER)
+        } == before
+
     @pytest.mark.parametrize("method", sorted(single_writer_writes()))
     async def test_a_write_that_supplies_no_holder_consults_no_lease(
         self,
@@ -3726,10 +3833,12 @@ class TestSuppliedHolderWrites:
         the day a holder-less write starts consulting a lease this is the
         case that reds: an arm that left the surface unheld would still
         pass. The write lands, read back off what the seam moves rather
-        than off a write log — the two implementations log a state move
-        differently — because an absent holder is by design not an unheld
-        one. The rival's grant is untouched by it: the lease records who
-        is writing, and this write did not claim to be that writer.
+        than off a write log: the double records neither a criterion
+        move-back nor a graph write in any log the observed writes read,
+        so the read-back of the effect is the assertion that decides both
+        arms. An absent holder is by design not an unheld one. The rival's
+        grant is untouched by it: the lease records who is writing, and
+        this write did not claim to be that writer.
         """
         row = SUPPLIED_HOLDER_WRITES[method]
         if row.prepare is not None:
