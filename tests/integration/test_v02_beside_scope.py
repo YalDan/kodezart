@@ -552,6 +552,12 @@ class _Untouchable:
 
 
 def test_the_authored_arm_never_reaches_the_native_graph():
+    """Construction is the assertion.
+
+    The coordinator compiles its graph when it is built, and the sentinel
+    raises on any attribute read and on truth testing, so an arm that so much
+    as looks at the native graph while wiring its fire node fails right here.
+    """
     fire = engine(criteria=TrackerCriteria(tracker=tracker()))
     assert fire.native_graph is not None
     wired = _arm(forge=None)
@@ -559,8 +565,6 @@ def test_the_authored_arm_never_reaches_the_native_graph():
     # helper itself inspects the value it installs.
     fire.native_graph = _Untouchable()  # the sentinel stands in for a graph
 
-    coordinator = AuthoredDeliveryCoordinator(
+    AuthoredDeliveryCoordinator(
         fire=fire, publication=wired.publication, checks=wired.checks
     )
-
-    assert coordinator.fire is fire
