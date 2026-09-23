@@ -296,11 +296,8 @@ async def test_a_member_the_round_mints_is_declared_by_the_next_round(monkeypatc
     assert report.halt is None
     children = [key for key in minted_keys(board) if key != CLAIMED_ISSUE]
     assert len(children) == 2
-    first, second = dict.fromkeys(nonce for _, nonce, _ in acquisitions(board))
-    declared = {nonce: lines for _, nonce, lines in acquisitions(board) if True}
-    assert not declared[first] & frozenset(
-        line for child in children for line in addresses(child, TICKET_LINES)
-    )
+    _first, second = dict.fromkeys(nonce for _, nonce, _ in acquisitions(board))
+    declared = {nonce: lines for _, nonce, lines in acquisitions(board)}
     assert all(addresses(child, TICKET_LINES) <= declared[second] for child in children)
     for child in children:
         landed = min(

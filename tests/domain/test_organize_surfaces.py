@@ -14,8 +14,29 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 
 MEMBERS = ("SCOPE-1", "SCOPE-2", "SCOPE-3")
+
+
+def _addresses_a_container(kind: SurfaceKind) -> bool:
+    """Whether *kind* is a container's surface rather than an issue's.
+
+    Read off the vocabulary itself: a container kind is named for the
+    container, and a surface of it refuses an issue reference.
+    """
+    if kind.value.startswith("container_"):
+        return True
+    try:
+        WritableSurface(
+            kind=kind,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-1"),
+            marker="probe" if kind is SurfaceKind.MARKER_COMMENT else None,
+        )
+    except ValueError:
+        return True
+    return False
+
+
 CONTAINER_KINDS = frozenset(
-    {SurfaceKind.CONTAINER_DESCRIPTION, SurfaceKind.CONTAINER_STATUS_UPDATE}
+    kind for kind in SurfaceKind if _addresses_a_container(kind)
 )
 
 
@@ -60,6 +81,10 @@ def test_graph_change_is_declared_by_the_pre_approval_row_and_by_no_other():
 
 def test_no_row_declares_a_container_surface():
     """The scope's own container is written by no organize row."""
+    assert CONTAINER_KINDS >= {
+        SurfaceKind.CONTAINER_DESCRIPTION,
+        SurfaceKind.CONTAINER_STATUS_UPDATE,
+    }
     for role in MANDATE_PHASE_ROLES.values():
         assert not role.write_surfaces & CONTAINER_KINDS
 
