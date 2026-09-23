@@ -1457,7 +1457,10 @@ class OrganizeOwner:
                             )
                         ):
                             # Newly prepared split children belong to this same phase;
-                            # removed members no longer receive its marker.
+                            # removed members no longer receive its marker. Only a
+                            # member the round declared is marked: one whose
+                            # approval changed mid-round stays owed, and the
+                            # barrier hands it to the round that declares it.
                             current_labels = await self._tracker.read_scope_labels(
                                 ref=scope
                             )
@@ -1465,6 +1468,7 @@ class OrganizeOwner:
                                 revision.issue
                                 for revision in current
                                 if is_organize_subject(revision.issue)
+                                and revision.issue.issue_key in declared_keys
                                 and await self._admitted(
                                     revision.issue,
                                     phase=phase,
