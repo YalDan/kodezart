@@ -474,6 +474,8 @@ async def test_a_body_checklist_is_adopted_item_by_item_and_a_rerun_mints_nothin
         call["prompt"] for call in executor.calls if AUTHOR_OPENING in call["prompt"]
     ]
     assert CHECKLIST in authored
+    # In the author template's own block, not only in the rubric's copy.
+    assert authored.rsplit("<issue_body>", 1)[1].startswith("\n" + CHECKLIST_BODY)
     assert (
         "When the issue body already carries a checklist a person wrote, adopt it"
         in " ".join(authored.split())

@@ -26,7 +26,9 @@ than restating it: propose exactly one criterion for each checklist item that no
 existing criterion's Check already states, and use the item's own text,
 unchanged and without its list marker or tick box, as that criterion's Check. Do
 not reword, merge, split or drop an item, and do not propose moving or removing
-the checklist; the body stays as it is.
+the checklist; the body stays as it is. An item that cannot be demonstrated as
+written stays that criterion's Check, and the criterion names the evidence that
+is missing: re-graining applies only to criteria you write yourself.
 
 Editing an existing criterion is unavailable: when required, return `unavailable`
 with capability `criterion_edit` and concrete evidence. This is the only declared
