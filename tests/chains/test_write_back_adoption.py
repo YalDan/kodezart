@@ -1969,6 +1969,146 @@ def test_a_port_write_taken_as_a_value_is_a_call_site(case):
     assert found.paths == (str(site),)
 
 
+#: A write reached by a string naming it: through the builtin ``getattr``,
+#: through ``operator.methodcaller``, or through ``getattr`` at module level
+#: where no function holds it.
+REFLECTED = {
+    "getattr": (
+        """
+from kodezart.core.protocols import TrackerPort
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def publish(self) -> None:
+        await getattr(self._tracker, "post_comment")(issue_key="K", body="b")
+""",
+        CallSite(
+            module="planted/reflected.py",
+            function="Writer.publish",
+            method="post_comment",
+        ),
+    ),
+    "methodcaller": (
+        """
+import operator
+
+from kodezart.core.protocols import TrackerPort
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def publish(self) -> None:
+        post = operator.methodcaller("post_comment", issue_key="K", body="b")
+        await post(self._tracker)
+""",
+        CallSite(
+            module="planted/reflected.py",
+            function="Writer.publish",
+            method="post_comment",
+        ),
+    ),
+    "imported-methodcaller": (
+        """
+from operator import methodcaller
+
+from kodezart.core.protocols import TrackerPort
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def publish(self) -> None:
+        await methodcaller("upsert_comment", issue_key="K", body="b")(self._tracker)
+""",
+        CallSite(
+            module="planted/reflected.py",
+            function="Writer.publish",
+            method="upsert_comment",
+        ),
+    ),
+    "module-level": (
+        """
+from kodezart.core.protocols import TrackerPort
+
+POST = getattr(TrackerPort, "post_comment")
+""",
+        CallSite(
+            module="planted/reflected.py",
+            function=MODULE_LEVEL,
+            method="post_comment",
+        ),
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(REFLECTED))
+def test_a_write_named_by_reflection_is_a_call_site(case):
+    """A string naming a write, handed to ``getattr`` or ``methodcaller``, is one.
+
+    Nothing drives the planted method and nothing declares it, so the write
+    it names by a string is refused exactly as the same write spelled as an
+    attribute would be.
+    """
+    text, site = REFLECTED[case]
+    found = census(("planted/reflected.py", text))
+    assert found.unadopted == frozenset({site})
+
+
+#: The two readings a reflective call is held to: a ``getattr`` the planted
+#: module defines itself is not the builtin, so the string it is handed
+#: names nothing; and a reflective write in an applier the verifier drives
+#: is a site of that applier, driven with it.
+REFLECTION_CONTROLS = {
+    "package-defined-getattr": """
+from kodezart.core.protocols import TrackerPort
+
+
+def getattr(receiver, name):
+    return None
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def publish(self) -> None:
+        getattr(self._tracker, "post_comment")
+""",
+    "driven": DRIVEN.replace(
+        'await self._tracker.post_comment(issue_key="K", body="b")',
+        'await getattr(self._tracker, "post_comment")(issue_key="K", body="b")',
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(REFLECTION_CONTROLS))
+def test_reflection_is_read_as_the_builtin_where_the_call_stands(case):
+    """Controls: reflection is resolved, and a reflective site keeps its holder.
+
+    A ``getattr`` the module defines is no reflection, so no site is made of
+    the string it takes.  The builtin inside a driven applier makes a site
+    of that applier, which the verifier drives.
+    """
+    module = "planted/reflection_control.py"
+    text = REFLECTION_CONTROLS[case]
+    assert text.count("getattr(self._tracker") == 1
+    found = census((module, text))
+    if case == "driven":
+        site = CallSite(
+            module=module, function="Writer.publish.put", method="post_comment"
+        )
+        assert site in found.driven
+    else:
+        assert not {site for site in found.sites if site.module == module}
+    assert found.unadopted == frozenset()
+
+
 def through_base(*, base_caller: bool) -> str:
     """An override the verifier drives through its own type, and maybe not.
 
