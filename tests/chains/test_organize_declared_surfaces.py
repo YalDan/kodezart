@@ -979,3 +979,153 @@ async def test_approval_landing_before_a_grooming_halts_first_record_writes_noth
         and str(args.get("body", "")).startswith("[organize-question:")
     ]
     assert board.grants() == []
+
+
+def authoring(executor, monkeypatch, payload):
+    """Every author session of the subject answers *payload*; the rest as configured."""
+    original = executor.stream
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if title == "OrganizeProposal" and keys and keys[-1] == CLAIMED_ISSUE:
+            executor.calls.append(kwargs)
+            yield result(structured_output=payload)
+            return
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+
+
+def undeclared(report):
+    return [
+        (finding.issue_id, finding.evidence)
+        for finding in report.halt.surviving_findings
+        if finding.defect_class == "undeclared_surface"
+    ]
+
+
+def evidence(phase, kind, declared):
+    return (
+        f"The {phase} phase needed {kind} on {CLAIMED_ISSUE}, which is outside "
+        f"the set it declares ({', '.join(declared)})."
+    )
+
+
+async def test_a_split_the_pre_approval_row_authors_is_a_finding_not_a_write(
+    monkeypatch,
+):
+    """The groom row declares no split set, so a split it authors is refused.
+
+    The judge refuses the subject once and then finds nothing, so only the
+    residual can hold the round open; it does, to the bound, and the halt
+    writes it on the subject.
+    """
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            CLAIMED_ISSUE: lambda n: (
+                refusal(CLAIMED_ISSUE, "spec_gap")
+                if n == 1
+                else buildable(CLAIMED_ISSUE)
+            )
+        },
+    )
+    authoring(
+        executor,
+        monkeypatch,
+        {
+            "kind": "split",
+            "issue_id": CLAIMED_ISSUE,
+            "children": [
+                {
+                    "deliverable_key": "first-deliverable",
+                    "title": "Prepared split",
+                    "body": "Prepared source-grounded child specification.",
+                }
+            ],
+        },
+    )
+    report = await run_owner(owner)
+    assert not [name for name, _ in board.calls if name == "create_split_if_absent"]
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and "parentId" in args
+    ]
+    assert undeclared(report) == [
+        (CLAIMED_ISSUE, evidence("groom", "issue_split_set", GROOM_LINES))
+    ]
+    assert report.halt.cause == "convergence_exhausted"
+    assert GROOM_MARKER not in board.server.issues[CLAIMED_ISSUE].labels
+    assert escalations(board, CLAIMED_ISSUE, "undeclared_surface")
+
+
+async def test_a_body_the_criteria_row_authors_is_a_finding_not_a_write(monkeypatch):
+    """The criteria stage declares no description, so a body it authors is refused."""
+    owner, board, executor = factory(
+        under_approval=True,
+        convergence_bound=1,
+        body="Prepared body grounded in the source.",
+        phases=lambda rows: rows[1:],
+    )
+    board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+    authoring(
+        executor,
+        monkeypatch,
+        {
+            "kind": "body",
+            "issue_id": CLAIMED_ISSUE,
+            "body": "A rewritten body the criteria stage may not write.",
+        },
+    )
+    report = await run_owner(owner)
+    assert undeclared(report) == [
+        (
+            CLAIMED_ISSUE,
+            evidence(
+                "criteria",
+                "issue_description",
+                ("criterion_child_set", "issue_label_set"),
+            ),
+        )
+    ]
+    assert (
+        board.server.issues[CLAIMED_ISSUE].description
+        == "Prepared body grounded in the source."
+    )
+
+
+async def test_criteria_the_ticket_row_authors_are_a_finding_not_a_write(monkeypatch):
+    """The ticket stage declares no criterion children, so criteria it authors wait."""
+    owner, board, executor = factory(
+        under_approval=True, convergence_bound=1, phases=lambda rows: rows[:1]
+    )
+    authoring(
+        executor,
+        monkeypatch,
+        {
+            "kind": "criteria",
+            "issue_id": CLAIMED_ISSUE,
+            "criteria": [
+                {
+                    "title": "Check prepared bytes",
+                    "check": "Check prepared bytes match the declared source.",
+                    "do": "Compare the source and check prepared bytes.",
+                }
+            ],
+        },
+    )
+    report = await run_owner(owner)
+    assert undeclared(report) == [
+        (CLAIMED_ISSUE, evidence("ticket", "criterion_child_set", TICKET_LINES))
+    ]
+    assert not [
+        issue
+        for issue in board.server.issues.values()
+        if issue.parent_id == CLAIMED_ISSUE and "check" in issue.labels
+    ]
