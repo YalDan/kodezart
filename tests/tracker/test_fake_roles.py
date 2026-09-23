@@ -7,9 +7,16 @@ member of its own, so the conformance suite runs over the roles composed,
 unchanged. Each role's class constructs alone and satisfies its role, which
 is what lets a test that needs one role build only that role's double.
 
+A role double answers its role plus the roles it composes and the roles
+whose members it calls through: its bases are exactly the doubles of the
+declaring roles its role composes and of the classes defining what its own
+body calls on itself, both derived, so it answers nothing wider and works
+when it is built alone. The store it is built over declares nothing public.
+
 The classes are found by what they declare, read off the module's own text,
-and the roles by the register the port guards derive, so a member moved
-between roles moves this guard with it.
+assignments counted as well as definitions, and the roles by the register
+the port guards derive, so a member moved between roles moves this guard
+with it.
 """
 
 import ast
@@ -31,6 +38,7 @@ from tests.tracker.role_register import (
     class_per_role,
     classes_outside_one_role,
     declared_by_role,
+    edge_report,
     implementation_classes,
     roles_implemented_nowhere,
     roles_implemented_twice,
@@ -47,21 +55,28 @@ def role_classes(text: str = MODULE_TEXT) -> dict[str, frozenset[str]]:
     return implementation_classes(text, state=STATE.__name__, whole=WHOLE)
 
 
-def whole_declares(text: str = MODULE_TEXT) -> frozenset[str]:
-    """The public members the composed double's own body declares.
-
-    The last definition of the name is the one the module binds.
-    """
+def whole_body(text: str = MODULE_TEXT) -> list[ast.stmt]:
+    """The composed double's own body; the last definition is the one bound."""
     *_, node = (
         node
         for node in ast.parse(text).body
         if isinstance(node, ast.ClassDef) and node.name == WHOLE
     )
+    return node.body
+
+
+def whole_declares(text: str = MODULE_TEXT) -> frozenset[str]:
+    """Everything the composed double's own body holds besides its docstring."""
+    body = whole_body(text)
     return frozenset(
-        item.name
-        for item in node.body
-        if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
-        and not item.name.startswith("_")
+        ast.unparse(item)
+        for item in body
+        if not (
+            item is body[0]
+            and isinstance(item, ast.Expr)
+            and isinstance(item.value, ast.Constant)
+            and isinstance(item.value.value, str)
+        )
     )
 
 
@@ -75,9 +90,23 @@ def test_every_class_of_the_double_answers_for_exactly_one_role():
 
 def test_the_composed_double_declares_nothing_and_composes_every_role_class():
     assert whole_declares() == frozenset()
-    composed = {cls.__name__ for cls in FakeTrackerPort.__mro__}
-    assert set(role_classes()) <= composed
-    assert STATE.__name__ in composed
+    assert {cls.__name__ for cls in FakeTrackerPort.__mro__} == set(role_classes()) | {
+        WHOLE,
+        STATE.__name__,
+        "object",
+    }
+
+
+def test_each_role_double_is_built_over_exactly_the_doubles_it_needs():
+    assert edge_report(MODULE_TEXT, state=STATE.__name__, whole=WHOLE) == {}
+
+
+def test_the_store_declares_no_public_callable():
+    held = {
+        name: value for name, value in vars(STATE).items() if not name.startswith("_")
+    }
+
+    assert [name for name, value in held.items() if callable(value)] == []
 
 
 @pytest.mark.parametrize("role", sorted(declared_by_role()))
