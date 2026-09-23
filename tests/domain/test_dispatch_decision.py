@@ -45,7 +45,10 @@ range this module does not know fails loudly. Beyond the row, what the port
 answers about an issue's subtree is varied too: its sub-issues, its
 criterion sub-issues and its comments. In the scope flow these are the
 lane's gap: many open criteria under it, and many deliverable children, each
-owing a criterion of its own. So are the edge kinds no eligibility clause
+owing a criterion of its own. So is the work already done: many criteria
+under a heavy issue in a completed state, beside its open ones, so its gap
+and its eligibility stay what they were while the fraction of its work
+still open moves. So are the edge kinds no eligibility clause
 reads: the blocker clause reads blocked-by edges alone, so the issue's other
 edges (blocks, related, duplicate) are a count like any other.
 Each varied input is set to its extremes — nothing, and a great deal — one
@@ -66,7 +69,9 @@ and the fire — a rebinding at boot, a subclass built at the root, a
 validator on the row, an eligibility clause, a table consulted after the
 selection, a hook in the rank value, a tie-break among equal priorities, an
 age shifted by a size, a count over the edges no clause reads, a lane
-skipped or chosen by its gap, a fired lane rested or re-offered by a size
+skipped or chosen by its gap or by the fraction of its work still open (a
+count over an eligibility input, the criteria's state), a fired lane rested
+or re-offered by a size
 rather than by what its fire closed, a closed lane passed over or reordered
 by a size on the delivery-only turn — fails here whatever it is spelled, as
 soon as it moves the decision for a board holding those extremes.
@@ -200,8 +205,10 @@ SCOPE_VARIED = (
 #: neither is refused before its graph launches.
 SCOPE_SUBJECT_FALLBACK = "title"
 
-#: What the port answers about an issue's subtree, beyond the row.
-SUBTREE = ("sub_issues", "criteria", "comments")
+#: What the port answers about an issue's subtree, beyond the row: its
+#: deliverable children, its open criteria, its comments, and the criteria
+#: under it that are already done.
+SUBTREE = ("sub_issues", "criteria", "comments", "done")
 
 #: Exact. The edge kinds an eligibility clause reads, one reason each.
 READ_EDGE_KINDS: dict[IssueRelationKind, str] = {
@@ -405,27 +412,37 @@ class Variation:
         )
 
 
+def done(issue: TrackerIssue) -> TrackerIssue:
+    """*issue* as a board holds it when somebody finished it elsewhere."""
+    return issue.model_copy(
+        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+    )
+
+
 def subtree_of(
     parents: Sequence[str], parts: Sequence[str]
 ) -> tuple[tuple[TrackerIssue, ...], tuple[TrackerComment, ...]]:
-    """Many children, criteria and comments under each of *parents*.
+    """Many children, criteria, done criteria and comments under each of *parents*.
 
     The children carry no queue state, so no scan finds them: they are what
     the port answers about their parent, never candidates of their own.
     """
     children = [
-        make_tracker_issue(
-            f"{parent}-{part}-{number}",
-            parent_key=parent,
-            queue_states=(),
-            issue_labels=frozenset({CRITERION_LABEL})
-            if part == "criteria"
-            else frozenset(),
-        )
+        done(child) if part == "done" else child
         for parent in parents
         for part in parts
         if part != "comments"
         for number in range(MANY)
+        for child in (
+            make_tracker_issue(
+                f"{parent}-{part}-{number}",
+                parent_key=parent,
+                queue_states=(),
+                issue_labels=frozenset({CRITERION_LABEL})
+                if part in {"criteria", "done"}
+                else frozenset(),
+            ),
+        )
     ]
     comments = [
         TrackerComment(
@@ -592,13 +609,6 @@ class ClosingExecutor(ObservedNativeExecutor):
             yield event
 
 
-def done(issue: TrackerIssue) -> TrackerIssue:
-    """*issue* as a board holds it when somebody finished it elsewhere."""
-    return issue.model_copy(
-        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
-    )
-
-
 def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
     """The scope board: one lane per board issue, varied by *variation*.
 
@@ -608,8 +618,9 @@ def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
     done, and nothing anywhere recording a branch or a pull request for
     them. Heavy lanes are given the variation's subtree: ``SCOPE_MANY``
     criteria, as many deliverable children each with a criterion of its
-    own, and as many long comments; under a ready lane those criteria are
-    open, under a closed lane they are done, so a closed lane stays closed.
+    own, as many long comments, and as many criteria already done; under a
+    ready lane the first two parts' criteria are open, under a closed lane
+    they are done, so a closed lane stays closed.
     """
     port = scope_board(
         lanes=LANES,
@@ -637,6 +648,17 @@ def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
         closed = lane.issue_key in SCOPE_CLOSED
         for number in range(SCOPE_MANY):
             owed = []
+            if "done" in parts:
+                key = f"{lane.issue_key}/done-{number}"
+                port.issues[key] = done(
+                    make_tracker_issue(
+                        key,
+                        parent_key=lane.issue_key,
+                        queue_states=(),
+                        issue_labels=frozenset({CRITERION_LABEL}),
+                        body=f"**Check:** {key} held\n**Evidence:** —",
+                    )
+                )
             if "criteria" in parts:
                 owed.append((f"{lane.issue_key}/many-{number}", lane.issue_key))
             if "sub_issues" in parts:
@@ -801,8 +823,8 @@ async def test_the_port_answers_the_varied_subtree() -> None:
     """The control for the subtree variation: the port does hold it.
 
     A subtree built for one issue is read back through the port methods a
-    consumer asks — the criteria, the comments, and the scan, which must
-    not find the children as candidates of their own.
+    consumer asks — the criteria, open and done, the comments, and the
+    scan, which must not find the children as candidates of their own.
     """
     (parent,) = BOARD[:1]
     children, comments = subtree_of((parent.issue_key,), SUBTREE)
@@ -813,8 +835,11 @@ async def test_the_port_answers_the_varied_subtree() -> None:
     scanned = await tracker.scan_issues(
         query=IssueQuery(queue_state=QueueState.APPROVED, page_size=10 * MANY),
     )
-    assert len(children) == 2 * MANY
-    assert len(criteria) == MANY
+    assert len(children) == 3 * MANY
+    assert len(criteria) == 2 * MANY
+    assert [
+        issue.state_kind is WorkflowStateKind.COMPLETED for issue in criteria
+    ].count(True) == MANY
     assert len(listed) == MANY
     assert [issue.issue_key for issue in scanned] == [parent.issue_key]
 
@@ -892,9 +917,11 @@ async def test_the_ready_read_answers_the_varied_gap() -> None:
     A lane given the whole subtree is read back through the ready read the
     walk selects from: its gap is its own two criteria, the ``SCOPE_MANY``
     criteria under it and one criterion under each of its ``SCOPE_MANY``
-    children, and a light lane's gap is its own two criteria alone. The
-    closed lanes are read back as closed, whatever sits under them: a heavy
-    closed lane's subtree holds as many criteria, all done.
+    children, and a light lane's gap is its own two criteria alone. Its
+    roster is that gap and the ``SCOPE_MANY`` criteria already done, so the
+    part of its work still open is what the variation changed. The closed
+    lanes are read back as closed, whatever sits under them: a heavy closed
+    lane's subtree holds as many criteria, all done.
     """
     heavy = BOARD[0].issue_key
     closed = SCOPE_CLOSED[0]
@@ -902,10 +929,14 @@ async def test_the_ready_read_answers_the_varied_gap() -> None:
     port = scope_lanes(variation)
     ready = await read_scope_ready(ref=SCOPE, tracker=port)
     gaps = {lane.issue.issue_key: len(lane.gap) for lane in ready.ready}
+    rosters = {lane.issue.issue_key: len(lane.criteria) for lane in ready.ready}
     own = len(SCOPE_CHECKS)
     assert gaps == {
         issue.issue_key: own + 2 * SCOPE_MANY if issue.issue_key == heavy else own
         for issue in BOARD
+    }
+    assert rosters == {
+        key: gap + SCOPE_MANY if key == heavy else gap for key, gap in gaps.items()
     }
     assert tuple(issue.issue_key for issue in ready.closed) == SCOPE_CLOSED
     under_closed = [
@@ -913,7 +944,7 @@ async def test_the_ready_read_answers_the_varied_gap() -> None:
         for issue in port.issues.values()
         if issue.issue_key.startswith(closed) and CRITERION_LABEL in issue.issue_labels
     ]
-    assert len(under_closed) == own + 2 * SCOPE_MANY
+    assert len(under_closed) == own + 3 * SCOPE_MANY
     assert all(
         issue.state_kind is WorkflowStateKind.COMPLETED for issue in under_closed
     )
