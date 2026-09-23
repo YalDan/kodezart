@@ -289,6 +289,9 @@ async def test_a_canceled_or_duplicate_criterion_is_non_counting_at_the_readines
     assert keys(selection) == ["lane"]
     assert selection.blocked == ()
     assert "blocker-check" not in selection.unresolved
+    # What stays unresolved is named, so the absence above is read off a
+    # list that still carries the scope's one counting open criterion.
+    assert selection.unresolved == ("lane-check",)
     fixture.assert_read_only()
 
 
