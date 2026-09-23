@@ -398,11 +398,55 @@ def parameters(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg
     return [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]
 
 
+def spelled(annotation: ast.expr) -> list[ast.expr]:
+    """*annotation*'s parts, with a quoted annotation read as the one it quotes."""
+    parts: list[ast.expr] = []
+    for part in ast.walk(annotation):
+        if isinstance(part, ast.Constant) and isinstance(part.value, str):
+            try:
+                quoted = ast.parse(part.value, mode="eval").body
+            except SyntaxError:
+                continue
+            parts.extend(spelled(quoted))
+        elif isinstance(part, ast.expr):
+            parts.append(part)
+    return parts
+
+
 def names_in(annotation: ast.expr) -> frozenset[str]:
-    """Every bare name an annotation spells."""
+    """Every name an annotation spells: bare, qualified, or quoted."""
     return frozenset(
-        part.id for part in ast.walk(annotation) if isinstance(part, ast.Name)
+        part.id if isinstance(part, ast.Name) else part.attr
+        for part in spelled(annotation)
+        if isinstance(part, ast.Name | ast.Attribute)
     )
+
+
+def admits_none(annotation: ast.expr) -> bool:
+    """Whether *annotation* lets ``None`` through, however the union is spelled.
+
+    ``X | None``, ``Optional[X]`` and ``Union[X, None]``, quoted or not, and
+    any of them wrapped in ``Annotated[...]``.
+    """
+    for part in spelled(annotation):
+        if isinstance(part, ast.BinOp) and any(
+            isinstance(arm, ast.Constant) and arm.value is None
+            for arm in ast.walk(part)
+        ):
+            return True
+        if isinstance(part, ast.Subscript):
+            wrapper = final_name(part.value)
+            arms = (
+                part.slice.elts if isinstance(part.slice, ast.Tuple) else [part.slice]
+            )
+            if wrapper == "Optional" or (
+                wrapper == "Union"
+                and any(
+                    isinstance(arm, ast.Constant) and arm.value is None for arm in arms
+                )
+            ):
+                return True
+    return False
 
 
 @cache
@@ -714,20 +758,37 @@ def uncredited_roles(
     return report
 
 
+def aggregate_aliases(text: str) -> frozenset[str]:
+    """Every name *text* binds to the whole port, by assignment or type alias."""
+    bound: set[str] = set()
+    for node in nodes(text):
+        if isinstance(node, ast.Assign | ast.AnnAssign | ast.TypeAlias):
+            if node.value is None or AGGREGATE not in names_in(node.value):
+                continue
+            targets = (
+                node.targets
+                if isinstance(node, ast.Assign)
+                else [node.name if isinstance(node, ast.TypeAlias) else node.target]
+            )
+            bound.update(name for target in targets if (name := final_name(target)))
+    return frozenset(bound)
+
+
 def aggregate_annotations(sources: Mapping[str, str]) -> tuple[str, ...]:
-    """Every consumer whose annotations name the whole port."""
+    """Every consumer that names the whole port, under its name or an alias.
+
+    An alias is a name any module binds to the aggregate, the port module
+    included; a consumer binding one is reported as well as one annotating
+    with one.
+    """
+    spellings = {AGGREGATE}.union(
+        *(aggregate_aliases(text) for text in sources.values())
+    )
     return tuple(
         path
         for path, text in sorted(sources.items())
-        if consumer(path) and AGGREGATE in annotation_names(text)
-    )
-
-
-def unions_none(annotation: ast.expr) -> bool:
-    """Whether *annotation* is a ``|`` union with ``None`` among its arms."""
-    return isinstance(annotation, ast.BinOp) and any(
-        isinstance(part, ast.Constant) and part.value is None
-        for part in ast.walk(annotation)
+        if consumer(path)
+        and (spellings & set(annotation_names(text)) or aggregate_aliases(text))
     )
 
 
@@ -763,8 +824,10 @@ def defaulted_role_parameters(sources: Mapping[str, str]) -> dict[str, tuple[str
                     or not names_in(argument.annotation) & known
                 ):
                     continue
-                if argument.arg in defaulted or isinstance(
-                    argument.annotation, ast.BinOp
+                if (
+                    argument.arg in defaulted
+                    or isinstance(argument.annotation, ast.BinOp)
+                    or admits_none(argument.annotation)
                 ):
                     loose.add(f"{function.name}({argument.arg})")
         for node in nodes(text):
@@ -775,7 +838,7 @@ def defaulted_role_parameters(sources: Mapping[str, str]) -> dict[str, tuple[str
                     isinstance(field, ast.AnnAssign)
                     and isinstance(field.target, ast.Name)
                     and names_in(field.annotation) & known
-                    and (field.value is not None or unions_none(field.annotation))
+                    and (field.value is not None or admits_none(field.annotation))
                 ):
                     loose.add(f"{node.name}.{field.target.id}")
         if loose:
@@ -783,13 +846,24 @@ def defaulted_role_parameters(sources: Mapping[str, str]) -> dict[str, tuple[str
     return report
 
 
-def imported_modules(text: str) -> frozenset[str]:
-    """Every absolute module *text* imports, and every name it imports from one."""
+def imported_modules(text: str, path: str | None = None) -> frozenset[str]:
+    """Every module *text* imports, and every name it imports from one.
+
+    A relative import is resolved against *path*, the module's own place in
+    the package, so ``from ..adapters import x`` names what it reaches.
+    """
     found: set[str] = set()
     for node in nodes(text):
-        if isinstance(node, ast.ImportFrom) and node.module and not node.level:
-            found.add(node.module)
-            found.update(f"{node.module}.{alias.name}" for alias in node.names)
+        if isinstance(node, ast.ImportFrom) and (node.module or node.level):
+            if node.level and path is None:
+                continue
+            base = node.module or ""
+            if node.level and path is not None:
+                package = [PACKAGE, *path.split("/")[:-1]]
+                anchor = package[: len(package) - (node.level - 1)]
+                base = ".".join([*anchor, *([node.module] if node.module else [])])
+            found.add(base)
+            found.update(f"{base}.{alias.name}" for alias in node.names)
         elif isinstance(node, ast.Import):
             found.update(alias.name for alias in node.names)
     return frozenset(found)
@@ -810,7 +884,7 @@ def adapter_importers(sources: Mapping[str, str]) -> tuple[str, ...]:
         and not path.startswith(f"{ADAPTERS}/")
         and any(
             name == ADAPTER_PACKAGE or name.startswith(f"{ADAPTER_PACKAGE}.")
-            for name in imported_modules(text)
+            for name in imported_modules(text, path)
         )
     )
 
@@ -818,9 +892,9 @@ def adapter_importers(sources: Mapping[str, str]) -> tuple[str, ...]:
 def first_party_closure(sources: Mapping[str, str]) -> frozenset[str]:
     """Every module the entry point reaches through its own imports."""
 
-    def paths_of(text: str) -> set[str]:
+    def paths_of(path: str, text: str) -> set[str]:
         out: set[str] = set()
-        for name in imported_modules(text):
+        for name in imported_modules(text, path):
             if not name.startswith(f"{PACKAGE}."):
                 continue
             relative = name.split(".", 1)[1].replace(".", "/")
@@ -838,7 +912,7 @@ def first_party_closure(sources: Mapping[str, str]) -> frozenset[str]:
         if path in visited or path not in sources:
             continue
         visited.add(path)
-        frontier.extend(paths_of(sources[path]))
+        frontier.extend(paths_of(path, sources[path]))
     return frozenset(visited)
 
 

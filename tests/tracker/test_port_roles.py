@@ -540,6 +540,83 @@ def test_a_consumer_that_takes_more_than_it_calls_is_reported(form):
     ]
 
 
+#: Each other way to spell what a clause reads, and the one report that must
+#: name the module spelling it.
+PLANTED_SPELLINGS = {
+    "a quoted whole port": (
+        'def hold(port: "{aggregate}") -> None:\n    port.{member}()\n',
+        "aggregate",
+    ),
+    "a qualified whole port": (
+        "from {port_package} import {port_module}\n\n\n"
+        "def hold(port: {port_module}.{aggregate}) -> None:\n    port.{member}()\n",
+        "aggregate",
+    ),
+    "an alias of the whole port": (
+        "TrackerWhole = {aggregate}\n\n\n"
+        "def hold(port: TrackerWhole) -> None:\n    port.{member}()\n",
+        "aggregate",
+    ),
+    "a type alias of the whole port": (
+        "type TrackerWhole = {aggregate}\n\n\n"
+        "def hold(port: TrackerWhole) -> None:\n    port.{member}()\n",
+        "aggregate",
+    ),
+    "a quoted role it never uses": (
+        'def hold(reader: "{role}") -> None:\n    return None\n',
+        "credit",
+    ),
+    "an optional role": (
+        "def hold(*, reader: Optional[{role}]) -> None:\n    reader.{member}()\n",
+        "default",
+    ),
+    "a union of a role and None": (
+        "def hold(*, reader: Union[{role}, None]) -> None:\n    reader.{member}()\n",
+        "default",
+    ),
+    "an annotated optional field": (
+        "@dataclass\nclass Holder:\n"
+        '    reader: Annotated[{role} | None, "held"]\n\n'
+        "    def use(self) -> None:\n        self.reader.{member}()\n",
+        "default",
+    ),
+    "a relative vendor adapter import": (
+        "from ..{adapter_relative} import {adapter_class}\n",
+        "adapter",
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_SPELLINGS))
+def test_every_spelling_names_what_it_spells(form):
+    sources = source_tree()
+    text = port_module_text()
+    role = min(declaring_roles(text))
+    port_package, port_module = TrackerPort.__module__.rsplit(".", 1)
+    planted, expected = PLANTED_SPELLINGS[form]
+    planted_path = "services/overreaching.py"
+    sources[planted_path] = planted.format(
+        aggregate=AGGREGATE,
+        role=role,
+        member=min(own_declarations(text)[role]),
+        port_package=port_package,
+        port_module=port_module,
+        adapter_relative=LinearMcpTracker.__module__.split(".", 1)[1],
+        adapter_class=LinearMcpTracker.__name__,
+    )
+
+    reports = {
+        "aggregate": aggregate_annotations(sources),
+        "credit": tuple(uncredited_roles(sources)),
+        "default": tuple(defaulted_role_parameters(sources)),
+        "adapter": adapter_importers(sources),
+    }
+
+    assert [name for name, report in reports.items() if planted_path in report] == [
+        expected
+    ]
+
+
 def wider_role(text: str) -> tuple[str, str, str]:
     """A role, a member of one role it composes, and a declaring role left idle.
 
