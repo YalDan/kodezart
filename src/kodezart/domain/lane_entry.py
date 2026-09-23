@@ -85,11 +85,12 @@ def recorded_commit(*, record: LaneRunState) -> LaneCommit:
     """The commit act re-entry resumes at: the record's last row (KOD-681, KOD-705).
 
     At re-entry the record is the only source of what this lane committed.
-    The rows are the lane's commit acts in order. After a stall the last of
-    them is the landing act, written by the step that computed
-    ``landable_commit``, so this is where the best iteration reaches
-    re-entry. A record with no landing act names no best iteration, and its
-    last act is the only head it names. The head field is not read, and
+    The rows are the lane's commit acts in order. After a stall exit that had
+    a commit, the last of them is the best iteration, written by the landing
+    step from ``landable_commit``: the consolidated tip when the landing
+    integrated, and otherwise the best commit itself. So this is where the
+    best iteration reaches re-entry. A record whose run reached no stall exit
+    names its last act, and that is the head. The head field is not read, and
     neither is any remote: a remote tip that has moved past this commit, or
     been reset behind it, does not change which commit the record names.
 
@@ -167,8 +168,11 @@ def decide_lane_entry(
     delivered against.
 
     The head a recorded lane resumes at is the one its record names — the
-    last commit act, which after a stall is the landing act — and never a
-    remote reading (KOD-705, KOD-96). The loop level's remote reading says
+    last commit act — and never a remote reading (KOD-705, KOD-96). After a
+    stall exit that had a commit, that act is the best iteration: the
+    consolidated tip when the landing integrated, and otherwise the best
+    commit itself. A record whose run reached no stall exit names its last
+    act, and that is the head. The loop level's remote reading says
     only whether the recorded loop branch still stands at that head. When it
     does, the lane continues that branch. When it does not — a landing moved
     the head off it, or a commit was pushed while its record write failed —
@@ -177,7 +181,10 @@ def decide_lane_entry(
     the head sha, leaving the old branch where it stands. A lane owing
     nothing whose loop branch has left its head refuses instead, because
     delivering that branch as it stands would deliver a commit the record
-    does not name.
+    does not name. So a lane that landed and then had every criterion crossed
+    off, with no pull request, refuses on every walk, even though its
+    deliverable branch holds the record's head; the refusal stays inside that
+    lane.
 
     ``remote_deliverable_head`` is the other level's own reading, and it is
     carried onto the entry rather than compared with anything here: where the

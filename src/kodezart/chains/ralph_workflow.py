@@ -457,19 +457,21 @@ class RalphWorkflowEngine:
         *,
         landed: dict[str, object],
     ) -> None:
-        """Put the landing act on this lane's record, where re-entry reads it.
+        """Put the stall exit's best act on this lane's record, where re-entry reads it.
 
-        The landing consolidates the best iteration of a stalled run onto the
-        deliverable branch, and the record's rows are the acts a re-entry
-        resolves: a lane re-entered against the last act the loop recorded
-        would resume from the work this landing was chosen over (KOD-705).
-        This step is the one that has both the lane and the tip, so the row is
-        written here, through the writer the loop's own commits go through.
+        The record's rows are the acts a re-entry resolves: a lane re-entered
+        against the last act the loop recorded would resume from the work the
+        best iteration was chosen over (KOD-705). This step is the one that
+        has both the lane and the best iteration, so the row is written here,
+        through the writer the loop's own commits go through.
 
-        Written only when the landing put that work ON the deliverable branch.
-        An unintegrated landing left it under a ref of its own, which is no
-        commit act of the branches this record names; and a lane whose subject
-        is not a tracker one has no record at all.
+        When the landing put the best iteration ON the deliverable branch, the
+        act recorded is the consolidated tip. Otherwise — a consolidation that
+        did not integrate, or a forge-less landing that published nothing —
+        the act recorded is the best commit itself, which is one of the loop
+        branch's own commits. A stall exit with no commit records nothing, and
+        neither does a lane whose subject is not a tracker one, which has no
+        record at all.
         """
         spec = state["fire_spec"]
         if not isinstance(spec, TrackerSpec):
