@@ -33,26 +33,34 @@ One class of the shipped proxy is out of this census: a model configuration
 whose `extra` setting is loosened from forbidding unknown fields to
 allowing them.  The tree carries none today and nothing here would see one.
 A second class is out of it too: `addopts` (with `-k` or `--deselect`),
-`testpaths`, `collect_ignore` in a conftest, a module-level `__test__` set
-false, and a `parametrize` mark whose parameter set is empty (which the
-runner reports as a skip at collection, under a setting of its own table)
-can each stop a test being collected at all, and nothing here reads what
-they say; they are a later slice.  The same holds for the collection-name
-keys of the runner's table (`python_files`, `python_classes`,
-`python_functions`), which decide what is a test in the first place; for a
-mark that relaxes the warning filter on one test or a whole module
-(`filterwarnings` applied as a mark rather than set in the pinned table);
-and for the type checker's own skip decorator (`typing.no_type_check`),
-which exempts a body from the checker with no comment to count.  Of the
+`testpaths`, `collect_ignore` in a conftest, `__test__` set false on a
+module, a class or a function, and a `parametrize` mark whose parameter set
+is empty (which the runner reports as a skip at collection, under a setting
+of its own table) can each stop a test being collected at all, and nothing
+here reads what they say; they are a later slice.  The same holds for the
+collection-name keys of the runner's table (`python_files`,
+`python_classes`, `python_functions`), which decide what is a test in the
+first place; for a mark that relaxes the warning filter on one test or a
+whole module (`filterwarnings` applied as a mark rather than set in the
+pinned table),
+and for the same relaxation spelled as a call or a fixture: a
+`warnings.simplefilter('ignore')` call, or an autouse fixture that relaxes
+the pinned `filterwarnings = ["error"]`; and for the type checker's own
+skip decorator (`typing.no_type_check`), which exempts a body from the
+checker with no comment to count.  Of the
 runner's table the key set is pinned whole, and of its values only
 `filterwarnings` and `markers` are read: a key it does not carry today --
 `addopts`, `norecursedirs`, a collection-name key,
 `empty_parameter_set_mark`, `collect_imported_tests` -- reds the suite when
 it is added, while a changed value of another key it carries, `testpaths`
-among them, is not seen.  Code the runner executes at collection is not
-read either: a collection hook in any conftest, the repository root's
-included, which the walk does not reach (`pytest_ignore_collect`, or a
-`pytest_collection_modifyitems` or `pytest_deselected` that removes items),
+among them, is not seen.  Code the runner executes before or during
+collection is not read either: any hook that a conftest, the repository
+root's included, which the walk does not reach, or a plugin module it loads
+through `pytest_plugins`, runs then (`pytest_configure` changing the
+selection options, `pytest_ignore_collect`, or a
+`pytest_collection_modifyitems` that removes items; `pytest_deselected` is
+only told which items were removed and cannot remove any itself), a plugin
+registered through the project's own `pytest11` entry points,
 `collect_ignore_glob`, a module-level deletion or rebinding of a test's
 name, a fixture decorator applied to a test, and a skip form reached
 through a submodule (`unittest.case.SkipTest`).  A third is out of it as
