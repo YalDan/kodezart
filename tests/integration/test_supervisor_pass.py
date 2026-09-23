@@ -238,13 +238,18 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
 
     # Every other pass is as it was: the arm adds one registration and edits no
     # other. The two sets are named, because a declared roster and an undeclared
-    # one no longer schedule the same passes: the roster withholds the per-issue
-    # machine and puts the organize tick and the heartbeat there instead, and
-    # both of those are registered before the observation arm runs.
+    # one do not schedule the same passes: the roster withholds the dispatch
+    # pass and adds the organize tick and the heartbeat, both registered before
+    # the observation arm runs, and the session passes run under either. The
+    # organize tick holds grooming's row, so grooming's name stands for it.
     per_issue = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
     if dispatching:
         per_issue |= {f"dispatch:{REPO}"}
-    scope_passes = {PromptKey.GROOMING_PASS.value, HEARTBEAT_PASS}
+    scope_passes = {
+        PromptKey.GROOMING_PASS.value,
+        PromptKey.FIRE_PREP_PASS.value,
+        HEARTBEAT_PASS,
+    }
     expected = scope_passes if raw_scopes else per_issue
     assert {entry.name for entry in registered} - {"supervisor"} == expected
 

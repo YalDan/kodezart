@@ -25,7 +25,7 @@ from kodezart.main import create_app, lifespan
 from kodezart.services.scope_approval import scope_approved
 from kodezart.services.tracker_boot import owned_mappings
 from kodezart.types.domain.branch import trunk_base
-from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
@@ -133,14 +133,16 @@ def test_the_shipped_file_names_the_criteria_stage_the_adapter_is_built_with():
 
 
 def test_the_shipped_file_declares_no_table_the_scope_path_never_reads() -> None:
-    """The header's claim about the two absent tables, asserted rather than read.
+    """The header's claim about the tables, asserted rather than read.
 
     Both fields default to an empty mapping, so a table added to the file would
-    load, boot and walk while the header above it said there was none.
+    load, boot and walk while the header above it said there was none. The run
+    event table is absent; the queue table is declared whole, because the
+    grooming and fire-prep sessions a scope deployment runs read every member.
     """
     loaded = shipped()
     assert loaded.run_event_states == {}
-    assert loaded.queue_states == {}
+    assert set(loaded.queue_states) == {member.value for member in QueueState}
 
 
 #: Every purpose a marker prefix can be asked for is named in the source by one
@@ -343,8 +345,9 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
     A deployment configured from the shipped file and the page's own environment
     block boots, reconciles its mappings into the team, schedules the passes that
     read its one scope table — the observation tick that watches each lane's run
-    shape, the organize tick and the standing scopes' heartbeat — and nothing
-    else, holds no checkpointer, and writes no label onto any issue. Its first
+    shape, the organize tick and the standing scopes' heartbeat — and beside
+    them the fire-prep session over the declared roster, holds no checkpointer,
+    and writes no label onto any issue. Its first
     scoped run is refused by type before a member is read, because nobody has
     approved the project yet, and it leaves the board untouched.
 
@@ -396,6 +399,7 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
             "supervisor",
             PromptKey.GROOMING_PASS.value,
+            PromptKey.FIRE_PREP_PASS.value,
             HEARTBEAT_PASS,
         ]
         # The observation tick records each lane's alarm under a configured
@@ -404,10 +408,12 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         # first observed lane.
         assert MARKER_PURPOSE in loaded.marker_prefixes
         assert app.state.checkpointer is None
-        for name in ("scheduled_passes_not_wired", "prompt_passes_not_wired"):
-            withheld = logged(events, name)
-            assert len(withheld) == 1, name
-            assert withheld[0]["organize_scopes_declared"] is True, name
+        withheld = logged(events, "scheduled_passes_not_wired")
+        assert len(withheld) == 1
+        assert withheld[0]["organize_scopes_declared"] is True
+        # The session passes are not withheld by a scope row: nothing says
+        # they are missing.
+        assert logged(events, "prompt_passes_not_wired") == []
         # Boot instates the vocabulary in the TEAM; it labels no issue and does
         # not touch the project it is about to be asked to walk.
         assert {

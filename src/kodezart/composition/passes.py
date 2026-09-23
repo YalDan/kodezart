@@ -257,11 +257,10 @@ def runs_scope_flow(operation: OperationConfig) -> bool:
     """Whether this operation declares scopes the organize owner walks.
 
     Such an operation is worked scope by scope: a scope is approved, the
-    organize step maps its workflow, and the walker runs the lanes. The
-    per-issue dispatcher and the two remaining prompt passes scan whole boards
-    and are no part of that flow — declaring the one team and the one
-    repository a scope run needs would otherwise schedule all three over that
-    team's entire board.
+    organize step maps its workflow, and the walker runs the lanes. It decides
+    the passes that belong to that flow alone; the grooming and fire-prep
+    sessions are no part of the question and run on the declared roster
+    either way (:func:`session_passes_wire`).
 
     Read off the existing roster rather than a switch of its own: a lane cannot
     fire without the criteria mandate's terminal marker, which only an organize
@@ -271,14 +270,17 @@ def runs_scope_flow(operation: OperationConfig) -> bool:
 
 
 def session_passes_wire(operation: OperationConfig) -> bool:
-    """Whether the two legacy prompt passes run as agent sessions here.
+    """Whether the grooming and fire-prep passes run as agent sessions here.
 
-    Both conditions, named once: a roster a template could not render over, and
-    a deployment that works scope by scope. Three sites ask the same question —
-    the wiring, the gate probe and the render preflight — and a second copy of
-    it is a second opinion about which passes this deployment schedules.
+    One condition, as v0.2 had it: a declared roster the templates can render
+    over. Declared scopes do not withhold them — the two sessions keep the
+    whole board in order inside the declared teams and repositories, and the
+    scope walk builds only what is approved. Three sites ask the same
+    question — the wiring, the gate probe and the render preflight — and a
+    second copy of it is a second opinion about which passes this deployment
+    schedules.
     """
-    return not runs_scope_flow(operation) and not absent_roster(operation)
+    return not absent_roster(operation)
 
 
 def _record_kind_for(key: PromptKey) -> RunKind:
@@ -315,11 +317,10 @@ async def build_prompt_passes(
     own fresh scope reads and explicit repository bindings, and is scheduled
     FIRST so a deployment that keeps nothing else keeps it.
 
-    The remaining prompt rows belong to the per-issue flow: they scan whole
-    boards from the legacy team/repository roster and use their configured
-    signal gates. They wire only where :func:`session_passes_wire` holds — an
-    operation that declares ``organize_scopes`` gets the organize tick and
-    neither of them. Preflight validates exactly those active rows.
+    The remaining prompt rows scan whole boards from the declared
+    team/repository roster and use their configured signal gates. They wire
+    wherever :func:`session_passes_wire` holds, whether or not the operation
+    declares ``organize_scopes``. Preflight validates exactly those active rows.
     """
     log: BoundLogger = get_logger(__name__)
     schedule = prompt_pass_schedule(config)
@@ -336,17 +337,14 @@ async def build_prompt_passes(
                 report=run_report(recorder, _record_kind_for(key), key.value),
             )
         )
-    absent = absent_roster(operation)
-    withheld = runs_scope_flow(operation)
-    if absent or withheld:
-        # Two reasons, one event, one field each: a roster a template could not
-        # render over, and a deployment whose work is a scope walk. An operator
-        # reading the log for "why no prompt pass?" finds which it is.
+    if not session_passes_wire(operation):
+        # The one reason: a roster a template could not render over. An
+        # operator reading the log for "why no prompt pass?" finds which
+        # collection is missing.
         await log.ainfo(
             "prompt_passes_not_wired",
             operation_config_present=True,
-            absent=list(absent),
-            organize_scopes_declared=withheld,
+            absent=list(absent_roster(operation)),
         )
         return scheduled
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
@@ -578,8 +576,9 @@ async def _verify_wired_gates(
     builders themselves use: a signal configured for a pass this deployment
     does not schedule is not a capability it needs, and refusing boot over
     one would hold a deployment hostage to a knob nothing reads. A deployment
-    that declares ``organize_scopes`` schedules neither session pass and no
-    per-issue dispatch pass, so it needs none of their signals.
+    that declares ``organize_scopes`` schedules no per-issue dispatch pass, so
+    it needs none of that pass's signals; it schedules both session passes,
+    so it needs theirs.
 
     Every refused signal is named at once, with the passes it gates and the
     backend's own diagnosis, because an operator fixing one scope at a time
@@ -739,8 +738,8 @@ async def verify_pass_preflight(
     in hand, the gate probe is a round trip, and the renders are local.
 
     The render half applies to exactly the passes that will WIRE.  An
-    operation with no roster, and one that declares ``organize_scopes``,
-    schedules none of them (see :func:`build_prompt_passes`), and rendering a
+    operation with no roster schedules none of them (see
+    :func:`build_prompt_passes`), and rendering a
     template it will never send would refuse a boot over a hole nothing
     reaches.
     """
@@ -977,7 +976,6 @@ async def build_dispatch_runtime(
             "prompt_passes_not_wired",
             operation_config_present=False,
             absent=[],
-            organize_scopes_declared=False,
         )
     return DispatchRuntime(
         scheduler=PassScheduler(passes=tuple(scheduled)),
