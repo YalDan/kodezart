@@ -580,7 +580,7 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             False,
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
-            False,
+            None,
             id="cleared_gate",
         ),
         pytest.param(
@@ -588,7 +588,7 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             True,
             AcceptVerdict.rejected,
             WorkflowStateKind.UNSTARTED,
-            False,
+            None,
             id="iteration_ceiling",
         ),
         pytest.param(
@@ -596,8 +596,24 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             False,
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
-            True,
+            "uneconomic",
             id="measured_uneconomic_cost",
+        ),
+        pytest.param(
+            3,
+            False,
+            AcceptVerdict.accepted,
+            WorkflowStateKind.COMPLETED,
+            "affordable",
+            id="measured_affordable_cost",
+        ),
+        pytest.param(
+            3,
+            False,
+            AcceptVerdict.accepted,
+            WorkflowStateKind.COMPLETED,
+            "unmeasured",
+            id="unmeasured_cost",
         ),
     ],
 )
@@ -614,10 +630,13 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
     one row and the ceiling itself in the other. The refusal round spends its
     seat of the iteration budget as any round does; there is no special case.
 
-    The cost row refuses the same claim at the measured uneconomic reason
-    instead: its judgment carries a measured, cited cost that decides before the
-    capability is asked, and the criterion, its state unmoved, is in round two's
-    driving set just the same.
+    The cost rows refuse the same claim at a cost reason instead, one row per
+    cost outcome: a measured, cited cost that prices uneconomic is escalated at
+    the uneconomic reason; one that prices affordable is recorded at the
+    affordable reason; and a cost with no measurement and no instrument is
+    recorded at the ground. Each decides before the capability is asked, and in
+    each the criterion, its state unmoved, is in round two's driving set just
+    the same.
     """
     port = None
     writes = 0
@@ -627,13 +646,21 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
 
     async def answers(title, payload, kwargs):
         nonlocal writes
-        if title == "AmendmentJudgment" and cost:
+        if title == "AmendmentJudgment" and cost == "unmeasured":
+            payload["finding"] = UNVERIFIABLE_HERE | {
+                "cost_claim": {
+                    "assertion": "The demonstration costs too much to run.",
+                    "measurement": None,
+                }
+            }
+            payload["measured_by"] = None
+        elif title == "AmendmentJudgment" and cost is not None:
             payload["finding"] = UNVERIFIABLE_HERE | {
                 "cost_claim": {
                     "assertion": "The demonstration costs too much to run.",
                     "measurement": {
                         "observed": "Executed once at base; 9 hours observed",
-                        "affordable": False,
+                        "affordable": cost == "affordable",
                     },
                 }
             }
@@ -680,13 +707,18 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
         assert writes == 2
         assert [bool(event.report.upheld) for event in reports] == [True, False]
         refusal = reports[0].report.upheld[0]
-        assert refusal.reason is (
-            UpheldReason.COST_MEASURED_UNECONOMIC
-            if cost
-            else UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+        escalated = cost in (None, "uneconomic")
+        assert (
+            refusal.reason
+            is {
+                None: UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+                "uneconomic": UpheldReason.COST_MEASURED_UNECONOMIC,
+                "affordable": UpheldReason.COST_MEASURED_AFFORDABLE,
+                "unmeasured": UpheldReason.GROUND_NOT_REPRODUCED,
+            }[cost]
         )
-        assert refusal.publication.kind == "escalated"
-        assert classified_before_round_two == [True]
+        assert refusal.publication.kind == ("escalated" if escalated else "recorded")
+        assert classified_before_round_two == [escalated]
         assert states_before_round_two == [entered]
         # One evaluation, and the refused criterion was in what it graded.
         assert len(dispatched) == 1
