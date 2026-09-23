@@ -911,14 +911,15 @@ async def test_a_weakened_designated_assertion_marks_the_lane_and_is_never_pushe
         assert minted[key].state_kind is WorkflowStateKind.UNSTARTED
         assert caught.value.marks == (key,)
         assert caught.value.lane_key == SUBJECT
-        # The Check is the rendered mark, byte for byte, and it names the test,
-        # the record and the assertion that went — not the one that replaced it.
+        # The Check is the rendered mark, byte for byte, and it names the test
+        # and the record, and neither the assertion that went nor the one that
+        # replaced it.
         check = criterion_field_bodies(minted[key].body, field="Check")[0]
         assert check == rendered_mark(pinned).check
         assert PROTECTED_PATH in check
         assert PROTECTED_NAME in check
         assert pinned.ruling_id in check
-        assert "answer() == 42" in check
+        assert "answer() == 42" not in check
         assert "answer() is not None" not in check
         # The mark is in the gap read over the lane's own criterion sub-issues.
         assert key in {

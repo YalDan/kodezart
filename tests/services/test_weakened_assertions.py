@@ -250,8 +250,9 @@ async def test_two_tests_that_each_lost_an_assertion_mint_two_marks_under_one_le
     assert all(
         issue.state_kind is WorkflowStateKind.UNSTARTED for issue in minted.values()
     )
-    # One mark per lost assertion, each naming its own test, its own record and
-    # the condition that went; the assertion that survived appears in neither.
+    # One mark per test that lost an assertion, each naming its own test and
+    # its own record; neither the condition that went nor the one that
+    # survived appears in either.
     checks = sorted(
         criterion_field_bodies(issue.body, field="Check")[0]
         for issue in minted.values()
@@ -267,7 +268,7 @@ async def test_two_tests_that_each_lost_an_assertion_mint_two_marks_under_one_le
     ):
         assert f"`{path}::{NAMES[path]}`" in check
         assert f"`record/{NAMES[path]}`" in check
-        assert f"`{lost}`" in check
+        assert lost not in check
         assert kept not in check
         assert start not in check and head not in check
     assert gate.content_classes == [ContentClass.DERIVED] * 4
