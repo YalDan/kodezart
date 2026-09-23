@@ -122,6 +122,16 @@ class SurfaceLeaseError(Exception):
         self.current_holder: str | None = current_holder
 
 
+class SurfaceContendedError(SurfaceLeaseError):
+    """Another run holds, or is bidding for, part of the set being acquired.
+
+    Raised only by acquisition. ``current_holder`` names the settled owner,
+    or is ``None`` when the refusing bid is in a race the backend has not
+    settled. A write-time refusal of a lease the writer itself no longer
+    holds is the base ``SurfaceLeaseError``, never this.
+    """
+
+
 class SurfaceLeaseLostError(Exception):
     """Renewal could not confirm the run's complete declared write set.
 

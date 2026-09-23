@@ -2193,13 +2193,58 @@ async def test_a_surface_held_by_another_run_leaves_the_mandate_open_and_escalat
             record["phase"],
             record["current_holder"],
             record["surface_kind"],
+            record["scope_key"],
         )
         == (
             CLAIMED_ISSUE,
             "ticket",
             "another-pass",
             SurfaceKind.ISSUE_DESCRIPTION.value,
+            CLAIMED_ISSUE,
         )
+        for record in unheld
+    )
+
+
+async def test_a_surface_another_run_is_bidding_for_leaves_the_mandate_open(
+    monkeypatch,
+):
+    """A race the backend has not settled is a surviving finding, not a crash.
+
+    Another pass takes the subject's description through the same adapter,
+    and every later write the backend stamps shares that grant's instant.
+    The stage's own bid then meets a grant it cannot order itself against,
+    so the acquisition is refused with no settled holder. The round writes
+    nothing there and the convergence bound reports the mandate it left.
+    """
+    h = owner_harness()
+    owner, board, executor, _observed = h.regrowth(monkeypatch, mandate=True)
+    drop_the_mandate(monkeypatch, executor)
+    with structlog.testing.capture_logs() as logs:
+        async with RunSurfaceLease(
+            tracker=board.tracker(),
+            job_id="another-pass",
+            surfaces=frozenset({description_surface(CLAIMED_ISSUE)}),
+            lease_seconds=60.0,
+        ):
+            (grant,) = board.grants()
+            board.server.comment_instants = [grant.created_at]
+            report = await h.run_owner(owner)
+    halt = report.halt
+    assert report.completed_phases == ()
+    assert halt.cause == "convergence_exhausted"
+    assert [(f.issue_id, f.role, f.mandate_text) for f in halt.surviving_findings] == [
+        ("restating-criterion", DefectRole.MANDATE, h.MANDATE_SENTENCE)
+    ]
+    assert (
+        board.server.issues[CLAIMED_ISSUE].description
+        == f"{h.MANDATE_SENTENCE} {h.DRAFT_BODY}"
+    )
+    unheld = [record for record in logs if record["event"] == "organize_surface_unheld"]
+    assert unheld
+    assert all(
+        (record["issue_key"], record["current_holder"], record["scope_key"])
+        == (CLAIMED_ISSUE, None, CLAIMED_ISSUE)
         for record in unheld
     )
 

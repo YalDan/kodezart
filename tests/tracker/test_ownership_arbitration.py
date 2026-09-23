@@ -18,7 +18,7 @@ import structlog.testing
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.errors import McpTransportError, TrackerProtocolError
 from kodezart.core.protocols import McpToolCaller, McpToolResult
-from kodezart.domain.errors import SurfaceLeaseError
+from kodezart.domain.errors import SurfaceContendedError, SurfaceLeaseError
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import ClaimResult, ClaimStatus
@@ -767,7 +767,7 @@ async def test_holders_earliest_on_different_targets_both_withdraw() -> None:
         return_exceptions=True,
     )
 
-    assert [type(outcome) for outcome in outcomes] == [SurfaceLeaseError] * 2
+    assert [type(outcome) for outcome in outcomes] == [SurfaceContendedError] * 2
     assert {
         outcome.current_holder
         for outcome in outcomes

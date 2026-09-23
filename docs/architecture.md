@@ -510,13 +510,14 @@ marker and is not a work subject, so it holds the stage before any session
 opens: counted, named, and free. Workflow state decides none of this; removing
 the escalation label is what returns a member to the roster.
 
-A write the pass cannot make because another run holds the surface is not an
-escape from the stage and not a pass. The round stops working that subject and
+A write the pass cannot make because another run holds or is bidding for the
+surface is not an escape from the stage and not a pass. The round stops working that subject and
 writes nothing there; the fresh verification that follows reports the class
 again, so the stage cannot converge on it, and the bounded halt carries the
 surviving finding with its quoted mandate and escalates it on the issue that
-owns it. A finding naming an issue outside the admitted scope stays a refusal:
-there is no issue there for the stage to own.
+owns it. A lease the run itself lost is not this case: that write fails and
+stops the run. A finding naming an issue outside the admitted scope stays a
+refusal: there is no issue there for the stage to own.
 
 The label is the record. A member already carrying a stage's marker is out of
 that stage's work roster unless a finding of this run names it, so a run

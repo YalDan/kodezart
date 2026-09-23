@@ -164,8 +164,17 @@ async def test_unsent_retry_preserves_every_owner_precondition(
         return await original(name=name, arguments=arguments)
 
     monkeypatch.setattr(board, "call_tool", call_tool)
-    with pytest.raises((OrganizeWriteRefusalError, SurfaceLeaseError)):
+    # A lease that lapsed under the run is the write's own failure: the base
+    # SurfaceLeaseError, never the contention a surviving finding absorbs.
+    expected = (
+        SurfaceLeaseError
+        if change == "lease"
+        else (OrganizeWriteRefusalError, SurfaceLeaseError)
+    )
+    with pytest.raises(expected) as raised:
         await fixtures.run_owner(owner)
+    if change == "lease":
+        assert type(raised.value) is SurfaceLeaseError
     assert attempts == 1
     assert not [args for name, args in board.calls if selected(name, args)]
     assert not board.grants()

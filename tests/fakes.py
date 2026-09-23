@@ -56,6 +56,7 @@ from kodezart.domain.errors import (
     RateLimitError,
     ScopeReadError,
     ScopeStatusError,
+    SurfaceContendedError,
     SurfaceLeaseError,
     SurfaceWriteAttributionError,
     TransientAPIError,
@@ -4789,7 +4790,7 @@ class FakeTrackerPort:
             order=surface_address,
         )
         if conflict is not None:
-            raise SurfaceLeaseError(
+            raise SurfaceContendedError(
                 "surface set intersects a live lease",
                 surface=conflict[0],
                 current_holder=conflict[1],

@@ -1426,9 +1426,11 @@ class TrackerPort(
         """Take the WHOLE set exclusively for *holder*, or take nothing.
 
         Acquisition never blocks and never retries: on intersection with
-        another holder's live lease it raises ``SurfaceLeaseError`` naming
-        that surface and its current holder, releases whatever it took, and
-        holds nothing afterwards. A surface *holder* itself holds live is
+        another holder's live lease, or with another holder's bid in a race
+        the backend has not settled, it raises ``SurfaceContendedError``
+        naming that surface and its settled holder (``None`` for an
+        unsettled race), releases whatever it took, and holds nothing
+        afterwards. A surface *holder* itself holds live is
         not contention — re-acquisition succeeds and re-times the whole
         set — and an expired lease is free to anyone.
 
@@ -1627,7 +1629,9 @@ class SurfaceLeaseTracker(Protocol):
         surfaces: frozenset[WritableSurface],
         holder: str,
         lease_seconds: float,
-    ) -> SurfaceLease: ...
+    ) -> SurfaceLease:
+        """Take the whole set for *holder*, or raise ``SurfaceContendedError``."""
+        ...
 
     async def renew_surfaces(
         self,
