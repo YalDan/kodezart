@@ -9,6 +9,7 @@ import structlog.testing
 
 from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.config.app import AppConfig
+from kodezart.core.errors import PassGateCapabilityError
 from kodezart.domain.errors import LaneRecordReadError
 from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
@@ -18,7 +19,7 @@ from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
     supervisor_holder,
 )
-from kodezart.types.domain.dispatch import PassRun
+from kodezart.types.domain.dispatch import PassRun, PassSignal
 from kodezart.types.domain.operation import (
     OperationMemberAbsentError,
     OrganizeScopeBinding,
@@ -61,6 +62,7 @@ from tests.services.lane_tally_fixtures import (
 )
 from tests.services.test_prompt_pass import example_config
 from tests.services.test_prompt_passes import (
+    DIAGNOSIS,
     HEARTBEAT_PASS,
     STANDING_SCOPE_SETTINGS,
     _runtime,
@@ -262,6 +264,134 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
         )
 
     assert {entry.name for entry in as_before.scheduler.passes} == per_issue
+
+
+#: The per-issue gates with issue activity left out, so any probe of
+#: ``issues_changed`` a boot makes is the supervisor's and nobody else's.
+GATES_WITHOUT_ISSUE_ACTIVITY: dict[str, object] = {
+    "fire_prep_pass_gate_signals": [PassSignal.triage_backlog],
+    "grooming_pass_gate_signals": [],
+    "dispatch_pass_gate_signals": [PassSignal.approved_changed],
+}
+
+
+async def _boot_gated(directory, *, raw, reconciled_roster, dispatching, tracker):
+    """This deployment over *tracker*, with no per-issue gate on issue activity."""
+    operation = declared(scopes=raw)
+    if dispatching:
+        operation = bound_to_one_repository(operation)
+    return await _runtime(
+        directory,
+        tracker=tracker,
+        runner=FakeAgentRunner(events=[]),
+        operation=operation,
+        reconciled=None
+        if reconciled_roster is None
+        else operation.model_copy(update=roster(*reconciled_roster)),
+        github_api=FakeDeliveryProbe() if dispatching else None,
+        **{
+            **(STANDING_SCOPE_SETTINGS if raw else {}),
+            **GATES_WITHOUT_ISSUE_ACTIVITY,
+        },
+        supervisor_pass_interval_seconds=INTERVAL,
+        supervisor_pass_timeout_seconds=TIMEOUT,
+    )
+
+
+@pytest.mark.parametrize("wiring", list(WIRINGS))
+async def test_the_supervisors_scans_are_probed_exactly_when_its_tick_registers(
+    tmp_path: Path, wiring: str
+) -> None:
+    """The probe and the registration are one predicate, read on every wiring.
+
+    Each wiring boots twice: once over a credential that refuses issue
+    activity, the one scan the supervisor's alarms declare, and once over a
+    credential that answers everything. A refusal naming a ``supervisor/``
+    alarm happens exactly when the answering boot registers the tick; a
+    deployment that registers none boots over the refusing credential and
+    never asks it about issue activity at all.
+    """
+    raw_scopes, reconciled_scopes, absent, dispatching = WIRINGS[wiring]
+    if reconciled_scopes is None:
+        # Nothing is dialled, so nothing can be probed and no tick registers:
+        # preflight refuses the partial organize configuration first.
+        with pytest.raises(OperationMemberAbsentError):
+            await _boot_gated(
+                tmp_path,
+                raw=raw_scopes,
+                reconciled_roster=None,
+                dispatching=dispatching,
+                tracker=None,
+            )
+        return
+
+    def board_for(scan_refusals):
+        return FakeTrackerPort(
+            issues=[],
+            marker_prefixes=declared(scopes=raw_scopes).marker_prefixes,
+            scan_refusals=scan_refusals,
+        )
+
+    refusing = board_for({PassSignal.issues_changed: DIAGNOSIS})
+    try:
+        await _boot_gated(
+            tmp_path / "refusing",
+            raw=raw_scopes,
+            reconciled_roster=reconciled_scopes,
+            dispatching=dispatching,
+            tracker=refusing,
+        )
+    except PassGateCapabilityError as caught:
+        refused = [line for line in caught.refusals if "supervisor/" in line]
+        assert refused, caught.refusals
+    else:
+        refused = []
+        assert not any(
+            PassSignal.issues_changed in probe for probe in refusing.capability_probes
+        )
+
+    with structlog.testing.capture_logs():
+        answered = await _boot_gated(
+            tmp_path / "answering",
+            raw=raw_scopes,
+            reconciled_roster=reconciled_scopes,
+            dispatching=dispatching,
+            tracker=board_for({}),
+        )
+    ticks = [entry for entry in answered.scheduler.passes if entry.name == "supervisor"]
+
+    assert bool(refused) is bool(ticks)
+    assert bool(ticks) is (absent is None)
+
+
+async def test_a_per_issue_deployment_probes_its_own_gates_and_no_supervisor_scan(
+    tmp_path: Path,
+) -> None:
+    """No roster, a delivery probe dialled: the probe is the per-issue gates alone.
+
+    Issue activity is left out of every per-issue gate, so the probe holds
+    exactly what the fire-preparation and dispatch passes are gated on and
+    nothing the supervisor's alarms declare.
+    """
+    tracker = FakeTrackerPort(
+        issues=[], marker_prefixes=declared(scopes=()).marker_prefixes
+    )
+
+    with structlog.testing.capture_logs():
+        runtime = await _boot_gated(
+            tmp_path,
+            raw=(),
+            reconciled_roster=(),
+            dispatching=True,
+            tracker=tracker,
+        )
+
+    assert [
+        entry for entry in runtime.scheduler.passes if entry.name == "supervisor"
+    ] == []
+    assert tracker.capability_probes == [
+        (PassSignal.triage_backlog, PassSignal.approved_changed)
+    ]
 
 
 def test_the_example_operation_declares_the_roster_the_tick_reads() -> None:
