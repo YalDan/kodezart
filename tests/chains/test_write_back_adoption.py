@@ -1170,36 +1170,70 @@ def test_a_step_wired_straight_at_the_port_fails_the_static_check():
     ) in production.call_sites(artifact_writes())
 
 
-#: The tracker's two structural writes: a graph change and a workflow-state
-#: move.  Graph change is the pre-approval organize row's alone (KOD-561),
-#: and the state moves are the lifecycle writer's and the lane state
-#: writer's (KOD-806); no organize stage and no step of a scope walk makes
-#: either.
-STRUCTURAL_WRITES = frozenset({"set_workflow_state", "update_issue_graph"})
-#: Every production call of those writes, compared exactly: a new call site
-#: of either, inside a write-back step or not, fails here as loudly as a
-#: stale entry does.
+#: The tracker's structural writes: every port write that moves workflow
+#: state, queue state or the issue graph. Derived from the state moves
+#: KOD-806 holds outside the write-back check (a stage write, a queue-state
+#: write and a put-back that names a backend state, the kind of move a
+#: cancellation would be) plus the graph change and the queue-state write,
+#: so a state move registered there is structural here without being
+#: listed twice. Graph change is the pre-approval organize row's alone
+#: (KOD-561), and no organize stage moves workflow or queue state.
+STRUCTURAL_WRITES = frozenset(
+    {site.method for site in KOD_806_STATE_MOVES}
+    | {"update_issue_graph", "set_queue_state"}
+)
+#: Every production call of those writes, compared exactly, each with the
+#: reason it is where it is: a new call site of any of them, inside a
+#: write-back step or not, fails here as loudly as a stale entry does.
 STRUCTURAL_CALL_SITES = frozenset(
     {
+        # The pre-approval organize row applies graph change itself
+        # (KOD-561); the run stages declare no graph surface.
         CallSite(
             module="services/organize_owner.py",
             function="OrganizeOwner._author_write.apply",
             method="update_issue_graph",
         ),
+        # The lifecycle writer moves a claimed lane to in progress when its
+        # job is dequeued (KOD-806).
         CallSite(
             module=LIFECYCLE,
             function="TrackerLifecycleWriter.on_dequeue",
             method="set_workflow_state",
         ),
+        # ...and to in review when its pull request opens (KOD-806).
         CallSite(
             module=LIFECYCLE,
             function="TrackerLifecycleWriter.on_pull_request",
             method="set_workflow_state",
         ),
+        # A verified merge retires the queue entry (KOD-806).
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_verified_merge",
+            method="set_queue_state",
+        ),
+        # A run that ended with no terminal outcome is put back in the state
+        # the pass found it in (KOD-806).
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_run_failed",
+            method="restore_workflow_state",
+        ),
+        # The lane state writer finishes a criterion sub-issue: it moves to
+        # done once the Evidence row of its grading has landed.
         CallSite(
             module=LANE_STATE,
             function="TrackerLaneStateWriter._write_one",
             method="set_workflow_state",
+        ),
+        # The walk puts back a lane whose fire closed none of the criteria
+        # it owed, to the unstarted state a reader found on its open work
+        # (KOD-460, held with the lifecycle moves under KOD-806).
+        CallSite(
+            module=WALKER,
+            function="ScopeWorkflowEngine._put_back",
+            method="restore_workflow_state",
         ),
     }
 )
@@ -1207,6 +1241,14 @@ STRUCTURAL_CALL_SITES = frozenset(
 
 def test_the_structural_writes_are_called_only_where_the_register_says():
     """Graph change and state moves, read off the tree and held to the register."""
+    assert STRUCTURAL_WRITES == frozenset(
+        {
+            "set_workflow_state",
+            "restore_workflow_state",
+            "set_queue_state",
+            "update_issue_graph",
+        }
+    )
     assert STRUCTURAL_WRITES <= write_methods(TRACKER_SURFACE)
     production = Production(production_sources())
     assert production.call_sites(STRUCTURAL_WRITES) == STRUCTURAL_CALL_SITES
