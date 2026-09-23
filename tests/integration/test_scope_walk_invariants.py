@@ -25,6 +25,7 @@ import structlog.testing
 from pydantic import BaseModel
 
 from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.domain.lane_entry import recorded_branches
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import CheckStep
@@ -43,11 +44,18 @@ from tests.integration.test_scope_runtime import (
     criteria_echo,
     drive,
     lane_failures,
+    lane_record,
     recorded_so_far,
     resumable,
     ticks_of,
 )
-from tests.integration.test_scope_union import armed, delivered_scope, stated
+from tests.integration.test_scope_union import (
+    ScratchGit,
+    armed,
+    delivered_scope,
+    executions,
+    stated,
+)
 
 #: Both lanes owe two criteria, so a leaked key list has more than one key in
 #: it and the scan below can tell a list from a single key an ordinary record
@@ -370,5 +378,97 @@ async def test_the_union_step_timeout_an_operator_sets_changes_what_the_walk_sta
     assert (counter.read_bytes() if counter.exists() else b"") == executed
     assert lane_failures(events) == ()
     assert [
-        (tick.tick, tick.dispatched, tick.rested_lanes) for tick in ticks_of(events)
-    ] == [(1, (), ()), (2, (), ("A",)), (3, (), ("A", "B"))]
+        (
+            tick.tick,
+            tick.dispatched,
+            tick.rested_lanes,
+            tick.skipped_lanes,
+            tick.failed_lanes,
+        )
+        for tick in ticks_of(events)
+    ] == [(1, (), (), (), ()), (2, (), ("A",), (), ()), (3, (), ("A", "B"), (), ())]
+
+
+#: The operator's own spelling of how many union attempts a tick makes before
+#: moving heads refuse it; ``AppConfig`` reads it from the environment.
+STALE_ATTEMPTS = "KODEZART_UNION_STALE_MAX_ATTEMPTS"
+
+
+@pytest.mark.parametrize(
+    ("attempts", "per_measurement"),
+    [pytest.param(None, 3, id="default"), pytest.param("1", 1, id="bounded")],
+)
+async def test_the_stale_attempts_an_operator_sets_changes_what_the_walk_does(
+    tmp_path, monkeypatch, attempts, per_measurement
+):
+    """A non-default stale-attempt bound changes how often the walk composes.
+
+    The declared step appends a mark, and every time it has run the branch
+    lane A's record names moves on the remote before the heads are read
+    again, so no composition ever outlives its own heads. Each tick then
+    composes once per allowed attempt and states the scope unmeasured: the
+    shipped default composes three times a tick, and the operator's bound of
+    one composes once. The walk itself is the same walk in both arms: the
+    same ticks, the same lanes offered and rested, none skipped or failed.
+    """
+    counter = tmp_path / "executions"
+    port, repos, forge = await delivered_scope()
+    moved = recorded_branches(record=await lane_record(port, "A")).deliverable_branch
+    if attempts is None:
+        monkeypatch.delenv(STALE_ATTEMPTS, raising=False)
+    else:
+        monkeypatch.setenv(STALE_ATTEMPTS, attempts)
+    read_head = ScratchGit.remote_branch_sha
+    moves: list[int] = []
+
+    async def moving(self, cwd, remote, branch):
+        # A composition that ran since the last move is followed by a move,
+        # so the read after it sees a head the composition did not measure.
+        ran = executions(counter)
+        if ran > len(moves):
+            before = repos.current
+            head = repos.of(moved)
+            head.commit()
+            head.publish()
+            repos.committing = before
+            moves.append(ran)
+        return await read_head(self, cwd, remote, branch)
+
+    monkeypatch.setattr(ScratchGit, "remote_branch_sha", moving)
+    events = []
+    ran_at_reports = []
+    try:
+        walk = armed(
+            port,
+            repos,
+            forge,
+            chain=(CheckStep(name="union-gate", command=f"printf x >> {counter}"),),
+        )
+        with structlog.testing.capture_logs() as logs:
+            async with asyncio.timeout(WALK_BOUND_SECONDS):
+                async for event in drive(walk, job="second-job", origin=FORGE_ORIGIN):
+                    events.append(event)
+                    if isinstance(event, ScopeWalkEvent):
+                        ran_at_reports.append(executions(counter))
+    finally:
+        await forge.close()
+
+    # Each tick states its report after it measured, so the executions
+    # between two reports are that tick's measurement.
+    assert [
+        ran - before
+        for before, ran in zip([0, *ran_at_reports], ran_at_reports, strict=False)
+    ] == [per_measurement] * 3
+    assert stated(logs, "scope_union_observed") == []
+    assert len(stated(logs, "scope_union_unmeasured")) == 3
+    assert lane_failures(events) == ()
+    assert [
+        (
+            tick.tick,
+            tick.dispatched,
+            tick.rested_lanes,
+            tick.skipped_lanes,
+            tick.failed_lanes,
+        )
+        for tick in ticks_of(events)
+    ] == [(1, (), (), (), ()), (2, (), ("A",), (), ()), (3, (), ("A", "B"), (), ())]
