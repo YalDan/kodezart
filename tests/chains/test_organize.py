@@ -1,4 +1,27 @@
-"""Actual tracker-to-executor admission calls preserve the fresh-source boundary."""
+"""Actual tracker-to-executor admission calls preserve the fresh-source boundary.
+
+The gap guard below, from ``GAP_ARITHMETIC`` on, holds that no call site of
+the gap arithmetic reads the tracker's change stamp.  What it reads, by
+object after import: every name, attribute and callee of a definition is
+what the module's namespace after import, an import anywhere in it or an
+assignment inside the definition binds it to — an aliased import, an import
+inside the function, a relative import, a module-level rebinding, a
+``functools.partial``, a static method, a walrus, a closure over its
+enclosing function's locals — and literal names count wherever they appear:
+``getattr(x, "name")``, ``operator.attrgetter("name")``, ``vars(x)["name"]``,
+``x.__dict__["name"]``, a ``module:attr`` or ``module.attr`` string, and
+``pkgutil.resolve_name`` or ``importlib.import_module`` handed a literal.
+Outside the reach: a value handed across a function boundary, where the
+other function is not resolved at this site (returned from a helper, stored
+on an object and read elsewhere, or passed through a container built
+elsewhere); a name built at run time; and a binding made only when a
+function runs (``setattr`` or ``globals()`` inside a function body).  Each
+shape of the limit is held unseen by
+``test_a_shape_outside_the_reach_is_no_call_site``; the trap runs every
+function of a gap home, and every call site the fixtures can run, with the
+stamp trapped, so a read hidden behind such a shape inside one of them
+still reds.
+"""
 
 import ast
 import functools
@@ -1686,13 +1709,15 @@ def arithmetic_call_sites(sources):
     naming its module or off a local assigned from one, or read as a literal
     name off the module through ``getattr``, ``operator.attrgetter``,
     ``vars`` or ``__dict__`` (``referencing_definitions``).  Each is scanned
-    whole
-    for the stamp's spelling (``change_stamp_reads``) and for a loaded name
-    bound to a stamp field, in its module or through an import
-    (``change_stamp_values``).  Out of reach: a function handed the
-    arithmetic or its answer across a call — by argument, attribute or
-    callback — a name built at run time, and a read through a model property
-    or method, which only running the site shows; the call sites the
+    whole for the stamp's spelling (``change_stamp_reads``) and for a loaded
+    name bound to a stamp field, in its module or through an import
+    (``change_stamp_values``).  Outside the reach: a value handed across a
+    function boundary, where the other function is not resolved at this site
+    (returned from a helper, stored on an object and read elsewhere, or
+    passed through a container built elsewhere); a name built at run time;
+    and a binding made only when a function runs (``setattr`` or
+    ``globals()`` inside a function body).  A read through a model property
+    or method is one only running the site shows; the call sites the
     fixtures can run are run under the trap below.
     """
     return {
@@ -1891,6 +1916,115 @@ def test_a_call_site_of_the_arithmetic_is_found_by_object_and_scanned(route, rea
 
     assert sites[(CALL_SITE_HOST, "plan")] == (
         frozenset({"updated_at"}) if reads else frozenset()
+    )
+
+
+#: Each shape outside the reach, as the text it would arrive as in
+#: ``CALL_SITE_HOST``, with the definitions in it that are call sites: a value
+#: handed across a function boundary (an argument, a helper's answer, an
+#: attribute of an instance, a container built elsewhere), a name built at run
+#: time, and a binding made only when a function runs.  ``plan`` reaches the
+#: arithmetic only across the boundary, so it is no site; the definition that
+#: binds the arithmetic, where the text has one, is.
+UNSEEN_CALL_SITE_SHAPES = {
+    "an argument": (
+        "def plan(criteria, since, window):\n"
+        "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+        (),
+    ),
+    "returned from a helper": (
+        "from kodezart.domain import gap\n"
+        "\n"
+        "def arithmetic():\n"
+        "    return gap.compute_gap\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    return [c for c in arithmetic()(criteria, supersession_refs={}){READ}]\n",
+        ("arithmetic",),
+    ),
+    "stored on an object and read elsewhere": (
+        "from kodezart.domain import gap\n"
+        "\n"
+        "class Holder:\n"
+        "    def __init__(self):\n"
+        "        self.window = gap.compute_gap\n"
+        "\n"
+        "def plan(criteria, since, holder):\n"
+        "    return [c for c in holder.window(criteria, supersession_refs={}){READ}]\n",
+        ("Holder.__init__",),
+    ),
+    "passed through a container built elsewhere": (
+        "from kodezart.domain import gap\n"
+        "\n"
+        "def table():\n"
+        "    return {'window': gap.compute_gap}\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    return [\n"
+        "        c for c in table()['window'](criteria, supersession_refs={}){READ}\n"
+        "    ]\n",
+        ("table",),
+    ),
+    "a name built at run time": (
+        "import pkgutil\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    home = pkgutil.resolve_name('kodezart.domain' + ':gap')\n"
+        "    return [\n"
+        "        c for c in home.compute_gap(criteria, supersession_refs={}){READ}\n"
+        "    ]\n",
+        (),
+    ),
+    "globals() bound inside a function": (
+        "from kodezart.domain import gap\n"
+        "\n"
+        "def bind():\n"
+        "    globals()['window'] = gap.compute_gap\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+        ("bind",),
+    ),
+    "setattr inside a function": (
+        "import sys\n"
+        "\n"
+        "from kodezart.domain import gap\n"
+        "\n"
+        "def bind():\n"
+        "    setattr(sys.modules[__name__], 'window', gap.compute_gap)\n"
+        "\n"
+        "def plan(criteria, since):\n"
+        "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+        ("bind",),
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(UNSEEN_CALL_SITE_SHAPES))
+def test_a_shape_outside_the_reach_is_no_call_site(shape):
+    """The stated limit, held: ``plan`` is no call site in any shape of it.
+
+    Planted with a stamp read, which the scan therefore never sees: this is
+    the limit the module docstring states, and the trap below is where such
+    a read dies when the function is one the trap runs.  Where the text
+    binds the arithmetic elsewhere — in the helper, the holder, the table or
+    the binder — that definition is the call site, so the plant is real and
+    the boundary, not the module, is what hides ``plan``.
+    """
+    text, sites_in_it = UNSEEN_CALL_SITE_SHAPES[shape]
+    planted = text.replace("{READ}", " if c.updated_at > since")
+    sources = source_tree()
+    before = {
+        name
+        for module, name in arithmetic_call_sites(sources)
+        if module == CALL_SITE_HOST
+    }
+    sources[CALL_SITE_HOST] += "\n\n" + planted
+    sites = arithmetic_call_sites(sources)
+
+    assert (CALL_SITE_HOST, "plan") not in sites
+    assert {name for module, name in sites if module == CALL_SITE_HOST} - before == set(
+        sites_in_it
     )
 
 

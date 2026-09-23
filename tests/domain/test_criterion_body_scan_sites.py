@@ -25,26 +25,45 @@ scan and is not reported here, because nothing is matched against a body.
 Resolution by key, and a writer that finds its target by text instead, are
 another guard's subject; this one owns the row grammar and the body scan.
 
-What it does not see: an equality against a row label over a body split by
-some other means, because only membership compares and matcher calls are
-read; a row label assembled from a name bound in an earlier statement,
-because only one expression's own literal parts are folded; a scan keyed on
-bare markdown bold with no row label at all, because a row shape here is a
-label followed by a colon and bold alone names no field — that form is held
-behaviourally by the reader ordering cases over both tracker
-implementations; a caller that hands a PARENT's body to the sanctioned
-reader, because the scan reads the reader and not the argument's
-provenance — that is held behaviourally by the reader conformance cases
-that give a parent a criterion-shaped body and read nothing out of it; a
-tuple of literal prefixes handed to a string matcher, because only one
-expression's own literal parts are folded and a tuple is not folded, so
-``line.startswith(("- [ ]", "- [x]"))`` shows the matcher no shaped
-argument; a matcher imported by bare name out of the pattern library
-(``from re import findall``, or ``compile as rx``), because a matcher call
-is read as an attribute of its module and not as a plain name; a matcher
-called with keyword arguments, such as ``re.search(pattern=…, string=…)``,
-because only a call's positional arguments are read; and any matcher
-reached by reflection.
+Wherever a reading resolves a name, the tree is read by object after
+import: the grammar object's referrers and the row patterns a module binds
+are found through the module's namespace after import, an import anywhere
+in it and the locals assigned inside a definition — an aliased import, an
+import inside a function, a local bound from ``pkgutil.resolve_name`` or
+``importlib.import_module`` — and literal names
+count wherever they appear: ``getattr(x, "name")``,
+``operator.attrgetter("name")``, ``vars(x)["name"]``, ``x.__dict__["name"]``
+and a ``module:attr`` or ``module.attr`` string.  Outside the reach: a value
+handed across a function boundary, where the other function is not resolved
+at this site (returned from a helper, stored on an object and read
+elsewhere, or passed through a container built elsewhere); a name built at
+run time; and a binding made only when a function runs (``setattr`` or
+``globals()`` inside a function body).  Each shape of the limit is held
+unseen by ``test_a_shape_outside_the_reach_is_no_referring_definition``.
+
+A row-grammar literal is read wherever it is written and whatever it is
+handed to, a bytes literal and the flags handed at its call included; what
+that reading does not see is a grammar assembled at call time from pieces
+none of which is a row grammar alone, such as a label built around a field
+name.  The body scan over checkbox rows and ``AC-n`` identities, the shapes
+no row-grammar literal carries, reads matcher calls and membership compares
+alone, so it does not see: a tuple of literal prefixes handed to a string
+matcher, because only one expression's own literal parts are folded and a
+tuple is not folded, so ``line.startswith(("- [ ]", "- [x]"))`` shows the
+matcher no shaped argument; a matcher imported by bare name out of the
+pattern library (``from re import findall``, or ``compile as rx``), because
+a matcher call is read as an attribute of its module and not as a plain
+name; a matcher called with keyword arguments, such as
+``re.search(pattern=…, string=…)``, because only a call's positional
+arguments are read; and any matcher reached by reflection.  Neither reading
+sees a scan keyed on bare markdown bold with no row label at all, because a
+row shape here is a label followed by a colon and bold alone names no
+field — that form is held behaviourally by the reader ordering cases over
+both tracker implementations; nor a caller that hands a PARENT's body to
+the sanctioned reader, because the scan reads the reader and not the
+argument's provenance — that is held behaviourally by the reader
+conformance cases that give a parent a criterion-shaped body and read
+nothing out of it.
 
 Under every spelling this layer does not see lies the behavioural floor,
 which is where a fallback that mints membership out of a parent's prose
@@ -1265,8 +1284,9 @@ def grammar_referrers(sources: dict[str, str]) -> list[tuple[str, str]]:
     """Every definition of *sources* that refers to the grammar object, by module.
 
     Read by identity, the way ``referencing_definitions`` reads it: a name an
-    import anywhere in the module binds to the object, an attribute that is
-    the object, a string naming it, called or handed on — so a bound
+    import anywhere in the module or a local assigned inside the definition
+    binds to the object, an attribute that is the object, a literal name
+    read off the owner, a string naming it, called or handed on — so a bound
     ``match`` of it mapped over a body's lines is a reference like a call.
     """
     return sorted(
@@ -1385,6 +1405,108 @@ def test_a_reuse_of_the_grammar_outside_the_walker_is_a_referring_definition(pla
 
     assert grammar_referrers(sources) == sorted(
         [(RULE_MODULE, _criterion_rows.__name__), (module, definition)]
+    )
+
+
+#: Each shape outside the reach, as a module text outside the owner, with the
+#: definitions in it that refer to the grammar: a value handed across a
+#: function boundary (an argument, a helper's answer, an attribute of an
+#: instance, a container built elsewhere), a name built at run time, and a
+#: binding made only when a function runs.  ``evidence`` reaches the grammar
+#: only across the boundary, so it refers to nothing; the definition that
+#: binds the grammar, where the text has one, is the referrer.
+UNSEEN_GRAMMAR_SHAPES = {
+    "an argument": (
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def evidence(body, row):\n"
+        "    return [row.match(line) for line in body.splitlines()]\n",
+        (),
+    ),
+    "returned from a helper": (
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def row():\n"
+        f"    return {OWNER_NAME}._CRITERION_ROW\n"
+        "\n"
+        "def evidence(body):\n"
+        "    return [row().match(line) for line in body.splitlines()]\n",
+        ("row",),
+    ),
+    "stored on an object and read elsewhere": (
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "class Holder:\n"
+        "    def __init__(self):\n"
+        f"        self.row = {OWNER_NAME}._CRITERION_ROW\n"
+        "\n"
+        "def evidence(body, holder):\n"
+        "    return [holder.row.match(line) for line in body.splitlines()]\n",
+        ("Holder.__init__",),
+    ),
+    "passed through a container built elsewhere": (
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def table():\n"
+        f"    return {{'row': {OWNER_NAME}._CRITERION_ROW}}\n"
+        "\n"
+        "def evidence(body):\n"
+        "    return [table()['row'].match(line) for line in body.splitlines()]\n",
+        ("table",),
+    ),
+    "a name built at run time": (
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def evidence(body):\n"
+        f"    row = getattr({OWNER_NAME}, '_CRITERION_' + 'ROW')\n"
+        "    return [row.match(line) for line in body.splitlines()]\n",
+        (),
+    ),
+    "globals() bound inside a function": (
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def bind():\n"
+        f"    globals()['ROW'] = {OWNER_NAME}._CRITERION_ROW\n"
+        "\n"
+        "def evidence(body):\n"
+        "    return [ROW.match(line) for line in body.splitlines()]\n",
+        ("bind",),
+    ),
+    "setattr inside a function": (
+        "import sys\n"
+        "\n"
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def bind():\n"
+        f"    setattr(sys.modules[__name__], 'ROW', {OWNER_NAME}._CRITERION_ROW)\n"
+        "\n"
+        "def evidence(body):\n"
+        "    return [ROW.match(line) for line in body.splitlines()]\n",
+        ("bind",),
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(UNSEEN_GRAMMAR_SHAPES))
+def test_a_shape_outside_the_reach_is_no_referring_definition(shape):
+    """The stated limit, held: ``evidence`` refers to the grammar in no shape of it.
+
+    Where the text binds the grammar elsewhere — in the helper, the holder,
+    the table or the binder — that definition is the referrer, and the
+    whole-tree pin above reds on it; ``evidence``, which reaches the object
+    only across the boundary, is not.  Under every such shape lies the
+    behavioural floor the module docstring names.
+    """
+    text, referrers = UNSEEN_GRAMMAR_SHAPES[shape]
+    module = "services/evidence_reader.py"
+    sources = {**source_tree(), module: text}
+    assert module not in source_tree()
+
+    assert grammar_referrers(sources) == sorted(
+        [
+            (RULE_MODULE, _criterion_rows.__name__),
+            *((module, name) for name in referrers),
+        ]
     )
 
 
