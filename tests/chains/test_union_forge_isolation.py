@@ -90,8 +90,8 @@ def public_callables(subject: object) -> frozenset[str]:
     Read across the whole MRO of whatever is handed in and never off
     ``vars``, which is one class body alone.  ``dir`` is complete only for a
     class that answers no name through ``__getattr__``, ``__getattribute__``
-    or ``__dir__``, so the holdings rule refuses those first
-    (``answers_by_hook``).
+    or ``__dir__``, so the holdings rule and the query-double rows refuse
+    those first (``answers_by_hook``).
     """
     return frozenset(
         name
@@ -133,40 +133,6 @@ MERGE_STATE_NAMES: frozenset[str] = frozenset(
 DECLARED_BY: dict[str, frozenset[str]] = {
     "kodezart.core.protocols": frozenset({"PRState"}),
 }
-
-#: Each forge READ port, its exact surface, how its double is BUILT and that
-#: double's surface.  The double is built rather than named because a surface
-#: is measured off an instance across its MRO: a capability attached to a base
-#: class or bound in ``__init__`` is on the object and not in the class body.
-#: The write port is pinned by the shipped base-resolution case;
-#: these are the read halves, where a merge would be likeliest to arrive
-#: disguised as one more thing you can ask about a pull request.  ForgeQuery is
-#: the port the criterion literally names, so it is pinned here as well as
-#: scanned above.  A double's surface is wider than its port's wherever the
-#: native client answers several read questions on one object while each port
-#: declares only its own.
-QUERY_DOUBLES: tuple[
-    tuple[type, frozenset[str], Callable[[], object], frozenset[str]], ...
-] = (
-    (
-        protocols.ForgeQuery,
-        frozenset({"open_pr_for_head", "branch_web_url"}),
-        FakeForgeQuery,
-        frozenset({"open_pr_for_head", "branch_web_url"}),
-    ),
-    (
-        protocols.PRStateReader,
-        frozenset({"read_pr_state"}),
-        partial(FakePRStateReader, records={}),
-        frozenset({"read_pr_state"}),
-    ),
-    (
-        protocols.DeliveryProbe,
-        frozenset({"open_delivery_exists"}),
-        FakeDeliveryProbe,
-        frozenset({"open_delivery_exists", "read_pr_state"}),
-    ),
-)
 
 
 def union_import_closure() -> tuple[str, ...]:
@@ -993,26 +959,88 @@ def test_the_union_steps_own_modules_name_the_merge_state_reader_nowhere() -> No
             assert forbidden not in source, (name, forbidden)
 
 
+#: Each forge READ port, its exact surface, its double, the double's
+#: arguments at their defaults and with every constructor parameter given,
+#: and the double's surface.  The write port is pinned by the shipped
+#: base-resolution case; these are the read halves, where a merge would be
+#: likeliest to arrive disguised as one more thing you can ask about a pull
+#: request.  ForgeQuery is the port the criterion literally names, so it is
+#: pinned here as well as scanned above.  A double's surface is wider than
+#: its port's wherever the native client answers several read questions on
+#: one object while each port declares only its own.
+QUERY_DOUBLES: tuple[
+    tuple[
+        type, frozenset[str], type, dict[str, object], dict[str, object], frozenset[str]
+    ],
+    ...,
+] = (
+    (
+        protocols.ForgeQuery,
+        frozenset({"open_pr_for_head", "branch_web_url"}),
+        FakeForgeQuery,
+        {},
+        {
+            "open_prs": {
+                (SEEDED_REPO_URL, "work/17"): (f"{SEEDED_REPO_URL}/pull/17", 17)
+            },
+            "fail_lookup": RuntimeError("the lookup is refused"),
+        },
+        frozenset({"open_pr_for_head", "branch_web_url"}),
+    ),
+    (
+        protocols.PRStateReader,
+        frozenset({"read_pr_state"}),
+        FakePRStateReader,
+        {"records": {}},
+        {"records": {(SEEDED_REPO_URL, 17): open_pull_request(17)}},
+        frozenset({"read_pr_state"}),
+    ),
+    (
+        protocols.DeliveryProbe,
+        frozenset({"open_delivery_exists"}),
+        FakeDeliveryProbe,
+        {},
+        {
+            "delivered": ("KOD-17",),
+            "pr_states": {(SEEDED_REPO_URL, 17): open_pull_request(17)},
+        },
+        frozenset({"open_delivery_exists", "read_pr_state"}),
+    ),
+)
+
+
 @pytest.mark.parametrize(
-    "port, port_surface, build_double, double_surface",
+    "port, port_surface, double, defaults, every_argument, double_surface",
     QUERY_DOUBLES,
     ids=[row[0].__name__ for row in QUERY_DOUBLES],
 )
 def test_the_query_ports_and_their_doubles_expose_no_merge_capability(
     port: type,
     port_surface: frozenset[str],
-    build_double: Callable[[], object],
+    double: type,
+    defaults: dict[str, object],
+    every_argument: dict[str, object],
     double_surface: frozenset[str],
 ) -> None:
     """A merge call on either read port cannot type-check against it.
 
-    Both sides are measured off a real object across its MRO — the protocol
-    itself, and one double built the way the cases here build it — so a merge
-    that arrives by inheritance or is bound on during construction is inside
-    the measurement instead of behind it.
+    The port side is what the protocol declares, properties included.  The
+    double side is what its class answers and what a built instance answers,
+    so an instance attribute cannot hide a class-body method, measured on
+    two builds: with defaults, and with every parameter the constructor
+    declares, so a method bound only when an argument is given is inside the
+    measurement.  ``dir`` reports the whole surface only when no class in
+    the double's MRO answers names through a hook, so that is required too.
+    Stated limits: a capability bound only under an argument combination
+    neither build passes, and an attribute attached after construction.
     """
-    assert public_callables(port) == port_surface
-    assert public_callables(build_double()) == double_surface
+    assert declared(port) == port_surface
+    assert set(every_argument) == set(inspect.signature(double).parameters)
+    assert not answers_by_hook(double)
+    for arguments in (defaults, every_argument):
+        built = double(**arguments)
+        surface = public_callables(built) | public_callables(type(built))
+        assert surface == double_surface, sorted(arguments)
 
 
 async def test_verifying_publishes_nothing_and_leaves_every_ref_identical(
