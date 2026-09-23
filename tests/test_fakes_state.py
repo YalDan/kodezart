@@ -1807,8 +1807,11 @@ def logs_read_in(
     Read off the source, with *instance* the name the function gives the
     object it runs on.  A load of ``self.<log>`` is allowed in two places
     only: as the receiver of an ``.append(...)`` or ``.extend(...)`` call,
-    and as the whole value bound to a local name, which then counts as the
-    log, so each load of that name is held to the same rule.  A local bound
+    and as the whole value of a plain or annotated assignment statement
+    to a local name, which then counts as the log, so each load of that
+    name is held to the same rule.  A walrus binding a log is not that:
+    its value is used where it stands, so ``(x := self.<log>)`` is a read
+    of the log, and its target counts as the log after it.  A local bound
     from ``self`` in any of the forms :func:`selves_in` follows counts as
     ``self``, so ``port = self`` and then ``port.<log>`` is a load of the
     log too, and ``getattr(self, "<log>")`` counts as ``self.<log>``.  An
@@ -1820,7 +1823,9 @@ def logs_read_in(
     a value handed across a function boundary — a module function or a
     nested function handed ``self`` — a name built at run time, a binding
     made only when the function runs (``setattr``, ``self.__dict__``) and
-    a binding through a loop or a context-manager target.
+    a binding through a loop or a context-manager target.  This pass reads
+    the source; the pin that covers any spelling is the run-time trap,
+    :func:`test_no_read_log_is_read_inside_the_double_at_run_time`.
     """
     tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
     return logs_read_in_tree(tree, logs, instance=instance)
@@ -1838,7 +1843,13 @@ def logs_read_in_tree(
             log = own_log(value, logs, selves)
             if log is not None and isinstance(target, ast.Name):
                 aliases[target.id] = log
-                recording.add(id(value))
+                # Only the whole value of an assignment STATEMENT is a
+                # binding and nothing else.  A walrus is an expression
+                # whose value flows on into whatever holds it, so the log
+                # it names is read there, whatever its target is later
+                # used for.
+                if isinstance(node, ast.Assign | ast.AnnAssign):
+                    recording.add(id(value))
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
@@ -1968,6 +1979,11 @@ class _LogUses:
     def decided_through_a_walrus(self, key: str) -> int:
         return len((port := self).issue_reads) + len(port.issue_reads)
 
+    def decided_through_a_walrus_of_a_log(self, key: str) -> bool:
+        if x := self.issue_reads:
+            return key in x
+        return False
+
     def decided_through_unpacking(self, key: str) -> int:
         port, _ = self, None
         return len(port.issue_reads)
@@ -2042,6 +2058,7 @@ def test_the_log_pass_classifies_each_planted_use() -> None:
     assert logs_read_in(_LogUses.decided_through_an_alias_of_self, logs) == flagged
     assert logs_read_in(_LogUses.decided_through_an_annotated_alias, logs) == flagged
     assert logs_read_in(_LogUses.decided_through_a_walrus, logs) == flagged
+    assert logs_read_in(_LogUses.decided_through_a_walrus_of_a_log, logs) == flagged
     assert logs_read_in(_LogUses.decided_through_unpacking, logs) == flagged
     assert logs_read_in(_LogUses.decided_through_a_chain, logs) == flagged
     assert logs_read_in(_LogUses.decided_through_a_boolean, logs) == flagged
