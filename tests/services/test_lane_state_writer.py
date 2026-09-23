@@ -4,6 +4,7 @@ import json
 from collections.abc import Mapping, Sequence
 
 import pytest
+import structlog
 
 from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
@@ -29,7 +30,7 @@ from kodezart.domain.fire_spec import (
     replace_criterion_fields,
 )
 from kodezart.domain.issue_tree import SubtreeClosure
-from kodezart.domain.lane_record import RUN_STATE_PURPOSE
+from kodezart.domain.lane_record import LANDING_ROW_SUBJECT, RUN_STATE_PURPOSE
 from kodezart.domain.lapse import GradedState
 from kodezart.domain.run_event_stream import (
     RUN_EVENT_PURPOSE,
@@ -264,6 +265,61 @@ async def test_the_pull_request_is_set_in_place_and_a_repeat_writes_nothing():
     # after the write before it.
     assert upserts[-1] == (RECORD_MARKER, recorded.comment_key)
     assert len(upserts) == 3
+
+
+async def test_a_landing_is_a_row_on_the_record_and_skipped_where_there_is_none():
+    """The landing act rides on the lane's record, and composes none of its own.
+
+    A lane with no record — a commit pushed whose record write then failed —
+    has nothing to re-enter from, so the act has nothing to carry it: the
+    write is skipped, no comment is minted, and a log line names the lane and
+    the landed sha. Refusing instead would take the delivery after the
+    landing down with it. Once the lane has its record, the same call
+    appends the act as the record's newest row, edited in place (KOD-705).
+    """
+    port, repo = board(), lane_repo()
+    lane_state = writer(port, repo)
+    upserts = comment_upserts(port)
+    orphan = repo.commit()
+
+    with structlog.testing.capture_logs() as logs:
+        skipped = await lane_state.record_landing(
+            lane=binding(), repo_path="/cache/lane", landed_sha=orphan
+        )
+
+    assert skipped is None
+    assert port.comments == []
+    assert upserts == []
+    assert [
+        (entry["lane"], entry["landed_sha"])
+        for entry in logs
+        if entry["event"] == "lane_landing_not_recorded"
+    ] == [(LANE, orphan)]
+
+    committed = await make_commit(lane_state, repo, 2)
+    recorded = record_comments(port)[0]
+    with structlog.testing.capture_logs() as logs:
+        landed = await lane_state.record_landing(
+            lane=binding(), repo_path="/cache/lane", landed_sha=orphan
+        )
+
+    assert landed is not None
+    assert [row.sha for row in landed.commits] == [
+        *(row.sha for row in committed.commits),
+        orphan,
+    ]
+    assert landed.commits[-1].subject == LANDING_ROW_SUBJECT
+    assert upserts[-1] == (RECORD_MARKER, recorded.comment_key)
+    assert [comment.comment_key for comment in record_comments(port)] == [
+        recorded.comment_key
+    ]
+    _, stored = await LaneRecordReader(tracker=port, operation=lane_operation()).read(
+        issue_key=LANE, lane_key=LANE
+    )
+    assert stored == landed
+    assert [
+        entry for entry in logs if entry["event"] == "lane_landing_not_recorded"
+    ] == []
 
 
 async def test_the_tenth_commit_edits_the_one_record_and_posts_nothing():

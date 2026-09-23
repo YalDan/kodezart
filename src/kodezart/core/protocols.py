@@ -1799,7 +1799,7 @@ class LaneStateWriter(Protocol):
 
     async def record_landing(
         self, *, lane: LaneBinding, repo_path: str, landed_sha: str
-    ) -> LaneRunState:
+    ) -> LaneRunState | None:
         """Record the landed best iteration as the lane's next commit act.
 
         The stall landing puts the best iteration of the run on the
@@ -1810,7 +1810,11 @@ class LaneStateWriter(Protocol):
 
         *repo_path* is only where the two shas of the changeset are read
         from: the landing holds no workspace, so nothing here is observed
-        off a tree.  A lane with no record refuses, the way a delivery does.
+        off a tree.  A lane with no record has nothing to re-enter from and
+        so nothing for the act to carry: the write is skipped and logged,
+        ``None`` is returned, and the delivery after it proceeds, since
+        refusing it would lose the landed work.  No first record is composed
+        out of a landing.
         """
         ...
 

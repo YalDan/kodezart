@@ -14,6 +14,7 @@ from typing import ClassVar
 
 import httpx
 import pytest
+import structlog
 from langgraph.checkpoint.memory import InMemorySaver
 from typing_extensions import is_protocol
 
@@ -57,6 +58,7 @@ from kodezart.domain.errors import (
     TransientAPIError,
 )
 from kodezart.domain.stall_report import DO_NOT_MERGE_PREFIX
+from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     ResultEvent,
@@ -107,6 +109,7 @@ from tests.chains.test_native_fire import (
     engine,
     function_at,
     native_evaluation,
+    native_operation,
     node_of,
     persisted_artifact,
     reached_through_callers,
@@ -425,12 +428,20 @@ async def test_a_stalled_lane_opens_and_watches_its_pull_request_like_any_other(
     From there the lane opens one pull request and watches its checks exactly
     as an accepted lane does: one create, one watch, one record, and nothing
     the forge saw carries the authored arm's marker (KOD-327).
+
+    The scripted loop records no commit, so this lane has no record on its
+    board when the stall exit lands its best iteration. Such a lane has
+    nothing to re-enter from, so the landing act is skipped and says so in a
+    log line naming the lane and the landed sha; refusing the landing would
+    have refused the delivery with it, and the work would never reach a pull
+    request (KOD-705).
     """
-    lane, state, config, wire, forge, executor, _, lane_state = composed(
+    lane, state, config, wire, forge, executor, tracker, lane_state = composed(
         loop=stalled_loop()
     )
     try:
-        reports, events, final = await run(lane, state, config)
+        with structlog.testing.capture_logs() as logs:
+            reports, events, final = await run(lane, state, config)
         terminal = next(
             event for event in events if isinstance(event, WorkflowCompleteEvent)
         )
@@ -456,6 +467,19 @@ async def test_a_stalled_lane_opens_and_watches_its_pull_request_like_any_other(
         assert lane_state.pull_requests == [
             (result.lane_key, result.pr, RepoVisibility.PRIVATE)
         ]
+        # The landing act was skipped, once, for this lane at the landed sha,
+        # and no first record was composed out of it.
+        assert [
+            (entry["lane"], entry["landed_sha"])
+            for entry in logs
+            if entry["event"] == "lane_landing_not_recorded"
+        ] == [(SUBJECT, result.final_commit_sha)]
+        assert (
+            await LaneRecordReader(tracker=tracker, operation=native_operation()).find(
+                issue_key=SUBJECT, lane_key=SUBJECT
+            )
+            is None
+        )
         assert executor.remediation_prompts == []
         assert all(
             DO_NOT_MERGE_PREFIX not in wire.creates[0][key]
