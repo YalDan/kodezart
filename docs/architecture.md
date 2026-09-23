@@ -337,7 +337,10 @@ same invocation while its last fire closed a previously open criterion of its
 subtree, because one fire's iteration budget is smaller than some lanes are and
 such a lane converges across fires instead of owing the remainder to the next
 invocation. The tick after a fire reads which of the criterion identities the
-lane owed the subtree now carries as closed, and reads nothing else. A fire that
+lane owed the subtree now carries as closed, and reads nothing else. A criterion
+canceled or marked duplicate during a fire leaves the gap on its state alone, so
+it reads as closed to that reading, and the lane gets at most one more fire
+before it rests. A fire that
 closed none of them puts the lane's issue back to the state its own open work
 stands in — the state name the first unstarted criterion it still owes carries,
 written through the port's own restore, which reads first and writes nothing
