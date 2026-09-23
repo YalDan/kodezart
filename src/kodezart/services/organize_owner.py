@@ -31,7 +31,11 @@ from kodezart.core.protocols import (
     WriteBackJudge,
 )
 from kodezart.domain.comment_markers import compose_comment_marker
-from kodezart.domain.criterion_creation import criterion_body, existing_criterion
+from kodezart.domain.criterion_creation import (
+    criteria_owed,
+    criterion_body,
+    existing_criterion,
+)
 from kodezart.domain.errors import (
     OrganizeDecisionRequiredError,
     OrganizeSurfaceResidualError,
@@ -1419,10 +1423,7 @@ class OrganizeOwner:
                             )
                             needs_criteria = (
                                 key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
-                                and not any(
-                                    c.state_kind is not WorkflowStateKind.CANCELED
-                                    for c in children
-                                )
+                                and criteria_owed(body=issue.body, children=children)
                             )
                             if (
                                 route is AdmissionRoute.MARK_COMPLETE

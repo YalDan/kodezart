@@ -54,7 +54,7 @@ from tests.integration.test_scope_runtime import board as scope_board
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_run_surface_lease import _Board
-from tests.tracker.conftest import CLAIMED_ISSUE
+from tests.tracker.conftest import CLAIMED_ISSUE, STATE_TYPES
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 
@@ -546,6 +546,126 @@ async def test_a_body_checklist_is_adopted_item_by_item_and_a_rerun_mints_nothin
         key: issue.description for key, issue in criterion_children(board).items()
     } == first
     assert parent.description == CHECKLIST_BODY
+
+
+def checklist_owner(*, children=()):
+    """An owner over the checklist parent, past its body stage.
+
+    Each of *children* is ``(key, body, status)``: a criterion child already
+    under the parent.  No admission verdict is scripted: the parent is judged
+    buildable as every body with a source is, so whether the criteria stage
+    is owed is the stage's own reading of the body and the children.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = factory(
+        under_approval=True,
+        body=CHECKLIST_BODY,
+        criteria=CHECKLIST_TITLES,
+        checks=CHECKLIST_ITEMS,
+        phases=criteria_row_only,
+    )
+    board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+    for key, body, status in children:
+        board.server.issues[key] = FakeMcpIssue(
+            id=key,
+            parent_id=CLAIMED_ISSUE,
+            labels=["check"],
+            description=body,
+            status=status,
+            status_type=STATE_TYPES[status],
+        )
+    return owner, board, executor
+
+
+def adopted(item: str) -> str:
+    """The body of a criterion a person made for *item*."""
+    return criterion_body(parent_key=CLAIMED_ISSUE, check=item, do="Read the export.")
+
+
+def minted_checks(board, *, besides):
+    """The Checks of every criterion child not among *besides*, sorted."""
+    return sorted(
+        criterion_field_bodies(issue.description, field="Check")
+        for key, issue in criterion_children(board).items()
+        if key not in besides
+    )
+
+
+async def test_a_checklist_item_with_no_criterion_owes_the_stage_by_itself():
+    """The stage reads the body and the children for itself.
+
+    The first item already has its criterion and the admission judges the
+    parent buildable, so only the two items no child states make the stage
+    owed: the author is opened and mints exactly those two.  Run again with
+    the marker taken off, every item is stated, so no author is opened and
+    nothing is minted.
+    """
+    owner, board, executor = checklist_owner(
+        children=((ADOPTED_CHILD, adopted(CHECKLIST_ITEMS[0]), "Todo"),)
+    )
+    parent = board.server.issues[CLAIMED_ISSUE]
+
+    report = await run_owner(owner)
+
+    assert report.halt is None
+    assert authors(executor) == 1
+    assert minted_checks(board, besides={ADOPTED_CHILD}) == [
+        (item,) for item in sorted(CHECKLIST_ITEMS[1:])
+    ]
+    assert len(minted_under_parent(board)) == 2
+    assert "criteria complete" in parent.labels
+    assert parent.description == CHECKLIST_BODY
+
+    first = {key: issue.description for key, issue in criterion_children(board).items()}
+    parent.labels.remove("criteria complete")
+    board.calls.clear()
+
+    second = await run_owner(owner)
+
+    assert second.halt is None
+    assert authors(executor) == 1
+    assert minted_under_parent(board) == []
+    assert "criteria complete" in parent.labels
+    assert {
+        key: issue.description for key, issue in criterion_children(board).items()
+    } == first
+
+
+async def test_an_item_whose_criterion_a_person_canceled_is_not_minted_again():
+    """A person's cancel stands: the canceled criterion still covers its item."""
+    canceled = "claimed-checklist-second"
+    owner, board, executor = checklist_owner(
+        children=(
+            (ADOPTED_CHILD, adopted(CHECKLIST_ITEMS[0]), "Todo"),
+            (canceled, adopted(CHECKLIST_ITEMS[1]), "Canceled"),
+        )
+    )
+
+    report = await run_owner(owner)
+
+    assert report.halt is None
+    assert authors(executor) == 1
+    assert minted_checks(board, besides={ADOPTED_CHILD, canceled}) == [
+        (CHECKLIST_ITEMS[2],)
+    ]
+    assert board.server.issues[canceled].status == "Canceled"
+
+
+async def test_a_canceled_child_with_no_check_refuses_no_creation_under_its_parent():
+    """A Canceled child whose Check cannot be read refuses nothing."""
+    unreadable = "claimed-checklist-unreadable"
+    owner, board, executor = checklist_owner(
+        children=((unreadable, "**Do:** no check", "Canceled"),)
+    )
+
+    report = await run_owner(owner)
+
+    assert report.halt is None
+    assert authors(executor) == 1
+    assert minted_checks(board, besides={unreadable}) == [
+        (item,) for item in sorted(CHECKLIST_ITEMS)
+    ]
 
 
 async def test_two_identical_proposed_checks_refuse_the_stage_and_mint_nothing():
