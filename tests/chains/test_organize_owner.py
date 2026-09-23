@@ -1564,6 +1564,45 @@ async def test_the_criteria_barrier_names_a_member_left_unlabelled(monkeypatch):
     assert "criteria complete" not in labels
 
 
+async def test_a_halt_in_the_second_run_stage_reports_the_stage_before_it(
+    monkeypatch,
+):
+    """A halt raised inside the second stage's rounds carries the first stage.
+
+    The ticket stage runs through and lands its marker; every admission read
+    after that marker is a refusal, so the criteria stage exhausts its one
+    admission round. The halt is the convergence loop's own, not the
+    barrier's, and the report it returns still names the ticket stage as
+    completed.
+    """
+    owner, board, executor = factory(under_approval=True, body=PREPARED_BODY, bound=1)
+    original = executor.stream
+    refused_at = []
+
+    async def refused(**kwargs):
+        marked = "body complete" in board.server.issues[CLAIMED_ISSUE].labels
+        if (
+            marked
+            and kwargs["output_format"]["schema"].get("title") == "AdmissionJudgment"
+        ):
+            executor.refuse_forever = True
+            refused_at.append(len(executor.calls))
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", refused)
+    report = await run_owner(owner)
+
+    assert refused_at, "the run never reached the criteria stage's admission"
+    assert report.halt is not None
+    assert report.halt.cause is StageHaltCause.ADMISSION_EXHAUSTED
+    assert report.halt.bound.loop == "admission"
+    assert report.completed_phases == (MandateKind.TICKET,)
+    labels = set(board.server.issues[CLAIMED_ISSUE].labels)
+    assert "body complete" in labels
+    assert "criteria complete" not in labels
+
+
 async def test_the_criteria_stage_opens_no_session_without_the_ticket_label():
     """The second run stage is gated on the first's marker, per member.
 
