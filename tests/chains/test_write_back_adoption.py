@@ -64,6 +64,7 @@ from kodezart.domain.errors import UnverifiedWritePathError
 from kodezart.domain.source_resolution import SourceIndex
 from kodezart.domain.write_adoption import (
     MODULE_LEVEL,
+    _driven_functions,
     artifact_writes,
     content_parameters,
     take_census,
@@ -283,7 +284,24 @@ def test_every_class_that_dials_the_tracker_writes_only_through_the_dialled_role
     """
     dialling = tracker_dialling_classes()
     assert LinearScopeStatusUpdates in dialling
-    assert write_methods(dialling) <= write_methods(ROLES)
+    assert dials_only_through_the_roles(dialling)
+
+
+def dials_only_through_the_roles(dialling: tuple[type, ...]) -> bool:
+    """Whether every write *dialling* declares is a write of the roles."""
+    return write_methods(dialling) <= write_methods(ROLES)
+
+
+def test_a_dialling_class_declaring_a_write_the_roles_lack_is_refused():
+    """Control: the comparison refuses a write only a dialling class declares."""
+
+    class SneakyStatusUpdates(LinearScopeStatusUpdates):
+        async def post_sneaky_note(self, *, issue_key: str, body: str) -> None:
+            """A write no dialled role declares."""
+
+    dialling = tracker_dialling_classes()
+    assert dials_only_through_the_roles(dialling)
+    assert not dials_only_through_the_roles((*dialling, SneakyStatusUpdates))
 
 
 @dataclass
@@ -1301,9 +1319,9 @@ def test_driven_is_proven_by_declared_types():
     }
     assert audit
     assert audit <= found.unadopted
-    assert Source(module="core/protocols.py", function="WriteBackStep.write") not in {
-        site.holder for site in census().driven
-    }
+    assert Source(
+        module="core/protocols.py", function="WriteBackStep.write"
+    ) not in _driven_functions(SourceIndex(installed_sources()), drive_entry())
 
 
 def test_the_census_covers_organize_and_the_evaluators_state_flips():
@@ -1365,12 +1383,12 @@ def driven_methods(module: str) -> frozenset[str]:
 async def test_every_write_the_observed_runs_make_is_a_driven_site(
     repository, monkeypatch, subject
 ):
-    """What a run wrote and what the census read are the same set of writes.
+    """Every write a run makes inside a window is a driven site of its module.
 
-    Neither half can shrink quietly: a run that stopped making a write would
-    leave the census claiming a driven site nothing exercises, and a census
-    that stopped seeing one would leave the run's write unaccounted for.
-    The comparison is per module, which is where the two halves meet.
+    A census that stopped seeing one of those writes would leave the run's
+    write unaccounted for.  That a run keeps making the writes it names is
+    pinned by the observed-run assertions above, not here.  The comparison
+    is per module, which is where the two halves meet.
     """
     journal = observe(monkeypatch)
     if subject == "evaluator":
