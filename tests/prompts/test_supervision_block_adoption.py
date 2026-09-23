@@ -40,11 +40,13 @@ prohibitions the amended base rule no longer states.
   and ``## `` heading in order, is pinned, so a section moved or added
   outside the base fails with the order it broke.
 * Outside the nine adopted sections the template is the base at a047d1fb
-  byte for byte, except for two amended lines (KOD-567, KOD-573, KOD-574):
-  the remainder, with the base's own text put back on those two lines, is
-  pinned by its sha256.  Any other change to the base fails whatever its
-  wording, a new prohibition, a window bound or a marker advance alike; it
-  is out of this change's reach and needs its own decision.
+  byte for byte, except for two amended lines (KOD-567, KOD-573, KOD-574)
+  and the per-issue sweep bound appended to two base lines (KOD-846): the
+  remainder, with the base's own text put back on the two amended lines and
+  the bound, pinned whole, taken off the other two, is pinned by its sha256.
+  Any other change to the base fails whatever its wording, a new
+  prohibition, a window bound or a marker advance alike; it is out of this
+  change's reach and needs its own decision.
 * The GitHub boundary has one owner, Supervision Boundaries (KOD-573).  It
   allows verification branches, commits and pushes, so no sentence of the
   template forbids them outright.  The two amended lines are the
@@ -72,6 +74,15 @@ TEMPLATE = default_sets_root() / OPUS_SET / "grooming_pass.md"
 #: into.  Computed once from that commit's blob; the test reads only the
 #: working tree.
 BASE_SHA256 = "0270af8a69f55807ba90612f5afc792e172bc92f7f8f45b3f1014e0fe2345ebc"
+
+#: The per-issue sweep bound (KOD-846), pinned whole: it closes the grooming
+#: tree's line and the mention scan's line, and renders only when a scope walks
+#: some declared team.
+SWEEP_BOUND = (
+    "{{#if scope_walks}} Every sweep here is bounded to the teams declared "
+    "above: an issue on a team a scope walks is not this pass's to triage, "
+    "rewrite, groom or answer, whoever it mentions.{{/if}}"
+)
 
 #: KOD-566's own list of the sections adopted byte for byte.
 VERBATIM: tuple[str, ...] = (
@@ -533,9 +544,12 @@ def test_outside_the_adopted_sections_the_template_is_the_base_but_two_lines():
     Outside the nine adopted sections, the template is the base byte for
     byte except for the two amended lines, each pinned whole in its own
     test.  Any other change to the base is out of this change's reach and
-    needs its own decision.
+    needs its own decision. The one other difference is the per-issue sweep
+    bound (KOD-846), pinned whole and taken off the two lines it closes.
     """
     remainder = base_remainder(template_text())
+    assert remainder.count(SWEEP_BOUND) == 2
+    remainder = remainder.replace(SWEEP_BOUND, "")
     lines = remainder.split("\n")
     for amended, base in (
         (authority_pointer_line(remainder), BASE_AUTHORITY_GITHUB_RULE),

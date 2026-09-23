@@ -795,7 +795,9 @@ scope by scope; the periodic dispatch pass and the two remaining prompt passes
 scan whole boards, so none of the three works that team's board. Every other
 team keeps all three, in the same deployment, exactly as without a row: its
 repository's dispatch pass, `fire_prep_pass` and `grooming_pass` over its board
-alone, and the lifecycle watcher. The rule reads the rows and the existing team
+alone, and the lifecycle watcher. The session passes' sweeps that reach past the
+team roster (a triage backlog, a mention scan) skip a walked team's issues. The
+rule reads the rows and the existing team
 binding and nothing else, which has limits. A per-issue team cannot share a
 repository with a scope. With one declared repository every team is bound to
 it, so every team is walked. An unbound team beside several repositories stays

@@ -647,9 +647,19 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     mapped = {row[0]: row[1] for row in rows}
     assert len(mapped) == len(rows)
 
+    # A derived placeholder names the fields its rule reads, and is never
+    # itself a field: a path belongs in the table above.
+    derived = dict(markdown_rows("## Derived placeholders"))
+    assert set(derived).isdisjoint(mapped)
+    for placeholder, sources in derived.items():
+        assert placeholder.split(".")[0] not in OperationConfig.model_fields
+        assert set(sources.split(", ")) <= set(OperationConfig.model_fields)
+
     # Direction 1 — no placeholder the templates reference is unmapped.
     referenced = template_placeholders()
-    assert referenced == set(mapped), referenced ^ set(mapped)
+    assert referenced == set(mapped) | set(derived), referenced ^ (
+        set(mapped) | set(derived)
+    )
     for placeholder, path in mapped.items():
         assert placeholder.split(".")[0] == path
 

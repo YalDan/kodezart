@@ -11,10 +11,19 @@ from kodezart.composition.passes import prompt_pass_schedule
 from kodezart.config.app import AppConfig
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.core.prompt_rendering import binding_names
+from kodezart.types.domain.prompts import PromptKey
+from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_passes import standing_scope_operation
 
 #: The bindings the per-team narrowing changes.
 ROSTER_BINDINGS = frozenset({"teams", "recorded_routing"})
+
+#: The sentence a claude-opus session template adds to each sweep that reaches
+#: past the roster when a scope walks some team.
+SCOPE_WALK_BOUND = (
+    "an issue on a team a scope walks is not this pass's to triage, rewrite, "
+    "groom or answer"
+)
 
 
 def test_the_team_roster_binds_only_the_per_issue_teams():
@@ -56,6 +65,22 @@ def test_with_no_scope_row_the_roster_binds_exactly_as_before():
         }
         for entry in operation.teams.values()
     ]
+
+
+def test_a_walked_team_binds_the_sweep_bound():
+    assert operation_bindings(standing_scope_operation())["scope_walks"] is True
+
+
+def test_with_no_scope_row_the_sweep_bound_is_absent_and_renders_nothing():
+    operation = standing_scope_operation(scopes=False)
+    bindings = operation_bindings(operation)
+    assert bindings["scope_walks_absent"] is True
+    prompts = load_registry(default_set="claude-opus", bindings=bindings)
+
+    for key in (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS):
+        rendered = prompts.template_for(key).render({"record_title": "a run"})
+        assert SCOPE_WALK_BOUND not in rendered, key
+        assert "scope walks" not in rendered, key
 
 
 def test_only_the_per_issue_session_templates_read_the_team_roster():

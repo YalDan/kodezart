@@ -247,6 +247,18 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
             several_repos and any(entry.repository is None for entry in per_issue)
         ),
     )
+    # Present exactly when a scope walks some declared team. A session
+    # template whose sweep reaches past the roster above (a whole triage
+    # backlog, every issue updated in the workspace, a mention scan) bounds
+    # that sweep under this pair, so a session of the per-issue flow never
+    # triages or answers on a board a scope walks (KOD-846). Absent with no
+    # scope row, so such an operation's render is exactly what it was.
+    _bind_absentable(
+        bindings,
+        "scope_walks",
+        True,
+        absent=not config.scope_walked_teams(),
+    )
     # An id alone renders as an opaque token no reader can resolve, so
     # every document and record reference carries its system beside it.
     # A TRACKER document's id is three-state on the model — absent means

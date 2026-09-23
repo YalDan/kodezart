@@ -48,6 +48,7 @@ from tests.fakes import (
     make_tracker_issue,
 )
 from tests.integration.test_organize_scheduler import dependencies, scope_only
+from tests.prompts.test_per_issue_roster_bindings import SCOPE_WALK_BOUND
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_passes import HEARTBEAT_PASS, ORGANIZE_PASS, _config
 from tests.test_forge_origin_selection import ForbiddenWorkflowEngine, _arm
@@ -59,6 +60,18 @@ TICK_BOUND_SECONDS = 30
 #: per-issue team's. The board keys are the teams' declared tracker keys.
 WALKED_ISSUE = "EXA-1"
 PER_ISSUE_ISSUE = "EXG-1"
+
+
+#: The words opening each sweep of a session template that reaches past the
+#: team roster: fire-prep's triage backlog and issue mention sweep, grooming's
+#: tree and its mention scan. Each is one line of its template.
+SWEEPS = {
+    PromptKey.FIRE_PREP_PASS: ("(a) Triage backlog", "(b) Mention sweep (issues)"),
+    PromptKey.GROOMING_PASS: (
+        "**2. Groom the whole tree**",
+        "**Mentions & principal comments.**",
+    ),
+}
 
 
 def _board() -> FakeTrackerPort:
@@ -203,7 +216,8 @@ async def test_a_scope_team_gets_no_per_issue_pass_while_the_other_team_keeps_al
     assert submission.scope is None
     assert WALKED_ISSUE not in board.claims
 
-    # Both session passes are told about the per-issue team's board alone.
+    # Both session passes are told about the per-issue team's board alone,
+    # and each sweep that reaches past that roster is bounded to it.
     for key in (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS):
         runner.calls.clear()
         await _tick(_named(runtime, key.value))
@@ -214,6 +228,10 @@ async def test_a_scope_team_gets_no_per_issue_pass_while_the_other_team_keeps_al
         assert re.search(r"\bEXG\b", prompt), key
         assert "Example Team" not in prompt, key
         assert not re.search(r"\bEXA\b", prompt), key
+        for sweep in SWEEPS[key]:
+            assert re.search(
+                re.escape(sweep) + r"[^\n]*" + re.escape(SCOPE_WALK_BOUND), prompt
+            ), (key, sweep)
 
     # The heartbeat's lane is never the lane a per-issue fire waits on.
     assert scope_lane(config) != config.dispatch_lane
