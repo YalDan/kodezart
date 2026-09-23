@@ -12,11 +12,9 @@ from kodezart.config.app import AppConfig
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.core.prompt_rendering import binding_names
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_passes import standing_scope_operation
-
-#: The bindings the per-team narrowing changes.
-ROSTER_BINDINGS = frozenset({"teams", "recorded_routing"})
 
 #: The sentence a claude-opus session template adds to each sweep that reaches
 #: past the roster when a scope walks some team.
@@ -83,17 +81,48 @@ def test_with_no_scope_row_the_sweep_bound_is_absent_and_renders_nothing():
         assert "scope walks" not in rendered, key
 
 
+def roster_bindings() -> frozenset[str]:
+    """Every binding a scope row changes, with each one's ``_absent`` companion.
+
+    Derived by binding one operation with and without its scope row, so a
+    binding the per-team narrowing reaches later is guarded without an edit
+    here.
+    """
+    walked = operation_bindings(standing_scope_operation())
+    unwalked = operation_bindings(standing_scope_operation(scopes=False))
+    changed = {name for name in walked if walked[name] != unwalked.get(name)}
+    roots = {name.removesuffix("_absent") for name in changed}
+    return frozenset(roots | {f"{root}_absent" for root in roots})
+
+
 def test_only_the_per_issue_session_templates_read_the_team_roster():
-    """Derived from the shipped sets and the scheduled pass table, never listed."""
+    """Derived from the shipped sets and the scheduled pass table, never listed.
+
+    Each key of each shipped set is read as the registry composes it, set
+    fragments included, in both ticket review modes, so a fragment that reads
+    the roster is seen in every member it is spliced into.
+    """
+    bindings = roster_bindings()
+    assert "teams" in bindings, bindings
     session_keys = {
         key.value for key in prompt_pass_schedule(AppConfig(_env_file=None))
     }
     readers = {
-        path.relative_to(default_sets_root())
-        for path in default_sets_root().rglob("*.md")
-        if {name.split(".")[0] for name in binding_names(path.read_text())}
-        & ROSTER_BINDINGS
+        (set_dir.name, mode.value, key.value)
+        for set_dir in default_sets_root().iterdir()
+        if set_dir.is_dir()
+        for mode in TicketReviewMode
+        for key in PromptKey
+        if {
+            name.split(".")[0]
+            for name in binding_names(
+                load_registry(default_set=set_dir.name, ticket_review_mode=mode)
+                .template_for(key)
+                .body
+            )
+        }
+        & bindings
     }
 
     assert readers, "no template reads the roster, so this guards nothing"
-    assert {path.stem for path in readers} <= session_keys, readers
+    assert {key for *_, key in readers} <= session_keys, readers
