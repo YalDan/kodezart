@@ -133,6 +133,28 @@ def graph_reading(snapshot: LaneGraphSnapshot) -> AlarmReading:
     return AlarmReading(source_ref="lane-graph", value=GraphEvidence(value=snapshot))
 
 
+#: ``STRUCTURAL_WRITE_UNCROSSES_MILESTONE`` as a pair one fact apart: a child
+#: opened under the completed fire, and the same child completed. Named here
+#: so the signal's own module owns the pair every other test reads.
+UNCROSSED_PAIR = (
+    SUBJECT,
+    (
+        graph_reading(graph()),
+        graph_reading(
+            graph(children=(issue("CHILD", WorkflowStateKind.STARTED, parent="FIRE"),))
+        ),
+    ),
+    (
+        graph_reading(graph()),
+        graph_reading(
+            graph(
+                children=(issue("CHILD", WorkflowStateKind.COMPLETED, parent="FIRE"),)
+            )
+        ),
+    ),
+)
+
+
 def graph_alarm(before: LaneGraphSnapshot, after: LaneGraphSnapshot) -> RunAlarm | None:
     return structural_write_uncrosses_milestone(
         subject=SUBJECT,

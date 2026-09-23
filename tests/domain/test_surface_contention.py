@@ -63,6 +63,17 @@ def readings(surface, *, holders=("job/run-a", "job/run-b"), limit=1):
     )
 
 
+#: The cross-run arm of ``SURFACE_CONTENDED`` as a pair one fact apart: a
+#: second run's holder on a surface one run already wrote twice, and the same
+#: history without it. Named here so the arm's own module owns the pair every
+#: other test reads.
+CROSS_RUN_PAIR = (
+    subject(address()),
+    readings(address(), holders=("run-1/holder-a", "run-1/holder-a", "run-2/holder-b")),
+    readings(address(), holders=("run-1/holder-a", "run-1/holder-a")),
+)
+
+
 def evaluate(surface, values):
     return surface_contended(
         subject=subject(surface),
