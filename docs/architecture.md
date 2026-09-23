@@ -776,8 +776,11 @@ renewal or tracker write; the author's session and its tracker reads come
 first. An address inside the scope and outside the set, such
 as a peer that joined after the round's snapshot, is refused there and recorded
 as a finding on the item that owns the address, and the round works on: a next
-round that declares the member writes the same change. A peer outside the scope
-is refused outright and recorded as nothing. The lease decides neither
+round that declares the member writes the same change, and once that write
+lands the finding is repaired and never written. An owner on the other side of
+approval from the row can take no record, so its finding is recorded on the
+subject instead, naming that member. A peer outside the scope is refused
+outright and recorded as nothing. The lease decides neither
 question: it is the record of what is held, and the comparison is the owner's.
 
 Graph change — dependency and related edges, parentage, priority and

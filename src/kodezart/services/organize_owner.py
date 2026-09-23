@@ -1256,6 +1256,10 @@ class OrganizeOwner:
         admissions = self._admissions.setdefault(phase.spec.kind, {})
         classes: set[str] = set()
         findings: tuple[SpecFinding, ...] = ()
+        # The last dry round's residuals, each with the subject whose
+        # write needed it: once that subject's write lands, the residual
+        # is repaired and leaves the held findings.
+        held_residuals: tuple[tuple[str, SpecFinding], ...] = ()
         active = False
         for _convergence_round in range(self._policy.max_convergence_rounds):
             snapshot = await self._snapshot(scope)
@@ -1358,7 +1362,7 @@ class OrganizeOwner:
                 ]
             )
             declared = phase_surfaces(member_keys=declared_keys, role=phase.role)
-            residuals: list[SpecFinding] = []
+            residuals: list[tuple[str, SpecFinding]] = []
             # Findings of a judgement this round left behind when its
             # subject's write became a residual or took the subject out
             # of the scope. Held for a halt later in the round only:
@@ -1453,13 +1457,32 @@ class OrganizeOwner:
                                 # on: the next round declares from a fresh
                                 # snapshot, and one that survives to the
                                 # bound is written at the halt.
-                                residuals.extend(
-                                    surface_findings(
-                                        outside=exc.surfaces,
-                                        phase=phase.spec.kind.value,
-                                        declared=phase.role.write_surfaces,
+                                for formed in surface_findings(
+                                    outside=exc.surfaces,
+                                    phase=phase.spec.kind.value,
+                                    declared=phase.role.write_surfaces,
+                                ):
+                                    # An owner on the other side of approval
+                                    # can take no record, so the subject, which
+                                    # is admitted, records it; the finding's
+                                    # evidence still names that member.
+                                    owner_approved = (
+                                        await self._tracker.execution_approved(
+                                            issue_key=formed.issue_id
+                                        )
                                     )
-                                )
+                                    residuals.append(
+                                        (
+                                            request.issue_key,
+                                            formed
+                                            if _on_approval_side(
+                                                owner_approved, phase=phase
+                                            )
+                                            else formed.model_copy(
+                                                update={"issue_id": request.issue_key}
+                                            ),
+                                        )
+                                    )
                                 interrupted.extend(result.findings)
                                 break
                             except OrganizeDecisionRequiredError as exc:
@@ -1507,6 +1530,15 @@ class OrganizeOwner:
                                     write_back_results=(verified_write,),
                                     results=(result,),
                                 )
+                            # The subject's write landed, so a residual its
+                            # write left in the last round is repaired and is
+                            # no longer held.
+                            repaired = [
+                                held
+                                for subject, held in held_residuals
+                                if subject == request.issue_key
+                            ]
+                            findings = tuple(f for f in findings if f not in repaired)
                             # Parent edits may remove this subject; splits may add
                             # newly minted members. Continue on the actual membership.
                             refreshed = await self._snapshot(scope)
@@ -1580,9 +1612,10 @@ class OrganizeOwner:
                         ):
                             refused.append(result)
                     findings = (
-                        *residuals,
+                        *(f for _, f in residuals),
                         *(f for result in fresh for f in result.findings),
                     )
+                    held_residuals = tuple(residuals)
                     classes.update(f.defect_class for f in findings)
                     refused_keys = {r.issue_id for r in refused}
                     for result in fresh:
@@ -1671,7 +1704,7 @@ class OrganizeOwner:
                     # the halt interrupted.
                     findings=(
                         *(f for f in findings if f.issue_id not in cleared),
-                        *residuals,
+                        *(f for _, f in residuals),
                         *interrupted,
                         *request.findings,
                     ),

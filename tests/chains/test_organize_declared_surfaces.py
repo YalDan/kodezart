@@ -675,6 +675,75 @@ async def test_the_refused_write_lands_once_the_next_round_declares_the_member(
     assert opened(board)[second] < landed
 
 
+async def test_a_residual_on_a_member_reading_approved_is_recorded_on_the_subject(
+    monkeypatch,
+):
+    """A residual whose owner the row may not write is recorded on its subject.
+
+    The member carries its own approval, so the grooming round declares none
+    of its addresses and may write nothing on it, a record included. The
+    edge onto it is a residual each round; at the bound the record lands on
+    the subject, which is admitted, and its evidence names the member.
+    """
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    approved = "FIX-APPROVED"
+    member(board, approved, labels=["approved scope"])
+    edging(board, executor, monkeypatch, approved)
+    report = await run_owner(owner)
+    assert report.halt.cause == "convergence_exhausted"
+    named = (
+        f"The groom phase needed issue_graph on {approved}, which is outside the "
+        "set it declares (issue_description, issue_graph, issue_label_set)."
+    )
+    assert undeclared(report) == [(CLAIMED_ISSUE, named)]
+    assert edge_writes(board) == []
+    (record,) = escalations(board, CLAIMED_ISSUE, "undeclared_surface")
+    assert record.interim_basis == named
+    assert escalations(board, approved) == []
+    assert "needs decision" not in board.server.issues[approved].labels
+
+
+async def test_a_residual_whose_write_lands_in_the_next_round_is_never_written(
+    monkeypatch,
+):
+    """A residual the next round repairs never reaches the board, halt or not.
+
+    Round one's edge onto a member that joined mid-round is a residual on
+    that member. Round two declares it and the edge lands; a member worked
+    after the subject then halts on a human decision in that round, and the
+    repaired residual is not written.
+    """
+    owner, board, executor = factory(convergence_bound=3, bound=2)
+
+    def join():
+        if LATE not in board.server.issues:
+            member(board, LATE)
+
+    edging(board, executor, monkeypatch, LATE, join=join)
+    member(board, EARLY)
+    seen = judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            EARLY: lambda n: (
+                buildable(EARLY) if n == 1 else refusal(EARLY, "human_decision")
+            )
+        },
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "human_decision"
+    # Assessed and refused by the dry round in round one; assessed again in
+    # round two, after the subject's edge has landed.
+    assert seen[EARLY] == 3
+    assert ("blockedBy", LATE) in board.server.issues[CLAIMED_ISSUE].relations
+    assert escalations(board, LATE) == []
+    assert "undeclared_surface" not in {
+        finding.defect_class for finding in report.halt.surviving_findings
+    }
+    assert escalations(board, EARLY)
+
+
 #: The two answers that write nothing, as the criteria stage's author gives them.
 NO_WRITE_ANSWERS = {
     "unresolved": {
