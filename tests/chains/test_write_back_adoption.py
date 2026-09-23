@@ -57,6 +57,7 @@ from kodezart.core.protocols import ScopeStatusUpdates, TrackerPort, WriteBackSt
 from kodezart.domain.errors import UnverifiedWritePathError
 from kodezart.domain.source_resolution import SourceIndex
 from kodezart.domain.write_adoption import (
+    MODULE_LEVEL,
     artifact_writes,
     content_parameters,
     take_census,
@@ -1451,6 +1452,80 @@ def test_a_driven_writer_something_else_calls_is_not_driven(case):
         )
         in found.driven
     )
+
+
+#: A port write taken as a value rather than called on the spot: bound to
+#: a local and called through it, bound into a partial, or taken at module
+#: level where no function holds it.
+TAKEN_AS_VALUE = {
+    "module-level": (
+        """
+from kodezart.core.protocols import TrackerPort
+
+POST = TrackerPort.post_comment
+""",
+        CallSite(
+            module="planted/taken_as_value.py",
+            function=MODULE_LEVEL,
+            method="post_comment",
+        ),
+    ),
+    "alias": (
+        """
+from kodezart.core.protocols import TrackerPort
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def publish(self) -> None:
+        post = self._tracker.post_comment
+        await post(issue_key="K", body="b")
+""",
+        CallSite(
+            module="planted/taken_as_value.py",
+            function="Writer.publish",
+            method="post_comment",
+        ),
+    ),
+    "partial": (
+        """
+import functools
+
+from kodezart.core.protocols import TrackerPort
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def publish(self) -> None:
+        upsert = functools.partial(self._tracker.upsert_comment, issue_key="K")
+        await upsert(body="b")
+""",
+        CallSite(
+            module="planted/taken_as_value.py",
+            function="Writer.publish",
+            method="upsert_comment",
+        ),
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(TAKEN_AS_VALUE))
+def test_a_port_write_taken_as_a_value_is_a_call_site(case):
+    """A write reached through a name it was bound to is still a write.
+
+    Nothing drives the planted method and nothing declares it, so the
+    write it takes as a value and later calls is refused, exactly as the
+    same write called on the spot would be.  Taken where no function holds
+    it, the write is a site of the module and is named under it.
+    """
+    text, site = TAKEN_AS_VALUE[case]
+    found = census(("planted/taken_as_value.py", text))
+    assert found.unadopted == frozenset({site})
+    assert found.paths == (str(site),)
 
 
 def test_the_boot_gate_and_the_guard_are_one_census():
