@@ -51,6 +51,7 @@ class SourceIndex:
         self._calls: dict[Source, list[ast.Call]] = {}
         self._assigns: dict[Source, list[ast.Assign]] = {}
         self._references: dict[str, list[tuple[Source | None, ast.expr]]] = {}
+        self._unheld: dict[int, str] = {}
         self._calls_by_callee: dict[int, ast.Call] = {}
         self._imports: dict[str, dict[str, tuple[str, str]]] = {}
         self._module_of: dict[str, str] = {
@@ -107,21 +108,24 @@ class SourceIndex:
             else:
                 if isinstance(child, ast.ImportFrom):
                     self._import(module, child)
-                self._attribute(body, child)
+                self._attribute(module, body, child)
                 self._index(module, child, quals, owner, holder, body)
 
-    def _attribute(self, body: Source | None, child: ast.AST) -> None:
+    def _attribute(self, module: str, body: Source | None, child: ast.AST) -> None:
         """Keep what a reader of *body* asks for: its calls, names and binds.
 
         A name mentioned at module or class level stands in no function
         body, and is kept with no holder: it is still a reference, and one
-        no call in a function accounts for.
+        no call in a function accounts for.  The module it stands in is kept
+        beside it, so such a mention can still be addressed.
         """
         if isinstance(child, ast.Attribute):
             self._references.setdefault(child.attr, []).append((body, child))
         elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
             self._references.setdefault(child.id, []).append((body, child))
         if body is None:
+            if isinstance(child, (ast.Attribute, ast.Name)):
+                self._unheld[id(child)] = module
             return
         if isinstance(child, ast.Call):
             self._calls[body].append(child)
@@ -407,6 +411,10 @@ class SourceIndex:
         holder.
         """
         return self._references.get(name, ())
+
+    def unheld_module(self, reference: ast.expr) -> str | None:
+        """The module a mention standing in no function body is made in."""
+        return self._unheld.get(id(reference))
 
     def call_of(self, reference: ast.expr) -> ast.Call | None:
         """The call *reference* is the callee of, if it is one."""

@@ -59,6 +59,9 @@ WRITE_VERBS = frozenset(
         "upsert",
     }
 )
+#: The function a write taken at module or class level is addressed under:
+#: it stands in no function, so it is a site of the module itself.
+MODULE_LEVEL = "<module>"
 #: What claim and lease bookkeeping is allowed to take beside an address:
 #: whose lease it is and how long it runs.  Anything else is content.
 LEASE_PARAMETERS = frozenset({"surfaces", "holder", "lease_seconds"})
@@ -174,28 +177,41 @@ def take_census(
 
 
 def _call_sites(index: SourceIndex, writes: frozenset[str]) -> frozenset[CallSite]:
-    """Every call of *writes* the tree makes through a receiver of its own.
+    """Every use of *writes* the tree makes through a receiver of its own.
 
     ``self.<write>(…)`` is a role's own implementation of a write reaching
     a sibling of its own, which is the backend seam and not a consumer
     reaching for the tracker.  Every other receiver is a consumer, a class
     that happens to declare a write of the same name included.
+
+    A use is a call, or the write taken as a value: bound to a name, handed
+    to a partial or passed along as a callback is a write made later
+    through something the census cannot follow, so it is a site of the
+    function it is taken in.  One taken at module or class level stands in
+    no function and is a site of the module, under ``MODULE_LEVEL``.
     """
     sites: set[CallSite] = set()
-    for holder in index.functions:
-        for call in index.direct_calls(holder):
-            callee = call.func
-            if not isinstance(callee, ast.Attribute) or callee.attr not in writes:
-                continue
-            if isinstance(callee.value, ast.Name) and callee.value.id in OWN_RECEIVERS:
-                continue
-            sites.add(
-                CallSite(
-                    module=holder.module,
-                    function=holder.function,
-                    method=callee.attr,
+    for method in writes:
+        for holder, reference in index.references(method):
+            if (
+                not isinstance(reference, ast.Attribute)
+                or not isinstance(reference.ctx, ast.Load)
+                or (
+                    isinstance(reference.value, ast.Name)
+                    and reference.value.id in OWN_RECEIVERS
                 )
-            )
+            ):
+                continue
+            if holder is not None:
+                sites.add(
+                    CallSite(
+                        module=holder.module, function=holder.function, method=method
+                    )
+                )
+                continue
+            module = index.unheld_module(reference)
+            if module is not None:
+                sites.add(CallSite(module=module, function=MODULE_LEVEL, method=method))
     return frozenset(sites)
 
 
