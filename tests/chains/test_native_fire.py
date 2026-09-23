@@ -2977,14 +2977,15 @@ def callers_of(*functions):
       top-level package, from which ``a.b.c.<function>`` reaches the
       function attribute by attribute; ``import a.b as m``,
       ``from ... import <module> as m`` and ``from ... import <function> as
-      x`` inside a function; and a module alias;
+      x`` inside the calling function or one enclosing it; and a module
+      alias;
     - a name bound, in the calling function or one enclosing it (the call
       made in a nested ``def``, ``async def`` or lambda), to any of these by
       plain, chained or annotated assignment, by unpacking a tuple into one
       of equal length with no starred target, by a walrus (and a walrus as
       the callee), by a ``for`` or comprehension target over a literal
       tuple or list, or by a positional or keyword-only parameter default,
-      followed to a fixed point;
+      a lambda's own parameters included, followed to a fixed point;
     - a bound method held in a local (``check = self._require_current``,
       ``check = self._delivery._require_current``, or by a walrus), and an
       attribute narrowed through a local (``delivery = self._delivery``,
@@ -2994,7 +2995,8 @@ def callers_of(*functions):
     A binding holds only in its own scope, so a same-named local of another
     function, a method of another class with the same name (through
     ``self``, a declared attribute or that class itself), and a same-named
-    function of another module are not the function.
+    function of another module are not the function, and a walrus inside a
+    lambda binds nothing in the function around it.
 
     Not seen, and held unseen by the same control: a conditional
     expression; starred unpacking; a ``for`` over a name bound to a
@@ -3371,6 +3373,35 @@ def local_module_from_import(state):
     crit.require_current_native_snapshot(state, reader=None)
 
 
+async def enclosing_module_from_import(state):
+    from kodezart.chains import criteria as crit
+
+    async def inner():
+        await crit.require_current_native_snapshot(state, reader=None)
+
+    await inner()
+
+
+async def enclosing_module_import(state):
+    import kodezart.chains.criteria as crit
+
+    async def inner():
+        await crit.require_current_native_snapshot(state, reader=None)
+
+    await inner()
+
+
+async def lambda_default(state):
+    run = lambda s, check=require_current_native_snapshot: check(s, reader=None)
+    await run(state)
+
+
+def lambda_walrus(state):
+    run = lambda: (check := require_current_native_snapshot)
+    run()
+    check(state, reader=None)
+
+
 def through_the_class(gate):
     Gate._require_current(gate)
 
@@ -3523,6 +3554,13 @@ RESOLVER_FOLLOWS = {
     "Piped.narrowed_closure": (
         "an attribute narrowed by the enclosing function, in a nested def"
     ),
+    "enclosing_module_from_import": (
+        "a from-import of a module by the enclosing function, in a nested def"
+    ),
+    "enclosing_module_import": (
+        "an import-as of a module by the enclosing function, in a nested def"
+    ),
+    "lambda_default": "a lambda's own parameter default",
 }
 
 #: The functions of the probe that must stay out: a same-named thing that is
@@ -3532,6 +3570,7 @@ RESOLVER_DOES_NOT_FOLLOW = {
     "Other.other_class_method": "a method of another class with the name",
     "OtherHeld.other_attribute": "that method through a declared attribute",
     "other_through_the_class": "that method through its own class",
+    "lambda_walrus": "a walrus inside a lambda, read in the enclosing function",
     "conditional": "a conditional expression",
     "starred": "starred unpacking",
     "loop_over_name": "a for over a name bound to a sequence",
