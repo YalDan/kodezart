@@ -438,18 +438,30 @@ async def test_preflight_asks_nothing_of_a_pass_a_scope_deployment_withholds(tmp
     assert set(scanner.asked) == {PassSignal.issues_changed}
 
 
+@pytest.mark.parametrize("deployment", ["scope", "per-issue", "no operation"], ids=str)
 @pytest.mark.parametrize("dialled", [True, False], ids=["tracker", "no tracker"])
 async def test_a_missing_fold_aborts_the_preflight_before_anything_is_probed(
-    tmp_path, monkeypatch, dialled
+    tmp_path, monkeypatch, dialled, deployment
 ):
     """Totality is the first boot check, and it needs nothing to be dialled.
 
-    A scope deployment with the alarm table one member short refuses naming
-    that member, whether or not a tracker is dialled, and the credential is
-    never asked what it can scan: a probe made first would be a round trip
-    spent on a boot that was always going to be refused.
+    A deployment with the alarm table one member short refuses naming that
+    member, whether or not a tracker is dialled, and the credential is never
+    asked what it can scan: a probe made first would be a round trip spent
+    on a boot that was always going to be refused. The refusal holds for
+    every deployment — a scope one, a per-issue one with no roster of scopes,
+    and one with no operation at all — because the check is unconditional.
+    The per-issue and no-operation rows keep the organize configuration, which
+    the preflight refuses later for a reason of its own, so a table check made
+    for scope deployments only would be answered by that other refusal.
     """
     _, operation, _board, _tracker, _prompts, _ledger = dependencies(tmp_path)
+    if deployment == "per-issue":
+        operation = OperationConfig.model_validate(
+            {**operation.model_dump(), "organize_scopes": []}
+        )
+    elif deployment == "no operation":
+        operation = None
     config = _config(
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},

@@ -49,6 +49,7 @@ from tests.integration.test_scope_runtime import SCOPE as WALK_SCOPE
 from tests.integration.test_scope_runtime import board as walk_fixture
 from tests.integration.test_scope_runtime import lane_record as walk_record
 from tests.lane_fixture import criteria_echo
+from tests.prompts.test_minimal_floor import minimal_fixture
 from tests.prompts.test_operation_config import EXAMPLE
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.services.lane_tally_fixtures import (
@@ -392,6 +393,32 @@ async def test_a_per_issue_deployment_probes_its_own_gates_and_no_supervisor_sca
     assert tracker.capability_probes == [
         (PassSignal.triage_backlog, PassSignal.approved_changed)
     ]
+
+
+async def test_the_floor_over_a_refusing_credential_boots_and_probes_nothing(
+    tmp_path: Path,
+) -> None:
+    """No roster, a tracker dialled that refuses issue activity, no delivery probe.
+
+    The floor schedules no session pass, no dispatch pass and no supervisor
+    tick, so it needs no scan at all: it boots over a credential that would
+    refuse the supervisor's one scan, and that credential is never asked.
+    """
+    tracker = FakeTrackerPort(
+        issues=[], scan_refusals={PassSignal.issues_changed: DIAGNOSIS}
+    )
+
+    with structlog.testing.capture_logs():
+        runtime = await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=FakeAgentRunner(events=[]),
+            operation=minimal_fixture(),
+            github_api=None,
+        )
+
+    assert [entry.name for entry in runtime.scheduler.passes] == []
+    assert tracker.capability_probes == []
 
 
 def test_the_example_operation_declares_the_roster_the_tick_reads() -> None:

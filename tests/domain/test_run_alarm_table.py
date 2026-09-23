@@ -35,13 +35,21 @@ def test_every_member_of_the_vocabulary_has_a_fold():
 @pytest.mark.parametrize(
     "missing",
     [
-        (AlarmSignal.TALLY_REGRESSED,),
+        *((member,) for member in AlarmSignal),
         (AlarmSignal.TALLY_REGRESSED, AlarmSignal.COMPOSITION_SUBSTITUTED),
     ],
-    ids=["one", "several"],
+    ids=[
+        *(member.value for member in AlarmSignal),
+        "several",
+    ],
 )
 def test_a_member_with_no_fold_refuses_the_boot_naming_every_one(monkeypatch, missing):
-    """Read at call time, so the refusal is of the table the process runs with."""
+    """Read at call time, so the refusal is of the table the process runs with.
+
+    Every member of the vocabulary is taken out alone, the ones no scheduled
+    tick observes included: totality is of the vocabulary, not of what one
+    observation folds.
+    """
     monkeypatch.setattr(
         run_alarm_table,
         "ALARM_TABLE",
