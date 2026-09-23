@@ -372,12 +372,18 @@ def test_the_by_effect_sections_carry_every_sentence_and_differ_only_where_repoi
 
 
 def test_the_by_effect_sections_carry_no_cadence_word():
-    """KOD-577: the authored sections name no cadence; they refer to this pass."""
+    """KOD-577: the authored sections name no cadence; they refer to this pass.
+
+    Besides the cadence list the pass templates are held to, which holds
+    none of them, the phrases the restated sentence dropped are checked by
+    name, so putting one back fails here.
+    """
+    restated = ("loop", "at once", "steady state")
     text = template_text()
     assert CADENCE_WORDS
     for name in BY_EFFECT:
         section = template_section(text, name).lower()
-        carried = [word for word in CADENCE_WORDS if word in section]
+        carried = [word for word in CADENCE_WORDS + restated if word in section]
         assert carried == [], name
 
 
