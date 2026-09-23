@@ -431,17 +431,37 @@ class OrganizeOwner:
             gate_open = key in issue.issue_labels
         return gate_open and _on_approval_side(approved, phase=phase)
 
-    async def _may_write(
-        self, issue_key: str, *, phase: ResolvedMandateSpec, scope: ScopeRef
-    ) -> None:
+    async def _require_member(self, issue_key: str, *, scope: ScopeRef) -> None:
         members = await self._tracker.scope_issues(ref=scope)
         if issue_key not in {member.issue_key for member in members}:
             raise OrganizeWriteRefusalError(
                 issue_key=issue_key, reason="the write target left the admitted scope"
             )
+
+    async def _may_write(
+        self, issue_key: str, *, phase: ResolvedMandateSpec, scope: ScopeRef
+    ) -> None:
+        await self._require_member(issue_key, scope=scope)
         issue = await self._tracker.read_issue(issue_key=issue_key)
         gate_members = await self._carried_members(scope, phase)
         if not await self._admitted(issue, phase=phase, gate_members=gate_members):
+            raise OrganizeWriteRefusalError(
+                issue_key=issue_key,
+                reason=f"{phase.spec.kind.value} is not admitted for this issue now",
+            )
+
+    async def _may_record(
+        self, issue_key: str, *, phase: ResolvedMandateSpec, scope: ScopeRef
+    ) -> None:
+        """Refuse a halt record the phase may not write on *issue_key* now.
+
+        A record is gated on the scope's membership and on the row's side of
+        approval, and not on the work-subject gate label: a criterion child
+        never carries that label and still owns the findings formed on it.
+        """
+        await self._require_member(issue_key, scope=scope)
+        approved = await self._tracker.execution_approved(issue_key=issue_key)
+        if not _on_approval_side(approved, phase=phase):
             raise OrganizeWriteRefusalError(
                 issue_key=issue_key,
                 reason=f"{phase.spec.kind.value} is not admitted for this issue now",
@@ -1022,7 +1042,7 @@ class OrganizeOwner:
                                 "the escalation admission evidence is no longer current"
                             ),
                         )
-                    await self._may_write(
+                    await self._may_record(
                         revision.issue.issue_key, phase=phase, scope=scope
                     )
 
@@ -1108,10 +1128,11 @@ class OrganizeOwner:
                         "the escalation classification remains unconfirmed"
                     )
             except OrganizeWriteRefusalError:
-                # A record the phase may no longer write — an item it is not
-                # admitted on, one that left the scope, stale admission
-                # evidence or a changed identity — is never written. It is
-                # named unrecorded and the halt's other records still land.
+                # A record the phase may no longer write — an item on the
+                # other side of approval, one that left the scope, stale
+                # admission evidence or a changed identity — is never
+                # written. It is named unrecorded and the halt's other
+                # records still land.
                 skipped.append(issue_key)
                 continue
             except (
