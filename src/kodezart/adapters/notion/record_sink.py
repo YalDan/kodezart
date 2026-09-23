@@ -32,7 +32,7 @@ from kodezart.types.domain.notion_records import (
     NotionRecordPageList,
     NotionRecordSchema,
 )
-from kodezart.types.domain.operation import RecordDestination, RunKind
+from kodezart.types.domain.operation import RecordDestination
 from kodezart.types.domain.run_records import RunRecord, RunRecordFailure
 
 _TOOL_RETRIEVE_DATA_SOURCE = "API-retrieve-a-data-source"
@@ -71,7 +71,7 @@ class NotionRecordSink:
         all the answer needs.
         """
         with record_failure_boundary(destination=destination, record=record):
-            if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
+            if destination.records_structured(record.kind):
                 title, expected = await self._structured_target(destination, record)
                 page = await self._find_record(destination, record, title)
                 return page is not None and self._matches_properties(page, expected)
@@ -121,7 +121,7 @@ class NotionRecordSink:
     ) -> None:
         """Create or complete this run's page using its declared contract."""
         with record_failure_boundary(destination=destination, record=record):
-            if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
+            if destination.records_structured(record.kind):
                 title, expected = await self._structured_target(destination, record)
                 page = await self._find_record(destination, record, title)
                 if page is not None and self._matches_properties(page, expected):

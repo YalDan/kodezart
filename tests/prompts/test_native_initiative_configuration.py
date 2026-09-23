@@ -4,10 +4,12 @@ import re
 
 import pytest
 
-from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.adapters.toml_operation_config import (
+    load_operation_config,
+    read_operation_file,
+)
 from kodezart.composition.prompts import boot_prompts
 from kodezart.config.app import AppConfig
-from kodezart.core.errors import OperationConfigError
 from kodezart.core.logging import get_logger
 from kodezart.types.domain.prompts import PromptKey
 from tests.prompts.test_operation_config import raw_example, write_toml
@@ -21,14 +23,21 @@ from tests.prompts.test_operation_config import raw_example, write_toml
         [{"id": "stale", "target_date": "2099-12-31"}],
     ],
 )
-def test_retired_initiative_roster_refuses_at_the_real_toml_loader(tmp_path, roster):
+def test_a_v02_initiative_roster_is_accepted_and_changes_nothing(tmp_path, roster):
+    """A v0.2 file's roster is dropped unread at the real loader (KOD-903)."""
     raw = raw_example()
+    raw.pop("initiatives", None)
+    (tmp_path / "without").mkdir()
+    (tmp_path / "with").mkdir()
+    without = read_operation_file(write_toml(tmp_path / "without", raw))
     raw["initiatives"] = roster
-    with pytest.raises(OperationConfigError) as raised:
-        load_operation_config(write_toml(tmp_path, raw))
-    assert "initiatives" in str(raised.value)
-    assert "2099-12-31" not in str(raised.value)
-    assert "stale-native-identity" not in str(raised.value)
+    loaded = read_operation_file(write_toml(tmp_path / "with", raw))
+    assert loaded.config == without.config
+    assert loaded.ignored == ("initiatives",)
+    assert without.ignored == ()
+    rendered = loaded.config.model_dump_json()
+    assert "2099-12-31" not in rendered
+    assert "stale-native-identity" not in rendered
 
 
 @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])

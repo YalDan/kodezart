@@ -809,6 +809,44 @@ async def test_without_a_delivery_probe_no_pass_is_scheduled_and_boot_says_so(
     assert unwired[0]["delivery_probe_present"] is False
 
 
+async def test_boot_logs_one_line_for_an_accepted_v02_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """A v0.2 initiative roster boots, and boot says once what it dropped.
+
+    The fixture declares a marker table, so nothing is defaulted; a boot of
+    the same file without the roster logs no such line at all (KOD-903).
+    """
+    monkeypatch.delenv("KODEZART_GITHUB_TOKEN", raising=False)
+    _configure(
+        monkeypatch, tmp_path, _operation_toml() + '\n[[initiatives]]\nid = "example"\n'
+    )
+    app = create_app()
+    async with lifespan(app):
+        pass
+    accepted = [
+        event
+        for event in _events(capsys.readouterr().out)
+        if event.get("event") == "operation_file_v02_accepted"
+    ]
+    assert len(accepted) == 1
+    assert accepted[0]["ignored"] == ["initiatives"]
+    assert accepted[0]["defaulted"] == []
+
+    _configure(monkeypatch, tmp_path, _operation_toml())
+    plain = create_app()
+    async with lifespan(plain):
+        pass
+    assert [
+        event
+        for event in _events(capsys.readouterr().out)
+        if event.get("event") == "operation_file_v02_accepted"
+    ] == []
+
+
 async def test_a_preflight_refusal_strands_no_queue_and_no_open_transport(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

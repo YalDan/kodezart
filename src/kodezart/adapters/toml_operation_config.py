@@ -8,6 +8,7 @@ the live workspace is explicitly NOT done here.
 
 import tomllib
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -30,8 +31,51 @@ RETIRED_SCOPE_KEYS: Final[Mapping[str, str]] = {
 }
 
 
-def load_operation_config(path: Path) -> OperationConfig:
-    """Parse and structurally validate an operation config file."""
+#: The one exception to the no-fallback rule, kept so that a v0.2 operation
+#: file boots as it is (KOD-903), and limited to what such a file can carry.
+#: A v0.2 initiative roster is accepted and has no effect: team scope is the
+#: declared boundary now.  Kept apart from RETIRED_SCOPE_KEYS, which means
+#: "refuse".
+V02_IGNORED_TABLES: Final[tuple[str, ...]] = ("initiatives",)
+
+#: The same exception, for a file that declares no ``[marker_prefixes]`` table
+#: at all: each purpose the per-issue path needs takes the marker v0.2 wrote,
+#: so the markers v0.2 already left on issues are still read.  v0.2 had no
+#: outcome marker, so ``run_outcome`` takes the shipped example's.  A declared
+#: table, even an empty one, is taken exactly as written, and every purpose it
+#: leaves out still refuses at use.
+V02_MARKER_PREFIXES: Final[Mapping[str, str]] = {
+    "claim": "kodezart-claim",
+    "work_ref": "kodezart-workref",
+    "base_spec": "kodezart-basespec",
+    "repository": "kodezart-repo",
+    "run_outcome": "run-outcome",
+}
+
+
+@dataclass(frozen=True)
+class OperationFile:
+    """A loaded operation, and what the v0.2 exception did to reach it.
+
+    ``ignored`` names each v0.2 table dropped unread, and ``defaulted`` each
+    member supplied because the file left it out.  Both are empty for a file
+    written for this version, so the root can say, once, exactly what an old
+    file was given.
+    """
+
+    config: OperationConfig
+    ignored: tuple[str, ...]
+    defaulted: tuple[str, ...]
+
+
+def read_operation_file(path: Path) -> OperationFile:
+    """Parse and structurally validate an operation config file.
+
+    Between the parse and the validation, and nowhere else, the v0.2
+    exception applies: see :data:`V02_IGNORED_TABLES` and
+    :data:`V02_MARKER_PREFIXES`.  Every other absent or unknown member is
+    judged by the model exactly as before.
+    """
     if not path.is_file():
         msg = f"Operation config not found at {path}"
         raise OperationConfigError(msg, failures=[f"missing file: {path}"])
@@ -40,11 +84,22 @@ def load_operation_config(path: Path) -> OperationConfig:
     except tomllib.TOMLDecodeError as exc:
         msg = f"Operation config at {path} is not valid TOML"
         raise OperationConfigError(msg, failures=[str(exc)]) from exc
+    ignored = tuple(key for key in V02_IGNORED_TABLES if raw.pop(key, None) is not None)
+    defaulted: tuple[str, ...] = ()
+    if "marker_prefixes" not in raw:
+        raw["marker_prefixes"] = dict(V02_MARKER_PREFIXES)
+        defaulted = ("marker_prefixes",)
     try:
-        return OperationConfig.model_validate(raw)
+        config = OperationConfig.model_validate(raw)
     except ValidationError as exc:
         msg = f"Operation config at {path} is invalid"
         raise OperationConfigError(msg, failures=_flatten(exc)) from exc
+    return OperationFile(config=config, ignored=ignored, defaulted=defaulted)
+
+
+def load_operation_config(path: Path) -> OperationConfig:
+    """Parse and structurally validate an operation config file."""
+    return read_operation_file(path).config
 
 
 def _flatten(exc: ValidationError) -> list[str]:

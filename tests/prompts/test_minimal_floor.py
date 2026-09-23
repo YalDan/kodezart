@@ -33,12 +33,27 @@ def test_the_minimal_fixture_declares_nothing_beyond_the_floor() -> None:
 
     A "minimal" fixture that quietly carries a principal or a queue map
     stops demonstrating that the floor boots, which is the whole claim.
+    The floor declares no ``[marker_prefixes]`` table, so, as for any v0.2
+    file, the loader supplies the markers v0.2 wrote (KOD-903).
     """
     config = minimal_fixture()
     scalars = {"operation_name", "workspace"}
-    for field in set(OperationConfig.model_fields) - scalars - {"private_surface"}:
+    loader_supplied = {"marker_prefixes"}
+    for field in (
+        set(OperationConfig.model_fields)
+        - scalars
+        - {"private_surface"}
+        - loader_supplied
+    ):
         assert len(getattr(config, field)) == 0, field
     assert config.private_surface is None
+    assert config.marker_prefixes == {
+        "claim": "kodezart-claim",
+        "work_ref": "kodezart-workref",
+        "base_spec": "kodezart-basespec",
+        "repository": "kodezart-repo",
+        "run_outcome": "run-outcome",
+    }
 
 
 def test_the_minimal_fixture_yields_a_boot_ready_binding_namespace() -> None:
