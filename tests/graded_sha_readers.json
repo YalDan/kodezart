@@ -141,7 +141,7 @@
   "domain/audit_claims.py::evidence_row_history.<genexpr>": {
     "reason": "not a revision comparison at all: an event is selected by the subject it is keyed to and by whether its kind writes the Evidence row, and a grading naming no commit is dropped",
     "uses": [
-      "return tuple((event.graded_sha for event in events if event.subject_key == criterion_key and event.graded_sha is not None))"
+      "return tuple((event.graded_sha for event in events if event.subject_key == criterion_key and event.kind in EVIDENCE_ROW_WRITES and (event.graded_sha is not None)))"
     ]
   },
   "domain/audit_claims.py::restamp_verdict": {
@@ -242,6 +242,15 @@
       "await settle(self._tracker.post_run_event(issue_key=lane.lane_key, event=event))",
       "event = LaneRunEvent(kind=UNDEMONSTRATED_EVENT_KINDS[reason], lane_key=lane.lane_key, subject_key=criterion.id, graded_sha=cross_off.evidence.graded_sha)",
       "if event not in events:\n    ..."
+    ]
+  },
+  "services/lane_state_writer.py::TrackerLaneStateWriter._write_one": {
+    "reason": "the graded commit recorded on the pass event a finished criterion posts, and that event posted unless the criterion's Evidence row history already ends at it",
+    "uses": [
+      "await settle(self._tracker.post_run_event(issue_key=lane.lane_key, event=event))",
+      "event = LaneRunEvent(kind=RunEventKind.CRITERION_PASSED, lane_key=lane.lane_key, subject_key=criterion.id, graded_sha=cross_off.evidence.graded_sha)",
+      "if not posted:\n    ...",
+      "posted = _ends_row_history(event=event, events=events)"
     ]
   },
   "services/lane_state_writer.py::TrackerLaneStateWriter.write_cross_offs": {
