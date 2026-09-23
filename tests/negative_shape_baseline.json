@@ -384,6 +384,7 @@
   "tests/test_fakes_state.py": 8,
   "tests/test_forge_origin_selection.py": 46,
   "tests/test_graded_sha_comparison_sites.py": 22,
+  "tests/test_graded_sha_trap.py": 45,
   "tests/test_lane_verification.py": 15,
   "tests/test_lifespan_cleanup.py": 64,
   "tests/test_mandate_dispatch_sites.py": 9,
@@ -5470,6 +5471,16 @@
    "test_every_reader_of_the_rule_is_named_with_the_reading_it_takes",
    "test_the_rule_is_consulted_from_one_body_in_each_package_that_reads_it",
    "test_a_second_reader_in_one_package_is_reported"
+  ],
+  "tests/test_graded_sha_trap.py": [
+   "test_the_trap_records_the_scope_and_the_statement_of_each_comparison",
+   "test_a_value_copied_to_a_plain_str_on_both_sides_is_past_the_trap",
+   "test_the_lane_reading_weighs_the_pair_in_the_rule_alone",
+   "test_the_audit_observation_weighs_the_pair_in_the_rule_alone",
+   "test_the_audit_evidence_reader_weighs_the_pair_in_the_rule_alone",
+   "test_the_restamp_reading_compares_the_graded_sha_only_as_its_rows_say",
+   "test_the_lane_state_writer_takes_a_lapsed_grading_back_without_weighing_it",
+   "test_every_consultation_of_the_rule_is_driven_with_both_values_trapped"
   ],
   "tests/test_lane_verification.py": [
    "test_pass_templates_resolve_by_key_under_default_configuration",
