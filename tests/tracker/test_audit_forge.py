@@ -185,6 +185,12 @@ async def test_exact_sha_roster_and_the_one_red_classifier_determine_the_verdict
         if case == "roster":
             assert "configured checks were not observed" in result.reason
             assert "ValidationError" not in result.reason
+        if case == "unknown":
+            assert "red checks are unclassified" in result.reason
+            assert "ValidationError" not in result.reason
+        if case == "environment":
+            assert "a declared prerequisite is unmet" in result.reason
+            assert "ValidationError" not in result.reason
         assert (
             AuditForgeObservation.model_validate_json(result.model_dump_json())
             == result
@@ -767,6 +773,87 @@ async def test_a_refutation_over_an_unclassified_red_is_refused(setup):
     values["red"] = {**values["red"], "red_class": CheckRedClass.UNCLASSIFIED}
     assert values["red"]["observation"]["checks_passed"] is False
     with pytest.raises(ValidationError, match="classified work failure"):
+        AuditForgeObservation.model_validate(values)
+
+
+async def test_a_refutation_whose_red_is_red_only_outside_the_roster_is_refused(
+    setup,
+):
+    """The claim's checks are red in the roster, but the red it classifies
+    is red only in a check the roster leaves out: nothing counted was
+    reproduced, so the refutation is refused."""
+    async with forge("fake", "work") as (ci, _):
+        result = await setup(ci).observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    values = result.model_dump()
+    values["red"] = {
+        "red_class": CheckRedClass.WORK_DEFECT,
+        "observation": {
+            **values["checks"],
+            "check_names": NAMES | {UNROSTERED},
+            "checks_passed": False,
+            "failed_check_names": frozenset({UNROSTERED}),
+        },
+    }
+    with pytest.raises(ValidationError, match="classified work failure"):
+        AuditForgeObservation.model_validate(values)
+
+
+async def test_a_mixed_refutation_whose_red_is_red_only_outside_the_roster_is_refused(
+    setup,
+):
+    """The claim's checks are red in a rostered and an excluded check; the
+    red it classifies is red only in the excluded one, so it counts nothing."""
+    async with forge("fake", "mixed") as (ci, _):
+        result = await setup(ci).observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    values = result.model_dump()
+    values["red"] = {
+        "red_class": CheckRedClass.WORK_DEFECT,
+        "observation": {
+            **values["checks"],
+            "failed_check_names": frozenset({UNROSTERED}),
+        },
+    }
+    with pytest.raises(ValidationError, match="classified work failure"):
+        AuditForgeObservation.model_validate(values)
+
+
+async def test_a_hold_over_a_flake_with_no_observable_rerun_is_refused(setup):
+    async with forge("fake", "green") as (ci, _):
+        values = (await setup(ci).observe(REQUEST)).model_dump()
+    values["red"] = {
+        "red_class": CheckRedClass.RUNNER_FLAKE,
+        "observation": {"kind": "absent", "summary": "no rerun"},
+    }
+    with pytest.raises(ValidationError, match="green exact-SHA"):
+        AuditForgeObservation.model_validate(values)
+
+
+async def test_a_hold_over_a_flake_whose_rerun_is_red_in_the_roster_is_refused(setup):
+    async with forge("fake", "green") as (ci, _):
+        values = (await setup(ci).observe(REQUEST)).model_dump()
+    values["red"] = {
+        "red_class": CheckRedClass.RUNNER_FLAKE,
+        "observation": {
+            **values["checks"],
+            "checks_passed": False,
+            "failed_check_names": frozenset({"unit"}),
+        },
+    }
+    with pytest.raises(ValidationError, match="green exact-SHA"):
+        AuditForgeObservation.model_validate(values)
+
+
+async def test_a_refutation_relabelled_a_hold_without_a_red_is_refused(setup):
+    """Checks red in the roster cannot hold with no red to classify them."""
+    async with forge("fake", "work") as (ci, _):
+        result = await setup(ci).observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    values = result.model_dump()
+    values["verdict"] = AuditVerdict.HOLDS
+    values["red"] = None
+    with pytest.raises(ValidationError, match="green exact-SHA run"):
         AuditForgeObservation.model_validate(values)
 
 
