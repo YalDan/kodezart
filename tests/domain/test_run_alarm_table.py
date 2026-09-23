@@ -168,8 +168,8 @@ _SURFACE = contention.address()
 
 #: Per member: its subject, a reading that makes its fold return an alarm, and
 #: a near-identical reading — one fact apart — that must return none. Built
-#: from each signal's own test module, so the pair is the one that signal's
-#: tests already describe.
+#: from each signal's own test-module helpers, so the pair is the one that
+#: signal's tests already describe.
 FOLD_PAIRS = {
     AlarmSignal.TALLY_UNMOVED: (
         lane_tally.LANE,
@@ -241,6 +241,27 @@ def test_every_member_carries_its_exact_string_value():
 def test_every_member_brings_a_fold_pair():
     """Whatever spelling the parametrization below has, a member with no pair."""
     assert set(FOLD_PAIRS) == set(AlarmSignal)
+
+
+def test_the_pairs_test_is_collected_over_exactly_the_vocabulary():
+    """A pair present and never run is caught too: the collected members are pinned.
+
+    Read off the pairs test's own parametrization, so a narrowed list there
+    fails here even while every member still brings a pair.
+    """
+    pairs_test = test_every_member_fires_on_one_fixture_and_is_quiet_on_its_twin
+    (collected,) = [
+        mark.args[1] for mark in pairs_test.pytestmark if mark.name == "parametrize"
+    ]
+    assert list(collected) == list(AlarmSignal)
+
+
+def test_the_widenings_are_exactly_the_two_arms():
+    """The scope arm widens the tally and the cross-run arm widens contention."""
+    assert {member for member, *_ in WIDENINGS.values()} == {
+        AlarmSignal.TALLY_UNMOVED,
+        AlarmSignal.SURFACE_CONTENDED,
+    }
 
 
 @pytest.mark.parametrize("member", list(AlarmSignal), ids=lambda member: member.value)

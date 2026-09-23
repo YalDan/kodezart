@@ -67,20 +67,21 @@ def observe(readings, subject=SUBJECT):
 
 
 @pytest.mark.parametrize(
-    "labels",
+    "readings",
     [
-        {"one": ["criteria-ready"], "two": []},
-        {"one": ["criteria-ready", "body-ready"], "two": []},
-        {"one": ["criteria-ready"], "two": None},
-        {"one": ["criteria-ready"]},
+        inputs(labels={"one": ["criteria-ready"], "two": []}),
+        # The scope arm's own firing half.
+        SCOPE_ARM_PAIR[1],
+        inputs(labels={"one": ["criteria-ready"], "two": None}),
+        inputs(labels={"one": ["criteria-ready"]}),
         # The only member not carrying is the one whose read is empty or
         # missing, so a missing read counted as carrying would close these.
-        {"one": ["criteria-ready", "body-ready"], "two": None},
-        {"one": ["criteria-ready", "body-ready"]},
+        inputs(labels={"one": ["criteria-ready", "body-ready"], "two": None}),
+        inputs(labels={"one": ["criteria-ready", "body-ready"]}),
     ],
+    ids=[f"labels{index}" for index in range(6)],
 )
-async def test_zero_partial_empty_and_missing_marker_reads_remain_open(labels):
-    readings = inputs(labels=labels)
+async def test_zero_partial_empty_and_missing_marker_reads_remain_open(readings):
     alarm = observe(readings)
     assert alarm is not None
     assert alarm.subject == SUBJECT
@@ -93,17 +94,19 @@ async def test_zero_partial_empty_and_missing_marker_reads_remain_open(labels):
 
 
 @pytest.mark.parametrize(
-    "labels",
+    "readings",
     [
-        {"one": ["criteria-ready", "body-ready"], "two": ["body-ready"]},
-        {"one": ["body-ready"], "two": ["body-ready"]},
-        {"one": [], "two": []},
-        {"one": None},
-        {},
+        # The scope arm's own quiet half.
+        SCOPE_ARM_PAIR[2],
+        inputs(labels={"one": ["body-ready"], "two": ["body-ready"]}),
+        inputs(labels={"one": [], "two": []}),
+        inputs(labels={"one": None}),
+        inputs(labels={}),
     ],
+    ids=[f"labels{index}" for index in range(5)],
 )
-def test_complete_marker_roster_or_no_entry_is_quiet(labels):
-    assert observe(inputs(labels=labels)) is None
+def test_complete_marker_roster_or_no_entry_is_quiet(readings):
+    assert observe(readings) is None
 
 
 def test_empty_roster_is_quiet():

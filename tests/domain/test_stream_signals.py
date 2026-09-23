@@ -496,6 +496,29 @@ def test_a_substituted_invocation_beside_clean_ones_is_substituted():
     assert alarm.signal is AlarmSignal.COMPOSITION_SUBSTITUTED
 
 
+def test_each_invocation_is_held_to_its_own_declaration_beside_a_mixed_one():
+    """Neither the stream's total nor the smallest declaration is the count.
+
+    A fan-out of two that opened two beside a single-session node that opened
+    one is quiet; a single-session node that opened two beside a fan-out that
+    opened fewer than it declared still raises.
+    """
+    fan_out = invocation("fan-out-2", declared=2)
+
+    assert (
+        substituted(
+            opened((SINGLE, "a"), (fan_out, "c"), (fan_out, "d")),
+        )
+        is None
+    )
+    assert (
+        substituted(
+            opened((SINGLE, "a"), (SINGLE, "b"), (fan_out, "c")),
+        )
+        is not None
+    )
+
+
 def test_a_repeated_opening_of_one_session_is_one_session():
     assert substituted(opened((SINGLE, "session-a"), (SINGLE, "session-a"))) is None
 
