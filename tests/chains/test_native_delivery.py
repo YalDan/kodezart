@@ -578,6 +578,31 @@ async def test_a_native_lane_reaps_its_fire_backups_after_an_accepted_merge(acce
         await forge.close()
 
 
+async def test_an_accepted_fire_whose_consolidation_diverged_reaps_no_backup():
+    """An accepted fire that did not merge reaps nothing on the native lane.
+
+    The loop accepts, but the loop branch and the deliverable have diverged,
+    so the consolidation merges nothing. The lane's cleanup is under the same
+    guard as the authored arm's — accepted and merged — so no backup is
+    reaped under any prefix.
+    """
+    lane, state, config, _, forge, *_ = composed()
+    merger = lane.fire.consolidation._merger
+    merger._outcomes = [
+        ConsolidationOutcome(status=ConsolidationStatus.DIVERGENT, feature_tip_sha=SHA)
+    ]
+    try:
+        _, events, _ = await run(lane, state, config)
+        terminal = next(
+            event for event in events if isinstance(event, WorkflowCompleteEvent)
+        )
+        assert (terminal.accepted, terminal.merged) == (True, False)
+        assert [call.get("method") for call in merger.calls] == ["consolidate"]
+        assert merger.calls[0]["status"] is ConsolidationStatus.DIVERGENT
+    finally:
+        await forge.close()
+
+
 async def test_a_loop_exit_with_nothing_to_land_opens_no_pull_request():
     """The other half of the partition: a loop exit that committed nothing.
 
