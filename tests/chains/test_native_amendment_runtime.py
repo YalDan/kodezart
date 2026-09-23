@@ -578,72 +578,117 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
 
 
 @pytest.mark.parametrize(
-    "max_iterations,fails_owed,verdict,settled,cost,refusals,rounds",
+    "max_iterations,failing,verdict,settled,cost,refusals,rounds,at_ceiling,plateaued",
     [
         pytest.param(
             3,
-            False,
+            0,
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             None,
             1,
             2,
+            False,
+            False,
             id="cleared_gate",
         ),
         pytest.param(
             2,
-            True,
+            1,
             AcceptVerdict.rejected,
             WorkflowStateKind.UNSTARTED,
             None,
             1,
             2,
+            True,
+            False,
             id="iteration_ceiling",
         ),
         pytest.param(
             4,
-            True,
+            2,
             AcceptVerdict.rejected,
             WorkflowStateKind.UNSTARTED,
             None,
             2,
             4,
+            True,
+            False,
             id="repeated_refusal_then_graded_rounds_to_the_ceiling",
         ),
         pytest.param(
-            3,
+            5,
+            2,
+            AcceptVerdict.accepted,
+            WorkflowStateKind.COMPLETED,
+            None,
+            2,
+            5,
+            True,
             False,
+            id="repeated_refusal_then_two_failing_rounds_then_cleared",
+        ),
+        pytest.param(
+            6,
+            3,
+            AcceptVerdict.rejected,
+            WorkflowStateKind.UNSTARTED,
+            None,
+            2,
+            5,
+            False,
+            True,
+            id="repeated_refusal_then_an_ordinary_plateau",
+        ),
+        pytest.param(
+            3,
+            0,
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             "uneconomic",
             1,
             2,
+            False,
+            False,
             id="measured_uneconomic_cost",
         ),
         pytest.param(
             3,
-            False,
+            0,
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             "affordable",
             1,
             2,
+            False,
+            False,
             id="measured_affordable_cost",
         ),
         pytest.param(
             3,
-            False,
+            0,
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             "unmeasured",
             1,
             2,
+            False,
+            False,
             id="unmeasured_cost",
         ),
     ],
 )
 async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_the_loop(
-    repository, max_iterations, fails_owed, verdict, settled, cost, refusals, rounds
+    repository,
+    max_iterations,
+    failing,
+    verdict,
+    settled,
+    cost,
+    refusals,
+    rounds,
+    at_ceiling,
+    plateaued,
 ):
     """The refusal round grades nothing and the next round drives the criterion.
 
@@ -667,8 +712,18 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
     capability, each refusal a new occurrence escalated on a sub-issue already
     classified `decision`, and rounds three and four claim nothing and fail the
     criterion. Two graded rounds after the refusals, with a continue decision
-    between them, run to the ceiling of four, so neither a stop nor a budget
-    cut keyed to a refusal, or to a repeated one, can hide behind the ceiling.
+    between them, run to the ceiling of four, so a stop or a budget cut keyed to
+    a refusal, or to a repeated one, that fires before the ceiling ends that row
+    early.
+
+    Two more rows follow the same two refusals with three graded rounds, so the
+    plateau stop is asked with the ceiling still ahead. In one, with a ceiling of
+    five, the criterion fails rounds three and four and everything passes round
+    five, which is accepted. In the other, with a ceiling of six, the criterion
+    fails every graded round and the loop ends at an ordinary plateau at round
+    five, one round under its ceiling. Only graded rounds are records, and a
+    plateau stop that counted a refusal as a stalled round would end both rows
+    at round four.
     """
     port = None
     writes = 0
@@ -709,7 +764,9 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
         elif title == "AcceptanceCriteriaOutput":
             keys = dispatched_keys(kwargs["prompt"], port)
             dispatched.append(keys)
-            passed = set(keys) - ({DIRECT_OWED} if fails_owed else set())
+            passed = set(keys) - (
+                {DIRECT_OWED} if len(dispatched) <= failing else set()
+            )
             payload.clear()
             payload.update(criteria_echo(keys=keys, passed=passed))
 
@@ -782,13 +839,13 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
         assert isinstance(iteration, WorkflowIterationEvent)
         assert iteration.verdict is verdict
         assert iteration.iteration == rounds
-        # The ceiling rows stop at their ceiling; the cleared rows stop below it.
-        assert (iteration.iteration == max_iterations) is fails_owed
+        # The ceiling rows stop at their ceiling; the others stop below it.
+        assert (iteration.iteration == max_iterations) is at_ceiling
         # A refusal round leaves no record of its own: only graded rounds do.
         assert [record.iteration for record in iteration.trajectory.records] == list(
             range(refusals + 1, rounds + 1)
         )
-        assert iteration.trajectory.plateaued is False
+        assert iteration.trajectory.plateaued is plateaued
         assert port.issues[DIRECT_OWED].state_kind is settled
     finally:
         await cleanup(workspace)
