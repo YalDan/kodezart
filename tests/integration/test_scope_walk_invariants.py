@@ -2,11 +2,11 @@
 
 One full walk of two lanes, read twice. Once for presence: every tick report
 names each ready lane's open criteria, in the order the read that selected the
-lanes carried them. Once for absence: nothing the run wrote down anywhere holds
-a criterion key list, scanned over every journal the board double records plus
-the scope's own status post rather than over a list of surfaces written out
-here — a list drifts from the double, and the surface a criterion key list
-would actually leak through is whichever one nobody thought to name.
+lanes carried them. Once for absence: nothing the run wrote down holds a
+criterion key list, scanned over the write journals the board double declares
+(``TRACKER_WRITE_JOURNALS``) plus the scope's own status posts. Each scanned
+surface is shown to be read by a payload planted on it, so a scan that
+stopped reading one of them fails here rather than passing beside a leak.
 
 The walk ends with one lane still owing both its criteria, so the status post
 and the lane records have material to leak; a run that had nothing left to say
@@ -14,17 +14,25 @@ about a criterion would pass this scan by having nothing to write.
 """
 
 import asyncio
+import copy
+import dataclasses
 import json
 import re
+from datetime import UTC, datetime
 
 import pytest
 import structlog.testing
+from pydantic import BaseModel
 
 from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import CheckStep
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
+from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import WorkflowStateKind
-from tests.fakes import TRACKER_WRITE_JOURNALS, tracker_state
+from tests.fakes import TRACKER_WRITE_JOURNALS, make_tracker_issue, tracker_state
 from tests.integration.test_scope_runtime import (
     FORGE_ORIGIN,
     SCOPE,
@@ -35,6 +43,7 @@ from tests.integration.test_scope_runtime import (
     criteria_echo,
     drive,
     lane_failures,
+    recorded_so_far,
     resumable,
     ticks_of,
 )
@@ -73,9 +82,18 @@ def criterion_keys_on(port) -> tuple[str, ...]:
 
 
 def strings_in(value) -> list[str]:
-    """Every string anywhere inside *value*, containers and mappings included."""
+    """Every string anywhere inside *value*, records and containers included.
+
+    A pydantic model and a dataclass instance are descended through their own
+    field dump: the board double's rendering keeps any value that compares
+    itself as it is, so a record in a journal reaches this scan whole.
+    """
     if isinstance(value, str):
         return [value]
+    if isinstance(value, BaseModel):
+        return strings_in(value.model_dump())
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return strings_in(dataclasses.asdict(value))
     if isinstance(value, dict):
         return [
             found
@@ -90,8 +108,9 @@ def strings_in(value) -> list[str]:
 def criterion_key_lists(port, status, *, keys) -> list[str]:
     """Every string a run wrote that names two or more of *keys* as whole tokens.
 
-    The scanned surface is the board double's OWN totality-checked rendering,
-    restricted to the journals a write lands in, plus the scope's status posts.
+    The scanned surface is the write journals the board double declares
+    (``TRACKER_WRITE_JOURNALS``), read through its own rendering, plus the
+    scope's status posts.
     Two or more keys, because one key is what an ordinary record legitimately
     names — a lane's own criterion in a cross-off event — while a LIST of them
     is the measurement this walk is not allowed to write down.
@@ -113,6 +132,30 @@ def criterion_key_lists(port, status, *, keys) -> list[str]:
     ]
 
 
+def planted(port, name: str, payload: str) -> None:
+    """*payload* written into the journal *name* the way that journal grows.
+
+    A list journal gains an entry, a mapping journal a key, and the write
+    ledger a stamp through its own ``record``. A journal of any other kind
+    fails here, so one the double adds later is planted on before it is
+    trusted to be scanned.
+    """
+    journal = getattr(port, name)
+    if isinstance(journal, list):
+        journal.append(payload)
+    elif isinstance(journal, dict):
+        journal[payload] = payload
+    elif isinstance(journal, SelfWriteLedger):
+        journal.record(issue_key=payload, updated_at=datetime(2026, 1, 1, tzinfo=UTC))
+    else:
+        pytest.fail(f"no way to plant on the journal {name}")
+
+
+#: One canceled criterion under each lane, so the walk has excluded keys a
+#: durable write could leak.
+DROPPED = ("A/dropped", "B/dropped")
+
+
 async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_write():
     """The measurement is on every tick report and on nothing the run wrote.
 
@@ -125,10 +168,19 @@ async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_
     wrong one, would still be caught.
 
     The supervisor's tally record and the run alarms are not this run's
-    writes: no walk path writes either, and a scan over every journal the
-    board double keeps would catch one if it did.
+    writes: no walk path writes either, and a scan over every declared write
+    journal would catch one if it did.
     """
     port = board(lanes=("A", "B"), checks=TWO_EACH)
+    for key in DROPPED:
+        port.issues[key] = make_tracker_issue(
+            key,
+            parent_key=key.split("/")[0],
+            issue_labels=frozenset({"criterion"}),
+            state_name="Canceled",
+            state_kind=WorkflowStateKind.CANCELED,
+            body=f"**Check:** {key} live Check  bytes\n**Evidence:** —",
+        )
     # A family that really commits, so the run leaves lane records on the board
     # for the scan to read: a walk whose lanes wrote nothing would pass the
     # absence half by having written nothing at all.
@@ -152,7 +204,14 @@ async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_
         ],
     )
     keys = criterion_keys_on(port)
-    assert keys == ("A/check", "A/second", "B/check", "B/second")
+    assert keys == (
+        "A/check",
+        "A/dropped",
+        "A/second",
+        "B/check",
+        "B/dropped",
+        "B/second",
+    )
     expected = [
         (row.issue.issue_key, tuple(item.issue_key for item in row.gap))
         for row in (await read_scope_ready(ref=SCOPE, tracker=port)).ready
@@ -198,20 +257,57 @@ async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_
     # that ended owing nothing, would pass the scan for the wrong reason.
     assert [event["lane"] for event in logs if event["event"] == "scope_lane_plateaued"]
     assert port.comment_writes
+    assert await recorded_so_far(port, "A") is not None
+    assert await recorded_so_far(port, "B") is not None
     assert len(harness.status.posts) == 1
     assert ticks[-1].unresolved_criteria == ("B/check", "B/second")
+    assert ticks[-1].excluded_criteria == DROPPED
     for key in ("A/check", "A/second"):
         assert port.issues[key].state_kind is WorkflowStateKind.COMPLETED
         assert "**Evidence:**" in port.issues[key].body
+        assert "**Evidence:** —" not in port.issues[key].body
+        assert [
+            body
+            for written, _, body in port.issue_writes
+            if written == key and body is not None and "**Evidence:**" in body
+        ]
 
     assert criterion_key_lists(port, harness.status, keys=keys) == []
 
-    # The matcher's own control: a payload of exactly the shape this scan is
-    # about, planted on a journal, is reported.
-    port.comment_writes.append(("A", json.dumps(["A/check", "B/check"])))
-    assert criterion_key_lists(port, harness.status, keys=keys) == [
-        '["A/check", "B/check"]'
-    ]
+    # The matcher's own controls: a payload of exactly the shape this scan is
+    # about is reported from each surface it scans, one surface at a time.
+    payload = json.dumps(["A/check", "B/check"])
+    for name in sorted(TRACKER_WRITE_JOURNALS):
+        kept = copy.deepcopy(getattr(port, name))
+        planted(port, name, payload)
+        assert criterion_key_lists(port, harness.status, keys=keys), name
+        setattr(port, name, kept)
+    harness.status.posts.append((SCOPE, payload))
+    assert criterion_key_lists(port, harness.status, keys=keys) == [payload]
+    harness.status.posts.pop()
+    # A key list inside a record-typed entry is reported too: a pydantic
+    # model in the base-spec journal and a dataclass in the lease journal,
+    # each of which the board's rendering keeps whole.
+    port.recorded_base_specs["planted"] = trunk_base(payload)
+    assert criterion_key_lists(port, harness.status, keys=keys) == [payload]
+    del port.recorded_base_specs["planted"]
+    port.lease_writes.append(
+        SurfaceLease(
+            holder=payload,
+            surfaces=frozenset(
+                {
+                    WritableSurface(
+                        kind=SurfaceKind.CRITERION_SUB_ISSUE,
+                        ref=ScopeRef(kind=ScopeKind.ISSUE, key="A/check"),
+                    )
+                }
+            ),
+            expires_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    assert criterion_key_lists(port, harness.status, keys=keys) == [payload]
+    port.lease_writes.pop()
+    assert criterion_key_lists(port, harness.status, keys=keys) == []
 
 
 #: The operator's own spelling of the union step bound: ``AppConfig`` reads it
