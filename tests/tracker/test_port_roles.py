@@ -38,12 +38,15 @@ parameter takes it; no role-typed parameter
 has a default or a union beside it; no module outside the adapters and the
 root imports a vendor adapter; and every role is taken, itself or composed
 into another, by a module the entry point reaches, but for the authorship
-read KOD-390 wires and the roles only an unwired consumer takes.
+read KOD-390 wires and the roles only an unwired consumer takes. Each
+annotation means the object it resolves to in its module, so a role imported
+under another name, bound to an alias or quoted is judged as the role it is.
 
-What it does not see: a member reached by reflection or by a name built at
-runtime, which reads here as uncalled and is a finding in its own right; and
-a call that type-checks against a role it does not carry, which the type
-gate over ``src/`` refuses already.
+What it does not see: the shapes the register module states are outside
+every static guard's reach, each held unseen by a planted control; a member
+reached that way reads here as uncalled and is a finding in its own right;
+and a call that type-checks against a role it does not carry, which the
+type gate over ``src/`` refuses already.
 """
 
 import importlib
@@ -93,6 +96,7 @@ from tests.tracker.role_register import (
     implemented_protocols,
     members_declared,
     method_members,
+    module_name,
     monoliths,
     own_declarations,
     port_members,
@@ -212,7 +216,7 @@ def single_caller(
         name: [
             path
             for path, text in production_modules(sources).items()
-            if name in called_members(text)
+            if name in called_members(text, path)
         ]
         for name in sorted(port_members() if members is None else members)
     }
@@ -261,7 +265,7 @@ def test_a_caller_outside_the_production_modules_does_not_count(place):
     text = sources.pop(module)
     sources[PLANTED_ELSEWHERE[place]] = text
 
-    assert name in called_members(text)
+    assert name in called_members(text, PLANTED_ELSEWHERE[place])
     assert name in zero_callers(sources, port_members())
 
 
@@ -801,7 +805,7 @@ def test_every_unwired_role_is_a_role_a_module_outside_the_run_takes():
     text = port_module_text()
     outside = set(sources) - first_party_closure(sources)
     taken = {
-        name for path in outside for name in annotation_names(sources[path])
+        name for path in outside for name in annotation_names(sources[path], path)
     } & roles(text)
 
     assert UNWIRED_CONSUMER_ROLES <= taken
@@ -921,6 +925,58 @@ PLANTED_SPELLINGS = {
         "from ..{adapter_relative} import {adapter_class}\n",
         "adapter",
     ),
+    "the whole port imported under a role's name": (
+        "from {port} import {aggregate} as {other_role}\n\n\n"
+        "def hold(port: {other_role}) -> None:\n    port.{member}()\n",
+        "aggregate",
+    ),
+    "the whole port through a module alias": (
+        "import {port} as ports\n\n\n"
+        "def hold(port: ports.{aggregate}) -> None:\n    port.{member}()\n",
+        "aggregate",
+    ),
+    "a role imported under another name it never uses": (
+        "from {port} import {role} as Held\n\n\n"
+        "def hold(reader: Held) -> None:\n    return None\n",
+        "credit",
+    ),
+    "a role through a module alias it never uses": (
+        "import {port} as ports\n\n\n"
+        "def hold(reader: ports.{role}) -> None:\n    return None\n",
+        "credit",
+    ),
+    "an assignment alias of a role it never uses": (
+        "Held = {role}\n\n\ndef hold(reader: Held) -> None:\n    return None\n",
+        "credit",
+    ),
+    "a type alias of a role it never uses": (
+        "type Held = {role}\n\n\ndef hold(reader: Held) -> None:\n    return None\n",
+        "credit",
+    ),
+    "a defaulted role imported under another name": (
+        "from typing import cast\n\nfrom {port} import {role} as Refs\n\n\n"
+        "def hold(refs: Refs = cast(Refs, None)) -> None:\n    refs.{member}()\n",
+        "default",
+    ),
+    "a role admitting None through a module alias": (
+        "import {port} as ports\n\n\n"
+        "def hold(*, refs: ports.{role} | None) -> None:\n    refs.{member}()\n",
+        "default",
+    ),
+    "an assignment alias of a role admitting None": (
+        "Refs = {role}\n\n\n"
+        "def hold(*, refs: Refs | None) -> None:\n    refs.{member}()\n",
+        "default",
+    ),
+    "a type alias of a role admitting None": (
+        "type Refs = {role}\n\n\n"
+        "def hold(*, refs: Refs | None) -> None:\n    refs.{member}()\n",
+        "default",
+    ),
+    "a quoted role admitting None": (
+        'def hold(*, refs: "{role} | None") -> None:\n    refs.{member}()\n',
+        "default",
+    ),
 }
 
 
@@ -935,7 +991,9 @@ def test_every_spelling_names_what_it_spells(form):
     sources[planted_path] = planted.format(
         aggregate=AGGREGATE,
         role=role,
+        other_role=max(declaring_roles(text)),
         member=min(own_declarations(text)[role]),
+        port=TrackerPort.__module__,
         port_package=port_package,
         port_module=port_module,
         adapter_relative=LinearMcpTracker.__module__.split(".", 1)[1],
@@ -952,6 +1010,73 @@ def test_every_spelling_names_what_it_spells(form):
     assert [name for name, report in reports.items() if planted_path in report] == [
         expected
     ]
+
+
+#: Each shape outside every static guard's reach, planted so that it would
+#: hold the whole port or leave a role idle if the guard could see it.
+PLANTED_UNSEEN = {
+    "a binding made when a function runs": (
+        "def bind() -> None:\n    globals()['Held'] = {aggregate}\n\n\n"
+        'def hold(port: "Held") -> None:\n    return None\n'
+    ),
+    "a name built at run time": (
+        "import {port} as ports\n\n"
+        'Held = getattr(ports, "Tracker" + "Port")\n\n\n'
+        "def hold(port: Held) -> None:\n    return None\n"
+    ),
+    "a value returned from a helper": (
+        "def port_type() -> type:\n    return {aggregate}\n\n\n"
+        "Held = port_type()\n\n\n"
+        "def hold(port: Held) -> None:\n    return None\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_UNSEEN))
+def test_a_shape_outside_the_reach_is_unseen(form):
+    """The stated limit, held: each shape is named by no report."""
+    sources = source_tree()
+    planted_path = "services/overreaching.py"
+    sources[planted_path] = PLANTED_UNSEEN[form].format(
+        aggregate=AGGREGATE, port=TrackerPort.__module__
+    )
+
+    reports = (
+        aggregate_annotations(sources),
+        tuple(uncredited_roles(sources)),
+        tuple(defaulted_role_parameters(sources)),
+        adapter_importers(sources),
+    )
+
+    assert not any(planted_path in report for report in reports)
+
+
+#: Each spelling a module can take a role under, for the reachability clause.
+PLANTED_TAKERS = {
+    "an import alias": "from {port} import {role} as Taken\n",
+    "a module alias": "import {port} as ports\n\nTaken = ports.{role}\n",
+    "an assignment alias": "from {port} import {role}\n\nTaken = {role}\n",
+    "a type alias": "from {port} import {role}\n\ntype Taken = {role}\n",
+    "a quoted alias": 'from {port} import {role}\n\nTaken = "{role}"\n',
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_TAKERS))
+def test_a_role_taken_under_any_spelling_is_reached(form):
+    """A module the run reaches that takes an unwired role, under an alias."""
+    sources = source_tree()
+    text = port_module_text()
+    role = min(UNWIRED_CONSUMER_ROLES)
+    planted_path = "services/planted_taker.py"
+    sources[planted_path] = PLANTED_TAKERS[form].format(
+        port=TrackerPort.__module__, role=role
+    ) + ("\n\ndef take(*, reader: Taken) -> None:\n    return None\n")
+    assert role in unreached_roles(sources, text)
+
+    sources["main.py"] += f"\nimport {module_name(planted_path)}\n"
+
+    assert role in annotation_names(sources[planted_path], planted_path)
+    assert role not in unreached_roles(sources, text)
 
 
 def wider_role(text: str) -> tuple[str, str, str]:
@@ -991,6 +1116,11 @@ PLANTED_CREDITS = {
         "    del note\n",
         "hold(reader): {idle}",
     ),
+    "a wider role imported under the narrower role's name": (
+        "from {port} import {wider} as {part_role}\n\n\n"
+        "def hold(*, reader: {part_role}) -> None:\n    reader.{member}()\n",
+        "hold(reader): {idle}",
+    ),
     "an idle role under a name another function hands on": (
         "def helper(*, tracker: {part_role}) -> None:\n    tracker.{member}()\n\n\n"
         "def first(*, tracker: {part_role}) -> None:\n    helper(tracker=tracker)\n\n\n"
@@ -1015,6 +1145,7 @@ def test_a_role_the_module_does_not_use_is_reported_by_the_credit_clause(form):
         "idle": idle,
         "idle_member": min(own_declarations(text)[idle]),
         "part_role": part_role,
+        "port": TrackerPort.__module__,
     }
     planted_path = "services/idle_holder.py"
     sources[planted_path] = planted.format(**fields)
@@ -1054,10 +1185,10 @@ def test_wiring_an_unwired_consumer_takes_its_role_off_the_list():
     (module,) = (
         path
         for path, source in sorted(sources.items())
-        if role in annotation_names(source)
+        if role in annotation_names(source, path)
         and path.startswith("services/")
         and not any(
-            other in annotation_names(source)
+            other in annotation_names(source, path)
             for other in UNWIRED_CONSUMER_ROLES - {role}
         )
     )
