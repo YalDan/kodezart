@@ -10,6 +10,7 @@ from kodezart.types.domain.amendment import (
     AmendmentJudgment,
     AmendmentReport,
     AmendmentSubject,
+    CriterionSubject,
     RepeatedUpheld,
     RulingSubject,
     UpheldReason,
@@ -149,15 +150,23 @@ def escalation_question(
                     "A missing-capability escalation requires the typed "
                     "claimed capability"
                 )
-            return (
+            # The escalation classifies this issue `decision`, and the plan read
+            # refuses while it carries that, so removing it is part of revival.
+            revival = (
                 f"Resolve the missing capability {capability.value} for "
                 f"{claim.subject.id}: the demonstration needs "
                 f"{judgment.finding.missing_resource}, which the declared "
                 "runner environment does not provide. Declaring "
                 f"{capability.value} in the repository's runner environment "
-                "and firing again revives the criterion; otherwise a person "
-                "cancels the criterion with a supersession."
+                "and removing the decision classification from this issue, "
+                "then firing again, revives it"
             )
+            if isinstance(claim.subject, CriterionSubject):
+                return (
+                    f"{revival}; otherwise a person cancels the criterion "
+                    "with a supersession."
+                )
+            return f"{revival}."
         case _:
             raise NativeWriteRefusalError(f"No escalation is raised at {reason.value}")
 

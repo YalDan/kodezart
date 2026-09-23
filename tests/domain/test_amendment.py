@@ -29,6 +29,7 @@ from kodezart.types.domain.amendment import (
     CriterionSubject,
     NativeWriterOutput,
     RecordedRefusal,
+    RulingSubject,
     UpheldAmendment,
     UpheldJudgment,
     UpheldReason,
@@ -281,12 +282,20 @@ def test_the_escalating_reasons_are_the_two_a_person_must_settle():
 #: The question the landed uneconomic escalation already carries, byte for byte.
 _UNECONOMIC_QUESTION = "Resolve the measured uneconomic departure for opaque/criterion"
 
+#: What the fixture's demonstration lacks, worded so it names no capability: the
+#: capability in a composed question can only have come from the typed claim.
+_MISSING_RESOURCE = "an outbound connection to the package index"
+
+#: A pinned subject's identity, worded so it names no criterion.
+_PINNED_ID = "pinned/offline-mirror"
+
 
 @pytest.mark.parametrize(
-    "reason,claimed,expected",
+    "reason,claimed,subject,expected",
     [
         pytest.param(
             UpheldReason.COST_MEASURED_UNECONOMIC,
+            None,
             None,
             _UNECONOMIC_QUESTION,
             id="uneconomic_keeps_its_own_question",
@@ -294,16 +303,48 @@ _UNECONOMIC_QUESTION = "Resolve the measured uneconomic departure for opaque/cri
         pytest.param(
             UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
             CheckPrerequisite.NETWORK,
+            None,
             (
-                "network",
-                "network access for the demonstration",
-                "runner environment",
-                "supersession",
+                "Resolve the missing capability network for opaque/criterion: the "
+                "demonstration needs an outbound connection to the package index, "
+                "which the declared runner environment does not provide. Declaring "
+                "network in the repository's runner environment and removing the "
+                "decision classification from this issue, then firing again, revives "
+                "it; otherwise a person cancels the criterion with a supersession."
             ),
             id="capability_names_the_revival_condition",
         ),
         pytest.param(
+            UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+            CheckPrerequisite.CREDENTIALS,
+            None,
+            (
+                "Resolve the missing capability credentials for opaque/criterion: the "
+                "demonstration needs an outbound connection to the package index, "
+                "which the declared runner environment does not provide. Declaring "
+                "credentials in the repository's runner environment and removing the "
+                "decision classification from this issue, then firing again, revives "
+                "it; otherwise a person cancels the criterion with a supersession."
+            ),
+            id="capability_is_interpolated_from_the_claim",
+        ),
+        pytest.param(
+            UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
+            CheckPrerequisite.NETWORK,
+            RulingSubject(id=_PINNED_ID),
+            (
+                "Resolve the missing capability network for pinned/offline-mirror: the"
+                " demonstration needs an outbound connection to the package index, "
+                "which the declared runner environment does not provide. Declaring "
+                "network in the repository's runner environment and removing the "
+                "decision classification from this issue, then firing again, revives "
+                "it."
+            ),
+            id="a_pinned_subject_is_named_as_itself",
+        ),
+        pytest.param(
             UpheldReason.GROUND_NOT_REPRODUCED,
+            None,
             None,
             NativeWriteRefusalError,
             id="ground_raises_nothing",
@@ -311,26 +352,32 @@ _UNECONOMIC_QUESTION = "Resolve the measured uneconomic departure for opaque/cri
         pytest.param(
             UpheldReason.ENVIRONMENT_LACKS_CAPABILITY,
             None,
+            None,
             NativeWriteRefusalError,
             id="capability_without_a_typed_claim_refuses",
         ),
     ],
 )
 def test_the_escalation_question_names_the_capability_and_the_revival_condition(
-    reason, claimed, expected
+    reason, claimed, subject, expected
 ):
     """Every reason is answered, and the two that raise nothing refuse as types.
 
     The uneconomic arm's question is the literal it already was, so admitting the
     second reason moves no existing escalation's content. The capability arm names
-    what is absent, what the demonstration needs, the one change that would revive
-    the criterion and the alternative left to a person. A reason that raises no
-    escalation, and a missing-capability reason with no typed claim to name, refuse
-    before any backend call rather than composing an empty question.
+    what is absent, what the demonstration needs, and what would revive it: the
+    capability declared and the `decision` classification the escalation adds
+    removed, since the plan read refuses while that classification stands. A
+    criterion is also offered the cancellation left to a person; a pinned subject
+    is named as itself and offered nothing a criterion alone has. A reason that
+    raises no escalation, and a missing-capability reason with no typed claim to
+    name, refuse before any backend call rather than composing an empty question.
     """
     value = record()
     claim = AmendmentClaim.model_validate(
-        value.claim.model_dump() | {"claimed_capability": claimed}
+        value.claim.model_dump()
+        | {"claimed_capability": claimed}
+        | ({} if subject is None else {"subject": subject})
     )
     judgment = AmendmentJudgment.model_validate(
         value.judgment.model_dump()
@@ -338,7 +385,7 @@ def test_the_escalation_question_names_the_capability_and_the_revival_condition(
             "finding": {
                 "verdict": "unverifiable",
                 "smallest_repair": "environment_supply",
-                "missing_resource": "network access for the demonstration",
+                "missing_resource": _MISSING_RESOURCE,
             }
         }
     )
@@ -347,11 +394,10 @@ def test_the_escalation_question_names_the_capability_and_the_revival_condition(
             escalation_question(reason=reason, claim=claim, judgment=judgment)
         return
     question = escalation_question(reason=reason, claim=claim, judgment=judgment)
-    if isinstance(expected, str):
-        assert question == expected
-        return
-    for named in expected:
-        assert named in question
+    assert question == expected
+    if subject is not None:
+        assert _PINNED_ID in question
+        assert "criterion" not in question
 
 
 def test_a_verdict_and_its_reason_cannot_be_constructed_apart():
