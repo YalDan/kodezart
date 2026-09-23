@@ -14,6 +14,7 @@ import inspect
 import pathlib
 import re
 import types
+import typing
 from unittest.mock import Mock
 
 import pytest
@@ -2397,12 +2398,147 @@ def _module_named_by(node, modules):
     return None
 
 
-def _callers_in(module, tree, function):
-    """Each outermost function of *module* holding a call that IS *function*."""
+def _unwrapped(value):
+    """A function stored on a class, as the function object itself."""
+    if isinstance(value, (staticmethod, classmethod)):
+        return value.__func__
+    return value
+
+
+def _is_one_of(value, functions):
+    """Whether *value* IS one of *functions*: identity, never equality."""
+    return any(value is function for function in functions)
+
+
+def _value_named_by(node, namespace, modules):
+    """The object a name or a module-alias attribute names in its module."""
+    if isinstance(node, ast.Name):
+        return namespace.get(node.id)
+    if isinstance(node, ast.Attribute):
+        owner = _module_named_by(node.value, modules)
+        return getattr(owner, node.attr, None) if owner is not None else None
+    return None
+
+
+def _classes_named_by(annotation, namespace, modules):
+    """The classes an annotation declares, read in the annotation's module.
+
+    A class named directly or through a module alias, either side of ``|``,
+    and the members of ``Optional[...]`` or ``Union[...]``.  Anything else,
+    a string annotation included, declares no class.
+    """
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        return _classes_named_by(
+            annotation.left, namespace, modules
+        ) | _classes_named_by(annotation.right, namespace, modules)
+    if isinstance(annotation, ast.Subscript):
+        generic = _value_named_by(annotation.value, namespace, modules)
+        if generic is not typing.Optional and generic is not typing.Union:
+            return set()
+        members = annotation.slice
+        return set().union(
+            *(
+                _classes_named_by(member, namespace, modules)
+                for member in (
+                    members.elts if isinstance(members, ast.Tuple) else [members]
+                )
+            )
+        )
+    value = _value_named_by(annotation, namespace, modules)
+    return {value} if isinstance(value, type) else set()
+
+
+def _receiver_name(method):
+    """The name a method's own instance (or class) is bound to, if any."""
+    if any(
+        isinstance(decorator, ast.Name) and decorator.id == "staticmethod"
+        for decorator in method.decorator_list
+    ):
+        return None
+    positional = [*method.args.posonlyargs, *method.args.args]
+    return positional[0].arg if positional else None
+
+
+def _paired(target, value):
+    """Each (target, value) an assignment pairs, unpacking equal-length tuples."""
+    if (
+        isinstance(target, (ast.Tuple, ast.List))
+        and isinstance(value, (ast.Tuple, ast.List))
+        and len(target.elts) == len(value.elts)
+    ):
+        return [
+            pair
+            for inner, source in zip(target.elts, value.elts, strict=True)
+            for pair in _paired(inner, source)
+        ]
+    return [(target, value)]
+
+
+def _attribute_classes(klass, namespace, modules):
+    """The classes each instance attribute holds, as the class declares it.
+
+    Declared means a class-body annotation, an annotated assignment to
+    ``self.<attribute>``, or an assignment to ``self.<attribute>`` from a
+    parameter of the same method whose annotation names the class -- the
+    way ``__init__`` stores what it is handed.
+    """
+    declared = {}
+    for statement in klass.body:
+        if isinstance(statement, ast.AnnAssign) and isinstance(
+            statement.target, ast.Name
+        ):
+            declared.setdefault(statement.target.id, set()).update(
+                _classes_named_by(statement.annotation, namespace, modules)
+            )
+        if not isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        receiver = _receiver_name(statement)
+        arguments = statement.args
+        parameters = {
+            argument.arg: argument.annotation
+            for argument in (
+                *arguments.posonlyargs,
+                *arguments.args,
+                *arguments.kwonlyargs,
+            )
+            if argument.annotation is not None
+        }
+        for node in ast.walk(statement):
+            if isinstance(node, ast.AnnAssign):
+                pairs = [(node.target, None)]
+            elif isinstance(node, ast.Assign):
+                pairs = [
+                    pair
+                    for target in node.targets
+                    for pair in _paired(target, node.value)
+                ]
+            else:
+                continue
+            for target, value in pairs:
+                if not (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == receiver
+                ):
+                    continue
+                if value is None:
+                    annotation = node.annotation
+                elif isinstance(value, ast.Name) and value.id in parameters:
+                    annotation = parameters[value.id]
+                else:
+                    continue
+                declared.setdefault(target.attr, set()).update(
+                    _classes_named_by(annotation, namespace, modules)
+                )
+    return declared
+
+
+def _calls_in(module, tree, functions):
+    """The holder of each call in *module* whose callee IS one of *functions*."""
     namespace = vars(module)
     # Resolved by identity, not by spelling: an aliased import and a
     # module-level rebinding both leave a name whose value is the function.
-    names = {name for name, value in namespace.items() if value is function}
+    names = {name for name, value in namespace.items() if _is_one_of(value, functions)}
     modules = {
         name: value
         for name, value in namespace.items()
@@ -2422,7 +2558,7 @@ def _callers_in(module, tree, function):
             )
             for alias in node.names:
                 value = getattr(source, alias.name, None)
-                if value is function:
+                if _is_one_of(value, functions):
                     names.add(alias.asname or alias.name)
                 elif isinstance(value, types.ModuleType):
                     modules[alias.asname or alias.name] = value
@@ -2448,40 +2584,97 @@ def _callers_in(module, tree, function):
         names |= added
         grown = bool(added)
 
-    def is_function(callee):
+    # A method is reached through its own instance: ``self.<method>`` in a
+    # method of the class, or ``self.<attribute>.<method>`` where the class
+    # declares what that attribute holds.  Either is resolved on the class,
+    # so the callee is still the function object itself.
+    declared_by_class = {}
+
+    def receiver_of(prefix, klass, method):
+        owner = module
+        for part in prefix:
+            owner = getattr(owner, part, None)
+        receiver = _receiver_name(method)
+        if not isinstance(owner, type) or receiver is None:
+            return None
+        if id(klass) not in declared_by_class:
+            declared_by_class[id(klass)] = _attribute_classes(klass, namespace, modules)
+        return receiver, owner, declared_by_class[id(klass)]
+
+    def classes_of(node, receiver):
+        if receiver is None:
+            return ()
+        name, owner, declared = receiver
+        if isinstance(node, ast.Name) and node.id == name:
+            return (owner,)
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == name
+        ):
+            return tuple(declared.get(node.attr, ()))
+        return ()
+
+    def is_function(callee, receiver):
         if isinstance(callee, ast.Name):
             return callee.id in names
         if isinstance(callee, ast.Attribute):
             owner = _module_named_by(callee.value, modules)
-            return owner is not None and getattr(owner, callee.attr, None) is function
+            if owner is not None:
+                return _is_one_of(getattr(owner, callee.attr, None), functions)
+            return any(
+                _is_one_of(
+                    _unwrapped(inspect.getattr_static(klass, callee.attr, None)),
+                    functions,
+                )
+                for klass in classes_of(callee.value, receiver)
+            )
         return False
 
-    found = set()
+    found = []
 
-    def walk(parent, prefix, outer):
+    def walk(parent, prefix, outer, receiver):
         for child in ast.iter_child_nodes(parent):
-            here, path = outer, prefix
+            here, path, held = outer, prefix, receiver
             if outer is None and isinstance(child, ast.ClassDef):
                 path = (*prefix, child.name)
             if outer is None and isinstance(
                 child, (ast.FunctionDef, ast.AsyncFunctionDef)
             ):
                 here = ".".join((*prefix, child.name))
-            if isinstance(child, ast.Call) and is_function(child.func):
-                found.add((module.__name__, here or f"module line {child.lineno}"))
-            walk(child, path, here)
+                if isinstance(parent, ast.ClassDef):
+                    held = receiver_of(prefix, parent, child)
+            if isinstance(child, ast.Call) and is_function(child.func, held):
+                found.append((module.__name__, here or f"module line {child.lineno}"))
+            walk(child, path, here, held)
 
-    walk(tree, (), None)
+    walk(tree, (), None, None)
     return found
 
 
-def callers_of(function):
-    """Every function in the package that calls *function*, found by identity.
+def calls_to(*functions):
+    """The holder of every call in the package to any of *functions*.
+
+    One entry per call, so a function that calls twice is listed twice.
+    """
+    return sorted(
+        holder
+        for module, tree in _package_modules()
+        for holder in _calls_in(module, tree, functions)
+    )
+
+
+def callers_of(*functions):
+    """Every function in the package that calls *functions*, found by identity.
 
     A call counts when its callee resolves to the function object itself:
     a name whose module-level value IS the function (so an aliased import or
     a module-level rebinding counts), a name rebound from one of those inside
-    the module, or an attribute of a module alias that resolves to it.  Each
+    the module, an attribute of a module alias that resolves to it, or a
+    method reached through its own instance -- ``self.<method>`` inside the
+    class, or ``self.<attribute>.<method>`` where the class declares the
+    attribute's class (a class-body annotation, or an assignment from an
+    annotated parameter) and that class's attribute IS the function.  Each
     caller is recorded as ``(module, qualified name of the outermost
     function)``, so two modules or two classes never merge into one name,
     and a call made in a closure is the node that holds it.  A call outside
@@ -2492,15 +2685,42 @@ def callers_of(function):
     An import made inside a function is read from the tree and resolved the
     same way, so a local ``from ... import recorded_native_roster as x``
     counts too.  Not seen: a function reached through any other object (an
-    instance, a mapping, a ``functools.partial``).
+    instance held anywhere but in ``self`` or a declared ``self`` attribute,
+    a mapping, a ``functools.partial``).
     """
-    return tuple(
-        sorted(
-            caller
-            for module, tree in _package_modules()
-            for caller in _callers_in(module, tree, function)
-        )
-    )
+    return tuple(sorted(set(calls_to(*functions))))
+
+
+def function_at(node):
+    """The function a ``(module, qualified name)`` node names, or nothing.
+
+    Nothing for a call recorded by its line, which names no function.
+    """
+    module, qualname = node
+    value = importlib.import_module(module)
+    for part in qualname.split("."):
+        value = inspect.getattr_static(value, part, None)
+    value = _unwrapped(value)
+    return value if inspect.isfunction(value) else None
+
+
+def reached_through_callers(function):
+    """Every function from which *function* is reached, call by call.
+
+    The callers of *function*, then the callers of those, to a fixed point
+    over the package's call graph as ``callers_of`` resolves it.  A caller
+    that is itself called is a helper, and whoever calls it reaches
+    *function* through it; the helper stays in the set as well.  Each round
+    adds a function the package defines or ends the loop, so it runs at most
+    once per function.
+    """
+    found = set(callers_of(function))
+    frontier = found
+    while frontier:
+        helpers = [helper for helper in map(function_at, sorted(frontier)) if helper]
+        frontier = set(callers_of(*helpers)) - found if helpers else set()
+        found |= frontier
+    return tuple(sorted(found))
 
 
 def node_of(function):
