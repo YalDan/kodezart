@@ -9,6 +9,7 @@ answered by the markers v0.2 wrote.
 
 import asyncio
 import subprocess
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from kodezart.composition.passes import (
 )
 from kodezart.composition.tracker import DialledTracker
 from kodezart.config.app import AppConfig
+from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.services.run_recorder import RunRecorder
@@ -377,6 +379,64 @@ async def test_markers_v02_wrote_are_still_read():
         if exclusion.issue_key == CLAIMED_ISSUE
     ] == [(CLAIMED_ISSUE, ExclusionClause.CLAIMED_OR_IN_FLIGHT, "v02-host")]
     assert queue.submissions == []
+
+
+@pytest.mark.parametrize(
+    "expires_at",
+    [
+        "not-an-instant",
+        (FIXTURE_NOW + timedelta(minutes=10)).replace(tzinfo=None).isoformat(),
+    ],
+    ids=["unparseable", "zoneless"],
+)
+async def test_a_v02_claim_whose_expiry_cannot_be_read_is_refused(expires_at):
+    """An expiry that does not parse, or names no zone, is a malformed marker."""
+    body = f'<!-- kodezart-claim holder="v02-host" expires-at="{expires_at}" -->'
+    _server, tracker = _board(_comment("c-1", body))
+
+    with pytest.raises(TrackerProtocolError) as refused:
+        await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+
+    assert "ownership marker does not carry the fields" in str(refused.value)
+    assert "comment=c-1" in str(refused.value)
+
+
+async def test_a_v02_claim_expiring_at_the_reading_instant_has_lapsed():
+    """v0.2's own rule: a claim whose expiry is not after now holds nothing."""
+    _server, tracker = _board(_comment("c-1", _v02_claim("v02-host", FIXTURE_NOW)))
+
+    assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+
+
+async def test_a_fenced_tie_beside_a_live_v02_claim_reads_unclaimed():
+    """Two live grants at one instant are not settled by a v0.2 claim (D15)."""
+    server, tracker = _board(_comment("c-1", _v02_claim("v02-host", LATER)))
+    granted = await tracker.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-a", lease_seconds=900
+    )
+    assert granted.status is ClaimStatus.GRANTED
+    (grant,) = [
+        comment for comment in server.comments if "holder: runner-a" in comment.body
+    ]
+    # A second holder's grant stamped at the same instant as the first.
+    server.comments.append(
+        replace(
+            grant,
+            id=f"{grant.id}-tied",
+            body=grant.body.replace("holder: runner-a", "holder: runner-b"),
+        )
+    )
+
+    assert await tracker.active_claim(issue_key=CLAIMED_ISSUE) is None
+
+
+def test_the_v02_claim_prefix_is_matched_as_written():
+    """A prefix carrying a pattern character matches only itself."""
+    pattern = LinearMarkers({"claim": "kz.claim"}).v02_claim_pattern
+    expiry = LIVE.isoformat()
+
+    assert pattern.search(f'<!-- kz.claim holder="h" expires-at="{expiry}" -->')
+    assert not pattern.search(f'<!-- kzXclaim holder="h" expires-at="{expiry}" -->')
 
 
 def _knowledge():
