@@ -2,10 +2,20 @@
 
 The scanned surface is derived: every module under the packaged source tree,
 walked from the package's own path, and every field of the two configuration
-models, walked recursively. Each scan keys on something that cannot be
-respelled — the port method's name, the two refusal types, and the signal
-vocabulary's own type — and each has a synthetic control proving it finds
-what it looks for.
+models, walked recursively. What each scan matches, and nothing more:
+
+- a call of the port's probe method, by its name;
+- a call of either boot check, by its name;
+- an ``except`` clause naming either refusal type, alone or in a tuple (a
+  broad handler such as ``except Exception`` is not scanned);
+- a membership test against the fold table, a ``.get`` on it, and a read of a
+  row's ``scans``, which only the two boot checks may make (a subscript read
+  of a row is allowed, because a stored record is replayed through it);
+- a configuration field whose annotation names the signal vocabulary's type;
+- a configuration field whose name contains ``alarm`` and whose annotation is
+  anything but a number.
+
+Each has a synthetic control proving it finds what it looks for.
 """
 
 import ast
@@ -30,6 +40,15 @@ PROBE_SITE = ("composition/passes.py", "_verify_wired_gates")
 #: The boot checks, and the one function allowed to call each of them.
 BOOT_CHECKS = ("_verify_wired_gates", require_alarm_table.__name__)
 BOOT_SITE = ("composition/passes.py", "verify_pass_preflight")
+#: The two functions allowed to ask whether the fold table has a row or what
+#: a row scans: the totality check and the probe that inverts the column.
+TABLE_QUESTION_SITES = frozenset(
+    {
+        ("domain/run_alarm_table.py", require_alarm_table.__name__),
+        PROBE_SITE,
+    }
+)
+TABLE = "ALARM_TABLE"
 REFUSALS = frozenset({PassGateCapabilityError.__name__, AlarmTableError.__name__})
 
 
@@ -97,6 +116,77 @@ def handlers_of(sources: Mapping[str, str], names: frozenset[str]) -> list[str]:
     )
 
 
+def _names_table(node: ast.expr) -> bool:
+    return (isinstance(node, ast.Name) and node.id == TABLE) or (
+        isinstance(node, ast.Attribute) and node.attr == TABLE
+    )
+
+
+def table_questions(sources: Mapping[str, str]) -> set[tuple[str, str]]:
+    """Every ``(path, function)`` asking whether the fold table has a row.
+
+    A membership test against the table, a ``.get`` on it, and a read of any
+    row's ``scans``. A subscript read of a row is not a question: it assumes
+    the row, which the boot has already guaranteed.
+    """
+    sites: set[tuple[str, str]] = set()
+    for path, text in sources.items():
+        for owner, node in _functions(ast.parse(text)):
+            asked = (
+                (
+                    isinstance(node, ast.Compare)
+                    and any(isinstance(op, (ast.In, ast.NotIn)) for op in node.ops)
+                    and any(
+                        _names_table(side) for side in (node.left, *node.comparators)
+                    )
+                )
+                or (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "get"
+                    and _names_table(node.func.value)
+                )
+                or (isinstance(node, ast.Attribute) and node.attr == "scans")
+            )
+            if asked:
+                sites.add((path, owner))
+    return sites
+
+
+def _numeric(annotation: object) -> bool:
+    if typing.get_origin(annotation) is typing.Annotated:
+        annotation = typing.get_args(annotation)[0]
+    return annotation in (int, float)
+
+
+def alarm_knobs(
+    model: type[BaseModel], ancestors: frozenset[type] = frozenset()
+) -> list[str]:
+    """Every field, through nested models, named for alarms and not a number.
+
+    A number is a bound; a string or a collection under an alarm's name is a
+    way to spell which alarms to leave out. Each path to a nested model is
+    walked, and only a model already on the current path is not re-entered.
+    """
+    path = ancestors | {model}
+    found: list[str] = []
+    for name, field in model.model_fields.items():
+        if "alarm" in name and not _numeric(field.annotation):
+            found.append(name)
+        for nested in _models_in(field.annotation):
+            if nested not in path:
+                found.extend(f"{name}.{inner}" for inner in alarm_knobs(nested, path))
+    return sorted(found)
+
+
+def _models_in(annotation: object) -> Iterator[type[BaseModel]]:
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        yield annotation
+        return
+    for arg in typing.get_args(annotation):
+        yield from _models_in(arg)
+
+
 def _mentions(annotation: object, target: type, seen: set[type]) -> bool:
     """Whether *annotation* names *target*, through containers and models."""
     if annotation is target:
@@ -143,7 +233,11 @@ def test_the_boot_checks_are_made_by_the_preflight_alone():
 
 
 def test_no_code_catches_a_boot_refusal_and_carries_on():
-    """A caught refusal is a degraded supervisor: the tick would run blind."""
+    """A caught refusal is a degraded supervisor: the tick would run blind.
+
+    Matched by the two refusal types' names, alone or in a tuple. A broad
+    handler is not scanned here.
+    """
     assert handlers_of(packaged_sources(), REFUSALS) == []
 
 
@@ -151,6 +245,17 @@ def test_no_configuration_field_can_name_an_alarm_signal():
     """No knob can switch a signal off, because no knob can name one."""
     assert fields_naming(AppConfig, AlarmSignal) == []
     assert fields_naming(OperationConfig, AlarmSignal) == []
+
+
+def test_no_alarm_knob_of_any_spelling_is_anything_but_a_bound():
+    """A signal named by string is still a signal named: only numbers pass."""
+    assert alarm_knobs(AppConfig) == []
+    assert alarm_knobs(OperationConfig) == []
+
+
+def test_only_the_boot_checks_ask_whether_the_fold_table_has_a_row():
+    """No runtime branch on a fold's presence or on what a row scans."""
+    assert table_questions(packaged_sources()) == TABLE_QUESTION_SITES
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +295,53 @@ def test_a_caught_refusal_is_found_alone_and_in_a_tuple():
     assert handlers_of(CONTROL, REFUSALS) == [
         "services/tick.py:4",
         "services/tick.py:8",
+    ]
+
+
+def test_a_question_to_the_fold_table_is_found_in_every_spelling():
+    sources = {
+        **CONTROL,
+        "domain/run_alarm_table.py": (
+            "def require_alarm_table():\n"
+            "    return [s for s in AlarmSignal if s not in ALARM_TABLE]\n"
+            "def alarm_raised(record):\n"
+            "    if record.signal not in ALARM_TABLE:\n"
+            "        return False\n"
+            "    return ALARM_TABLE[record.signal].fold(record)\n"
+        ),
+        "services/tick.py": (
+            "def observe(signal):\n"
+            "    return run_alarm_table.ALARM_TABLE.get(signal)\n"
+            "def scanned(signal):\n"
+            "    return tables.ALARM_TABLE[signal].scans\n"
+            "def replayed(signal, record):\n"
+            "    return ALARM_TABLE[signal].fold(record)\n"
+        ),
+    }
+
+    assert table_questions(sources) == {
+        ("domain/run_alarm_table.py", "require_alarm_table"),
+        ("domain/run_alarm_table.py", "alarm_raised"),
+        ("services/tick.py", "observe"),
+        ("services/tick.py", "scanned"),
+    }
+
+
+def test_an_alarm_knob_that_is_not_a_number_is_found_through_nesting():
+    class Inner(BaseModel):
+        disabled_alarm_signals: frozenset[str] = frozenset()
+        run_alarm_bound: int = 1
+
+    class Knobs(BaseModel):
+        run_alarm_max_ticks: int = 1
+        alarm_mode: str = ""
+        nested: Inner = Inner()
+        listed: list[Inner] = []
+
+    assert alarm_knobs(Knobs) == [
+        "alarm_mode",
+        "listed.disabled_alarm_signals",
+        "nested.disabled_alarm_signals",
     ]
 
 
