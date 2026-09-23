@@ -411,6 +411,60 @@ def _refused(name: str) -> bool:
     return _names_vendor(name) or name.partition(".")[0] in VENDOR_SDKS
 
 
+#: The third-party packages an inner layer may import, whole.  The graph
+#: framework is admitted apart from its database-backed checkpointer, below.
+LAYER_FRAMEWORKS = frozenset({"pydantic", "langchain_core", "typing_extensions"})
+GRAPH_FRAMEWORK = "langgraph"
+GRAPH_DATABASE = "langgraph.checkpoint.postgres"
+#: What one core module may import beyond the inner layers' rule, by module:
+#: the checkpointer opens the database the graph runs on, and the logging
+#: setup configures the structured logger.  Named per module, so a second
+#: core module importing either is refused.
+CORE_INFRASTRUCTURE: dict[str, frozenset[str]] = {
+    f"{PACKAGE}.core.checkpointer": frozenset({"psycopg", GRAPH_DATABASE}),
+    f"{PACKAGE}.core.logging": frozenset({"structlog"}),
+}
+
+
+def _within(name: str, package: str) -> bool:
+    return name == package or name.startswith(f"{package}.")
+
+
+def _importable(name: str, *, module: str) -> bool:
+    """Whether a module of an inner layer may import this module at all.
+
+    The standard library, this package outside its adapters, and the few
+    frameworks the inner layers are built on, nothing else: stated as what
+    is admitted rather than as a derived forbidden set, so a vendor SDK no
+    adapter happens to import is refused as surely as one that does.
+    """
+    root = name.partition(".")[0]
+    if root in sys.stdlib_module_names:
+        return True
+    if any(_within(name, stated) for stated in CORE_INFRASTRUCTURE.get(module, ())):
+        return True
+    if root == PACKAGE:
+        return not _names_vendor(name)
+    if root == GRAPH_FRAMEWORK:
+        return not _within(name, GRAPH_DATABASE)
+    return root in LAYER_FRAMEWORKS
+
+
+def _is_import(node: ast.Import | ast.ImportFrom | ast.Call) -> bool:
+    """Whether a node imports: a statement, or a call to a dynamic import."""
+    if not isinstance(node, ast.Call):
+        return True
+    callee = node.func
+    called = (
+        callee.attr
+        if isinstance(callee, ast.Attribute)
+        else callee.id
+        if isinstance(callee, ast.Name)
+        else None
+    )
+    return called in {"import_module", "__import__"}
+
+
 @dataclass(frozen=True)
 class LayerScan:
     """Every module one scan opened, by layer, and every refused import."""
@@ -424,7 +478,9 @@ def scan_layers(source_root: Path, layers: Sequence[str]) -> LayerScan:
 
     Import statements are read from the syntax tree, so a mention in a
     docstring is not an import, and an import inside a function body or
-    under ``TYPE_CHECKING`` still is.
+    under ``TYPE_CHECKING`` still is.  A name is refused when it is an
+    adapter or a derived vendor SDK, and an imported name also when the
+    inner layers' admission does not name it.
     """
     scanned: dict[str, list[str]] = {}
     refused: list[str] = []
@@ -439,7 +495,11 @@ def scan_layers(source_root: Path, layers: Sequence[str]) -> LayerScan:
                 for name in _imported(
                     node, module=module, is_package=path.name == "__init__.py"
                 ):
-                    if _refused(name):
+                    if _refused(name) or (
+                        _is_import(node)
+                        and not name.startswith(".")
+                        and not _importable(name, module=module)
+                    ):
                         refused.append(f"{module}:{node.lineno}: {name}")
     return LayerScan(scanned=scanned, refused=refused)
 
@@ -451,6 +511,9 @@ def test_the_types_domain_and_chains_layers_import_no_vendor_module() -> None:
     core the ports live in) as much as the values and the chains: no module
     there imports an adapter or a vendor SDK, however the import is
     spelled. A call handed such a name — a dynamic import — counts too.
+    What they may import is the standard library, this package outside its
+    adapters, pydantic, langchain_core, typing_extensions and langgraph
+    without its postgres checkpointer; two core modules are stated apart.
     """
     scan = scan_layers(SOURCE_ROOT, INNER_LAYERS)
 
@@ -482,6 +545,14 @@ def later() -> None:
     import httpx
 
 
+def vendors() -> None:
+    import anthropic
+    from pydantic_ai import Agent
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    import psycopg
+    importlib.import_module("anthropic")
+
+
 def dynamic() -> None:
     importlib.import_module("kodezart.adapters.linear")
     importlib.import_module(name="kodezart.adapters.linear.tracker")
@@ -495,14 +566,22 @@ def test_the_scan_reports_every_planted_import_and_no_prose(tmp_path: Path) -> N
 
     A plain, a from, a relative, a vendor SDK, a TYPE_CHECKING, a
     function-body and four dynamic imports are each reported on their own
-    line; the docstring's mention is not, and a clean layer reports none.
+    line, and so is every package the admission does not name, however no
+    adapter imports it; the docstring's mention is not, and a clean layer
+    importing only admitted packages reports none.
     """
     package = tmp_path / PACKAGE
     (package / "domain").mkdir(parents=True)
     (package / "types").mkdir()
     (package / "domain" / "planted.py").write_text(PLANTED_LAYER, encoding="utf-8")
     (package / "types" / "clean.py").write_text(
-        "from collections.abc import Sequence\n", encoding="utf-8"
+        "from collections.abc import Sequence\n"
+        "from pydantic import BaseModel\n"
+        "from langchain_core.messages import BaseMessage\n"
+        "from typing_extensions import TypedDict\n"
+        "from langgraph.graph import StateGraph\n"
+        "from kodezart.domain.errors import SurfaceLeaseError\n",
+        encoding="utf-8",
     )
 
     scan = scan_layers(tmp_path, ("domain", "types"))
@@ -525,6 +604,47 @@ def test_the_scan_reports_every_planted_import_and_no_prose(tmp_path: Path) -> N
         'importlib.import_module(name="kodezart.adapters.linear.tracker")',
         'importlib.import_module(".linear.tracker", package="kodezart.adapters")',
         'importlib.import_module(".adapters.linear", "kodezart")',
+        "import anthropic",
+        "from pydantic_ai import Agent",
+        "from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver",
+        "import psycopg",
+        'importlib.import_module("anthropic")',
+    }
+
+
+def test_core_imports_its_infrastructure_only_where_stated(tmp_path: Path) -> None:
+    """The two core modules stated apart are the only ones admitted apart.
+
+    The checkpointer's database driver and the logging setup's logger are
+    admitted in those two modules and refused, line by line, in any other
+    core module that imports them.
+    """
+    core = tmp_path / PACKAGE / "core"
+    core.mkdir(parents=True)
+    stated = (
+        "import psycopg\n"
+        "from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver\n"
+        "import structlog\n"
+    )
+    for name in ("checkpointer", "logging", "elsewhere"):
+        (core / f"{name}.py").write_text(stated, encoding="utf-8")
+
+    scan = scan_layers(tmp_path, ("core",))
+
+    assert scan.scanned == {
+        "core": [
+            f"{PACKAGE}.core.checkpointer",
+            f"{PACKAGE}.core.elsewhere",
+            f"{PACKAGE}.core.logging",
+        ]
+    }
+    assert {entry.rpartition(": ")[0] for entry in scan.refused} == {
+        f"{PACKAGE}.core.checkpointer:3",
+        f"{PACKAGE}.core.logging:1",
+        f"{PACKAGE}.core.logging:2",
+        f"{PACKAGE}.core.elsewhere:1",
+        f"{PACKAGE}.core.elsewhere:2",
+        f"{PACKAGE}.core.elsewhere:3",
     }
 
 
@@ -565,6 +685,28 @@ def test_the_lease_calls_are_declared_on_the_port_in_the_port_module() -> None:
     assert (
         TrackerPort.__module__ == SurfaceLeaseTracker.__module__ == protocols.__name__
     )
+
+
+def test_every_port_member_is_declared_in_the_port_module() -> None:
+    """Every capability of the tracker port is declared in the port module.
+
+    The owner of each public member is read off the port's own method
+    resolution order, with no list of members or bases: a capability moved
+    onto a base protocol defined in another module is still inherited, and
+    is refused here by name.
+    """
+    owners = {
+        name: next(owner for owner in TrackerPort.__mro__ if name in vars(owner))
+        for name in dir(TrackerPort)
+        if not name.startswith("_")
+    }
+
+    assert {"acquire_surfaces", "container_metadata", "scope_issues"} <= set(owners)
+    assert {
+        name: owner.__module__
+        for name, owner in owners.items()
+        if owner.__module__ != protocols.__name__
+    } == {}
 
 
 #: What each lease call takes and answers, stated in domain types. The
