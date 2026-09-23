@@ -54,7 +54,11 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
 from kodezart.types.domain.persist import PersistResult
-from kodezart.types.domain.run_event import UNDEMONSTRATED_EVENT_KINDS, RunEventKind
+from kodezart.types.domain.run_event import (
+    EVIDENCE_ROW_WRITES,
+    UNDEMONSTRATED_EVENT_KINDS,
+    RunEventKind,
+)
 from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState
 from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
 
@@ -491,31 +495,46 @@ class TrackerLaneStateWriter:
         Each of the two writes reads its own sub-issue: the transition has
         no compare-and-set of its own, so it is the second read that stands
         in for one. A sub-issue the board moved between the stamp and the
-        transition keeps the Evidence row of the grading that reached it and
-        is not finished.
+        transition keeps the Evidence row of the grading that reached it,
+        and that grading's entry, and is not finished.
 
-        The grading is then announced on the LANE's stream, at the sha the
-        row now names. That entry is what makes the stream the Evidence
-        row's own write history rather than a refutation-only subset of it:
-        a passing grading restamps the row, and a reader asking which
-        grading the row's commit came from has to find the passing ones
-        there too, or every ordinary refuted-then-passed lifecycle reads as
-        a row pointing behind its last recorded grading (KOD-506). The
-        announcement addresses the lane issue, not this criterion, so a
-        criterion sub-issue still carries no comment of any kind.
+        The grading is announced on the LANE's stream as soon as the stamp
+        lands, at the sha the row now names. That entry is what makes the
+        stream the Evidence row's own write history rather than a
+        refutation-only subset of it: a passing grading restamps the row, and
+        a reader asking which grading the row's commit came from has to find
+        the passing ones there too, or every ordinary refuted-then-passed
+        lifecycle reads as a row pointing behind its last recorded grading
+        (KOD-506). The announcement addresses the lane issue, not this
+        criterion, so a criterion sub-issue still carries no comment of any
+        kind.
 
-        It is the LAST write of the act, and it is announced once for one
-        grading: the same verdict written again at the same head restamps
-        the same row and is the same entry, so the stream is looked up for
-        that entry in *events*, the act's one reading of it, taken before
+        The entry follows the row write it records and comes before the
+        transition, so the row and its history move together: a stamp that
+        refuses posts nothing and leaves both at the earlier grading, and a
+        transition that refuses after it leaves the row and its last entry
+        naming the same commit. Posted after the transition, a criterion
+        already finished and graded again at a later head whose transition
+        failed would keep a row at the new commit with no entry naming it,
+        and nothing repairs that: finished, it is in no later attempt's
+        roster. Posted before the stamp, a refused stamp would leave an entry
+        at a commit the row does not name.
+
+        It is announced once for one row write: the same verdict written
+        again at the same head restamps the same row, so it is posted unless
+        the criterion's LAST row-write entry in *events* is already this pass.
+        *events* is the act's one reading of the stream, taken before
         anything is written — the reading a take-back looks its refutation
-        up in — and a stream that will not parse has refused before this
-        sub-issue was read. A transition that never landed leaves the
-        criterion unfinished and re-graded by the next attempt, which
-        announces its own grading. A post that fails leaves the criterion
-        finished and unannounced, which is the same partial state a lost
-        refutation leaves and is repaired by nobody: finished, it is in no
-        later attempt's roster.
+        up in — so a stream that will not parse has refused before this
+        sub-issue was read. An equal entry anywhere earlier would not do: a
+        head that returns to a commit the criterion passed at before a later
+        refutation restamps the row there again, and without a fresh entry
+        the history would end at the refutation while the row names the
+        earlier commit. A post that fails stops the act before the
+        transition: a criterion not yet finished stays owed and the next
+        attempt announces its own grading, while one already finished keeps
+        its restamped row unannounced, which is the same partial state a lost
+        refutation leaves and is repaired by nobody.
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=issue, criterion=criterion)
@@ -525,10 +544,19 @@ class TrackerLaneStateWriter:
             subject_key=criterion.id,
             graded_sha=cross_off.evidence.graded_sha,
         )
-        posted = event in events
+        written = [
+            entry
+            for entry in events
+            if entry.subject_key == criterion.id and entry.kind in EVIDENCE_ROW_WRITES
+        ]
+        posted = written[-1:] == [event]
         await self._stamp(
             lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
         )
+        if not posted:
+            await settle(
+                self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
+            )
         stamped = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=stamped, criterion=criterion)
         await settle(
@@ -536,10 +564,6 @@ class TrackerLaneStateWriter:
                 issue_key=criterion.id, stage=LifecycleStage.DONE
             )
         )
-        if not posted:
-            await settle(
-                self._tracker.post_run_event(issue_key=lane.lane_key, event=event)
-            )
 
     async def _take_back(
         self,

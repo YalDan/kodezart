@@ -150,8 +150,9 @@ class LosingBoard(FakeTrackerPort):
     """A board that loses the next write of one named call, and then behaves.
 
     Taking a criterion back is three writes — the move back, the Evidence row
-    and the event — and each of them can be the one the backend does not
-    take. What the board holds afterwards, and what a later failing verdict
+    and the event — and finishing one is three as well — the Evidence row, the
+    event and the transition — and each of them can be the one the backend
+    does not take. What the board holds afterwards, and what a later verdict
     does about it, is the property this double exists to ask about, so the
     loss is armed when a test wants it rather than on the first write of that
     name: armed after the writes a test needs to have landed, the next write
@@ -189,6 +190,11 @@ class LosingBoard(FakeTrackerPort):
         return await super().edit_description(
             target=target, expected=expected, replacement=replacement, **rest
         )
+
+    async def set_workflow_state(self, *, issue_key, stage):
+        if self._drop_once("set_workflow_state"):
+            raise TransientAPIError("the transition never reached the board")
+        return await super().set_workflow_state(issue_key=issue_key, stage=stage)
 
 
 class LaneGit(FakeGitService):

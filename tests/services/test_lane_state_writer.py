@@ -1336,6 +1336,8 @@ async def test_a_body_that_changed_under_the_stamp_leaves_the_criterion_unfinish
     assert port.issues[CRITERIA[0]].state_kind is WorkflowStateKind.UNSTARTED
     assert port.workflow_writes == []
     assert [key for key, _, _ in port.issue_writes] == []
+    # The entry records the row write, so a stamp that never landed has none.
+    assert stream(port) == []
 
 
 async def test_a_state_that_moved_under_the_stamp_is_not_moved_to_done():
@@ -1891,9 +1893,22 @@ async def test_the_rows_write_history_ends_where_the_row_does_in_every_state(rea
     Three criteria are finished at one head, and the next attempt leaves each
     in a different state: one refuted and taken back, one read as
     undemonstrated under *reason*, one passed again; that one then lapses at
-    a third head. The audit's restamp trace reads the lane's stream as each
-    Evidence row's write history (KOD-506), so for every criterion the last
-    commit that history names must be the one its row names.
+    a third head, and the head then returns to the first commit, where the
+    refuted one passes again. The audit's restamp trace reads the lane's
+    stream as each Evidence row's write history (KOD-506), so for every
+    criterion the last commit that history names must be the one its row
+    names.
+
+    The return is a head revisiting a commit, as a divergence recovery that
+    resets the workspace to the remote tip can. The pass there restamps the
+    row at the first commit after the refutation at the second, so it is a
+    row write of its own and is announced again, though an equal entry sits
+    earlier in the stream: looked up anywhere in the stream rather than as
+    the criterion's last row write, it would leave the history ending at the
+    refutation while the row names the first commit.
+
+    The lapse announces nothing: the one that lapses keeps exactly the passes
+    it was finished with, and no entry at all for the lapse.
 
     The undemonstrated one is the case that can go wrong. It is still
     finished, its row still names the first head, and its reading posted its
@@ -1912,22 +1927,37 @@ async def test_the_rows_write_history_ends_where_the_row_does_in_every_state(rea
         lane_state, sha=second, failed=[broken], reasons=withheld([unread], reason)
     )
     await lapse(lane_state, key=kept, standing_sha=second, head_sha=third)
+    await tick(lane_state, sha=first, keys=[broken])
 
     posted = stream(port)
-    assert [
-        (event.kind, event.graded_sha)
-        for event in posted
-        if event.subject_key == unread
-    ] == [
+
+    def entries(key: str) -> list[tuple[RunEventKind, str | None]]:
+        return [
+            (event.kind, event.graded_sha)
+            for event in posted
+            if event.subject_key == key
+        ]
+
+    assert entries(unread) == [
         (RunEventKind.CRITERION_PASSED, first),
         (UNDEMONSTRATED_EVENT_KINDS[reason], second),
     ]
+    assert entries(broken) == [
+        (RunEventKind.CRITERION_PASSED, first),
+        (RunEventKind.CRITERION_REFUTED, second),
+        (RunEventKind.CRITERION_PASSED, first),
+    ]
+    assert entries(kept) == [
+        (RunEventKind.CRITERION_PASSED, first),
+        (RunEventKind.CRITERION_PASSED, second),
+    ]
     assert port.issues[unread].state_kind is WorkflowStateKind.COMPLETED
+    assert port.issues[broken].state_kind is WorkflowStateKind.COMPLETED
     rows = {
         key: parse_criterion_evidence(port.issues[key].body).graded_sha
         for key in CRITERIA
     }
-    assert rows == {broken: second, unread: first, kept: second}
+    assert rows == {broken: first, unread: first, kept: second}
     for key in CRITERIA:
         history = evidence_row_history(events=posted, criterion_key=key)
         assert history[-1] == rows[key], key
@@ -2099,6 +2129,57 @@ async def test_a_refutation_a_write_was_lost_from_leaves_the_criterion_owed(drop
     )
 
 
+#: What each lost write of a pass leaves on a criterion finished at the first
+#: head and graded again at the second: the grading its Evidence row carries,
+#: and the pass entries that second grading posted.
+LOST_PASS_WRITES = {
+    "edit_description": ("1" * 40, ()),
+    "set_workflow_state": ("2" * 40, ("2" * 40,)),
+}
+
+
+@pytest.mark.parametrize("drops", sorted(LOST_PASS_WRITES))
+async def test_a_pass_a_write_was_lost_from_leaves_the_row_where_its_history_ends(
+    drops,
+):
+    """The pass entry follows the row write it records, and nothing else.
+
+    A criterion finished at one head is graded again at a later one, and one
+    write of that pass is lost. A stamp that never landed posts nothing, so
+    the row and its history both stay at the earlier grading. A transition
+    lost after the stamp leaves the criterion finished with its row at the
+    later commit, and the entry naming that commit is already on the stream:
+    posted after the transition, it would be missing, and nothing would
+    repair it, because a finished criterion is in no later attempt's roster.
+    Either way the restamp trace holds for the row the board keeps.
+    """
+    recorded, later = LOST_PASS_WRITES[drops]
+    port = losing_board()
+    lane_state = writer(port, lane_repo())
+    regraded, *rest = CRITERIA
+
+    await tick(lane_state, sha="1" * 40)
+    port.lose(drops)
+    with pytest.raises(TransientAPIError):
+        await tick(lane_state, sha="2" * 40)
+
+    assert port.issues[regraded].state_kind is WorkflowStateKind.COMPLETED
+    row = parse_criterion_evidence(port.issues[regraded].body).graded_sha
+    assert row == recorded
+    posted = stream(port)
+    assert [(event.kind, event.subject_key, event.graded_sha) for event in posted] == [
+        *((RunEventKind.CRITERION_PASSED, key, "1" * 40) for key in CRITERIA),
+        *((RunEventKind.CRITERION_PASSED, regraded, sha) for sha in later),
+    ]
+    assert all(
+        parse_criterion_evidence(port.issues[key].body).graded_sha == "1" * 40
+        for key in rest
+    )
+    history = evidence_row_history(events=posted, criterion_key=regraded)
+    assert history == ("1" * 40, *later)
+    assert restamp_verdict(history=history, graded_sha=row) is AuditVerdict.HOLDS
+
+
 async def test_a_stream_that_will_not_parse_refuses_before_the_board_is_touched():
     """A damaged stream is knowable first, so the pass still reads as a pass.
 
@@ -2260,8 +2341,10 @@ async def test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra():
     await tick(lane_state, sha="1" * 40)
 
     port.count_the_next_write()
+    finished = stream(port)
     await lapse(lane_state, key=lapsing, standing_sha="1" * 40, head_sha="2" * 40)
     assert port.listings == 0
+    assert stream(port) == finished
     assert refutations(port) == []
 
     port.count_the_next_write()

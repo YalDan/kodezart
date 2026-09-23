@@ -370,14 +370,22 @@ consumer that sees the event for iteration n can read the tracker and find that
 iteration's cross-offs already on it. It is handed the roster the attempt was
 dispatched against and the whole grade of it, one for one and in order. For a
 criterion the attempt passed, the sha it was graded at goes on that sub-issue's
-Evidence row, the sub-issue then moves to the configured `done` stage, and one
-`criterion_passed` event naming that sha is posted on the LANE under
-`marker_prefixes.run_event` last — the body edit under its own compare-and-set
-precondition, the transition after it, the announcement after that. The event
-is what makes the lane's stream the Evidence row's own write history, which is
-what the audit's restamp trace reads; the stream is looked up for that entry
-before anything is written, so the same verdict written again at the same head
-restamps the same row and announces nothing twice. For a criterion the attempt
+Evidence row, one `criterion_passed` event naming that sha is posted on the
+LANE under `marker_prefixes.run_event`, and the sub-issue then moves to the
+configured `done` stage — the body edit under its own compare-and-set
+precondition, the announcement as soon as that edit lands, the transition last.
+The event records the row write, so it follows that write and nothing else: a
+stamp that refuses posts nothing, and a transition that refuses after it leaves
+the row and its last entry naming the same commit, including for a criterion
+already finished and graded again at a later head, which no later attempt's
+roster would reach to repair. The event is what makes the lane's stream the
+Evidence row's own write history, which is what the audit's restamp trace
+reads. The stream is looked up for that entry before anything is written, and
+the pass is posted unless the criterion's last row-write entry there is already
+that same pass: the same verdict written again at the same head restamps the
+same row and announces nothing twice, while a head that returns to a commit
+the criterion passed at before a later refutation announces that pass again,
+so the history ends at the commit the row names. For a criterion the attempt
 failed that this fire had already finished, the sub-issue moves back to the
 team's unstarted state first, the refuting grading then goes on its Evidence
 row, and one `criterion_refuted` event is posted under
