@@ -191,6 +191,12 @@ def _call_sites(index: SourceIndex, writes: frozenset[str]) -> frozenset[CallSit
     through something the census cannot follow, so it is a site of the
     function it is taken in.  One taken at module or class level stands in
     no function and is a site of the module, under ``MODULE_LEVEL``.
+
+    A write named by a string is reached by reflection: the name handed to
+    the builtin ``getattr`` or to ``operator.methodcaller`` is a site of the
+    function the call stands in, whatever the receiver.  A derived-write
+    declaration's own arguments name writes too, and are no site: they are
+    handed to the declaration, not to either of those.
     """
     sites: set[CallSite] = set()
     for method in writes:
@@ -214,7 +220,53 @@ def _call_sites(index: SourceIndex, writes: frozenset[str]) -> frozenset[CallSit
             module = index.unheld_module(reference)
             if module is not None:
                 sites.add(CallSite(module=module, function=MODULE_LEVEL, method=method))
+    for module, holder, call in index.every_call():
+        reflected = _reflected(index, module, holder, call)
+        if reflected is not None and reflected in writes:
+            sites.add(
+                CallSite(
+                    module=module,
+                    function=MODULE_LEVEL if holder is None else holder.function,
+                    method=reflected,
+                )
+            )
     return frozenset(sites)
+
+
+def _reflected(
+    index: SourceIndex, module: str, holder: Source | None, call: ast.Call
+) -> str | None:
+    """The method a reflective call names by a string, if it is one.
+
+    ``getattr(receiver, "<name>", …)`` and ``operator.methodcaller("<name>",
+    …)``, each resolved as the builtin or standard-library function rather
+    than by spelling: a name the package itself binds where the call stands
+    is not either of them.
+    """
+    callee = call.func
+    if (
+        isinstance(callee, ast.Name)
+        and callee.id == "getattr"
+        and index.unbound(module, holder, callee.id)
+    ):
+        named = call.args[1] if len(call.args) > 1 else None
+    elif (
+        isinstance(callee, ast.Name)
+        and callee.id == "methodcaller"
+        and index.unbound(module, holder, callee.id)
+    ) or (
+        isinstance(callee, ast.Attribute)
+        and callee.attr == "methodcaller"
+        and isinstance(callee.value, ast.Name)
+        and callee.value.id == "operator"
+        and index.unbound(module, holder, callee.value.id)
+    ):
+        named = call.args[0] if call.args else None
+    else:
+        return None
+    if isinstance(named, ast.Constant) and isinstance(named.value, str):
+        return named.value
+    return None
 
 
 def _authored_sites(

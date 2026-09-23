@@ -53,6 +53,7 @@ class SourceIndex:
         self._references: dict[str, list[tuple[Source | None, ast.expr]]] = {}
         self._unheld: dict[int, str] = {}
         self._calls_by_callee: dict[int, ast.Call] = {}
+        self._every_call: list[tuple[str, Source | None, ast.Call]] = []
         self._imports: dict[str, dict[str, tuple[str, str]]] = {}
         self._module_of: dict[str, str] = {
             dotted_name(module): module for module in self.trees
@@ -119,6 +120,8 @@ class SourceIndex:
         no call in a function accounts for.  The module it stands in is kept
         beside it, so such a mention can still be addressed.
         """
+        if isinstance(child, ast.Call):
+            self._every_call.append((module, body, child))
         if isinstance(child, ast.Attribute):
             self._references.setdefault(child.attr, []).append((body, child))
         elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
@@ -427,6 +430,23 @@ class SourceIndex:
     def unheld_module(self, reference: ast.expr) -> str | None:
         """The module a mention standing in no function body is made in."""
         return self._unheld.get(id(reference))
+
+    def every_call(self) -> Sequence[tuple[str, Source | None, ast.Call]]:
+        """Every call in the tree, with its module and the body it stands in.
+
+        A call at module or class level stands in no body.
+        """
+        return self._every_call
+
+    def unbound(self, module: str, holder: Source | None, name: str) -> bool:
+        """Whether *name* names nothing the package defines where it stands.
+
+        A name no enclosing scope, module definition or ``kodezart`` import
+        binds is a builtin or an import from outside the package.
+        """
+        if holder is not None:
+            return self.visible(holder, name) is None
+        return self.declared(module, name) is None
 
     def call_of(self, reference: ast.expr) -> ast.Call | None:
         """The call *reference* is the callee of, if it is one."""
