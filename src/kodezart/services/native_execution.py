@@ -266,6 +266,12 @@ class NativeExecution:
             before_commit=before_commit,
             before_publish=before_publish,
         )
+        # A round that committed nothing may push its branch at its cut point,
+        # but that push is not an iteration commit: it is recorded as no act,
+        # carries no sha into the loop's trajectory, and so never replaces an
+        # earlier best.
+        if receipt is not None and receipt.commit_sha == phase.start.head_sha:
+            receipt = None
         # The commit act is not complete until it has been recorded: a
         # phase that yielded its sha first would leave a pushed commit no
         # reader of the tracker can find.
