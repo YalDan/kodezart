@@ -1,0 +1,298 @@
+{
+  "chains/audit_detection_removal.py::DetectorRemovalVerifier._require_removed_quote": {
+    "reason": "the removed quote read at the graded commit: the blob's own commit is checked against the commit it was asked for, a self-resolution, and the quote is read out of that blob; a baseline commit against the graded commit, never against a head",
+    "uses": [
+      "baseline = await self._git.read_source(cwd=snapshot.repository, commit_sha=snapshot.evidence.graded_sha, path=quote.path)",
+      "if baseline.commit_sha != snapshot.evidence.graded_sha or baseline.path != quote.path:\n    ...",
+      "if not b''.join(lines[quote.line - 1:]).startswith(quoted):\n    ...",
+      "lines = baseline.content.splitlines(keepends=True)"
+    ]
+  },
+  "chains/audit_detection_removal.py::DetectorRemovalVerifier.observe": {
+    "reason": "the graded commit quoted into the session's prompt and recorded onto the observation, and the judgment the session answers that prompt with read for its findings: prose and a record, never a reading of the pair",
+    "uses": [
+      "await self._require_removed_quote(snapshot, finding.detector)",
+      "await self._require_removed_quote(snapshot, finding.mechanism)",
+      "for finding in judgment.findings:\n    ...",
+      "if judgment.criterion_key != snapshot.criterion.issue_key:\n    ...",
+      "judgment = DetectorRemovalJudgment.model_validate(payload)",
+      "payload = await self._sessions.judge(repository=snapshot.repository, head_sha=snapshot.head_sha, key=key, prompt=prompt, output_schema=DETECTOR_REMOVAL_SCHEMA, site='audit_detection_removal')",
+      "prompt = self._prompts.template_for(key).render({'criterion_key': snapshot.criterion.issue_key, 'check': snapshot.check, 'graded_sha': snapshot.evidence.graded_sha, 'head_sha': snapshot.head_sha})",
+      "return DetectorRemovalObservation(judgment=judgment, graded_sha=snapshot.evidence.graded_sha, head_sha=snapshot.head_sha, record_ref=snapshot.comment.comment_key, check=snapshot.check)"
+    ]
+  },
+  "chains/audit_evidence.py::AuditEvidenceVerifier._head.observe": {
+    "reason": "self-resolution: the recorded revision must resolve to itself; and the ancestry check is_ancestor(repository, evidence.graded_sha, head) is provenance: it asks whether the recorded commit is on this branch at all, not whether the reading still stands",
+    "uses": [
+      "if await self._source.resolve_commit(cwd=repository, ref=evidence.graded_sha) != evidence.graded_sha:\n    ...",
+      "if not await self._git.is_ancestor(repository, evidence.graded_sha, head):\n    ..."
+    ]
+  },
+  "chains/audit_evidence.py::AuditEvidenceVerifier._observe": {
+    "reason": "the audit lane's one consultation of the rule: the graded sha is handed to the rule and its answer read, never weighed here",
+    "uses": [
+      "if not completed or graded_state(graded_sha=evidence.graded_sha, head_sha=head) is GradedState.counted:\n    ..."
+    ]
+  },
+  "chains/audit_evidence.py::AuditRestampVerifier.observe": {
+    "reason": "the Evidence row's recorded commit handed to restamp_verdict, the provenance reading of the recorded history, and quoted into the trace's reason: recorded against recorded, never against a head",
+    "uses": [
+      "return AuditRestampTrace(criterion_key=request.criterion_key, recorded_evidence=evidence, history=history, verdict=verdict, reason=f'{request.criterion_key}: the Evidence row names {evidence.graded_sha}, and the last recorded grading is at {history[-1]}')",
+      "verdict = restamp_verdict(history=history, graded_sha=evidence.graded_sha)"
+    ]
+  },
+  "chains/audit_forge.py::AuditForgeVerifier._checked_snapshot": {
+    "reason": "the checked commit against the graded commit: the forge reading's provenance, not the head now",
+    "uses": [
+      "if checks.commit_sha != evidence.graded_sha:\n    ..."
+    ]
+  },
+  "chains/audit_forge.py::AuditForgeVerifier._forge": {
+    "reason": "the graded commit handed to the CI port as the ref whose checks are read; the snapshot and the red classification that come back are read for their verdict and roster, and the snapshot's own commit is checked in _checked_snapshot: never weighed against a head",
+    "uses": [
+      "assert_never(unreachable)",
+      "checks = self._checked_snapshot(red.observation, evidence)",
+      "checks = self._checked_snapshot(watched, evidence)",
+      "if checks.checks_passed:\n    ...",
+      "if isinstance(red.observation, AbsentChecks):\n    ...",
+      "if isinstance(watched, AbsentChecks):\n    ...",
+      "if isinstance(watched, IncompleteChecks):\n    ...",
+      "match red.red_class:",
+      "raise AuditClaimReadError(watched.summary)",
+      "red = await classify_red_checks(ci=self._ci, repository=repository, repo_url=repository.url, initial=checks, max_attempts=self._config.delivery_red_rerun_max_attempts)",
+      "self._require_roster(checks, required)",
+      "self._require_roster(checks, required)",
+      "watched = await self._ci.wait_for_checks(repo_url=request.repo_url, ref=evidence.graded_sha)"
+    ]
+  },
+  "chains/audit_forge.py::AuditForgeVerifier._forge.result": {
+    "reason": "the recorded commit quoted into the forge observation's reason text",
+    "uses": [
+      "return AuditForgeObservation(criterion=criterion, recorded_evidence=evidence, required_check_names=required, checks=checks, red=red, verdict=verdict, reason=f'{request.criterion_key} at {evidence.graded_sha}: {reason}')"
+    ]
+  },
+  "chains/audit_overclaim.py::AuditOverclaimVerifier._adoption": {
+    "reason": "membership: whether an adopted source sha is one of the audited pair, never one of the pair against the other",
+    "uses": [
+      "if pair.source_sha not in {snapshot.evidence.graded_sha, snapshot.head_sha}:\n    ..."
+    ]
+  },
+  "chains/audit_overclaim.py::AuditOverclaimVerifier.observe": {
+    "reason": "the same prompt-and-record shape as the removal observation: quoted into the session, recorded onto the observation, and the session's judgment read and handed to the adoption check",
+    "uses": [
+      "if judgment.criterion_key != snapshot.criterion.issue_key:\n    ...",
+      "judgment = AuditOverclaimJudgment.model_validate(output)",
+      "judgment = await self._adoption(snapshot, judgment)",
+      "output = await self._sessions.judge(repository=snapshot.repository, head_sha=snapshot.head_sha, key=key, prompt=prompt, output_schema=AUDIT_OVERCLAIM_SCHEMA, site='audit_overclaim')",
+      "prompt = self._prompts.template_for(key).render({'criterion_key': snapshot.criterion.issue_key, 'graded_sha': snapshot.evidence.graded_sha, 'head_sha': snapshot.head_sha, 'check': snapshot.check})",
+      "return AuditOverclaimObservation(judgment=judgment, graded_sha=snapshot.evidence.graded_sha, head_sha=snapshot.head_sha, record_ref=snapshot.comment.comment_key, check=snapshot.check)"
+    ]
+  },
+  "chains/audit_sweep.py::AuditReadSweep._observe_forge": {
+    "reason": "the recorded commit of a historical forge observation, carried onto the claim the mandate is asked about, and the mandate's report checked for naming that same claim: a record against a record",
+    "uses": [
+      "claim = AuditClaimObservation(judgment=AuditClaimJudgment(criterion_key=observed.criterion.issue_key, verdict=observed.verdict, evidence=observed.reason), head_sha=observed.recorded_evidence.graded_sha, record_ref=target.source.comment.comment_key, check=check)",
+      "if report.claim != claim:\n    ...",
+      "report = await self._mandates.complete(AuditMandateRequest(claim=claim, defect_class=f'forge checks refute the recorded grading: {check}', surfaces=surfaces, repo_url=request.repo_url, cache_key=request.cache_key))",
+      "return (observed, report, None)"
+    ]
+  },
+  "chains/ralph_loop.py::RalphLoop._base_reading": {
+    "reason": "the sha this attempt graded at, logged beside the base sha when a criterion is already satisfied at the base: a log field, never weighed",
+    "uses": [
+      "await self._log.awarning('criterion_satisfied_at_base', criterion=result.criterion_id, graded_sha=graded_sha, base_sha=base_sha, command=result.command)"
+    ]
+  },
+  "chains/ralph_loop.py::RalphLoop._cross_off": {
+    "reason": "the sha this attempt graded at, handed to cross_offs_for, which records it on each row; the rows are filtered by the rule's own reading and sent to the lane writer, and no partition is computed here",
+    "uses": [
+      "await lane_state.write_cross_offs(lane=self._lane_binding(ctx), dispatched=tuple((criterion for criterion, _ in decided)), cross_offs=tuple((cross_off for _, cross_off in decided)))",
+      "cross_offs = cross_offs_for(results=grade.results, graded_sha=graded_sha, observation=evaluation_observation(session_id=graded_in, iteration=iteration), reasons=reasons, standing=standing, reading=reading)",
+      "decided = tuple((pair for pair in zip(roster.criteria, cross_offs, strict=True) if reading.get(pair[1].criterion) is not GradedState.counted))",
+      "return cross_offs"
+    ]
+  },
+  "chains/ralph_loop.py::RalphLoop._cross_off.<genexpr>": {
+    "reason": "the rows built from that sha, filtered by the rule's reading and split into criteria and rows for the lane writer",
+    "uses": [
+      "await lane_state.write_cross_offs(lane=self._lane_binding(ctx), dispatched=tuple((criterion for criterion, _ in decided)), cross_offs=tuple((cross_off for _, cross_off in decided)))",
+      "await lane_state.write_cross_offs(lane=self._lane_binding(ctx), dispatched=tuple((criterion for criterion, _ in decided)), cross_offs=tuple((cross_off for _, cross_off in decided)))",
+      "decided = tuple((pair for pair in zip(roster.criteria, cross_offs, strict=True) if reading.get(pair[1].criterion) is not GradedState.counted))"
+    ]
+  },
+  "chains/ralph_loop.py::RalphLoop._moved_since.<dictcomp>": {
+    "reason": "the interval's base, not an operand: each distinct graded sha is handed to the Git service port as one end of the digest the rule consumes, keyed by that sha",
+    "uses": [
+      "return {sha: await self._git.diff_summary(cwd=cwd, base_ref=sha, head_ref=head_sha) for sha in sorted({cross_off.evidence.graded_sha for cross_off in prior if cross_off.state is CrossOffState.passed and cross_off.rederivation_class in PATH_BOUND_CLASSES})}"
+    ]
+  },
+  "chains/ralph_loop.py::RalphLoop._moved_since.<setcomp>": {
+    "reason": "the distinct recorded graded shas of the passed path-bound gradings, collected as the bases of that digest",
+    "uses": [
+      "return {sha: await self._git.diff_summary(cwd=cwd, base_ref=sha, head_ref=head_sha) for sha in sorted({cross_off.evidence.graded_sha for cross_off in prior if cross_off.state is CrossOffState.passed and cross_off.rederivation_class in PATH_BOUND_CLASSES})}"
+    ]
+  },
+  "core/prompt_namespaces.py::<module>": {
+    "reason": "the name the graded sha is quoted under, in the table of per-call prompt variable names: a name, and no value is read",
+    "uses": [
+      "PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset({'tracker_criteria', 'swept_criteria', 'task', 'task_md', 'task_description', 'base_ref', 'base_sha', 'claim', 'pinned_rulings', 'judgment', 'prior', 'finding', 'preserve_subject', 'validation_findings', 'prior_prompt', 'pending_failures', 'criteria', 'acceptance_criteria', 'total_iterations', 'review_feedback', 'ci_summary', 'original_ticket', 'done_work', 'failure_evidence', 'draft_md', 'previous_draft_md', 'reviewer_feedback', 'reviewer_suggestions', 'reviewer_suggestions_absent', 'commit_count', 'file_paths', 'file_paths_absent', 'commit_subjects', 'changeset_is_empty', 'changeset_has_commits', 'content', 'destination', 'inspect_aggregates', 'inspect_privacy', 'roster_minimum', 'record_title', 'organize_context', 'mandate_rubric', 'issue_body', 'issue_key', 'linked_issue_bodies', 'refusal_evidence', 'defect_classes', 'criterion_issue_bodies', 'criterion_key', 'head_sha', 'graded_sha', 'check', 'written_artifact', 'audited_surfaces', 'refutation_evidence', 'defect_class', 'verification_goal'})"
+    ]
+  },
+  "domain/audit_claims.py::evidence_row_history.<genexpr>": {
+    "reason": "not a revision comparison at all: an event is selected by the subject it is keyed to and by whether its kind writes the Evidence row, and a grading naming no commit is dropped",
+    "uses": [
+      "return tuple((event.graded_sha for event in events if event.subject_key == criterion_key and event.graded_sha is not None))"
+    ]
+  },
+  "domain/audit_claims.py::restamp_verdict": {
+    "reason": "the last recorded grading against the row's own recorded commit: whether a restamp names the grading that actually last ran, never the head now",
+    "uses": [
+      "if history and history[-1] == graded_sha:\n    ..."
+    ]
+  },
+  "domain/criterion_cross_off.py::cross_offs_for": {
+    "reason": "the Evidence row's commit chosen and recorded: the sha this attempt graded at, or for a lapsed grading its prior row's graded sha carried forward; a record is built, nothing is weighed",
+    "uses": [
+      "attempt = (graded_sha, observation)",
+      "built.append(CriterionCrossOff(criterion=criterion, state=verdict, evidence=CriterionEvidence(graded_sha=recorded, test=pointer), rederivation_class=rederivation_class, exercised_paths=exercised_paths, undemonstrated_reason=withheld))",
+      "recorded = prior.evidence.graded_sha",
+      "recorded, pointer = attempt"
+    ]
+  },
+  "domain/criterion_evidence.py::apply_evidence": {
+    "reason": "the Evidence record handed whole to its serialiser to be written into the criterion's Evidence field",
+    "uses": [
+      "return replace_criterion_fields(body, replacements={'Evidence': evidence_field_value(evidence)})"
+    ]
+  },
+  "domain/criterion_evidence.py::evidence_field_value": {
+    "reason": "the Evidence record serialised whole, under its aliases, as the fenced JSON the Evidence field carries",
+    "uses": [
+      "payload = evidence.model_dump_json(by_alias=True, indent=2)",
+      "return f'\\n```json\\n{payload}\\n```'"
+    ]
+  },
+  "domain/criterion_evidence.py::render_evidence_field": {
+    "reason": "the Evidence record handed whole to the same serialiser to render the field with its label",
+    "uses": [
+      "return f'**Evidence:**{evidence_field_value(evidence)}'"
+    ]
+  },
+  "domain/lapse.py::held_standing": {
+    "reason": "the lane arm's one consultation of the rule: both revisions handed over, the digest map keyed by the recorded one, and the rule's answer partitioned",
+    "uses": [
+      "if state is GradedState.counted:\n    ...\nelse:\n    ...",
+      "state = graded_state(graded_sha=cross_off.evidence.graded_sha, head_sha=head_sha, rederivation_class=cross_off.rederivation_class, exercised_paths=cross_off.exercised_paths, changeset=changesets.get(cross_off.evidence.graded_sha))"
+    ]
+  },
+  "services/assertion_drift.py::AssertionDriftDetector.compare": {
+    "reason": "the protected assertions read AT the graded commit and AT the head: the graded reference's shape checked, each commit resolved and checked against itself, each blob against the commit it was asked for, and the two readings' assertions compared, never the two revisions",
+    "uses": [
+      "after = protected_assertions(source=after_blob.content, path=protected.path, qualified_name=protected.qualified_name)",
+      "after_blob = blobs[resolved_head, protected.path]",
+      "before = protected_assertions(source=before_blob.content, path=protected.path, qualified_name=protected.qualified_name)",
+      "before_blob = blobs[resolved_graded, protected.path]",
+      "blob = await self._git.read_source(cwd=repo_path, commit_sha=sha, path=protected.path)",
+      "blobs[key] = blob",
+      "claims.append(AssertionDeviationClaim(protected_test=protected, graded_sha=resolved_graded, head_sha=resolved_head, graded_blob_sha=before_blob.blob_sha, head_blob_sha=after_blob.blob_sha, before=before, after=after))",
+      "for sha in (resolved_graded, resolved_head):\n    ...",
+      "if blob.commit_sha != sha or blob.path != protected.path:\n    ...",
+      "if key not in blobs:\n    ...",
+      "if not before:\n    ...",
+      "if re.fullmatch('(?:[0-9a-f]{40}|[0-9a-f]{64})', graded_sha) is None:\n    ...",
+      "if resolved_graded != graded_sha:\n    ...",
+      "if tuple((row.structural_form for row in before)) != tuple((row.structural_form for row in after)):\n    ...",
+      "key = (sha, protected.path)",
+      "raise AssertionComparisonError(source_ref=graded_sha, reason='duplicate protected-test references')",
+      "raise AssertionComparisonError(source_ref=graded_sha, reason='the graded commit identity changed')",
+      "raise AssertionComparisonError(source_ref=graded_sha, reason='the graded reference must be a complete commit SHA')",
+      "resolved_graded = await self._git.resolve_commit(cwd=repo_path, ref=graded_sha)"
+    ]
+  },
+  "services/assertion_drift.py::AssertionDriftDetector.compare.<genexpr>": {
+    "reason": "the assertion forms read out of the blob taken at the graded commit and out of the blob taken at the head, compared form against form",
+    "uses": [
+      "if tuple((row.structural_form for row in before)) != tuple((row.structural_form for row in after)):\n    ...",
+      "if tuple((row.structural_form for row in before)) != tuple((row.structural_form for row in after)):\n    ..."
+    ]
+  },
+  "services/audit_runtime.py::_reports": {
+    "reason": "the forge observation's recorded commit carried onto its publication, where the publication's own provenance check reads it",
+    "uses": [
+      "found.append(AuditForgePublication(graded_sha=observation.forge.recorded_evidence.graded_sha, report=observation.forge_report))"
+    ]
+  },
+  "services/audit_sources.py::AuditSourceReader.read.resolve": {
+    "reason": "self-resolution over both revisions as one loop, each resolving to itself; and the ancestry check is_ancestor(repository, evidence.graded_sha, head) is provenance: it asks whether the recorded commit is on this branch at all, not whether the reading still stands",
+    "uses": [
+      "for sha in (evidence.graded_sha, head):\n    ...",
+      "if await self._source.resolve_commit(cwd=repository, ref=sha) != sha:\n    ...",
+      "if not await self._git.is_ancestor(repository, evidence.graded_sha, head):\n    ..."
+    ]
+  },
+  "services/lane_lapse_escalation.py::lapse_question": {
+    "reason": "the commit a lapsed grading was taken at, recorded as the sha the escalation is raised at",
+    "uses": [
+      "return LaneEscalation(issue_id=lane_key, escalation_key=f'{cross_off.criterion}:lapse', raised_by=RunKind.FIRE.value, raised_at_sha=cross_off.evidence.graded_sha, question=f'Re-derive or re-state the observation {cross_off.criterion} was graded on: the paths it exercised have moved since, and this loop cannot perform that observation again.', interim_reading='The criterion is returned to unstarted, carrying the sha it was graded at; nothing counts it until the observation is taken again.', interim_basis=', '.join(cross_off.exercised_paths))"
+    ]
+  },
+  "services/lane_state_writer.py::TrackerLaneStateWriter._undemonstrated": {
+    "reason": "the graded commit recorded on the undemonstrated run event, and that event posted unless the lane already carries it",
+    "uses": [
+      "await settle(self._tracker.post_run_event(issue_key=lane.lane_key, event=event))",
+      "event = LaneRunEvent(kind=UNDEMONSTRATED_EVENT_KINDS[reason], lane_key=lane.lane_key, subject_key=criterion.id, graded_sha=cross_off.evidence.graded_sha)",
+      "if event not in events:\n    ..."
+    ]
+  },
+  "services/lane_state_writer.py::TrackerLaneStateWriter.write_cross_offs": {
+    "reason": "the graded commit logged beside a criterion not crossed off, and recorded on the refutation event a take-back posts",
+    "uses": [
+      "await self._log.ainfo('criterion_not_crossed_off', lane=lane.lane_key, criterion=cross_off.criterion, state=cross_off.state.value, reason=None if reason is None else reason.value, graded_sha=cross_off.evidence.graded_sha)",
+      "await self._take_back(lane=lane, criterion=criterion, cross_off=cross_off, event=LaneRunEvent(kind=RunEventKind.CRITERION_REFUTED, lane_key=lane.lane_key, subject_key=criterion.id, graded_sha=cross_off.evidence.graded_sha), events=events)"
+    ]
+  },
+  "services/mutation_survival.py::MutationSurvivalReader.survivors": {
+    "reason": "the mutant workspace's own head against the sha it was checked out at: whether the removal left the tree the second grading reads, never whether a grading lapsed",
+    "uses": [
+      "async with owned_workspace(self._workspace, ref=graded_sha, repo_path=repo_path, cache_key=cache_key) as mutant:\n    ...",
+      "await self._log.awarning('mutation_took_no_reading', site='mutation_removal', graded_sha=graded_sha)",
+      "await self._remove(criteria=withheldable, workspace=mutant)",
+      "if await read_workspace_head(git=self._git, workspace=mutant) != (graded_sha, True):\n    ...",
+      "if mutated is None:\n    ...",
+      "mutated = await self._regrade(evaluation_prompt=evaluation_prompt, workspace=mutant)",
+      "return surviving_checks(clean=grade.results, mutated=mutated.criteria_results)"
+    ]
+  },
+  "services/recorded_assertion_drift.py::RecordedAssertionDriftDetector.compare": {
+    "reason": "a ref: the revision the recorded assertions are read AT, handed to the detector beside the head it reads them against, and the detector's claims returned",
+    "uses": [
+      "claims = await self._detector.compare(repo_path=snapshot.repository, graded_sha=snapshot.evidence.graded_sha, head_ref=snapshot.head_sha, protected_tests=tuple(protected))",
+      "return claims"
+    ]
+  },
+  "types/domain/audit_evidence.py::AuditEvidenceObservation.is_lapse": {
+    "reason": "the audit lane's observation of a finished claim's recorded grading, which hands both revisions to the rule rather than weighing them",
+    "uses": [
+      "return self.criterion.state_kind is WorkflowStateKind.COMPLETED and graded_state(graded_sha=self.recorded_evidence.graded_sha, head_sha=self.head_sha) is GradedState.lapsed"
+    ]
+  },
+  "types/domain/audit_evidence.py::AuditRestampTrace.verdict_follows_the_recorded_history": {
+    "reason": "the same reading as restamp_verdict, refused at construction so the wrong verdict cannot be published; still recorded against recorded",
+    "uses": [
+      "if (self.verdict is AuditVerdict.HOLDS) is not traced:\n    ...",
+      "traced = self.history[-1] == self.recorded_evidence.graded_sha"
+    ]
+  },
+  "types/domain/audit_forge.py::AuditForgeObservation.verdict_has_exact_observation": {
+    "reason": "the checked commit against the graded commit: the forge reading's provenance, not the head now",
+    "uses": [
+      "if self.checks is not None and self.checks.commit_sha != self.recorded_evidence.graded_sha:\n    ..."
+    ]
+  },
+  "types/domain/audit_runtime.py::AuditForgePublication._recorded_revision_matches_report": {
+    "reason": "head against head: the forge report's own provenance, the recorded commit a publication names against the head its report was taken at, not the head now",
+    "uses": [
+      "if self.report.claim.head_sha != self.graded_sha:\n    ..."
+    ]
+  }
+}
