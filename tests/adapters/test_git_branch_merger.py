@@ -199,6 +199,51 @@ async def test_cleanup_backup_branches_filters_with_is_backup() -> None:
     assert delete_calls[0][3] == "feat/x-backup-11112222"
 
 
+@pytest.mark.parametrize("failing", ["list_remote_branches", "delete_remote_branch"])
+async def test_cleanup_backup_branches_logs_and_swallows_a_failure(failing) -> None:
+    """A listing or a deletion that raises is logged at error and not raised.
+
+    The port promises the cleanup never raises: it runs after a fire's
+    terminal, where a failure to reap a backup must not become the lane's
+    failure. Either act failing ends the cleanup with one error record
+    naming the prefix, and the workspace it acquired is still released.
+    """
+    from tests.fakes import FakeGitService, FakeWorkspaceProvider
+
+    class RefusingGit(FakeGitService):
+        async def list_remote_branches(self, cwd, remote, prefix):
+            listed = await super().list_remote_branches(cwd, remote, prefix)
+            if failing == "list_remote_branches":
+                raise RuntimeError("remote refused the listing")
+            return listed
+
+        async def delete_remote_branch(self, cwd, remote, branch):
+            await super().delete_remote_branch(cwd, remote, branch)
+            if failing == "delete_remote_branch":
+                raise RuntimeError("remote refused the deletion")
+
+    fake_git = RefusingGit(remote_branches=["feat/x-backup-11112222"])
+    fake_workspace = FakeWorkspaceProvider()
+    merger = GitBranchMerger(git=fake_git, workspace=fake_workspace, remote="origin")
+
+    with structlog.testing.capture_logs() as logs:
+        answer = await merger.cleanup_backup_branches(
+            repo_path="/tmp/repo",
+            repo_url=None,
+            prefix="feat/x",
+        )
+
+    assert answer is None
+    # The failing act was reached: the refusal is the one this case planted.
+    assert failing in {call[0] for call in fake_git.calls}
+    failures = [e for e in logs if e["event"] == "backup_cleanup_failed"]
+    assert len(failures) == 1
+    assert failures[0]["log_level"] == "error"
+    assert failures[0]["prefix"] == "feat/x"
+    assert "refused" in failures[0]["error"]
+    assert ("release", "/tmp/fake-workspace") in fake_workspace.calls
+
+
 async def test_cleanup_backup_branches_empty_list_still_releases() -> None:
     """When no branches match, workspace is still acquired and released."""
     from tests.fakes import FakeGitService, FakeWorkspaceProvider
