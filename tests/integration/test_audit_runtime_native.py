@@ -29,7 +29,11 @@ from kodezart.types.domain.agent import (
     Ruling,
     RulingProtectedTestRef,
 )
-from kodezart.types.domain.assertion_drift import AssertionDeviationClaim
+from kodezart.types.domain.assertion_drift import (
+    AssertionDeviationClaim,
+    AssertionSource,
+    ProtectedTestRef,
+)
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_evidence import AuditRestampTrace
 from kodezart.types.domain.audit_overclaim import OverclaimKind
@@ -898,7 +902,95 @@ async def test_the_composed_audit_carries_a_changed_protected_assertion_as_a_cla
     ]
     assert state_writes(server) == []
     assert server.issues[CHILD].status == "Done"
-    assert len(server.comments) - comments_before == len(scope.writes)
+    # The two records the pass publishes for ROOT, whether or not a claim was
+    # made: nothing is written for the claim.
+    assert len(server.comments) - comments_before == 2
+    assert len(scope.writes) == 2
+
+
+class ClaimingComparison:
+    """A configured comparison that reports one changed protected assertion.
+
+    It stands in for the recorded comparison so the claim can land on a
+    criterion the pass judges: every criterion the composed comparison finds
+    drift on is graded behind its head, and the pass defers a Done one of
+    those and refuses coverage of any other before its claim could count.
+    """
+
+    def __init__(self, *, graded_sha, head_sha):
+        self.claim = AssertionDeviationClaim(
+            protected_test=ProtectedTestRef(
+                source_ref="protection-record-comment",
+                path=PATH,
+                qualified_name="test_contract",
+            ),
+            graded_sha=graded_sha,
+            head_sha=head_sha,
+            graded_blob_sha="graded-blob",
+            head_blob_sha="head-blob",
+            before=(
+                AssertionSource(
+                    line=5,
+                    expression="implementation() == 1",
+                    structural_form="Compare",
+                ),
+            ),
+            after=(
+                AssertionSource(
+                    line=5,
+                    expression="implementation() == 2",
+                    structural_form="Compare",
+                ),
+            ),
+        )
+        self.requests = []
+
+    async def compare(self, request):
+        self.requests.append(request.criterion_key)
+        return (self.claim,)
+
+
+@pytest.mark.parametrize("claimed", [True, False], ids=["claimed", "unclaimed"])
+async def test_a_drift_claim_on_a_judged_criterion_publishes_nothing_of_its_own(
+    native_audit, claimed
+):
+    """A claim is evidence, not a verdict, on a criterion the pass judges.
+
+    CHILD is Done and graded at the head, so the pass judges it rather than
+    deferring it, and its drift reading reaches the reasons it refuses
+    coverage for and the publications it writes. With a claim or without
+    one, the pass publishes the same records, refuses nothing and moves no
+    state: the claim is carried on the raw observations and nowhere else.
+    """
+    audit, _executor, server, _tracker, _git, _workspace, repository = native_audit
+    _remote, _author, _observer, prior, head = repository
+    (target,) = audit._targets
+    comparison = ClaimingComparison(graded_sha=prior, head_sha=head)
+    if claimed:
+        target.sweep._drift = comparison
+    comments_before = len(server.comments)
+
+    assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    scope = audit.last_report.scopes[0]
+    assert scope.status == "complete", audit.last_report.model_dump_json()
+    assert {row.issue_key for row in scope.coverage.covered} == {ROOT, CHILD}
+    claims = [
+        row
+        for row in scope.raw_observations
+        if isinstance(row, AssertionDeviationClaim)
+    ]
+    if claimed:
+        assert claims == [comparison.claim]
+        assert comparison.requests == [CHILD]
+    else:
+        assert claims == []
+    # The same nine records with the claim as without it, none of them about
+    # the changed assertion, and no state moved.
+    assert len(server.comments) - comments_before == 9
+    assert len(scope.writes) == 9
+    assert not any("implementation() == 2" in row.body for row in server.comments)
+    assert state_writes(server) == []
+    assert server.issues[CHILD].status == "Done"
 
 
 async def test_an_unreadable_protection_record_refuses_the_criterion_not_the_audit(
