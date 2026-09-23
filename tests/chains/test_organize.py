@@ -1873,7 +1873,7 @@ async def test_an_unverifiable_verdict_first_met_in_verification_reaches_the_hal
 SECOND_SURFACE = "second-surface"
 
 
-def second_surface_regrowth(monkeypatch, *, body):
+def second_surface_regrowth(monkeypatch, *, body, convergence_bound=2):
     """A ticket stage whose fix defects a surface the round did not author.
 
     The subject's assessment names the class on the subject while its body
@@ -1892,7 +1892,7 @@ def second_surface_regrowth(monkeypatch, *, body):
         under_approval=True,
         phases=h.ticket_only,
         body=body,
-        convergence_bound=2,
+        convergence_bound=convergence_bound,
     )
     board.server.issues[SECOND_SURFACE] = FakeMcpIssue(
         id=SECOND_SURFACE,
@@ -2032,17 +2032,21 @@ async def test_a_fix_that_defects_a_second_surface_is_worked_in_the_next_round(
 async def test_a_round_that_writes_nothing_does_not_terminate(monkeypatch):
     """An author round with nothing to write is not a dry verification round.
 
-    The author's proposal equals the board, so the round writes nothing;
-    the verification that follows still names the class, and the loop goes
-    round again until the bound rather than ending on the quiet round.
+    Round one opens no author session: the subject is admitted as it stands,
+    and its dry verification names the class on the criterion child. Round
+    two authors the subject and its proposal equals the board, so it writes
+    nothing; its own verification still names the class, and round three
+    follows it with a further author session and a further verification.
+    The loop ends only at the bound, never on the quiet round.
     """
     h = owner_harness()
     body = f"{h.MANDATE_SENTENCE} {h.GROUNDED_BODY}"
-    owner, board, executor, _observed, _examined = second_surface_regrowth(
-        monkeypatch, body=body
+    owner, board, executor, observed, _examined = second_surface_regrowth(
+        monkeypatch, body=body, convergence_bound=3
     )
     report = await h.run_owner(owner)
-    assert subject_proposals(executor)
+    assert len(subject_proposals(executor)) == 2
+    assert observed == [(SECOND_SURFACE, h.REGROWTH_CLASS)] * 3
     assert [
         args
         for name, args in board.calls
@@ -2050,7 +2054,7 @@ async def test_a_round_that_writes_nothing_does_not_terminate(monkeypatch):
     ] == []
     assert board.server.issues[CLAIMED_ISSUE].description == body
     assert report.halt.cause == "convergence_exhausted"
-    assert report.halt.bound.rounds_used == 2
+    assert report.halt.bound.rounds_used == 3
     assert report.completed_phases == ()
 
 
