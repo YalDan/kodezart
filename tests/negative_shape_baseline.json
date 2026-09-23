@@ -276,7 +276,7 @@
   "tests/integration/test_scope_launch_freshness.py": 5,
   "tests/integration/test_scope_runtime.py": 514,
   "tests/integration/test_scope_union.py": 48,
-  "tests/integration/test_scope_walk_invariants.py": 21,
+  "tests/integration/test_scope_walk_invariants.py": 22,
   "tests/integration/test_self_running_chain.py": 21,
   "tests/integration/test_session_resume.py": 6,
   "tests/integration/test_stacked_scope.py": 29,
