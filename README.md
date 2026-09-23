@@ -512,13 +512,16 @@ escalation returns unresolved. Missing or ambiguous records, unreadable
 reply links and incomplete pages raise `EscalationReadError`. Resolution
 reads every comment page and does not parse historical escalation bodies
 as JSON, cache answers, write comments or change labels. The supervisor tick
-consumes this read for each ready lane's open lapse questions. That tick also
-observes each declared scope's stage barrier from its roster and stage markers,
-reads the ready set of every scope the operation declares, observes the lane
-tally arm for each ready lane and each finished member, and observes every
-member's own stream for a criterion moved back that nobody reported, a lapse
-nothing will re-derive, and an evaluation that opened more sessions than it
-declared.
+consumes this read for the open lapse questions of each ready lane and of each
+lane held on its own open question. It reads each scope without the walker's
+stage barriers, so a scope whose walk is held on an open decision is still
+observed; a held lane's questions are aged over its whole criterion subtree,
+and its tally is not observed. That tick also observes each declared scope's
+stage barrier from its roster and stage markers, reads the ready set of every
+scope the operation declares, observes the lane tally arm for each ready lane
+and each finished member, and observes every member's own stream for a
+criterion moved back that nobody reported, a lapse nothing will re-derive, and
+an evaluation that opened more sessions than it declared.
 
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the

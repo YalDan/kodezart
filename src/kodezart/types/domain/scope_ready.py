@@ -69,6 +69,18 @@ class ScopeReadyLane:
 
 
 @dataclass(frozen=True, slots=True)
+class ScopeHeldMember:
+    """One member whose walk is held on an open decision, and its criteria.
+
+    ``criteria`` is every criterion record beneath the member, open or
+    closed: the roster its lapse questions could have been raised for.
+    """
+
+    issue: TrackerIssue
+    criteria: tuple[TrackerIssue, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ScopeReadySet:
     """One reading of a scope: what owes work, what is blocked, what is finished.
 
@@ -93,6 +105,10 @@ class ScopeReadySet:
     reading silently: a caller that saw neither the key in ``unresolved`` nor
     a statement about it could not tell a set-aside obligation from one that
     was never there (KOD-794).
+
+    ``held`` carries the members classified for decision, with their
+    criteria, when the read was taken without the walker's stage barriers.
+    The walker's own read refuses such a scope, so for it ``held`` is empty.
     """
 
     scope: ResolvedScope
@@ -104,3 +120,4 @@ class ScopeReadySet:
     unresolved: tuple[str, ...] = ()
     unreachable: tuple[UnreachableCriterion, ...] = ()
     excluded: tuple[str, ...] = ()
+    held: tuple[ScopeHeldMember, ...] = ()

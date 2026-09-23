@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 import structlog.testing
 
+from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.config.app import AppConfig
 from kodezart.core.errors import PassGateCapabilityError
-from kodezart.domain.errors import LaneRecordReadError
+from kodezart.domain.errors import LaneRecordReadError, ScopePlanRefusalError
 from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.lapse import lapse_escalation_key
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
@@ -42,6 +43,7 @@ from tests.fakes import (
     FakeAgentRunner,
     FakeDeliveryProbe,
     FakeTrackerPort,
+    make_tracker_issue,
 )
 from tests.integration.test_scope_runtime import (
     FORGE_ORIGIN,
@@ -66,6 +68,7 @@ from tests.services.lane_tally_fixtures import (
     answer_question,
     board,
     checks,
+    criterion,
     declared_set_fixture,
     question_subject,
     raise_lapse_question,
@@ -1419,6 +1422,123 @@ async def test_the_same_question_answered_by_a_decision_record_raises_nothing(
     assert len(cleared.readings) == 1
     assert len(await ageing_events(port, RunEventKind.RUN_ALARM_CLEARED)) == 1
     assert len(await ageing_events(port, RunEventKind.RUN_ALARM_RAISED)) == 1
+
+
+#: A deliverable child beneath lane B owing a criterion of its own, so B's
+#: roster reaches deeper than its direct criteria, as a fire's does.
+PART = "LANE-B/part"
+NESTED = "LANE-B/part/check"
+NESTED_QUESTION = lapse_escalation_key(NESTED)
+#: More commits than the tally bound on both lanes, with every criterion open.
+STALLED = (RAISED_AT, "b" * 40, HEAD)
+
+
+async def held_board():
+    """Lane B held on its open lapse question, lane C ready and stalled.
+
+    The question is about the criterion beneath B's deliverable child, and it
+    is raised through the production writer, so B is classified for decision
+    exactly as a lapsed observation leaves it.
+    """
+    operation = declared(scopes=(SCOPE,))
+    port = await board(
+        lanes=LANES,
+        commits=STALLED,
+        scope=SCOPE,
+        holder=supervisor_holder(operation_name=operation.operation_name),
+        prefixes=operation.marker_prefixes,
+        extra=(
+            make_tracker_issue(PART, parent_key="LANE-B"),
+            criterion(NESTED, lane=PART),
+        ),
+    )
+    await raise_lapse_question(port, "LANE-B", NESTED, graded_sha=RAISED_AT)
+    return port, operation
+
+
+async def test_the_walker_refuses_the_held_scope_and_the_supervisor_reads_it():
+    """One read, two callers: the walker's refuses, the supervisor's holds B.
+
+    With the stage barriers on, as the walker reads, the scope holding B's
+    open decision is refused by name. With them off, as the supervisor reads,
+    C is the ready lane and B is held with every criterion beneath it,
+    including the one under its deliverable child.
+    """
+    port, _ = await held_board()
+    assert "decision" in port.issues["LANE-B"].issue_labels
+
+    with pytest.raises(ScopePlanRefusalError) as refused:
+        await read_scope_ready(ref=SCOPE, tracker=port)
+    assert refused.value.open_decisions == ("LANE-B",)
+
+    ready = await read_scope_ready(ref=SCOPE, tracker=port, stage_barriers=False)
+    assert [row.issue.issue_key for row in ready.ready] == ["LANE-C"]
+    assert [member.issue.issue_key for member in ready.held] == ["LANE-B"]
+    assert [row.issue_key for row in ready.held[0].criteria] == [
+        "LANE-B/check",
+        "LANE-B/second",
+        NESTED,
+    ]
+    assert ready.closed == ()
+    assert ready.unapproved == ()
+
+
+async def test_a_tick_over_a_held_lane_ages_its_question_and_tallies_only_the_other():
+    """Lane B held on an open lapse question; lane C ready, its tally unmoved.
+
+    Both lanes recorded three commits against a tally bound of one with every
+    criterion open. The tick completes, raises C's TALLY_UNMOVED once and
+    ages B's question past its commit bound, and raises no TALLY_UNMOVED for
+    B: a held lane is waiting on a person, and the ageing alarm is the alarm
+    for that.
+    """
+    port, operation = await held_board()
+    scheduled = build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            run_alarm_max_commits_without_closure=BOUND,
+            run_alarm_escalation_age_max_commits=1,
+            run_alarm_escalation_age_max_ticks=10,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=operation,
+        tracker=port,
+    )
+
+    assert await tick(scheduled) is PassRun.RAN
+
+    tallied = stored_alarm(
+        await port.read_run_alarms(issue_key="LANE-C"),
+        subject=subject("LANE-C"),
+        signal=SIGNAL,
+    )
+    assert tallied is not None
+    assert alarm_raised(tallied)
+    assert [
+        event.subject_key
+        for event in await port.lane_run_events(issue_key="LANE-C", lane_key="LANE-C")
+        if event.kind is RunEventKind.RUN_ALARM_RAISED
+    ] == ["tally_unmoved"]
+
+    carried = await port.read_run_alarms(issue_key="LANE-B")
+    assert stored_alarm(carried, subject=subject("LANE-B"), signal=SIGNAL) is None
+    aged = stored_alarm(
+        carried,
+        subject=question_subject("LANE-B", NESTED_QUESTION),
+        signal=AlarmSignal.ESCALATION_AGEING,
+    )
+    assert aged is not None
+    assert aged.bound == AlarmBound(
+        config_field="run_alarm_escalation_age_max_commits",
+        configured_value=1,
+        observed_value=2,
+    )
+    assert [
+        event.subject_key
+        for event in await port.lane_run_events(issue_key="LANE-B", lane_key="LANE-B")
+        if event.kind is RunEventKind.RUN_ALARM_RAISED
+    ] == [f"escalation_ageing:{NESTED_QUESTION}"]
 
 
 class RecordingPort:

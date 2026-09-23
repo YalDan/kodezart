@@ -169,14 +169,18 @@ The supervisor tick observes each declared scope's stage barrier under the
 scope arm of `TALLY_UNMOVED`, read from the roster and the stage markers and
 logged, never recorded; every member of the scope's ready reading: for a ready
 or finished lane the lane tally arm of `TALLY_UNMOVED`, and for every lane,
-blocked and unapproved ones included, the criteria its own stream accounts
-for, under `TALLY_REGRESSED` and `LAPSE_UNDISCHARGED`, and the node-session
-openings its stream holds, under `COMPOSITION_SUBSTITUTED`; and for each ready
-lane the age of every open lapse question it holds, under
-`ESCALATION_AGEING`. Per lane it reads the run-state record, every alarm record
-on that lane's issue in one listing, and the lane's stream, composes what each
-address should hold, and writes only where the two differ. It moves no state
-and opens no session.
+blocked, unapproved and held ones included, the criteria its own stream
+accounts for, under `TALLY_REGRESSED` and `LAPSE_UNDISCHARGED`, and the
+node-session openings its stream holds, under `COMPOSITION_SUBSTITUTED`; and
+for each ready lane, and each lane held on its own open question, the age of
+every open lapse question it holds, under `ESCALATION_AGEING`. It reads each
+scope without the walker's stage barriers, so a scope whose walk is held on an
+open decision is still observed: a lane its lapse question classified for
+decision has its questions aged over its whole criterion subtree, and its
+tally is not observed, because it is waiting on a person. Per lane it reads
+the run-state record, every alarm record on that lane's issue in one listing,
+and the lane's stream, composes what each address should hold, and writes only
+where the two differ. It moves no state and opens no session.
 It is registered only when the operation declares `[[organize_scopes]]` rows and
 the deployment dials a tracker; either one absent registers nothing and names
 which was missing in the boot log.

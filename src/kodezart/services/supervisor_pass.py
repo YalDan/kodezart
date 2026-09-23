@@ -26,6 +26,7 @@ from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.run_alarm import RunAlarm
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
+from kodezart.types.domain.tracker import TrackerIssue
 
 #: The name this tick is registered under on the existing scheduler.
 SUPERVISOR_TICK_NAME = "supervisor"
@@ -55,7 +56,7 @@ class SupervisorIncompleteError(Exception):
 
 
 class SupervisorPass:
-    """Every declared scope's ready lanes and finished members, once per tick."""
+    """Every declared scope's ready, finished and held members, once per tick."""
 
     def __init__(
         self,
@@ -90,6 +91,15 @@ class SupervisorPass:
         is ready again, while what its stream already said about the criteria
         it graded is still read. A lane holding a lapse nothing will
         re-derive is by construction one of those.
+
+        A scope whose walk is held on an open decision is observed all the
+        same: the scope is read without the walker's stage barriers. A member
+        its own lapse question classified for decision is held: it is
+        waiting on a person, so it is observed as waiting — its tally is not
+        composed, and a tally raise standing on it stays as it stood until
+        the lane is ready again, as a blocked lane's does — and its open
+        questions are aged over its whole criterion subtree, because the
+        ageing alarm is the alarm for a lane waiting on a person.
 
         Each lane's open lapse questions are aged beside its alarms, measured
         from the scope's position: every member's recorded commits, read once
@@ -127,6 +137,7 @@ class SupervisorPass:
                     ready=ready,
                     lane_key=row.issue.issue_key,
                     standing=Ready(roster=row.criteria, gap=row.gap),
+                    questions=row.criteria,
                     position=position,
                     failed=failed,
                 )
@@ -135,6 +146,7 @@ class SupervisorPass:
                     ready=ready,
                     lane_key=issue.issue_key,
                     standing=Finished(),
+                    questions=(),
                     position=position,
                     failed=failed,
                 )
@@ -143,6 +155,7 @@ class SupervisorPass:
                     ready=ready,
                     lane_key=blocked.issue_key,
                     standing=Waiting(),
+                    questions=(),
                     position=position,
                     failed=failed,
                 )
@@ -151,6 +164,16 @@ class SupervisorPass:
                     ready=ready,
                     lane_key=unapproved,
                     standing=Waiting(),
+                    questions=(),
+                    position=position,
+                    failed=failed,
+                )
+            for member in ready.held:
+                await self._observe(
+                    ready=ready,
+                    lane_key=member.issue.issue_key,
+                    standing=Waiting(),
+                    questions=member.criteria,
                     position=position,
                     failed=failed,
                 )
@@ -180,13 +203,15 @@ class SupervisorPass:
         ready: ScopeReadySet,
         lane_key: str,
         standing: LaneStanding,
+        questions: Sequence[TrackerIssue],
         position: ScopePosition | None,
         failed: list[str],
     ) -> None:
         """One lane's own observations, whose failure is that lane's alone.
 
-        The lane's open questions are those its own roster could have raised,
-        so a finished or waiting member, observed with no roster, ages none.
+        The lane's open questions are those *questions*, its own roster, could
+        have raised: a ready lane's roster, a held member's whole criterion
+        subtree, and nothing for a finished or blocked or unapproved member.
         """
         try:
             await self._alarms.observe_lane(
@@ -199,7 +224,7 @@ class SupervisorPass:
                 await self._ageing.observe(
                     scope_key=ready.scope.ref.key,
                     lane_key=lane_key,
-                    criteria=standing.roster if isinstance(standing, Ready) else (),
+                    criteria=questions,
                     position=position,
                 )
         except Exception:

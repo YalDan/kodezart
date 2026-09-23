@@ -70,8 +70,11 @@ def build_supervisor_pass(
         config=config,
     )
 
+    # The supervisor reads without the walker's stage barriers: a scope whose
+    # walk is held on an open decision is still observed, and what holds it
+    # is the question the ageing arm is there to age.
     def read_ready(ref: ScopeRef) -> Awaitable[ScopeReadySet]:
-        return read_scope_ready(ref=ref, tracker=tracker)
+        return read_scope_ready(ref=ref, tracker=tracker, stage_barriers=False)
 
     # The scope's stage barrier at each rung is the service's to read, typed
     # on the tally role alone, the roster behind its classification

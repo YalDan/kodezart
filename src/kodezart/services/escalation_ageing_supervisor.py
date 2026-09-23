@@ -64,16 +64,18 @@ class EscalationAgeingSupervisor:
     async def position(self, *, ready: ScopeReadySet) -> ScopePosition:
         """Every member the ready read names, as the commits its record holds.
 
-        Blocked, unapproved and closed members are read as well as ready
-        ones: a lane blocked when a question was first observed would
-        otherwise count its whole history once it is ready again. A member
-        with no record is absent, and a damaged record refuses.
+        Blocked, unapproved, closed and held members are read as well as
+        ready ones: a lane blocked when a question was first observed would
+        otherwise count its whole history once it is ready again, and a lane
+        held on its own open question is the lane that question is about. A
+        member with no record is absent, and a damaged record refuses.
         """
         keys = {
             *(row.issue.issue_key for row in ready.ready),
             *(row.issue_key for row in ready.blocked),
             *ready.unapproved,
             *(issue.issue_key for issue in ready.closed),
+            *(member.issue.issue_key for member in ready.held),
         }
         orders: dict[str, tuple[str, ...]] = {}
         for key in sorted(keys):

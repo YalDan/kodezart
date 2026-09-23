@@ -16,10 +16,10 @@ from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
 from kodezart.domain.lapse import lapse_escalation_key
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
-from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.escalation_ageing_supervisor import EscalationAgeingSupervisor
 from kodezart.services.escalation_records import EscalationRecordReader
+from kodezart.services.lane_escalation import LaneEscalationWriter
 from kodezart.services.lane_lapse_escalation import lapse_question
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.run_alarm_recorder import RunAlarmRecorder
@@ -31,6 +31,7 @@ from kodezart.types.domain.criterion_lifecycle import (
     CrossOffState,
     RederivationClass,
 )
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
 from kodezart.types.domain.run_alarm import (
     AlarmSignal,
@@ -41,7 +42,7 @@ from kodezart.types.domain.run_alarm import (
 from kodezart.types.domain.run_state import LaneCommit, LaneEscalation, LaneRunState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import WorkflowStateKind
-from tests.fakes import FakeTrackerPort, make_tracker_issue
+from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
 
 SCOPE = "scoped-project"
 HEAD = "a" * 40
@@ -59,6 +60,9 @@ PREFIXES = {
     "run_alarm": "fixture-runalarm",
     "escalation": "fixture-escalation",
 }
+#: The job a test's own lapse question is raised under: the raising fire's
+#: identity, never the supervisor's.
+RAISING_JOB = "raising-fire"
 #: The criteria-stage label the board's lanes carry, as the walker's own
 #: fixtures spell it, so a scoped read of this board selects them.
 STAGED = "criteria-staged"
@@ -90,6 +94,9 @@ class Board:
     *questions* holds the ``(lane, occurrence)`` pairs of the lapse questions
     a test raised on the board, because each one's ageing record is an
     address the tick may write under and no other question's is.
+
+    *classifications* holds the classification writes a test's own raise
+    made, in order, because the tick itself writes none.
     """
 
     port: FakeTrackerPort
@@ -98,6 +105,7 @@ class Board:
     scope_keys: dict[str, str] = field(default_factory=dict)
     allowed: set[tuple[str, str]] = field(default_factory=set)
     questions: set[tuple[str, str]] = field(default_factory=set)
+    classifications: list[tuple[str, str]] = field(default_factory=list)
     states: dict[str, tuple[str, WorkflowStateKind]] = field(default_factory=dict)
     state_changes: dict[str, datetime] = field(default_factory=dict)
 
@@ -183,6 +191,7 @@ async def board(
     scope=None,
     scopes=None,
     holder=HOLDER,
+    extra=(),
 ):
     """Each lane's issue, its criterion family, and the record its loop left.
 
@@ -195,6 +204,10 @@ async def board(
     scope reference to the lanes that are its members, so one board can carry a
     lane under each of several declared scopes. It and *scope* are two
     spellings of the one membership map, so only one of them may be given.
+
+    *extra* holds further issues beneath the lanes, such as a deliverable
+    child owing criteria of its own, so a lane's subtree can reach deeper than
+    its direct criteria.
     """
     if scope is not None and scopes is not None:
         raise ValueError("a board states its scope memberships once")
@@ -216,7 +229,8 @@ async def board(
                 ),
                 *subtree(lane),
             )
-        ],
+        ]
+        + list(extra),
         marker_prefixes=prefixes,
         scope_memberships=memberships,
         criteria_stage_label_key=None if memberships is None else STAGED,
@@ -302,10 +316,12 @@ def question_subject(lane, occurrence, *, scope_key=SCOPE):
 async def raise_lapse_question(port, lane, criterion_key, *, graded_sha):
     """Put the lapse question about *criterion_key* on *lane*, as its writer does.
 
-    The occurrence, the marker and the body are the writer's own composition,
-    so a board holding this question holds what a lapsed observation leaves.
-    The write is the test's and not the tick's, so it is named as a foreign
-    write, and the question's ageing address joins the tick's declared set.
+    The question goes through the production writer, so the board holds what a
+    lapsed observation leaves: the question under its own marker and the lane
+    classified for decision. The writes are the test's and not the tick's, so
+    the comment is named as a foreign write, the classification is recorded as
+    the board's own, and the question's ageing address joins the tick's
+    declared set.
     """
     occurrence = lapse_escalation_key(criterion_key)
     question = lapse_question(
@@ -329,12 +345,23 @@ async def raise_lapse_question(port, lane, criterion_key, *, graded_sha):
     allow_foreign_write(port, lane=lane, marker=marker)
     entry = next(row for row in BOARDS if row.port is port)
     entry.questions.add((lane, occurrence))
-    return await port.post_comment(
-        issue_key=lane,
-        body=marked_comment_body(
-            marker=marker, body=question.model_dump_json(by_alias=True)
+    writer = LaneEscalationWriter(
+        tracker=port,
+        gate=PassThroughGate(),
+        operation=operation(port.marker_prefixes).model_copy(
+            update={"issue_labels": {"decision": "decision"}}
         ),
+        surface_lease_seconds=LEASE_SECONDS,
     )
+    mark = len(port.classification_writes)
+    comment = await writer.raise_escalation(
+        lane_key=lane,
+        job_id=RAISING_JOB,
+        escalation=question,
+        visibility=RepoVisibility.PUBLIC,
+    )
+    entry.classifications.extend(port.classification_writes[mark:])
+    return comment
 
 
 async def answer_question(port, lane, question):
@@ -561,7 +588,7 @@ def assert_every_write_is_inside_the_declared_set():
         assert port.workflow_writes == []
         assert port.restored_states == []
         assert port.queue_writes == []
-        assert port.classification_writes == []
+        assert port.classification_writes == entry.classifications
         assert port.claim_writes == []
         assert [
             lease for lease in port.leases.values() if lease.holder == entry.holder
