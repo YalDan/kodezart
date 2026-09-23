@@ -16,7 +16,7 @@ from kodezart.domain.errors import (
     AuditEvidenceReadError,
     PRStateReadError,
 )
-from kodezart.domain.lane_record import associated_branches, render_lane_record
+from kodezart.domain.lane_record import render_lane_record
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.services.audit_terminal import AuditTerminalReader
 from kodezart.services.lane_records import LaneRecordReader
@@ -26,6 +26,7 @@ from kodezart.types.domain.audit_terminal import (
     AuditTerminalRequest,
     TerminalDiscrepancy,
 )
+from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
@@ -246,34 +247,52 @@ async def test_reaped_and_prior_associations_do_not_need_live_refs(setup):
     assert all(call[-1] == BRANCH for call in git.calls)
 
 
+@pytest.mark.parametrize("reaped", [False, True], ids=["live", "reaped"])
 async def test_a_reaped_branch_is_enumerated_and_reported_absent_by_the_remote_read(
-    setup, server, tracker_writes
+    setup, server, forge, tracker_writes, reaped
 ):
-    """Absence is the remote read's answer; the record keeps the association.
+    """A recorded recovery ref stays associated; its liveness is a remote read.
 
-    Every recorded branch is gone from the remote, as consolidation and the
-    backup reaper leave them. The association query still names each one,
-    and the only calls that name any of them are the remote-branch reads that
-    report the branch absent; nothing asks the tracker about them.
+    The pull request's head is the record's RECOVERY association, which the
+    tracker record keeps whether or not the ref still exists.  While the ref
+    is live at the pull request's head, that association resolves it and the
+    terminal holds.  Once the ref and the loop branch are reaped, the remote
+    reads of those two names are what report them absent: the loop branch as
+    no branch, the recovery ref as an association with no live head.  Nothing
+    asks the tracker about either name.
     """
     reader, git, record, _ = setup
-    recorded = associated_branches(record=record)
-    for branch in recorded:
-        git._remote_branch_shas[branch] = None
+    recovery = "reaped-ref"
+    assert (recovery, BranchRole.RECOVERY) in {
+        (item.branch, item.role) for item in record.associations
+    }
+    forge[1][(REPO, 7)] = forge[1][(REPO, 7)].model_copy(
+        update={"head_branch": recovery}
+    )
+    git._remote_branch_shas[recovery] = None if reaped else HEAD
+    if reaped:
+        git._remote_branch_shas[BRANCH] = None
     before, asked = tracker_writes(), len(server.calls)
     result = await reader.observe(REQUEST)
-    assert associated_branches(record=record) == recorded
-    assert {"reaped-ref", BRANCH} <= recorded
-    assert TerminalDiscrepancy.NO_BRANCH in result.discrepancies
-    assert result.branch_head is None
-    naming = [call for call in git.calls if set(call) & recorded]
-    assert naming
+    if reaped:
+        assert result.verdict is AuditVerdict.REFUTED
+        assert result.discrepancies == (
+            TerminalDiscrepancy.NO_BRANCH,
+            TerminalDiscrepancy.UNRESOLVED_ASSOCIATION,
+        )
+        assert result.branch_head is None
+    else:
+        assert result.verdict is AuditVerdict.HOLDS
+        assert result.discrepancies == ()
+        assert result.branch_head == HEAD
+    naming = [call for call in git.calls if call[-1] in {recovery, BRANCH}]
+    assert {call[-1] for call in naming} == {recovery, BRANCH}
     assert {call[0] for call in naming} == {"remote_branch_sha"}
     assert tracker_writes() == before
     assert not [
         call
         for call in server.calls[asked:]
-        if any(branch in str(call[1]) for branch in recorded)
+        if any(branch in str(call[1]) for branch in (recovery, BRANCH))
     ]
 
 
