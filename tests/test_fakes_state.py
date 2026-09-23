@@ -426,9 +426,11 @@ async def write_work_ref(port: FakeTrackerPort) -> None:
 
 async def write_scope_label(port: FakeTrackerPort) -> None:
     # A scope label is defined on the workspace, so this ensure stamps no
-    # issue, and the three attributes it moves are state a consumer reads
-    # back rather than journals — and on a second ensure of the same
-    # identifier they would not move at all. The attempt is the only trace.
+    # issue. A new one lands in the three attributes a label instatement
+    # fills — the scope labels, the identifiers the workspace knows and the
+    # containers each value is defined in — and on a second ensure of the
+    # same identifier those would not move at all, so the attempt is the one
+    # trace every ensure leaves.
     await port.ensure_mappings(
         refs=[
             MappingRef(
@@ -441,9 +443,9 @@ async def write_scope_label(port: FakeTrackerPort) -> None:
 
 
 async def write_queue_state_mapping(port: FakeTrackerPort) -> None:
-    # The other instatable kinds address the workspace too, and the two
-    # attributes this arm fills are read back rather than journalled, so the
-    # instatement is the only trace a write-set check can read.
+    # The other instatable kinds address the workspace too: this arm fills
+    # the identifiers the workspace knows and the containers each value is
+    # defined in, and records the instatement itself.
     await port.ensure_mappings(
         refs=[
             MappingRef(
@@ -451,6 +453,21 @@ async def write_queue_state_mapping(port: FakeTrackerPort) -> None:
                 name="approved",
                 identifier="fixture-queue-state",
                 scope=FIXTURE_TEAM_KEY,
+            ),
+        ],
+    )
+
+
+async def write_issue_label(port: FakeTrackerPort) -> None:
+    # A label the workspace does not hold yet, so the ensure creates it: its
+    # identifier becomes known, defined in the container the ref declares.
+    await port.ensure_mappings(
+        refs=[
+            MappingRef(
+                kind=MappingKind.ISSUE_LABEL,
+                name="a label",
+                identifier="fixture-label",
+                scope=CONTAINER,
             ),
         ],
     )
@@ -801,17 +818,33 @@ CASES: Mapping[str, Case] = {
     "a document ensured": Case(
         method="ensure_mappings",
         call=write_document,
-        journals=frozenset({"_documents", "document_titles"}),
+        journals=frozenset({"_documents", "document_titles", "known_identifiers"}),
     ),
     "a scope label ensured": Case(
         method="ensure_mappings",
         call=write_scope_label,
-        journals=frozenset({"label_writes"}),
+        journals=frozenset(
+            {
+                "label_writes",
+                "scope_label_identifiers",
+                "known_identifiers",
+                "mapping_containers",
+            }
+        ),
     ),
     "a queue state instated": Case(
         method="ensure_mappings",
         call=write_queue_state_mapping,
-        journals=frozenset({"mapping_instatements"}),
+        journals=frozenset(
+            {"mapping_instatements", "known_identifiers", "mapping_containers"}
+        ),
+    ),
+    "an issue label instated": Case(
+        method="ensure_mappings",
+        call=write_issue_label,
+        journals=frozenset(
+            {"mapping_instatements", "known_identifiers", "mapping_containers"}
+        ),
     ),
     "an active claim read": Case(
         method="active_claim",

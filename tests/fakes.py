@@ -4132,10 +4132,12 @@ class FakeTrackerPort:
             )
         self.graph_writes.append(issue_key)
         self.issues[issue_key] = candidate
+        self._wrote(issue_key)
         for peer in changed_peers(issue_key=issue_key, changes=changes, issues=current):
             self.graph_writes.append(peer.issue_key)
             self.issues[peer.issue_key] = peer
-        return candidate
+            self._wrote(peer.issue_key)
+        return self.issues[issue_key]
 
     def _require_graph_holder(
         self, *, kind: SurfaceKind, issue_key: str, holder: str
@@ -5370,10 +5372,12 @@ def tracker_state(port: FakeTrackerPort) -> dict[str, object]:
 #: then invisible to a check that looked only for a stamp, the scope-label
 #: ensures and the other mapping instatements, which address the workspace
 #: and so stamp no issue at all, and the graph writes, which replace issues
-#: in place and stamp none of them.  The last two are the unlock attempts —
-#: a claim release and a surface release — which move nothing on a board
-#: holding neither and would therefore be invisible to a check that read the
-#: locks back instead of the attempt.
+#: in place.  Then the unlock attempts — a claim
+#: release and a surface release — which move nothing on a board holding
+#: neither and would therefore be invisible to a check that read the locks
+#: back instead of the attempt.  The last three are where a label or a scope
+#: label the ensure contract instates lands: the containers each value is
+#: defined in, the identifiers the workspace knows, and the scope labels.
 #:
 #: The set is not trusted to be complete either: the census beside this
 #: module drives EVERY member the port declares, read off its class line with
@@ -5408,6 +5412,9 @@ TRACKER_WRITE_JOURNALS = frozenset(
         "graph_writes",
         "claim_releases",
         "lease_releases",
+        "mapping_containers",
+        "known_identifiers",
+        "scope_label_identifiers",
     }
 )
 
