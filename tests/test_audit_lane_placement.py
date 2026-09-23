@@ -55,8 +55,15 @@ function body; ``eval`` or ``exec`` is not read either.  Only ``*.py`` is
 walked: a ``.pyi`` stub restating an owned word is left to code review.
 The same mechanism, asked one more question, states that the check-red
 vocabulary and the body that classifies a red are each declared once in the
-package: the member set and the answered shape are read off the symbols, so a
-copy under another name or another enum alias is reported (KOD-322).
+package: the member names, the member values and the answered shape are read
+off the symbols, and only the owner's own class and function are exempt, by
+module and name together.  An enum is recognised through ``from enum import
+… as …``, through ``import enum`` and an attribute base, and in the
+functional form; a vocabulary is carried by any superset of its names or its
+values; a classifier is any function whose return annotation resolves,
+through import aliases, dotted paths, unions and string annotations, to the
+classification or the vocabulary; and a construction of the classification
+outside the owner's function is reported (KOD-322).
 """
 
 import ast
@@ -156,6 +163,11 @@ RED_MEMBERS = frozenset(member.name for member in CheckRedClass)
 #: annotation rather than named here: a second body answering it is a second
 #: classifier.
 RED_OBSERVATION = classify_red_checks.__annotations__["return"].__name__
+#: The vocabulary's member values: a copy may keep the values under other
+#: member names, which is the same vocabulary as persisted.
+RED_VALUES = frozenset(member.value for member in CheckRedClass)
+#: What a classifier answers with: the classification, or the bare vocabulary.
+RED_SHAPES = frozenset({RED_OBSERVATION, CheckRedClass.__name__})
 
 
 def _modules(root: Path) -> list[tuple[str, ast.Module]]:
@@ -356,58 +368,233 @@ def _imported_from(module: str, source_module: str) -> frozenset[str]:
     )
 
 
-def _enum_names(tree: ast.Module) -> frozenset[str]:
-    """Every name this module binds an enum base to.
+def _enum_names(tree: ast.Module) -> tuple[frozenset[str], frozenset[str]]:
+    """The names this module binds an enum class to, and the enum module to.
 
-    Read out of the module's own imports, the way protocol bases are, so
-    ``from enum import StrEnum as _S`` is seen as the enum base it is.
+    Read out of the module's own imports, the way protocol bases are:
+    ``from enum import StrEnum as _S`` binds ``_S`` to an enum class, and
+    ``import enum as _e`` binds ``_e`` to the module, so ``_e.StrEnum`` is
+    an enum class too.
     """
-    return frozenset(
+    classes = frozenset(
         alias.asname or alias.name
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module == "enum"
         for alias in node.names
     )
+    modules = frozenset(
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "enum"
+    )
+    return classes, modules
+
+
+def _names_an_enum(
+    expression: ast.expr, enums: tuple[frozenset[str], frozenset[str]]
+) -> bool:
+    classes, modules = enums
+    return (isinstance(expression, ast.Name) and expression.id in classes) or (
+        isinstance(expression, ast.Attribute)
+        and isinstance(expression.value, ast.Name)
+        and expression.value.id in modules
+    )
+
+
+def _class_vocabulary(node: ast.ClassDef) -> tuple[frozenset[str], frozenset[object]]:
+    """The member names a class states, and the constant values it assigns."""
+    values = frozenset(
+        child.value.value
+        for child in node.body
+        if isinstance(child, ast.Assign | ast.AnnAssign)
+        and isinstance(child.value, ast.Constant)
+    )
+    return _declared_members(node), values
+
+
+def _functional_vocabulary(
+    call: ast.Call,
+) -> tuple[frozenset[str], frozenset[object]]:
+    """The member names and values of ``Enum("Name", members)``.
+
+    The members may be one string of names, a sequence of names, a sequence
+    of name and value pairs, or a mapping of names to values.
+    """
+    if len(call.args) < 2:
+        return frozenset(), frozenset()
+    members = call.args[1]
+    if isinstance(members, ast.Constant) and isinstance(members.value, str):
+        names = frozenset(members.value.replace(",", " ").split())
+        return names, frozenset()
+    if isinstance(members, ast.Dict):
+        return (
+            frozenset(
+                key.value for key in members.keys if isinstance(key, ast.Constant)
+            ),
+            frozenset(
+                value.value
+                for value in members.values
+                if isinstance(value, ast.Constant)
+            ),
+        )
+    if isinstance(members, ast.List | ast.Tuple):
+        names: set[str] = set()
+        values: set[object] = set()
+        for element in members.elts:
+            if isinstance(element, ast.Constant):
+                names.add(element.value)
+            elif (
+                isinstance(element, ast.Tuple | ast.List)
+                and len(element.elts) == 2
+                and all(isinstance(part, ast.Constant) for part in element.elts)
+            ):
+                name, value = element.elts
+                assert isinstance(name, ast.Constant)
+                assert isinstance(value, ast.Constant)
+                names.add(name.value)
+                values.add(value.value)
+        return frozenset(names), frozenset(values)
+    return frozenset(), frozenset()
+
+
+def _carries_the_red_vocabulary(
+    vocabulary: tuple[frozenset[str], frozenset[object]],
+) -> bool:
+    names, values = vocabulary
+    return names >= RED_MEMBERS or values >= RED_VALUES
 
 
 def _red_vocabularies(root: Path) -> dict[str, list[str]]:
-    """Each class outside the owner assigning the red vocabulary's members."""
+    """Each enum but the owner's that carries the red vocabulary.
+
+    An enum carries it when its member names, or its member values, include
+    every member of the vocabulary: a superset is the vocabulary with more
+    beside it.  Both the class form and the functional form are read, and
+    only the owner's own class is exempt, by module and name together.
+    """
     found: dict[str, list[str]] = {}
-    owner = declared_in(CheckRedClass)
+    owner = (declared_in(CheckRedClass), CheckRedClass.__name__)
     for module, tree in _modules(root):
-        if module == owner:
-            continue
-        bases = _enum_names(tree)
-        copies = sorted(
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ClassDef)
-            and any(
-                isinstance(base, ast.Name) and base.id in bases for base in node.bases
-            )
-            and _declared_members(node) == RED_MEMBERS
-        )
+        enums = _enum_names(tree)
+        copies: set[str] = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ClassDef)
+                and (module, node.name) != owner
+                and any(_names_an_enum(base, enums) for base in node.bases)
+                and _carries_the_red_vocabulary(_class_vocabulary(node))
+            ):
+                copies.add(node.name)
+            elif (
+                isinstance(node, ast.Call)
+                and _names_an_enum(node.func, enums)
+                and _carries_the_red_vocabulary(_functional_vocabulary(node))
+            ):
+                first = node.args[0]
+                copies.add(
+                    first.value
+                    if isinstance(first, ast.Constant) and isinstance(first.value, str)
+                    else f"<call at line {node.lineno}>"
+                )
         if copies:
-            found[module] = copies
+            found[module] = sorted(copies)
     return found
 
 
+def _imported_names(tree: ast.Module) -> Mapping[str, str]:
+    """Each name this module binds by ``from … import``, to the name it imports."""
+    return {
+        alias.asname or alias.name: alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+
+
+def _resolves_to(
+    annotation: ast.expr | None, targets: frozenset[str], imported: Mapping[str, str]
+) -> bool:
+    """Whether *annotation* names one of *targets*, however it is spelled.
+
+    Through an import alias, a dotted module path, ``X | None``, ``Optional``,
+    ``Union`` and any other subscript, and a string annotation.
+    """
+    match annotation:
+        case None:
+            return False
+        case ast.Name(id=name):
+            return imported.get(name, name) in targets
+        case ast.Attribute(attr=attr):
+            return attr in targets
+        case ast.BinOp(left=left, right=right):
+            return _resolves_to(left, targets, imported) or _resolves_to(
+                right, targets, imported
+            )
+        case ast.Subscript(value=value, slice=inner):
+            return _resolves_to(value, targets, imported) or _resolves_to(
+                inner, targets, imported
+            )
+        case ast.Tuple(elts=elements):
+            return any(_resolves_to(element, targets, imported) for element in elements)
+        case ast.Constant(value=str() as text):
+            try:
+                parsed = ast.parse(text, mode="eval").body
+            except SyntaxError:
+                return False
+            return _resolves_to(parsed, targets, imported)
+    return False
+
+
 def _red_classifiers(root: Path) -> dict[str, list[str]]:
-    """Each awaitable outside the owner answering with the classifier's shape."""
+    """Each function but the owner's that answers with a red classification.
+
+    A classifier is any function, synchronous or not, whose return
+    annotation resolves to the classification or to the vocabulary itself.
+    Only the owner's own function is exempt, by module and name together,
+    so a second classifier beside it is reported too.
+    """
     found: dict[str, list[str]] = {}
-    owner = declared_in(classify_red_checks)
+    owner = (declared_in(classify_red_checks), classify_red_checks.__name__)
     for module, tree in _modules(root):
-        if module == owner:
-            continue
+        imported = _imported_names(tree)
         classifiers = sorted(
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.AsyncFunctionDef)
-            and node.returns is not None
-            and ast.unparse(node.returns) == RED_OBSERVATION
+            {
+                node.name
+                for node in ast.walk(tree)
+                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and (module, node.name) != owner
+                and _resolves_to(node.returns, RED_SHAPES, imported)
+            }
         )
         if classifiers:
             found[module] = classifiers
+    return found
+
+
+def _red_constructions(root: Path) -> dict[str, list[str]]:
+    """Each construction of the classification outside the owner's function."""
+    found: dict[str, list[str]] = {}
+    owner = (declared_in(classify_red_checks), classify_red_checks.__name__)
+    for module, tree in _modules(root):
+        imported = _imported_names(tree)
+        inside = {
+            id(node)
+            for function in ast.walk(tree)
+            if isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef)
+            and (module, function.name) == owner
+            for node in ast.walk(function)
+        }
+        sites = sorted(
+            f"line {node.lineno}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and id(node) not in inside
+            and _resolves_to(node.func, frozenset({RED_OBSERVATION}), imported)
+        )
+        if sites:
+            found[module] = sites
     return found
 
 
@@ -423,8 +610,10 @@ def test_no_module_but_the_owner_declares_the_red_vocabulary() -> None:
 
 
 def test_no_module_but_the_owner_declares_a_red_classifier() -> None:
-    """One body in the package answers with a red classification."""
+    """One body in the package answers with a red classification, and only
+    that body constructs one."""
     assert _red_classifiers(SOURCE) == {}
+    assert _red_constructions(SOURCE) == {}
 
 
 def test_each_named_module_owns_the_symbol_the_placement_names() -> None:
@@ -1021,3 +1210,129 @@ def test_importing_or_reading_the_red_vocabulary_is_not_declaring_it(
     )
     assert _red_vocabularies(tmp_path) == {}
     assert _red_classifiers(tmp_path) == {}
+
+
+def _members(*, extra: str = "", by_value: bool = False) -> str:
+    rows = (
+        [f"    {value} = {value!r}" for value in sorted(RED_VALUES)]
+        if by_value
+        else [f"    {name} = {name.lower()!r}" for name in sorted(RED_MEMBERS)]
+    )
+    return "\n".join(rows) + extra + "\n"
+
+
+RED_VOCABULARY_SPELLINGS = {
+    "attribute-base": f"import enum\n\n\nclass RedKind(enum.StrEnum):\n{_members()}",
+    "module-alias": f"import enum as _e\n\n\nclass RedKind(_e.Enum):\n{_members()}",
+    "functional": (
+        "from enum import StrEnum\n\n"
+        f"RedKind = StrEnum('RedKind', {sorted(RED_MEMBERS)!r})\n"
+    ),
+    "functional-string": (
+        "import enum\n\n"
+        f"RedKind = enum.Enum('RedKind', {' '.join(sorted(RED_MEMBERS))!r})\n"
+    ),
+    "superset": (
+        "from enum import StrEnum\n\n\nclass RedKind(StrEnum):\n"
+        + _members(
+            extra="\n    OTHER = 'other'\n\n    def blocking(self) -> bool:\n"
+            "        return True"
+        )
+    ),
+    "by-value": (
+        "from enum import StrEnum\n\n\nclass RedKind(StrEnum):\n"
+        + _members(by_value=True)
+    ),
+}
+
+
+@pytest.mark.parametrize("spelling", sorted(RED_VOCABULARY_SPELLINGS))
+def test_a_red_vocabulary_is_reported_however_it_is_spelled(
+    tmp_path: Path, spelling: str
+) -> None:
+    (tmp_path / "copy.py").write_text(RED_VOCABULARY_SPELLINGS[spelling])
+    assert _red_vocabularies(tmp_path) == {"copy.py": ["RedKind"]}
+
+
+def test_a_second_red_vocabulary_in_the_owners_module_is_reported(
+    tmp_path: Path,
+) -> None:
+    owner = tmp_path / declared_in(CheckRedClass)
+    owner.parent.mkdir(parents=True)
+    owner.write_text(
+        "from enum import StrEnum\n\n\n"
+        f"class {CheckRedClass.__name__}(StrEnum):\n{_members()}\n\n"
+        f"class RedKind(StrEnum):\n{_members()}"
+    )
+    assert _red_vocabularies(tmp_path) == {declared_in(CheckRedClass): ["RedKind"]}
+
+
+RED_CLASSIFIER_SPELLINGS = {
+    "sync-vocabulary": (
+        f"from kodezart.types.domain.delivery import {CheckRedClass.__name__}\n\n\n"
+        f"def classify(observed) -> {CheckRedClass.__name__}:\n"
+        "    return observed\n"
+    ),
+    "async-vocabulary": (
+        f"async def classify(observed) -> {CheckRedClass.__name__}:\n"
+        "    return observed\n"
+    ),
+    "qualified": (
+        "from kodezart.types.domain import delivery\n\n\n"
+        f"async def classify(observed) -> delivery.{RED_OBSERVATION}:\n"
+        "    return observed\n"
+    ),
+    "aliased": (
+        f"from kodezart.types.domain.delivery import {RED_OBSERVATION} as _Obs\n\n\n"
+        "async def classify(observed) -> _Obs:\n"
+        "    return observed\n"
+    ),
+    "optional-union": (
+        f"async def classify(observed) -> {RED_OBSERVATION} | None:\n"
+        "    return observed\n"
+    ),
+    "optional": (
+        "from typing import Optional\n\n\n"
+        f"def classify(observed) -> Optional[{RED_OBSERVATION}]:\n"
+        "    return observed\n"
+    ),
+    "string": (
+        f"async def classify(observed) -> {RED_OBSERVATION!r}:\n    return observed\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("spelling", sorted(RED_CLASSIFIER_SPELLINGS))
+def test_a_red_classifier_is_reported_however_it_is_spelled(
+    tmp_path: Path, spelling: str
+) -> None:
+    (tmp_path / "second.py").write_text(RED_CLASSIFIER_SPELLINGS[spelling])
+    assert _red_classifiers(tmp_path) == {"second.py": ["classify"]}
+
+
+def test_a_second_classifier_and_construction_beside_the_owner_are_reported(
+    tmp_path: Path,
+) -> None:
+    owner = tmp_path / declared_in(classify_red_checks)
+    owner.parent.mkdir(parents=True)
+    owner.write_text(
+        f"async def {classify_red_checks.__name__}(initial) -> {RED_OBSERVATION}:\n"
+        f"    return {RED_OBSERVATION}(red_class=None, observation=initial)\n\n\n"
+        f"async def strictly(initial) -> {RED_OBSERVATION}:\n"
+        f"    return {RED_OBSERVATION}(red_class=None, observation=initial)\n"
+    )
+    module = declared_in(classify_red_checks)
+    assert _red_classifiers(tmp_path) == {module: ["strictly"]}
+    assert _red_constructions(tmp_path) == {module: ["line 6"]}
+
+
+def test_a_classification_constructed_outside_the_classifier_is_reported(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "builder.py").write_text(
+        f"from kodezart.types.domain.delivery import {RED_OBSERVATION}\n\n\n"
+        "def restamp(observed, red_class):\n"
+        f"    return {RED_OBSERVATION}(red_class=red_class, observation=observed)\n"
+    )
+    assert _red_classifiers(tmp_path) == {}
+    assert _red_constructions(tmp_path) == {"builder.py": ["line 5"]}
