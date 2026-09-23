@@ -801,7 +801,11 @@ rule reads the rows and the existing team
 binding and nothing else, which has limits. A per-issue team cannot share a
 repository with a scope. With one declared repository every team is bound to
 it, so every team is walked. An unbound team beside several repositories stays
-per-issue. A repository whose bound teams are all walked gets no dispatch pass,
+per-issue. The rule reads a row's `repo_url`, not the issues its scope spans: an
+issue, project or initiative scope whose members sit on a per-issue team's board
+leaves those members open to that team's dispatch pass, and because the scope
+walk writes no claim (KOD-788) nothing arbitrates between the two flows there. A
+repository whose bound teams are all walked gets no dispatch pass,
 and `dispatch_pass_unbound_repository` names them in `scope_walked_teams`.
 
 When every team is walked, no per-issue pass is scheduled and no lifecycle

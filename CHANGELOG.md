@@ -31,7 +31,11 @@ concerns.
   `scheduled_passes_not_wired` and `prompt_passes_not_wired` events each carry
   a new `organize_scopes_declared` boolean saying so, and boot probes no gate
   signal and renders no template for a withheld pass.
-  `dispatch_pass_unbound_repository` carries `scope_walked_teams`.
+  `dispatch_pass_unbound_repository` carries `scope_walked_teams`. On upgrade,
+  a deployment that declared rows and also a team on a repository no row names
+  now runs that team's dispatch, fire-prep and grooming passes and the
+  lifecycle watcher; its declared `[marker_prefixes]` table must then name
+  `claim`, `work_ref`, `base_spec`, `repository` and `run_outcome`.
 - The organize tick is registered with the pass scheduler as `organize`, so
   `grooming_pass` stays the per-issue grooming session's name; its runs keep the
   grooming record identity. The `scope_heartbeat` pass submits on

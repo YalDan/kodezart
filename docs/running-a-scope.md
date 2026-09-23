@@ -63,7 +63,10 @@ repository a row names is walked, and the per-issue dispatch pass and the two
 remaining prompt passes, which scan whole boards, are not scheduled over its
 board. That file binds its one team to its one repository, so nothing per-issue
 is scheduled at all. A deployment that also declares teams on repositories no
-row names keeps every per-issue pass for those teams, exactly as before. And
+row names keeps every per-issue pass for those teams, exactly as before. The
+rule reads a row's repository, not the issues its scope spans, so a scope whose
+members sit on such a team's board leaves them open to that team's dispatch
+pass. And
 declaring `[[organize_mandates]]` without an `[[organize_scopes]]` row is a
 partial organize configuration, refused at boot.
 
