@@ -8,17 +8,21 @@ rather than scanned surfaces.
 """
 
 import ast
+import importlib
+import inspect
+import pkgutil
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+from types import ModuleType
 
-from typing_extensions import get_protocol_members
+from typing_extensions import get_protocol_members, is_protocol
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.protocols import TrackerPort
-from tests.domain.test_criterion_cross_off import SOURCE_ROOT
+from tests.domain.test_criterion_cross_off import SOURCE_ROOT, source_tree
 from tests.tracker.test_criterion_port_sites import module_of
 
 TESTS_ROOT = Path(__file__).parents[1]
@@ -68,6 +72,87 @@ UNWIRED_CONSUMER_ROLES = frozenset(
 def port_members() -> frozenset[str]:
     """Every member of the whole port, through its bases."""
     return frozenset(get_protocol_members(TrackerPort))
+
+
+def module_name(path: str) -> str:
+    """The dotted name the shipped module at tree-relative *path* imports as."""
+    parts = path.removesuffix(".py").split("/")
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join([LinearMcpTracker.__module__.split(".", 1)[0], *parts])
+
+
+@cache
+def shipped_modules() -> tuple[ModuleType, ...]:
+    """Every module of the shipped tree, imported."""
+    return tuple(
+        importlib.import_module(module_name(path)) for path in sorted(source_tree())
+    )
+
+
+def adapter_package_modules() -> tuple[ModuleType, ...]:
+    """Every module of the package the vendor adapter's own module belongs to."""
+    package = importlib.import_module(LinearMcpTracker.__module__.rsplit(".", 1)[0])
+    return tuple(
+        importlib.import_module(found.name)
+        for found in pkgutil.walk_packages(
+            package.__path__, prefix=f"{package.__name__}."
+        )
+    )
+
+
+def classes_defined_in(modules: Iterable[ModuleType]) -> frozenset[type]:
+    """Every class each of *modules* defines itself, not one it imports."""
+    return frozenset(
+        cls
+        for module in modules
+        for _, cls in inspect.getmembers(module, inspect.isclass)
+        if cls.__module__ == module.__name__
+    )
+
+
+def method_members(protocol: type) -> frozenset[str]:
+    """The public methods *protocol* asks for, not its properties or fields."""
+    return frozenset(
+        name
+        for name in get_protocol_members(protocol)
+        if not name.startswith("_")
+        and callable(inspect.getattr_static(protocol, name, None))
+    )
+
+
+@cache
+def implemented_protocols() -> dict[str, type]:
+    """Every protocol of the shipped tree a class of the adapter package answers.
+
+    Read by object: a protocol any module of the shipped tree defines whose
+    public methods are all callables of one class the vendor adapter's
+    package defines. The port's roles are among them, and so is every role
+    narrowed beside the port rather than composed into it.
+    """
+    classes = classes_defined_in(adapter_package_modules())
+    return {
+        protocol.__name__: protocol
+        for protocol in classes_defined_in(shipped_modules())
+        if is_protocol(protocol)
+        and (methods := method_members(protocol))
+        and any(
+            all(callable(getattr(cls, name, None)) for name in methods)
+            for cls in classes
+        )
+    }
+
+
+def scanned_members() -> frozenset[str]:
+    """Every role method the caller question asks about.
+
+    The whole port's members, and the methods of every protocol the vendor
+    adapter's package implements, so a role narrowed beside the port is
+    asked the same question as one composed into it.
+    """
+    return port_members().union(
+        *(method_members(protocol) for protocol in implemented_protocols().values())
+    )
 
 
 def call_pattern(name: str) -> re.Pattern[str]:
@@ -480,11 +565,12 @@ def called_members(text: str) -> frozenset[str]:
     """Every member name *text* calls on a tracker role it holds.
 
     A call counts only when its receiver is a role binding: a parameter or
-    field annotated with a role or the aggregate, or a name or attribute
+    field annotated with a role, the aggregate or a protocol the adapter
+    package implements, or a name or attribute
     that binding is kept as. A same-named method called on anything else
     calls no tracker member.
     """
-    known = roles(port_module_text()) | {AGGREGATE}
+    known = roles(port_module_text()) | {AGGREGATE} | set(implemented_protocols())
     return frozenset().union(
         *(members_called_on(binding, text) for binding in bindings(text, known)),
         frozenset(),
@@ -575,6 +661,8 @@ class Binding:
     A parameter is held under its own name inside its function, and under
     every attribute or local name it is assigned to; an attribute is read
     anywhere in the class that holds it, or the module when no class does.
+    A binding whose annotation holds the role inside a container, such as
+    ``Mapping[K, R]``, is a container of the role rather than the role.
     """
 
     role: str
@@ -583,6 +671,19 @@ class Binding:
     name_scope: ast.AST
     attributes: frozenset[str]
     attribute_scope: ast.AST
+    container: bool = False
+
+
+#: The subscripted forms that wrap one type rather than hold values of it.
+TYPE_WRAPPERS = frozenset({"Optional", "Union", "Annotated"})
+
+
+def holds_in_a_container(annotation: ast.expr) -> bool:
+    """Whether *annotation* is a container of what it names, not the thing itself."""
+    return (
+        isinstance(annotation, ast.Subscript)
+        and final_name(annotation.value) not in TYPE_WRAPPERS
+    )
 
 
 def assigned_pairs(scope: ast.AST) -> list[tuple[ast.expr, ast.expr]]:
@@ -645,8 +746,39 @@ def bindings(text: str, known: frozenset[str]) -> list[Binding]:
                         name_scope=node,
                         attributes=frozenset(attributes),
                         attribute_scope=owner,
+                        container=holds_in_a_container(argument.annotation),
                     )
                     for role in sorted(held)
+                )
+            for item in ast.walk(node):
+                if not isinstance(item, ast.AnnAssign):
+                    continue
+                on_self = (
+                    isinstance(item.target, ast.Attribute)
+                    and isinstance(item.target.value, ast.Name)
+                    and item.target.value.id == "self"
+                )
+                if not (isinstance(item.target, ast.Name) or on_self):
+                    continue
+                found.extend(
+                    Binding(
+                        role=role,
+                        label=f"{where}{node.name}({ast.unparse(item.target)})",
+                        names=frozenset(
+                            {item.target.id}
+                            if isinstance(item.target, ast.Name)
+                            else ()
+                        ),
+                        name_scope=node,
+                        attributes=frozenset(
+                            {item.target.attr}
+                            if isinstance(item.target, ast.Attribute)
+                            else ()
+                        ),
+                        attribute_scope=owner,
+                        container=holds_in_a_container(item.annotation),
+                    )
+                    for role in sorted(names_in(item.annotation) & known)
                 )
         elif isinstance(node, ast.ClassDef):
             for item in node.body:
@@ -663,6 +795,7 @@ def bindings(text: str, known: frozenset[str]) -> list[Binding]:
                         name_scope=node,
                         attributes=frozenset({item.target.id}),
                         attribute_scope=node,
+                        container=holds_in_a_container(item.annotation),
                     )
                     for role in sorted(names_in(item.annotation) & known)
                 )
@@ -674,18 +807,57 @@ def holds(binding: Binding) -> Callable[[ast.expr], bool]:
 
     Its name inside the function that takes it, its attribute on ``self``
     inside the class that keeps it, or the same attribute read off another
-    receiver anywhere in the module.
+    receiver anywhere in the module. For a container of the role, what is
+    held is an element drawn from it: a subscript of it, what a method
+    called on it returns, or a name a function assigns either of those to or
+    iterates it into.
     """
     inside = {id(node) for node in ast.walk(binding.name_scope)}
     owned = {id(node) for node in ast.walk(binding.attribute_scope)}
 
-    def held(value: ast.expr) -> bool:
+    def kept(value: ast.expr) -> bool:
         if isinstance(value, ast.Name):
             return id(value) in inside and value.id in binding.names
         if isinstance(value, ast.Attribute) and value.attr in binding.attributes:
             on_self = isinstance(value.value, ast.Name) and value.value.id == "self"
             return id(value) in owned or not on_self
         return False
+
+    if not binding.container:
+        return kept
+
+    def element(value: ast.expr) -> bool:
+        if isinstance(value, ast.Subscript):
+            return kept(value.value)
+        return (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Attribute)
+            and kept(value.func.value)
+        )
+
+    drawn: set[int] = set()
+    for function in ast.walk(binding.attribute_scope):
+        if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        names = {
+            target.id
+            for target, value in assigned_pairs(function)
+            if isinstance(target, ast.Name) and element(value)
+        } | {
+            loop.target.id
+            for loop in ast.walk(function)
+            if isinstance(loop, ast.For | ast.AsyncFor)
+            and isinstance(loop.target, ast.Name)
+            and (kept(loop.iter) or element(loop.iter))
+        }
+        drawn.update(
+            id(node)
+            for node in ast.walk(function)
+            if isinstance(node, ast.Name) and node.id in names
+        )
+
+    def held(value: ast.expr) -> bool:
+        return id(value) in drawn or element(value)
 
     return held
 
