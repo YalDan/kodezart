@@ -647,6 +647,17 @@ def plant(root: Path, body: str, *, at: str = PLANTED) -> dict[str, ast.Module]:
             PERSISTER_MODULE,
             id="the-constant-read-by-getattr-inside-the-writer",
         ),
+        pytest.param(
+            "from pathlib import Path as _P\n"
+            "from kodezart.core import constants as _c\n"
+            "def decide(repo_path, decide_lane_entry):\n"
+            '    _d = _P(repo_path) / getattr(_c, "ARTIFACT_DIR")\n'
+            '    _ = [p.read_text() for p in _d.glob("*.json")]'
+            " if _d.exists() else []\n"
+            "    return decide_lane_entry()\n",
+            "services/lane_entry.py",
+            id="a-lane-entry-read-through-getattr-on-the-constants-module",
+        ),
     ],
 )
 def test_a_planted_read_is_reported(body, at, tmp_path):
