@@ -7,14 +7,18 @@ import pytest
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.lane_alarms import Finished, Ready
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
-from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_surface
+from kodezart.domain.run_alarm_record import (
+    MARKER_PURPOSE,
+    run_alarm_marker,
+    run_alarm_surface,
+)
 from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE, LaneRunEvent
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.node_session import NodeInvocation, NodeSessionKey
 from kodezart.types.domain.operation import OperationMemberAbsentError, RunKind
-from kodezart.types.domain.run_alarm import AlarmSignal
+from kodezart.types.domain.run_alarm import AlarmSignal, CriterionSubject, LaneSubject
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_records import RunIdentity
 from tests.fakes import FakeTrackerPort, make_tracker_issue
@@ -289,6 +293,52 @@ async def test_the_supervisor_leases_exactly_the_alarm_marker_on_the_lane_issue(
     leased = [lease for lease in port.lease_writes if lease.holder == HOLDER]
     assert leased, "a leased write with no lease states nothing about its surface"
     assert [lease.surfaces for lease in leased] == [frozenset({expected})] * len(leased)
+
+
+async def test_the_records_one_tick_writes_share_one_lease():
+    """One lease over exactly the addresses written, whatever their number.
+
+    The lane's tally is stalled (more commits than the bound, nothing closed)
+    and its first criterion, crossed off by the lane, stands in Todo again, so
+    the one tick writes a lane record and a criterion record together.
+    """
+    port = await one_lane()
+    await port.post_run_event(
+        issue_key=LANE,
+        event=LaneRunEvent(
+            kind=RunEventKind.ISSUE_CROSSED_OFF,
+            lane_key=LANE,
+            subject_key=FIRST,
+            graded_sha=HEAD,
+        ),
+    )
+    regressed = CriterionSubject(
+        scope_key=SCOPE, issue_id=LANE, member_id=FIRST, lane_key=LANE
+    )
+    before = len(port.lease_writes)
+
+    await observe(supervisor(port))
+
+    written = await port.read_run_alarms(issue_key=LANE)
+    assert {(row.subject, row.signal) for row in written} == {
+        (LaneSubject(scope_key=SCOPE, lane_key=LANE), AlarmSignal.TALLY_UNMOVED),
+        (regressed, AlarmSignal.TALLY_REGRESSED),
+    }
+    [grant] = port.lease_writes[before:]
+    assert grant.holder == HOLDER
+    assert grant.surfaces == frozenset(
+        {
+            run_alarm_surface(issue_key=LANE, marker=alarm_marker(port, LANE)),
+            run_alarm_surface(
+                issue_key=LANE,
+                marker=run_alarm_marker(
+                    subject=regressed,
+                    signal=AlarmSignal.TALLY_REGRESSED,
+                    marker_prefixes=port.marker_prefixes,
+                ),
+            ),
+        }
+    )
 
 
 async def test_a_lane_fire_holding_the_record_marker_and_the_supervisor_both_write():
