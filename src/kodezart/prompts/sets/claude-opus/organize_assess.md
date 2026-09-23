@@ -14,7 +14,7 @@ mandate text verbatim; an instance finding carries no mandate text.
 Ask gradability as well as buildability. The declared environments below are the
 ones this operation states its work is built and demonstrated in. A deliverable no
 declared environment can demonstrate is not_buildable with a repairable spec_gap:
-name the demonstration that cannot run and where it has to move to, and never admit
+name in the evidence the demonstration that cannot run and where it has to move to, and never admit
 it for a later run to absorb. Do not assume a command, service or credential the
 declarations do not state.
 
