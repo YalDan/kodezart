@@ -616,6 +616,41 @@ def test_the_fire_terminal_and_state_grow_no_field_of_the_lane_s_delivery():
     assert delivery & set(WorkflowState.__annotations__) == SHARED_WITH_STATE
 
 
+def state_keys(state: type) -> set[str]:
+    """Every key the TypedDict *state* declares or merges from a base, by object.
+
+    Read off the two registers the TypedDict machinery fills for the class
+    — its required keys and its optional keys — and held equal to its
+    merged annotations, so a key arriving through a base is the state's own
+    here, and the two readings cannot drift apart.
+    """
+    keys = set(state.__required_keys__) | set(state.__optional_keys__)
+    assert keys == set(state.__annotations__)
+    return keys
+
+
+def test_the_fire_s_state_keys_are_pinned_whole():
+    """The fire's state type, as an exact key set read by object.
+
+    Every key of ``WorkflowState``, declared on it or merged from a base,
+    read from the TypedDict's own key registers rather than from its
+    source, and held equal to :data:`STATE_KEYS`: a delivery key added to
+    the state under any spelling reds here.  The one optional key is pinned
+    as such too, so a key made optional is a change here as well.  The
+    control merges a delivery key into the state through a base and shows
+    the reading sees it.  The coordinator's public surface — ``deliver``
+    and its signature — is pinned beside the lane's delivery tests.
+    """
+    assert state_keys(WorkflowState) == STATE_KEYS
+    assert set(WorkflowState.__optional_keys__) == {"ruling_unrecorded"}
+
+    class Delivered(WorkflowState):
+        pr_url: str | None
+
+    assert state_keys(Delivered) - STATE_KEYS == {"pr_url"}
+    assert DELIVERY_FIELDS & state_keys(Delivered) == {"pr_url"}
+
+
 #: What a class may define to be rendered some other way than by its
 #: fields: pydantic's own entry points, which ``BaseModel`` defines and a
 #: model overrides by defining one of its own, and the two hooks through
