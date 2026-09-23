@@ -300,6 +300,7 @@
   "tests/prompts/test_pass_roster.py": 40,
   "tests/prompts/test_principal_roles.py": 22,
   "tests/prompts/test_prompt_wiring.py": 88,
+  "tests/prompts/test_quick_win_sizing.py": 2,
   "tests/prompts/test_resolvable_identifiers.py": 22,
   "tests/prompts/test_rollback.py": 19,
   "tests/prompts/test_scope_label_bindings.py": 3,
@@ -307,7 +308,7 @@
   "tests/prompts/test_set_completeness.py": 10,
   "tests/prompts/test_skills_loadouts.py": 16,
   "tests/prompts/test_supervision_adoption.py": 16,
-  "tests/prompts/test_supervision_block_adoption.py": 27,
+  "tests/prompts/test_supervision_block_adoption.py": 30,
   "tests/prompts/test_v5_board_hierarchy.py": 12,
   "tests/prompts/test_v5_fragments.py": 34,
   "tests/prompts/test_v5_lenses.py": 6,
@@ -4201,6 +4202,10 @@
    "test_the_same_set_resolves_under_the_reviewed_mode",
    "test_a_declared_critique_fills_the_slot_under_create_only"
   ],
+  "tests/prompts/test_quick_win_sizing.py": [
+   "test_each_pass_renders_its_quick_win_paragraph_whole",
+   "test_each_pass_sends_a_rare_edge_case_to_the_backlog"
+  ],
   "tests/prompts/test_resolvable_identifiers.py": [
    "test_rendered_pass_carries_no_unresolved_placeholder",
    "test_every_rendered_id_carries_its_configured_name",
@@ -4286,7 +4291,9 @@
    "test_the_seven_self_contained_sections_are_byte_identical_in_their_extent",
    "test_the_block_file_is_the_text_of_record",
    "test_the_by_effect_sections_carry_every_sentence_and_differ_only_where_repointed",
+   "test_the_by_effect_sections_are_pinned_whole",
    "test_the_by_effect_sections_carry_no_cadence_word",
+   "test_no_by_effect_section_names_a_block_section_the_template_does_not_head",
    "test_every_tag_a_repointed_reference_names_is_a_top_level_template_section",
    "test_every_adopted_section_sits_between_top_level_sections_never_inside_one",
    "test_the_template_is_not_the_block_and_holds_no_other_top_level_heading",

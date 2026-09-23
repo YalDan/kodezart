@@ -7,9 +7,16 @@ composed into the groom judge, the repair author and the two scheduled
 passes, so the four roles that read or write placement cannot disagree
 about it.
 
-The four sentences are written out here rather than derived from the
-fragment: a test that reads its own expectation out of the text it guards
-stays green when a sentence is dropped.
+The fragment also sizes work for quick wins (KOD-904): a parent issue is
+finished and shipped on its own, soon; nothing is split finer than one
+coherent change; a rare edge case becomes its own backlog issue.  Those five
+sentences reach every carrier with the rest, and the two scheduled passes
+are asserted to carry them.
+
+Every sentence is written out here rather than derived from the fragment:
+a test that reads its own expectation out of the text it guards stays
+green when a sentence is dropped.  The whole fragment is pinned as well, so
+a sentence added, reordered or reworded fails here first.
 """
 
 import tomllib
@@ -44,6 +51,27 @@ SENTENCES = (
     "Missing project or milestone: flag it, don't invent it.",
 )
 
+#: The quick-win sizing sentences (KOD-904), in declaration order.  Kept
+#: apart from the hierarchy sentences because the legacy fire prep states
+#: one of them word for word; the legacy set carries no hierarchy sentence,
+#: and that claim stays about the hierarchy alone.
+QUICK_WIN_SENTENCES = (
+    "Size for quick wins: each parent issue can be finished and shipped on its"
+    " own, soon, and shows progress when it lands.",
+    "Split a parent issue that is larger; flag a project or milestone that is"
+    " larger, with the split you propose.",
+    "Don't split finer than one coherent change that is useful by itself.",
+    "A rare or improbable edge case found along the way is its own backlog"
+    " issue for cleanup, not added scope.",
+    "An issue's finish line stays its stated criteria.",
+)
+
+#: The fragment's whole text: one sentence per line, the hierarchy first.
+WHOLE_FRAGMENT = "\n".join(SENTENCES + QUICK_WIN_SENTENCES)
+
+#: The two scheduled passes: the ones that hand work over to be built.
+SIZING_PASSES = (PromptKey.GROOMING_PASS.value, PromptKey.FIRE_PREP_PASS.value)
+
 #: The sentence the grooming pass no longer carries: grooming re-places what
 #: the board misplaces, so declaring it no reorganisation contradicts the
 #: standard it now states.
@@ -71,9 +99,14 @@ def test_the_board_hierarchy_is_declared_exactly_once() -> None:
     carriers = [
         body
         for body in member_files(V5_SET)
-        if any(sentence in body for sentence in SENTENCES)
+        if any(sentence in body for sentence in SENTENCES + QUICK_WIN_SENTENCES)
     ]
     assert carriers == []
+
+
+def test_the_board_hierarchy_is_pinned_whole() -> None:
+    """The declaration is exactly the hierarchy then the quick-win sizing."""
+    assert fragment(FRAGMENT_NAME) == WHOLE_FRAGMENT
 
 
 def test_the_board_hierarchy_resolves_into_exactly_its_four_carriers() -> None:
@@ -90,6 +123,16 @@ def test_every_hierarchy_sentence_reaches_every_carrier(
     sentence: str,
 ) -> None:
     """Every sentence survives composition into every carrier's render."""
+    assert sentence in render_v5_case(carrier)
+
+
+@pytest.mark.parametrize("sentence", QUICK_WIN_SENTENCES)
+@pytest.mark.parametrize("carrier", SIZING_PASSES)
+def test_both_scheduled_passes_size_work_for_quick_wins(
+    carrier: str,
+    sentence: str,
+) -> None:
+    """Grooming and fire prep each render every quick-win sentence (KOD-904)."""
     assert sentence in render_v5_case(carrier)
 
 
