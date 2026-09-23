@@ -64,6 +64,7 @@ from tests.chains.union_holdings import (
     declared,
     held_by,
     is_port,
+    is_record,
     public_callables,
     refused,
     written_surface,
@@ -1107,6 +1108,55 @@ QUERY_DOUBLES: tuple[
 )
 
 
+def double_refusals(built: object, surface: frozenset[str]) -> list[str]:
+    """What a built double holds that can be asked more than *surface*.
+
+    The double is walked like the step (``held_by``), so a sub-object behind
+    an attribute is measured whether or not the attribute can be called, and
+    whether or not its name is public.  Each object reached must be a record,
+    a routine, a builtin container, a builtin exception (a value the double
+    raises, not a thing it asks), or answer no public callable outside
+    *surface* and no name through a hook.
+    """
+    return [
+        f"{type(value).__module__}.{type(value).__qualname__}"
+        for value in held_by(built)
+        if not (
+            is_record(value)
+            or type(value) in ROUTINES
+            or type(value) in COLLECTIONS
+            or (
+                isinstance(value, BaseException)
+                and type(value).__module__ == "builtins"
+            )
+            or (not answers_by_hook(type(value)) and public_callables(value) <= surface)
+        )
+    ]
+
+
+class MergeBehindAnAttribute(FakeForgeQuery):
+    """The query double, with a merge behind an attribute that cannot be called."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pulls = SimpleNamespace(merge=lambda **_: None)
+
+
+def test_a_merge_behind_an_attribute_of_a_query_double_is_measured() -> None:
+    """Guards the query-double rows: what a double holds is measured too.
+
+    The surface alone misses this merge — the attribute holding it cannot
+    be called — so the walk is what must see it, and the shipped double must
+    still pass the same walk.
+    """
+    surface = frozenset({"open_pr_for_head", "branch_web_url"})
+    built = MergeBehindAnAttribute()
+
+    assert public_callables(built) | public_callables(type(built)) == surface
+    assert double_refusals(built, surface) == ["types.SimpleNamespace"]
+    assert double_refusals(FakeForgeQuery(), surface) == []
+
+
 @pytest.mark.parametrize(
     "port, port_surface, double, defaults, every_argument, double_surface",
     QUERY_DOUBLES,
@@ -1129,8 +1179,11 @@ def test_the_query_ports_and_their_doubles_expose_no_merge_capability(
     declares, so a method bound only when an argument is given is inside the
     measurement.  ``dir`` reports the whole surface only when no class in
     the double's MRO answers names through a hook, so that is required too.
-    Stated limits: a capability bound only under an argument combination
-    neither build passes, and an attribute attached after construction.
+    Everything each build holds is walked and measured against the same
+    surface (``double_refusals``), so a capability behind an attribute —
+    callable or not — is inside it as well.  Stated limits: a capability
+    bound only under an argument combination neither build passes, and an
+    attribute attached after construction.
     """
     assert declared(port) == port_surface
     assert set(every_argument) == set(inspect.signature(double).parameters)
@@ -1139,6 +1192,7 @@ def test_the_query_ports_and_their_doubles_expose_no_merge_capability(
         built = double(**arguments)
         surface = public_callables(built) | public_callables(type(built))
         assert surface == double_surface, sorted(arguments)
+        assert double_refusals(built, double_surface) == [], sorted(arguments)
 
 
 async def test_verifying_publishes_nothing_and_leaves_every_ref_identical(
