@@ -474,6 +474,50 @@ COLUMNS = RecordColumns(
 )
 
 
+_FIRE_LOG_TOML = """\
+operation_name = "o"
+workspace = "w"
+
+[records.fire]
+system = "knowledge"
+name = "Fire Log"
+id = "destination-1"
+append_only = true
+"""
+
+
+@pytest.mark.parametrize(
+    ("structure", "reported"),
+    [
+        ("", True),
+        (
+            "\n[records.fire.columns]\n"
+            + "".join(
+                f'{name} = "{value}"\n'
+                for name, value in COLUMNS.model_dump(mode="json").items()
+                if value is not None and name != "repo_options"
+            ),
+            False,
+        ),
+    ],
+    ids=["no-structure", "columns"],
+)
+async def test_a_fire_log_given_the_v02_shape_is_reported_at_load(
+    tmp_path, structure, reported
+):
+    """The loader names a knowledge fire log it will write the v0.2 way."""
+    path = tmp_path / "operation.toml"
+    path.write_text(_FIRE_LOG_TOML + structure, encoding="utf-8")
+
+    loaded = read_operation_file(path)
+
+    assert ("records.fire" in loaded.defaulted) is reported
+    assert (
+        loaded.config.records[RunKind.FIRE.value].records_structured(RunKind.FIRE)
+        is not reported
+    )
+
+
 async def test_a_fire_log_with_no_structure_writes_the_v02_row_and_adds_no_clause(
     tmp_path,
 ):

@@ -15,7 +15,11 @@ from typing import Final
 from pydantic import ValidationError
 
 from kodezart.core.errors import OperationConfigError
-from kodezart.types.domain.operation import OperationConfig
+from kodezart.types.domain.operation import (
+    DocumentSystem,
+    OperationConfig,
+    RunKind,
+)
 
 #: Keys a deployment used to declare a scope under a second time, and what to
 #: say instead.  A file that still carries one is refused at load: naming the
@@ -58,8 +62,11 @@ class OperationFile:
     """A loaded operation, and what the v0.2 exception did to reach it.
 
     ``ignored`` names each v0.2 table dropped unread, and ``defaulted`` each
-    member supplied because the file left it out.  Both are empty for a file
-    written for this version, so the root can say, once, exactly what an old
+    member supplied because the file left it out: ``marker_prefixes`` when
+    the file declares no such table, and ``records.fire`` when its knowledge
+    fire log declares neither ``columns`` nor ``outcome_mapping`` and so is
+    written in v0.2's title-line shape.  Both are empty for a file that
+    declares those members, so the root can say, once, exactly what an old
     file was given.
     """
 
@@ -94,6 +101,16 @@ def read_operation_file(path: Path) -> OperationFile:
     except ValidationError as exc:
         msg = f"Operation config at {path} is invalid"
         raise OperationConfigError(msg, failures=_flatten(exc)) from exc
+    fire_log = config.records.get(RunKind.FIRE.value)
+    if (
+        fire_log is not None
+        and fire_log.system is DocumentSystem.KNOWLEDGE
+        and not fire_log.records_structured(RunKind.FIRE)
+    ):
+        # The rule fire_record_template reads: this log takes v0.2's title
+        # line and its session no record clause. Named, so that is never
+        # silent either (KOD-903).
+        defaulted = (*defaulted, "records.fire")
     return OperationFile(config=config, ignored=ignored, defaulted=defaulted)
 
 
