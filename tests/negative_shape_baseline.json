@@ -307,7 +307,7 @@
   "tests/prompts/test_set_completeness.py": 9,
   "tests/prompts/test_skills_loadouts.py": 16,
   "tests/prompts/test_supervision_adoption.py": 16,
-  "tests/prompts/test_supervision_block_adoption.py": 26,
+  "tests/prompts/test_supervision_block_adoption.py": 27,
   "tests/prompts/test_v5_board_hierarchy.py": 12,
   "tests/prompts/test_v5_fragments.py": 34,
   "tests/prompts/test_v5_lenses.py": 6,
@@ -4289,8 +4289,8 @@
    "test_the_authority_github_rule_points_at_supervision_boundaries",
    "test_no_sentence_of_the_template_forbids_commits_pushes_or_branches",
    "test_the_github_boundary_lines_are_pinned_whole",
-   "test_the_github_acts_are_the_ones_supervision_boundaries_grants",
-   "test_every_github_sentence_outside_supervision_boundaries_only_reads"
+   "test_outside_the_adopted_sections_the_template_is_the_base_but_two_lines",
+   "test_the_layout_shows_where_each_adopted_section_sits"
   ],
   "tests/prompts/test_v5_board_hierarchy.py": [
    "test_the_board_hierarchy_is_declared_exactly_once",
