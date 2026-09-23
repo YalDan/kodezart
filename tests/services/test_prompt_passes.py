@@ -644,6 +644,41 @@ async def test_two_refused_signals_are_named_in_one_abort(tmp_path: Path) -> Non
     ]
 
 
+async def test_two_refused_signals_sharing_one_diagnosis_are_each_named(
+    tmp_path: Path,
+) -> None:
+    """Refusals are one per refused signal, however many share a diagnosis.
+
+    A backend gives every signal one tool serves the same diagnosis, so two
+    refused signals with one reason are the ordinary multi-refusal case: the
+    abort still carries a refusal for each signal, each naming its own.
+    """
+    tracker = FakeTrackerPort(
+        scan_refusals={
+            PassSignal.issues_changed: DIAGNOSIS,
+            PassSignal.triage_backlog: DIAGNOSIS,
+        }
+    )
+
+    with pytest.raises(PassGateCapabilityError) as caught:
+        await _runtime(
+            tmp_path,
+            tracker=tracker,
+            runner=FakeAgentRunner(events=[]),
+            fire_prep_pass_gate_signals=[
+                PassSignal.issues_changed,
+                PassSignal.triage_backlog,
+            ],
+        )
+
+    refusals = caught.value.refusals
+    assert len(refusals) == 2, refusals
+    for signal in (PassSignal.issues_changed, PassSignal.triage_backlog):
+        starting = [item for item in refusals if item.startswith(f"{signal.value} ")]
+        assert len(starting) == 1, (signal, refusals)
+    assert all(DIAGNOSIS in item for item in refusals)
+
+
 async def test_a_refused_signal_names_every_pass_that_declares_it(
     tmp_path: Path,
 ) -> None:

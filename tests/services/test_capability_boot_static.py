@@ -23,7 +23,11 @@ implementers are the modules that define a function under the probe's name,
 found by the walk; and inside the preflight's module only its imports and
 the bodies of the preflight and the holder may name any of it.
 
-The handler check is "no handler lets it continue", not "no ``try`` encloses
+The handler check runs over every edge of the boot chain, and the chain is
+derived rather than listed: from the probe, each callee's one caller, up to
+the lifespan.  The probe's own call may sit under no handler at all.  Every
+call above it, the preflight's call of the holder included, is checked as
+"no handler lets it continue", not "no ``try`` encloses
 it", because the composition root's lifespan has one failure path around
 every boot act (``main.py``'s outer ``try`` and its ``except BaseException``):
 it binds the failure, unwinds what boot acquired, and raises the failure
@@ -320,6 +324,55 @@ def unreached(trees: dict[str, ast.Module], holder: str) -> list[str]:
     return found
 
 
+def boot_chain(trees: dict[str, ast.Module]) -> list[tuple[str, str, str]]:
+    """Each call edge from the probe up to the lifespan: module, caller, callee.
+
+    Derived with ``callers()``: the probe's one caller, that caller's one
+    caller, and so on until the lifespan.  The walk stops where a callee has
+    no single caller (the reach test reports that), and is bounded by the
+    number of functions in the tree, so a cycle ends it too.
+    """
+    limit = sum(
+        isinstance(node, FUNCTIONS)
+        for tree in trees.values()
+        for node in ast.walk(tree)
+    )
+    chain: list[tuple[str, str, str]] = []
+    callee = ASK
+    for _ in range(limit):
+        sites = callers(trees, callee)
+        if len(sites) != 1:
+            break
+        [site] = sites
+        module, _, scope = site.partition("::")
+        caller = scope.rpartition(".")[2]
+        chain.append((module, caller, callee))
+        if (module, caller) == (ROOT_MODULE, ROOT_FUNCTION):
+            break
+        callee = caller
+    return chain
+
+
+def run_past_edges(
+    trees: dict[str, ast.Module], chain: list[tuple[str, str, str]]
+) -> list[str]:
+    """Every edge of *chain* whose callee's result is swallowed or run past.
+
+    The probe edge may sit under no handler at all; every other edge may sit
+    only under a handler that carries the failure out.
+    """
+    found: list[str] = []
+    for module, caller, callee in chain:
+        tree = trees[module]
+        reported = (
+            [f"line {guard.lineno}" for guard in handled_calls(tree, callee)]
+            if callee == ASK
+            else continuing(tree, callee)
+        )
+        found.extend(f"{module}::{caller} -> {callee}: {item}" for item in reported)
+    return found
+
+
 def implementers(trees: dict[str, ast.Module]) -> frozenset[str]:
     """The modules that define a function under the probe's own name."""
     return frozenset(
@@ -399,16 +452,21 @@ def test_no_consumer_names_the_capability_answer():
 def test_no_handler_lets_the_probe_or_the_boot_refusal_continue():
     """Neither the question nor the abort is caught and run past.
 
-    The probe call is under no handler at all. The boot act is called inside
-    the lifespan's one failure path, which binds the failure and raises it
-    after it has unwound its resources — so the refusal still ends the boot,
-    and a handler that merely logged it would be reported here.
+    Every edge of the boot chain is checked, derived from the probe up to the
+    lifespan rather than listed: the probe call is under no handler at all,
+    and each call above it (the holder in the preflight, the preflight in the
+    lifespan) is under no handler that lets the run go on. The boot act is
+    called inside the lifespan's one failure path, which binds the failure and
+    raises it after it has unwound its resources — so the refusal still ends
+    the boot, and a handler that merely logged it would be reported here.
     """
     trees = module_trees()
-    assert handled_calls(trees[PREFLIGHT_MODULE], ASK) == []
-    root = trees[ROOT_MODULE]
-    assert handled_calls(root, PREFLIGHT)
-    assert continuing(root, PREFLIGHT) == []
+    chain = boot_chain(trees)
+    holder = holder_of(trees)
+    assert chain[0][1:] == (holder, ASK), chain
+    assert chain[-1] == (ROOT_MODULE, ROOT_FUNCTION, PREFLIGHT), chain
+    assert run_past_edges(trees, chain) == []
+    assert handled_calls(trees[ROOT_MODULE], PREFLIGHT)
 
 
 #: The lifespan's own shape around a planted guard: one failure path that
@@ -633,6 +691,103 @@ def test_a_probe_inlined_into_the_preflight_satisfies_the_reach():
     }
     assert holder_of(trees) == PREFLIGHT
     assert unreached(trees, PREFLIGHT) == []
+
+
+#: The call on each edge of a boot chain, unguarded: the holder's probe, the
+#: preflight's call of the holder, and the lifespan's call of the preflight.
+PROBE_CALL = f"await tracker.{ASK}(signals=signals)\n"
+HOLDER_CALL = "await {holder}(config=config, tracker=tracker)\n"
+PREFLIGHT_CALL = f"await {PREFLIGHT}(config=app.config, tracker=app.tracker)\n"
+
+
+def indented(statement: str, depth: int) -> str:
+    """*statement* indented by *depth* levels of four spaces."""
+    return "".join(
+        f"{' ' * 4 * depth}{line}\n" for line in statement.splitlines() if line
+    )
+
+
+def planted_chain(*, probe: str, holding: str, booting: str) -> dict[str, ast.Module]:
+    """A boot chain of three edges, each call replaced by the body given for it.
+
+    The holder and the preflight sit in the preflight's module and the
+    lifespan in the root module, under the shipped names, so the chain walk
+    derives the same three edges it derives from the shipped tree.
+    """
+    holder = holder_of(module_trees())
+    return {
+        PREFLIGHT_MODULE: ast.parse(
+            f"async def {holder}(*, config, tracker):\n"
+            "    signals = config.signals\n"
+            f"{indented(probe, 1)}"
+            f"async def {PREFLIGHT}(*, config, tracker):\n"
+            f"{indented(holding.format(holder=holder), 1)}"
+        ),
+        ROOT_MODULE: ast.parse(
+            f"async def {ROOT_FUNCTION}(app, log):\n{indented(booting, 1)}    yield\n"
+        ),
+    }
+
+
+def test_the_boot_chain_derived_from_a_clean_chain_reports_nothing():
+    """Non-vacuity for the planted edges below: unguarded calls pass."""
+    trees = planted_chain(probe=PROBE_CALL, holding=HOLDER_CALL, booting=PREFLIGHT_CALL)
+    holder = holder_of(module_trees())
+    assert boot_chain(trees) == [
+        (PREFLIGHT_MODULE, holder, ASK),
+        (PREFLIGHT_MODULE, PREFLIGHT, holder),
+        (ROOT_MODULE, ROOT_FUNCTION, PREFLIGHT),
+    ]
+    assert run_past_edges(trees, boot_chain(trees)) == []
+
+
+@pytest.mark.parametrize(
+    "edge",
+    [
+        pytest.param(
+            {"probe": (f"try:\n    {PROBE_CALL}except Exception as exc:\n    raise\n")},
+            id="the-probe-edge-under-any-handler",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    f"except {ABORT} as exc:\n"
+                    "    if not config.http.debug:\n"
+                    "        raise\n"
+                    "    await log.awarning('pass_gate_capability_refused', "
+                    "error=str(exc))\n"
+                )
+            },
+            id="the-holder-edge-raising-only-outside-debug",
+        ),
+        pytest.param(
+            {
+                "booting": (
+                    "try:\n"
+                    f"    {PREFLIGHT_CALL}"
+                    "except BaseException as exc:\n"
+                    "    await log.aerror('boot_failed', error=str(exc))\n"
+                )
+            },
+            id="the-root-edge-logging-and-serving",
+        ),
+    ],
+)
+def test_a_guard_on_any_edge_of_the_boot_chain_is_reported(edge):
+    """The chain walk checks each edge, the middle one included."""
+    calls = {"probe": PROBE_CALL, "holding": HOLDER_CALL, "booting": PREFLIGHT_CALL}
+    trees = planted_chain(**{**calls, **edge})
+    chain = boot_chain(trees)
+    assert len(chain) == 3, chain
+    [reported] = run_past_edges(trees, chain)
+    [(module, caller, callee)] = [
+        link
+        for link, name in zip(chain, ("probe", "holding", "booting"), strict=True)
+        if name in edge
+    ]
+    assert reported.startswith(f"{module}::{caller} -> {callee}: "), reported
 
 
 def test_a_preflight_module_function_naming_the_abort_is_reported():
