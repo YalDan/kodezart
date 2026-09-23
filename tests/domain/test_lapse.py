@@ -148,6 +148,26 @@ def test_a_path_bound_grading_with_no_changed_path_reading_lapses():
     )
 
 
+def test_a_stale_base_lapses_a_grading_whose_record_says_nothing_it_exercised_moved():
+    """The base arm answers before the path reading, even where one is present.
+
+    The record is there and touches nothing the grading exercised, which
+    carries the grading on a live base; the tree it was about was cut from a
+    base that is gone, so on a stale one it lapses all the same.
+    """
+    assert (
+        graded_state(
+            graded_sha=GRADED,
+            head_sha=HEAD,
+            rederivation_class=RederivationClass.observed,
+            exercised_paths=("src/kodezart/domain/",),
+            changeset=digest("docs/architecture.md"),
+            base_stale=True,
+        )
+        is GradedState.lapsed
+    )
+
+
 def test_an_empty_commit_record_carries_a_path_bound_grading():
     """A record that read no changed path is a reading, and it says nothing moved."""
     assert (
@@ -413,12 +433,17 @@ def test_a_grading_that_already_lapsed_stays_lapsed_and_is_not_newly_lapsed():
     }
 
 
-def test_the_partition_asks_the_rule_once_per_standing_path_bound_grading():
+@pytest.mark.parametrize("base_stale", [False, True])
+def test_the_partition_asks_the_rule_once_per_standing_path_bound_grading(
+    base_stale,
+):
     """A cheap grading needs no reading, so none is taken for it.
 
     Counted by the digests the partition actually consults: a reading it
     took for a cheap grading would be a read of a digest the caller did
-    not even have to fetch.
+    not even have to fetch.  On a stale base too, where the rule lapses
+    every one of them: the partition still asks the one rule, so the base
+    reading reaches the one lapse expression and no answer stands in for it.
     """
     consulted: list[str] = []
 
@@ -443,7 +468,7 @@ def test_the_partition_asks_the_rule_once_per_standing_path_bound_grading():
         standing("failed-one", state=CrossOffState.failed),
     ]
     held_standing(
-        base_stale=False,
+        base_stale=base_stale,
         prior=prior,
         head_sha=HEAD,
         changesets=Counting({GRADED: digest("docs/architecture.md")}),

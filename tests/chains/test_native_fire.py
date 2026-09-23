@@ -16,6 +16,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
 from kodezart.adapters.job_registry import InMemoryJobRegistry
+from kodezart.chains import fire_implementation
 from kodezart.chains.criteria import (
     TrackerCriteria,
     require_current_native_snapshot,
@@ -2062,8 +2063,12 @@ ALL_CRITERIA = (
 )
 
 
-def entry_of(kind: str):
-    """One of the three ways a lane enters, named by kind."""
+def entry_of(kind: str, *, base_stale: bool = False):
+    """One of the three ways a lane enters, named by kind.
+
+    *base_stale* is the entry's reading of its dispatch base; a new lane
+    carries none.
+    """
     if kind == "new":
         return NewLane()
     shape = ResumedLane if kind == "resumed" else DeliverOnlyLane
@@ -2072,7 +2077,7 @@ def entry_of(kind: str):
         loop_branch=RECORDED_LOOP,
         head_sha=RECORDED_HEAD,
         body_digest=None,
-        base_stale=False,
+        base_stale=base_stale,
     )
 
 
@@ -2333,6 +2338,57 @@ def test_the_step_before_the_loop_routes_a_delivering_lane_past_it(
     assert ("revalidate_criteria", "merge_to_feature") in edges
     assert ("revalidate_criteria", "rule_open_questions") in edges
     assert ("rule_open_questions", "run_ralph_loop") in edges
+
+
+@pytest.mark.parametrize("kind", ["resumed", "deliver_only"])
+async def test_a_stale_entry_hands_its_base_reading_to_the_loop(kind, monkeypatch):
+    """The loop is told the base the lane entered on is stale.
+
+    A resumed lane, and a lane entered to deliver on the remediation round
+    the review sent back, which runs the loop like any other round: each
+    entry read its dispatch base stale, and the gate the loop runs is handed
+    that reading rather than a default.
+    """
+    gate = FakeQualityGate(
+        events=[],
+        evaluation=AcceptanceCriteriaOutput.model_validate(
+            native_evaluation(reconciled=True)
+        ),
+        last_commit_sha="a" * 40,
+    )
+    if kind == "resumed":
+        source = TrackerCriteria(tracker=tracker())
+        spec, roster = await source.read_entry(issue_key=SUBJECT)
+    else:
+        _, source, spec = await finished_subtree()
+        _, roster = await source.read_entry(issue_key=SUBJECT, delivering=True)
+    fire = engine(criteria=source, quality_gate=gate)
+    state, config = fire.prepare(
+        prompt="Implement the requested behavior",
+        issue_key=None,
+        repo_path="/tmp/fire",
+        repo_url="https://github.com/owner/repo",
+        base_spec=trunk_base("main"),
+        scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=["Bash"],
+        cache_key="native-fire",
+        surface_holder="native-fire",
+        entry=entry_of(kind, base_stale=True),
+    )
+    state["fire_spec"], state["criterion_set"] = spec, roster
+    if kind == "deliver_only":
+        state["remediation_ticket"] = RemediationPlan(
+            instructions="close what the review named, under the same Checks"
+        )
+    monkeypatch.setattr(
+        fire_implementation, "get_stream_writer", lambda: lambda _: None
+    )
+
+    await fire.implementation.run_ralph_loop(state, config)
+
+    assert len(gate.calls) == 1
+    assert gate.calls[-1]["base_stale"] is True
 
 
 class CountingSource:
