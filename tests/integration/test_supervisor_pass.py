@@ -406,6 +406,65 @@ async def test_a_tick_observes_a_stalled_lane_under_every_declared_scope() -> No
         assert len(raised) == 1, ref.key
 
 
+#: A stalled lane whose landing row records its best commit again (KOD-681):
+#: three rows, two distinct shas. The two counts differ, so a clock that read
+#: the rows' length would report a different value from one that reads shas.
+LANDING_LANE = "LANE-R"
+LANDING_COMMITS = ("sha-one", "sha-two", "sha-one")
+
+
+async def test_a_stalled_lane_whose_landing_repeats_a_sha_raises_on_distinct_shas():
+    """A returning sha is a recorded act, not new work, and not a malformed read.
+
+    The tick completes over a record whose commit shas repeat, and the alarm
+    it raises carries the bound's field and value and the count of distinct
+    shas the lane recorded: two, where the rows number three.
+    """
+    operation = declared(scopes=(SCOPE,))
+    port = await board(
+        lanes=(LANDING_LANE,),
+        commits=LANDING_COMMITS,
+        scope=SCOPE,
+        holder=supervisor_holder(operation_name=operation.operation_name),
+    )
+    # The premise: a sha repeats, and the distinct shas still pass the bound,
+    # so the lane is measured and the repeat is what the reading has to take.
+    assert len(set(LANDING_COMMITS)) == 2
+    assert len(LANDING_COMMITS) == 3
+    assert len(set(LANDING_COMMITS)) > BOUND
+
+    scheduled = build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            run_alarm_max_commits_without_closure=BOUND,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=operation,
+        tracker=port,
+    )
+    async with asyncio.timeout(TICK_BOUND_SECONDS):
+        assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+
+    stored = await port.read_run_alarm(
+        issue_key=LANDING_LANE, subject=subject(LANDING_LANE), signal=SIGNAL
+    )
+    assert stored is not None
+    assert is_raised(stored)
+    assert stored.bound is not None
+    assert stored.bound.config_field == "run_alarm_max_commits_without_closure"
+    assert stored.bound.configured_value == BOUND
+    assert stored.bound.observed_value == 2
+    raised = [
+        event
+        for event in await port.lane_run_events(
+            issue_key=LANDING_LANE, lane_key=LANDING_LANE
+        )
+        if event.kind is RunEventKind.RUN_ALARM_RAISED
+    ]
+    assert len(raised) == 1
+
+
 #: A dispatch holder no default would produce, so a lease holder composed from
 #: it would be visible wherever it appeared.
 FOREIGN_PROCESS = "separate-deployment"
@@ -695,9 +754,12 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
         [event async for event in drive(second, job="stalled-job")]
 
     stalled = await walk_record(port, "S")
+    # The clock counts distinct shas: the landing row records the best commit
+    # again (KOD-681), so the record may carry a sha twice.
+    recorded = {row.sha for row in stalled.commits}
     # The precondition, from the board: a lane whose recorded commits do not
     # pass the bound could satisfy what follows by never being measured.
-    assert len(stalled.commits) > STALL_BOUND
+    assert len(recorded) > STALL_BOUND
     assert port.issues["S/check"].state_kind is not WorkflowStateKind.COMPLETED
 
     before = board_state(port)
@@ -724,7 +786,7 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
     assert stored.bound is not None
     assert stored.bound.config_field == "run_alarm_max_commits_without_closure"
     assert stored.bound.configured_value == STALL_BOUND
-    assert stored.bound.observed_value == len(stalled.commits)
+    assert stored.bound.observed_value == len(recorded)
     assert await observed_alarms(port) == ["S"]
     assert len(await raised_events(port, "S")) == 1
     assert await raised_events(port, "A") == []

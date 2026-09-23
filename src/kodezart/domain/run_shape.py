@@ -515,6 +515,11 @@ def _lane_tally_unmoved(
     criteria while three more were surfaced did work the difference of two
     counts would report as negative. A lane that closed something, or owes
     nothing at all, is quiet whatever it recorded.
+
+    A lane's commit shas may repeat: a landing records the best commit again
+    as its own row (KOD-681), so a returning sha is a recorded act. The clock
+    counts distinct new shas, so a returning sha is never new work. Criterion
+    identities may not repeat, and a reading that repeats one refuses.
     """
     signal = AlarmSignal.TALLY_UNMOVED
     try:
@@ -538,9 +543,7 @@ def _lane_tally_unmoved(
     configured = read_alarm_value(bound_reading, CountEvidence, signal)
     for reading, identities in (
         (anchor_reading, anchor.open),
-        (anchor_reading, anchor.commits),
         (latest_reading, latest.open),
-        (latest_reading, latest.commits),
         (closed_reading, closed),
     ):
         if len(set(identities)) != len(identities):

@@ -207,23 +207,25 @@ def test_malformed_foreign_or_inconsistent_readings_refuse(damage):
     assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
 
 
-#: The five identity tuples the arm reads, and one damaged reading for each: an
-#: identity repeated in it. Every one of the five is checked by the code, so all
-#: five are asked here — a repeat in the commits of either reading is counted
-#: once by the set difference and leaves the arithmetic looking right, which is
-#: exactly why the refusal cannot be pinned for one tuple and assumed for four.
+#: The three criterion identity tuples the arm reads, and one damaged reading
+#: for each: an identity repeated in it. Every one of the three is checked by
+#: the code, so all three are asked here: a repeat in the closed reading is
+#: also a closed identity still owed, which is why the refusal cannot be pinned
+#: for one tuple and assumed for the others.
 REPEATED = {
     "anchor.open": (0, lambda: tally(("c-one", "c-one"))),
-    "anchor.commits": (0, lambda: tally(commits=("sha-a", "sha-a"))),
     "latest.open": (1, lambda: tally(("c-one", "c-one"), ("sha-one", "sha-two"))),
-    "latest.commits": (1, lambda: tally(("c-one", "c-two"), ("sha-one", "sha-one"))),
     "closed": (2, None),
 }
 
 
 @pytest.mark.parametrize("tuple_name", list(REPEATED))
 def test_a_repeated_identity_in_any_of_the_five_tuples_refuses(tuple_name):
-    """One reason for all five, so which tuple was damaged is not the answer.
+    """One reason for all three, so which tuple was damaged is not the answer.
+
+    The name is the one the test census records. Of the five identity tuples
+    the arm reads, only the three criterion tuples refuse a repeat; the two
+    commit tuples may repeat a sha, and the two tests below read them.
 
     The reason is asserted and not only the signal: a repeat in the closed
     reading is also a closed identity still owed, and a check that had stopped
@@ -243,6 +245,38 @@ def test_a_repeated_identity_in_any_of_the_five_tuples_refuses(tuple_name):
 
     assert caught.value.reason == "an identity appears more than once"
     assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
+
+
+def test_a_repeated_commit_sha_is_read_and_counts_once():
+    """A landing records the best commit again (KOD-681), so shas may repeat.
+
+    The latest reading carries three rows over two distinct shas and the
+    bound is two: distinct shas stay at the bound and are quiet, where the
+    rows' length would pass it. With the bound at one, the alarm's observed
+    value is the two distinct shas, not the three rows.
+    """
+    repeated = tally(commits=("sha-one", "sha-two", "sha-one"))
+
+    assert observe(readings(latest=repeated, bound=2)) is None
+
+    alarm = observe(readings(latest=repeated, bound=1))
+    assert alarm is not None
+    assert alarm.bound is not None
+    assert alarm.bound.observed_value == 2
+
+
+def test_a_sha_the_anchor_repeats_is_read_and_is_not_new_work():
+    """A returning sha in the earlier reading is still a sha it already held."""
+    alarm = observe(
+        readings(
+            anchor=tally(commits=("sha-a", "sha-b", "sha-a")),
+            latest=tally(commits=("sha-a", "sha-b", "sha-a", "sha-c", "sha-d")),
+        )
+    )
+
+    assert alarm is not None
+    assert alarm.bound is not None
+    assert alarm.bound.observed_value == 2
 
 
 def test_a_subject_with_no_tally_arm_refuses():
