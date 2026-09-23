@@ -181,6 +181,16 @@ def _created_context(context: OrganizeContext, child: TrackerIssue) -> OrganizeC
     )
 
 
+def _on_approval_side(approved: bool, *, phase: ResolvedMandateSpec) -> bool:
+    """Whether an approval reading is on the side of approval *phase* acts on.
+
+    A run stage acts on a member that reads approved, a pre-approval phase
+    on one that does not. The approval half of ``OrganizeOwner._admitted``,
+    and the reading the round's declared set takes of each member.
+    """
+    return approved is phase.role.runs_under_approval
+
+
 class OrganizeOwner:
     def __init__(
         self,
@@ -404,7 +414,9 @@ class OrganizeOwner:
         The one reading behind every gate and approval arm. A run stage is
         admitted by approval and by its gate; a pre-approval phase by its
         gate while approval is absent. A gate naming the approval label
-        reads the cascade, never the exact scope's own labels.
+        reads the cascade, never the exact scope's own labels. Its approval
+        half is ``_on_approval_side``, which the round's declared set reads
+        on its own.
         """
         approved = await self._tracker.execution_approved(issue_key=issue.issue_key)
         namespace, key = split_label_key(phase.spec.gate_label_key)
@@ -417,9 +429,7 @@ class OrganizeOwner:
             gate_open = ScopeLabel(key) in gate_members
         else:
             gate_open = key in issue.issue_labels
-        return gate_open and (
-            approved if phase.role.runs_under_approval else not approved
-        )
+        return gate_open and _on_approval_side(approved, phase=phase)
 
     async def _may_write(
         self, issue_key: str, *, phase: ResolvedMandateSpec, scope: ScopeRef
@@ -1320,8 +1330,10 @@ class OrganizeOwner:
                 [
                     key
                     for key in by_key
-                    if await self._tracker.execution_approved(issue_key=key)
-                    is phase.role.runs_under_approval
+                    if _on_approval_side(
+                        await self._tracker.execution_approved(issue_key=key),
+                        phase=phase,
+                    )
                 ]
             )
             declared = phase_surfaces(member_keys=declared_keys, role=phase.role)
