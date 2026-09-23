@@ -401,7 +401,8 @@ def _bound_values(function: Function, name: str) -> list[ast.expr] | None:
     """Every value the function binds *name* to, in any binding form.
 
     ``None`` when a binding form binds it to nothing an expression names
-    (an import, a ``with`` or ``except`` target, a ``del``).
+    (an import, a ``with`` or ``except`` target, a match capture, a star or
+    the rest of a mapping pattern).
     """
     values: list[ast.expr] = []
     for node in _own_nodes(function):
@@ -436,12 +437,55 @@ def _bound_values(function: Function, name: str) -> list[ast.expr] | None:
         elif isinstance(node, ast.withitem):
             if node.optional_vars is not None and _holds_name(node.optional_vars, name):
                 return None
-        elif (isinstance(node, ast.ExceptHandler) and node.name == name) or (
-            isinstance(node, ast.Import | ast.ImportFrom)
-            and any((alias.asname or alias.name) == name for alias in node.names)
+        elif (
+            (isinstance(node, ast.ExceptHandler) and node.name == name)
+            or (
+                isinstance(node, ast.Import | ast.ImportFrom)
+                and any((alias.asname or alias.name) == name for alias in node.names)
+            )
+            or (isinstance(node, ast.MatchAs | ast.MatchStar) and node.name == name)
+            or (isinstance(node, ast.MatchMapping) and node.rest == name)
         ):
             return None
     return values
+
+
+def _display_values(
+    display: ast.expr, key: str, *, splat: bool
+) -> list[ast.expr | None]:
+    """The values a dict display sets for *key*.
+
+    A display that is not a literal dict, or one with a key that is not a
+    constant, gives ``None`` when *splat* says it could set the key.
+    """
+    if not isinstance(display, ast.Dict):
+        return [None] if splat else []
+    values: list[ast.expr | None] = []
+    for name, value in zip(display.keys, display.values, strict=True):
+        if name is None:
+            values.extend(_display_values(value, key, splat=splat))
+        elif isinstance(name, ast.Constant):
+            if name.value == key:
+                values.append(value)
+        elif splat:
+            values.append(None)
+    return values
+
+
+def _default(function: Function, name: str) -> ast.expr | None:
+    """The default a parameter takes when a caller omits it."""
+    arguments = function.args
+    positional = [*arguments.posonlyargs, *arguments.args]
+    offset = len(positional) - len(arguments.defaults)
+    for index, argument in enumerate(positional):
+        if argument.arg == name and index >= offset:
+            return arguments.defaults[index - offset]
+    for argument, default in zip(
+        arguments.kwonlyargs, arguments.kw_defaults, strict=True
+    ):
+        if argument.arg == name:
+            return default
+    return None
 
 
 def _parameters(function: Function) -> list[str]:
@@ -460,24 +504,31 @@ class Provenance:
     """Where the state name a restore puts back comes from.
 
     A restored name must bottom out at a read of the board row's own
-    state-name field.  It is followed through every binding form of a local
-    name (an assignment, tuple and starred targets among them, an annotated
-    or augmented assignment, a walrus, a loop or comprehension target), from
-    a parameter to the same-named argument at every production caller of
-    the function, and from a read of any other model field to every
-    production keyword of that field's name.  A call of the builtin
-    ``next`` is followed through its arguments, a comprehension through its
-    element, a conditional through both arms; ``None`` names no state.
-    Anything else is reported: a constant, a lookup in a mapping, an
-    attribute held on ``self``, a name bound in a form that names no
-    value, and a parameter or field nothing in production passes.
+    state-name field, recognised by the field's name on any receiver but
+    ``self``.  It is followed through every binding form of a local name (an
+    assignment, tuple and starred targets among them, an annotated or
+    augmented assignment, a walrus, a loop or comprehension target); from a
+    parameter to its default and to the same-named argument at every
+    production caller of a function of that name, by keyword, by position or
+    in a ``**`` display; and from a read of any other model field to every
+    production value set for that field: a keyword, a key of a ``**``
+    display, of ``model_copy(update=...)`` or of a dict handed to
+    ``model_validate`` or ``validate_python``, and a positional argument of a
+    class that declares the field.  A call of the builtin ``next`` is
+    followed through its arguments, a comprehension through its element, a
+    conditional through both arms, a boolean operation through every
+    operand; ``None`` names no state.  Anything else is reported: a
+    constant, a lookup in a mapping, an attribute held on ``self``, a name a
+    match pattern or another form binds to no value, a parameter or field
+    nothing in production passes, and a ``*`` or ``**`` splat that could
+    carry one without its contents being a literal.
 
-    Still unseen: a name composed at run time or reached by ``getattr``;
-    a caller that omits the parameter and leaves its default; callers are
-    matched by the called name alone, so a same-named function elsewhere is
-    followed too, which can only report more; and the board-row read is
-    recognised by the field's name on any receiver but ``self``, so another
-    object carrying an attribute of that name is taken for the board.
+    Still unseen, as for every static guard: a value handed across a
+    function boundary, where the other function is not resolved at this
+    site (returned from a helper, stored on an object and read elsewhere, or
+    passed through a container built elsewhere); a name built at run time;
+    and a binding made only when a function runs (``setattr`` or
+    ``globals()`` inside a function body).
     """
 
     def __init__(self, sources: Mapping[str, str]) -> None:
@@ -486,6 +537,44 @@ class Provenance:
         self.calls = {
             source: list(direct_calls(node)) for source, node in self.functions.items()
         }
+        #: Each class the sources declare, with its annotated fields in order.
+        self.fields = {
+            node.name: [
+                item.target.id
+                for item in node.body
+                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+            ]
+            for tree in production.trees.values()
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef)
+        }
+
+    def _set_values(self, call: ast.Call, field: str) -> list[ast.expr | None]:
+        """Every value *call* sets for the model field *field*.
+
+        ``None`` stands for a splat that could set it but whose contents are
+        not a literal.
+        """
+        values: list[ast.expr | None] = []
+        declares = field in self.fields.get(called_name(call) or "", ())
+        for word in call.keywords:
+            if word.arg == field:
+                values.append(word.value)
+            elif word.arg is None:
+                values.extend(_display_values(word.value, field, splat=declares))
+            elif word.arg == "update" and called_name(call) == "model_copy":
+                values.extend(_display_values(word.value, field, splat=False))
+        if called_name(call) in {"model_validate", "validate_python"} and call.args:
+            values.extend(_display_values(call.args[0], field, splat=False))
+        if declares:
+            order = self.fields[called_name(call) or ""]
+            for position, argument in enumerate(call.args):
+                if isinstance(argument, ast.Starred):
+                    values.append(None)
+                    break
+                if position < len(order) and order[position] == field:
+                    values.append(argument)
+        return values
 
     def _is_method(self, source: Source) -> bool:
         node = self.functions[source]
@@ -559,18 +648,24 @@ class Provenance:
             return []
         seen.add(("field", field))
         passed = [
-            (source, word.value)
+            (source, call, value)
             for source, calls in self.calls.items()
             for call in calls
-            for word in call.keywords
-            if word.arg == field
+            for value in self._set_values(call, field)
         ]
         if not passed:
             return [f"{ast.unparse(expression)} passed by nothing, in {where}"]
         return [
             leaf
-            for source, value in passed
-            for leaf in self.origins(source, value, seen)
+            for source, call, value in passed
+            for leaf in (
+                self.origins(source, value, seen)
+                if value is not None
+                else [
+                    f"{ast.unparse(call)} may set {field} unresolvably, in "
+                    f"{source.module}::{source.function}"
+                ]
+            )
         ]
 
     def _name_origins(self, source: Source, name: str, seen: set[object]) -> list[str]:
@@ -582,6 +677,9 @@ class Provenance:
         values = _bound_values(function, name)
         if values is None:
             return [f"{name} bound to no value in {where}"]
+        default = _default(function, name)
+        if default is not None:
+            values = [*values, default]
         leaves = [
             leaf for value in values for leaf in self.origins(source, value, seen)
         ]
@@ -597,22 +695,39 @@ class Provenance:
             if name in positional
             else -1
         )
-        passed = [
-            (caller, argument)
-            for caller, calls in self.calls.items()
-            for call in calls
-            if called_name(call) == function.name
-            for argument in (
-                *(word.value for word in call.keywords if word.arg == name),
-                *(call.args[index : index + 1] if index >= 0 else ()),
-            )
-        ]
+        passed: list[tuple[Source, ast.expr | None, ast.Call]] = []
+        for caller, calls in self.calls.items():
+            for call in calls:
+                if called_name(call) != function.name:
+                    continue
+                for word in call.keywords:
+                    if word.arg == name:
+                        passed.append((caller, word.value, call))
+                    elif word.arg is None:
+                        passed.extend(
+                            (caller, value, call)
+                            for value in _display_values(word.value, name, splat=True)
+                        )
+                for position, argument in enumerate(call.args):
+                    if isinstance(argument, ast.Starred):
+                        if index >= position:
+                            passed.append((caller, None, call))
+                        break
+                    if position == index:
+                        passed.append((caller, argument, call))
         if not passed and not values:
             return [f"parameter {name} passed by no caller of {where}"]
         return leaves + [
             leaf
-            for caller, argument in passed
-            for leaf in self.origins(caller, argument, seen)
+            for caller, argument, call in passed
+            for leaf in (
+                self.origins(caller, argument, seen)
+                if argument is not None
+                else [
+                    f"{ast.unparse(call)} may pass {name} unresolvably, in "
+                    f"{caller.module}::{caller.function}"
+                ]
+            )
         ]
 
 
@@ -674,6 +789,172 @@ def claim(winner):
 """
 
 
+def _restore_field(field: str, setter: str) -> str:
+    """A restore of *field* off a report, and one production *setter* of it."""
+    return f"""
+class Restorer:
+    async def put_back(self, key, report):
+        await self._tracker.{RESTORE_STATE}(
+            issue_key=key, {RESTORED_NAME}=report.{field}
+        )
+
+
+def claim(report, winner, options):
+    {setter}
+"""
+
+
+def _restore_through(function: str, caller: str, binding: str = "") -> str:
+    """A restore of a parameter, bound by *binding*, and one *caller*."""
+    return f"""
+class Restorer:
+    async def {function}(self, key, name):
+        {binding or "pass"}
+        await self._tracker.{RESTORE_STATE}(issue_key=key, {RESTORED_NAME}=name)
+
+
+async def fail(restorer, key, options, rows):
+    {caller}
+"""
+
+
+#: One planted restore per acceptance arm and per construction form the
+#: provenance follows, each carrying something that is not a board read.
+ARMS = {
+    "chains/arm_boolop.py": _restore(f'row.{BOARD_STATE} or "Done"'),
+    "chains/arm_comprehension.py": _restore('next((s for s in ("Backlog",)), None)'),
+    "chains/arm_field.py": _restore_field(
+        "parked_name", 'return Report(parked_name="Backlog")'
+    ),
+    "chains/arm_ifexp.py": _restore(f'row.{BOARD_STATE} if row else "Done"'),
+    "chains/arm_next.py": _restore(
+        f"next((operation.{sorted(CONFIGURED)[0]}[s] for s in ()), None)"
+    ),
+    "chains/arm_unpassed.py": _restore("report.unpassed_name"),
+    "chains/form_adapter.py": _restore_field(
+        "adapted_name",
+        'return TypeAdapter(Report).validate_python({"adapted_name": "Todo"})',
+    ),
+    "chains/form_copy.py": _restore_field(
+        "copied_name",
+        f"return Report(copied_name=winner.{BOARD_STATE}).model_copy("
+        'update={"copied_name": "Backlog"})',
+    ),
+    "chains/form_display.py": _restore_field(
+        "displayed_name", 'return Report(**{"displayed_name": "Backlog"})'
+    ),
+    "chains/form_positional.py": _restore_field(
+        "positional_name", 'return Parked("Backlog")'
+    )
+    + "\n\nclass Parked:\n    positional_name: str\n",
+    "chains/form_splat.py": _restore_field(
+        "splatted_name", "return Splatted(**options)"
+    )
+    + "\n\nclass Splatted:\n    splatted_name: str\n",
+    "chains/form_validate.py": _restore_field(
+        "validated_name",
+        'return Report.model_validate({"validated_name": "Backlog"})',
+    ),
+    "chains/match_as.py": _restore_through(
+        "put_back_captured",
+        f"await restorer.put_back_captured(key, name=rows[0].{BOARD_STATE})",
+        'match "Backlog":\n            case name:\n                pass',
+    ),
+    "chains/match_rest.py": _restore_through(
+        "put_back_rest",
+        f"await restorer.put_back_rest(key, name=rows[0].{BOARD_STATE})",
+        'match {"a": "Backlog"}:\n            case {**name}:\n                pass',
+    ),
+    "chains/match_star.py": _restore_through(
+        "put_back_starred",
+        f"await restorer.put_back_starred(key, name=rows[0].{BOARD_STATE})",
+        'match ["Backlog"]:\n            case [*name]:\n                pass',
+    ),
+    "chains/parameter_display.py": _restore_through(
+        "put_back_displayed",
+        'await restorer.put_back_displayed(key, **{"name": "Todo"})',
+    ),
+    "chains/parameter_splat.py": _restore_through(
+        "put_back_splatted", "await restorer.put_back_splatted(key, **options)"
+    ),
+    "chains/parameter_default.py": _restore_through(
+        "put_back_defaulted", "await restorer.put_back_defaulted(key)"
+    ).replace("(self, key, name)", '(self, key, name="Backlog")'),
+}
+
+
+def _at(module: str, function: str = "Restorer.put_back") -> str:
+    return f"chains/{module}.py::{function}"
+
+
+#: What each planted arm is reported as.
+ARM_REPORTS = {
+    "chains/arm_boolop.py": f"{_at('arm_boolop')}: 'Done' in {_at('arm_boolop')}",
+    "chains/arm_comprehension.py": (
+        f"{_at('arm_comprehension')}: ('Backlog',) in {_at('arm_comprehension')}"
+    ),
+    "chains/arm_field.py": (
+        f"{_at('arm_field')}: 'Backlog' in {_at('arm_field', 'claim')}"
+    ),
+    "chains/arm_ifexp.py": f"{_at('arm_ifexp')}: 'Done' in {_at('arm_ifexp')}",
+    "chains/arm_next.py": (
+        f"{_at('arm_next')}: operation.{sorted(CONFIGURED)[0]}[s] in {_at('arm_next')}"
+    ),
+    "chains/arm_unpassed.py": (
+        f"{_at('arm_unpassed')}: report.unpassed_name passed by nothing, in "
+        f"{_at('arm_unpassed')}"
+    ),
+    "chains/form_adapter.py": (
+        f"{_at('form_adapter')}: 'Todo' in {_at('form_adapter', 'claim')}"
+    ),
+    "chains/form_copy.py": (
+        f"{_at('form_copy')}: 'Backlog' in {_at('form_copy', 'claim')}"
+    ),
+    "chains/form_display.py": (
+        f"{_at('form_display')}: 'Backlog' in {_at('form_display', 'claim')}"
+    ),
+    "chains/form_positional.py": (
+        f"{_at('form_positional')}: 'Backlog' in {_at('form_positional', 'claim')}"
+    ),
+    "chains/form_splat.py": (
+        f"{_at('form_splat')}: Splatted(**options) may set splatted_name "
+        f"unresolvably, in {_at('form_splat', 'claim')}"
+    ),
+    "chains/form_validate.py": (
+        f"{_at('form_validate')}: 'Backlog' in {_at('form_validate', 'claim')}"
+    ),
+    "chains/match_as.py": (
+        f"{_at('match_as', 'Restorer.put_back_captured')}: name bound to no value "
+        f"in {_at('match_as', 'Restorer.put_back_captured')}"
+    ),
+    "chains/match_rest.py": (
+        f"{_at('match_rest', 'Restorer.put_back_rest')}: name bound to no value "
+        f"in {_at('match_rest', 'Restorer.put_back_rest')}"
+    ),
+    "chains/match_star.py": (
+        f"{_at('match_star', 'Restorer.put_back_starred')}: name bound to no value "
+        f"in {_at('match_star', 'Restorer.put_back_starred')}"
+    ),
+    "chains/parameter_display.py": (
+        f"{_at('parameter_display', 'Restorer.put_back_displayed')}: 'Todo' in "
+        f"{_at('parameter_display', 'fail')}"
+    ),
+    "chains/parameter_splat.py": (
+        f"{_at('parameter_splat', 'Restorer.put_back_splatted')}: "
+        "restorer.put_back_splatted(key, **options) may pass name unresolvably, "
+        f"in {_at('parameter_splat', 'fail')}"
+    ),
+    "chains/parameter_default.py": (
+        f"{_at('parameter_default', 'Restorer.put_back_defaulted')}: 'Backlog' in "
+        f"{_at('parameter_default', 'Restorer.put_back_defaulted')}"
+    ),
+}
+
+
+def test_every_planted_arm_is_named_with_the_report_it_takes():
+    assert set(ARM_REPORTS) == set(ARMS)
+
+
 def test_a_restored_state_name_is_read_from_the_board_and_not_from_configuration():
     assert CONFIGURED
     assert ADAPTER_MAPPING
@@ -697,8 +978,9 @@ def test_a_restored_state_name_is_read_from_the_board_and_not_from_configuration
         "chains/state_names.py": _restore("self._state_names[stage]"),
         "chains/tuple.py": TUPLE_BOUND,
         "chains/walrus.py": WALRUS_BOUND,
+        **ARMS,
     }
-    assert Provenance(planted).unboarded() == (
+    expected = (
         f"chains/configured.py::Restorer.put_back: operation.{field}[stage] "
         "in chains/configured.py::Restorer.put_back",
         "chains/constant.py::Restorer.put_back: 'Done' "
@@ -718,3 +1000,37 @@ def test_a_restored_state_name_is_read_from_the_board_and_not_from_configuration
         "chains/walrus.py::Restorer.put_back: 'Todo' "
         "in chains/walrus.py::Restorer.put_back",
     )
+    assert Provenance(planted).unboarded() == tuple(
+        sorted((*expected, *ARM_REPORTS.values()))
+    )
+
+
+def test_a_value_handed_across_a_function_boundary_is_not_seen():
+    """The stated limit: a state name stored on an object and read elsewhere
+    is taken for the board by the field's name alone."""
+    sources = {"chains/held.py": _restore(f"self._operation.{BOARD_STATE}")}
+    assert Provenance(sources).unboarded() == ()
+
+
+def test_a_name_built_at_run_time_is_not_seen():
+    """The stated limit: a field set under a name composed when it runs."""
+    sources = {
+        "chains/runtime.py": _restore_field(
+            "composed_name",
+            f"report = Report(composed_name=winner.{BOARD_STATE})\n"
+            '    vars(report)["composed" + "_name"] = "Backlog"',
+        )
+    }
+    assert Provenance(sources).unboarded() == ()
+
+
+def test_a_binding_made_only_when_a_function_runs_is_not_seen():
+    """The stated limit: a field set through ``setattr`` inside a body."""
+    sources = {
+        "chains/setattr.py": _restore_field(
+            "late_name",
+            f"report = Report(late_name=winner.{BOARD_STATE})\n"
+            '    setattr(report, "late_name", "Backlog")',
+        )
+    }
+    assert Provenance(sources).unboarded() == ()
