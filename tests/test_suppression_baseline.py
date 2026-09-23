@@ -3,9 +3,9 @@
 A hole nothing counts is a hole that grows.  The measure is an absolute
 in-tree baseline: every suppression directive, every form that keeps a
 collected test from running, every mark the collection gate deselects,
-every test declaration, every file's assertion count and the gate's own
-configuration are read from the tree as it stands and compared with what is
-written down below.  Nothing is diffed against a base ref -- none is
+every test declaration, every file's assertion count and the project
+file's tool tables are read from the tree as it stands and compared with
+what is written down below.  Nothing is diffed against a base ref -- none is
 recorded, and a baseline needs none.  It is the stronger measure either
 way: a changed-lines reading catches a hole only where it was added, while
 here every line is a changed line, so a hole reds the suite wherever it
@@ -34,25 +34,30 @@ whose `extra` setting is loosened from forbidding unknown fields to
 allowing them.  The tree carries none today and nothing here would see one.
 
 A second class is out of it too, and it is stated here as a class.  The
-gate runs four tools: the test runner, the type checker, the linter and
-the formatter.  The census reads the modules of the two trees it walks,
-`src/kodezart` and `tests/` (the test files, and the conftest files under
-`tests/` among them; a conftest at the repository root is outside its
-walk), and the pinned tool tables of `pyproject.toml`, and it reads in
-them only the shapes this census counts.  Nothing else that changes what
-any of the gate's tools checks, or how it checks it, is read: not what
-lives outside those files, and not what lives inside them in any other
-form.  Of the runner's table the key set is pinned whole, and of its
-values only `filterwarnings` and `markers` are read: a key it does not
-carry today -- `addopts`, `norecursedirs`, a collection-name key
+gate's tools are four: the test runner, the type checker, the linter and
+the formatter (its fifth recipe, `verify-no-origin-literal`, is a text
+search that honours no suppression).  The census reads the modules of the
+two trees it walks, `src/kodezart` and `tests/` (the test files, and the
+conftest files under `tests/` among them; a conftest at the repository
+root is outside its walk), and the pinned tool tables of `pyproject.toml`,
+and it reads in them only the shapes this census counts.  It also looks,
+beside the project file and in every directory the walk reaches, for
+another configuration file one of those tools would read
+(`FOREIGN_TOOL_FILES`), and reds the suite on any it finds.  Nothing
+else that changes what any of the gate's tools checks, or how it checks
+it, is read: not what lives outside those files, and not what lives
+inside them in any other form.  Of the runner's table the key set is
+pinned whole, and of its values only `filterwarnings` and `markers` are
+read: a key it does not carry today -- `addopts`, `norecursedirs`, a collection-name key
 (`python_files`, `python_classes`, `python_functions`),
 `empty_parameter_set_mark`, `collect_imported_tests` -- reds the suite when
 it is added, while a changed value of another key it carries, `testpaths`
 among them, is not seen.  Examples of the class, none of them read:
 
 - the gate's own invocation: every recipe the Makefile `check:` target
-  runs, with its options, its paths and its config-file flags (`test:`,
-  `lint:`, `type-check:`, `format-check:`), so a `--disable-error-code`
+  runs, with its options, its paths and its config-file flags
+  (`verify-no-origin-literal:`, `format-check:`, `lint:`, `type-check:`,
+  `test:`), so a `--disable-error-code`
   handed to the type checker or an `--extend-ignore` handed to the linter
   is honoured and unseen; the prerequisite list of `check:`, which decides
   which of those recipes run at all; the CI step that runs the gate

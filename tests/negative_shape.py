@@ -24,7 +24,7 @@ from tests.conftest import GATED_MARKERS
 
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 
-#: The two trees the gate covers: shipped code and the suite that exercises it.
+#: The two trees the census walks: shipped code and the suite that exercises it.
 SCANNED: Final[tuple[str, ...]] = ("src/kodezart", "tests")
 
 #: Both suffixes the gate's tools read.  The linter lints a stub under the
