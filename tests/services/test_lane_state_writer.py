@@ -2034,9 +2034,11 @@ async def test_a_lapse_announces_nothing_and_asks_the_board_nothing_extra():
 # ---------------------------------------------------------------------------
 
 #: The sha the criterion was first finished at, and the sha of the attempt
-#: whose verdict is under test: forty hex digits, every one of them used, so a
-#: row that lost, reordered or recased a byte reads back as another commit.
-STANDING_SHA = "1" * 40
+#: whose verdict is under test: forty hex digits each, every hex digit used,
+#: neither one a palindrome nor a rotation of itself, and the two distinct, so
+#: a row that lost, reordered, reversed or recased a byte of either reads back
+#: as another commit. The lapsed member is written at the standing sha.
+STANDING_SHA = "fedcba9876543210" * 2 + "fedcba98"
 ATTEMPT_SHA = "0123456789abcdef" * 2 + "01234567"
 
 
