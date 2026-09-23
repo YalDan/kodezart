@@ -16,12 +16,14 @@ import traceback
 from contextlib import suppress
 from functools import partial
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
 from kodezart.adapters.git.check_chain import SubprocessCheckChainRunner
 from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.config.app import AppConfig
+from kodezart.core import protocols
 from kodezart.domain.errors import (
     CheckChainExecutionError,
     GitOperationError,
@@ -61,6 +63,34 @@ UNION_MODULES: tuple[str, ...] = (
     "kodezart.services.union_composition",
     "kodezart.services.union_identity",
 )
+
+
+def is_port(value: object) -> bool:
+    """A protocol the ports module declares: what a collaborator is typed as."""
+    return (
+        isinstance(value, type)
+        and value.__module__ == protocols.__name__
+        and getattr(value, "_is_protocol", False)
+    )
+
+
+def declared(port: type) -> frozenset[str]:
+    """Every member *port* declares, inherited members and properties included.
+
+    Read off the protocol's own record of its members, not off ``callable``,
+    which a property on a port fails, and not off ``dir``, which cannot tell
+    a declared member from the machinery every class carries.
+    """
+    return frozenset(port.__protocol_attrs__)
+
+
+def ports_of(cls: type) -> dict[str, type]:
+    """Every constructor parameter of *cls* annotated with a port, by name."""
+    return {
+        name: hint
+        for name, hint in get_type_hints(cls.__init__).items()
+        if is_port(hint)
+    }
 
 
 def _raised(node: ast.Raise) -> str:
