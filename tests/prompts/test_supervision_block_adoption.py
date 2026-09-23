@@ -40,9 +40,10 @@ prohibitions the amended base rule no longer states.
   and ``## `` heading in order, is pinned, so a section moved or added
   outside the base fails with the order it broke.
 * Outside the nine adopted sections the template is the base at a047d1fb
-  byte for byte, except for two amended lines (KOD-567, KOD-573, KOD-574):
-  the remainder, with the base's own text put back on those two lines, is
-  pinned by its sha256.  Any other change to the base fails whatever its
+  byte for byte, except for two amended lines (KOD-567, KOD-573, KOD-574)
+  and principle 3's quick-win sizing sentences (KOD-904): the remainder,
+  with the base's own text put back on those two lines, is pinned by its
+  sha256.  Any other change to the base fails whatever its
   wording, a new prohibition, a window bound or a marker advance alike; it
   is out of this change's reach and needs its own decision.
 * The GitHub boundary has one owner, Supervision Boundaries (KOD-573).  It
@@ -68,10 +69,11 @@ BLOCK = REPO_ROOT / "docs" / "supervision-block.md"
 BLOCK_SHA256 = "c1778d8d867e3967e8f9f988a7f7a0439b4b792de2836bad954fc398994a8352"
 TEMPLATE = default_sets_root() / OPUS_SET / "grooming_pass.md"
 
-#: sha256 of the grooming template at a047d1fb, the base the block is adopted
-#: into.  Computed once from that commit's blob; the test reads only the
+#: sha256 of the base the block is adopted into: the grooming template at
+#: a047d1fb with principle 3 extended by the quick-win sizing sentences
+#: (KOD-904), a deliberate change to the base text.  The test reads only the
 #: working tree.
-BASE_SHA256 = "0270af8a69f55807ba90612f5afc792e172bc92f7f8f45b3f1014e0fe2345ebc"
+BASE_SHA256 = "81745d371029de5c18070ba23bb19589d1b37aafce7f76e1b9f05b2bfcf790b2"
 
 #: KOD-566's own list of the sections adopted byte for byte.
 VERBATIM: tuple[str, ...] = (
