@@ -27,6 +27,7 @@ def observation(verdict="refuted"):
         verdict=verdict,
         discrepancies=("closed_unmerged_pr",) if verdict == "refuted" else (),
         branch_head="observed-head",
+        verification_head="observed-head",
         pr=None,
     )
 
@@ -97,7 +98,7 @@ def test_bare_or_unbound_refutation_cannot_be_completed(damage):
     if damage == "no-mandate":
         data["mandate"] = None
     elif damage == "no-head":
-        data["observation"]["branch_head"] = None
+        data["observation"]["verification_head"] = None
     elif damage == "no-discrepancy":
         data["observation"]["discrepancies"] = ()
     else:

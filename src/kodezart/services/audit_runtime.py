@@ -263,10 +263,10 @@ def _all_reports(
 
 
 def _head(publication: AuditPublication) -> str | None:
-    """The report's own source head; none for a branch that no longer exists."""
+    """The report's own source head; none for a lane with no verification head."""
     if not isinstance(publication, AuditTerminalPublication):
         return publication.report.claim.head_sha
-    return publication.report.observation.branch_head
+    return publication.report.observation.verification_head
 
 
 def _detector(publication: AuditPublication) -> str:
@@ -610,8 +610,9 @@ class AuditScheduledPass:
     ) -> str:
         """The commit a publication's write-back is judged at.
 
-        The report's own head where it has one.  A refutation whose branch
-        no longer exists has none, so it is judged at the trunk head, the
+        The report's own head where it has one.  A refutation with no
+        verification head, its branch gone and no deliverable branch holding
+        its recorded head, has none, so it is judged at the trunk head, the
         same read the scope's summary is judged at.
         """
         return _head(publication) or await self._trunk_head(target)

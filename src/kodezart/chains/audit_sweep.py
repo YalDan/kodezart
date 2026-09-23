@@ -11,13 +11,13 @@ from kodezart.core.protocols import GitService, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_issues
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES
+from kodezart.services.audit_heads import read_verification_head
 from kodezart.services.audit_requests import (
     AuditRequestReader,
     AuditRequestSnapshot,
     AuditRequestTarget,
 )
 from kodezart.services.audit_terminal import AuditTerminalReader
-from kodezart.services.git_observations import read_remote_head
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
@@ -197,9 +197,10 @@ class AuditReadSweep:
     the sweep produces runs the same mandate hunt: a criterion claim, each
     over-claim and detector-removal reading, a forge reading at its graded
     sha, a restamp trace at the current head, and a terminal refutation. A
-    terminal whose branch no longer exists is emitted as REFUTED with
-    ``NO_BRANCH`` and hunted with no head pin, over the tracker surfaces
-    alone. A refutation whose hunt fails keeps its raw value beside the
+    terminal with no verification head (its loop branch gone and no
+    deliverable branch of its run holding the recorded head) is emitted as
+    REFUTED with ``NO_BRANCH`` and hunted with no head pin, over the tracker
+    surfaces alone. A refutation whose hunt fails keeps its raw value beside the
     reason, and never a complete report. No timer, scheduler or writer lives
     here, and no partial detector pass enters the audit coverage cache. The
     forge verifier may request the delivery classifier's bounded same-SHA
@@ -257,7 +258,7 @@ class AuditReadSweep:
                         AuditMandateContext(
                             defect_class=terminal.defect_class(),
                             refutation_evidence=terminal.refutation_evidence(),
-                            head_sha=terminal.branch_head,
+                            head_sha=terminal.verification_head,
                             surfaces=surfaces,
                             repo_url=request.repo_url,
                             cache_key=request.cache_key,
@@ -535,15 +536,13 @@ class AuditReadSweep:
         repository = await ensure_repository(
             cache=self._cache, repo_url=request.repo_url, cache_key=request.cache_key
         )
-        if (
-            await read_remote_head(
-                git=self._git,
-                repository=repository,
-                remote=self._remote,
-                branch=target.source.record.branch,
-            )
-            != head
-        ):
+        verification = await read_verification_head(
+            git=self._git,
+            repository=repository,
+            remote=self._remote,
+            record=target.source.record,
+        )
+        if verification.sha != head:
             raise AuditClaimReadError("observed branch changed during the read sweep")
 
     async def prepare(self) -> AuditRequestSnapshot:

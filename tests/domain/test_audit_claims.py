@@ -174,6 +174,7 @@ def terminal(verdict: AuditVerdict) -> AuditTerminalReport:
             verdict=verdict,
             discrepancies=(TerminalDiscrepancy.NO_BRANCH,) if refuted else (),
             branch_head=HEAD if refuted else None,
+            verification_head=HEAD if refuted else None,
             pr=None,
         ),
         mandate=ABSENT_MANDATE if refuted else None,

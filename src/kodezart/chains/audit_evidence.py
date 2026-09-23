@@ -14,6 +14,7 @@ from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.domain.lapse import GradedState, graded_state
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES, parse_audit_evidence
+from kodezart.services.audit_heads import read_verification_head
 from kodezart.services.git_observations import read_replace_refs
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
@@ -24,6 +25,7 @@ from kodezart.types.domain.audit_evidence import (
 )
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
+from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 
@@ -66,7 +68,7 @@ class AuditEvidenceVerifier:
         self,
         *,
         repository: str,
-        branch: str,
+        record: LaneRunState,
         evidence: CriterionEvidence,
         completed: bool,
     ) -> str:
@@ -76,7 +78,14 @@ class AuditEvidenceVerifier:
                 raise AuditClaimReadError(
                     "the Evidence repository substitutes Git objects"
                 )
-            head = await self._git.remote_branch_sha(repository, self._remote, branch)
+            head = (
+                await read_verification_head(
+                    git=self._git,
+                    repository=repository,
+                    remote=self._remote,
+                    record=record,
+                )
+            ).sha
             if not head:
                 raise AuditClaimReadError("the recorded branch has no live remote head")
             if await self._source.resolve_commit(cwd=repository, ref=head) != head:
@@ -139,7 +148,7 @@ class AuditEvidenceVerifier:
         )
         head = await self._head(
             repository=repository,
-            branch=record.branch,
+            record=record,
             evidence=evidence,
             completed=completed,
         )
@@ -175,10 +184,10 @@ class AuditEvidenceVerifier:
             raise AuditClaimReadError(
                 "the lane record changed during Evidence verification"
             )
-        latest_head = await settle(
-            self._git.remote_branch_sha(repository, self._remote, record.branch)
+        latest = await read_verification_head(
+            git=self._git, repository=repository, remote=self._remote, record=record
         )
-        if latest_head != head:
+        if latest.sha != head:
             raise AuditClaimReadError(
                 "the remote head changed during Evidence verification"
             )
