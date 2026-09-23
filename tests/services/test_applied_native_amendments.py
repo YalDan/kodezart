@@ -142,15 +142,26 @@ async def test_done_criterion_archives_exact_evidence_then_resets_before_new_che
 
 
 async def test_the_criterion_state_move_takes_one_lease_on_its_own_sub_issue(
-    repository,
+    repository, monkeypatch
 ):
     """What the read declined to take, the move that writes it takes once.
 
     The criterion sub-issue is the leased surface here, so the state move
-    back to pending is covered by exactly one grant over that criterion and
-    no other criterion is held while it runs.
+    back to pending is covered by exactly one grant over that criterion,
+    and the move presents that grant's holder: a move made with no holder
+    would pass a board that checks grants only when one is presented. On
+    this unmarked board no other criterion is held while it runs; a marked
+    model holds every member's surface, which is another board's reading.
     """
     port = tracker()
+    presented: list[str | None] = []
+    reset = port.reset_criterion_pending
+
+    async def reset_presenting(**kwargs):
+        presented.append(kwargs["holder"])
+        return await reset(**kwargs)
+
+    monkeypatch.setattr(port, "reset_criterion_pending", reset_presenting)
     executor = Executor(
         reproduced=True, subject={"kind": "criterion", "id": DIRECT_DONE}
     )
@@ -166,6 +177,7 @@ async def test_the_criterion_state_move_takes_one_lease_on_its_own_sub_issue(
             for surface in lease.surfaces
             if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE
         ] == [DIRECT_DONE]
+        assert presented == [port.lease_acquisitions[0].holder]
     finally:
         await cleanup(workspace)
 
