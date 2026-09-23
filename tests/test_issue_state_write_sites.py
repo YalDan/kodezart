@@ -5,22 +5,30 @@ adoption registers, which already name every production write of the port
 that runs outside a write-back, each with the reason it does: one statement
 of the writer set, asked a second question.  The scanned side is that
 module's own production walk, which resolves a write through the attribute
-it is called on and skips the class that states the method itself, so the
-port declaration and the backend adapter are outside the surface by
-construction rather than by an exemption anybody has to maintain.
+it is called on and skips a call of the method inside the class that states
+it, so the port declaration and the backend adapter are outside the surface
+by construction rather than by an exemption anybody has to maintain.  What
+that walk skips is read again here: inside a class that states a move, a
+call of it on anything but ``self`` is reported, and so is a move named
+anywhere without being called.
 
 A write that can be recomputed from durable state by a process that never
-held the session belongs to a node rather than to a session.  That is not a
-shape a syntax tree can decide; it is the reason the permitted sites are the
-ones they are, and each register row carries that reason where it is
-declared.
+held the session belongs to a node rather than to a session.  That clause is
+carried by argument, not by a control: no syntax tree can decide what is
+recomputable.  The lane state writer's register row states it for the
+finished-criterion move.  The lifecycle writer's rows are held under their
+own obligation (KOD-806) and do not argue recomputability: the state its
+restore puts back rides in from the dispatch pass's scan and is not re-read,
+so that write is node-side without being recomputable, which the clause does
+not forbid.  The audit's criterion reopen is node-side too: it is a
+write-back step of the audit node applying the audit's own durable finding,
+and it moves a criterion through ``reset_criterion_pending``, not through a
+stage.
 
-Blind spot, stated rather than implied: the board-read half below follows
-the argument expression and its local name bindings, so a configured
-mapping bound to a local name first, or a call reached by reflection, is
-not seen.  Neither shape is in the tree; the second is covered from the
-other side by the adoption register, which reaches every production write
-of the port.
+Blind spots, stated rather than implied: a move reached by ``getattr`` or
+by a name composed at run time; a move at module level or in a class body,
+outside every function; and, in the board-read half, what ``Provenance``
+states it does not see.
 """
 
 import ast
@@ -104,21 +112,28 @@ def test_the_permitted_modules_are_the_two_named_authors_per_move():
 
 SECOND_WRITER = f"""
 class SecondWriter:
+    @property
+    def surface(self):
+        return "workflow state"
+
     async def write(self, key, stage):
         await self._tracker.{SET_STATE}(issue_key=key, stage=stage)
 """
 
 
 def test_a_state_move_from_a_chain_module_is_reported():
+    """A chain's write-back step that moves a state satisfies the adoption
+    register, which asks only that a port write run inside a write-back, so
+    this guard is the one that reports it."""
     sources = {**production_sources(), "chains/second_writer.py": SECOND_WRITER}
-    found = Production(sources).call_sites(STATE_MOVES)
+    production = Production(sources)
     planted = CallSite(
         module="chains/second_writer.py",
         function="SecondWriter.write",
         method=SET_STATE,
     )
-    assert planted in found
-    assert planted not in PERMITTED
+    assert planted in production.call_sites(STATE_MOVES)
+    assert planted not in production.outside_a_write_back(artifact_writes())
 
 
 STATES_THE_METHOD = f"""
