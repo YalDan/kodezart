@@ -1208,6 +1208,10 @@ class OrganizeOwner:
                 )
                 declared = phase_surfaces(member_keys=declared_keys, role=phase.role)
                 residuals: list[SpecFinding] = []
+                # Subjects this round verified clean after working them: a
+                # finding an earlier round formed on one of them is repaired,
+                # and a halt later in the round does not write it.
+                cleared: set[str] = set()
                 try:
                     async with RunSurfaceLease(
                         tracker=self._tracker,
@@ -1360,6 +1364,7 @@ class OrganizeOwner:
                                         )
                                     )
                                 ):
+                                    cleared.add(issue.issue_key)
                                     break
                             else:
                                 raise _HaltRequestError(
@@ -1490,9 +1495,14 @@ class OrganizeOwner:
                         bound=request.bound,
                         write_back_results=request.write_back_results,
                         # Every finding still open: the last dry round's,
+                        # less those on a subject this round verified clean,
                         # the residuals this round formed before it halted,
                         # and those of the judgement the halt interrupted.
-                        findings=(*findings, *residuals, *request.findings),
+                        findings=(
+                            *(f for f in findings if f.issue_id not in cleared),
+                            *residuals,
+                            *request.findings,
+                        ),
                         phase=phase,
                         scope=scope,
                         job_id=job_id,
