@@ -321,38 +321,46 @@ def test_a_class_touching_the_surface_that_is_not_a_role_is_reported(form):
     assert [bool(report) for report in reports].count(True) == 1
 
 
-@pytest.mark.parametrize(
-    "form",
-    ["a member back on the aggregate", "a member on two roles", "a base redeclared"],
-)
+#: Each way a member can sit off its one role: the text that arrives, and
+#: the one report that must name it.
+PLANTED_PLACEMENTS = {
+    "a member back on the aggregate": (
+        "\n\n@runtime_checkable\nclass {aggregate}(Protocol):\n"
+        "    async def {member}(self) -> None: ...\n",
+        "aggregate",
+    ),
+    "a member on a sibling role": (
+        "\n\n@runtime_checkable\nclass SecondPlace(Protocol):\n"
+        "    async def {member}(self) -> None: ...\n",
+        "twice",
+    ),
+    "a member shadowing its base": (
+        "\n\n@runtime_checkable\nclass Shadowing({owner}, Protocol):\n"
+        "    async def {member}(self) -> None: ...\n",
+        "redeclared",
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_PLACEMENTS))
 def test_a_member_off_its_one_role_is_reported(form):
     text = port_module_text()
     member = sorted(port_members())[0]
     owner = next(
         name for name in sorted(roles(text)) if member in own_declarations(text)[name]
     )
-    planted = {
-        "a member back on the aggregate": (
-            f"\n\n@runtime_checkable\nclass {AGGREGATE}(Protocol):\n"
-            f"    async def {member}(self) -> None: ...\n"
-        ),
-        "a member on two roles": (
-            f"\n\n@runtime_checkable\nclass SecondPlace({owner}, Protocol):\n"
-            f"    async def {member}(self) -> None: ...\n"
-        ),
-        "a base redeclared": (
-            f"\n\n@runtime_checkable\nclass Shadowing({owner}, Protocol):\n"
-            f"    async def {member}(self) -> None: ...\n"
-        ),
-    }[form]
-    grown = text + planted
+    planted, expected = PLANTED_PLACEMENTS[form]
+    grown = text + planted.format(aggregate=AGGREGATE, member=member, owner=owner)
 
-    if form == "a member back on the aggregate":
-        assert own_declarations(grown)[AGGREGATE] == frozenset({member})
-    else:
-        assert "SecondPlace" in str(twice_declared(grown)) or "Shadowing" in str(
-            redeclared_from_a_base(grown)
-        )
+    reports = {
+        "aggregate": member in own_declarations(grown)[AGGREGATE],
+        "twice": member in twice_declared(grown),
+        "redeclared": any(
+            member in shadowed for shadowed in redeclared_from_a_base(grown).values()
+        ),
+    }
+
+    assert [name for name, reported in reports.items() if reported] == [expected]
 
 
 def kod_390_role() -> str:

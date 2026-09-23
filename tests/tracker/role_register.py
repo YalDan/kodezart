@@ -307,13 +307,25 @@ def stray_classes(text: str) -> dict[str, tuple[str, ...]]:
 
 
 def twice_declared(text: str) -> dict[str, tuple[str, ...]]:
-    """Every member declared on more than one role, with the roles that do."""
+    """Every member declared on two roles neither of which composes the other.
+
+    A role that redeclares what a role it composes declares is the other
+    report's, so each misplaced member is named by exactly one of the two.
+    """
     own = own_declarations(text)
     places: dict[str, list[str]] = {}
     for name in sorted(roles(text)):
         for member in sorted(own[name]):
             places.setdefault(member, []).append(name)
-    return {member: tuple(names) for member, names in places.items() if len(names) > 1}
+    return {
+        member: tuple(names)
+        for member, names in places.items()
+        if any(
+            first not in composed(text, second) and second not in composed(text, first)
+            for index, first in enumerate(names)
+            for second in names[index + 1 :]
+        )
+    }
 
 
 def redeclared_from_a_base(text: str) -> dict[str, tuple[str, ...]]:
