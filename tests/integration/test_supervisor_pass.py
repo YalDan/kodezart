@@ -721,6 +721,48 @@ def _scope_raises(logs):
     ]
 
 
+async def test_the_composed_tick_observes_both_open_rungs_of_one_scope():
+    """Two barriers open at once in one scope: each rung is observed and said.
+
+    One member carries the groom, body and criteria markers; the other carries
+    none. So the groom barrier is open (a member has entered the body stage
+    and one carries no groom marker) and so is the body barrier (a member has
+    entered the criteria stage and one carries no body marker), and the tick
+    says so for each rung, in the governed order.
+    """
+    operation = declared(scopes=(SCOPE,))
+    port = await board(
+        lanes=LANES,
+        scope=SCOPE,
+        holder=supervisor_holder(operation_name=operation.operation_name),
+    )
+    entered, behind = LANES
+    issue = port.issues[entered]
+    port.issues[entered] = issue.model_copy(
+        update={"issue_labels": issue.issue_labels | {"groomed", "body", "criteria"}}
+    )
+    assert not {"groomed", "body", "criteria"} & port.issues[behind].issue_labels
+    scheduled = build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            run_alarm_max_commits_without_closure=BOUND,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=operation,
+        tracker=port,
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        async with asyncio.timeout(TICK_BOUND_SECONDS):
+            assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+
+    assert _scope_raises(logs) == [
+        (SCOPE.key, GROOM_MARKER_SOURCE),
+        (SCOPE.key, TICKET_MARKER_SOURCE),
+    ]
+
+
 async def test_every_declared_scope_is_observed_on_every_tick():
     """Each declared scope's barrier is read from its own roster, every tick.
 

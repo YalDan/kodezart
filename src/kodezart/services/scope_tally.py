@@ -6,6 +6,7 @@ from kodezart.domain.organize import is_organize_subject
 from kodezart.domain.run_shape import tally_unmoved
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.organize import (
+    MANDATE_PHASE_ROLES,
     MandateKind,
     phase_successor,
     split_label_key,
@@ -126,3 +127,37 @@ async def observe_scope_tally(
         raised_at_sha=raised_at_sha,
         raised_by=raised_by,
     )
+
+
+async def observe_scope_barrier(
+    *,
+    tracker: ScopeRosterReader,
+    operation: OperationConfig,
+    scope: ScopeRef,
+    raised_at_sha: str,
+    raised_by: str,
+) -> tuple[RunAlarm, ...]:
+    """The scope's stage barrier at every rung that has a later stage.
+
+    The rungs are read off ``phase_successor``, the same function the
+    collector refuses the last rung with, so the two cannot disagree about
+    which rungs exist. Every open rung's alarm is returned, in the governed
+    order, so two barriers open at once are two alarms. It holds the roster
+    role alone, as the collector does: nothing it is handed can read a
+    stream or write anything.
+    """
+    raised: list[RunAlarm] = []
+    for rung in MANDATE_PHASE_ROLES:
+        if phase_successor(rung) is None:
+            continue
+        alarm = await observe_scope_tally(
+            tracker=tracker,
+            operation=operation,
+            scope=scope,
+            phase=rung,
+            raised_at_sha=raised_at_sha,
+            raised_by=raised_by,
+        )
+        if alarm is not None:
+            raised.append(alarm)
+    return tuple(raised)

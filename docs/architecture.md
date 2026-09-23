@@ -1013,9 +1013,12 @@ string is the pass's own identity, the operation name with the tick name on it
 
 Each scope's stage barrier is observed first in that scope's iteration of the
 tick: `composition/supervisor.py::build_supervisor_pass` builds, beside the lane
-observer, a callable the tick is handed the way `read_ready` is, which calls
+observer, a callable the tick is handed the way `read_ready` is, which binds the
+port to `services.scope_tally.observe_scope_barrier` and holds no loop of its
+own. That function is typed on `ScopeRosterReader` alone and calls
 `services.scope_tally.observe_scope_tally` once for each rung of the governed
-sequence that has a successor, holding only `ScopeRosterReader`. A raise is
+sequence that has a successor, returning every open rung's alarm in that order,
+so two barriers open at once are two alarms. Each raise is
 logged as `supervisor_scope_alarm_raised` at warning with the scope, the
 signal it raised under (`tally_unmoved`, the member the scope arm widens) and
 the rung's marker address; a failure is logged as `supervisor_scope_arm_failed`,

@@ -8,14 +8,13 @@ from kodezart.core.protocols import TrackerPort
 from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.pass_scheduler import ScheduledPass
-from kodezart.services.scope_tally import observe_scope_tally
+from kodezart.services.scope_tally import observe_scope_barrier
 from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
     SupervisorPass,
     supervisor_holder,
 )
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.organize import MANDATE_PHASE_ROLES, phase_successor
 from kodezart.types.domain.run_alarm import RunAlarm
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
@@ -51,28 +50,16 @@ def build_supervisor_pass(
     def read_ready(ref: ScopeRef) -> Awaitable[ScopeReadySet]:
         return read_scope_ready(ref=ref, tracker=tracker)
 
-    # Every rung of the governed sequence that has a later stage to have been
-    # entered, read off the same function the collector refuses the last rung
-    # with, so the two cannot disagree about which rungs exist.
-    rungs = tuple(
-        kind for kind in MANDATE_PHASE_ROLES if phase_successor(kind) is not None
-    )
-
-    async def observe_scope(ref: ScopeRef) -> tuple[RunAlarm, ...]:
-        """The scope's stage barrier at each rung, from its roster and markers."""
-        raised: list[RunAlarm] = []
-        for rung in rungs:
-            alarm = await observe_scope_tally(
-                tracker=tracker,
-                operation=operation,
-                scope=ref,
-                phase=rung,
-                raised_at_sha=SUPERVISOR_TICK_NAME,
-                raised_by=holder,
-            )
-            if alarm is not None:
-                raised.append(alarm)
-        return tuple(raised)
+    # The scope's stage barrier at each rung is the service's to read, typed
+    # on the roster role alone; the port is only handed to it here.
+    def observe_scope(ref: ScopeRef) -> Awaitable[tuple[RunAlarm, ...]]:
+        return observe_scope_barrier(
+            tracker=tracker,
+            operation=operation,
+            scope=ref,
+            raised_at_sha=SUPERVISOR_TICK_NAME,
+            raised_by=holder,
+        )
 
     # The declared rows projected to their bare scope refs: the tick reads
     # tracker state only, so the repository and report destination beside each
