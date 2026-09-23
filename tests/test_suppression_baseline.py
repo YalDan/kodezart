@@ -34,12 +34,15 @@ whose `extra` setting is loosened from forbidding unknown fields to
 allowing them.  The tree carries none today and nothing here would see one.
 
 A second class is out of it too, and it is stated here as a class.  The
-census reads the test files, the conftest files under `tests/` (a conftest
-at the repository root is outside its walk) and the pytest tables of
-`pyproject.toml`, and it reads in them only the shapes this census counts.
-Nothing else that changes which tests run, or how they run, is read: not
-what lives outside those files, and not what lives inside them in any
-other form.  Of the runner's table the key set is pinned whole, and of its
+gate runs four tools: the test runner, the type checker, the linter and
+the formatter.  The census reads the modules of the two trees it walks,
+`src/kodezart` and `tests/` (the test files, and the conftest files under
+`tests/` among them; a conftest at the repository root is outside its
+walk), and the pinned tool tables of `pyproject.toml`, and it reads in
+them only the shapes this census counts.  Nothing else that changes what
+any of the gate's tools checks, or how it checks it, is read: not what
+lives outside those files, and not what lives inside them in any other
+form.  Of the runner's table the key set is pinned whole, and of its
 values only `filterwarnings` and `markers` are read: a key it does not
 carry today -- `addopts`, `norecursedirs`, a collection-name key
 (`python_files`, `python_classes`, `python_functions`),
@@ -47,6 +50,20 @@ carry today -- `addopts`, `norecursedirs`, a collection-name key
 it is added, while a changed value of another key it carries, `testpaths`
 among them, is not seen.  Examples of the class, none of them read:
 
+- the gate's own invocation: every recipe the Makefile `check:` target
+  runs, with its options, its paths and its config-file flags (`test:`,
+  `lint:`, `type-check:`, `format-check:`), so a `--disable-error-code`
+  handed to the type checker or an `--extend-ignore` handed to the linter
+  is honoured and unseen; the prerequisite list of `check:`, which decides
+  which of those recipes run at all; the CI step that runs the gate
+  (`make check` in `.github/workflows/check.yml`); and the environment
+  variables each tool reads, `PYTEST_ADDOPTS`, `PYTEST_PLUGINS` and
+  `MYPYPATH` among them;
+- code the type checker does not reach, which it checks nothing in: a body
+  under `if not TYPE_CHECKING:`, a branch behind a platform or version
+  guard (`sys.platform`, `sys.version_info`) that the checked platform or
+  version rules out, and a body under the checker's own skip decorator
+  (`typing.no_type_check`), none of which carries a comment to count;
 - a hook that a conftest or a plugin runs at any phase, at collection or at
   run time: `pytest_collection_modifyitems` removing items,
   `pytest_configure` changing the selection options,
@@ -58,8 +75,6 @@ among them, is not seen.  Examples of the class, none of them read:
 - a plugin loaded any way: through `pytest_plugins` in a conftest or in a
   test module, through the project's own `pytest11` entry points, or
   through the entry point of a plugin that a new dependency brings;
-- the gate's own invocation: the options of the Makefile `test:` recipe,
-  and the `PYTEST_ADDOPTS` and `PYTEST_PLUGINS` environment variables;
 - `__test__` set false on a module, a class or a function;
 - a `pytest_generate_tests` that parametrizes over an empty set, and a
   `parametrize` mark whose parameter set is empty, which the runner
@@ -73,15 +88,11 @@ among them, is not seen.  Examples of the class, none of them read:
   test, and a skip form reached through a submodule
   (`unittest.case.SkipTest`).
 
-Outside that class, and out of the census in the same way, is the type
-checker's own skip decorator (`typing.no_type_check`), which exempts a body
-from the checker with no comment to count.
-
-A third class is out of it as well: a stub carrying no directive at all,
-sitting beside the module it shadows, takes that module out of the type
-checker's reach, because the checker reads the stub in place of it.  That
-shape has no directive to count and no roster can see it; it is a diff the
-code review has to catch.
+One member of that class is worth its own words: a stub carrying no
+directive at all, sitting beside the module it shadows, takes that module
+out of the type checker's reach, because the checker reads the stub in
+place of it.  That shape has no directive to count and no roster can see
+it; it is a diff the code review has to catch.
 
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
@@ -240,8 +251,8 @@ CONFIG_BASELINE: dict[str, object] = {
     "tool.ruff": {
         "target-version": "py312",
         "line-length": 88,
-        # No exclusion key, no include key: the linter reads whatever the
-        # gate hands it, which is both trees the census walks.
+        # No exclusion key, no include key.  What the gate hands the linter
+        # is not read here: that is the gate's invocation, stated above.
         "src": ("src", "tests"),
         "lint": {
             "select": (
