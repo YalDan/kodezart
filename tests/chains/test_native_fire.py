@@ -2636,7 +2636,9 @@ def _calls_in(module, tree, functions):
     }
     # An import made inside a function binds nothing at module level, so it
     # is read from the tree and resolved the same way: the name it binds
-    # counts when the object it imports IS the function (or a module).
+    # counts when the object it imports IS the function (or a module).  A
+    # plain ``import a.b.c`` binds only ``a``, to the top-level package, and
+    # the call's dotted attributes reach the function from there.
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             source = importlib.import_module(
@@ -2654,8 +2656,12 @@ def _calls_in(module, tree, functions):
                     modules[alias.asname or alias.name] = value
         elif isinstance(node, ast.Import):
             for alias in node.names:
+                imported = importlib.import_module(alias.name)
                 if alias.asname:
-                    modules[alias.asname] = importlib.import_module(alias.name)
+                    modules[alias.asname] = imported
+                else:
+                    top = alias.name.partition(".")[0]
+                    modules[top] = importlib.import_module(top)
     # A local rebinding exists only in the tree: every plain name assigned
     # from a name already known is the function too, to a fixed point.  Each
     # pass adds a name or ends the loop, so it runs at most once per
@@ -2773,10 +2779,13 @@ def callers_of(*functions):
     than folded in.
 
     An import made inside a function is read from the tree and resolved the
-    same way, so a local ``from ... import recorded_native_roster as x``
-    counts too.  Not seen: a function reached through any other object (an
-    instance held anywhere but in ``self`` or a declared ``self`` attribute,
-    a mapping, a ``functools.partial``).
+    same way: ``from ... import recorded_native_roster as x`` binds ``x``
+    when the object imported IS the function, ``import a.b as m`` binds
+    ``m`` to that module, and a plain ``import a.b.c`` binds ``a`` to the
+    top-level package, from which ``a.b.c.recorded_native_roster`` reaches
+    the function attribute by attribute.  Not seen: a function reached
+    through any other object (an instance held anywhere but in ``self`` or a
+    declared ``self`` attribute, a mapping, a ``functools.partial``).
     """
     return tuple(sorted(set(calls_to(*functions))))
 
