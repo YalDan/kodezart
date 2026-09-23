@@ -4,13 +4,14 @@ import asyncio
 import hashlib
 import inspect
 import json
+import re
 import sys
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
 from enum import Enum
 from itertools import product
 from math import prod
 from pathlib import Path
-from types import CodeType, FrameType, UnionType
+from types import CodeType, FrameType, FunctionType, MethodType, UnionType
 from typing import Annotated, Literal, Union, get_args, get_origin
 
 import pytest
@@ -689,6 +690,33 @@ def own_serialisation_hooks(cls: type) -> set[str]:
     return hooks
 
 
+def closure_line() -> list[type[BaseModel]]:
+    """Every class the terminal's machinery is made of, in a stable order.
+
+    The terminal, every model its annotations reach (held equal to the
+    rosters above), and every class on each one's line but ``object`` and
+    pydantic's own ``BaseModel``: a validator or a config setting declared
+    on a base is the terminal's as much as one declared on it.  Sorted by
+    module and qualified name.
+    """
+    closure = set(models_under(WorkflowCompleteEvent))
+    assert closure == {WorkflowCompleteEvent, *NESTED_FIELDS}
+    line = {
+        cls
+        for model in closure
+        for cls in model.__mro__
+        if cls is not object and cls is not BaseModel
+    }
+    assert closure < line
+    assert all(issubclass(cls, BaseModel) for cls in line)
+    return sorted(line, key=qualified)
+
+
+def qualified(cls: type) -> str:
+    """*cls* by module and qualified name."""
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
 def test_nothing_on_the_terminal_s_closure_renders_it_but_its_fields():
     """No custom serialisation on the terminal or on any model it holds.
 
@@ -704,16 +732,8 @@ def test_nothing_on_the_terminal_s_closure_renders_it_but_its_fields():
     entry points or hooks.  Whatever a model's values, what it sends is
     then its fields, as its schema declares them.
     """
+    line = closure_line()
     closure = set(models_under(WorkflowCompleteEvent))
-    assert closure == {WorkflowCompleteEvent, *NESTED_FIELDS}
-    line = {
-        cls
-        for model in closure
-        for cls in model.__mro__
-        if cls is not object and cls is not BaseModel
-    }
-    assert closure < line
-    assert all(issubclass(cls, BaseModel) for cls in line)
     assert {
         cls.__qualname__: found
         for cls in line
@@ -729,6 +749,102 @@ def test_nothing_on_the_terminal_s_closure_renders_it_but_its_fields():
         for cls in line
         if (hooks := own_serialisation_hooks(cls))
     } == {}
+
+
+#: A ``ref`` as pydantic writes it into a core schema: the class's module
+#: path and qualified name, then the class's address in this process.
+ADDRESSED_REF = re.compile(r"^(?P<name>[\w.]+):\d+$")
+
+#: The mark a ``repr`` leaves on a value shown with its address.
+ADDRESS = re.compile(r" at 0x[0-9a-f]+")
+
+
+def rendered(node: object, on_stack: frozenset[int] = frozenset()) -> object:
+    """A core schema *node*, rendered so two processes render it alike.
+
+    A mapping keeps its keys and a list or tuple its order.  A class, a
+    function and a bound method are named by module and qualified name —
+    the method by the class it is bound to as well — rather than shown
+    with their address; the ``ref`` strings pydantic builds from a class's
+    name and address lose the address; a JSON value is kept; anything else
+    is its ``repr``.  Bounded by the schema's own finite tree: a node on
+    the way to itself reds here.
+    """
+    assert id(node) not in on_stack
+    below = on_stack | {id(node)}
+    if isinstance(node, Mapping):
+        return {
+            str(key): (
+                ADDRESSED_REF.sub(r"\g<name>", value)
+                if key in ("ref", "schema_ref") and isinstance(value, str)
+                else rendered(value, below)
+            )
+            for key, value in node.items()
+        }
+    if isinstance(node, list | tuple):
+        return [rendered(item, below) for item in node]
+    if node is None or isinstance(node, str | int | float | bool):
+        return node
+    if isinstance(node, type):
+        return f"class {qualified(node)}"
+    if isinstance(node, MethodType):
+        bound_to = rendered(node.__self__, below)
+        return f"method {rendered(node.__func__, below)} of {bound_to}"
+    if isinstance(node, FunctionType):
+        return f"function {node.__module__}.{node.__qualname__}"
+    return repr(node)
+
+
+def machinery_digest(line: Iterable[type[BaseModel]]) -> str:
+    """One sha256 over the rendered core schema of every class in *line*.
+
+    Keyed by qualified name and dumped with sorted keys, so the text is
+    the same whichever order the classes come in and whichever process
+    renders them; a value still shown with its address reds here rather
+    than moving the digest from one run to the next.
+    """
+    text = json.dumps(
+        {qualified(cls): rendered(cls.__pydantic_core_schema__) for cls in line},
+        sort_keys=True,
+    )
+    assert ADDRESS.search(text) is None
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+#: The sha256 of the core schema of every class on the terminal's line,
+#: rendered by :func:`rendered` and digested by :func:`machinery_digest`,
+#: as they stood when the hand-off was pinned, under pydantic 2.12.5.  The
+#: core schema is what pydantic validates and serialises from, so a field,
+#: an alias, a default, a validator of any mode, a serializer of any kind or
+#: an ``extra`` setting changed on any class on the line moves this digest,
+#: and the change is made in the commit that updates it, which is the
+#: review this pin exists to force.  A pydantic upgrade that lays a schema
+#: out differently moves it as well, and is reviewed the same way.
+TERMINAL_MACHINERY_DIGEST = (
+    "1c8663a53f13e19b6e2672d2d33d3f758a7cacdea55becb61f61e0021b29c207"
+)
+
+
+def test_the_terminal_s_whole_machinery_is_pinned_by_digest():
+    """Every class on the terminal's line, whole, in one digest and one control.
+
+    The walk above flags custom serialisation.  A change on the validation
+    side — a nested model letting extra keys through and a before-validator
+    putting one in — leaves every roster, every hook and every
+    serialisation entry as it was and still puts a key on the wire, because
+    pydantic sends what ``extra='allow'`` kept.  So the whole core schema of
+    every class on the line is pinned at once, rendered without addresses
+    and digested, and ANY change to a field, an alias, a validator, a
+    serializer or a config setting on any of them moves the digest.  The
+    likeliest change is held apart in a readable assertion as well: every
+    class on the line forbids extra keys.
+    """
+    line = closure_line()
+    assert line != []
+    assert {cls.__qualname__: cls.model_config.get("extra") for cls in line} == {
+        cls.__qualname__: "forbid" for cls in line
+    }
+    assert machinery_digest(line) == TERMINAL_MACHINERY_DIGEST
 
 
 #: How long the egress drive waits on any one step of the run it holds: the
