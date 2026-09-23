@@ -3,10 +3,16 @@
 The whole memory of this refusal is the criterion it leaves on the lane, so
 a killed run that commits the same loss again finds that criterion rather
 than minting a second one: the text is rendered from the pinned record's own
-identifiers and the writer's starting head, and the mint's own identity —
-exact parent plus current Check — answers a replay from that head with the
-child that already stands. A weakening from a later starting head is a new
-obligation and mints a new child, whatever state the earlier one is in.
+identifiers alone, and the mint's own identity — exact parent plus
+current Check — answers a replay with the child that already stands.
+
+A refused weakening never moves the lane's head, so the mark is satisfied as
+soon as it is minted and is crossed off in the normal course. A later
+weakening of the same test renders the same Check and is answered with that
+crossed-off child, so the writer moves any child it is answered with that is
+not open back to unstarted, under a lease on that child's own surface. An
+open child is left as it stands, so a replay of a killed run writes nothing
+more.
 
 What the mark is made of is arithmetic over two pinned Git objects and a
 pinned record, so nothing here is authored and nothing here is a second
@@ -46,6 +52,7 @@ from kodezart.types.domain.gating import (
 from kodezart.types.domain.organize_owner import CriterionProposal
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 
 class WeakenedAssertionMarks:
@@ -131,7 +138,7 @@ class WeakenedAssertionMarks:
             kind=SurfaceKind.CRITERION_CHILD_SET,
             ref=ScopeRef(kind=ScopeKind.ISSUE, key=lane_key),
         )
-        minted: list[str] = []
+        minted: list[TrackerIssue] = []
         async with RunSurfaceLease(
             tracker=self._tracker,
             job_id=holder,
@@ -152,9 +159,38 @@ class WeakenedAssertionMarks:
                         holder=holder,
                     )
                 )
-                minted.append(created.issue_key)
-        await self._log.ainfo("assertion_weakening_marked", lane=lane_key, marks=minted)
-        raise AssertionWeakenedError(lane_key=lane_key, marks=tuple(minted))
+                minted.append(created)
+        # The mint returns a matched child in whatever state it is in; one
+        # crossed off stands for no obligation, so it is moved back to
+        # unstarted under a lease on its own surface.
+        closed = [
+            child
+            for child in minted
+            if child.state_kind is not WorkflowStateKind.UNSTARTED
+        ]
+        if closed:
+            async with RunSurfaceLease(
+                tracker=self._tracker,
+                job_id=holder,
+                surfaces=frozenset(
+                    WritableSurface(
+                        kind=SurfaceKind.CRITERION_SUB_ISSUE,
+                        ref=ScopeRef(kind=ScopeKind.ISSUE, key=child.issue_key),
+                    )
+                    for child in closed
+                ),
+                lease_seconds=self._lease_seconds,
+            ) as reopening:
+                for child in closed:
+                    await reopening.renew()
+                    await settle(
+                        self._tracker.reset_criterion_pending(
+                            expected=child, holder=holder
+                        )
+                    )
+        keys = [child.issue_key for child in minted]
+        await self._log.ainfo("assertion_weakening_marked", lane=lane_key, marks=keys)
+        raise AssertionWeakenedError(lane_key=lane_key, marks=tuple(keys))
 
     async def _gate_exact(
         self,

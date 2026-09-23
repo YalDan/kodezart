@@ -1675,10 +1675,12 @@ class CriterionMinter(SurfaceLeaseTracker, Protocol):
     """Exactly the tracker calls one obligation mint makes.
 
     A role narrowed out of the port rather than a widening of it: the lease
-    on one lane's criterion child set, and the mint under it. What it leaves
-    out is the point: no workflow state, no description edit and no reset of
-    a criterion that already stands, so a holder of this role can add an
-    obligation to a lane and can change nothing it already carries.
+    on one lane's criterion child set, the mint under it, and the move of a
+    child the mint answered with back to unstarted, under a lease on that
+    child's own surface. What it leaves out is the point: no other workflow
+    state and no description edit, so a holder of this role can add an
+    obligation to a lane, or reopen the one it names, and can change no
+    text the lane already carries.
     ``TrackerPort`` satisfies it structurally.
     """
 
@@ -1691,6 +1693,10 @@ class CriterionMinter(SurfaceLeaseTracker, Protocol):
         do: str,
         holder: str,
         revalidate: WriteRevalidation | None = None,
+    ) -> TrackerIssue: ...
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str | None = None
     ) -> TrackerIssue: ...
 
 
