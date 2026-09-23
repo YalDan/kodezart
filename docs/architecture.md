@@ -1160,13 +1160,16 @@ discipline over the read: the criterion template-row grammar is compiled in
 criterion-shaped text against a body, and criterion sub-issues reach the
 tracker only through the port's criterion read. `create_criterion_if_absent`
 is called from the criteria stage alone and implemented by one adapter method
-under the criterion child-set surface. A native identity is the sub-issue key
-and nothing else: removing one criterion and renumbering the `AC-n` tokens of
-the remainder moves no key, and the retired key resolves to nothing rather
-than to the criterion that took its number. The authored arm enumerates from 1
-each round, which `GeneratedCriteriaOutput` states and this rule does not
-bind. Evaluator state/body writer adoption and the separate model-membership
-and spec-backend invariants remain unfinished.
+under the criterion child-set surface. A checklist a person wrote in the body is
+adopted by the criteria author, one criterion per item with the item's text
+quoted verbatim as its Check; the body is left as it is, and a re-run mints
+nothing because a criterion's identity is its exact Check text. A native
+identity is the sub-issue key and nothing else: removing one criterion and
+renumbering the `AC-n` tokens of the remainder moves no key, and the retired key
+resolves to nothing rather than to the criterion that took its number. The
+authored arm enumerates from 1 each round, which `GeneratedCriteriaOutput`
+states and this rule does not bind. Evaluator state/body writer adoption and the
+separate model-membership and spec-backend invariants remain unfinished.
 
 `CriterionResolver` is the narrow role for resolving one criterion, and
 `NativeCriterionResolver` in `criterion_sources` is its one implementation. It

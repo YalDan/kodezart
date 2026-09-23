@@ -21,6 +21,13 @@ accepts no body, graph or split proposal from this role. Those specification and
 structural repairs belong to the separate Organize authoring role. Do not claim
 that criterion prose edits the addressed issue or changes its native graph.
 
+When the issue body already carries a checklist a person wrote, adopt it rather
+than restating it: propose exactly one criterion for each checklist item that no
+existing criterion's Check already states, and use the item's own text,
+unchanged and without its list marker or tick box, as that criterion's Check. Do
+not reword, merge, split or drop an item, and do not propose moving or removing
+the checklist; the body stays as it is.
+
 Editing an existing criterion is unavailable: when required, return `unavailable`
 with capability `criterion_edit` and concrete evidence. This is the only declared
 unavailable capability. Reserve `unresolved` for a real unruled human decision;

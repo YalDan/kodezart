@@ -81,3 +81,69 @@ def test_organize_roles_inherit_the_existing_authorship_and_judgment_policies() 
         assert (
             registry.session_policy(key).effort is metadata.session_roles[role].effort
         )
+
+
+#: Every set shipped, read off the sets root rather than listed here, so a set
+#: added beside the two today is held to the same paragraph.
+SHIPPED_SETS = sorted(
+    path.name for path in default_sets_root().iterdir() if path.is_dir()
+)
+
+#: The load-bearing sentences of the checklist-adoption paragraph, one clause
+#: each: adopt and do not restate, one criterion per item not already stated,
+#: the item's own text as the Check, nothing reworded, merged, split or
+#: dropped, and the body left where it is.
+CHECKLIST_ADOPTION = (
+    "When the issue body already carries a checklist a person wrote, adopt it "
+    "rather than restating it:",
+    "propose exactly one criterion for each checklist item that no existing "
+    "criterion's Check already states,",
+    "use the item's own text, unchanged and without its list marker or tick box, "
+    "as that criterion's Check.",
+    "Do not reword, merge, split or drop an item,",
+    "do not propose moving or removing the checklist; the body stays as it is.",
+)
+
+#: The landed sentence that keeps adoption from becoming an edit of a child.
+NO_CRITERION_EDIT = "Editing an existing criterion is unavailable"
+
+
+def rendered_criteria_author(set_name: str) -> str:
+    """The criteria author as *set_name* renders it, whitespace folded."""
+    template = load_registry(default_set=set_name).template_for(
+        PromptKey.ORGANIZE_CRITERIA_AUTHOR
+    )
+    return " ".join(template.render(ORGANIZE_CASE).split())
+
+
+def adoption_paragraph(rendered: str) -> str:
+    """The paragraph from its first sentence to its last, as rendered."""
+    start = rendered.index(CHECKLIST_ADOPTION[0])
+    end = rendered.index(CHECKLIST_ADOPTION[-1], start) + len(CHECKLIST_ADOPTION[-1])
+    return rendered[start:end]
+
+
+@pytest.mark.parametrize("set_name", SHIPPED_SETS)
+def test_the_criteria_author_adopts_a_body_checklist_verbatim_in_every_set(
+    set_name: str,
+) -> None:
+    """Each set tells the criteria author to adopt a checklist, not restate it.
+
+    One assertion per sentence, so a set that loses or rewords any clause is
+    named, and then the paragraph itself is compared with every other set's:
+    equality alone would hold for two sets that both lacked it.
+    """
+    assert {V5_SET, OPUS_SET} <= set(SHIPPED_SETS)
+    rendered = rendered_criteria_author(set_name)
+
+    for sentence in CHECKLIST_ADOPTION:
+        assert sentence in rendered, sentence
+    assert NO_CRITERION_EDIT in rendered
+    # The paragraph is the only place the prompt speaks of a checklist, so no
+    # second sentence elsewhere can tell the author to treat one differently.
+    assert rendered.count("checklist") == adoption_paragraph(rendered).count(
+        "checklist"
+    )
+    assert {
+        adoption_paragraph(rendered_criteria_author(other)) for other in SHIPPED_SETS
+    } == {adoption_paragraph(rendered)}

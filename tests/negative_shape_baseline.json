@@ -1735,6 +1735,8 @@
    "test_source_identity_is_checked_before_any_session",
    "test_the_pre_approval_owner_grooms_alone_and_reentry_writes_nothing",
    "test_the_run_stage_owner_does_ticket_then_criteria_and_replays_dry",
+   "test_a_body_checklist_is_adopted_item_by_item_and_a_rerun_mints_nothing",
+   "test_two_identical_proposed_checks_refuse_the_stage_and_mint_nothing",
    "test_single_admission_round_stops_with_durable_refusal_and_no_completion",
    "test_measured_refusal_class_refuses_without_marker_or_criterion",
    "test_wrong_author_identity_refuses_before_native_issue_write",
@@ -4119,7 +4121,8 @@
    "test_organize_roles_have_the_named_enum_members_and_values",
    "test_removing_each_organize_data_file_fails_application_prompt_boot",
    "test_each_role_renders_its_own_data_file",
-   "test_organize_roles_inherit_the_existing_authorship_and_judgment_policies"
+   "test_organize_roles_inherit_the_existing_authorship_and_judgment_policies",
+   "test_the_criteria_author_adopts_a_body_checklist_verbatim_in_every_set"
   ],
   "tests/prompts/test_pass_roster.py": [
    "test_no_shipped_template_names_a_team_or_repository_slot",
