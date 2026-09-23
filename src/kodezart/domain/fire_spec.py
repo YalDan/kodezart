@@ -18,6 +18,7 @@ _CRITERION_ROW = re.compile(r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 _HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
 _LIST_ITEM = re.compile(r"^ {0,3}(?:[-*+]|\d+[.)])\s+(.*)$")
+_CHECKLIST_ITEM = re.compile(r"^[ \t]*[-*+][ \t]+\[[ xX]\][ \t]+(.*\S)[ \t]*$")
 CriterionField = Literal["Check", "Do", "Evidence", "Class"]
 
 #: The heading whose section states what the subject's own text commits to
@@ -38,6 +39,21 @@ def body_digest(body: str) -> str:
     same body agree on it without either of them asking anything.
     """
     return sha256(body.encode("utf-8")).hexdigest()
+
+
+def checklist_items(body: str) -> tuple[str, ...]:
+    """The items of the Markdown task list a person wrote in *body*, in order.
+
+    An item is a line holding a ``-``, ``*`` or ``+`` marker, then a ``[ ]``,
+    ``[x]`` or ``[X]`` tick box, then text, at any indentation.  Each item is
+    its text alone, stripped, without its marker or tick box: exactly what a
+    criterion adopting it states as its Check.  No other line is an item.
+    """
+    return tuple(
+        match[1].strip()
+        for line in body.splitlines()
+        if (match := _CHECKLIST_ITEM.match(line)) is not None
+    )
 
 
 def _without_comments(line: str, *, comment: bool) -> tuple[str, bool]:
