@@ -315,6 +315,8 @@ dispatches and graph-level retries have distinct invocation keys; repeated frame
 session produce one occurrence. Issue-less calls do not synthesize a tracker
 identity. This event is emitted on the harness stream and does not certify a
 durable tracker event, an alarm, or completion of the supervisor's event reader.
+On the scoped arm each opening is also posted on the lane's own stream, and
+`COMPOSITION_SUBSTITUTED` reads it there.
 
 `workflow_ticket.approved` is three-state (`approved`, `unapproved`,
 `not_reviewed`) and rides beside `mode`. `not_reviewed` says no reviewer ran

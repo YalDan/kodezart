@@ -28,10 +28,12 @@ class NodeInvocation(CamelCaseModel):
 class NodeSessionKey(CamelCaseModel):
     """What one observed opening is keyed to on its lane's stream.
 
-    The whole invocation, not its key alone: a resumed lane reusing its loop
-    branch can repeat an invocation key under another run, and the declared
-    session count is a fact of the invocation that a reader of the key needs
-    in order to say whether the node opened more than it declared.
+    The whole invocation, not its key alone: the declared session count is a
+    fact of the invocation that a reader of the key needs in order to say
+    whether the node opened more than it declared. The run is carried as a
+    precaution rather than to tell repeats apart: the evaluator's invocation
+    key already carries a fresh ``uuid4`` per node execution, so one key
+    cannot recur under another run.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
