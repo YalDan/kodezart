@@ -106,7 +106,7 @@ does not exist.
 | LaneLapseEscalator | LaneLapseEscalations | The one question a lane raises when a grading it cannot re-derive lapses: on the lane's own issue, keyed by that criterion, written after the move back and judged inside a verified window |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
-| NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and ruling records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication, and refuses a commit that loses an assertion a pinned record designates, leaving the mark as a criterion on the lane |
+| NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and pinned records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication, and refuses a commit that loses an assertion a pinned record it holds designates, leaving the mark as a criterion on the lane |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
 | QualityGate       | RalphLoop                | LangGraph iterative execute/evaluate loop            |
 | TicketGenerator   | TicketGenerationLoop     | LangGraph draft/review loop                          |

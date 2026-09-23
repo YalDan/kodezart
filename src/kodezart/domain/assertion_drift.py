@@ -75,6 +75,11 @@ def lost_assertions(
     one survives. This is the whole of what "weakens" means here: a
     designated test changes through a claimed departure, never through a
     rewrite someone would call stronger.
+
+    It compares which assertions a test carries, not whether they run: an
+    assertion moved where it no longer runs still reads as carried. That
+    covers an inner definition nothing calls, a branch that never runs, code
+    after a ``return``, and a handler that swallows ``AssertionError``.
     """
     remaining = Counter(row.structural_form for row in after)
     lost: list[AssertionSource] = []
