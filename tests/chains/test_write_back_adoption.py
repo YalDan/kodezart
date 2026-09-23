@@ -1261,6 +1261,186 @@ def test_an_untyped_call_reaches_no_function_by_its_name_alone():
     assert site in found.unadopted
 
 
+#: A module-level writer, imported by name into two other modules: one calls
+#: it from an applier the verifier drives, the other from a plain method in
+#: a module that also nests an unrelated function under the same name.
+EMITTER = """
+from kodezart.core.protocols import TrackerPort
+
+
+async def forward_planted_note(tracker: TrackerPort) -> None:
+    await tracker.post_comment(issue_key="K", body="b")
+"""
+EMIT_DRIVEN = """
+from dataclasses import dataclass
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort
+from kodezart.planted.emitter import forward_planted_note
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    apply: object
+
+    async def write(self, *, finding):
+        await self.apply(finding)
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort, verifier: WriteBackVerifier) -> None:
+        self._tracker, self._verifier = tracker, verifier
+
+    async def publish(self) -> None:
+        async def put(finding):
+            await forward_planted_note(self._tracker)
+
+        await self._verifier.write_back(step=Step(None, put), ref="r")
+"""
+EMIT_BYPASS = """
+from kodezart.core.protocols import TrackerPort
+from kodezart.planted.emitter import forward_planted_note
+
+
+def unrelated():
+    def forward_planted_note():
+        return None
+
+    return forward_planted_note()
+
+
+class Other:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def shortcut(self) -> None:
+        await forward_planted_note(self._tracker)
+"""
+EMIT_SITE = CallSite(
+    module="planted/emitter.py", function="forward_planted_note", method="post_comment"
+)
+
+
+@pytest.mark.parametrize("bypass", [False, True], ids=["driven-only", "bypassed"])
+def test_a_bare_name_reaches_no_nested_def_it_is_not_scoped_by(bypass):
+    """A name lexical scope does not find is its import, not a namesake.
+
+    The writer is imported by name and called from a driven applier, which
+    alone makes it driven.  The second module calls it from a plain method,
+    beside an unrelated function nesting a def of the same name.  A reader
+    that fell back from the lexical walk to any same-named def in the module
+    would resolve that call to the namesake, leave the writer with driven
+    callers only, and drive its write; the call resolves to the import, so
+    the write is refused.
+    """
+    planted = [("planted/emitter.py", EMITTER), ("planted/emit_driven.py", EMIT_DRIVEN)]
+    if bypass:
+        planted.append(("planted/emit_bypass.py", EMIT_BYPASS))
+    found = census(*planted)
+    if bypass:
+        assert EMIT_SITE in found.unadopted
+        assert EMIT_SITE not in found.driven
+    else:
+        assert EMIT_SITE in found.driven
+
+
+#: Two writers of one method name, both driven from an applier through their
+#: own declared types, and a bypass that binds one name to either of them.
+TWO_SINKS = """
+from dataclasses import dataclass
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort
+
+
+class Alpha:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def relay_twice(self) -> None:
+        await self._tracker.post_comment(issue_key="A", body="a")
+
+
+class Beta:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def relay_twice(self) -> None:
+        await self._tracker.post_comment(issue_key="B", body="b")
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    apply: object
+
+    async def write(self, *, finding):
+        await self.apply(finding)
+
+
+class Writer:
+    def __init__(
+        self, *, alpha: Alpha, beta: Beta, verifier: WriteBackVerifier
+    ) -> None:
+        self._alpha, self._beta, self._verifier = alpha, beta, verifier
+
+    async def publish(self) -> None:
+        async def land(finding):
+            await self._alpha.relay_twice()
+            await self._beta.relay_twice()
+
+        await self._verifier.write_back(step=Step(None, land), ref="r")
+{bypass}"""
+TWO_SINK_BYPASSES = {
+    "none": "",
+    "local": """
+class Shortcut:
+    async def run(self, tracker: TrackerPort, pick: bool) -> None:
+        if pick:
+            sink = Alpha(tracker=tracker)
+        else:
+            sink = Beta(tracker=tracker)
+        await sink.relay_twice()
+""",
+    "attribute": """
+class Shortcut:
+    def __init__(self, *, tracker: TrackerPort, pick: bool) -> None:
+        if pick:
+            self._sink = Alpha(tracker=tracker)
+        else:
+            self._sink = Beta(tracker=tracker)
+
+    async def run(self) -> None:
+        await self._sink.relay_twice()
+""",
+}
+
+
+@pytest.mark.parametrize("bypass", sorted(TWO_SINK_BYPASSES))
+def test_a_name_two_classes_bind_is_typed_as_neither(bypass):
+    """A local or attribute bound to two classes resolves to no one of them.
+
+    Both writers are driven from the applier through their own types, which
+    is the control.  The bypass binds one name, a local or an attribute, to
+    either class and calls the write through it outside any window.  Typed
+    as one of the two, the call would leave the other class's writer with
+    driven callers only; typed as neither, it is unresolved, so both
+    writers' writes are refused.
+    """
+    module = "planted/two_sinks.py"
+    found = census((module, TWO_SINKS.format(bypass=TWO_SINK_BYPASSES[bypass])))
+    sites = {
+        CallSite(module=module, function=f"{owner}.relay_twice", method="post_comment")
+        for owner in ("Alpha", "Beta")
+    }
+    if bypass == "none":
+        assert sites <= found.driven
+    else:
+        assert sites <= found.unadopted
+        assert sites.isdisjoint(found.driven)
+
+
 UNGROUNDED_STEP = '''
 from kodezart.core.protocols import TrackerPort
 
