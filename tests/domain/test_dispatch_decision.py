@@ -17,14 +17,20 @@ The scope flow. In a scope deployment the lane that fires is chosen by
 ``ScopeWorkflowEngine``, which ``build_workflow_engine`` (the function
 ``main.py`` calls) builds through ``build_scope_runtime``. It is built that
 way here, over a scope board whose lanes are the board's issues with their
-priorities and ages, and one walk is run to its end. Every fire it launches
-is refused at its first session by the scripted executor, which the lane
-boundary contains and rests, so each lane is fired once and the walk ends
-when none is left: what is recorded is the sequence of lanes fired, with
-each lane's contained failure, and that sequence is the lane selector's
-order. The scope flow's own eligibility inputs are registered apart
-(``SCOPE_ELIGIBILITY_REASONS``), and its varied fields are derived from the
-row model the same way.
+priorities and ages, on an origin with a forge behind it, and one walk is
+run to its end with fires that return. Every lane owes two criteria. The
+scripted agent boundary passes exactly the lane's own criterion when a
+grading asks about it and nothing otherwise, so a lane's first fire closes
+one of what it owed and the tick after it reads that as progress and offers
+the lane again; its second fire, asked only about what is left, closes
+nothing, and that tick's reading rests the lane by the plateau rule and
+puts its issue back. Every lane is therefore fired twice and rested once,
+whatever its gap holds, and the walk ends when none is left. What is
+recorded is the whole sequence: the lanes fired in order, re-fires
+included, the lanes rested in order, every contained failure, and the
+number of ticks the walk took. The scope flow's own eligibility inputs are
+registered apart (``SCOPE_ELIGIBILITY_REASONS``), and its varied fields are
+derived from the row model the same way.
 
 The row is partitioned three ways, off the row model itself. ``RANK_INPUTS``
 are the two fields a rank is made from. ``ELIGIBILITY_INPUTS`` are the fields
@@ -54,26 +60,31 @@ and the fire — a rebinding at boot, a subclass built at the root, a
 validator on the row, an eligibility clause, a table consulted after the
 selection, a hook in the rank value, a tie-break among equal priorities, an
 age shifted by a size, a count over the edges no clause reads, a lane
-skipped or chosen by its gap — fails here whatever it is spelled, as soon as
-it moves the decision for a board holding those extremes.
+skipped or chosen by its gap, a fired lane rested or re-offered by a size
+rather than by what its fire closed — fails here whatever it is spelled, as
+soon as it moves the decision for a board holding those extremes.
 
 Limit: a size taken from outside the board (for example, from the
 repository) is not varied here, so it would have to be read in a path body
 the static guard pins to be seen; the scope flow's lane selector
-(``ScopeWorkflowEngine._select``) and the dispatch pass's hand-off after the
-selection are not among those bodies. A size rule that moves nothing at
-these extremes — a threshold beyond them — is not seen; in the scope flow
-the subtree's great deal is ``SCOPE_MANY`` per part, because the ready read
-re-reads every lane's subtree on every tick. In the scope flow a lane whose
-body and title are both empty has no subject and is refused before its
-graph launches, so there the everything case leaves the title alone and the
-title is varied on its own. The pass runs ungated
+(``ScopeWorkflowEngine._select``), its re-fire reading (``_settle``) and the
+dispatch pass's hand-off after the selection are not among those bodies. A
+size rule that moves nothing at these extremes — a threshold beyond them —
+is not seen; in the scope flow the subtree's great deal is ``SCOPE_MANY``
+per part, because the ready read re-reads every lane's subtree on every
+tick. In the scope flow a lane whose body and title are both empty has no
+subject and is refused before its graph launches, so there the everything
+case leaves the title alone and the title is varied on its own. What a
+fire does inside its sessions is scripted, so which criteria a fire closes
+is not decided here: the rule is the same for every lane and every size,
+and what is held is what the walk decides from it. The pass runs ungated
 (``dispatch_pass_gate_signals`` empty, a legal deployment), so the gate's
 own reading of the board is outside this test; the gate decides whether a
 pass runs, not which issue it claims.
 """
 
 import asyncio
+import re
 import types
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
@@ -92,6 +103,7 @@ from kodezart.core.logging import get_logger
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.operation import QueueState
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.tracker import (
     IssuePriority,
@@ -100,11 +112,12 @@ from kodezart.types.domain.tracker import (
     IssueRelationKind,
     TrackerComment,
     TrackerIssue,
+    WorkflowStateKind,
 )
+from tests.adapters.test_github_api import _make_client
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
-    FakeAgentExecutor,
     FakeAgentRunner,
     FakeDeliveryProbe,
     FakeGitService,
@@ -118,9 +131,16 @@ from tests.fakes import (
     make_prompt_provider,
     make_tracker_issue,
 )
-from tests.integration.test_scope_runtime import SCOPE, bounded_walk
+from tests.integration.test_scope_runtime import (
+    FORGE_ORIGIN,
+    SCOPE,
+    ObservedNativeExecutor,
+    WalkRepos,
+    drive,
+    resumable,
+)
 from tests.integration.test_scope_runtime import board as scope_board
-from tests.integration.test_scope_runtime import runtime as scope_runtime
+from tests.lane_fixture import ScopeForgeWire, criteria_echo
 from tests.services.test_dispatch_pass import APPROVER, operation_config
 
 #: The row fields a rank is made from: ``rank_key`` reads these two.
@@ -248,17 +268,37 @@ BASE_DECISION = (
     ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3"),
 )
 
-#: The scripted executor's refusal: what every scope fire ends in.
-FIRE_REFUSAL = "the scripted executor opens no session"
+#: The rank order of the board's issues, which is the order the scope flow
+#: fires its lanes in.
+RANK_ORDER = ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3")
+
+#: The two criteria every scope lane owes: one its first fire closes, and
+#: one no fire closes. The first is the lane's own criterion, which the
+#: scope board names ``<lane>/check``.
+SCOPE_CHECKS = ("check", "second")
+
+#: How a grading's prompt names the criteria it asks about: between these
+#: two markers of the evaluator's template, one criterion per line, its
+#: key first. Every key the scope board mints carries a slash.
+CRITERIA_SECTION = re.compile(
+    r"── ACCEPTANCE CRITERIA TO EVALUATE ──(.*?)── CHANGESET TO EVALUATE ──",
+    re.DOTALL,
+)
+CRITERION_LINE = re.compile(r"^(\S+/\S+) ", re.MULTILINE)
+
+#: The walk's bound. The heaviest variation walks in about 24 s on its own;
+#: the machine the suite runs on shares its cores with several test runs.
+SCOPE_WALK_BOUND_SECONDS = 300
 
 #: Exact. The scope flow's decision over the same lanes: every lane fired
-#: once, in rank order, each ending in the contained refusal.
+#: twice in rank order — its first fire closes one criterion and the lane is
+#: offered again, its second closes nothing and the lane rests — no lane
+#: failed, and one tick per fire plus the tick that finds nothing to offer.
 SCOPE_BASE_DECISION = (
-    ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3"),
-    tuple(
-        (key, "RuntimeError", FIRE_REFUSAL)
-        for key in ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3")
-    ),
+    tuple(key for key in RANK_ORDER for _ in range(2)),
+    RANK_ORDER,
+    (),
+    2 * len(RANK_ORDER) + 1,
 )
 
 
@@ -488,36 +528,64 @@ VARIATIONS = variations(VARIED, VARIED)
 SCOPE_VARIATIONS = variations(SCOPE_VARIED, SCOPE_VARIED - {SCOPE_SUBJECT_FALLBACK})
 
 
-class RefusingExecutor(FakeAgentExecutor):
-    """An agent boundary that refuses every session a fire opens.
+def own_criterion(lane: str) -> str:
+    """The one criterion of *lane* a fire closes: the lane's own, by name."""
+    return f"{lane}/{SCOPE_CHECKS[0]}"
 
-    A fire's first session raises, the lane boundary contains it and rests
-    the lane, so each lane is fired once and nothing a fire does after its
-    launch can bear on which lane the walk fires next.
+
+def asked_about(prompt: str) -> str:
+    """The section of a grading's *prompt* that lists the criteria it asks about."""
+    (section,) = CRITERIA_SECTION.findall(prompt)
+    return section
+
+
+class ClosingExecutor(ObservedNativeExecutor):
+    """An agent boundary whose fires return, each closing at most one criterion.
+
+    Every grading passes exactly the lane's own criterion when the fire was
+    asked about it, and nothing otherwise; the roster it answers is the one
+    the prompt names, so no answer is invented and none is missing. A lane's
+    first fire is asked about everything it owes and closes its own
+    criterion; its second is asked only about what is left and closes
+    nothing. The rule reads no size and is the same for every lane, so what
+    the walk decides from it is the walk's own.
     """
 
     def __init__(self) -> None:
-        super().__init__(events=[])
-        self.refused: list[str] = []
+        super().__init__([])
+        #: Every grading: the lane, the criteria asked about, those passed.
+        self.gradings: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = []
 
     async def stream(self, **kwargs: object) -> AsyncGenerator[AgentEvent, None]:
-        self.refused.append(str(kwargs.get("prompt")))
-        raise RuntimeError(FIRE_REFUSAL)
-        yield
+        output_format = kwargs.get("output_format")
+        schema = output_format.get("schema") if isinstance(output_format, dict) else {}
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        if "criteriaResults" in properties:
+            identity = kwargs.get("run_identity")
+            assert isinstance(identity, RunIdentity), "a grading names its fire"
+            lane = identity.name
+            asked = tuple(CRITERION_LINE.findall(asked_about(str(kwargs["prompt"]))))
+            passed = tuple(key for key in asked if key == own_criterion(lane))
+            self.gradings.append((lane, asked, passed))
+            self.evaluations.append(criteria_echo(keys=asked, passed=set(passed)))
+        async for event in super().stream(**kwargs):
+            yield event
 
 
 def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
     """The scope board: one lane per board issue, varied by *variation*.
 
-    Each lane carries its issue's priority and age, and the stage markers
-    and one criterion the scope board gives every lane. Heavy lanes are
+    Each lane carries its issue's priority and age, the stage markers the
+    scope board gives every lane, and its two criteria. Heavy lanes are
     given the variation's subtree: ``SCOPE_MANY`` open criteria, as many
     deliverable children each owing one criterion, and as many long
     comments.
     """
     keys = tuple(issue.issue_key for issue in BOARD)
     port = scope_board(
-        lanes=keys, priorities={issue.issue_key: issue.priority for issue in BOARD}
+        lanes=keys,
+        priorities={issue.issue_key: issue.priority for issue in BOARD},
+        checks=dict.fromkeys(keys, SCOPE_CHECKS),
     )
     aged = tuple(
         rebuilt(
@@ -568,35 +636,68 @@ def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
     return port
 
 
-async def scope_decision(
+ScopeDecision = tuple[
+    tuple[str, ...], tuple[str, ...], tuple[tuple[str, str, str], ...], int
+]
+
+
+async def scope_walk(
     port: FakeTrackerPort,
-) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
-    """The lanes one scope walk fires, and how each lane's turn ended.
+) -> tuple[ScopeDecision, ClosingExecutor]:
+    """One whole scope walk over *port*, and the agent boundary it ran through.
 
     Built through ``build_workflow_engine``, the function ``main.py``
-    calls, which composes the scope flow through ``build_scope_runtime``.
-    Bounded: the walk runs under the scope suite's own time bound, and each
-    lane is fired at most once because its refused fire rests it. The log
-    is captured rather than rendered, since each contained refusal logs its
-    traceback.
+    calls, which composes the scope flow through ``build_scope_runtime``,
+    on an origin with a forge behind it and over repositories that commit
+    as a lane's do, so every fire enters, records and delivers the way a
+    deployed one does. Bounded by ``SCOPE_WALK_BOUND_SECONDS``. The log is
+    captured rather than rendered.
+
+    What comes back is the decision: the lanes fired in order, the lanes
+    rested in order, every contained lane failure, and the tick count.
     """
-    executor = RefusingExecutor()
-    harness = scope_runtime(
-        port=port,
-        lanes=tuple(issue.issue_key for issue in BOARD),
-        executor=executor,
+    repos = WalkRepos(url=FORGE_ORIGIN)
+    wire = ScopeForgeWire(head_sha_of=repos.head_of)
+    forge = _make_client(wire)
+    executor = ClosingExecutor()
+    try:
+        harness = resumable(
+            port=port,
+            repos=repos,
+            lanes=tuple(issue.issue_key for issue in BOARD),
+            origin=FORGE_ORIGIN,
+            forge=forge,
+            trunk="main",
+            executor=executor,
+        )
+        with structlog.testing.capture_logs():
+            async with asyncio.timeout(SCOPE_WALK_BOUND_SECONDS):
+                events = [
+                    event
+                    async for event in drive(
+                        harness, job="decision-job", origin=FORGE_ORIGIN
+                    )
+                ]
+    finally:
+        await forge.close()
+    ticks = [event.observation for event in events if isinstance(event, ScopeWalkEvent)]
+    last = ticks[-1]
+    decided: ScopeDecision = (
+        last.dispatched,
+        last.rested_lanes,
+        tuple(
+            (failure.issue_key, failure.error.error_kind, failure.error.error)
+            for failure in last.failed_lanes
+        ),
+        len(ticks),
     )
-    with structlog.testing.capture_logs():
-        events = await bounded_walk(harness)
-    observations = [
-        event.observation for event in events if isinstance(event, ScopeWalkEvent)
-    ]
-    last = observations[-1]
-    assert len(executor.refused) == len(last.dispatched)
-    return last.dispatched, tuple(
-        (failure.issue_key, failure.error.error_kind, failure.error.error)
-        for failure in last.failed_lanes
-    )
+    return decided, executor
+
+
+async def scope_decision(port: FakeTrackerPort) -> ScopeDecision:
+    """The decision one scope walk over *port* makes."""
+    decided, _ = await scope_walk(port)
+    return decided
 
 
 def test_the_row_is_partitioned_into_rank_eligibility_and_varied_fields() -> None:
@@ -701,30 +802,56 @@ async def test_the_decision_does_not_move_when_a_size_moves(case: str) -> None:
 
 
 async def test_the_composed_scope_flow_fires_its_lanes_in_rank_order() -> None:
-    """The scope flow's base decision: priority first, age second, each once.
+    """The scope flow's base decision, and the control for its fires.
 
     The literal is written out, so a walk that fired nothing, or a scope
     flow composed some other way, fails here before any variation is
-    compared with it.
+    compared with it. And the fires did what the walk's decision is read
+    from: each lane's first fire was asked about both its criteria and
+    closed its own, its second was asked about the one left and closed
+    nothing, so on the board after the walk every lane's own criterion is
+    done and its other one is still owed.
     """
-    assert await scope_decision(scope_lanes(None)) == SCOPE_BASE_DECISION
+    port = scope_lanes(None)
+    decided, executor = await scope_walk(port)
+    assert decided == SCOPE_BASE_DECISION
+    asked_by_lane: dict[str, list[tuple[tuple[str, ...], tuple[str, ...]]]] = {}
+    for lane, asked, passed in executor.gradings:
+        asked_by_lane.setdefault(lane, []).append((asked, passed))
+    assert set(asked_by_lane) == set(RANK_ORDER)
+    for lane, gradings in asked_by_lane.items():
+        both = frozenset(f"{lane}/{name}" for name in SCOPE_CHECKS)
+        first = [(asked, passed) for asked, passed in gradings if set(asked) == both]
+        second = [(asked, passed) for asked, passed in gradings if set(asked) != both]
+        assert first and all(passed == (own_criterion(lane),) for _, passed in first)
+        assert second and all(
+            asked == (f"{lane}/{SCOPE_CHECKS[1]}",) and passed == ()
+            for asked, passed in second
+        )
+        assert port.issues[own_criterion(lane)].state_kind is (
+            WorkflowStateKind.COMPLETED
+        )
+        assert port.issues[f"{lane}/{SCOPE_CHECKS[1]}"].state_kind is (
+            WorkflowStateKind.UNSTARTED
+        )
 
 
 async def test_the_ready_read_answers_the_varied_gap() -> None:
     """The control for the scope subtree: the lane selector is handed it.
 
     A lane given the whole subtree is read back through the ready read the
-    walk selects from: its gap is its own criterion, the ``SCOPE_MANY``
+    walk selects from: its gap is its own two criteria, the ``SCOPE_MANY``
     criteria under it and one criterion under each of its ``SCOPE_MANY``
-    children, and a light lane's gap is its own criterion alone.
+    children, and a light lane's gap is its own two criteria alone.
     """
     heavy = BOARD[0].issue_key
     variation = Variation((), SUBTREE, False, frozenset({heavy}))
     port = scope_lanes(variation)
     ready = await read_scope_ready(ref=SCOPE, tracker=port)
     gaps = {lane.issue.issue_key: len(lane.gap) for lane in ready.ready}
+    own = len(SCOPE_CHECKS)
     assert gaps == {
-        issue.issue_key: 1 + 2 * SCOPE_MANY if issue.issue_key == heavy else 1
+        issue.issue_key: own + 2 * SCOPE_MANY if issue.issue_key == heavy else own
         for issue in BOARD
     }
     assert len(await port.list_comments(issue_key=heavy)) == SCOPE_MANY
@@ -732,7 +859,8 @@ async def test_the_ready_read_answers_the_varied_gap() -> None:
 
 @pytest.mark.parametrize("case", sorted(SCOPE_VARIATIONS))
 async def test_the_scope_flow_does_not_move_when_a_size_moves(case: str) -> None:
-    """The same lanes fired in the same order, whatever the varied inputs hold.
+    """The same lanes fired, re-fired and rested in the same order, whatever
+    the varied inputs hold.
 
     The variation is checked to reach the scope board first, so a variation
     that changed nothing cannot pass for one the walk withstood.
