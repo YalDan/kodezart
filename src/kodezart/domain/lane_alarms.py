@@ -271,7 +271,10 @@ def _criterion_alarms(
     Whether the walk will re-derive the lane is the one thing neither the
     stream nor the record can say, and it is read from the standing: nothing
     on this path takes a claim, so "a lane holding no live claim" is a lane
-    this tick's own ready reading does not carry.
+    this tick's own ready reading does not carry. That is a proxy, and it is
+    exactly "not ready on this tick": a ready lane the current walk
+    invocation has rested counts as re-derived, because the next invocation
+    offers it again, and a ready lane no walk runs at all is not told apart.
     """
     known = {issue.issue_key: issue for issue in criteria}
     projections = tuple(
