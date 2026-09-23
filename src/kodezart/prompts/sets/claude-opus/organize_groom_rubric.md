@@ -17,4 +17,4 @@ one that fails otherwise.
 Whether the issue can be built, and whether that can be shown against the
 supplied base, is no part of this mandate: those questions belong to the later
 rows of the organize table and are judged there, against their own rubric.
-Refuse here only on the four conditions above.
+Do not refuse on whether the issue can be built.

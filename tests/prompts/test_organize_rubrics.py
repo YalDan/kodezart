@@ -70,11 +70,12 @@ def numbered_items(text: str) -> list[str]:
 #: The four parts are a conjunction: every one must hold.
 CONJUNCTION = "only when all four conditions below hold"
 
-#: What the pre-approval rubric states it does not judge, and that it refuses
-#: on the four parts alone.
+#: What the pre-approval rubric states it does not judge, and that it does
+#: not refuse on it. It claims no "only": the wrapper it is rendered in may
+#: state a refusal of its own, such as the v5 placement refusal.
 EXCLUSION = (
     "is no part of this mandate",
-    "Refuse here only on the four conditions above",
+    "Do not refuse on whether the issue can be built.",
 )
 
 #: What a pre-approval accept condition may not say. Every one of these was in
@@ -155,6 +156,39 @@ def test_no_pre_approval_accept_condition_names_the_dry_implementation(
         assert "Golden source issue body" in rendered, wrapper.value
         for part in FOUR_PARTS:
             assert part in normalised(rendered), (wrapper.value, part)
+
+
+#: The refusal the v5 assessment wrapper states after the board hierarchy: an
+#: issue outside it is refused, whatever the rubric the wrapper is handed.
+PLACEMENT = (
+    "An issue outside that tree is not_buildable with a repairable spec_gap:"
+    " name the misplacement and the field that carries it."
+)
+
+
+def test_the_v5_groom_assessment_states_the_rubric_and_the_placement_refusal() -> None:
+    """The rubric does not contradict the wrapper it is rendered in.
+
+    The v5 assessment wrapper refuses an issue placed outside the board
+    hierarchy. The pre-approval rubric rendered into it states its four
+    parts and claims no "only" about what may be refused, so the session
+    is handed the two refusal grounds together and no sentence that rules
+    one of them out.
+    """
+    groom = row_of(MandateKind.GROOM)
+    rubric = rendered_rubric(V5_SET, groom.spec.rubric_prompt_key)
+    rendered = normalised(
+        rendered_around(V5_SET, groom.spec.admission_prompt_key, rubric)
+    )
+    for part in FOUR_PARTS:
+        assert part in rendered, part
+    assert PLACEMENT in rendered
+    sentences = re.split(r"(?<=[.:])\s+", rendered)
+    assert [
+        sentence
+        for sentence in sentences
+        if "refuse" in sentence.lower() and "only" in sentence.lower().split()
+    ] == []
 
 
 #: How the admission wrapper states what it assesses: against the rubric it is
