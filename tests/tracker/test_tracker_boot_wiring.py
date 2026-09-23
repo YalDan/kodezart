@@ -847,6 +847,39 @@ async def test_boot_logs_one_line_for_an_accepted_v02_file(
     ] == []
 
 
+async def test_boot_logs_what_a_file_with_no_marker_table_was_given(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    wired: ManagedFakeLinearMcpServer,
+) -> None:
+    """A file declaring no marker table is given v0.2's, and boot says so first.
+
+    One line, naming the member it supplied and the file it read, before the
+    tracker is dialled (KOD-903).
+    """
+    monkeypatch.delenv("KODEZART_GITHUB_TOKEN", raising=False)
+    declared_table = '[marker_prefixes]\nrun_outcome = "fixture-run-outcome"\n'
+    body = _operation_toml()
+    assert body.count(declared_table) == 1
+    _configure(monkeypatch, tmp_path, body.replace(declared_table, ""))
+    app = create_app()
+    async with lifespan(app):
+        pass
+
+    events = _events(capsys.readouterr().out)
+    names = [event.get("event") for event in events]
+    (accepted,) = [
+        event for event in events if event.get("event") == "operation_file_v02_accepted"
+    ]
+    assert accepted["defaulted"] == ["marker_prefixes"]
+    assert accepted["ignored"] == []
+    assert accepted["path"] == str(tmp_path / "operation.toml")
+    assert names.index("operation_file_v02_accepted") < names.index(
+        "tracker_mappings_reconciled"
+    )
+
+
 async def test_a_preflight_refusal_strands_no_queue_and_no_open_transport(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
