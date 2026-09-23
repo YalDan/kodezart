@@ -497,6 +497,16 @@ pre-approval row no lease marker. A member the round mints is outside the set
 that round declared and is declared by the next round, which snapshots the
 board again.
 
+The round's lease is renewed only at its writes. Each member's marker carries
+the lines of the whole set, so one renewal edits one marker per member. The
+longest stretch without a write is the dry round, which runs one verification
+session per member, and it has to fit within `tracker.surface_lease_seconds`:
+a round whose lease lapsed before its next write raises
+`SurfaceLeaseLostError` at that write and writes nothing more. A round killed
+while it holds the set leaves its markers standing until they lapse, so the
+next pass over that scope is refused until then; a grooming tick stops at the
+first target that raises, and the targets after it wait for the next tick.
+
 That same set is the bound on what the row may write. Every address a
 proposal needs — the subject's own surface and, for a graph change, the graph
 address of every affected peer — is weighed against the held set before any
