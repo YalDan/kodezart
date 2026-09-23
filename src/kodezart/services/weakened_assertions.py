@@ -32,7 +32,7 @@ from kodezart.domain.amendment import (
 )
 from kodezart.domain.assertion_drift import lost_assertions, weakening_mark
 from kodezart.domain.criterion_creation import criterion_body
-from kodezart.domain.errors import AssertionComparisonError
+from kodezart.domain.errors import AssertionComparisonError, GitSourceReadError
 from kodezart.services.assertion_drift import AssertionDriftDetector
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.agent import RulingProtectedTestRef
@@ -91,7 +91,10 @@ class WeakenedAssertionMarks:
                 head_ref=commit_sha,
                 protected_tests=designated,
             )
-        except AssertionComparisonError as exc:
+        except (AssertionComparisonError, GitSourceReadError) as exc:
+            # A designated file the starting head cannot supply is as
+            # uncomparable as a definition it cannot resolve: the writer is
+            # refused with its own typed refusal either way, and no mark.
             raise NativeWriteRefusalError(
                 "The designated tests could not be compared"
             ) from exc
