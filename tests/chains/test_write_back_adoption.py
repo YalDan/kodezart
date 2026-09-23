@@ -742,6 +742,39 @@ def test_a_declaration_is_exact_in_both_directions(bucket):
         assert found.paths == (str(site),)
 
 
+WRAPPER = '''
+from kodezart.core.protocols import TrackerPort
+
+
+class Wrapper:
+    """A class declaring a write of the port's name and forwarding it on."""
+
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def upsert_comment(self, **kw) -> None:
+        await self._tracker.upsert_comment(**kw)
+'''
+
+
+def test_a_wrapper_declaring_a_port_write_of_its_own_is_still_a_call_site():
+    """Only ``self.<write>(…)`` is the backend seam; any other receiver is a call.
+
+    The wrapper defines a method of the write's own name, and what it
+    reaches is another object's write, so the call it makes is a consumer's
+    call like any other.  Nothing drives it and nothing declares it, so it
+    is refused.
+    """
+    found = census(("planted/wrapper.py", WRAPPER))
+    site = CallSite(
+        module="planted/wrapper.py",
+        function="Wrapper.upsert_comment",
+        method="upsert_comment",
+    )
+    assert site in found.sites
+    assert site in found.unadopted
+
+
 IMPOSTOR = '''
 from kodezart.core.protocols import TrackerPort
 
