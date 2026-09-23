@@ -1682,8 +1682,6 @@ def references(
             if isinstance(node, ast.Name | ast.Attribute | ast.Call):
                 keys, _ = denoted(index, module, node)
                 word = node.attr if isinstance(node, ast.Attribute) else None
-                if isinstance(node, ast.Call) and (reflected := _reflected(node)):
-                    word = reflected[1]
                 if not keys and word in wanted:
                     keys = index.methods.get(word or "", frozenset())
             elif isinstance(node, ast.Constant) and node.value in wanted:

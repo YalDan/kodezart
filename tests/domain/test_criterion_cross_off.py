@@ -191,6 +191,12 @@ def callers_of(tree: ast.Module, *, name: str) -> list[str]:
     rather than by a bare name: ``self._mint(...)`` counts exactly as
     ``mint(...)`` does.  The aliases are resolved to a fixed point before the
     calls are counted, by the same resolution the stage guard below uses.
+
+    Resolved within the one tree it is handed: a binding in one module called
+    under its alias in another is not matched, and neither is a member handed
+    on by any route ``stage_names`` does not record.  The criterion mint's
+    one-caller count does not rest on this walk; it counts every naming of
+    the member over the whole package instead (KOD-621).
     """
     where = qualified_names(tree)
     aliases = stage_names(tree, stage=name)
@@ -217,9 +223,11 @@ def stage_names(tree: ast.Module, *, stage: str) -> set[str]:
     read.  Grown to a fixed point, because an alias can precede its source and
     an alias of an alias is the same value again.
 
-    What it does not record: a binding that wraps the member before handing it
-    on — a walrus, a tuple or list unpacking, a parameter default, a
-    ``partial`` — each of which hands on a value of another shape.
+    What it records is an assignment whose whole value is spelled as the
+    member or as a recorded spelling.  What it does not record: the same
+    value handed on by any other route — a walrus, a tuple or list unpacking,
+    a parameter default, a ``partial``, a conditional whose last arm is not
+    the member, an argument, a return, or a binding in another module.
     """
     names: set[str] = set()
 

@@ -31,27 +31,34 @@ binds to its value, pooled over the whole tree and resolved to each
 module's own words, and by the tool's literal, whether the tool is passed
 positionally or by keyword — so importing the constant from the module that
 binds it, importing it under another name, or spelling the tool inline are
-each still a listing.  A member bound to a word and called under that word
-is likewise the same call, and so is a member a class holds on itself: the
-caller walk resolves assignment aliases of the member to a fixed point —
-a word, or the whole dotted spelling of an instance attribute such as
-``self._mint`` — and matches a call by the whole spelling of its target,
-so binding the mint to a name or to ``self`` first is no way past the
-one-caller count either.
+each still a listing.
 
-What it does not see: a member reached by reflection; a binding that wraps
-the member before handing it on — a walrus, a tuple unpacking, a parameter
-default, a ``partial`` — which no module of this tree writes; a selection of
-criterion rows out of issues some container read already returned, which is
-not a listing and which an AST cannot tell from one — that rows come from
-the port's read is what the conformance cases over the parametrized tracker
-fixture establish; a mint that neither takes the surface nor spells the
-creation payload, which would be building its request by subscript and
-would also be outside the lease discipline the creation conformance case
-pins; and the doubles, because the scanned tree is the shipped package.
+The mint's callers are counted by what cannot be respelled: every place in
+the whole package that names the member at all, called or not.  A member is
+reached through the instance that holds it, so its name as an attribute is
+the one thing every route to it spells, and handing it on is itself a
+naming — binding it to a word, to ``self`` or to a conditional, passing it
+as an argument or through a constructor, returning it, wrapping it in a
+``partial`` or a lambda, fetching it by ``getattr`` or ``methodcaller`` with
+its literal name.  Each of those is a site in the definition that writes
+it, whichever module later calls the value, so a base class binding the
+member in one module and a subclass calling it in another is a site in the
+first.  The listing descent and the family read are still counted as calls,
+by the per-module alias walk in the cross-off module.
+
+What it does not see: a member reached by ``getattr`` or ``__dict__`` under a
+name built at run time, or by ``eval``; a selection of criterion rows out of
+issues some container read already returned, which is not a listing and
+which an AST cannot tell from one — that rows come from the port's read is
+what the conformance cases over the parametrized tracker fixture establish;
+a mint that neither takes the surface nor spells the creation payload,
+which would be building its request by subscript and would also be outside
+the lease discipline the creation conformance case pins; and the doubles,
+because the scanned tree is the shipped package.
 """
 
 import ast
+import functools
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -74,6 +81,7 @@ from tests.domain.test_criterion_cross_off import (
     source_tree,
 )
 from tests.identity_guards import _constructor_names
+from tests.name_resolution import identity_index, object_key, parsed, references
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 
@@ -397,6 +405,32 @@ def test_a_second_listing_site_is_reported(form):
     assert module in LISTING_REPORTS[report](sources)
 
 
+#: The mint's own definitions, each read off the object: the port's two
+#: declarations, on the aggregate and on the narrow minting role, and the
+#: adapter's implementation.
+MINT_DEFINITIONS = frozenset(
+    {
+        object_key(CriterionMinter.create_criterion_if_absent),
+        object_key(TrackerPort.create_criterion_if_absent),
+        object_key(LinearMcpTracker.create_criterion_if_absent),
+    }
+)
+
+
+def mint_sites(sources: dict[str, str]) -> dict[str, list[str]]:
+    """Every definition in *sources* that names the mint, called or not, by module.
+
+    Resolved over the whole map at once, by identity where a receiver is a
+    class or module the code names, and by the member's own name where it is
+    an instance — the way every caller reaches a port member.
+    """
+    found: dict[str, set[str]] = {}
+    for reference in references(identity_index(parsed(sources)), members={MINT}):
+        if reference.key in MINT_DEFINITIONS:
+            found.setdefault(reference.module, set()).add(reference.definition)
+    return {module: sorted(definitions) for module, definitions in found.items()}
+
+
 def mint_surfaces(sources: dict[str, str]) -> dict[str, list[str]]:
     """Every scope inside a vendor adapter that names the mint's surface.
 
@@ -412,13 +446,8 @@ def mint_surfaces(sources: dict[str, str]) -> dict[str, list[str]]:
     return by_module(inside, lambda tree: scopes_naming(tree, attribute=MINT_SURFACE))
 
 
-def mint_callers(sources: dict[str, str]) -> dict[str, list[str]]:
-    """Every module of *sources* that calls the mint, with its calling scopes."""
-    return by_module(sources, lambda tree: callers_of(tree, name=MINT))
-
-
 def callers_outside_the_holders(callers: dict[str, list[str]]) -> list[str]:
-    """The modules calling the mint other than its two holders, sorted.
+    """The modules naming the mint other than its two holders, sorted.
 
     The one comparison the guard below and the planted control share, so a
     loosened comparison fails the control rather than passing silently.
@@ -427,17 +456,20 @@ def callers_outside_the_holders(callers: dict[str, list[str]]) -> list[str]:
 
 
 def test_the_criteria_stage_is_the_only_caller_of_the_criterion_mint():
-    """The mint is declared on two roles, implemented once, called once each.
+    """The mint is declared on two roles, implemented once, named once per holder.
 
     The member, the classes and their steps are all read off the code, so
     renaming any of them moves the guard.  The port module declares the
     aggregate and the narrow minting role; the adapter implements it once.
-    The stage's call sits in a closure of its write step, and the step is what
-    the stage holds, so that assertion is on the prefix and the closure's own
-    tail stays the code's word; a second closure in the same step would be a
-    second calling definition and would redden the count.  The mark's call
-    sits in the method's own body, and the equality over the callers is exact,
-    so a third holder of the mint still reddens.
+    The count is of every definition that names the member, called or not,
+    over the whole package at once (KOD-621): a definition that hands the
+    member on names it, so a second minting caller is a second site wherever
+    it later calls the value.  The stage's call sits in a closure of its write
+    step, and the step is what the stage holds, so that assertion is on the
+    prefix and the closure's own tail stays the code's word; a second closure
+    in the same step would be a second naming definition and would redden the
+    count.  The mark's call sits in the method's own body, and the equality
+    over the callers is exact, so a third holder of the mint still reddens.
     """
     sources = source_tree()
 
@@ -450,7 +482,7 @@ def test_the_criteria_stage_is_the_only_caller_of_the_criterion_mint():
             }
         ),
     }
-    callers = mint_callers(sources)
+    callers = mint_sites(sources)
 
     assert callers_outside_the_holders(callers) == []
     assert len(callers[OWNER]) == 1
@@ -485,18 +517,22 @@ def test_the_adapter_holds_one_minting_method():
     assert surfaces[ADAPTER][0].startswith(mint)
 
 
-#: The four reports the two assertions above are made of, each by the name
+#: The five reports the two assertions above are made of, each by the name
 #: the control below refers to it by.
 MINT_REPORTS = {
     "implementations": lambda sources: by_module(
         sources, lambda tree: definitions_of(tree, name=MINT)
     ),
+    "callers": mint_sites,
     "callers outside the holders": lambda sources: callers_outside_the_holders(
-        mint_callers(sources)
+        mint_sites(sources)
     ),
     "surfaces": mint_surfaces,
     "creations": lambda sources: by_module(sources, labelled_child_creations),
 }
+
+#: A module the tree does not have, which a planted row may import from.
+SECOND_STAGE_MODULE = f"{SOURCE_ROOT.name}.services.second_stage"
 
 #: Each way a second minting site could arrive: the module it arrives as,
 #: the text it arrives as, and the report that must name it.
@@ -537,6 +573,102 @@ PLANTED_MINTS = {
         f"        )\n",
         "callers",
     ),
+    # The shapes that hand the member on before anything calls it: each names
+    # the member in the definition that writes it, which is the site
+    # (KOD-621).
+    "a second caller through a method that returns the member": (
+        "services/second_stage.py",
+        f"class SecondStage:\n"
+        f"    def __init__(self, tracker):\n"
+        f"        self._tracker = tracker\n"
+        f"\n"
+        f"    def _minter(self):\n"
+        f"        return self._tracker.{MINT}\n"
+        f"\n"
+        f"    async def stage(self):\n"
+        f"        return await self._minter()(\n"
+        f"            parent_key='p', title='t', check='c', do='d', holder='h'\n"
+        f"        )\n",
+        "callers",
+    ),
+    "a second caller by the member handed as an argument": (
+        "services/second_stage.py",
+        f"async def _run(mint):\n"
+        f"    return await mint(\n"
+        f"        parent_key='p', title='t', check='c', do='d', holder='h'\n"
+        f"    )\n"
+        f"\n"
+        f"async def stage(tracker):\n"
+        f"    return await _run(tracker.{MINT})\n",
+        "callers",
+    ),
+    "a second caller by a conditional binding on self": (
+        "services/second_stage.py",
+        f"class SecondStage:\n"
+        f"    def __init__(self, tracker):\n"
+        f"        self._mint = tracker.{MINT} if tracker else None\n",
+        "callers",
+    ),
+    "a second caller by the member injected through a constructor": (
+        "services/second_wiring.py",
+        f"from {SECOND_STAGE_MODULE} import SecondStage\n"
+        f"\n"
+        f"def wire(tracker):\n"
+        f"    return SecondStage(tracker.{MINT})\n",
+        "callers",
+    ),
+    "a second caller by a base class binding the member on self": (
+        "services/second_base.py",
+        f"class SecondBase:\n"
+        f"    def __init__(self, tracker):\n"
+        f"        self._mint = tracker.{MINT}\n",
+        "callers",
+    ),
+    "a second caller by a walrus": (
+        "services/second_stage.py",
+        f"async def stage(tracker):\n"
+        f"    if mint := tracker.{MINT}:\n"
+        f"        return await mint(\n"
+        f"            parent_key='p', title='t', check='c', do='d', holder='h'\n"
+        f"        )\n",
+        "callers",
+    ),
+    "a second caller by a tuple unpacking": (
+        "services/second_stage.py",
+        f"async def stage(tracker):\n"
+        f"    (mint,) = (tracker.{MINT},)\n"
+        f"    return await mint(\n"
+        f"        parent_key='p', title='t', check='c', do='d', holder='h'\n"
+        f"    )\n",
+        "callers",
+    ),
+    "a second caller by a partial": (
+        "services/second_stage.py",
+        f"from functools import partial\n"
+        f"\n"
+        f"async def stage(tracker):\n"
+        f"    mint = partial(tracker.{MINT}, holder='h')\n"
+        f"    return await mint(parent_key='p', title='t', check='c', do='d')\n",
+        "callers",
+    ),
+    "a second caller by getattr with the member's literal name": (
+        "services/second_stage.py",
+        f"async def stage(tracker):\n"
+        f"    return await getattr(tracker, {MINT!r})(\n"
+        f"        parent_key='p', title='t', check='c', do='d', holder='h'\n"
+        f"    )\n",
+        "callers",
+    ),
+    "a second caller by methodcaller with the member's literal name": (
+        "services/second_stage.py",
+        f"from operator import methodcaller\n"
+        f"\n"
+        f"async def stage(tracker):\n"
+        f"    return await methodcaller(\n"
+        f"        {MINT!r}, parent_key='p', title='t', check='c', do='d', holder='h'\n"
+        f"    )(tracker)\n",
+        "callers",
+    ),
     "a second implementation": (
         "services/second_port.py",
         f"class Second:\n"
@@ -565,12 +697,36 @@ PLANTED_MINTS = {
 }
 
 
+#: The modules a row needs beside the one it plants: the subclass that calls
+#: what a base class in another module bound on ``self``.
+ALSO_PLANTED = {
+    "a second caller by a base class binding the member on self": {
+        "services/second_stage.py": (
+            f"from {SOURCE_ROOT.name}.services.second_base import SecondBase\n"
+            f"\n"
+            f"class SecondStage(SecondBase):\n"
+            f"    async def stage(self):\n"
+            f"        return await self._mint(\n"
+            f"            parent_key='p', title='t', check='c', do='d', holder='h'\n"
+            f"        )\n"
+        ),
+    },
+}
+
+
+@functools.cache
+def shipped_mint_report(report: str) -> dict[str, list[str]]:
+    """What *report* names over the shipped package, read once."""
+    return MINT_REPORTS[report](source_tree())
+
+
 @pytest.mark.parametrize("form", sorted(PLANTED_MINTS))
 def test_a_second_mint_caller_and_a_second_minting_method_are_each_reported(form):
     sources = source_tree()
     module, text, report = PLANTED_MINTS[form]
-    assert module not in MINT_REPORTS[report](sources)
+    assert module not in shipped_mint_report(report)
 
     sources[module] = text
+    sources.update(ALSO_PLANTED.get(form, {}))
 
     assert module in MINT_REPORTS[report](sources)
