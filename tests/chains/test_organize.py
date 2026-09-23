@@ -5,7 +5,7 @@ import functools
 import inspect
 from collections import Counter
 from collections.abc import AsyncIterator, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 
 import pytest
@@ -72,8 +72,10 @@ from tests.fakes import (
 from tests.name_resolution import (
     call_sites,
     defining_module,
+    module_namespace,
     modules_reaching,
     parsed,
+    referencing_definitions,
     source_tree,
 )
 from tests.prompts.sets import OPUS_SET, V5_SET
@@ -1436,10 +1438,13 @@ GAP_COMPUTATION_MODULES = frozenset(
         "services/scope_tally.py",
     }
 )
-#: Every module of the tree that reads the change stamp, and the reason it
-#: may.  None of them can compute the gap; a module that newly reads the
-#: stamp, for any reason and however the value reached it, arrives here as a
-#: decision with its reason written down, or reds.
+#: Every module of the tree that spells the change stamp, and the reason it
+#: may.  None of them is in the gap's reach, and none holds a call site of the
+#: arithmetic found by object.  A module that newly spells the stamp arrives
+#: here as a decision with its reason written down, or reds.  The register is
+#: kept per module, so a new read inside a module already here is not seen by
+#: it: the trap below holds it when the arithmetic runs it, and the call-site
+#: scan holds it when the reading function refers to the arithmetic.
 CHANGE_STAMP_READERS = {
     "adapters/linear/tracker.py": "The adapter: it reads the stamp off the wire "
     "and exposes it, and scans by recency, which the Check allows.",
@@ -1470,11 +1475,17 @@ CHANGE_STAMP_READERS = {
 
 
 def change_stamp_reads(tree):
-    """Every way parsed source reaches the tracker's change-timestamp field."""
+    """Every spelling of the tracker's change-timestamp field in parsed source.
+
+    As an attribute, a name, a keyword, a class pattern's keyword and a
+    string constant.
+    """
     reads = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr in CHANGE_STAMP_FIELDS:
             reads.add(node.attr)
+        elif isinstance(node, ast.MatchClass):
+            reads.update(CHANGE_STAMP_FIELDS.intersection(node.kwd_attrs))
         elif isinstance(node, ast.Name) and node.id in CHANGE_STAMP_FIELDS:
             reads.add(node.id)
         elif isinstance(node, ast.keyword) and node.arg in CHANGE_STAMP_FIELDS:
@@ -1504,20 +1515,17 @@ def gap_computation_sites(sources):
     submodule imported from its package, a dotted route through an imported
     package, and a string constant naming a module.
 
-    Nothing here follows the gap's answer.  How a helper hands the answer
-    on — returned, yielded, stored in a local, an accumulator, a field, a
-    property, a dict slot, a partial, a lambda, a module alias, a method, two
-    helpers deep — does not matter, because whoever consumes it imports the
-    helper's module, and that module reaches the arithmetic.
+    Nothing here follows the gap's answer: a module that imports a helper
+    beside the arithmetic is in the reach through that import, whatever shape
+    the helper hands the answer on in.
 
     Wider than the Check, and stated so a red is read right: a module that
     imports the arithmetic's module for any reason, a type among them, is
-    counted as able to compute the gap.  A module that reaches none of it and
-    is handed a value at run time — by argument, attribute or callback — calls
-    no gap arithmetic and is no call site; if it reads the stamp, it is a row
-    of ``CHANGE_STAMP_READERS`` instead.  Not seen: a module name assembled at
-    run time, a relative name handed to ``importlib.import_module`` with its
-    package, and ``eval`` or ``exec``.
+    counted as able to compute the gap.  Not in the reach: a module handed the
+    arithmetic or its answer at run time — by argument, attribute or
+    callback — without importing either.  Not seen: a module name assembled
+    at run time, a relative name handed to ``importlib.import_module`` with
+    its package, and ``eval`` or ``exec``.
     """
     trees = {relative: _parsed_once(source) for relative, source in sources.items()}
     return {
@@ -1591,18 +1599,558 @@ def test_the_discovered_gap_sites_are_the_upper_bound_exactly():
 def test_every_module_that_reads_the_change_stamp_is_registered_with_its_reason():
     """The stamp's readers are keyed on the stamp, not on the gap's answer.
 
-    Every module that reads it is read off the tree and must be a row of the
-    register, and every row must still read it: the adapter that exposes it,
+    Every module that spells it is read off the tree and must be a row of the
+    register, and every row must still spell it: the adapter that exposes it,
     the models that declare it, and the few services that keep it for a
     purpose of their own, none of them in the gap's reach.  A module that
-    starts reading the stamp — whatever handed it the value — reds here until
-    its reason is written down beside the others.
+    starts to spell the stamp reds here until its reason is written down
+    beside the others.
     """
     readers = change_stamp_readers(source_tree())
 
     assert readers
     assert readers.keys() == CHANGE_STAMP_READERS.keys()
     assert readers.keys().isdisjoint(gap_computation_sites(source_tree()))
+
+
+@functools.cache
+def _arithmetic_sites_of(relative, source):
+    """One module's call sites of the arithmetic, with what each reads."""
+    return tuple(
+        (name, frozenset(change_stamp_reads(node)))
+        for name, node in referencing_definitions(
+            relative,
+            _parsed_once(source),
+            module_namespace(relative, source),
+            wanted=GAP_ARITHMETIC,
+        )
+    )
+
+
+def arithmetic_call_sites(sources):
+    """``(module, definition)`` -> what it reads of the stamp, per call site.
+
+    A call site is a definition whose text refers to a member of
+    ``GAP_ARITHMETIC`` by object, called or not: under an aliased import, an
+    import inside the function, a relative import, a module-level rebinding,
+    a ``functools.partial``, a static method, loaded as a value and handed
+    on, or named by a string constant as ``module:attr`` or ``module.attr``
+    (``referencing_definitions``).  Each is scanned whole for a read of the
+    stamp.  Out of reach: a function handed the arithmetic or its answer
+    across a call — by argument, attribute or callback — and a name built at
+    run time.
+    """
+    return {
+        (relative, name): reads
+        for relative, source in sorted(sources.items())
+        for name, reads in _arithmetic_sites_of(relative, source)
+    }
+
+
+def registered_readers_holding_a_call_site(sources):
+    """The registered stamp readers that refer to the arithmetic by object."""
+    return sorted(
+        {module for module, _name in arithmetic_call_sites(sources)}
+        & CHANGE_STAMP_READERS.keys()
+    )
+
+
+def test_no_call_site_of_the_arithmetic_found_by_object_reads_the_change_stamp():
+    """The arithmetic's call sites are found by the objects, and read no stamp.
+
+    Every call site is inside the gap's reach, which ties the two readings
+    together: a site the reach misses — one that names the arithmetic by a
+    string constant rather than importing it — reds here.  No registered
+    reader of the stamp is a call site: a module kept on the register for a
+    reason of its own that starts to refer to the arithmetic reds, whatever
+    it reads.
+    """
+    sites = arithmetic_call_sites(source_tree())
+
+    assert sites
+    assert {site for site, reads in sites.items() if reads} == set()
+    assert {module for module, _name in sites} <= GAP_COMPUTATION_MODULES
+    assert registered_readers_holding_a_call_site(source_tree()) == []
+
+
+#: Each way a definition refers to the arithmetic by object, as the module
+#: text it arrives as.  ``{READ}`` is where a change-stamp read goes.
+CALL_SITE_ROUTES = {
+    "aliased_import": "from kodezart.domain.gap import compute_gap as gap_of\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in gap_of(criteria, supersession_refs={}){READ}]\n",
+    "import_inside_the_function": "def plan(criteria, since):\n"
+    "    from kodezart.domain.gap import compute_gap as _g\n"
+    "\n"
+    "    return [c for c in _g(criteria, supersession_refs={}){READ}]\n",
+    "module_alias_inside_the_function": "def plan(criteria, since):\n"
+    "    import kodezart.domain.gap as gap_module\n"
+    "\n"
+    "    window = gap_module.compute_gap\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "dotted_route_inside_the_function": "def plan(criteria, since):\n"
+    "    import kodezart.domain.gap\n"
+    "\n"
+    "    window = kodezart.domain.gap.compute_gap\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "relative_import_inside_the_function": "def plan(criteria, since):\n"
+    "    from ..domain.gap import compute_gap as window\n"
+    "\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "loaded_as_a_value_and_handed_on": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since, run):\n"
+    "    return [c for c in run(gap.compute_gap, criteria){READ}]\n",
+    "module_level_rebinding": "from kodezart.domain.organize import organize_gap\n"
+    "\n"
+    "_ARITHMETIC = organize_gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in _ARITHMETIC(**criteria){READ}]\n",
+    "module_level_partial": "import functools\n"
+    "\n"
+    "from kodezart.domain.gap import compute_gap\n"
+    "\n"
+    "_WINDOW = functools.partial(compute_gap, supersession_refs={})\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in _WINDOW(criteria){READ}]\n",
+    "static_method": "from kodezart.domain.gap import compute_gap\n"
+    "\n"
+    "class Arithmetic:\n"
+    "    window = staticmethod(compute_gap)\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in Arithmetic.window(criteria, supersession_refs={}){READ}]\n",
+    "named_as_module_colon_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = pkgutil.resolve_name('kodezart.domain.gap:compute_gap')\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "named_as_module_dot_attr": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = pkgutil.resolve_name('kodezart.domain.organize.organize_gap')\n"
+    "    return [c for c in window(**criteria){READ}]\n",
+}
+
+
+@pytest.mark.parametrize("reads", [True, False])
+@pytest.mark.parametrize("route", sorted(CALL_SITE_ROUTES))
+def test_a_call_site_of_the_arithmetic_is_found_by_object_and_scanned(route, reads):
+    """A definition referring to the arithmetic by any route is a scanned site.
+
+    One row per route, each with and without the read.  The read-free rows
+    redden the moment resolution stops following that route, because the
+    planted definition drops out of the sites; the reading rows redden the
+    scan.  An import at the top of a module binds its name in the module's
+    globals, which the module-level rebinding row reads; the rows importing
+    inside the function are what reads an import the globals never hold,
+    relative, aliased or dotted.  The partial and static-method rows are what
+    unwraps a stand-in, and the two string rows what resolves a named object.
+    """
+    planted = CALL_SITE_ROUTES[route].replace(
+        "{READ}", " if c.updated_at > since" if reads else ""
+    )
+    sites = arithmetic_call_sites({**source_tree(), "services/planted.py": planted})
+
+    assert sites[("services/planted.py", "plan")] == (
+        frozenset({"updated_at"}) if reads else frozenset()
+    )
+
+
+def test_a_registered_reader_that_refers_to_the_arithmetic_is_a_call_site():
+    """A module on the register reds the moment it refers to the arithmetic.
+
+    The planted function names the arithmetic by a string constant, so it
+    imports nothing the reach could follow, and it sits in a module that
+    already spells the stamp, so the register's keys do not move.  Found by
+    object, it is a call site, which a registered reader may not hold.
+    """
+    sources = source_tree()
+    sources["services/pass_gate.py"] += (
+        "\n\n"
+        "def recent_gap(criteria, since):\n"
+        "    import pkgutil\n"
+        "\n"
+        "    window = pkgutil.resolve_name('kodezart.domain.gap:compute_gap')\n"
+        "    return [\n"
+        "        c for c in window(criteria, supersession_refs={})"
+        " if c.updated_at > since\n"
+        "    ]\n"
+    )
+
+    assert registered_readers_holding_a_call_site(sources) == ["services/pass_gate.py"]
+    assert arithmetic_call_sites(sources)[
+        ("services/pass_gate.py", "recent_gap")
+    ] == frozenset({"updated_at"})
+    assert "services/pass_gate.py" not in gap_computation_sites(sources)
+
+
+class ChangeStampRead(BaseException):
+    """An operation on a trapped change stamp: the arithmetic read it.
+
+    Not an ``Exception``, so no ``except Exception`` in the arithmetic can
+    turn a read into an answer.
+    """
+
+
+#: Every operation a value can be put to that could let it decide an answer.
+TRAPPED_OPERATIONS = (
+    "__eq__",
+    "__ne__",
+    "__lt__",
+    "__le__",
+    "__gt__",
+    "__ge__",
+    "__hash__",
+    "__bool__",
+    "__str__",
+    "__repr__",
+    "__format__",
+    "__add__",
+    "__radd__",
+    "__sub__",
+    "__rsub__",
+    "__int__",
+    "__float__",
+    "__index__",
+    "__len__",
+    "__iter__",
+    "__contains__",
+    "__getitem__",
+    "__call__",
+    "__getattribute__",
+)
+
+
+def change_stamp_trap(reads):
+    """A change stamp whose every operation is recorded in *reads* and raises.
+
+    Comparison, hashing, truth, text, arithmetic, attribute access: each one
+    appends its name and raises ``ChangeStampRead``.  The record is kept even
+    when something swallows the raise.
+    """
+
+    def sprung(operation):
+        def operate(*_arguments):
+            reads.append(operation)
+            raise ChangeStampRead(operation)
+
+        return operate
+
+    trap = type(
+        "ChangeStampTrap",
+        (),
+        {operation: sprung(operation) for operation in TRAPPED_OPERATIONS},
+    )
+    return trap()
+
+
+def arithmetic_cases(stamp):
+    """Each entry point of the arithmetic over boards reaching every arm it has.
+
+    ``case -> (entry point, keyword arguments, records)``; every record's
+    change stamp is ``stamp(n)`` for the n-th record the case builds, and an
+    answer is read as the positions of its records among *records*.
+
+    The arms reached.  ``compute_gap`` and the ``in_gap`` it runs: every
+    workflow state kind, each with and without a supersession, so an open
+    criterion, a completed one, and a canceled and a duplicate one either
+    superseded or not; an empty board; and its three refusals — a criterion
+    twice, a record that is no criterion, a blank supersession.  The organize
+    gap, asked by ``organize_gap`` and by ``organize_at_rest``: a board with a
+    subject at rest, a nested subtree (a deliverable child under it holding
+    its own criterion), a subject without its marker, one without an
+    admission, one whose admission is stale, one whose criterion child's
+    admission is stale, one whose only criterion is canceled, one with an
+    open finding, one whose criterion child has one, and a tracker record and
+    a decision record that are no subject; a board at rest; an empty board;
+    and its four refusals — a blank marker, a revision twice, an admission
+    twice, a criterion without its parent.
+    """
+    built = iter(range(1_000))
+
+    def record(key, **changes):
+        fixture = issue(key, f"Body for {key}", **changes)
+        return fixture.model_copy(update={"updated_at": stamp(next(built))})
+
+    def revision(key, **changes):
+        return TrackerIssueRevision(
+            issue=issue(key, f"Body for {key}"), body_digest=f"opaque:{key}"
+        ).model_copy(update={"issue": record(key, **changes)})
+
+    def criterion(key, kind, parent=SUBJECT):
+        return record(
+            key,
+            parent_key=parent,
+            issue_labels=["criterion"],
+            state_kind=kind,
+            state_name=kind.value,
+        )
+
+    kinds = [
+        criterion(f"criterion/{kind.value}{superseded}", kind)
+        for kind in WorkflowStateKind
+        for superseded in ("", "/superseded")
+    ]
+    refs = {
+        each.issue_key: "superseding/1"
+        for each in kinds
+        if each.issue_key.endswith("/superseded")
+    }
+
+    def subtree(criteria, refs=None):
+        return (
+            compute_gap,
+            {"criteria": criteria, "supersession_refs": refs or {}},
+            criteria,
+        )
+
+    def family(key, *, marker=True, child=WorkflowStateKind.COMPLETED, parent=None):
+        return (
+            revision(
+                key,
+                issue_labels=[BODY_MARKER] if marker else [],
+                **({"parent_key": parent} if parent else {}),
+            ),
+            revision(
+                f"{key}/check",
+                parent_key=key,
+                issue_labels=["criterion"],
+                state_kind=child,
+                state_name=child.value,
+            ),
+        )
+
+    at_rest = family(SUBJECT)
+    nested = family(f"{SUBJECT}/deliverable", parent=SUBJECT)
+    unmarked = family("unmarked/1", marker=False)
+    unadmitted = family("unadmitted/1")
+    stale = family("stale/1")
+    stale_child = family("stale-child/1")
+    uncriterioned = family("uncriterioned/1", child=WorkflowStateKind.CANCELED)
+    found = family("found/1")
+    found_child = family("found-child/1")
+    records = (
+        revision("tracker/1", issue_labels=["tracker"]),
+        revision("decision/1", issue_labels=["decision"]),
+    )
+    board = (
+        *at_rest,
+        *nested,
+        *unmarked,
+        *unadmitted,
+        *stale,
+        *stale_child,
+        *uncriterioned,
+        *found,
+        *found_child,
+        *records,
+    )
+    lapsed = {stale[0].issue.issue_key, stale_child[1].issue.issue_key}
+    admissions = tuple(
+        AdmissionResult.model_validate(
+            {
+                **gap_admission(each).model_dump(),
+                "admitted_body_digest": "opaque:before"
+                if each.issue.issue_key in lapsed
+                else each.body_digest,
+            }
+        )
+        for each in board
+        if each.issue.issue_key not in {unadmitted[0].issue.issue_key}
+    )
+    findings = tuple(
+        SpecFinding(
+            issue_id=key,
+            defect_class="unsupported-claim",
+            evidence="The recorded claim names no supporting observation.",
+            role=DefectRole.INSTANCE,
+        )
+        for key in (found[0].issue.issue_key, found_child[1].issue.issue_key)
+    )
+    orphan = revision("orphan/check", parent_key="absent/1", issue_labels=["criterion"])
+
+    def organize(revisions, *, admitted=None, open_findings=(), marker=BODY_MARKER):
+        return {
+            "revisions": revisions,
+            "admissions": tuple(gap_admission(each) for each in revisions)
+            if admitted is None
+            else admitted,
+            "open_findings": open_findings,
+            "body_marker_key": marker,
+        }
+
+    organize_boards = {
+        "every arm": organize(board, admitted=admissions, open_findings=findings),
+        "at rest": organize(at_rest),
+        "empty board": organize(()),
+        "refuses a blank marker": organize(at_rest, marker=" "),
+        "refuses a revision twice": organize((*at_rest, at_rest[0])),
+        "refuses an admission twice": organize(
+            at_rest,
+            admitted=tuple(gap_admission(each) for each in (*at_rest, at_rest[0])),
+        ),
+        "refuses a criterion without its parent": organize((*at_rest, orphan)),
+    }
+    return {
+        "subtree gap: every state kind": subtree(kinds, refs),
+        "subtree gap: empty board": subtree(()),
+        "subtree gap refuses a criterion twice": subtree((kinds[0], kinds[0])),
+        "subtree gap refuses a record that is no criterion": subtree(
+            (record("plain/1"),)
+        ),
+        "subtree gap refuses a blank supersession": subtree(
+            (kinds[0],), {kinds[0].issue_key: " "}
+        ),
+        **{
+            f"{entry.__name__}: {name}": (
+                entry,
+                arguments,
+                tuple(each.issue for each in arguments["revisions"]),
+            )
+            for name, arguments in organize_boards.items()
+            for entry in (organize_gap, organize_at_rest)
+        },
+    }
+
+
+def arithmetic_outcome(entry, arguments, records):
+    """What one entry point answers: its records by position, or its refusal."""
+    try:
+        answer = entry(**arguments)
+    except ValueError as refusal:
+        return ("refused", str(refusal))
+    if isinstance(answer, bool):
+        return ("answered", answer)
+    return (
+        "answered",
+        tuple(
+            position
+            for item in answer
+            for position, each in enumerate(records)
+            if each is item
+        ),
+    )
+
+
+#: The stamp every record carries in the baseline reading.
+BASELINE_STAMP = datetime(2026, 1, 1, tzinfo=UTC)
+#: What each case answers over records carrying ``BASELINE_STAMP``.  Written
+#: out, so a board that stops reaching the arm it was built for reds.
+ARITHMETIC_OUTCOMES = {
+    "subtree gap: every state kind": ("answered", (0, 1, 2, 3, 4, 5, 6, 7, 10, 12)),
+    "subtree gap: empty board": ("answered", ()),
+    "subtree gap refuses a criterion twice": (
+        "refused",
+        "a criterion identity appears more than once",
+    ),
+    "subtree gap refuses a record that is no criterion": (
+        "refused",
+        "gap membership requires a criterion sub-issue",
+    ),
+    "subtree gap refuses a blank supersession": (
+        "refused",
+        "a supersession reference must be nonempty",
+    ),
+    "organize_gap: every arm": ("answered", (4, 6, 8, 10, 12, 14, 16)),
+    "organize_at_rest: every arm": ("answered", False),
+    "organize_gap: at rest": ("answered", ()),
+    "organize_at_rest: at rest": ("answered", True),
+    "organize_gap: empty board": ("answered", ()),
+    "organize_at_rest: empty board": ("answered", True),
+    **{
+        f"{entry.__name__}: refuses {what}": ("refused", refusal)
+        for what, refusal in {
+            "a blank marker": "organize gap requires a body phase marker key",
+            "a revision twice": "organize gap requires one revision per issue",
+            "an admission twice": "organize gap requires one admission per surface",
+            "a criterion without its parent": "organize gap requires each "
+            "criterion's parent",
+        }.items()
+        for entry in (organize_gap, organize_at_rest)
+    },
+}
+#: Each change stamp the records are read under besides the baseline: a trap
+#: that raises on any operation, and two readings far apart whose order runs
+#: opposite ways across the records, so a filter or a sort keyed on the stamp
+#: answers differently under one of them.
+STAMP_VARIANTS = ("trapped", "far past, ascending", "far future, descending")
+
+
+def stamp_variant(variant, reads):
+    """The stamp each record carries under *variant*, by the order it is built."""
+    if variant == "trapped":
+        trap = change_stamp_trap(reads)
+        return lambda _position: trap
+    if variant == "far past, ascending":
+        return lambda position: datetime(1, 1, 1, tzinfo=UTC) + timedelta(days=position)
+    return lambda position: (
+        datetime(9999, 12, 31, tzinfo=UTC) - timedelta(days=position)
+    )
+
+
+def arithmetic_entry_points():
+    """The arithmetic and every definition beside it that refers to it, as objects.
+
+    Found by object in the homes read off ``GAP_ARITHMETIC``, the way the
+    call sites are, so a helper added beside the arithmetic that hands on its
+    answer is an entry point the trap has to run.
+    """
+    points = {id(value): value for value in GAP_ARITHMETIC}
+    for home in sorted(gap_homes()):
+        source = source_tree()[home]
+        namespace = module_namespace(home, source)
+        for name, _node in referencing_definitions(
+            home, ast.parse(source), namespace, wanted=GAP_ARITHMETIC
+        ):
+            value = functools.reduce(
+                getattr, name.split(".")[1:], namespace[name.split(".")[0]]
+            )
+            points[id(value)] = value
+    return points
+
+
+def test_the_trapped_boards_run_every_entry_point_and_reach_every_arm():
+    """The boards the trap runs over are the ones the arithmetic answers.
+
+    Every entry point is run, and nothing else is; each case answers what it
+    was built for over the baseline stamp, so a board that stops reaching its
+    arm — a refusal where an answer was meant, an empty gap where a member
+    was — reds here rather than turning the trap into a vacuous pass.
+    """
+    points = arithmetic_entry_points()
+    cases = arithmetic_cases(lambda _position: BASELINE_STAMP)
+
+    assert points.keys() > {id(value) for value in GAP_ARITHMETIC}
+    assert {id(entry) for entry, _arguments, _records in cases.values()} == (
+        points.keys()
+    )
+    assert {
+        case: arithmetic_outcome(*arguments) for case, arguments in cases.items()
+    } == ARITHMETIC_OUTCOMES
+
+
+@pytest.mark.parametrize("variant", STAMP_VARIANTS)
+@pytest.mark.parametrize("case", sorted(ARITHMETIC_OUTCOMES))
+def test_the_arithmetic_answers_alike_whatever_the_change_stamp_holds(case, variant):
+    """The arithmetic runs with the change stamp trapped, and never reads it.
+
+    The reach of the Check, shown by running it: ``compute_gap``,
+    ``organize_gap`` and every definition beside them that refers to them,
+    together with everything they execute — a model method, a helper in a
+    module they import, a class pattern — answer every case the same with
+    the stamp trapped, far in the past and far in the future, and no
+    operation touches the trap.  An identity test against the trap (``is``)
+    is no operation it can see, and cannot move an answer either.
+    """
+    reads = []
+    entry, arguments, records = arithmetic_cases(stamp_variant(variant, reads))[case]
+
+    assert arithmetic_outcome(entry, arguments, records) == ARITHMETIC_OUTCOMES[case]
+    assert reads == []
 
 
 @pytest.mark.parametrize(
@@ -1682,15 +2230,23 @@ IMPORT_ROUTES = {
     "\n"
     "def plan(criteria, since):\n"
     "    return [c for c in window(criteria){READ}]\n",
+    "relative_import_in_a_package_init": "from kodezart.domain.planted import window\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
 }
-#: The helper the two-hop row imports: a module of its own that reaches the
-#: arithmetic and reads nothing.
-PLANTED_HELPER = (
-    "from kodezart.domain.issue_tree import open_criteria\n"
+#: The modules the routes above import that are not in the tree: the helper
+#: the two-hop row imports, a module of its own that reaches the arithmetic
+#: and reads nothing, and a package whose ``__init__`` re-exports the
+#: arithmetic through a relative import, resolved against the package itself.
+PLANTED_HELPERS = {
+    "services/planted_helper.py": "from kodezart.domain.issue_tree import"
+    " open_criteria\n"
     "\n"
     "def window(criteria):\n"
-    "    return open_criteria(criteria)\n"
-)
+    "    return open_criteria(criteria)\n",
+    "domain/planted/__init__.py": "from ..gap import compute_gap as window\n",
+}
 
 
 @pytest.mark.parametrize("reads", [True, False])
@@ -1708,11 +2264,7 @@ def test_a_gap_site_reached_under_another_spelling_is_discovered_and_scanned(
     planted = IMPORT_ROUTES[route].replace(
         "{READ}", " if c.updated_at > since" if reads else ""
     )
-    sources = {
-        **source_tree(),
-        "services/planted.py": planted,
-        "services/planted_helper.py": PLANTED_HELPER,
-    }
+    sources = {**source_tree(), **PLANTED_HELPERS, "services/planted.py": planted}
 
     assert "services/planted.py" in gap_computation_sites(sources)
     assert gap_sites_reading_the_change_stamp(sources) == (
@@ -1748,228 +2300,10 @@ def test_a_module_that_only_quotes_a_seed_name_is_not_a_gap_site():
     assert "services/planted.py" in change_stamp_readers(sources)
 
 
-#: The ways a helper beside the arithmetic can hand its answer on, each as
-#: ``(home, appended text, imported name, consuming expression)``.  Every one
-#: is ordinary Python, and none of them is read: the consumer imports the
-#: helper's module, and that is what puts it in the reach.
-WRAPPER_SHAPES = {
-    "returned call": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    return compute_gap(criteria, supersession_refs={})\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "returned local": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    answer = compute_gap(criteria, supersession_refs={})\n"
-        "    return answer\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "aliased arithmetic": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    arithmetic = compute_gap\n"
-        "    return arithmetic(criteria, supersession_refs={})\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "yielded answer": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    yield from compute_gap(criteria, supersession_refs={})\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "module-level alias": (
-        "domain/gap.py",
-        "_arithmetic = compute_gap\n"
-        "\n"
-        "def gap_since(criteria):\n"
-        "    return _arithmetic(criteria, supersession_refs={})\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "import inside the wrapper": (
-        "services/run_shape.py",
-        "def gap_since(criteria):\n"
-        "    from kodezart.domain.gap import compute_gap as _g\n"
-        "\n"
-        "    return _g(criteria, supersession_refs={})\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "extended accumulator": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    out = []\n"
-        "    out.extend(compute_gap(criteria, supersession_refs={}))\n"
-        "    return out\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "appended accumulator": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    out = []\n"
-        "    for row in compute_gap(criteria, supersession_refs={}):\n"
-        "        out.append(row)\n"
-        "    return out\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "augmented accumulator": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    out = []\n"
-        "    out += compute_gap(criteria, supersession_refs={})\n"
-        "    return out\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "tuple unpacking": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    answer, _ = compute_gap(criteria, supersession_refs={}), None\n"
-        "    return answer\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "match capture": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    match compute_gap(criteria, supersession_refs={}):\n"
-        "        case answer:\n"
-        "            return answer\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "dict slot": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    slots = {}\n"
-        "    slots['gap'] = compute_gap(criteria, supersession_refs={})\n"
-        "    return slots['gap']\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "conditional expression": (
-        "domain/gap.py",
-        "def gap_since(criteria):\n"
-        "    return compute_gap(criteria, supersession_refs={}) if criteria else ()\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "method": (
-        "domain/gap.py",
-        "class GapWindow:\n"
-        "    def since(self, criteria):\n"
-        "        return compute_gap(criteria, supersession_refs={})\n",
-        "GapWindow",
-        "GapWindow().since(criteria)",
-    ),
-    "property": (
-        "domain/gap.py",
-        "class GapWindow:\n"
-        "    def __init__(self, criteria):\n"
-        "        self.criteria = criteria\n"
-        "\n"
-        "    @property\n"
-        "    def rows(self):\n"
-        "        return compute_gap(self.criteria, supersession_refs={})\n",
-        "GapWindow",
-        "GapWindow(criteria).rows",
-    ),
-    "field set in __post_init__": (
-        "domain/gap.py",
-        "import dataclasses\n"
-        "\n"
-        "@dataclasses.dataclass\n"
-        "class GapWindow:\n"
-        "    criteria: tuple\n"
-        "    rows: tuple = ()\n"
-        "\n"
-        "    def __post_init__(self):\n"
-        "        self.rows = tuple(compute_gap(self.criteria, supersession_refs={}))\n",
-        "GapWindow",
-        "GapWindow(criteria).rows",
-    ),
-    "module-level partial": (
-        "domain/gap.py",
-        "import functools\n"
-        "\n"
-        "gap_since = functools.partial(compute_gap, supersession_refs={})\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "lambda": (
-        "domain/gap.py",
-        "gap_since = lambda criteria: compute_gap(criteria, supersession_refs={})\n",
-        "gap_since",
-        "gap_since(criteria)",
-    ),
-    "bare alias export": (
-        "domain/gap.py",
-        "gap_since = compute_gap\n",
-        "gap_since",
-        "gap_since(criteria, supersession_refs={})",
-    ),
-    "wrapper of a wrapper": (
-        "domain/issue_tree.py",
-        "def open_since(criteria, *, ref):\n"
-        "    return open_criteria(criteria, ref=ref)\n",
-        "open_since",
-        "open_since(criteria, ref=None)",
-    ),
-}
-
-
-def wrapper_consumer(shape, reads):
-    """The planted wrapper's home, its extended source, and its consumer."""
-    home, appended, name, expression = WRAPPER_SHAPES[shape]
-    dotted = home.removesuffix(".py").replace("/", ".")
-    read = " if c.updated_at > since" if reads else ""
-    return (
-        home,
-        appended,
-        f"from kodezart.{dotted} import {name}\n"
-        "\n"
-        "def plan(criteria, since):\n"
-        f"    return [c for c in {expression}{read}]\n",
-    )
-
-
-@pytest.mark.parametrize("reads", [True, False])
-@pytest.mark.parametrize("shape", sorted(WRAPPER_SHAPES))
-def test_a_module_reaching_the_gap_through_a_wrapper_is_discovered_and_scanned(
-    shape, reads
-):
-    """A consumer of a helper that hands on the gap's answer is a gap site.
-
-    The helper is planted beside the arithmetic under every shape the answer
-    can be handed on in, and consumed from a module of its own that spells no
-    word of the arithmetic.  The reading rows must redden the guard and the
-    register of stamp readers alike; the read-free twins pin the discovery
-    itself, so a reach that stopped following the consumer's import reads as
-    a module missing from the discovered set rather than as one more green
-    run.
-    """
-    home, appended, consumer = wrapper_consumer(shape, reads)
-    sources = source_tree()
-    sources[home] += f"\n\n{appended}"
-    sources["services/planted.py"] = consumer
-
-    assert "services/planted.py" in gap_computation_sites(sources)
-    assert gap_sites_reading_the_change_stamp(sources) == (
-        {"services/planted.py": {"updated_at"}} if reads else {}
-    )
-    assert ("services/planted.py" in change_stamp_readers(sources)) is reads
-
-
 @pytest.mark.parametrize("field", sorted(CHANGE_STAMP_FIELDS))
-@pytest.mark.parametrize("form", ["attribute", "name", "keyword", "wire_key"])
+@pytest.mark.parametrize(
+    "form", ["attribute", "name", "keyword", "wire_key", "class_pattern"]
+)
 def test_change_stamp_detector_flags_a_gap_site_that_reads_the_field(field, form):
     snippet = {
         "attribute": f"def gap(rows, since):\n"
@@ -1978,6 +2312,10 @@ def test_change_stamp_detector_flags_a_gap_site_that_reads_the_field(field, form
         f"    return [row for row in rows if row.body_digest != {field}]\n",
         "keyword": f"def gap(tracker):\n    return tracker.query({field}=MARK)\n",
         "wire_key": f"def gap(row):\n    return row['{field}']\n",
+        "class_pattern": f"def gap(row, since):\n"
+        f"    match row:\n"
+        f"        case Row({field}=stamp):\n"
+        f"            return stamp > since\n",
     }[form]
     assert change_stamp_reads(ast.parse(snippet)) == {field}
     assert change_stamp_reads(ast.parse(snippet.replace(field, "body_digest"))) == set()

@@ -4,15 +4,21 @@ import ast
 
 import pytest
 
+import kodezart.domain
+from kodezart.domain import gap as gap_module
+from kodezart.domain.gap import compute_gap
 from tests.name_resolution import (
     SOURCE_ROOT,
     annotated_parameters,
     bound_names,
     call_sites,
     definitions,
+    module_namespace,
+    named_object,
     parameters_receiving,
     parsed,
     reaches,
+    referencing_definitions,
     resolve,
     source_tree,
 )
@@ -433,3 +439,111 @@ def test_the_source_tree_is_the_package_read_off_disk(tmp_path):
     (tmp_path / "notes.md").write_text("not a module\n", encoding="utf-8")
 
     assert source_tree(tmp_path) == {"inner/two.py": "TWO = 2\n", "one.py": "ONE = 1\n"}
+
+
+@pytest.mark.parametrize(
+    ("text", "named"),
+    [
+        ("kodezart.domain.gap:compute_gap", compute_gap),
+        ("kodezart.domain.gap.compute_gap", compute_gap),
+        ("kodezart.domain.gap", gap_module),
+        ("compute_gap", None),
+        ("kodezart.domain.gap:absent", None),
+        ("kodezart.domain.absent.compute_gap", None),
+        ("os.path:join", None),
+        ("kodezart.domain.gap compute_gap", None),
+        ("(Check|Evidence)", None),
+    ],
+)
+def test_a_string_naming_an_object_resolves_to_the_object_itself(text, named):
+    assert named_object(text) is named
+
+
+def test_the_namespace_of_a_module_is_what_its_text_binds():
+    """The package's own globals for its text on disk, a fresh run otherwise."""
+    relative = "domain/gap.py"
+    source = source_tree()[relative]
+
+    assert module_namespace(relative, source) is vars(gap_module)
+
+    changed = module_namespace(relative, source + "\nPLANTED = compute_gap\n")
+    assert changed is not vars(gap_module)
+    assert changed["PLANTED"] is changed["compute_gap"]
+    assert changed["compute_gap"] is not compute_gap
+    assert changed["__name__"] == gap_module.__name__
+
+
+def test_a_word_that_only_spells_the_object_does_not_refer_to_it():
+    """A reference is the object itself, never its word.
+
+    The planted module defines a function of the same name, quotes the name,
+    and calls its own function: nothing there is the arithmetic.
+    """
+    source = (
+        "def compute_gap(rows):\n"
+        "    return rows\n"
+        "\n"
+        "LABEL = 'compute_gap'\n"
+        "\n"
+        "def plan(rows):\n"
+        "    return compute_gap(rows)\n"
+    )
+    namespace = module_namespace("services/planted.py", source)
+
+    assert (
+        referencing_definitions(
+            "services/planted.py", ast.parse(source), namespace, wanted=(compute_gap,)
+        )
+        == ()
+    )
+
+
+def test_a_submodule_imported_from_its_package_binds_the_submodule(monkeypatch):
+    """``from package import name`` binds the submodule the package lacks.
+
+    With the attribute taken off the package, as it is before the submodule
+    is first imported, the import itself still binds the submodule, and so
+    does the resolution here.
+    """
+    monkeypatch.delattr(kodezart.domain, "gap")
+    source = (
+        "def plan(rows):\n"
+        "    from kodezart.domain import gap\n"
+        "\n"
+        "    return gap.compute_gap(rows, supersession_refs={})\n"
+    )
+
+    assert [
+        name
+        for name, _node in referencing_definitions(
+            "services/planted.py",
+            ast.parse(source),
+            module_namespace("services/planted.py", source),
+            wanted=(compute_gap,),
+        )
+    ] == ["plan"]
+
+
+def test_a_relative_import_in_a_package_init_resolves_against_the_package():
+    """A package's ``__init__`` is its own package, not its parent's module.
+
+    Imported inside the function, so the name is bound by the import alone
+    and never by the module's globals.
+    """
+    relative = "domain/planted/__init__.py"
+    source = (
+        "def plan(rows):\n"
+        "    from ..gap import compute_gap as window\n"
+        "\n"
+        "    return window(rows, supersession_refs={})\n"
+    )
+
+    assert [
+        name
+        for name, _node in referencing_definitions(
+            relative,
+            ast.parse(source),
+            module_namespace(relative, source),
+            wanted=(compute_gap,),
+        )
+    ] == ["plan"]

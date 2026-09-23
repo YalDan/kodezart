@@ -38,6 +38,10 @@ home, so a call to a bare name it binds reaches no definition, and a relative
 module receiver — ``from . import b``, then ``b._own_text(spec)`` — spells no
 module of the tree and takes the every-method rule; no module under the
 package writes either form.
+
+``named_object``, ``module_namespace`` and ``referencing_definitions`` resolve
+by the object instead of by the word, a string constant naming one included,
+and each states its own reach.
 """
 
 import ast
@@ -45,8 +49,13 @@ import builtins
 import dis
 import functools
 import importlib
+import importlib.abc
+import importlib.machinery
 import importlib.util
+import inspect
 import linecache
+import pkgutil
+import re
 import sys
 import types
 from collections.abc import Callable, Collection, Mapping
@@ -891,3 +900,231 @@ def modules_reaching(
             break
         reached |= grown
     return frozenset(reached)
+
+
+#: A text that spells a dotted path, optionally split once by a colon: the
+#: shape ``pkgutil.resolve_name`` reads as ``module:attr`` or ``module.attr``.
+_NAMED_PATH = re.compile(
+    r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*(?::[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)?"
+)
+
+
+def named_object(text: str) -> object | None:
+    """The object *text* names as ``module:attr`` or ``module.attr``, or ``None``.
+
+    What ``pkgutil.resolve_name`` answers for it, which is how a string
+    constant naming a function is turned into that function at run time.
+    Only a text that spells a dotted path inside the package is read; a text
+    that names nothing there answers ``None``.
+    """
+    if not _NAMED_PATH.fullmatch(text) or not text.startswith(f"{SOURCE_ROOT.name}."):
+        return None
+    try:
+        return pkgutil.resolve_name(text)
+    except (ImportError, AttributeError, ValueError):
+        return None
+
+
+def _dotted_name(relative: str) -> str:
+    """The dotted module name a posix path under the package is imported as."""
+    parts = relative.removesuffix(".py").split("/")
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join((SOURCE_ROOT.name, *parts))
+
+
+class _SourceText(importlib.abc.SourceLoader):
+    """A loader that runs a module from text held in memory."""
+
+    def __init__(self, path: str, source: str) -> None:
+        self.path = path
+        self.source = source
+
+    def get_filename(self, fullname: str) -> str:
+        return self.path
+
+    def get_data(self, path: str) -> bytes:
+        return self.source.encode("utf-8")
+
+
+def module_namespace(
+    relative: str, source: str, root: Path = SOURCE_ROOT
+) -> Mapping[str, object]:
+    """The globals *source* binds when it runs as the package module *relative*.
+
+    The imported module's own globals when *source* is that module's text on
+    disk, so the objects read here are the objects the package runs with.
+    Any other text is run as a fresh module under the same name, never
+    registered in ``sys.modules``, so a planted or changed module is read by
+    what it binds rather than by how it spells it.
+    """
+    dotted = _dotted_name(relative)
+    path = root / relative
+    if path.is_file() and path.read_text(encoding="utf-8") == source:
+        return vars(importlib.import_module(dotted))
+    loader = _SourceText(str(path), source)
+    module = importlib.util.module_from_spec(
+        importlib.machinery.ModuleSpec(
+            dotted,
+            loader,
+            origin=str(path),
+            is_package=relative.endswith("__init__.py"),
+        )
+    )
+    loader.exec_module(module)
+    return vars(module)
+
+
+def _unwrapped(value: object) -> tuple[object, ...]:
+    """*value* and every object it stands in for, one hop at a time.
+
+    A ``functools.partial`` stands for its function and a static method for
+    its own.  Bounded by a seen set, so a cycle ends the walk.
+    """
+    found: list[object] = []
+    seen: set[int] = set()
+    current: object | None = value
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        found.append(current)
+        if isinstance(current, functools.partial):
+            current = current.func
+        elif isinstance(current, staticmethod):
+            current = current.__func__
+        else:
+            current = None
+    return tuple(found)
+
+
+def _import_bindings(relative: str, tree: ast.Module) -> dict[str, list[object]]:
+    """Local name -> the objects an import anywhere in *tree* binds it to.
+
+    An import inside a function binds its name as surely as one at the top,
+    so both are read; a relative import is resolved against the module's own
+    package, and ``from package import name`` binds the submodule when the
+    package holds no such attribute yet, as the import itself would.  An
+    import that does not resolve binds nothing.
+    """
+    dotted = _dotted_name(relative)
+    package = dotted if relative.endswith("__init__.py") else dotted.rpartition(".")[0]
+    bound: dict[str, list[object]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                named = alias.name if alias.asname else alias.name.partition(".")[0]
+                try:
+                    module = importlib.import_module(named)
+                except ImportError:
+                    continue
+                bound.setdefault(alias.asname or named, []).append(module)
+        elif isinstance(node, ast.ImportFrom):
+            try:
+                base = importlib.util.resolve_name(
+                    "." * node.level + (node.module or ""), package
+                )
+                home = importlib.import_module(base)
+            except (ImportError, ValueError):
+                continue
+            for alias in node.names:
+                value = inspect.getattr_static(home, alias.name, _ABSENT)
+                if value is _ABSENT:
+                    try:
+                        value = importlib.import_module(f"{base}.{alias.name}")
+                    except ImportError:
+                        continue
+                bound.setdefault(alias.asname or alias.name, []).append(value)
+    return bound
+
+
+#: What a lookup answers when the name is not there.
+_ABSENT = object()
+#: A definition a reference can sit inside.
+_Scope = ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+
+
+def _denoted(
+    node: ast.expr,
+    namespace: Mapping[str, object],
+    bound: Mapping[str, list[object]],
+) -> tuple[object, ...]:
+    """Every object an expression can denote here, each with what it stands in for.
+
+    A loaded name through the module's globals and through every import that
+    binds it, an attribute through each object its receiver denotes, and a
+    string constant through ``named_object``.
+    """
+    candidates: list[object] = []
+    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+        if node.id in namespace:
+            candidates.append(namespace[node.id])
+        candidates.extend(bound.get(node.id, ()))
+    elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+        for receiver in _denoted(node.value, namespace, bound):
+            value = inspect.getattr_static(receiver, node.attr, _ABSENT)
+            if value is not _ABSENT:
+                candidates.append(value)
+    elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+        named = named_object(node.value)
+        if named is not None:
+            candidates.append(named)
+    return tuple(found for value in candidates for found in _unwrapped(value))
+
+
+def referencing_definitions(
+    relative: str,
+    tree: ast.Module,
+    namespace: Mapping[str, object],
+    *,
+    wanted: Collection[object],
+) -> tuple[tuple[str, ast.AST], ...]:
+    """Every definition of *tree* whose text refers to one of *wanted*, by identity.
+
+    ``(dotted definition, its node)``.  A reference is any expression that
+    denotes the object itself, called or not: a name the module's globals or
+    an import anywhere in it binds to the object (an aliased import, an
+    import inside a function, a module-level rebinding, a re-export), an
+    attribute of a module or class that is the object, a string constant
+    naming it as ``module:attr`` or ``module.attr``, and a
+    ``functools.partial`` or static method of it.
+
+    Each function holding a reference is a definition here, and so is every
+    function enclosing that one, so a closure's caller is read with it.  A
+    reference outside every function is recorded against the class body it
+    sits in, or ``<module>`` with the whole module as its node.
+
+    Not seen: an object reached through a value handed in at run time — an
+    argument, an attribute of an instance, a mapping — and a name built at
+    run time.
+    """
+    targets = {id(value) for value in wanted}
+    bound = _import_bindings(relative, tree)
+    found: dict[int, tuple[str, ast.AST]] = {}
+
+    def record(scopes: tuple[_Scope, ...]) -> None:
+        names: list[str] = []
+        functions: list[tuple[str, ast.AST]] = []
+        for scope in scopes:
+            names.append(scope.name)
+            if isinstance(scope, ast.FunctionDef | ast.AsyncFunctionDef):
+                functions.append((".".join(names), scope))
+        if functions:
+            for name, scope in functions:
+                found[id(scope)] = (name, scope)
+        elif scopes:
+            found[id(scopes[-1])] = (".".join(names), scopes[-1])
+        else:
+            found[id(tree)] = ("<module>", tree)
+
+    def walk(node: ast.AST, scopes: tuple[_Scope, ...]) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.expr) and any(
+                id(value) in targets for value in _denoted(child, namespace, bound)
+            ):
+                record(scopes)
+            inner = scopes
+            if isinstance(child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+                inner = (*scopes, child)
+            walk(child, inner)
+
+    walk(tree, ())
+    return tuple(sorted(found.values(), key=lambda pair: pair[0]))
