@@ -1,9 +1,8 @@
 """A checklist a person wrote, and when the criteria stage still owes it.
 
-The parser reads Markdown task-list lines outside fenced blocks and HTML
-comments, and nothing else; the stage is owed while no child counts or while
-some item is stated by no child's Check; and a child the board Canceled or
-closed as a Duplicate refuses no creation.
+The parser reads Markdown task-list lines and nothing else; the stage is owed
+while no child counts or while some item is stated by no child's Check; and a
+child the board Canceled or closed as a Duplicate refuses no creation.
 """
 
 import pytest
@@ -79,42 +78,6 @@ def test_a_line_that_is_not_a_task_list_item_is_no_item(line):
 
 def test_the_items_come_in_the_order_the_body_states_them():
     assert checklist_items(CHECKLIST_BODY) == (FIRST, SECOND)
-
-
-THIRD = "The reader is versioned."
-
-
-@pytest.mark.parametrize(
-    ("opening", "closing"),
-    [("```", "```"), ("~~~", "~~~"), ("```markdown", "````")],
-    ids=["backticks", "tildes", "info-string-longer-close"],
-)
-def test_a_task_list_line_in_a_fenced_block_is_no_item(opening, closing):
-    """A fenced example of a checklist adds no item; the items beside it do."""
-    body = f"- [ ] {FIRST}\n\n{opening}\n- [ ] {SECOND}\n{closing}\n\n- [x] {THIRD}\n"
-    assert checklist_items(body) == (FIRST, THIRD)
-
-
-@pytest.mark.parametrize(
-    "comment",
-    [f"<!-- - [ ] {SECOND} -->", f"<!--\n- [ ] {SECOND}\n-->"],
-    ids=["one-line", "multi-line"],
-)
-def test_a_task_list_line_behind_an_html_comment_is_no_item(comment):
-    """A commented-out checklist line adds no item; the items beside it do."""
-    body = f"- [ ] {FIRST}\n{comment}\n- [x] {THIRD}\n"
-    assert checklist_items(body) == (FIRST, THIRD)
-
-
-def test_a_comment_on_an_item_line_is_no_part_of_the_item():
-    assert checklist_items(f"- [ ] {FIRST} <!-- a note -->\n") == (FIRST,)
-
-
-def test_a_fenced_checklist_leaves_the_stage_owed_only_by_the_children():
-    """With every visible item stated, a fenced example owes nothing more."""
-    body = f"{CHECKLIST_BODY}\n```\n- [ ] {THIRD}\n```\n<!-- - [ ] {THIRD} -->\n"
-    both = (child("c1"), child("c2", check=SECOND))
-    assert not criteria_owed(body=body, children=both)
 
 
 def test_the_stage_is_owed_while_no_child_counts():

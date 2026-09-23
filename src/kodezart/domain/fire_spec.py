@@ -48,35 +48,12 @@ def checklist_items(body: str) -> tuple[str, ...]:
     ``[x]`` or ``[X]`` tick box, then text, at any indentation.  Each item is
     its text alone, stripped, without its marker or tick box: exactly what a
     criterion adopting it states as its Check.  No other line is an item.
-
-    This reader's own fence and HTML-comment rules decide what is visible, as
-    they do for the template rows: a task-list line inside a fenced block or
-    behind a comment is an example or a note, not an item, and a comment on
-    an item's line is no part of its text.
     """
-    items: list[str] = []
-    fence: tuple[str, int] | None = None
-    comment = False
-    for original in body.splitlines():
-        delimiter = _FENCE.match(original)
-        if fence is not None:
-            if (
-                delimiter is not None
-                and delimiter[1][0] == fence[0]
-                and len(delimiter[1]) >= fence[1]
-                and not delimiter[2].strip()
-            ):
-                fence = None
-            continue
-        line, comment = _without_comments(original, comment=comment)
-        delimiter = _FENCE.match(line)
-        if delimiter is not None:
-            fence = delimiter[1][0], len(delimiter[1])
-            continue
-        match = _CHECKLIST_ITEM.match(line)
-        if match is not None:
-            items.append(match[1].strip())
-    return tuple(items)
+    return tuple(
+        match[1].strip()
+        for line in body.splitlines()
+        if (match := _CHECKLIST_ITEM.match(line)) is not None
+    )
 
 
 def _without_comments(line: str, *, comment: bool) -> tuple[str, bool]:
