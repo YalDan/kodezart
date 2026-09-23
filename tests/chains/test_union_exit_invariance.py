@@ -12,6 +12,7 @@ import ast
 import asyncio
 import importlib
 import inspect
+import operator
 import traceback
 from contextlib import suppress
 from functools import partial
@@ -91,6 +92,44 @@ def ports_of(cls: type) -> dict[str, type]:
         for name, hint in get_type_hints(cls.__init__).items()
         if is_port(hint)
     }
+
+
+#: Every port the step is constructed with, by parameter, read off its
+#: constructor's annotations.
+PORT_PARAMETERS: dict[str, type] = ports_of(ScopeUnionCoordinator)
+
+
+class Asked:
+    """A port as the step holds it, recording every member read off it.
+
+    Each read of a name that is not a dunder is recorded, then forwarded to
+    the port, so the record keys on the read that executed rather than on how
+    it was spelled: a dot, ``hasattr``, ``getattr`` with an assembled name,
+    through an alias or with starred arguments, ``operator.attrgetter`` or
+    ``methodcaller``, and ``port.__getattribute__(name)`` — a dunder read
+    resolves on the proxy itself, and its ``__getattribute__`` is the
+    recorder.  Out of reach, and so stated: ``object.__getattribute__`` on
+    the proxy's own slots, ``type(port).__dict__``, which reads the proxy's
+    class, and ``eval``/``exec``.
+    """
+
+    __slots__ = ("_names", "_port")
+
+    def __init__(self, port: object) -> None:
+        object.__setattr__(self, "_port", port)
+        object.__setattr__(self, "_names", [])
+
+    def __getattribute__(self, name: str) -> object:
+        if name.startswith("__") and name.endswith("__"):
+            return object.__getattribute__(self, name)
+        object.__getattribute__(self, "_names").append(name)
+        return getattr(object.__getattribute__(self, "_port"), name)
+
+
+def asked_of(proxy: Asked) -> tuple[str, ...]:
+    """Every member name read off *proxy*, in the order it was read."""
+    names: list[str] = object.__getattribute__(proxy, "_names")
+    return tuple(names)
 
 
 def _raised(node: ast.Raise) -> str:
@@ -220,22 +259,47 @@ class Fixture:
         self.remote = remote
         self.observer = observer
         self.tracker = scope.tracker()
+        self.handed: list[tuple[str, Asked]] = []
 
     def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:
-        return ScopeUnionCoordinator(
-            scope_kind=PROJECT.kind,
-            tracker=self.tracker,
-            refs=self.tracker,
-            git=self.git,
-            runner=runner
+        """The production step, each port it is handed wrapped in a recorder."""
+        ports = {
+            "tracker": self.tracker,
+            "refs": self.tracker,
+            "git": self.git,
+            "runner": runner
             or SubprocessCheckChainRunner(
                 timeout=AppConfig().union_check_step_timeout_seconds
             ),
+        }
+        assert set(ports) == set(PORT_PARAMETERS), sorted(ports)
+        handed = {name: Asked(port) for name, port in ports.items()}
+        self.handed.extend(handed.items())
+        return ScopeUnionCoordinator(
+            scope_kind=PROJECT.kind,
+            **handed,
             context=self.context,
             config=AppConfig(),
             committer_name="Union Fixture",
             committer_email="union@example.invalid",
         )
+
+    def asked(self, parameter: str) -> frozenset[str]:
+        """Every member read off the port handed as *parameter*, on any step."""
+        return frozenset(
+            member
+            for name, proxy in self.handed
+            if name == parameter
+            for member in asked_of(proxy)
+        )
+
+    def undeclared_reads(self) -> dict[str, list[str]]:
+        """Each port's reads of a member the port it is typed as does not declare."""
+        return {
+            name: sorted(self.asked(name) - declared(port))
+            for name, port in PORT_PARAMETERS.items()
+            if self.asked(name) - declared(port)
+        }
 
     def sha(self, lane: str) -> str:
         return self.scope.by_lane[lane].head_sha
@@ -843,6 +907,7 @@ async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
         assert raised is not None, name
         path, lines = EXIT_SITES[site]
         assert {(path, line) for line in lines} & passed_through(raised), (name, site)
+    assert fixture.undeclared_reads() == {}, name
     assert fixture.git.publications == [], name
     assert await fixture.refs() == before, name
     assert fixture.git.created == fixture.git.removed, name
@@ -850,6 +915,64 @@ async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
     assert (
         await pinned.git(fixture.observer, "worktree", "list", "--porcelain")
     ).count("worktree ") == 1
+
+
+async def test_the_ports_the_step_is_handed_record_what_it_asks(tmp_path):
+    """Guards the record every scenario above reads: it is wired, and it is live.
+
+    Not parametrised.  The ports are read off the constructor and pinned, so
+    an empty read fails here; a green verify must record a read on each of
+    them, so a fixture that stopped wrapping them fails here rather than
+    passing every scenario vacuously; and a declared read is forwarded to the
+    port itself.
+    """
+    assert PORT_PARAMETERS == {
+        "tracker": protocols.TrackerPort,
+        "refs": protocols.WorkRefReader,
+        "git": protocols.GitService,
+        "runner": protocols.CheckChainRunner,
+    }
+    fixture = await build_delivery(tmp_path / "world")
+
+    await drive_green(fixture)
+
+    for name, port in PORT_PARAMETERS.items():
+        assert fixture.asked(name), name
+        assert fixture.asked(name) <= declared(port), name
+    assert Asked(fixture.git).fetch.__self__ is fixture.git
+
+
+#: The member the spellings below read, assembled so no scan could see it.
+ASSEMBLED = "open" + "_pr_for_head"
+
+#: ``getattr`` under another name, as an aliased read spells it.
+LOOK = getattr
+
+#: Every ordinary spelling of reading a member by name.  The record keys on
+#: the read that executed, so each must land on it the same way.
+READ_SPELLINGS = (
+    ("a dot", lambda port: port.open_pr_for_head),
+    ("hasattr", lambda port: hasattr(port, ASSEMBLED)),
+    ("getattr with an assembled name", lambda port: getattr(port, ASSEMBLED, None)),
+    ("getattr through an alias", lambda port: LOOK(port, ASSEMBLED)),
+    ("a starred getattr", lambda port: getattr(*(port, ASSEMBLED, None))),
+    ("operator.attrgetter", lambda port: operator.attrgetter(ASSEMBLED)(port)),
+    ("operator.methodcaller", lambda port: operator.methodcaller(ASSEMBLED)(port)),
+    ("__getattribute__", lambda port: port.__getattribute__(ASSEMBLED)),
+)
+
+
+@pytest.mark.parametrize(
+    "spelling, read", READ_SPELLINGS, ids=[row[0] for row in READ_SPELLINGS]
+)
+def test_a_read_by_any_spelling_is_on_the_record(spelling, read) -> None:
+    """Each spelling a static scan misses, read through the recorder."""
+    proxy = Asked(RecordingPublisher())
+
+    with suppress(AttributeError):
+        read(proxy)
+
+    assert ASSEMBLED in asked_of(proxy), spelling
 
 
 #: A branch no repository in the fixture has, so the merge and the deletion

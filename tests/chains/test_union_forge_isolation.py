@@ -198,7 +198,12 @@ def union_import_closure() -> tuple[str, ...]:
 
 
 def _reads_a_member_by_a_computed_name(node: ast.AST) -> bool:
-    """A ``getattr`` call, however it is reached, asked for a computed name."""
+    """A call spelled ``getattr`` or ``<x>.getattr`` with a computed second argument.
+
+    Only that spelling: an alias of ``getattr``, a starred call,
+    ``operator.attrgetter`` or ``methodcaller``, ``__getattribute__`` and a
+    class ``__dict__`` are not read here.
+    """
     if not isinstance(node, ast.Call):
         return False
     func = node.func
@@ -214,7 +219,7 @@ def _reads_a_member_by_a_computed_name(node: ast.AST) -> bool:
 
 
 def dynamic_member_read_sites(module: ModuleType) -> frozenset[tuple[str, str]]:
-    """Every member *module* reads by a name that is not one string literal.
+    """Every call in *module* spelled ``getattr`` asking for a computed name.
 
     ``getattr(git, "open" + "_pr_for_head")`` writes the question it asks
     nowhere, so a scan over attribute names and one over string literals both
@@ -595,7 +600,10 @@ async def test_verifying_leaves_every_open_pull_request_open(
     returns as it was before it was called — on EACH way it returns, because a
     lifecycle write placed on the return the read-back never drives is a write
     nothing here would see.  The reuse rows read back around their SECOND ask,
-    so the return under measurement is the one that composes nothing.
+    so the return under measurement is the one that composes nothing.  On
+    each, no port the step is handed was asked a member its port does not
+    declare, however the read was spelled — the forge this git double carries
+    included.
     """
     fixture = await build_delivery(
         tmp_path / "world", edits=edits, git=ReachableForgeGit()
@@ -610,6 +618,7 @@ async def test_verifying_leaves_every_open_pull_request_open(
     result = await coordinator.verify()
 
     after = await lifecycles(forge)
+    assert fixture.undeclared_reads() == {}, name
     assert (result is first) is reused, name
     assert (result.checks is not None) is composed, name
     assert (result.merge_conflict is not None) is not composed, name
@@ -895,8 +904,11 @@ def test_no_module_the_union_step_reaches_asks_a_pull_request_anything() -> None
     like a forge question, a string equal to one — which is how such a read is
     spelled when it goes through ``getattr`` rather than a dot — the
     merge-state vocabulary arriving by import, and a forge client imported
-    under any name.  A name ASSEMBLED at runtime is none of those, and is
-    refused by the case below instead.
+    under any name.  A name assembled at runtime is none of those.  A call
+    spelled ``getattr`` that assembles one is registered by the case below;
+    every other spelling of it is read by no scan here, and is refused at
+    run time instead: every exit and return scenario reads the record each
+    port the step is handed keeps of what it was asked (``Asked``).
     """
     closure = union_import_closure()
 
@@ -928,25 +940,27 @@ def test_no_module_the_union_step_reaches_asks_a_pull_request_anything() -> None
 #: cover a forge read added anywhere else in it.
 #:
 #: ``kodezart.core.prompt_rendering._member`` resolves one segment of a
-#: template path against the scopes a prompt is rendered with and hands the
-#: value straight back without calling it, and the holdings cases above say the
-#: union step holds no forge collaborator that a scope could carry to it.
+#: template path against the scopes a prompt is rendered with; the holdings
+#: cases above say the union step holds no forge collaborator a scope could
+#: carry to it, and the runtime record says no port it holds is asked a
+#: member its port does not declare.
 ALLOWED_DYNAMIC_MEMBER_READS: frozenset[tuple[str, str]] = frozenset(
     {("kodezart.core.prompt_rendering", "_member")}
 )
 
 
 def test_no_module_the_union_step_reaches_reads_a_member_by_a_computed_name() -> None:
-    """The one spelling the scans above cannot reach, accounted for by site.
+    """A call spelled ``getattr`` with an assembled name, accounted for by site.
 
-    A forge read reached through ``getattr`` with an assembled name never
-    writes the method name, so neither scan above can see it, anywhere on the
-    closure — including the module every lane head is read through, which is
-    one call deeper than the union step's own files.  So every site on the
-    closure that reads a member by a computed name is named above with its
-    reason and the set must match exactly: an unregistered read fails here,
-    and a registered one that has gone fails too rather than standing as a
-    permission nothing uses.
+    Such a read never writes the method name, so neither scan above can see
+    it, anywhere on the closure — including the module every lane head is
+    read through, which is one call deeper than the union step's own files.
+    So every call on the closure spelled ``getattr`` or ``<x>.getattr`` whose
+    second positional argument is not one string literal is named above with
+    its reason, and the set must match exactly: an unregistered one fails
+    here, and a registered one that has gone fails too rather than standing
+    as a permission nothing uses.  Other spellings of a computed read are not
+    scanned; the runtime record is the check for those (see the case above).
     """
     closure = union_import_closure()
 
