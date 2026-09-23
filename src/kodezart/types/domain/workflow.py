@@ -278,6 +278,13 @@ class WorkflowState(TypedDict):
     commits nothing would otherwise make a run that plainly did work look
     as though it had done none.
 
+    ``best_iteration_branch`` is the loop branch that commit was made and
+    pushed on, written beside it and by the same step. A remediation round
+    draws a loop branch of its own, and one that commits nothing is never
+    pushed, so the branch that holds the best commit is not always the run's
+    current ``ralph_branch``: a row recorded against the current one would
+    name a branch the remote does not hold.
+
     ``lane_entry`` is how this run entered: ``None`` on the authored arm
     and on a native fire prepared without a walker, which is the same as a
     new lane.  It is carried on the state because the fire's entry check
@@ -319,6 +326,7 @@ class WorkflowState(TypedDict):
     remediation_ticket: TicketDraftOutput | RemediationPlan | None
     remediation_entry: RemediationEntry | None
     best_iteration_sha: str | None
+    best_iteration_branch: str | None
     repo_url: str | None
     repo_visibility: RepoVisibility
     trajectory: LoopTrajectory | None

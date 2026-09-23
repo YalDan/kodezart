@@ -27,6 +27,7 @@ from kodezart.domain.lane_record import (
     render_lane_record,
 )
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
+from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import ResultEvent, WorkflowIterationEvent
@@ -41,6 +42,7 @@ from kodezart.types.domain.criterion_lifecycle import (
     RederivationClass,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.lane_entry import ResumedLane
 from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationConfig,
@@ -1903,3 +1905,111 @@ async def test_a_forge_less_stall_records_the_best_iteration_as_the_next_act():
     assert len(repo.shas) == 2
     assert record.commits[-1].sha == repo.shas[0] != repo.shas[-1]
     assert [row.sha for row in record.commits] == [*repo.shas, repo.shas[0]]
+
+
+class CommitsFirst(LanePersister):
+    """Commits the lane's first *limit* iterations and none after them.
+
+    What an iteration that changed nothing leaves: no commit and so no push,
+    and a loop branch that round was cut on that the remote never holds.
+    Every branch a persist was asked for is kept, committed to or not.
+    """
+
+    def __init__(self, repo: LaneRepo, *, limit: int) -> None:
+        super().__init__(repo)
+        self.limit = limit
+        self.asked: list[str] = []
+
+    async def persist(self, **kwargs):
+        self.asked.append(kwargs["branch"])
+        if len(self.repo.shas) >= self.limit:
+            return None
+        return await super().persist(**kwargs)
+
+
+async def test_a_stall_whose_last_round_committed_nothing_re_enters_at_its_best():
+    """The best act is bound to the loop branch that holds it, not the last one.
+
+    Round one commits twice and grades both the same, so its best is its
+    first commit and not its tip; the remediation round draws a loop branch
+    of its own and commits nothing, so that branch is never pushed. Forge-less,
+    so nothing is published or consolidated. The landing row names the best
+    commit, and a row bound to the empty round's branch would name a branch
+    the remote does not hold: every later walk would refuse the lane as absent
+    from the remote. Bound to round one's branch, a re-entry resolves the best
+    commit (KOD-705).
+    """
+    port = tracker()
+    repo = LaneRepo(branch="unnamed")
+    persister = CommitsFirst(repo, limit=2)
+    executor = NativeExecutor([native_evaluation(failed=True) for _ in range(4)])
+    fire = engine(
+        criteria=CountingCriteria(tracker=port),
+        real_loop=True,
+        max_iterations=2,
+        remediation_rounds=1,
+        executor=executor,
+        git=LaneGit(repo),
+        source=LaneSource(repo),
+        persister=persister,
+        forge=lane_forge(),
+        merger=FakeBranchMerger(),
+    )
+    state, config = fire.prepare(
+        prompt="Implement the current Checks.",
+        issue_key=None,
+        repo_path="/tmp/fire",
+        repo_url=REPO_URL,
+        base_spec=trunk_base("main"),
+        scope=SCOPE_OF_SUBJECT,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=["Bash"],
+        cache_key=JOB,
+        surface_holder=JOB,
+    )
+    first_round = state["ralph_branch"]
+    # The repository double holds one branch on the remote: round one's, the
+    # only one a commit was pushed on.
+    repo.branch = first_round
+
+    async for _ in fire.native_graph.astream(
+        state, config=config, stream_mode="custom"
+    ):
+        pass
+
+    # The premise, observed: two commits pushed on round one's branch, one
+    # remediation round, and that round asked to persist on a branch of its
+    # own and committed nothing there.
+    assert len(repo.shas) == 2
+    assert [call["branch"] for call in persister.calls] == [first_round] * 2
+    assert len(executor.remediation_prompts) == 1
+    assert persister.asked[:2] == [first_round] * 2
+    assert len(persister.asked) > 2
+    assert first_round not in persister.asked[2:]
+
+    record = await LaneRecordReader(tracker=port, operation=native_operation()).read(
+        issue_key=SUBJECT, lane_key=SUBJECT
+    )
+    landed = record[1]
+    assert landed.commits[-1].sha == repo.shas[0] != repo.shas[-1]
+    assert landed.commits[-1].subject == LANDING_ROW_SUBJECT
+    # The branch the record names is one the remote holds.
+    assert landed.branch == first_round
+    assert (
+        await LaneGit(repo).remote_branch_sha("/tmp/fire", "origin", landed.branch)
+        == repo.shas[-1]
+    )
+    # And a re-entry over that record and that remote resolves the best
+    # commit, by sha: the loop branch stands past it, so none is carried.
+    entry = await LaneEntryReader(
+        records=LaneRecordReader(tracker=port, operation=native_operation()),
+        git=LaneGit(repo),
+        remote="origin",
+    ).read(
+        issue_key=SUBJECT,
+        open_criteria=OWED_KEYS,
+        repo_path="/tmp/fire",
+        resolved_base="main",
+    )
+    assert isinstance(entry, ResumedLane)
+    assert (entry.loop_branch, entry.head_sha) == (None, repo.shas[0])

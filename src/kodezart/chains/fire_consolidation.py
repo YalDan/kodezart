@@ -101,9 +101,12 @@ class FireConsolidation:
             # A round that committed nothing writes nothing: omitting the
             # key leaves the previously recorded best standing, so a run
             # whose LAST round was empty is not reported as having done
-            # no work at all.
+            # no work at all. The branch is written with it: the best is a
+            # commit of THIS round's loop branch, which its push put on the
+            # remote, and a later round's branch may never be pushed.
             if best is not None:
                 exit_state["best_iteration_sha"] = best
+                exit_state["best_iteration_branch"] = state["ralph_branch"]
             return exit_state
 
         outcome = await self._merger.consolidate(
