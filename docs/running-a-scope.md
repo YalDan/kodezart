@@ -174,7 +174,7 @@ names the member and what it stops.
 | the declared repository | matching the request's origin, before the first read | `ScopeReadError` |
 | the forge token | selecting a delivery reader for the origin | `ScopedExecutionUnavailableError` |
 | the criterion's team | taking a refuted criterion back | `CriterionReadError` |
-| a tracker write path in the installed code that no write-back verifier drives and no derived-write declaration holds out | boot, before the tracker is dialled or anything is written | `UnverifiedWritePathError` |
+| a call of the tracker port's artifact-write surface (the roles the tracker is dialled as) in the installed code that no write-back verifier drives and no derived-write declaration holds out | boot, before the tracker is dialled or anything is written | `UnverifiedWritePathError` |
 
 A lane issue that carries no criteria-stage marker cannot fire. That marker is
 written by the organize step after approval, not by hand and not by the builder
