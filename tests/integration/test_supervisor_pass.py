@@ -1065,6 +1065,159 @@ async def test_a_tick_over_a_held_lane_ages_its_question_and_tallies_only_the_ot
     ] == [f"escalation_ageing:{NESTED_QUESTION}"]
 
 
+#: A member that the held lane is a sub-issue of, approved and owing its own
+#: criteria, so its gap walks through the held lane.
+PARENT = "PARENT"
+
+
+async def held_scope(*, lanes, questions, lane_fields=None):
+    """A scope over *lanes*, each of *questions* raised on its lane as lapsed.
+
+    Every question goes through the production writer, so each lane it is
+    raised on is classified for decision as a lapsed observation leaves it.
+    """
+    operation = declared(scopes=(SCOPE,))
+    port = await board(
+        lanes=lanes,
+        commits=STALLED,
+        scope=SCOPE,
+        holder=supervisor_holder(operation_name=operation.operation_name),
+        prefixes=operation.marker_prefixes,
+        lane_fields=lane_fields,
+    )
+    for lane, criterion_key in questions:
+        await raise_lapse_question(port, lane, criterion_key, graded_sha=RAISED_AT)
+    return port, operation
+
+
+def held_pass(port, operation):
+    """The composed tick, with the tally and the question's commit bound at one."""
+    return build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            run_alarm_max_commits_without_closure=BOUND,
+            run_alarm_escalation_age_max_commits=1,
+            run_alarm_escalation_age_max_ticks=10,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=operation,
+        tracker=port,
+    )
+
+
+async def assert_aged_past_its_bound(port, lane, criterion_key):
+    """The question about *criterion_key* on *lane* aged past its commit bound.
+
+    Two commits of the lane's three were recorded after the one the question
+    was raised at, against a bound of one, and the raise was announced once.
+    """
+    occurrence = lapse_escalation_key(criterion_key)
+    aged = await port.read_run_alarm(
+        issue_key=lane,
+        subject=question_subject(lane, occurrence),
+        signal=AlarmSignal.ESCALATION_AGEING,
+    )
+    assert aged is not None
+    assert aged.bound == AlarmBound(
+        config_field="run_alarm_escalation_age_max_commits",
+        configured_value=1,
+        observed_value=2,
+    )
+    assert [
+        event.subject_key
+        for event in await port.lane_run_events(issue_key=lane, lane_key=lane)
+        if event.kind is RunEventKind.RUN_ALARM_RAISED
+        and event.subject_key.startswith("escalation_ageing:")
+    ] == [f"escalation_ageing:{occurrence}"]
+
+
+async def test_a_lane_blocked_by_a_held_lane_is_blocked_and_the_question_ages():
+    """Lane C is blocked by lane B, which is held on an open lapse question.
+
+    B still owes its criteria, so C is read as blocked rather than ready and
+    its tally is not observed, though its commits are past the tally bound.
+    The tick completes and B's question ages past its bound.
+    """
+    port, operation = await held_scope(
+        lanes=LANES,
+        questions=(("LANE-B", LAPSED),),
+        lane_fields={"LANE-C": {"blocked_by": ("LANE-B",)}},
+    )
+
+    ready = await read_scope_ready(ref=SCOPE, tracker=port, stage_barriers=False)
+    assert ready.ready == ()
+    assert [row.issue_key for row in ready.blocked] == ["LANE-C"]
+    assert [member.issue.issue_key for member in ready.held] == ["LANE-B"]
+
+    assert await tick(held_pass(port, operation)) is PassRun.RAN
+
+    assert (
+        await port.read_run_alarm(
+            issue_key="LANE-C", subject=subject("LANE-C"), signal=SIGNAL
+        )
+        is None
+    )
+    await assert_aged_past_its_bound(port, "LANE-B", LAPSED)
+
+
+async def test_a_held_sub_issue_is_walked_through_by_its_parent_and_its_question_ages():
+    """Lane B, held on an open lapse question, is a sub-issue of PARENT.
+
+    PARENT is approved and ready, and its gap is its own criteria and every
+    open criterion of B beneath it. The tick completes and B's question ages
+    past its bound.
+    """
+    port, operation = await held_scope(
+        lanes=(PARENT, "LANE-B"),
+        questions=(("LANE-B", LAPSED),),
+        lane_fields={"LANE-B": {"parent_key": PARENT}},
+    )
+
+    ready = await read_scope_ready(ref=SCOPE, tracker=port, stage_barriers=False)
+    assert [row.issue.issue_key for row in ready.ready] == [PARENT]
+    assert sorted(row.issue_key for row in ready.ready[0].gap) == sorted(
+        (*checks(PARENT), *checks("LANE-B"))
+    )
+    assert [member.issue.issue_key for member in ready.held] == ["LANE-B"]
+
+    assert await tick(held_pass(port, operation)) is PassRun.RAN
+
+    await assert_aged_past_its_bound(port, "LANE-B", LAPSED)
+
+
+async def test_a_scope_whose_only_lane_is_held_still_ages_its_question():
+    """No lane of the scope is ready: the only one is held on its question."""
+    port, operation = await held_scope(
+        lanes=("LANE-B",), questions=(("LANE-B", LAPSED),)
+    )
+
+    ready = await read_scope_ready(ref=SCOPE, tracker=port, stage_barriers=False)
+    assert ready.ready == ()
+    assert [member.issue.issue_key for member in ready.held] == ["LANE-B"]
+
+    assert await tick(held_pass(port, operation)) is PassRun.RAN
+
+    await assert_aged_past_its_bound(port, "LANE-B", LAPSED)
+
+
+async def test_two_held_lanes_in_one_scope_both_age_their_questions():
+    """Lanes B and C are each held on an open lapse question of their own."""
+    port, operation = await held_scope(
+        lanes=LANES,
+        questions=(("LANE-B", LAPSED), ("LANE-C", "LANE-C/check")),
+    )
+
+    ready = await read_scope_ready(ref=SCOPE, tracker=port, stage_barriers=False)
+    assert ready.ready == ()
+    assert [member.issue.issue_key for member in ready.held] == list(LANES)
+
+    assert await tick(held_pass(port, operation)) is PassRun.RAN
+
+    await assert_aged_past_its_bound(port, "LANE-B", LAPSED)
+    await assert_aged_past_its_bound(port, "LANE-C", "LANE-C/check")
+
+
 class RecordingPort:
     """The port, recording every member anything asks it for."""
 
