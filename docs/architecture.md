@@ -567,7 +567,9 @@ the role table. The set states the board's shape once, as one tree from
 initiative down to sub-issue placed through tracker fields, and composes it
 into the groom judge, the repair author and the two scheduled pass prompts, so
 an issue sitting outside that tree is a repairable gap rather than a matter of
-taste.
+taste. Both the grooming and the fire-prep passes size work for quick wins and
+file a rare or improbable edge case as its own backlog issue rather than as
+added scope.
 
 Because approval admits a member to a run stage instead of ending it, a
 run-stage row may name `scope_labels.approved` as its gate by that exact
