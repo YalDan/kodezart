@@ -32,42 +32,56 @@ elsewhere, of a surface somebody nominated.
 One class of the shipped proxy is out of this census: a model configuration
 whose `extra` setting is loosened from forbidding unknown fields to
 allowing them.  The tree carries none today and nothing here would see one.
-A second class is out of it too: `addopts` (with `-k` or `--deselect`),
-`testpaths`, `collect_ignore` in a conftest, `__test__` set false on a
-module, a class or a function, and a `parametrize` mark whose parameter set
-is empty (which the runner reports as a skip at collection, under a setting
-of its own table) can each stop a test being collected at all, and nothing
-here reads what they say; they are a later slice.  The same holds for the
-collection-name keys of the runner's table (`python_files`,
-`python_classes`, `python_functions`), which decide what is a test in the
-first place; for a mark that relaxes the warning filter on one test or a
-whole module (`filterwarnings` applied as a mark rather than set in the
-pinned table),
-and for the same relaxation spelled as a call or a fixture: a
-`warnings.simplefilter('ignore')` call, or an autouse fixture that relaxes
-the pinned `filterwarnings = ["error"]`; and for the type checker's own
-skip decorator (`typing.no_type_check`), which exempts a body from the
-checker with no comment to count.  Of the
-runner's table the key set is pinned whole, and of its values only
-`filterwarnings` and `markers` are read: a key it does not carry today --
-`addopts`, `norecursedirs`, a collection-name key,
+
+A second class is out of it too, and it is stated here as a class.  The
+census reads the test files, the conftest files under `tests/` (a conftest
+at the repository root is outside its walk) and the pytest tables of
+`pyproject.toml`, and it reads in them only the shapes this census counts.
+Nothing else that changes which tests run, or how they run, is read: not
+what lives outside those files, and not what lives inside them in any
+other form.  Of the runner's table the key set is pinned whole, and of its
+values only `filterwarnings` and `markers` are read: a key it does not
+carry today -- `addopts`, `norecursedirs`, a collection-name key
+(`python_files`, `python_classes`, `python_functions`),
 `empty_parameter_set_mark`, `collect_imported_tests` -- reds the suite when
 it is added, while a changed value of another key it carries, `testpaths`
-among them, is not seen.  Code the runner executes before or during
-collection is not read either: any hook that a conftest, the repository
-root's included, which the walk does not reach, or a plugin module it loads
-through `pytest_plugins`, runs then (`pytest_configure` changing the
-selection options, `pytest_ignore_collect`, or a
-`pytest_collection_modifyitems` that removes items; `pytest_deselected` is
-only told which items were removed and cannot remove any itself), a plugin
-registered through the project's own `pytest11` entry points,
-`collect_ignore_glob`, a module-level deletion or rebinding of a test's
-name, a fixture decorator applied to a test, and a skip form reached
-through a submodule (`unittest.case.SkipTest`).  A third is out of it as
-well: a stub carrying no directive at all, sitting beside the module it
-shadows, takes that module out of the type checker's reach, because the
-checker reads the stub in place of it.  That shape has no directive to
-count and no roster can see it; it is a diff the code review has to catch.
+among them, is not seen.  Examples of the class, none of them read:
+
+- a hook that a conftest or a plugin runs at any phase, at collection or at
+  run time: `pytest_collection_modifyitems` removing items,
+  `pytest_configure` changing the selection options,
+  `pytest_ignore_collect`, `pytest_runtest_protocol`,
+  `pytest_runtest_call`, `pytest_pyfunc_call`, and
+  `pytest_runtest_makereport` rewriting an outcome.  `pytest_deselected`
+  is only a notification hook: it is told which items were removed and
+  cannot remove any itself;
+- a plugin loaded any way: through `pytest_plugins` in a conftest or in a
+  test module, through the project's own `pytest11` entry points, or
+  through the entry point of a plugin that a new dependency brings;
+- the gate's own invocation: the options of the Makefile `test:` recipe,
+  and the `PYTEST_ADDOPTS` and `PYTEST_PLUGINS` environment variables;
+- `__test__` set false on a module, a class or a function;
+- a `pytest_generate_tests` that parametrizes over an empty set, and a
+  `parametrize` mark whose parameter set is empty, which the runner
+  reports as a skip at collection under a setting of its own table;
+- `warnings.simplefilter("ignore")`, whether called at import or during a
+  test or a fixture, an autouse fixture relaxing the pinned
+  `filterwarnings = ["error"]`, and a `filterwarnings` mark on one test or
+  a whole module;
+- `collect_ignore` and `collect_ignore_glob` in a conftest, a module-level
+  deletion or rebinding of a test's name, a fixture decorator applied to a
+  test, and a skip form reached through a submodule
+  (`unittest.case.SkipTest`).
+
+Outside that class, and out of the census in the same way, is the type
+checker's own skip decorator (`typing.no_type_check`), which exempts a body
+from the checker with no comment to count.
+
+A third class is out of it as well: a stub carrying no directive at all,
+sitting beside the module it shadows, takes that module out of the type
+checker's reach, because the checker reads the stub in place of it.  That
+shape has no directive to count and no roster can see it; it is a diff the
+code review has to catch.
 
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
