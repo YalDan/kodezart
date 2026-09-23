@@ -191,8 +191,19 @@ def test_a_criterion_its_lane_never_accounted_for_is_quiet_everywhere():
     )
 
 
-def test_a_lapse_on_a_lane_that_is_not_ready_is_undischarged():
-    on, firing, _ = LAPSE_PAIR
+@pytest.mark.parametrize(
+    "kind",
+    [WorkflowStateKind.UNSTARTED, WorkflowStateKind.STARTED],
+    ids=["back in Todo", "held in review"],
+)
+def test_a_lapse_on_a_lane_that_is_not_ready_is_undischarged(kind):
+    """Lapsed and not closed again, on a lane the walk does not re-derive.
+
+    The review state is the ordinary open ``STARTED`` kind, so a lapse the
+    lane took back into review is as undischarged as one back in Todo.
+    """
+    on = LAPSE_PAIR[0]
+    firing = (state(kind), account(CROSSED_OFF, LAPSED), rederived(False))
 
     alarm = undischarged(firing, on=on)
 
