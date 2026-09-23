@@ -1220,3 +1220,35 @@ async def test_criteria_the_ticket_row_authors_are_a_finding_not_a_write(monkeyp
         for issue in board.server.issues.values()
         if issue.parent_id == CLAIMED_ISSUE and "check" in issue.labels
     ]
+
+
+async def test_a_round_that_starts_blocked_writes_none_of_the_findings_it_holds(
+    monkeypatch,
+):
+    """A report-shaped halt spends no judgement and writes no finding.
+
+    Round one's dry round forms a finding on the sibling, and while it does
+    the subject is escalated, so round two starts blocked on it. That halt
+    names the member and writes nothing; the held finding is formed again by
+    the judgement of the entry that works the member.
+    """
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    member(board, SIBLING, labels=[GROOM_MARKER])
+
+    def sibling(n):
+        if n == 1:
+            board.server.issues[CLAIMED_ISSUE].labels.append("needs decision")
+            return buildable(SIBLING, spec_finding(SIBLING))
+        return buildable(SIBLING)
+
+    seen = judging(board, executor, monkeypatch, {SIBLING: sibling})
+    report = await run_owner(owner)
+    assert seen[SIBLING] == 1
+    assert report.halt.cause == "stage_incomplete"
+    assert report.halt.unlabelled_issue_ids == (CLAIMED_ISSUE,)
+    assert escalations(board, SIBLING) == []
+    assert not [
+        comment
+        for comment in board.server.comments
+        if comment.body.startswith("[organize-question:")
+    ]
