@@ -1,6 +1,7 @@
 """One current graph and recorded-ruling context for Organize readers and writers."""
 
 import json
+from collections.abc import Sequence
 from hashlib import sha256
 
 from kodezart.core.protocols import TrackerPort
@@ -36,9 +37,19 @@ class OrganizeContextReader:
             for row in operation.organize_mandates
         )
 
-    async def read(self, *, scope: ScopeRef) -> OrganizeContext:
-        members = await self._tracker.scope_issues(ref=scope)
-        member_keys = tuple(sorted(issue.issue_key for issue in members))
+    async def read(
+        self, *, scope: ScopeRef, member_keys: Sequence[str] | None = None
+    ) -> OrganizeContext:
+        """The scope's current context.
+
+        With *member_keys*, those are the scope's members and no roster
+        listing is made: a caller that has just listed the scope passes what
+        it read rather than listing it again.
+        """
+        if member_keys is None:
+            members = await self._tracker.scope_issues(ref=scope)
+            member_keys = [issue.issue_key for issue in members]
+        member_keys = tuple(sorted(member_keys))
         if len(set(member_keys)) != len(member_keys):
             raise OrganizeWriteRefusalError(
                 issue_key=scope.key, reason="duplicate native scope identities"
@@ -154,5 +165,13 @@ class OrganizeContextReader:
         }
         return sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
-    async def matches(self, *, scope: ScopeRef, digest: str) -> bool:
-        return self.digest(await self.read(scope=scope)) == digest
+    async def matches(
+        self,
+        *,
+        scope: ScopeRef,
+        digest: str,
+        member_keys: Sequence[str] | None = None,
+    ) -> bool:
+        return (
+            self.digest(await self.read(scope=scope, member_keys=member_keys)) == digest
+        )

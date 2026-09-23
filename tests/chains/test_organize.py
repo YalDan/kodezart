@@ -4,6 +4,7 @@ import ast
 import inspect
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
+from itertools import pairwise
 
 import pytest
 import structlog.testing
@@ -2338,8 +2339,9 @@ class RosterReads:
         monkeypatch.setattr(organize_owner, "organize_gap", recorded)
 
 
+@pytest.mark.parametrize("entry", ["fresh", "retained"])
 async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
-    monkeypatch,
+    monkeypatch, entry
 ):
     """The tick reads the roster once per stage and asks the gap over it.
 
@@ -2349,9 +2351,14 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     snapshot, with nothing read between them but that snapshot's revision
     reads and the scope labels. The pre-query is not a second read — it is
     the cardinality of the answer the gap already gave.
+
+    The fresh row is a new owner over the converged board. The retained row
+    runs the owner that converged it again, so its admissions are still
+    standing: their liveness is read against the round's own roster, never
+    a listing of its own.
     """
     h = owner_harness()
-    owner, board, _executor = h.two_lane_board()
+    owner, board, converged = h.two_lane_board()
     assert (await h.run_owner(owner)).halt is None
     second, board, executor = h.factory(under_approval=True, board=board)
     scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
@@ -2371,24 +2378,75 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     # One read per member: the unit a re-read of the snapshot would add.
     assert revision_reads == len(members)
     snapshot_reads = listing_reads + revision_reads + label_reads
+    ran, spent = (second, executor) if entry == "fresh" else (owner, converged)
+    spent.calls.clear()
     probe = RosterReads(monkeypatch, board)
-    report = await h.run_owner(second)
+    report = await h.run_owner(ran)
 
     assert report.halt is None
     assert per_read >= 1
     # The stage's own snapshot, then that stage's barrier and the next
     # stage's snapshot: no listing sits between a snapshot and its gap call.
     assert probe.at_gap == [per_read, 3 * per_read]
-    assert probe.reads_at_gap == [snapshot_reads, 3 * snapshot_reads]
     assert [name for name, _ in board.calls].count("list_issues") == 4 * per_read
     assert len(probe.at_gap) == len(report.completed_phases) == 2
     assert all(
         organize_at_rest(**inputs) is (answer == ())
         for inputs, answer in zip(probe.inputs, probe.answers, strict=True)
     )
-    assert probe.answers[0] != ()
-    assert executor.calls == []
+    assert spent.calls == []
     assert not [name for name, _ in board.calls if name.startswith("save_")]
+    if entry == "fresh":
+        assert probe.reads_at_gap == [snapshot_reads, 3 * snapshot_reads]
+        assert probe.answers[0] != ()
+        return
+    # A retained admission still standing answers a stage at rest, so the
+    # pre-query's True side is reached at tick level.
+    assert () in probe.answers
+
+
+async def test_a_later_round_lists_the_roster_once_before_its_gap(monkeypatch):
+    """A second round of one stage opens on one roster read, like the first.
+
+    The refutation entry re-runs the owner that converged the scope, so its
+    admissions are retained, and its criteria stage takes two rounds. Every
+    roster listing the backend serves is counted at each gap call; the
+    listings between two gap calls are exact multiples of one read.
+    """
+    h = owner_harness()
+    listed = []
+    serve = FakeLinearMcpServer.call_tool
+
+    async def counted(self, *, name, arguments):
+        if name == "list_issues":
+            listed.append(name)
+        return await serve(self, name=name, arguments=arguments)
+
+    monkeypatch.setattr(FakeLinearMcpServer, "call_tool", counted)
+    at_gap = []
+    computed = organize_owner.organize_gap
+
+    def recorded(**kwargs):
+        at_gap.append(len(listed))
+        return computed(**kwargs)
+
+    monkeypatch.setattr(organize_owner, "organize_gap", recorded)
+    spy, board, _executor, report = await h.entry_refutation(monkeypatch)
+    before = len(listed)
+    await board.tracker().scope_issues(
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    )
+    per_read = len(listed) - before
+    rounds = at_gap[-len(spy.calls) :]
+    assert report.halt is None
+    # Ticket gap to criteria round one: the ticket barrier and the criteria
+    # snapshot. Round one to round two: the listings round one's sessions and
+    # its dry pass make, measured by running, then round two's one snapshot.
+    # A further listing anywhere before round two's gap adds one read.
+    assert [later - earlier for earlier, later in pairwise(rounds)] == [
+        2 * per_read,
+        17 * per_read,
+    ]
 
 
 def unavailable_network_operation():
