@@ -42,10 +42,12 @@ from kodezart.adapters import asyncio_job_queue
 from kodezart.api.v1.endpoints import agent as agent_routes
 from kodezart.api.v1.endpoints import jobs as job_routes
 from kodezart.chains import ralph_workflow
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.ralph_workflow import FireGraph, RalphWorkflowEngine
 from kodezart.composition.jobs import build_job_service
+from kodezart.core.protocols import FireCriteriaSource
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.outcome import classify_outcome
+from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.handlers import agent_handler
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
@@ -62,12 +64,17 @@ from kodezart.types.domain.criteria import (
     CriteriaValidation,
     CriterionFeasibility,
     CriterionFlag,
+    CriterionId,
     CriterionVerdict,
     ForbiddenCriterionClass,
+    TrackerCriterion,
+    TrackerCriterionSet,
 )
 from kodezart.types.domain.delivery import LaneDelivery
+from kodezart.types.domain.fire_spec import CriterionRef, IssueRef, TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
+from kodezart.types.domain.lane_entry import LaneEntry
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import WorkflowState
@@ -739,6 +746,58 @@ def trajectory(*, plateaued: bool, never_passed: list[str]) -> LoopTrajectory:
     )
 
 
+#: The subject a native state is addressed to, and the one criterion it is
+#: graded against: the spec the state carries and the roster the engine's
+#: reader answers name the same key, so the snapshot check the completion
+#: node runs first admits the state.
+SUBJECT = "KOD-313"
+CRITERION = "KOD-314"
+
+
+def native_spec() -> TrackerSpec:
+    """The tracker spec a native state carries: the subject and its criterion."""
+    return TrackerSpec(
+        subject=IssueRef(SUBJECT),
+        body="the subject's own text",
+        criteria=(CriterionRef(CRITERION),),
+        read_at_version="1",
+    )
+
+
+def native_roster() -> TrackerCriterionSet:
+    """The roster the state records and the reader answers: the spec's criterion."""
+    return TrackerCriterionSet(
+        criteria=[TrackerCriterion(id=CriterionId(CRITERION), text="a check holds")]
+    )
+
+
+class HeldCriteria:
+    """A criteria source that answers one spec and one roster, whatever is asked.
+
+    What an engine needs to compile its tracker-native graph, and what the
+    completion node's snapshot check reads: the roster it answers is the
+    one every drive state records, so the check admits each of them, and
+    every spec it was asked for is kept, so the drive can show the check
+    ran on every state.
+    """
+
+    def __init__(self) -> None:
+        self.spec = native_spec()
+        self.roster = native_roster()
+        self.asked: list[TrackerSpec] = []
+
+    async def read_entry(
+        self, *, issue_key: str, delivering: bool = False
+    ) -> tuple[TrackerSpec, TrackerCriterionSet]:
+        return self.spec, self.roster
+
+    async def read_current(
+        self, *, spec: TrackerSpec, held: TrackerCriterionSet | None = None
+    ) -> TrackerCriterionSet:
+        self.asked.append(spec)
+        return self.roster
+
+
 def fire_state(
     *,
     feature_tip_sha: str | None = None,
@@ -746,14 +805,18 @@ def fire_state(
     unconfirmed: bool = False,
     **classified: object,
 ) -> WorkflowState:
-    """A state as the completion node reads it, with exactly the fire's keys.
+    """A native state as the completion node reads it, with exactly the fire's keys.
 
     The classifier tests' neutral state with *classified* set on it, the
     lane's delivery keys taken off, and the keys the fire's prepare step
     writes that the neutral state does not carry added at the values
     prepare gives a fresh run against trunk; the terminal's other inputs
-    are set as asked.  Held to the pinned key set, so the drive runs on the
-    fire's own shape.
+    are set as asked.  Addressed to the native subject — its issue key,
+    the tracker spec and the roster the engine's reader answers — so the
+    snapshot check the node runs first admits it.  The entry facts the
+    drive crosses it with (the lane entry, the work base, the visibility)
+    hold their fresh-run values here and are set by :func:`native_axes`.
+    Held to the pinned key set, so the drive runs on the fire's own shape.
     """
     legacy = _state(**classified)
     state = WorkflowState(
@@ -762,12 +825,93 @@ def fire_state(
         work_base_ref="main",
         repo_visibility=RepoVisibility.UNKNOWN,
     )
+    state["issue_key"] = SUBJECT
+    state["fire_spec"] = native_spec()
+    state["criterion_set"] = native_roster()
     state["feature_tip_sha"] = feature_tip_sha
     state["criteria_validation"] = criteria_validation
     if unconfirmed:
         state["ruling_unrecorded"] = True
     assert set(WorkflowState.__required_keys__) <= set(state) <= STATE_KEYS
     return state
+
+
+def lane_entry_kinds() -> tuple[type[BaseModel], ...]:
+    """Every kind of lane entry, read off the ``LaneEntry`` union by object.
+
+    The alias holds an ``Annotated`` union; its members are the kinds.
+    """
+    union, _ = get_args(LaneEntry.__value__)
+    kinds = get_args(union)
+    assert kinds != ()
+    assert all(isinstance(kind, type) and issubclass(kind, BaseModel) for kind in kinds)
+    return kinds
+
+
+def entered(kind: type[BaseModel]) -> BaseModel:
+    """One entry of *kind*, each required field filled by what its annotation admits.
+
+    A string field holds a name; a field that admits ``None`` holds it.  Any
+    other required field reds here rather than being guessed at.
+    """
+    fields: dict[str, object] = {}
+    for name, field in kind.model_fields.items():
+        if not field.is_required():
+            continue
+        if field.annotation is str:
+            fields[name] = f"{name}-pinned"
+        else:
+            assert type(None) in get_args(field.annotation), (kind, name)
+            fields[name] = None
+    return kind(**fields)
+
+
+#: The loop branch every drive state names, which a recorded lane continues
+#: as its work base: the neutral state's own.
+LOOP_BRANCH = _state()["ralph_branch"]
+
+#: The refs a run's next loop cuts from: trunk, as a fresh run holds, and
+#: the loop branch a recorded lane continues.
+WORK_BASES = ("main", LOOP_BRANCH)
+
+
+def native_axes() -> dict[str, dict[str, object]]:
+    """Every combination of the entry facts a native state carries, by name.
+
+    Every lane entry — none, and one of each kind the ``LaneEntry`` union
+    names, derived from the union by object — crossed with each work base
+    and with every member of ``RepoVisibility``.  Bounded by the product
+    of the three.
+    """
+    kinds = lane_entry_kinds()
+    entries: list[BaseModel | None] = [None, *(entered(kind) for kind in kinds)]
+    assert {type(entry) for entry in entries if entry is not None} == set(kinds)
+    return {
+        (
+            f"{'no entry' if entry is None else type(entry).__name__}, "
+            f"{'trunk' if base == 'main' else 'loop branch'}, {visibility.value}"
+        ): {
+            "lane_entry": entry,
+            "work_base_ref": base,
+            "repo_visibility": visibility,
+        }
+        for entry in entries
+        for base in WORK_BASES
+        for visibility in RepoVisibility
+    }
+
+
+def node_binding(graph: FireGraph, name: str) -> MethodType:
+    """The bound method the compiled *graph* runs as its node *name*, by object.
+
+    Read off the compiled graph's own node: the callable it wraps, which
+    for a coroutine method is held as the node's async function.  A node
+    bound to anything but a bound method reds here.
+    """
+    runnable = graph.nodes[name].bound
+    bound = runnable.afunc if runnable.func is None else runnable.func
+    assert isinstance(bound, MethodType), name
+    return bound
 
 
 #: The commit a merged hand-off's terminal carries.
@@ -900,31 +1044,38 @@ def keys_in(dump: object) -> set[str]:
     return set()
 
 
-async def test_the_completion_node_emits_exactly_the_terminal_for_every_outcome(
+async def test_the_completion_node_emits_exactly_the_terminal_for_every_native_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The tracker-native graph's completion node, run over every outcome it classifies.
+    """The tracker-native completion node, run over every outcome under every entry.
 
     The fire's terminal is built in one place, the engine's completion
-    node, which the egress drive replaces with a held engine and the
-    machinery pins read as a class rather than run.  It is run here, on the
-    compiled fire's own engine with the stream writer a graph run would
-    hand it, over a state for every outcome the shipped classifier names —
-    derived from the classifier's source, so a member it starts producing
-    is a run missing here — among them the plateau with the trajectory's
-    flag set and, under the same loop exit, unset; the merged hand-off with
-    its commit present and no merge error; and a clean run whose trajectory
-    has nothing that never passed.  For each: the event is exactly
-    ``WorkflowCompleteEvent`` and not a subclass; its dump in python and in
-    JSON mode, with and without aliases, with and without its ``None``
-    fields, has exactly the keys the schema declares at every depth; and no
-    delivery key, under its field name or its alias, is anywhere in any of
-    them.
+    node, which the egress drive replaces with a held composition and the
+    machinery pins read as a class rather than run.  It is run here as the
+    compiled tracker-native graph binds it — the engine is built with a
+    criteria source, so that graph is compiled, and the node is read off
+    it — with the stream writer a graph run would hand it and a config
+    carrying a thread id, over tracker-native states: each carries the
+    subject's issue key, a tracker spec and the roster the engine's reader
+    answers, so the snapshot check the node runs first admits it, and the
+    reader is shown asked once per state.  The states are one per outcome
+    the shipped classifier names — derived from the classifier's source, so
+    a member it starts producing is a run missing here; among them the
+    plateau with the trajectory's flag set and, under the same loop exit,
+    unset; the merged hand-off with its commit present and no merge error;
+    and a clean run whose trajectory has nothing that never passed — each
+    crossed with every entry fact the node could branch on: no lane entry
+    and one of each kind the ``LaneEntry`` union names, trunk and the loop
+    branch as the work base, and every repository visibility.  For each
+    run: the event is exactly ``WorkflowCompleteEvent`` and not a subclass;
+    its dump in python and in JSON mode, with and without aliases, with and
+    without its ``None`` fields, has exactly the keys the schema declares at
+    every depth; and no delivery key, under its field name or its alias, is
+    anywhere in any of them.
 
-    This is about the tracker-native graph alone.  The authored v0.2 arm
-    legitimately emits ``AuthoredWorkflowCompleteEvent``, with its
-    delivery fields, from its own graph; that arm is not this one, and no
-    state of this graph may reach that type.
+    That is the reach: the node, over these states.  The authored arm
+    legitimately emits ``AuthoredWorkflowCompleteEvent``, with its delivery
+    fields, from its own graph, and is not driven here.
     """
     runs = completions()
     assert {outcome for outcome, _ in runs.values()} == classified_outcomes()
@@ -939,40 +1090,71 @@ async def test_the_completion_node_emits_exactly_the_terminal_for_every_outcome(
     _, clean = runs["a clean run"]
     assert clean["trajectory"] is not None
     assert clean["trajectory"].never_passed_ids == []
+    for name, (_, state) in runs.items():
+        assert state["issue_key"] == SUBJECT, name
+        assert isinstance(state["fire_spec"], TrackerSpec), name
+        assert state["ralph_branch"] == LOOP_BRANCH, name
     forbidden = delivery_keys()
     assert {"prUrl", "prNumber", "ciStatus"} <= forbidden
     assert forbidden & set(WorkflowCompleteEvent.model_fields) == set()
+    axes = native_axes()
+    kinds = lane_entry_kinds()
+    assert len(axes) == (1 + len(kinds)) * len(WORK_BASES) * len(RepoVisibility)
+    assert {facts["repo_visibility"] for facts in axes.values()} == set(RepoVisibility)
+    assert {type(facts["lane_entry"]) for facts in axes.values()} == {
+        type(None),
+        *kinds,
+    }
 
+    criteria = HeldCriteria()
+    assert isinstance(criteria, FireCriteriaSource)
+    engine = fire(criteria=criteria)
+    assert engine.native_graph is not None
+    complete = node_binding(engine.native_graph, "complete")
+    assert complete.__self__ is engine
+    config = RunnableConfig(configurable={"thread_id": workflow_thread_id("pinned")})
     written: list[AgentEvent] = []
     monkeypatch.setattr(ralph_workflow, "get_stream_writer", lambda: written.append)
-    engine = fire()
+    driven = 0
     for name, (outcome, state) in runs.items():
-        del written[:]
-        assert await engine._complete_node(state, RunnableConfig()) == {}, name
-        (event,) = written
-        assert type(event) is WorkflowCompleteEvent, name
-        assert event.outcome is outcome, name
-        renderings = {
-            (mode, by_alias, exclude_none): event.model_dump(
-                mode=mode, by_alias=by_alias, exclude_none=exclude_none
-            )
-            for mode in ("python", "json")
-            for by_alias in (False, True)
-            for exclude_none in (False, True)
-        } | {
-            ("json text", by_alias, exclude_none): json.loads(
-                event.model_dump_json(by_alias=by_alias, exclude_none=exclude_none)
-            )
-            for by_alias in (False, True)
-            for exclude_none in (False, True)
-        }
-        for (mode, by_alias, exclude_none), dump in renderings.items():
-            where = f"{name}: {mode}, {'aliased' if by_alias else 'named'}"
-            where += ", nones off" if exclude_none else ", nones on"
-            assert_dumped_as_declared(
-                event, dump, by_alias=by_alias, exclude_none=exclude_none, where=where
-            )
-            assert keys_in(dump) & forbidden == set(), where
+        for entry, facts in axes.items():
+            where = f"{name} ({entry})"
+            run = WorkflowState(**{**state, **facts})
+            assert set(run) == set(state), where
+            del written[:]
+            assert await complete(run, config) == {}, where
+            driven += 1
+            (event,) = written
+            assert type(event) is WorkflowCompleteEvent, where
+            assert event.outcome is outcome, where
+            renderings = {
+                (mode, by_alias, exclude_none): event.model_dump(
+                    mode=mode, by_alias=by_alias, exclude_none=exclude_none
+                )
+                for mode in ("python", "json")
+                for by_alias in (False, True)
+                for exclude_none in (False, True)
+            } | {
+                ("json text", by_alias, exclude_none): json.loads(
+                    event.model_dump_json(by_alias=by_alias, exclude_none=exclude_none)
+                )
+                for by_alias in (False, True)
+                for exclude_none in (False, True)
+            }
+            assert len(renderings) == 12, where
+            for (mode, by_alias, exclude_none), dump in renderings.items():
+                rendering = f"{where}: {mode}, {'aliased' if by_alias else 'named'}"
+                rendering += ", nones off" if exclude_none else ", nones on"
+                assert_dumped_as_declared(
+                    event,
+                    dump,
+                    by_alias=by_alias,
+                    exclude_none=exclude_none,
+                    where=rendering,
+                )
+                assert keys_in(dump) & forbidden == set(), rendering
+    assert driven == len(runs) * len(axes)
+    assert criteria.asked == [native_spec()] * driven
 
 
 #: What a class may define to be rendered some other way than by its

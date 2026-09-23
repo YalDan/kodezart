@@ -18,6 +18,7 @@ from kodezart.core.protocols import (
     ArtifactPersister,
     BranchMerger,
     CIMonitor,
+    FireCriteriaSource,
     GitService,
     OutboundContentGate,
     PRCreator,
@@ -58,6 +59,7 @@ def make_fire_workflow(
     criteria_max_regeneration_rounds: int,
     fan_in_max_attempts: int,
     artifact_persister: ArtifactPersister | None = None,
+    criteria: FireCriteriaSource | None = None,
 ) -> RalphWorkflowEngine:
     return RalphWorkflowEngine(
         specification=FireSpecification(
@@ -99,6 +101,7 @@ def make_fire_workflow(
         retry_max_attempts=retry_max_attempts,
         retry_initial_interval=retry_initial_interval,
         delay_floor_for=delay_floor_for,
+        criteria=criteria,
     )
 
 
