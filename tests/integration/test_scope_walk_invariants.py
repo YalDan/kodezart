@@ -161,14 +161,16 @@ def foreign_keys_on_criterion_writes(port, *, keys) -> list[tuple[str, str]]:
 def planted(port, name: str, payload: str) -> None:
     """*payload* written into the journal *name* the way that journal grows.
 
-    A list journal gains an entry, a mapping journal a key, and the write
-    ledger a stamp through its own ``record``. A journal of any other kind
-    fails here, so one the double adds later is planted on before it is
-    trusted to be scanned.
+    A list journal gains an entry, a set journal a member, a mapping journal
+    a key, and the write ledger a stamp through its own ``record``. A
+    journal of any other kind fails here, so one the double adds later is
+    planted on before it is trusted to be scanned.
     """
     journal = getattr(port, name)
     if isinstance(journal, list):
         journal.append(payload)
+    elif isinstance(journal, set):
+        journal.add(payload)
     elif isinstance(journal, dict):
         journal[payload] = payload
     elif isinstance(journal, SelfWriteLedger):

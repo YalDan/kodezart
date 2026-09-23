@@ -3985,9 +3985,11 @@ class FakeTrackerPort:
                 kind=SurfaceKind.ISSUE_GRAPH, issue_key=peer, holder=holder
             )
         self.issues[issue_key] = candidate
+        self._wrote(issue_key)
         for peer in changed_peers(issue_key=issue_key, changes=changes, issues=current):
             self.issues[peer.issue_key] = peer
-        return candidate
+            self._wrote(peer.issue_key)
+        return self.issues[issue_key]
 
     def _require_graph_holder(
         self, *, kind: SurfaceKind, issue_key: str, holder: str
@@ -5183,10 +5185,13 @@ def tracker_state(port: FakeTrackerPort) -> dict[str, object]:
 #: first eight are the ones such a check named when it was written; the rest
 #: are what naming them one by one left out — the recorded base spec, the
 #: queue-state writes, the put-backs, both halves of a document write, and
-#: this process's own write ledger.  The last two are the unlock attempts —
-#: a claim release and a surface release — which move nothing on a board
-#: holding neither and would therefore be invisible to a check that read the
-#: locks back instead of the attempt.  Named here so the rendering above is
+#: this process's own write ledger.  Then the unlock attempts — a claim
+#: release and a surface release — which move nothing on a board holding
+#: neither and would therefore be invisible to a check that read the locks
+#: back instead of the attempt.  The last three are where a label or a scope
+#: label the ensure contract instates lands: the containers each value is
+#: defined in, the identifiers the workspace knows, and the scope labels.
+#: Named here so the rendering above is
 #: SHOWN to reach them rather than trusted to: a rendering that stopped
 #: reaching one of these has stopped being total, and that is the one
 #: failure a list of journals cannot report about itself.
@@ -5208,6 +5213,9 @@ TRACKER_WRITE_JOURNALS = frozenset(
         "self_writes",
         "claim_releases",
         "lease_releases",
+        "mapping_containers",
+        "known_identifiers",
+        "scope_label_identifiers",
     }
 )
 
@@ -5244,11 +5252,16 @@ def nothing_written(port: FakeTrackerPort) -> Callable[[], bool]:
     The surface is the declared reach list above, and it is a hand-written
     list on purpose: the completeness test beside it forces the list to name
     every journal this check reaches, so a journal that arrives later has to
-    arrive with the write that fills it.  A write that lands in an attribute
-    the list does not name — ``recorded_work_refs`` under ``record_work_ref``,
-    the identity map under ``upsert_issue`` — is reached all the same,
-    because those calls either stamp the issue through ``_wrote``, whose
-    stamp lands in ``self_writes``, or fill a journal the list does name.
+    arrive with the write that fills it.  A write that lands on an issue
+    outside the named journals — ``recorded_work_refs`` under
+    ``record_work_ref``, the identity map under ``upsert_issue``, the graph
+    under ``update_issue_graph`` — stamps that issue through ``_wrote``,
+    whose stamp lands in ``self_writes``.  A label or scope label the ensure
+    contract creates is not an issue and has no stamp; it lands in
+    ``mapping_containers``, ``known_identifiers`` and
+    ``scope_label_identifiers``, which the list names.  A write on this
+    double that does neither is outside this check: the list is only as
+    total as those two rules.
 
     Attributes outside the set (``issue_reads``, ``scans``, a subclass's own
     counters) are outside the claim by construction, and so is a board a

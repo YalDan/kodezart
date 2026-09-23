@@ -158,6 +158,33 @@ async def write_document(port: FakeTrackerPort) -> None:
     )
 
 
+async def write_issue_label(port: FakeTrackerPort) -> None:
+    # A label the workspace does not hold yet, so the ensure creates it: its
+    # identifier becomes known, defined in the container the ref declares.
+    await port.ensure_mappings(
+        refs=[
+            MappingRef(
+                kind=MappingKind.ISSUE_LABEL,
+                name="a label",
+                identifier="fixture-label",
+                scope=CONTAINER,
+            ),
+        ],
+    )
+
+
+async def write_scope_label(port: FakeTrackerPort) -> None:
+    await port.ensure_mappings(
+        refs=[
+            MappingRef(
+                kind=MappingKind.SCOPE_LABEL,
+                name="a scope label",
+                identifier="fixture-scope-label",
+            ),
+        ],
+    )
+
+
 async def write_self_write(port: FakeTrackerPort) -> None:
     port.self_writes.record(issue_key=ISSUE, updated_at=FIXTURE_EPOCH)
 
@@ -183,6 +210,9 @@ WRITES: Mapping[str, Callable[[FakeTrackerPort], Awaitable[None]]] = {
     "self_writes": write_self_write,
     "claim_releases": write_claim_release,
     "lease_releases": write_lease_release,
+    "mapping_containers": write_issue_label,
+    "known_identifiers": write_issue_label,
+    "scope_label_identifiers": write_scope_label,
 }
 
 
