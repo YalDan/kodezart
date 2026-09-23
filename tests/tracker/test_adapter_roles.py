@@ -8,8 +8,15 @@ public member belong to the one session class, which declares no public
 member and sits once at the root of the composed adapter. So one adapter
 object is one session, holding the one caller it was given.
 
-How Linear is called is pinned beside this, by the recorded call log in
-``test_linear_call_log.py``; this module pins the shape.
+Each role class also answers its whole role: it is built over the role
+classes of the declaring roles its role composes and of the classes whose
+members its own body reaches, derived as the double's are, so it answers
+every member of its role on its own.
+
+How Linear is called is pinned beside this, by the per-case call log of the
+conformance suite recorded before the split (``conformance_call_log.json``)
+and by the scripted call log in ``test_linear_call_log.py``; this module pins
+the shape.
 """
 
 import ast
@@ -27,9 +34,12 @@ from tests.tracker.role_register import (
     class_per_role,
     classes_outside_one_role,
     declared_by_role,
+    edge_report,
     final_name,
     implementation_classes,
+    members_declared,
     nodes,
+    port_module_text,
     roles_implemented_nowhere,
     roles_implemented_twice,
 )
@@ -112,13 +122,26 @@ def role_class_constructions(sources: dict[str, str]) -> list[str]:
     )
 
 
-def test_every_class_of_the_adapter_answers_for_exactly_one_role():
+def test_every_class_of_the_adapter_declares_exactly_one_roles_members():
     classes = role_classes()
 
     assert classes_outside_one_role(classes) == {}
     assert roles_implemented_twice(classes) == {}
     assert roles_implemented_nowhere(classes) == frozenset()
     assert len(classes) == len(declared_by_role())
+
+
+def test_each_role_class_is_built_over_exactly_the_classes_it_needs():
+    assert edge_report(MODULE_TEXT, state=SESSION.__name__, whole=WHOLE) == {}
+
+
+@pytest.mark.parametrize("role", sorted(declared_by_role()))
+def test_each_role_class_answers_its_whole_role(role):
+    role_class = getattr(
+        inspect.getmodule(LinearMcpTracker), class_per_role(role_classes())[role]
+    )
+
+    assert members_declared(port_module_text(), role) <= set(dir(role_class))
 
 
 def test_only_the_session_constructs_and_it_declares_no_member():

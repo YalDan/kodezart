@@ -2924,7 +2924,10 @@ class LinearWriterIdentityReader(_LinearTrackerSession):
         return frozenset({wire.name, wire.display_name})
 
 
-class LinearCommentRecordWriter(LinearTrackerCommentReader, LinearWriterIdentityReader):
+class LinearCommentRecordWriter(
+    LinearWriterIdentityReader,
+    LinearTrackerCommentReader,
+):
     """The ``CommentRecordWriter`` role, over the shared session."""
 
     async def upsert_comment(
@@ -3074,7 +3077,10 @@ class LinearTrackerCriteriaReader(_LinearTrackerSession):
         return criteria
 
 
-class LinearCriterionMintWriter(LinearIssueReader, LinearTrackerCriteriaReader):
+class LinearCriterionMintWriter(
+    LinearTrackerCriteriaReader,
+    LinearIssueReader,
+):
     """The ``CriterionMintWriter`` role, over the shared session."""
 
     async def create_criterion_if_absent(
@@ -3276,7 +3282,10 @@ class LinearSurfaceAuthorshipReader(LinearWriterIdentityReader):
 
 
 class LinearDescriptionWriter(
-    LinearSurfaceAuthorshipReader, LinearIssueReader, LinearPlanningIssueReader
+    LinearSurfaceAuthorshipReader,
+    LinearIssueReader,
+    LinearWriterIdentityReader,
+    LinearPlanningIssueReader,
 ):
     """The ``DescriptionWriter`` role, over the shared session."""
 
@@ -3466,7 +3475,321 @@ class LinearExecutionApprovalReader(LinearIssueReader):
         return subject[0], approved
 
 
-class LinearFireDispatchTracker(_LinearTrackerSession):
+class LinearIssueRevisionReader(LinearIssueReader):
+    """The ``IssueRevisionReader`` role, over the shared session."""
+
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        """Hash exactly the returned body, independently of vendor timestamps."""
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueRevision(
+            issue=issue,
+            body_digest=body_digest(issue.body),
+        )
+
+
+class LinearIssueScanReader(_LinearTrackerSession):
+    """The ``IssueScanReader`` role, over the shared session."""
+
+    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
+        """Issues matching *query*, in backend order.
+
+        An issue carrying a workflow-state kind the domain does not name is
+        EXCLUDED from the answer rather than unwinding the scan, and it is
+        named as it goes: its key, the tool that returned it and the raw
+        value the vendor sent, once per issue.  A scan reads a whole board,
+        so one such issue took every pass that read it down with it, for as
+        long as it sat there — one groomed duplicate crash-looped the
+        dispatch pass.
+
+        The containment stops at this seam.  :meth:`read_issue` still
+        raises on the same value, because there the issue the caller asked
+        about IS the answer and excluding it would return nothing at all.
+        """
+        arguments: dict[str, object] = {"limit": query.page_size}
+        if query.queue_state is not None:
+            arguments["label"] = self._label_for(query.queue_state)
+        if query.team_key is not None:
+            arguments["team"] = self._team_identifier(query.team_key)
+        if query.updated_since is not None:
+            arguments["updatedAt"] = query.updated_since.isoformat()
+        payload = await self._call(_TOOL_LIST_ISSUES, arguments)
+        listing = self._validate(LinearIssueListWire, payload, _TOOL_LIST_ISSUES)
+        found: list[TrackerIssue] = []
+        for wire in listing.issues:
+            if wire.status_type not in _STATE_KIND_BY_VALUE:
+                await self._log.aerror(
+                    "tracker_scan_issue_excluded",
+                    issue_key=wire.id,
+                    tool=_TOOL_LIST_ISSUES,
+                    status_type=wire.status_type,
+                )
+                continue
+            found.append(self._to_issue(wire))
+        return tuple(found)
+
+
+class LinearLaneEventHistory(_LinearTrackerSession):
+    """The ``LaneEventHistory`` role, over the shared session."""
+
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]:
+        """Read the whole log with its reply links, then order by creation.
+
+        The reply links are REQUIRED rather than taken where offered: a
+        listing that omitted them could not distinguish a threaded decision
+        record from a posted event, and an omission would silently widen
+        the stream instead of failing.
+        """
+        return lane_run_events(
+            comments=tuple(
+                self._to_comment(wire, issue_key=issue_key)
+                for wire in await self._comment_wires(issue_key)
+            ),
+            lane_key=lane_key,
+            marker_prefixes=self._marker_prefixes,
+        )
+
+
+class LinearLaneEventWriter(_LinearTrackerSession):
+    """The ``LaneEventWriter`` role, over the shared session."""
+
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent:
+        """Append the event under this stream's configured lane marker."""
+        await self._post_comment(
+            issue_key=issue_key,
+            body=render_run_event(event=event, marker_prefixes=self._marker_prefixes),
+        )
+        return event
+
+
+class LinearModelMemberReader(
+    LinearTrackerCriteriaReader,
+    LinearPlanningIssueReader,
+):
+    """The ``ModelMemberReader`` role, over the shared session."""
+
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        label = self._classification_label(
+            classification, stops="complete labeled issue membership cannot be read"
+        )
+        arguments: dict[str, object] = {
+            "label": label,
+            "includeArchived": True,
+            "fields": ["id"],
+            "limit": _ISSUE_IDENTITY_PAGE_SIZE,
+        }
+        members: dict[str, TrackerIssue] = {}
+        try:
+
+            async def read(
+                request: Mapping[str, object],
+            ) -> tuple[LinearScopeIssuesWire, bool, str | None]:
+                payload = await self._call(_TOOL_LIST_ISSUES, request)
+                page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+                return page, page.has_next_page, page.cursor
+
+            async for page in cursor_pages(
+                read,
+                arguments=arguments,
+                refusal=lambda _: IssueLabelReadError(
+                    classification=classification,
+                    reason="membership pagination cannot advance",
+                ),
+            ):
+                for entry in page.issues:
+                    if entry.id in members:
+                        raise IssueLabelReadError(
+                            classification=classification,
+                            reason=f"duplicate listed identity {entry.id!r}",
+                        )
+                    issue = await self.read_planning_issue(issue_key=entry.id)
+                    if (
+                        issue.issue_key != entry.id
+                        or classification not in issue.issue_labels
+                    ):
+                        raise IssueLabelReadError(
+                            classification=classification,
+                            reason=f"listed identity or label changed for {entry.id!r}",
+                        )
+                    members[entry.id] = issue
+            return tuple(members[key] for key in sorted(members))
+        except (TrackerUnavailableError, TrackerProtocolError) as exc:
+            raise IssueLabelReadError(
+                classification=classification,
+                reason="the tracker membership read failed or was incomplete",
+            ) from exc
+
+
+class LinearTrackerArtifactReader(
+    LinearTrackerCriteriaReader,
+    LinearContainerMetadataReader,
+    LinearTrackerCommentReader,
+    LinearPlanningIssueReader,
+):
+    """The ``TrackerArtifactReader`` role, over the shared session."""
+
+    async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+        self._issue_identity.require_prefix()
+        scope = ScopeRef(kind=ScopeKind.ISSUE, key=source_key)
+        children: dict[str, TrackerIssue] = {}
+        for identity, issue in await self._identity_issues():
+            if identity.scope_key != scope:
+                continue
+            if identity.deliverable_key in children:
+                raise DuplicateIssueIdentityError(
+                    scope_key=scope,
+                    deliverable_key=identity.deliverable_key,
+                    issue_keys=[
+                        children[identity.deliverable_key].issue_key,
+                        issue.issue_key,
+                    ],
+                )
+            if (
+                issue.parent_key != source_key
+                or {"criterion", "decision"} & issue.issue_labels
+            ):
+                raise OrganizeWriteRefusalError(
+                    issue_key=source_key,
+                    reason=(
+                        "split identity is misplaced or no longer an ordinary "
+                        "deliverable"
+                    ),
+                )
+            children[identity.deliverable_key] = issue
+        return tuple(sorted(children.values(), key=lambda issue: issue.issue_key))
+
+    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
+        self._issue_identity.require_prefix()
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        current = self._validate(LinearAddressedIssueWire, payload, _TOOL_GET_ISSUE)
+        if not current.matches_requested(issue_key):
+            raise TrackerProtocolError(
+                "issue identity read returned another native key",
+                tool=_TOOL_GET_ISSUE,
+                detail=issue_key,
+            )
+        return self._issue_identity.decode(
+            current.description or "", issue_key=current.id
+        )
+
+
+class LinearPassGateReader(LinearIssueScanReader):
+    """The ``PassGateReader`` role, over the shared session."""
+
+    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
+        """Reviews matching *query*, newest first.
+
+        Ordering is asked of the vendor and recency is applied here: the
+        listing tool takes an order but no recency predicate, so pushing
+        the filter down is not on offer.  Ordering newest-first is what
+        makes that acceptable — the answer to "did anything move since
+        *t*" is at the head of the first page, not spread over the set.
+        """
+        arguments: dict[str, object] = {
+            "limit": query.page_size,
+            "orderBy": _ORDER_BY_UPDATED_AT,
+        }
+        if query.repo_url is not None:
+            owner, repo = extract_owner_repo(query.repo_url)
+            arguments["owner"] = owner
+            arguments["repo"] = repo
+        payload = await self._call(_TOOL_LIST_DIFFS, arguments)
+        listing = self._validate(LinearDiffListWire, payload, _TOOL_LIST_DIFFS)
+        reviews = tuple(
+            TrackerReview(
+                review_key=wire.full_identifier,
+                updated_at=wire.updated_at,
+            )
+            for wire in listing.diffs
+        )
+        if query.updated_since is None:
+            return reviews
+        # Strictly after: the mark is the newest thing the last tick SAW,
+        # so an equal stamp is that same thing and reporting it again
+        # would keep a quiet board looking busy forever.
+        return tuple(
+            review for review in reviews if review.updated_at > query.updated_since
+        )
+
+    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
+        """Retain the whole native projection, including unconfigured fields.
+
+        The two complete comment listings and bounding full issue reads
+        must agree. Unknown fields are retained as opaque JSON, not dropped
+        by the normal domain projection. No read creates a write receipt.
+        """
+
+        async def issue_payload() -> tuple[McpToolResult, LinearPlanningIssueWire]:
+            payload = await self._call(
+                _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+            )
+            wire = self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
+            if wire.id != issue_key:
+                raise TrackerProtocolError(
+                    "movement read returned another issue",
+                    tool=_TOOL_GET_ISSUE,
+                    detail=issue_key,
+                )
+            return payload, wire
+
+        before, _ = await issue_payload()
+        assert isinstance(before, Mapping)
+        initial_fields = field_values(before)
+        comments = await self._movement_comments(issue_key)
+        repeated_comments = await self._movement_comments(issue_key)
+        after, issue = await issue_payload()
+        assert isinstance(after, Mapping)
+        if initial_fields != field_values(after) or comments != repeated_comments:
+            raise TrackerProtocolError(
+                "issue or comments changed during movement read",
+                tool=_TOOL_GET_ISSUE,
+                detail=issue_key,
+            )
+        assert isinstance(after, Mapping)
+        return IssueMovementSnapshot(
+            issue_key=issue.id,
+            updated_at=issue.updated_at,
+            fields=field_values(
+                {key: value for key, value in after.items() if key != "updatedAt"}
+            ),
+            comments=comments,
+        )
+
+
+class LinearRecordedRepositoryReader(_LinearTrackerSession):
+    """The ``RecordedRepositoryReader`` role, over the shared session."""
+
+    async def recorded_repository(self, *, issue_key: str) -> str | None:
+        """The latest recorded target repository, or ``None`` when none is.
+
+        Latest wins on the same append-only comment log the claim, the
+        work refs and the base spec already ride: a re-staged fire is
+        re-routed by its newest record.  Read regardless of
+        author — the marker is judgment's to write and anyone's to
+        correct, so authorship is deliberately not checked here.
+        """
+        latest: str | None = None
+        pattern = self._markers.repository_pattern
+        for wire in await self._comment_wires(issue_key):
+            match = pattern.search(wire.body)
+            if match is not None:
+                latest = match.group("url")
+        return latest
+
+
+class LinearFireDispatchTracker(
+    LinearRecordedRepositoryReader,
+    LinearIssueScanReader,
+    LinearIssueReader,
+    LinearClaimHolder,
+):
     """The ``FireDispatchTracker`` role, over the shared session."""
 
     async def claim_issue(
@@ -3600,7 +3923,55 @@ class LinearFireDispatchTracker(_LinearTrackerSession):
         )
 
 
-class LinearFireSubjectReader(LinearExecutionApprovalReader):
+class LinearScanCapabilityReader(_LinearTrackerSession):
+    """The ``ScanCapabilityReader`` role, over the shared session."""
+
+    async def verify_scan_capability(
+        self,
+        *,
+        signals: Sequence[PassSignal],
+    ) -> Mapping[PassSignal, str]:
+        """Which of *signals* this credential cannot scan for, and why.
+
+        One minimal probe per DISTINCT scan: the three issue signals are
+        served by one listing tool, so probing all three probes once.  A
+        refusal is read off the error the transport already carries, and
+        anything else it carries is re-raised — a boot that cannot reach
+        the workspace at all is not a boot that learned something about
+        scope.
+
+        One PROBE is not one call when the answer is a refusal, and that
+        cost is taken deliberately.  See :meth:`_probe_scope`.
+        """
+        probed: dict[str, str | None] = {}
+        refused: dict[PassSignal, str] = {}
+        for signal in signals:
+            tool = self._scan_tool(signal)
+            if tool not in probed:
+                probed[tool] = await self._probe_scope(tool)
+            diagnosis = probed[tool]
+            if diagnosis is not None:
+                refused[signal] = diagnosis
+        return refused
+
+
+class LinearScopeFamilyReader(LinearIssueReader):
+    """The ``ScopeFamilyReader`` role, over the shared session."""
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        """Resolve live container membership or an issue's whole subtree."""
+        return await LinearScopeReader(
+            call=self._call,
+            read_issue=self.read_issue,
+        ).scope_issues(ref=ref)
+
+
+class LinearFireSubjectReader(
+    LinearScopeFamilyReader,
+    LinearExecutionApprovalReader,
+    LinearTrackerCriteriaReader,
+    LinearIssueReader,
+):
     """The ``FireSubjectReader`` role, over the shared session."""
 
     async def read_fire_subject(self, *, issue_key: str) -> TrackerIssue:
@@ -3625,190 +3996,10 @@ class LinearFireSubjectReader(LinearExecutionApprovalReader):
         return subject
 
 
-class LinearIssueRevisionReader(LinearIssueReader):
-    """The ``IssueRevisionReader`` role, over the shared session."""
-
-    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
-        """Hash exactly the returned body, independently of vendor timestamps."""
-        issue = await self.read_issue(issue_key=issue_key)
-        return TrackerIssueRevision(
-            issue=issue,
-            body_digest=body_digest(issue.body),
-        )
-
-
-class LinearIssueScanReader(_LinearTrackerSession):
-    """The ``IssueScanReader`` role, over the shared session."""
-
-    async def scan_issues(self, *, query: IssueQuery) -> Sequence[TrackerIssue]:
-        """Issues matching *query*, in backend order.
-
-        An issue carrying a workflow-state kind the domain does not name is
-        EXCLUDED from the answer rather than unwinding the scan, and it is
-        named as it goes: its key, the tool that returned it and the raw
-        value the vendor sent, once per issue.  A scan reads a whole board,
-        so one such issue took every pass that read it down with it, for as
-        long as it sat there — one groomed duplicate crash-looped the
-        dispatch pass.
-
-        The containment stops at this seam.  :meth:`read_issue` still
-        raises on the same value, because there the issue the caller asked
-        about IS the answer and excluding it would return nothing at all.
-        """
-        arguments: dict[str, object] = {"limit": query.page_size}
-        if query.queue_state is not None:
-            arguments["label"] = self._label_for(query.queue_state)
-        if query.team_key is not None:
-            arguments["team"] = self._team_identifier(query.team_key)
-        if query.updated_since is not None:
-            arguments["updatedAt"] = query.updated_since.isoformat()
-        payload = await self._call(_TOOL_LIST_ISSUES, arguments)
-        listing = self._validate(LinearIssueListWire, payload, _TOOL_LIST_ISSUES)
-        found: list[TrackerIssue] = []
-        for wire in listing.issues:
-            if wire.status_type not in _STATE_KIND_BY_VALUE:
-                await self._log.aerror(
-                    "tracker_scan_issue_excluded",
-                    issue_key=wire.id,
-                    tool=_TOOL_LIST_ISSUES,
-                    status_type=wire.status_type,
-                )
-                continue
-            found.append(self._to_issue(wire))
-        return tuple(found)
-
-
-class LinearLaneEventHistory(_LinearTrackerSession):
-    """The ``LaneEventHistory`` role, over the shared session."""
-
-    async def lane_run_events(
-        self, *, issue_key: str, lane_key: str
-    ) -> Sequence[LaneRunEvent]:
-        """Read the whole log with its reply links, then order by creation.
-
-        The reply links are REQUIRED rather than taken where offered: a
-        listing that omitted them could not distinguish a threaded decision
-        record from a posted event, and an omission would silently widen
-        the stream instead of failing.
-        """
-        return lane_run_events(
-            comments=tuple(
-                self._to_comment(wire, issue_key=issue_key)
-                for wire in await self._comment_wires(issue_key)
-            ),
-            lane_key=lane_key,
-            marker_prefixes=self._marker_prefixes,
-        )
-
-
-class LinearLifecycleStateWriter(_LinearTrackerSession):
-    """The ``LifecycleStateWriter`` role, over the shared session."""
-
-    async def set_queue_state(
-        self,
-        *,
-        issue_key: str,
-        state: QueueState,
-    ) -> TrackerIssue:
-        """Set the semantic queue state, replacing any other member.
-
-        Refused before any request when the state's label is the admission
-        vocabulary's approved member: a queue write cannot grant approval.
-        """
-        label = self._label_for(state)
-        if aliases_approval_member(label=label, scope_labels=self._scope_labels):
-            raise ApprovalLabelWriteError(
-                issue_key=issue_key, classification=state.value
-            )
-        current = await self._read_issue_wire(issue_key)
-        issue = self._to_issue(current)
-        if issue.queue_states == frozenset({state}):
-            return issue
-        preserved = [
-            name for name in current.labels if name not in self._queue_state_by_label
-        ]
-        payload = await self._call(
-            _TOOL_SAVE_ISSUE, {"id": issue_key, "labels": [*preserved, label]}
-        )
-        return self._saved_issue(payload, written={"labels": [*preserved, label]})
-
-    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
-        """Post a comment and return it as stored."""
-        return await self._post_comment(issue_key=issue_key, body=body)
-
-
-class LinearLaneEventWriter(_LinearTrackerSession):
-    """The ``LaneEventWriter`` role, over the shared session."""
-
-    async def post_run_event(
-        self, *, issue_key: str, event: LaneRunEvent
-    ) -> LaneRunEvent:
-        """Append the event under this stream's configured lane marker."""
-        await self._post_comment(
-            issue_key=issue_key,
-            body=render_run_event(event=event, marker_prefixes=self._marker_prefixes),
-        )
-        return event
-
-
-class LinearModelMemberReader(LinearPlanningIssueReader):
-    """The ``ModelMemberReader`` role, over the shared session."""
-
-    async def read_labeled_issues(
-        self, *, classification: str
-    ) -> Sequence[TrackerIssue]:
-        label = self._classification_label(
-            classification, stops="complete labeled issue membership cannot be read"
-        )
-        arguments: dict[str, object] = {
-            "label": label,
-            "includeArchived": True,
-            "fields": ["id"],
-            "limit": _ISSUE_IDENTITY_PAGE_SIZE,
-        }
-        members: dict[str, TrackerIssue] = {}
-        try:
-
-            async def read(
-                request: Mapping[str, object],
-            ) -> tuple[LinearScopeIssuesWire, bool, str | None]:
-                payload = await self._call(_TOOL_LIST_ISSUES, request)
-                page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
-                return page, page.has_next_page, page.cursor
-
-            async for page in cursor_pages(
-                read,
-                arguments=arguments,
-                refusal=lambda _: IssueLabelReadError(
-                    classification=classification,
-                    reason="membership pagination cannot advance",
-                ),
-            ):
-                for entry in page.issues:
-                    if entry.id in members:
-                        raise IssueLabelReadError(
-                            classification=classification,
-                            reason=f"duplicate listed identity {entry.id!r}",
-                        )
-                    issue = await self.read_planning_issue(issue_key=entry.id)
-                    if (
-                        issue.issue_key != entry.id
-                        or classification not in issue.issue_labels
-                    ):
-                        raise IssueLabelReadError(
-                            classification=classification,
-                            reason=f"listed identity or label changed for {entry.id!r}",
-                        )
-                    members[entry.id] = issue
-            return tuple(members[key] for key in sorted(members))
-        except (TrackerUnavailableError, TrackerProtocolError) as exc:
-            raise IssueLabelReadError(
-                classification=classification,
-                reason="the tracker membership read failed or was incomplete",
-            ) from exc
-
-
-class LinearOrganizeContextTracker(LinearIssueReader):
+class LinearOrganizeContextTracker(
+    LinearScopeFamilyReader,
+    LinearTrackerCommentReader,
+):
     """The ``OrganizeContextTracker`` role, over the shared session."""
 
     async def project_milestones(
@@ -3819,58 +4010,282 @@ class LinearOrganizeContextTracker(LinearIssueReader):
         ).project_milestones(project_key=project_key)
 
 
-class LinearTrackerArtifactReader(_LinearTrackerSession):
-    """The ``TrackerArtifactReader`` role, over the shared session."""
+class LinearScopeReadPreflight(_LinearTrackerSession):
+    """The ``ScopeReadPreflight`` role, over the shared session."""
 
-    async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
-        self._issue_identity.require_prefix()
-        scope = ScopeRef(kind=ScopeKind.ISSUE, key=source_key)
-        children: dict[str, TrackerIssue] = {}
-        for identity, issue in await self._identity_issues():
-            if identity.scope_key != scope:
-                continue
-            if identity.deliverable_key in children:
-                raise DuplicateIssueIdentityError(
-                    scope_key=scope,
-                    deliverable_key=identity.deliverable_key,
-                    issue_keys=[
-                        children[identity.deliverable_key].issue_key,
-                        issue.issue_key,
-                    ],
-                )
-            if (
-                issue.parent_key != source_key
-                or {"criterion", "decision"} & issue.issue_labels
-            ):
-                raise OrganizeWriteRefusalError(
-                    issue_key=source_key,
-                    reason=(
-                        "split identity is misplaced or no longer an ordinary "
-                        "deliverable"
-                    ),
-                )
-            children[identity.deliverable_key] = issue
-        return tuple(sorted(children.values(), key=lambda issue: issue.issue_key))
+    def require_scope_plan_reads(self) -> None:
+        """A clean plan must be able to see both criteria and open decisions."""
+        for classification in ("criterion", "decision"):
+            self._classification_label(
+                classification, stops="scope plan barriers cannot be read"
+            )
 
-    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
-        self._issue_identity.require_prefix()
+    def require_issue_classification_reads(
+        self, *, additional_keys: frozenset[str] = frozenset()
+    ) -> None:
+        self.require_scope_plan_reads()
+        for key in sorted({"criterion", "decision", "tracker", *additional_keys}):
+            self._classification_label(
+                key, stops="required issue classifications cannot be read"
+            )
+
+
+class LinearStateHistoryReader(_LinearTrackerSession):
+    """The ``StateHistoryReader`` role, over the shared session."""
+
+    async def read_issue_state_change(
+        self, *, issue_key: str
+    ) -> TrackerIssueStateChange:
+        """Use the matching open state interval from the same native payload."""
         payload = await self._call(
             _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
         )
-        current = self._validate(LinearAddressedIssueWire, payload, _TOOL_GET_ISSUE)
-        if not current.matches_requested(issue_key):
+        wire = self._validate(LinearIssueStateHistoryWire, payload, _TOOL_GET_ISSUE)
+        current = [entry for entry in wire.state_history if entry.ended_at is None]
+        if wire.id != issue_key or len(current) != 1:
             raise TrackerProtocolError(
-                "issue identity read returned another native key",
+                "state history has no unique current issue interval",
                 tool=_TOOL_GET_ISSUE,
-                detail=issue_key,
+                detail=f"target={issue_key}; returned={wire.id}",
             )
-        return self._issue_identity.decode(
-            current.description or "", issue_key=current.id
+        entry = current[0]
+        if (
+            entry.state.name != wire.status
+            or entry.state.type != wire.status_type
+            or wire.created_at.utcoffset() is None
+            or wire.updated_at.utcoffset() is None
+            or not wire.created_at <= entry.started_at <= wire.updated_at
+            or any(
+                item.ended_at is not None
+                and not wire.created_at
+                <= item.started_at
+                <= item.ended_at
+                <= entry.started_at
+                for item in wire.state_history
+            )
+        ):
+            raise TrackerProtocolError(
+                "state history does not agree with the issue snapshot",
+                tool=_TOOL_GET_ISSUE,
+                detail=f"target={issue_key}",
+            )
+        return TrackerIssueStateChange(
+            issue=self._to_issue(wire), state_changed_at=entry.started_at
         )
 
 
+class LinearStateRestorer(_LinearTrackerSession):
+    """The ``StateRestorer`` role, over the shared session."""
+
+    async def restore_workflow_state(
+        self,
+        *,
+        issue_key: str,
+        state_name: str,
+    ) -> TrackerIssue:
+        """Put the issue back in the state a reader found it in."""
+        return await self._save_state(issue_key=issue_key, state_name=state_name)
+
+
+class LinearSurfaceLeaseTracker(_LinearTrackerSession):
+    """The ``SurfaceLeaseTracker`` role, over the shared session."""
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        """Take the WHOLE set for *holder*, or take nothing and name the owner."""
+        outcome = await self._grant(
+            addressing=_LEASE_ADDRESSING,
+            addresses=surfaces,
+            holder=holder,
+            lease_seconds=lease_seconds,
+        )
+        if isinstance(outcome, _Refused):
+            raise SurfaceLeaseError(
+                (
+                    "surface set intersects a live lease"
+                    if outcome.settled
+                    else "surface set meets a race the backend has not settled"
+                ),
+                surface=outcome.address,
+                current_holder=outcome.holder,
+            )
+        return SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=outcome.expires_at,
+        )
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        """Extend the lease *holder* holds over the whole set, or nothing."""
+        extended = await self._extend(
+            addressing=_LEASE_ADDRESSING,
+            addresses=surfaces,
+            holder=holder,
+            lease_seconds=lease_seconds,
+        )
+        if extended is None:
+            return None
+        return SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=extended.expires_at,
+        )
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        """Delete the markers *holder* wrote over any of these surfaces."""
+        await self._withdraw(
+            addressing=_LEASE_ADDRESSING,
+            addresses=surfaces,
+            holder=holder,
+        )
+
+
+class LinearRunAlarmTracker(
+    LinearSurfaceLeaseTracker,
+    LinearLaneEventWriter,
+    LinearLaneEventHistory,
+    LinearCommentRecordWriter,
+):
+    """The ``RunAlarmTracker`` role, over the shared session."""
+
+    async def record_run_alarm(
+        self, *, issue_key: str, alarm: RunAlarm, holder: str
+    ) -> None:
+        """Keep one whole-subject record under the existing leased upsert policy."""
+        marker = run_alarm_marker(
+            subject=alarm.subject,
+            signal=alarm.signal,
+            marker_prefixes=self._marker_prefixes,
+        )
+        require_alarm_holder(issue_key=issue_key, marker=marker, holder=holder)
+        await self.read_run_alarm(
+            issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
+        )
+
+        def validate_existing(stored: TrackerComment) -> None:
+            self._parse_alarm_comment(
+                stored=stored, subject=alarm.subject, signal=alarm.signal
+            )
+
+        await self._upsert_comment(
+            target=issue_key,
+            marker=marker,
+            body=render_run_alarm(alarm=alarm),
+            holder=holder,
+            validate_existing=validate_existing,
+        )
+
+    async def read_run_alarm(
+        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm | None:
+        """Resolve the full subject and signal across the native comment log."""
+        marker = run_alarm_marker(
+            subject=subject, signal=signal, marker_prefixes=self._marker_prefixes
+        )
+        stored = comment_under_marker(
+            target=issue_key,
+            marker=marker,
+            comments=await self.list_comments(issue_key=issue_key),
+        )
+        if stored is None:
+            return None
+        return self._parse_alarm_comment(stored=stored, subject=subject, signal=signal)
+
+
+class LinearTrackerContextReader(_LinearTrackerSession):
+    """The ``TrackerContextReader`` role, over the shared session."""
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        """Attachment and document metadata referenced by the issue."""
+        wire = await self._read_issue_wire(issue_key)
+        assets = []
+        for asset in (*wire.attachments, *wire.documents):
+            url = asset.url
+            if url is None:
+                payload = await self._call(_TOOL_GET_DOCUMENT, {"id": asset.id})
+                document = self._validate(LinearAssetWire, payload, _TOOL_GET_DOCUMENT)
+                if document.id != asset.id or document.title != asset.title:
+                    raise TrackerProtocolError(
+                        "document metadata differs from the issue reference",
+                        tool=_TOOL_GET_DOCUMENT,
+                        detail=f"expected document {asset.id!r}",
+                    )
+                url = document.url
+            assets.append(
+                TrackerAsset(
+                    asset_key=asset.id,
+                    title=asset.title,
+                    url=url,
+                    content_type=asset.content_type,
+                    size_bytes=asset.size,
+                )
+            )
+        return tuple(assets)
+
+    async def read_document(self, *, document_key: str) -> str:
+        """The document's text content."""
+        payload = await self._call(_TOOL_GET_DOCUMENT, {"id": document_key})
+        return self._validate(
+            LinearDocumentWire,
+            payload,
+            _TOOL_GET_DOCUMENT,
+        ).content
+
+
+class LinearTrackerScopeApprovalReader(
+    LinearExecutionApprovalReader,
+    LinearContainerMetadataReader,
+):
+    """The ``TrackerScopeApprovalReader`` role, over the shared session."""
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        self._require_approval_label()
+        if ref.kind is ScopeKind.ISSUE:
+            _, members = await self._read_scope_issue(ref.key)
+            return members
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+        if ref.kind is ScopeKind.MILESTONE:
+            await reader.container_metadata(ref=ref)
+            return frozenset()
+        labels, _ = await reader.labels_parent(ref=ref)
+        return self._scope_label_members(tuple(labels))
+
+
 class LinearOrganizeOwnerTracker(
-    LinearContainerMetadataReader, LinearTrackerArtifactReader
+    LinearTrackerScopeApprovalReader,
+    LinearSurfaceLeaseTracker,
+    LinearScopeReadPreflight,
+    LinearScopeFamilyReader,
+    LinearTrackerArtifactReader,
+    LinearIssueRevisionReader,
+    LinearExecutionApprovalReader,
+    LinearDescriptionWriter,
+    LinearSurfaceAuthorshipReader,
+    LinearCriterionMintWriter,
+    LinearTrackerCriteriaReader,
+    LinearContainerMetadataReader,
+    LinearIssueReader,
+    LinearCommentRecordWriter,
+    LinearWriterIdentityReader,
+    LinearTrackerCommentReader,
+    LinearClassificationWriter,
+    LinearPlanningIssueReader,
 ):
     """The ``OrganizeOwnerTracker`` role, over the shared session."""
 
@@ -4147,402 +4562,6 @@ class LinearOrganizeOwnerTracker(
         self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
         created = self._saved_issue(await self._send(_TOOL_SAVE_ISSUE, arguments))
         return _SplitCreation(saved=created, source=source, content=content)
-
-
-class LinearPassGateReader(_LinearTrackerSession):
-    """The ``PassGateReader`` role, over the shared session."""
-
-    async def scan_reviews(self, *, query: ReviewQuery) -> Sequence[TrackerReview]:
-        """Reviews matching *query*, newest first.
-
-        Ordering is asked of the vendor and recency is applied here: the
-        listing tool takes an order but no recency predicate, so pushing
-        the filter down is not on offer.  Ordering newest-first is what
-        makes that acceptable — the answer to "did anything move since
-        *t*" is at the head of the first page, not spread over the set.
-        """
-        arguments: dict[str, object] = {
-            "limit": query.page_size,
-            "orderBy": _ORDER_BY_UPDATED_AT,
-        }
-        if query.repo_url is not None:
-            owner, repo = extract_owner_repo(query.repo_url)
-            arguments["owner"] = owner
-            arguments["repo"] = repo
-        payload = await self._call(_TOOL_LIST_DIFFS, arguments)
-        listing = self._validate(LinearDiffListWire, payload, _TOOL_LIST_DIFFS)
-        reviews = tuple(
-            TrackerReview(
-                review_key=wire.full_identifier,
-                updated_at=wire.updated_at,
-            )
-            for wire in listing.diffs
-        )
-        if query.updated_since is None:
-            return reviews
-        # Strictly after: the mark is the newest thing the last tick SAW,
-        # so an equal stamp is that same thing and reporting it again
-        # would keep a quiet board looking busy forever.
-        return tuple(
-            review for review in reviews if review.updated_at > query.updated_since
-        )
-
-    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
-        """Retain the whole native projection, including unconfigured fields.
-
-        The two complete comment listings and bounding full issue reads
-        must agree. Unknown fields are retained as opaque JSON, not dropped
-        by the normal domain projection. No read creates a write receipt.
-        """
-
-        async def issue_payload() -> tuple[McpToolResult, LinearPlanningIssueWire]:
-            payload = await self._call(
-                _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
-            )
-            wire = self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
-            if wire.id != issue_key:
-                raise TrackerProtocolError(
-                    "movement read returned another issue",
-                    tool=_TOOL_GET_ISSUE,
-                    detail=issue_key,
-                )
-            return payload, wire
-
-        before, _ = await issue_payload()
-        assert isinstance(before, Mapping)
-        initial_fields = field_values(before)
-        comments = await self._movement_comments(issue_key)
-        repeated_comments = await self._movement_comments(issue_key)
-        after, issue = await issue_payload()
-        assert isinstance(after, Mapping)
-        if initial_fields != field_values(after) or comments != repeated_comments:
-            raise TrackerProtocolError(
-                "issue or comments changed during movement read",
-                tool=_TOOL_GET_ISSUE,
-                detail=issue_key,
-            )
-        assert isinstance(after, Mapping)
-        return IssueMovementSnapshot(
-            issue_key=issue.id,
-            updated_at=issue.updated_at,
-            fields=field_values(
-                {key: value for key, value in after.items() if key != "updatedAt"}
-            ),
-            comments=comments,
-        )
-
-
-class LinearRecordedRepositoryReader(_LinearTrackerSession):
-    """The ``RecordedRepositoryReader`` role, over the shared session."""
-
-    async def recorded_repository(self, *, issue_key: str) -> str | None:
-        """The latest recorded target repository, or ``None`` when none is.
-
-        Latest wins on the same append-only comment log the claim, the
-        work refs and the base spec already ride: a re-staged fire is
-        re-routed by its newest record.  Read regardless of
-        author — the marker is judgment's to write and anyone's to
-        correct, so authorship is deliberately not checked here.
-        """
-        latest: str | None = None
-        pattern = self._markers.repository_pattern
-        for wire in await self._comment_wires(issue_key):
-            match = pattern.search(wire.body)
-            if match is not None:
-                latest = match.group("url")
-        return latest
-
-
-class LinearRunAlarmTracker(LinearCommentRecordWriter):
-    """The ``RunAlarmTracker`` role, over the shared session."""
-
-    async def record_run_alarm(
-        self, *, issue_key: str, alarm: RunAlarm, holder: str
-    ) -> None:
-        """Keep one whole-subject record under the existing leased upsert policy."""
-        marker = run_alarm_marker(
-            subject=alarm.subject,
-            signal=alarm.signal,
-            marker_prefixes=self._marker_prefixes,
-        )
-        require_alarm_holder(issue_key=issue_key, marker=marker, holder=holder)
-        await self.read_run_alarm(
-            issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
-        )
-
-        def validate_existing(stored: TrackerComment) -> None:
-            self._parse_alarm_comment(
-                stored=stored, subject=alarm.subject, signal=alarm.signal
-            )
-
-        await self._upsert_comment(
-            target=issue_key,
-            marker=marker,
-            body=render_run_alarm(alarm=alarm),
-            holder=holder,
-            validate_existing=validate_existing,
-        )
-
-    async def read_run_alarm(
-        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
-    ) -> RunAlarm | None:
-        """Resolve the full subject and signal across the native comment log."""
-        marker = run_alarm_marker(
-            subject=subject, signal=signal, marker_prefixes=self._marker_prefixes
-        )
-        stored = comment_under_marker(
-            target=issue_key,
-            marker=marker,
-            comments=await self.list_comments(issue_key=issue_key),
-        )
-        if stored is None:
-            return None
-        return self._parse_alarm_comment(stored=stored, subject=subject, signal=signal)
-
-
-class LinearScanCapabilityReader(_LinearTrackerSession):
-    """The ``ScanCapabilityReader`` role, over the shared session."""
-
-    async def verify_scan_capability(
-        self,
-        *,
-        signals: Sequence[PassSignal],
-    ) -> Mapping[PassSignal, str]:
-        """Which of *signals* this credential cannot scan for, and why.
-
-        One minimal probe per DISTINCT scan: the three issue signals are
-        served by one listing tool, so probing all three probes once.  A
-        refusal is read off the error the transport already carries, and
-        anything else it carries is re-raised — a boot that cannot reach
-        the workspace at all is not a boot that learned something about
-        scope.
-
-        One PROBE is not one call when the answer is a refusal, and that
-        cost is taken deliberately.  See :meth:`_probe_scope`.
-        """
-        probed: dict[str, str | None] = {}
-        refused: dict[PassSignal, str] = {}
-        for signal in signals:
-            tool = self._scan_tool(signal)
-            if tool not in probed:
-                probed[tool] = await self._probe_scope(tool)
-            diagnosis = probed[tool]
-            if diagnosis is not None:
-                refused[signal] = diagnosis
-        return refused
-
-
-class LinearScopeFamilyReader(LinearIssueReader):
-    """The ``ScopeFamilyReader`` role, over the shared session."""
-
-    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
-        """Resolve live container membership or an issue's whole subtree."""
-        return await LinearScopeReader(
-            call=self._call,
-            read_issue=self.read_issue,
-        ).scope_issues(ref=ref)
-
-
-class LinearScopeReadPreflight(_LinearTrackerSession):
-    """The ``ScopeReadPreflight`` role, over the shared session."""
-
-    def require_scope_plan_reads(self) -> None:
-        """A clean plan must be able to see both criteria and open decisions."""
-        for classification in ("criterion", "decision"):
-            self._classification_label(
-                classification, stops="scope plan barriers cannot be read"
-            )
-
-    def require_issue_classification_reads(
-        self, *, additional_keys: frozenset[str] = frozenset()
-    ) -> None:
-        self.require_scope_plan_reads()
-        for key in sorted({"criterion", "decision", "tracker", *additional_keys}):
-            self._classification_label(
-                key, stops="required issue classifications cannot be read"
-            )
-
-
-class LinearStateHistoryReader(_LinearTrackerSession):
-    """The ``StateHistoryReader`` role, over the shared session."""
-
-    async def read_issue_state_change(
-        self, *, issue_key: str
-    ) -> TrackerIssueStateChange:
-        """Use the matching open state interval from the same native payload."""
-        payload = await self._call(
-            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
-        )
-        wire = self._validate(LinearIssueStateHistoryWire, payload, _TOOL_GET_ISSUE)
-        current = [entry for entry in wire.state_history if entry.ended_at is None]
-        if wire.id != issue_key or len(current) != 1:
-            raise TrackerProtocolError(
-                "state history has no unique current issue interval",
-                tool=_TOOL_GET_ISSUE,
-                detail=f"target={issue_key}; returned={wire.id}",
-            )
-        entry = current[0]
-        if (
-            entry.state.name != wire.status
-            or entry.state.type != wire.status_type
-            or wire.created_at.utcoffset() is None
-            or wire.updated_at.utcoffset() is None
-            or not wire.created_at <= entry.started_at <= wire.updated_at
-            or any(
-                item.ended_at is not None
-                and not wire.created_at
-                <= item.started_at
-                <= item.ended_at
-                <= entry.started_at
-                for item in wire.state_history
-            )
-        ):
-            raise TrackerProtocolError(
-                "state history does not agree with the issue snapshot",
-                tool=_TOOL_GET_ISSUE,
-                detail=f"target={issue_key}",
-            )
-        return TrackerIssueStateChange(
-            issue=self._to_issue(wire), state_changed_at=entry.started_at
-        )
-
-
-class LinearStateRestorer(_LinearTrackerSession):
-    """The ``StateRestorer`` role, over the shared session."""
-
-    async def restore_workflow_state(
-        self,
-        *,
-        issue_key: str,
-        state_name: str,
-    ) -> TrackerIssue:
-        """Put the issue back in the state a reader found it in."""
-        return await self._save_state(issue_key=issue_key, state_name=state_name)
-
-
-class LinearSurfaceLeaseTracker(_LinearTrackerSession):
-    """The ``SurfaceLeaseTracker`` role, over the shared session."""
-
-    async def acquire_surfaces(
-        self,
-        *,
-        surfaces: frozenset[WritableSurface],
-        holder: str,
-        lease_seconds: float,
-    ) -> SurfaceLease:
-        """Take the WHOLE set for *holder*, or take nothing and name the owner."""
-        outcome = await self._grant(
-            addressing=_LEASE_ADDRESSING,
-            addresses=surfaces,
-            holder=holder,
-            lease_seconds=lease_seconds,
-        )
-        if isinstance(outcome, _Refused):
-            raise SurfaceLeaseError(
-                (
-                    "surface set intersects a live lease"
-                    if outcome.settled
-                    else "surface set meets a race the backend has not settled"
-                ),
-                surface=outcome.address,
-                current_holder=outcome.holder,
-            )
-        return SurfaceLease(
-            holder=holder,
-            surfaces=surfaces,
-            expires_at=outcome.expires_at,
-        )
-
-    async def renew_surfaces(
-        self,
-        *,
-        surfaces: frozenset[WritableSurface],
-        holder: str,
-        lease_seconds: float,
-    ) -> SurfaceLease | None:
-        """Extend the lease *holder* holds over the whole set, or nothing."""
-        extended = await self._extend(
-            addressing=_LEASE_ADDRESSING,
-            addresses=surfaces,
-            holder=holder,
-            lease_seconds=lease_seconds,
-        )
-        if extended is None:
-            return None
-        return SurfaceLease(
-            holder=holder,
-            surfaces=surfaces,
-            expires_at=extended.expires_at,
-        )
-
-    async def release_surfaces(
-        self,
-        *,
-        surfaces: frozenset[WritableSurface],
-        holder: str,
-    ) -> None:
-        """Delete the markers *holder* wrote over any of these surfaces."""
-        await self._withdraw(
-            addressing=_LEASE_ADDRESSING,
-            addresses=surfaces,
-            holder=holder,
-        )
-
-
-class LinearTrackerContextReader(_LinearTrackerSession):
-    """The ``TrackerContextReader`` role, over the shared session."""
-
-    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
-        """Attachment and document metadata referenced by the issue."""
-        wire = await self._read_issue_wire(issue_key)
-        assets = []
-        for asset in (*wire.attachments, *wire.documents):
-            url = asset.url
-            if url is None:
-                payload = await self._call(_TOOL_GET_DOCUMENT, {"id": asset.id})
-                document = self._validate(LinearAssetWire, payload, _TOOL_GET_DOCUMENT)
-                if document.id != asset.id or document.title != asset.title:
-                    raise TrackerProtocolError(
-                        "document metadata differs from the issue reference",
-                        tool=_TOOL_GET_DOCUMENT,
-                        detail=f"expected document {asset.id!r}",
-                    )
-                url = document.url
-            assets.append(
-                TrackerAsset(
-                    asset_key=asset.id,
-                    title=asset.title,
-                    url=url,
-                    content_type=asset.content_type,
-                    size_bytes=asset.size,
-                )
-            )
-        return tuple(assets)
-
-    async def read_document(self, *, document_key: str) -> str:
-        """The document's text content."""
-        payload = await self._call(_TOOL_GET_DOCUMENT, {"id": document_key})
-        return self._validate(
-            LinearDocumentWire,
-            payload,
-            _TOOL_GET_DOCUMENT,
-        ).content
-
-
-class LinearTrackerScopeApprovalReader(LinearIssueReader):
-    """The ``TrackerScopeApprovalReader`` role, over the shared session."""
-
-    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
-        self._require_approval_label()
-        if ref.kind is ScopeKind.ISSUE:
-            _, members = await self._read_scope_issue(ref.key)
-            return members
-        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
-        if ref.kind is ScopeKind.MILESTONE:
-            await reader.container_metadata(ref=ref)
-            return frozenset()
-        labels, _ = await reader.labels_parent(ref=ref)
-        return self._scope_label_members(tuple(labels))
 
 
 class LinearTrackerVocabulary(_LinearTrackerSession):
@@ -4849,37 +4868,63 @@ class LinearWorkflowStateWriter(_LinearTrackerSession):
         return await self._save_state(issue_key=issue_key, state_name=state_name)
 
 
-class LinearMcpTracker(
-    LinearDescriptionWriter,
-    LinearOrganizeOwnerTracker,
-    LinearRunAlarmTracker,
-    LinearCriterionMintWriter,
-    LinearFireSubjectReader,
-    LinearClassificationWriter,
-    LinearCriterionReopener,
-    LinearIssueRevisionReader,
-    LinearLaneEventWriter,
-    LinearLifecycleStateWriter,
-    LinearModelMemberReader,
-    LinearOrganizeContextTracker,
-    LinearScopeFamilyReader,
-    LinearTrackerScopeApprovalReader,
-    LinearWorkRefRecorder,
-    LinearClaimHolder,
-    LinearEscalationResolutionReader,
-    LinearFireDispatchTracker,
-    LinearIssueScanReader,
-    LinearLaneEventHistory,
-    LinearPassGateReader,
-    LinearRecordedRepositoryReader,
-    LinearScanCapabilityReader,
-    LinearScopeReadPreflight,
-    LinearStateHistoryReader,
-    LinearStateRestorer,
-    LinearSurfaceLeaseTracker,
-    LinearTrackerContextReader,
-    LinearTrackerVocabulary,
+class LinearLifecycleStateWriter(
     LinearWorkflowStateWriter,
+    LinearWorkRefRecorder,
+    LinearSurfaceLeaseTracker,
+    LinearStateRestorer,
+    LinearCommentRecordWriter,
+):
+    """The ``LifecycleStateWriter`` role, over the shared session."""
+
+    async def set_queue_state(
+        self,
+        *,
+        issue_key: str,
+        state: QueueState,
+    ) -> TrackerIssue:
+        """Set the semantic queue state, replacing any other member.
+
+        Refused before any request when the state's label is the admission
+        vocabulary's approved member: a queue write cannot grant approval.
+        """
+        label = self._label_for(state)
+        if aliases_approval_member(label=label, scope_labels=self._scope_labels):
+            raise ApprovalLabelWriteError(
+                issue_key=issue_key, classification=state.value
+            )
+        current = await self._read_issue_wire(issue_key)
+        issue = self._to_issue(current)
+        if issue.queue_states == frozenset({state}):
+            return issue
+        preserved = [
+            name for name in current.labels if name not in self._queue_state_by_label
+        ]
+        payload = await self._call(
+            _TOOL_SAVE_ISSUE, {"id": issue_key, "labels": [*preserved, label]}
+        )
+        return self._saved_issue(payload, written={"labels": [*preserved, label]})
+
+    async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
+        """Post a comment and return it as stored."""
+        return await self._post_comment(issue_key=issue_key, body=body)
+
+
+class LinearMcpTracker(
+    LinearLifecycleStateWriter,
+    LinearTrackerVocabulary,
+    LinearOrganizeOwnerTracker,
+    LinearTrackerContextReader,
+    LinearRunAlarmTracker,
+    LinearStateHistoryReader,
+    LinearOrganizeContextTracker,
+    LinearFireSubjectReader,
+    LinearScanCapabilityReader,
+    LinearFireDispatchTracker,
+    LinearPassGateReader,
+    LinearModelMemberReader,
+    LinearEscalationResolutionReader,
+    LinearCriterionReopener,
     _LinearTrackerSession,
 ):
     """``TrackerPort`` over the Linear MCP server.

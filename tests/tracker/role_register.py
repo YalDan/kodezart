@@ -973,14 +973,18 @@ def public(names: frozenset[str]) -> frozenset[str]:
 
 
 def self_calls(node: ast.ClassDef) -> frozenset[str]:
-    """Every ``self.<name>(...)`` a class body calls, public or private."""
+    """Every ``self.<name>`` a class body reads, public or private.
+
+    A call and a bound method handed on as a callback both reach the member,
+    so both count; an attribute the body assigns is not a read.
+    """
     return frozenset(
-        call.func.attr
-        for call in ast.walk(node)
-        if isinstance(call, ast.Call)
-        and isinstance(call.func, ast.Attribute)
-        and isinstance(call.func.value, ast.Name)
-        and call.func.value.id == "self"
+        part.attr
+        for part in ast.walk(node)
+        if isinstance(part, ast.Attribute)
+        and isinstance(part.ctx, ast.Load)
+        and isinstance(part.value, ast.Name)
+        and part.value.id == "self"
     )
 
 
@@ -1029,7 +1033,7 @@ def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ..
     """Every role class whose bases are not exactly the role classes it needs.
 
     A role class needs the classes of the declaring roles its role composes,
-    and the class that defines each ``self.<name>`` its own body calls that
+    and the class that defines each ``self.<name>`` its own body reads that
     neither it nor the state defines. The role classes its bases reach must
     be exactly those and what they reach in turn, and each base must be the
     state or a role class: nothing wider is inherited and nothing it calls
