@@ -103,7 +103,9 @@ class FireConsolidation:
             # whose LAST round was empty is not reported as having done
             # no work at all. The branch is written with it: the best is a
             # commit of THIS round's loop branch, which its push put on the
-            # remote, and a later round's branch may never be pushed.
+            # remote. A round that committed nothing may push its branch at
+            # its cut point, but that push is not an iteration commit and
+            # never replaces an earlier best.
             if best is not None:
                 exit_state["best_iteration_sha"] = best
                 exit_state["best_iteration_branch"] = state["ralph_branch"]
