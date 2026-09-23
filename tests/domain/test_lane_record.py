@@ -1303,6 +1303,68 @@ def test_a_repeated_recovery_receipt_adds_no_second_association():
     }
 
 
+#: A second backup ref, pushed by a later divergence recovery of the same run.
+SECOND_RECOVERY_REF = "ordinary-name-backup-4e5f6a7b"
+
+
+def test_a_recovery_ref_survives_a_later_plain_commit_of_the_same_run():
+    """A recorded recovery ref stays associated after the run commits again.
+
+    The recovery commit is not the run's last: a divergence is followed by
+    ordinary commits, and a commit that recovered nothing composes its record
+    from the prior one without dropping the backup ref that record carries.
+    """
+    lane = binding()
+    recovered = recovered_commit(prior=None, recovery_ref=RECOVERY_REF)
+    later = next_lane_record(
+        prior=recovered,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="b" * 40,
+        pushed_head_sha="b" * 40,
+        changeset=changeset(commits=2, files=1),
+        subject="Plain change",
+        recovery_ref=None,
+    )
+    recovery = (RECOVERY_REF, BranchRole.RECOVERY, lane.loop_branch, lane.run_id)
+    assert recovery in association_chains(recovered)
+    assert recovery in association_chains(later)
+    assert RECOVERY_REF in associated_branches(record=later)
+    assert [row.sha for row in later.commits] == ["a" * 40, "b" * 40]
+
+
+def test_a_second_recovery_of_the_same_run_is_recorded_beside_the_first():
+    """Two recoveries with distinct backup refs are both associated, in order.
+
+    The second receipt accumulates onto the record rather than replacing the
+    first ref, and neither ref is recorded twice.
+    """
+    lane = binding()
+    first = recovered_commit(prior=None, recovery_ref=RECOVERY_REF)
+    second = next_lane_record(
+        prior=first,
+        lane=lane,
+        branch_url="https://forge.example/branch/ordinary-name",
+        head_sha="b" * 40,
+        pushed_head_sha="b" * 40,
+        changeset=changeset(commits=2, files=1),
+        subject="Recovered again",
+        recovery_ref=SECOND_RECOVERY_REF,
+    )
+    assert association_chains(second) == [
+        (lane.deliverable_branch, BranchRole.DELIVERABLE, lane.base_ref, lane.run_id),
+        (lane.loop_branch, BranchRole.LOOP, lane.deliverable_branch, lane.run_id),
+        (RECOVERY_REF, BranchRole.RECOVERY, lane.loop_branch, lane.run_id),
+        (SECOND_RECOVERY_REF, BranchRole.RECOVERY, lane.loop_branch, lane.run_id),
+    ]
+    assert role_counts(second, run_id=lane.run_id) == {
+        BranchRole.DELIVERABLE: 1,
+        BranchRole.LOOP: 1,
+        BranchRole.RECOVERY: 2,
+    }
+    assert {RECOVERY_REF, SECOND_RECOVERY_REF} <= associated_branches(record=second)
+
+
 def test_a_commit_that_recovered_nothing_records_no_recovery_association():
     record = recovered_commit(prior=None, recovery_ref=None)
     assert BranchRole.RECOVERY not in {item.role for item in record.associations}
