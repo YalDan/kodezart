@@ -79,9 +79,9 @@ _DISPATCH_NAME = "dispatch"
 _HEARTBEAT_NAME = "scope_heartbeat"
 
 #: What the organize tick is registered as.  Its own name rather than the
-#: grooming row's: ``grooming_pass`` stays the per-issue grooming session's
-#: name in a deployment that runs both flows, and two passes under one name
-#: would be one line in the log for two different things.
+#: grooming row's: ``grooming_pass`` stays the grooming session's name in a
+#: deployment that declares scopes, and two passes under one name would be
+#: one line in the log for two different things.
 _ORGANIZE_NAME = "organize"
 
 
@@ -263,7 +263,10 @@ def runs_scope_flow(operation: OperationConfig) -> bool:
 
     What it decides is the scope flow's own machinery: the observation tick,
     the organize tick and the heartbeat.  A scope is approved, the organize
-    step maps its workflow, and the walker runs the lanes.
+    step maps its workflow, and the walker runs the lanes: the scope walk
+    builds what is approved.  It never withholds grooming or fire prep, which
+    prepare the board for scopes to be approved and run whether or not any
+    scope is declared (see :func:`session_passes_wire`).
 
     Read off the existing roster rather than a switch of its own: a lane cannot
     fire without the criteria mandate's terminal marker, which only an organize
@@ -273,29 +276,33 @@ def runs_scope_flow(operation: OperationConfig) -> bool:
 
 
 def runs_per_issue_flow(operation: OperationConfig) -> bool:
-    """Whether some team of this operation is worked issue by issue.
+    """Whether some team of this operation is fired issue by issue.
 
     Every team when no scope row is declared — whatever the teams, so an
     operation without scopes takes exactly the per-issue path it always did —
     and otherwise every team no scope walks (see
-    :meth:`OperationConfig.per_issue_teams`).  The dispatch pass, its gate
-    probe and the two session passes all read this one answer, so a team a
-    scope walks gets none of them while every other team keeps all three in
-    the same deployment (KOD-846).
+    :meth:`OperationConfig.per_issue_teams`).  The dispatch pass and its gate
+    probe read this one answer, so ready work on a team a scope walks waits
+    for its scope to be approved and walked rather than being fired issue by
+    issue, while every other team keeps its dispatch pass and lifecycle
+    watcher in the same deployment (KOD-846).  Grooming and fire prep do not
+    read it: they run for every team (see :func:`session_passes_wire`).
     """
     return not runs_scope_flow(operation) or bool(operation.per_issue_teams())
 
 
 def session_passes_wire(operation: OperationConfig) -> bool:
-    """Whether the two legacy prompt passes run as agent sessions here.
+    """Whether the grooming and fire-prep sessions run here.
 
-    Both conditions, named once: a roster a template could not render over, and
-    no team left for the per-issue flow to work. Three sites ask the same
-    question — the wiring, the gate probe and the render preflight — and a
-    second copy of it is a second opinion about which passes this deployment
-    schedules.
+    Wherever the operation declares a roster a template can render over,
+    exactly as v0.2 scheduled them, and for every declared team whether or
+    not a scope row is declared: grooming and fire prep prepare the board
+    for scopes to be approved, and the scope walk builds what is approved.
+    Three sites ask the same question — the wiring, the gate probe and the
+    render preflight — and a second copy of it is a second opinion about
+    which passes this deployment schedules.
     """
-    return runs_per_issue_flow(operation) and not absent_roster(operation)
+    return not absent_roster(operation)
 
 
 def _record_kind_for(key: PromptKey) -> RunKind:
@@ -325,37 +332,33 @@ async def build_prompt_passes(
     skills: SkillsSelection,
     recorder: RunRecorder,
 ) -> list[ScheduledPass]:
-    """Bind the per-issue flow's two prompt passes.
+    """Bind the grooming and fire-prep sessions.
 
-    Both rows belong to the per-issue flow: they scan the boards of the teams
-    no scope walks, from the team/repository roster, and use their configured
-    signal gates. They wire only where :func:`session_passes_wire` holds — an
-    operation whose every team a scope walks gets neither of them. Preflight
-    validates exactly those active rows.
+    Both rows scan every declared team's board, from the team/repository
+    roster, and use their configured signal gates, whether or not a scope row
+    is declared: they prepare the board for scopes to be approved, and the
+    scope walk builds what is approved. They wire only where
+    :func:`session_passes_wire` holds. Preflight validates exactly those
+    active rows.
     """
     log: BoundLogger = get_logger(__name__)
     schedule = prompt_pass_schedule(config)
-    absent = absent_roster(operation)
-    withheld = not runs_per_issue_flow(operation)
-    if absent or withheld:
-        # Two reasons, one event, one field each: a roster a template could not
-        # render over, and a deployment whose work is a scope walk. An operator
-        # reading the log for "why no prompt pass?" finds which it is.
+    if not session_passes_wire(operation):
+        # The one reason with an operation in hand: a roster a template could
+        # not render over, named collection by collection.
         await log.ainfo(
             "prompt_passes_not_wired",
             operation_config_present=True,
-            absent=list(absent),
-            organize_scopes_declared=runs_scope_flow(operation),
+            absent=list(absent_roster(operation)),
         )
         return []
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
     # Read only where some row is gated, because only a built gate scans. The
-    # boards it scans are the per-issue teams' alone, never a board a scope
-    # walks (KOD-846); an operation that declares no team at all was already
-    # turned away above by absent_roster.
+    # boards it scans are every declared team's, scopes or not; an operation
+    # that declares no team at all was already turned away above.
     gated = dialled is not None and any(row.signals for row in schedule.values())
-    team_keys = operation.per_issue_teams() if gated else ()
+    team_keys = operation.team_keys() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
     return [
         ScheduledPass(
@@ -589,9 +592,10 @@ async def _verify_wired_gates(
     builders themselves use: a signal configured for a pass this deployment
     does not schedule is not a capability it needs, and refusing boot over
     one would hold a deployment hostage to a knob nothing reads. A team a
-    scope walks gets neither session pass and no per-issue dispatch pass, so
-    a deployment whose every team is walked needs none of their signals,
-    while one that also declares per-issue teams needs them for those.
+    scope walks gets no per-issue dispatch pass, so a deployment whose every
+    team is walked needs none of the dispatch signals; the two session
+    passes run for every team, so their signals are needed wherever the
+    roster is declared.
 
     Every refused signal is named at once, with the passes it gates and the
     backend's own diagnosis, because an operator fixing one scope at a time
@@ -751,11 +755,10 @@ async def verify_pass_preflight(
     in hand, the gate probe is a round trip, and the renders are local.
 
     The render half applies to exactly the passes that will WIRE.  An
-    operation with no roster, and one whose every team a scope walks,
-    schedules none of them (see :func:`build_prompt_passes`), and rendering a
-    template it will never send would refuse a boot over a hole nothing
-    reaches.  An operation that also declares per-issue teams renders both,
-    over those teams.
+    operation with no roster schedules none of them (see
+    :func:`build_prompt_passes`), and rendering a template it will never send
+    would refuse a boot over a hole nothing reaches.  Every other operation
+    renders both, over every declared team, scopes or not.
     """
     # Called for its refusals, which are the point: a partial Organize
     # configuration must not reach a scheduler. Its answer is read nowhere
@@ -817,9 +820,9 @@ async def build_dispatch_runtime(
     # Cadence is scheduler configuration and nothing else. Four
     # states, none silent: no tracker, no operation config, no delivery probe
     # to answer "is this issue already delivered?", or an operation whose
-    # every team a scope walks and has no use for a pass that scans a whole
-    # board — and the passes do not run, named, never inferred from an empty
-    # schedule.
+    # every team a scope walks, whose ready work waits for its scope to be
+    # approved and walked rather than being fired issue by issue — and the
+    # passes do not run, named, never inferred from an empty schedule.
     built: DispatchPasses | None = None
     if (
         dialled is not None
@@ -939,7 +942,7 @@ async def build_dispatch_runtime(
             )
         # The organize tick on the grooming cadence and budget and under the
         # grooming report identity, registered under a name of its own so the
-        # per-issue grooming session below keeps ``grooming_pass``.
+        # grooming session below keeps ``grooming_pass``.
         organize = build_organize_tick(
             config=config,
             operation=operation,
@@ -1008,7 +1011,6 @@ async def build_dispatch_runtime(
             "prompt_passes_not_wired",
             operation_config_present=False,
             absent=[],
-            organize_scopes_declared=False,
         )
     return DispatchRuntime(
         scheduler=PassScheduler(passes=tuple(scheduled)),

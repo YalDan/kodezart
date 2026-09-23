@@ -59,14 +59,16 @@ because a copy here is a copy that goes stale.
 
 Two things about that file are worth saying twice. Declaring
 `[[organize_scopes]]` is what makes a team a scope team: a team bound to a
-repository a row names is walked, and the per-issue dispatch pass and the two
-remaining prompt passes, which scan whole boards, are not scheduled over its
-board. That file binds its one team to its one repository, so nothing per-issue
-is scheduled at all. A deployment that also declares teams on repositories no
-row names keeps every per-issue pass for those teams, exactly as before. The
-rule reads a row's repository, not the issues its scope spans, so a scope whose
-members sit on such a team's board leaves them open to that team's dispatch
-pass. And
+repository a row names is walked, and no per-issue dispatch pass fires its
+ready work issue by issue; that work waits for its scope to be approved and
+walked. That file binds its one team to its one repository, so no dispatch pass
+is scheduled at all. The fire-prep and grooming session passes still run over
+every declared team, as they do without a row: they prepare the board for a
+scope to be approved, and the scope walk builds what is approved. A deployment
+that also declares teams on repositories no row names keeps the dispatch pass
+for those teams, exactly as before. The rule reads a row's repository, not the
+issues its scope spans, so a scope whose members sit on such a team's board
+leaves them open to that team's dispatch pass. And
 declaring `[[organize_mandates]]` without an `[[organize_scopes]]` row is a
 partial organize configuration, refused at boot.
 
@@ -98,18 +100,17 @@ current name; every retired spelling is refused rather than ignored.
   mapping is resolved. It names the backend and the two lists above.
 - `scheduled_passes_not_wired` with `organize_scopes_declared: true` — the
   per-issue dispatch pass is withheld, and this field is why.
-- `prompt_passes_not_wired` with `organize_scopes_declared: true` — the fire-prep
-  and grooming session passes are withheld, for the same reason.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
   carries and that pass's interval. On a scope deployment that is the organize
-  tick (`organize`), the standing scopes' heartbeat, the observation tick that
-  watches each lane's run shape, and the audit pass where one is configured.
+  tick (`organize`), the fire-prep and grooming session passes, the standing
+  scopes' heartbeat, the observation tick that watches each lane's run shape,
+  and the audit pass where one is configured.
 
-Both "not wired" lines are expected when every team is walked, as with the
-shipped file, and a boot that does NOT carry them there is a boot that just
-scheduled the per-issue machine over your team's whole board. A deployment that
-also declares other teams logs neither line and schedules their per-issue
-passes beside the scope passes.
+The "not wired" line is expected when every team is walked, as with the
+shipped file, and a boot that does NOT carry it there is a boot that just
+scheduled a dispatch pass over your team's whole board. A deployment that also
+declares other teams does not log it and schedules their dispatch passes beside
+the scope passes.
 
 ## Starting a run
 

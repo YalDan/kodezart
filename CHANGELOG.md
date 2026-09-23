@@ -23,21 +23,27 @@ concerns.
   `ScopedExecutionUnavailableError` names the absence of a scoped arm or of a
   delivery reader for the origin. The README's stale paragraph about claim
   acquisition being refused is deleted; claim acquisition is implemented.
-- `[[organize_scopes]]` withholds the per-issue machine per team (KOD-846). A
-  team bound to a repository a row names is walked scope by scope and gets no
-  periodic dispatch pass, fire-prep or grooming prompt pass over its board.
-  Every other team of the same deployment keeps all three and the lifecycle
-  watcher, exactly as without a row. When every team is walked, the existing
-  `scheduled_passes_not_wired` and `prompt_passes_not_wired` events each carry
-  a new `organize_scopes_declared` boolean saying so, and boot probes no gate
-  signal and renders no template for a withheld pass.
-  `dispatch_pass_unbound_repository` carries `scope_walked_teams`. On upgrade,
-  a deployment that declared rows and also a team on a repository no row names
-  now runs that team's dispatch, fire-prep and grooming passes and the
+- `[[organize_scopes]]` withholds the per-issue dispatch pass per team
+  (KOD-846). A team bound to a repository a row names is walked scope by scope
+  and gets no periodic dispatch pass over its board: its ready work waits for
+  its scope to be approved and walked. Every other team of the same deployment
+  keeps its dispatch pass and the lifecycle watcher, exactly as without a row.
+  When every team is walked, the existing `scheduled_passes_not_wired` event
+  carries a new `organize_scopes_declared` boolean saying so, and boot probes
+  no dispatch gate signal. `dispatch_pass_unbound_repository` carries
+  `scope_walked_teams`. On upgrade, a deployment that declared rows and also a
+  team on a repository no row names now runs that team's dispatch pass and the
   lifecycle watcher; its declared `[marker_prefixes]` table must then name
   `claim`, `work_ref`, `base_spec`, `repository` and `run_outcome`.
+- `fire_prep_pass` and `grooming_pass` run for every declared team whether or
+  not `[[organize_scopes]]` is declared, with the cadence, budget, gate signals
+  and run record they have without it: grooming and fire prep prepare the board
+  for scopes to be approved, and the scope walk builds what is approved. On
+  upgrade, a scope deployment now schedules both and renders their templates at
+  boot, so its operation file declares `[queue_states]`, as
+  `docs/operation.scope.toml` now does.
 - The organize tick is registered with the pass scheduler as `organize`, so
-  `grooming_pass` stays the per-issue grooming session's name; its runs keep the
+  `grooming_pass` stays the grooming session's name; its runs keep the
   grooming record identity. The `scope_heartbeat` pass submits on
   `KODEZART_DISPATCH_LANE` followed by `:scope`, so a per-issue fire never
   queues behind a scope run the heartbeat submitted; a scope run posted over

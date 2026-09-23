@@ -789,15 +789,12 @@ scope's verified audit summary is reported on. It is optional because a
 deployment that configures no audit has nowhere to report; a configured audit
 refuses naming `organize_scopes.report_issue_key` on a row that omits it.
 
-Declaring `[[organize_scopes]]` also withholds the per-issue machine from the
-teams it walks, per team. A team bound to a repository a row names is worked
-scope by scope; the periodic dispatch pass and the two remaining prompt passes
-scan whole boards, so none of the three works that team's board. Every other
-team keeps all three, in the same deployment, exactly as without a row: its
-repository's dispatch pass, `fire_prep_pass` and `grooming_pass` over its board
-alone, and the lifecycle watcher. The session passes' sweeps that reach past the
-team roster (a triage backlog, a mention scan) skip a walked team's issues. The
-rule reads the rows and the existing team
+Declaring `[[organize_scopes]]` also withholds the per-issue dispatch pass
+from the teams it walks, per team. A team bound to a repository a row names is
+worked scope by scope: its ready work waits for its scope to be approved and
+walked, and no dispatch pass fires it issue by issue. Every other team keeps its
+repository's dispatch pass and the lifecycle watcher, in the same deployment,
+exactly as without a row. The rule reads the rows and the existing team
 binding and nothing else, which has limits. A per-issue team cannot share a
 repository with a scope. With one declared repository every team is bound to
 it, so every team is walked. An unbound team beside several repositories stays
@@ -808,13 +805,19 @@ walk writes no claim (KOD-788) nothing arbitrates between the two flows there. A
 repository whose bound teams are all walked gets no dispatch pass,
 and `dispatch_pass_unbound_repository` names them in `scope_walked_teams`.
 
-When every team is walked, no per-issue pass is scheduled and no lifecycle
-watcher is built; `scheduled_passes_not_wired` and `prompt_passes_not_wired`
-each carry `organize_scopes_declared: true` so the reason is in the log rather
-than inferred from an empty schedule. Boot then asks nothing of those passes:
-no gate signal they configure is probed and no template they would send is
-rendered. A deployment that also declares per-issue teams logs neither line,
-probes their signals and renders their templates.
+A row never withholds grooming or fire prep. `fire_prep_pass` and
+`grooming_pass` are scheduled whenever the operation declares a roster, for
+every declared team, with the same cadence, budget, gate signals and run record
+as without a row: grooming and fire prep prepare the board for scopes to be
+approved, and the scope walk builds what is approved. Boot probes their gate
+signals and renders their templates in every such deployment.
+
+When every team is walked, no dispatch pass is scheduled and no lifecycle
+watcher is built; `scheduled_passes_not_wired` carries
+`organize_scopes_declared: true` so the reason is in the log rather than
+inferred from an empty schedule, and boot probes no dispatch gate signal. A
+deployment that also declares per-issue teams does not log that line and probes
+their dispatch signals.
 
 `[[organize_scopes]]` rows are the standing scopes: each one is groomed before
 approval by the organize tick on the grooming cadence, and submitted as a scope
@@ -825,7 +828,7 @@ pass takes the place of the withheld dispatch scan and reuses its knobs —
 `KODEZART_DISPATCH_LANE` followed by `:scope`, a lane of its own, so a per-issue
 fire never waits behind a scope run the heartbeat submitted. A scope run posted
 over HTTP takes the endpoint's own lane instead. The organize tick is registered as
-`organize`, leaving `grooming_pass` to the per-issue grooming session. The
+`organize`, leaving `grooming_pass` to the grooming session. The
 heartbeat adds no configuration field of its own, opens no
 session and writes nothing to the tracker. A row that is not approved is
 reported as unapproved and never submitted; a row whose run is live on any lane

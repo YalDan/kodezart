@@ -913,11 +913,13 @@ class OperationConfig(OperationModel):
         return tuple(key for key in self.teams if key in walked)
 
     def per_issue_teams(self) -> tuple[str, ...]:
-        """Every team the per-issue flow works, in declaration order.
+        """Every team the per-issue dispatcher fires, in declaration order.
 
-        Every declared team :meth:`scope_walked_teams` does not name, so the
-        two flows never work the same board (KOD-846).  With no scope row
-        that is every team, exactly as before.
+        Every declared team :meth:`scope_walked_teams` does not name, so a
+        ready issue on a walked team waits for its scope to be approved and
+        walked rather than being fired issue by issue (KOD-846).  With no
+        scope row that is every team, exactly as before.  Grooming and fire
+        prep are not narrowed by it: they work every declared team.
         """
         walked = set(self.scope_walked_teams())
         return tuple(key for key in self.teams if key not in walked)

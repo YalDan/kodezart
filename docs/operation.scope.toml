@@ -9,10 +9,12 @@
 # the refusal names the member and what it stops.
 #
 # [[organize_scopes]] is the one scope table, and declaring it is what makes
-# this a scope deployment: no per-issue dispatch pass, no fire-prep or grooming
-# session pass and no lifecycle watcher is scheduled. There is no
-# [run_event_states] table here and no [queue_states] table: neither is read on
-# this path.
+# this a scope deployment: no per-issue dispatch pass and no lifecycle watcher
+# is scheduled, so ready work waits for its scope to be approved and walked.
+# The fire-prep and grooming session passes still run over the declared team:
+# they prepare the board for a scope to be approved, and the scope walk builds
+# what is approved. There is no [run_event_states] table here: it is not read
+# on this path.
 
 # Human-readable name of the operation these settings describe.
 operation_name = "example-scope-operation"
@@ -30,6 +32,17 @@ agent_identities = ["@example-agent", "example-agent"]
 [teams.primary]
 name = "Example team"
 key = "EXA"
+
+# Queue states. Grooming and fire prep read them while they move a triaged
+# issue towards a scope that can be approved. With the table declared, all five
+# members are required at load. With no table at all, boot refuses to render
+# those two sessions and names the members they read.
+[queue_states]
+triage = "queue:triage"
+proposed = "queue:proposed"
+approved = "queue:approved"
+done = "queue:done"
+decision = "queue:decision"
 
 # Scope admission. With the table declared, all three members are required at
 # load. With no table at all, the first scoped read cannot resolve approval and

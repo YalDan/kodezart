@@ -113,18 +113,6 @@ registries.
 | endpoints.notion_connector | endpoints |
 | private_surface | private_surface |
 
-## Derived placeholders
-
-A placeholder that is no single path: the binding reads several fields through
-a rule on `OperationConfig`. Each is listed with the fields that rule reads, and
-the test holds each name out of the model's fields and each source in them.
-`scope_walks` is present exactly when `scope_walked_teams()` is non-empty
-(KOD-846).
-
-| Placeholder | OperationConfig fields |
-| --- | --- |
-| scope_walks | organize_scopes, repos, teams |
-
 ## What this lane does not claim
 
 - **Live-workspace resolution.** Validation here is structural only: required

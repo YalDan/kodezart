@@ -241,9 +241,10 @@ async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatc
 
 
 # ---------------------------------------------------------------------------
-# A team a scope walks is worked scope by scope: the per-issue dispatcher and
-# the two legacy prompt passes scan whole boards and are withheld from it
-# (KOD-832), while a team no scope walks keeps all three (KOD-846).
+# A team a scope walks is worked scope by scope: the per-issue dispatcher is
+# withheld from it (KOD-832), while a team no scope walks keeps it (KOD-846).
+# Grooming and fire prep run for every team either way: they prepare the board
+# for scopes to be approved, and the scope walk builds what is approved.
 # ---------------------------------------------------------------------------
 
 
@@ -306,25 +307,35 @@ def _logged(logs, name):
     return [entry for entry in logs if entry.get("event") == name]
 
 
-async def test_a_scope_deployment_schedules_the_organize_tick_and_no_per_issue_pass(
+#: The two session passes, in the order the schedule registers them.
+SESSION_PASSES = (PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value)
+
+#: The session run's keywords that are this boot's own objects rather than a
+#: schedule value: each boot builds its own runner.
+PER_BOOT_KEYWORDS = frozenset({"runner"})
+
+
+async def test_a_scope_deployment_schedules_grooming_and_fire_prep_and_no_dispatch_pass(
     tmp_path,
 ):
-    """Every premise of the per-issue machine is present, and it is not built.
+    """Every premise of the per-issue dispatcher is present, and it is not built.
 
     A scope run needs one declared team and one declared repository; a tracker
     is dialled and a delivery probe is configured. On the state this fixture is
-    in, boot used to schedule an hourly dispatch pass and both session passes
-    over that team's whole board. What this deployment gets is the organize tick,
-    the standing scopes' own heartbeat beside it and the observation tick that
-    watches each lane's run shape — none of which scans a board — with no
-    lifecycle watcher behind it, and both existing "not wired"
-    lines carry the reason as a field rather than leaving an operator to read
-    three true premises and a schedule with no per-issue pass in it.
+    in, boot used to schedule an hourly dispatch pass over that team's whole
+    board. What this deployment gets is the organize tick, the standing scopes'
+    own heartbeat beside it and the observation tick that watches each lane's
+    run shape, with no lifecycle watcher behind them, and the existing "not
+    wired" line carries the reason as a field. Grooming and fire prep are
+    scheduled over every declared team exactly as a deployment without scopes
+    schedules them: they prepare the board for scopes to be approved.
     """
     config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
+    walked = scope_only(operation)
+    assert walked.per_issue_teams() == ()
     runtime, logs = await _runtime_over(
         config,
-        scope_only(operation),
+        walked,
         board,
         tracker,
         prompts,
@@ -334,6 +345,7 @@ async def test_a_scope_deployment_schedules_the_organize_tick_and_no_per_issue_p
     assert [entry.name for entry in runtime.scheduler.passes] == [
         "supervisor",
         ORGANIZE_PASS,
+        *SESSION_PASSES,
         HEARTBEAT_PASS,
     ]
     assert runtime.lifecycle is None
@@ -342,10 +354,35 @@ async def test_a_scope_deployment_schedules_the_organize_tick_and_no_per_issue_p
     assert withheld[0]["tracker_present"] is True
     assert withheld[0]["delivery_probe_present"] is True
     assert withheld[0]["organize_scopes_declared"] is True
-    silent = _logged(logs, "prompt_passes_not_wired")
-    assert len(silent) == 1
-    assert silent[0]["absent"] == []
-    assert silent[0]["organize_scopes_declared"] is True
+    assert _logged(logs, "prompt_passes_not_wired") == []
+
+    # The same operation declaring no scope row schedules both sessions with the
+    # same values: cadence, budget, report and every keyword the session is run
+    # with but the runner each boot builds for itself.
+    unscoped = OperationConfig.model_validate(
+        {**walked.model_dump(), "organize_scopes": []}
+    )
+    plain, _plain_logs = await _runtime_over(
+        config.model_copy(update={"organize": None}),
+        unscoped,
+        board,
+        tracker,
+        prompts,
+        ledger,
+        forge=FakeDeliveryProbe(),
+    )
+    for name in SESSION_PASSES:
+        (scoped_entry,) = [e for e in runtime.scheduler.passes if e.name == name]
+        (plain_entry,) = [e for e in plain.scheduler.passes if e.name == name]
+        assert scoped_entry.interval_seconds == plain_entry.interval_seconds, name
+        assert scoped_entry.timeout_seconds == plain_entry.timeout_seconds, name
+        assert scoped_entry.report is not None and plain_entry.report is not None
+        assert scoped_entry.run.func is plain_entry.run.func, name
+        assert set(scoped_entry.run.keywords) == set(plain_entry.run.keywords), name
+        for keyword in set(scoped_entry.run.keywords) - PER_BOOT_KEYWORDS:
+            assert (
+                scoped_entry.run.keywords[keyword] == plain_entry.run.keywords[keyword]
+            ), (name, keyword)
 
 
 async def test_the_same_operation_without_organize_scopes_keeps_the_per_issue_passes(
@@ -388,46 +425,52 @@ async def test_the_same_operation_without_organize_scopes_keeps_the_per_issue_pa
     assert _logged(logs, "prompt_passes_not_wired") == []
 
 
-class _RefusingScanner(FakeTrackerPort):
-    """A port that fails the test if a gate signal is probed at all."""
+class _RecordingPrompts:
+    """The boot registry, recording every template preflight renders."""
 
-    async def verify_scan_capability(self, *, signals):
-        raise AssertionError(f"a withheld pass asked for {signals}")
+    def __init__(self, inner):
+        self._inner = inner
+        self.rendered: list[PromptKey] = []
 
+    def template_for(self, key, *args, **kwargs):
+        self.rendered.append(key)
+        return self._inner.template_for(key, *args, **kwargs)
 
-class _RefusingPrompts:
-    """A provider that fails the test if a withheld pass is rendered at all."""
-
-    def template_for(self, *, key, **rest):
-        raise AssertionError(f"a withheld pass rendered {key}")
-
-    def render(self, **rest):
-        raise AssertionError("a withheld pass rendered a template")
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
 
 
-async def test_preflight_asks_nothing_of_a_pass_a_scope_deployment_withholds(tmp_path):
+async def test_preflight_asks_a_scope_deployment_for_its_sessions_and_not_dispatch(
+    tmp_path,
+):
     """Preflight probes and renders exactly what the wiring will build.
 
-    Both of the refusals this holds back cost a boot cycle each, and neither is
-    about a capability this deployment needs: the signals gate passes it does
-    not schedule, and the templates belong to passes it does not send. The
-    doubles raise rather than answer, so a preflight that asked would fail here
-    instead of silently holding a scope deployment hostage to a knob nothing
+    Grooming and fire prep run in a scope deployment, so their signals are
+    probed and their templates rendered. The dispatch pass is withheld from a
+    deployment whose every team is walked, so its signal is not probed: a
+    refusal over it would hold a scope deployment hostage to a knob nothing
     reads.
     """
-    _, operation, _board, _tracker, _prompts, _ledger = dependencies(tmp_path)
+    _, operation, _board, _tracker, prompts, _ledger = dependencies(tmp_path)
     config = _config(
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
         write_back={"max_verify_rounds": 2},
         fire_prep_pass_gate_signals=[PassSignal.issues_changed],
+        grooming_pass_gate_signals=[],
         dispatch_pass_gate_signals=[PassSignal.approved_changed],
         ticket_review_mode="reviewed",
     )
+    scanner = FakeTrackerPort()
+    recording = _RecordingPrompts(prompts)
     await verify_pass_preflight(
         config=config,
         operation=scope_only(operation),
-        tracker=_RefusingScanner(),
+        tracker=scanner,
         github_api=FakeDeliveryProbe(),
-        prompts=_RefusingPrompts(),
+        prompts=recording,
     )
+    assert [list(probe) for probe in scanner.capability_probes] == [
+        [PassSignal.issues_changed]
+    ]
+    assert recording.rendered == [PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS]

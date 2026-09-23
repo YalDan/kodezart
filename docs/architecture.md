@@ -32,13 +32,16 @@ the operation file loads. An operation that declares `[[organize_scopes]]`
 schedules the passes that read that one table — the organize tick (registered
 as `organize`), the scope heartbeat, the observation tick where a tracker is
 dialled and the audit where one is configured. A team bound to a repository a
-scope row names is walked scope by scope and gets no per-issue pass over its
-board. Every other team of the same deployment keeps the per-issue machine
-exactly as before: the dispatch pass for its repository, both session passes
-(`fire_prep_pass` and `grooming_pass`) over its board, and the lifecycle
-watcher. Only when every team is walked is none of those built. The heartbeat
-submits on a lane of its own, so a per-issue fire never queues behind a scope
-run (KOD-846).
+scope row names is walked scope by scope and gets no per-issue dispatch pass
+over its board: its ready work waits for its scope to be approved and walked.
+Every other team of the same deployment keeps the dispatch pass for its
+repository and the lifecycle watcher exactly as before. Only when every team is
+walked is neither built. Grooming and fire prep (`grooming_pass` and
+`fire_prep_pass`) are not withheld by a scope row: they run over every declared
+team exactly as v0.2 scheduled them, preparing the board for scopes to be
+approved, and the scope walk builds what is approved. The heartbeat submits on
+a lane of its own, so a per-issue fire never queues behind a scope run
+(KOD-846).
 The lifespan registers each acquired resource with an `AsyncExitStack`.
 Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
 their records, then closes their transports; the checkpointer retains its

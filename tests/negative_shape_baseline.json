@@ -3785,9 +3785,9 @@
    "test_scheduled_owner_prepares_native_children_and_reentry_is_idempotent",
    "test_partial_owner_configuration_refuses_during_preflight",
    "test_actual_lifespan_registers_and_runs_the_owner",
-   "test_a_scope_deployment_schedules_the_organize_tick_and_no_per_issue_pass",
+   "test_a_scope_deployment_schedules_grooming_and_fire_prep_and_no_dispatch_pass",
    "test_the_same_operation_without_organize_scopes_keeps_the_per_issue_passes",
-   "test_preflight_asks_nothing_of_a_pass_a_scope_deployment_withholds"
+   "test_preflight_asks_a_scope_deployment_for_its_sessions_and_not_dispatch"
   ],
   "tests/integration/test_organize_tick_halt.py": [
    "test_halted_first_binding_does_not_starve_second_binding"

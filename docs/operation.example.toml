@@ -41,11 +41,14 @@ organize_mandates = []
 # lane followed by ":scope", writing nothing to the tracker; the observation
 # tick reads each row's scope where a tracker is dialled; and the audit collects
 # each row where audit settings are configured.
-# A row withholds the per-issue machine from every team bound to its
-# repository: no dispatch pass, fire-prep or grooming session pass works that
-# team's board, because it is worked scope by scope. Every other team keeps
-# them. Empty keeps them for every team, declares no standing scope and
-# schedules none of the four passes above.
+# A row withholds the per-issue dispatch pass from every team bound to its
+# repository: that team's ready work waits for its scope to be approved and
+# walked. Every other team keeps its dispatch pass. A row schedules no fire-prep
+# or grooming session pass and withholds none: grooming and fire prep run for
+# every team whether or not a row is declared, preparing the board for scopes
+# to be approved, and the scope walk builds what is approved. Empty keeps the
+# dispatch pass for every team, declares no standing scope and schedules none of
+# the four passes above.
 organize_scopes = []
 
 # Identities the agent posts under, in the order the pass templates address

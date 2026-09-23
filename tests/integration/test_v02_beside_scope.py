@@ -1,11 +1,14 @@
 """The per-issue flow keeps running beside the scope walk (KOD-846).
 
 A team bound to a repository a scope row names is walked scope by scope and
-gets no per-issue pass over its board; every other team of the same deployment
-keeps the dispatch pass, both session passes and the lifecycle watcher exactly
-as before. And a per-issue run never reaches the scope walk: the dispatcher
-submits no scope, the router sends an unscoped run to its origin's arm even with
-the scoped arm wired, and the fire streams the authored graph for it.
+gets no per-issue dispatch pass over its board; every other team of the same
+deployment keeps its dispatch pass and the lifecycle watcher exactly as before.
+Grooming and fire prep run over every declared team whether or not a scope row
+is declared: they prepare the board for scopes to be approved, and the scope
+walk builds what is approved. And a per-issue run never reaches the scope walk:
+the dispatcher submits no scope, the router sends an unscoped run to its
+origin's arm even with the scoped arm wired, and the fire streams the authored
+graph for it.
 """
 
 import asyncio
@@ -48,7 +51,6 @@ from tests.fakes import (
     make_tracker_issue,
 )
 from tests.integration.test_organize_scheduler import dependencies, scope_only
-from tests.prompts.test_per_issue_roster_bindings import SCOPE_WALK_BOUND
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_passes import HEARTBEAT_PASS, ORGANIZE_PASS, _config
 from tests.test_forge_origin_selection import ForbiddenWorkflowEngine, _arm
@@ -60,18 +62,6 @@ TICK_BOUND_SECONDS = 30
 #: per-issue team's. The board keys are the teams' declared tracker keys.
 WALKED_ISSUE = "EXA-1"
 PER_ISSUE_ISSUE = "EXG-1"
-
-
-#: The words opening each sweep of a session template that reaches past the
-#: team roster: fire-prep's triage backlog and issue mention sweep, grooming's
-#: tree and its mention scan. Each is one line of its template.
-SWEEPS = {
-    PromptKey.FIRE_PREP_PASS: ("(a) Triage backlog", "(b) Mention sweep (issues)"),
-    PromptKey.GROOMING_PASS: (
-        "**2. Groom the whole tree**",
-        "**Mentions & principal comments.**",
-    ),
-}
 
 
 def _board() -> FakeTrackerPort:
@@ -166,12 +156,12 @@ async def _tick(entry):
 
 
 # ---------------------------------------------------------------------------
-# One deployment, two flows: the walked team gets none of the per-issue
-# passes, and the other team keeps all three.
+# One deployment, two flows: the walked team gets no dispatch pass, the other
+# team keeps its own, and grooming and fire prep cover every team.
 # ---------------------------------------------------------------------------
 
 
-async def test_a_scope_team_gets_no_per_issue_pass_while_the_other_team_keeps_all_three(
+async def test_a_scope_team_gets_no_dispatch_pass_while_both_sessions_cover_every_team(
     tmp_path,
 ):
     config, operation, prompts = _mixed(tmp_path)
@@ -216,22 +206,18 @@ async def test_a_scope_team_gets_no_per_issue_pass_while_the_other_team_keeps_al
     assert submission.scope is None
     assert WALKED_ISSUE not in board.claims
 
-    # Both session passes are told about the per-issue team's board alone,
-    # and each sweep that reaches past that roster is bounded to it.
+    # Both session passes are told about every declared team's board, the
+    # walked team's included: grooming and fire prep prepare it for its scope
+    # to be approved.
     for key in (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS):
         runner.calls.clear()
         await _tick(_named(runtime, key.value))
         (call,) = runner.calls
         prompt = str(call["prompt"])
         # The team keys as words: the templates' own prose says "EXACTLY".
-        assert "example-agent-team" in prompt, key
-        assert re.search(r"\bEXG\b", prompt), key
-        assert "Example Team" not in prompt, key
-        assert not re.search(r"\bEXA\b", prompt), key
-        for sweep in SWEEPS[key]:
-            assert re.search(
-                re.escape(sweep) + r"[^\n]*" + re.escape(SCOPE_WALK_BOUND), prompt
-            ), (key, sweep)
+        for name, board_key in (("example-agent-team", "EXG"), ("Example Team", "EXA")):
+            assert name in prompt, (key, name)
+            assert re.search(rf"\b{board_key}\b", prompt), (key, board_key)
 
     # The heartbeat's lane is never the lane a per-issue fire waits on.
     assert scope_queue_lane(config) != config.dispatch_lane
@@ -281,7 +267,7 @@ async def _session_scans(runtime, board, key):
     return {query.team_key for query in board.scans}
 
 
-async def test_a_gated_session_pass_scans_only_the_per_issue_boards(tmp_path):
+async def test_a_gated_session_pass_scans_every_board_as_without_a_scope_row(tmp_path):
     config, operation, prompts = _mixed(tmp_path)
     second = operation.repos[1].url
     board = _board()
@@ -304,11 +290,10 @@ async def test_a_gated_session_pass_scans_only_the_per_issue_boards(tmp_path):
         queue=FakeJobQueue(),
     )
 
-    # The one intended difference: a session gate of the mixed deployment
-    # never asks about the walked team's board, while with no scope row
-    # primary is a per-issue team and its board is scanned too.
+    # Each session gate asks about every declared team's board, the walked
+    # team's included, exactly as with no scope row.
     for key in SESSION_PASSES:
-        assert await _session_scans(runtime, board, key) == {"agent"}, key
+        assert await _session_scans(runtime, board, key) == {"primary", "agent"}, key
         assert await _session_scans(v02, v02_board, key) == {"primary", "agent"}, key
 
     # Everything else is exactly as the deployment with no scope row schedules
@@ -396,7 +381,7 @@ class _RecordingPrompts:
 async def test_preflight_probes_and_renders_the_per_issue_passes_of_a_mixed_operation(
     tmp_path,
 ):
-    """Preflight asks exactly what the wiring builds: the per-issue team's passes."""
+    """Preflight asks exactly what the wiring builds: dispatch and both sessions."""
     _, operation, prompts = _mixed(tmp_path)
     config = _config(
         tmp_path,
@@ -423,18 +408,19 @@ async def test_preflight_probes_and_renders_the_per_issue_passes_of_a_mixed_oper
     assert recording.rendered == [PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS]
 
 
-async def test_a_deployment_whose_every_team_is_walked_schedules_no_per_issue_pass(
+async def test_a_deployment_whose_every_team_is_walked_keeps_both_sessions_only(
     tmp_path,
 ):
     config, operation, prompts = _mixed(tmp_path)
     walked = scope_only(operation)
     assert walked.per_issue_teams() == ()
+    board = _board()
 
     runtime, logs = await _boot(
-        config,
+        _gated(config),
         walked,
         prompts,
-        board=_board(),
+        board=board,
         runner=FakeAgentRunner(events=[]),
         queue=FakeJobQueue(),
     )
@@ -442,12 +428,17 @@ async def test_a_deployment_whose_every_team_is_walked_schedules_no_per_issue_pa
     assert [entry.name for entry in runtime.scheduler.passes] == [
         "supervisor",
         ORGANIZE_PASS,
+        PromptKey.FIRE_PREP_PASS.value,
+        PromptKey.GROOMING_PASS.value,
         HEARTBEAT_PASS,
     ]
     assert runtime.lifecycle is None
-    for name in ("scheduled_passes_not_wired", "prompt_passes_not_wired"):
-        (withheld,) = _logged(logs, name)
-        assert withheld["organize_scopes_declared"] is True, name
+    (withheld,) = _logged(logs, "scheduled_passes_not_wired")
+    assert withheld["organize_scopes_declared"] is True
+    assert _logged(logs, "prompt_passes_not_wired") == []
+    # Grooming and fire prep still ask about every declared team's board.
+    for key in SESSION_PASSES:
+        assert await _session_scans(runtime, board, key) == {"primary", "agent"}, key
 
 
 # ---------------------------------------------------------------------------

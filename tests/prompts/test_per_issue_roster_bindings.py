@@ -1,30 +1,24 @@
-"""The session passes' team roster names the per-issue teams only (KOD-846).
+"""The session passes' team roster names every declared team, scopes or not.
 
-The two per-issue session passes are the only templates that enumerate the
-team roster, so binding the roster over the teams no scope walks tells exactly
-those sessions about exactly those boards. With no scope row the binding is
-what it always was.
+Grooming and fire prep run for every team whether or not a scope row is
+declared: they prepare the board for scopes to be approved, and the scope walk
+builds what is approved. So a scope row narrows nothing either session is told,
+and with no scope row the roster binds what it always did.
 """
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.composition.passes import prompt_pass_schedule
 from kodezart.config.app import AppConfig
 from kodezart.core.prompt_namespaces import operation_bindings
-from kodezart.core.prompt_rendering import binding_names
-from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_prompt_passes import standing_scope_operation
 
-#: The sentence a claude-opus session template adds to each sweep that reaches
-#: past the roster when a scope walks some team.
-SCOPE_WALK_BOUND = (
-    "an issue on a team a scope walks is not this pass's to triage, rewrite, "
-    "groom or answer"
-)
+#: What a session render is given besides the operation's own bindings.
+RENDER_VARIABLES = {"record_title": "a run", "skills_reference": ""}
 
 
-def test_the_team_roster_binds_only_the_per_issue_teams():
+def test_a_scope_deployment_binds_every_declared_team_in_the_roster():
     operation = standing_scope_operation()
     assert operation.scope_walked_teams() == ("primary",)
 
@@ -33,12 +27,10 @@ def test_the_team_roster_binds_only_the_per_issue_teams():
     teams = bindings["teams"]
     assert isinstance(teams, list)
     assert [(team["name"], team["key"]) for team in teams] == [
-        ("example-agent-team", "EXG")
+        ("Example Team", "EXA"),
+        ("example-agent-team", "EXG"),
     ]
     assert bindings["teams_absent"] is None
-    # Several repositories are still declared, so an unbound per-issue team
-    # would still render as recorded: the repository roster is not narrowed.
-    assert bindings["recorded_routing_absent"] is True
 
 
 def test_with_no_scope_row_the_roster_binds_exactly_as_before():
@@ -65,64 +57,42 @@ def test_with_no_scope_row_the_roster_binds_exactly_as_before():
     ]
 
 
-def test_a_walked_team_binds_the_sweep_bound():
-    assert operation_bindings(standing_scope_operation())["scope_walks"] is True
-
-
-def test_with_no_scope_row_the_sweep_bound_is_absent_and_renders_nothing():
-    operation = standing_scope_operation(scopes=False)
-    bindings = operation_bindings(operation)
-    assert bindings["scope_walks_absent"] is True
-    prompts = load_registry(default_set="claude-opus", bindings=bindings)
-
-    for key in (PromptKey.FIRE_PREP_PASS, PromptKey.GROOMING_PASS):
-        rendered = prompts.template_for(key).render({"record_title": "a run"})
-        assert SCOPE_WALK_BOUND not in rendered, key
-        assert "scope walks" not in rendered, key
-
-
-def roster_bindings() -> frozenset[str]:
-    """Every binding a scope row changes, with each one's ``_absent`` companion.
-
-    Derived by binding one operation with and without its scope row, so a
-    binding the per-team narrowing reaches later is guarded without an edit
-    here.
-    """
-    walked = operation_bindings(standing_scope_operation())
-    unwalked = operation_bindings(standing_scope_operation(scopes=False))
-    changed = {name for name in walked if walked[name] != unwalked.get(name)}
-    roots = {name.removesuffix("_absent") for name in changed}
-    return frozenset(roots | {f"{root}_absent" for root in roots})
-
-
-def test_only_the_per_issue_session_templates_read_the_team_roster():
+def test_a_scope_row_changes_nothing_either_session_pass_is_told():
     """Derived from the shipped sets and the scheduled pass table, never listed.
 
-    Each key of each shipped set is read as the registry composes it, set
-    fragments included, in both ticket review modes, so a fragment that reads
-    the roster is seen in every member it is spliced into.
+    Each scheduled session key of each shipped set is rendered as the registry
+    composes it, set fragments included, in both ticket review modes, over one
+    operation with its scope row and without it. The two renders are the same
+    text, and each names every declared team's board.
     """
-    bindings = roster_bindings()
-    assert "teams" in bindings, bindings
-    session_keys = {
-        key.value for key in prompt_pass_schedule(AppConfig(_env_file=None))
-    }
-    readers = {
-        (set_dir.name, mode.value, key.value)
-        for set_dir in default_sets_root().iterdir()
-        if set_dir.is_dir()
-        for mode in TicketReviewMode
-        for key in PromptKey
-        if {
-            name.split(".")[0]
-            for name in binding_names(
-                load_registry(default_set=set_dir.name, ticket_review_mode=mode)
-                .template_for(key)
-                .body
-            )
-        }
-        & bindings
-    }
+    walked = standing_scope_operation()
+    unwalked = standing_scope_operation(scopes=False)
+    assert walked.organize_scopes
+    assert not unwalked.organize_scopes
+    session_keys = tuple(prompt_pass_schedule(AppConfig(_env_file=None)))
+    assert session_keys
+    sets = [path.name for path in default_sets_root().iterdir() if path.is_dir()]
+    assert sets
 
-    assert readers, "no template reads the roster, so this guards nothing"
-    assert {key for *_, key in readers} <= session_keys, readers
+    compared = 0
+    for set_name in sets:
+        for mode in TicketReviewMode:
+            renders = [
+                load_registry(
+                    default_set=set_name,
+                    ticket_review_mode=mode,
+                    bindings=operation_bindings(operation),
+                )
+                for operation in (walked, unwalked)
+            ]
+            for key in session_keys:
+                scoped, plain = (
+                    registry.template_for(key).render(RENDER_VARIABLES)
+                    for registry in renders
+                )
+                assert scoped == plain, (set_name, mode.value, key.value)
+                for entry in walked.teams.values():
+                    assert entry.key in scoped, (set_name, key.value, entry.key)
+                compared += 1
+
+    assert compared == len(sets) * len(TicketReviewMode) * len(session_keys)

@@ -211,8 +211,8 @@ DIAGNOSIS = "auth_insufficient_scope: this credential cannot read those"
 HEARTBEAT_PASS = "scope_heartbeat"
 
 #: What the organize tick is registered under, spelled here for the same
-#: reason: ``grooming_pass`` stays the per-issue grooming session's name in a
-#: deployment that runs both flows, so the tick carries a name of its own.
+#: reason: ``grooming_pass`` stays the grooming session's name in a deployment
+#: that declares scopes, so the tick carries a name of its own.
 ORGANIZE_PASS = "organize"
 
 #: The deployment half of a standing-scope operation: the owner bounds both
@@ -529,7 +529,7 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
     assert heartbeat.report is None
     assert registered.count(HEARTBEAT_PASS) == 1
     assert registered.count(ORGANIZE_PASS) == 1
-    # The per-issue grooming session of the team no scope walks, once.
+    # The grooming session, which runs whether or not a scope is declared, once.
     assert registered.count(PromptKey.GROOMING_PASS.value) == 1
 
     # The REGISTERED callable, ticked: what the scheduler would reach is the
