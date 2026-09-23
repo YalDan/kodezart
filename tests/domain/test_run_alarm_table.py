@@ -34,9 +34,16 @@ def test_every_member_of_the_vocabulary_has_a_fold():
     assert set(ALARM_TABLE) == set(AlarmSignal)
 
 
-def test_a_member_with_no_fold_refuses_the_boot_naming_every_one(monkeypatch):
+@pytest.mark.parametrize(
+    "missing",
+    [
+        (AlarmSignal.TALLY_REGRESSED,),
+        (AlarmSignal.TALLY_REGRESSED, AlarmSignal.COMPOSITION_SUBSTITUTED),
+    ],
+    ids=["one", "several"],
+)
+def test_a_member_with_no_fold_refuses_the_boot_naming_every_one(monkeypatch, missing):
     """Read at call time, so the refusal is of the table the process runs with."""
-    missing = (AlarmSignal.TALLY_REGRESSED, AlarmSignal.COMPOSITION_SUBSTITUTED)
     monkeypatch.setattr(
         run_alarm_table,
         "ALARM_TABLE",

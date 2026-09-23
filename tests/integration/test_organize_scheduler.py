@@ -8,13 +8,15 @@ from kodezart.composition.tracker import DialledTracker
 from kodezart.core.errors import PassGateCapabilityError
 from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import operation_bindings
+from kodezart.domain import run_alarm_table
 from kodezart.domain.lane_alarms import OBSERVED_ALARMS
-from kodezart.domain.run_alarm_table import alarm_scans
+from kodezart.domain.run_alarm_table import AlarmTableError, alarm_scans
 from kodezart.services.agent_service import AgentService
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.dispatch import PassRun, PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_alarm import AlarmSignal
 from tests.chains.test_organize import RecordingWorkspace
 from tests.chains.test_organize_owner import BoardExecutor
 from tests.fakes import (
@@ -434,6 +436,48 @@ async def test_preflight_asks_nothing_of_a_pass_a_scope_deployment_withholds(tmp
     )
 
     assert set(scanner.asked) == {PassSignal.issues_changed}
+
+
+@pytest.mark.parametrize("dialled", [True, False], ids=["tracker", "no tracker"])
+async def test_a_missing_fold_aborts_the_preflight_before_anything_is_probed(
+    tmp_path, monkeypatch, dialled
+):
+    """Totality is the first boot check, and it needs nothing to be dialled.
+
+    A scope deployment with the alarm table one member short refuses naming
+    that member, whether or not a tracker is dialled, and the credential is
+    never asked what it can scan: a probe made first would be a round trip
+    spent on a boot that was always going to be refused.
+    """
+    _, operation, _board, _tracker, _prompts, _ledger = dependencies(tmp_path)
+    config = _config(
+        tmp_path,
+        organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
+        write_back={"max_verify_rounds": 2},
+        ticket_review_mode="reviewed",
+    )
+    monkeypatch.setattr(
+        run_alarm_table,
+        "ALARM_TABLE",
+        {
+            signal: row
+            for signal, row in run_alarm_table.ALARM_TABLE.items()
+            if signal is not AlarmSignal.LAPSE_UNDISCHARGED
+        },
+    )
+    tracker = FakeTrackerPort()
+
+    with pytest.raises(AlarmTableError) as caught:
+        await verify_pass_preflight(
+            config=config,
+            operation=operation,
+            tracker=tracker if dialled else None,
+            github_api=FakeDeliveryProbe(),
+            prompts=_RefusingPrompts(),
+        )
+
+    assert caught.value.missing == (AlarmSignal.LAPSE_UNDISCHARGED,)
+    assert tracker.capability_probes == []
 
 
 async def test_a_scope_deployment_whose_credential_cannot_list_issues_is_refused(
