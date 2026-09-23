@@ -862,10 +862,12 @@ async def test_the_marker_write_carries_the_run_as_its_holder(monkeypatch):
 async def test_the_marker_write_is_keyed_on_the_member_and_the_marker(monkeypatch):
     """One write per member, of the phase's own marker, and none on a replay.
 
-    The member and the marker are the write's whole key: a member already
-    carrying the marker is never written again, so a second entry into the
-    same board sends nothing. The write names the configured marker member;
-    the board shows the label the operation spells it as.
+    The write names the configured marker member; the board shows the label
+    the operation spells it as. On a second entry every member already
+    carries the marker, so the stage roster owes nothing and the phase opens
+    no round at all: the replay is the roster's, and it never reaches the
+    terminal act. The terminal act's own set-if-different is the partially
+    marked case below.
     """
     owner, board, _ = factory()
     writes = record_classification_writes(board, monkeypatch)
@@ -883,6 +885,64 @@ async def test_the_marker_write_is_keyed_on_the_member_and_the_marker(monkeypatc
     report = await run_owner(owner)
     assert report.halt is None
     assert writes == []
+
+
+def judged_members(executor):
+    """The member each write-back judgment was opened on, in session order."""
+    return [
+        json.loads(
+            re.search(
+                r"<written_artifact>\s*(.*?)\s*</written_artifact>",
+                call["prompt"],
+                re.S,
+            )[1]
+        )["nativeRef"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "WriteBackFinding"
+    ]
+
+
+async def test_a_partially_marked_scope_marks_only_the_member_that_lacks_it(
+    monkeypatch,
+):
+    """The terminal act is set-if-different on the member it is keyed on.
+
+    Two members under one scope reach the marker sweep: one already carries
+    the phase marker and one does not, and neither is the scope's own key.
+    Exactly one marker write is sent, onto the member that lacks it, under the
+    job as its holder. The marked member is sent no write, is never leased
+    and is never judged.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = factory(body=PREPARED_BODY)
+    board.server.issues[CLAIMED_ISSUE].labels.append("graph complete")
+    board.server.issues["marked-child"] = FakeMcpIssue(
+        id="marked-child",
+        parent_id=CLAIMED_ISSUE,
+        description=PREPARED_BODY,
+        labels=["graph complete"],
+    )
+    board.server.issues["unmarked-child"] = FakeMcpIssue(
+        id="unmarked-child", parent_id=CLAIMED_ISSUE, description=PREPARED_BODY
+    )
+    writes = record_classification_writes(board, monkeypatch)
+    report = await run_owner(owner)
+
+    assert report.halt is None
+    assert report.completed_phases == (MandateKind.GROOM,)
+    assert writes == [("unmarked-child", "groomed", "actual-organize-job")]
+    leased = [
+        args.get("issueId")
+        for name, args in board.calls
+        if name == "save_comment"
+        and "kind: lease\n" in str(args.get("body", ""))
+        and args.get("issueId") is not None
+    ]
+    assert leased == ["unmarked-child"]
+    assert judged_members(executor) == ["unmarked-child"]
+    for key in (CLAIMED_ISSUE, "marked-child", "unmarked-child"):
+        assert "graph complete" in board.server.issues[key].labels
 
 
 def swallow_marker_writes(board, executor, monkeypatch):
