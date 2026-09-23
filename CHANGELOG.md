@@ -34,7 +34,8 @@ concerns.
   `[marker_prefixes]` table gets the markers v0.2 wrote for the per-issue path,
   and a `records.fire` log with neither `columns` nor `outcome_mapping` gets
   v0.2's title-line row and no record clause. Boot logs
-  `operation_file_v02_accepted` once when it applies. A v0.2 claim already on
+  `operation_file_v02_accepted` once when it applies, its `defaulted` naming
+  `marker_prefixes` and `records.fire` where each was given. A v0.2 claim already on
   an issue is honoured until it lapses and is never written again.
   `docs/migration-v0.2-to-v0.3.md` says what an old file gets.
 - `[run_event_states]` is optional in an operation file, and dialling the
