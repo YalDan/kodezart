@@ -280,8 +280,9 @@ reader tells an obligation the board set aside from one that was never there
 
 Each ready lane's gap is measured on the walk observation, as `gaps`: one
 `GapMeasurement` per ready lane naming its open subtree criteria at that read,
-built fresh every tick and on no durable write the run makes — not the lane
-record, not a criterion's Evidence write, not the status update (KOD-461). An
+built fresh every tick and written to none of the three surfaces the run
+writes down: the lane record comment, a criterion's Evidence row and the scope
+status update (KOD-461). An
 open criterion inside a ready lane's subtree that the scope's own filter cannot
 address in its own right is named among the observation's exclusions as
 `out_of_scope`, with the reason the filter gives; one under a blocked or

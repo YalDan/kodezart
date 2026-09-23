@@ -289,9 +289,9 @@ named under any member, approved or not, blocked or not, and only a lane that is
 ready (approved and unblocked) is fired for it. Its reason is `other_project` or
 `no_project` under a project or initiative scope and `other_milestone` or
 `no_milestone` under a milestone scope.
-Each ready lane's gap is measured there, fresh on every tick, and on no durable
-write the run makes: not the lane record, not a criterion's Evidence write and
-not the status update.
+Each ready lane's gap is measured there, fresh on every tick, and on none of
+the three surfaces the run writes down: the lane record comment, a
+criterion's Evidence row and the scope status update.
 
 This request route executes eligible lanes serially, and a lane is fired again in
 the same invocation while its last fire closed a previously open criterion of its
