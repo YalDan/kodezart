@@ -4,8 +4,18 @@ from dataclasses import replace
 
 import pytest
 
-from kodezart.domain.errors import AuditClaimReadError, CriterionReadError
+from kodezart.domain.errors import (
+    AssertionComparisonError,
+    AuditClaimReadError,
+    CriterionReadError,
+    RulingRecordReadError,
+)
 from kodezart.services.assertion_drift import AssertionDriftDetector
+from kodezart.services.audit_failures import (
+    AUDIT_PUBLICATION_FAILURES,
+    AUDIT_READ_FAILURES,
+    DRIFT_READ_FAILURES,
+)
 from kodezart.services.recorded_assertion_drift import RecordedAssertionDriftDetector
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.assertion_drift import (
@@ -114,3 +124,62 @@ async def test_an_unreadable_criterion_family_refuses_the_comparison_not_the_aud
     assert child.assertion_drift is None
     assert child.drift_unavailable_reason is not None
     assert child.drift_unavailable_reason.startswith("CriterionReadError: ")
+
+
+class Comparing:
+    """A configured comparison that would report one claim if it were asked."""
+
+    def __init__(self):
+        self.requests = []
+
+    async def compare(self, request):
+        self.requests.append(request)
+        return (claim(head_sha=HEAD),)
+
+
+class Refusing:
+    """A configured comparison that cannot establish a readable pair."""
+
+    async def compare(self, request):
+        raise AssertionComparisonError(
+            source_ref=request.criterion_key, reason="the graded test holds none"
+        )
+
+
+async def test_a_criterion_target_with_no_native_request_is_refused_by_name(setup):
+    """A criterion with no native request is never compared as an empty result."""
+    build, *_ = setup
+    drift = Comparing()
+    sweep = build(selected_drift=drift)
+    snapshot = await sweep.prepare()
+    child, parent = snapshot.targets
+    assert child.issue.issue_key == CHILD
+    unaddressed = replace(child, request=None)
+
+    observed = await sweep.observe_target(
+        snapshot=replace(snapshot, targets=(unaddressed, parent)), target=unaddressed
+    )
+
+    assert observed.assertion_drift is None
+    assert observed.drift_unavailable_reason == (
+        "AuditClaimReadError: assertion-drift comparison requires a native "
+        "criterion request"
+    )
+    assert drift.requests == []
+
+
+async def test_a_comparison_that_refuses_is_the_criterions_unavailability(setup):
+    build, *_ = setup
+    child, _parent = (await build(selected_drift=Refusing()).run()).observations
+    assert child.target.issue.issue_key == CHILD
+    assert child.assertion_drift is None
+    assert child.drift_unavailable_reason is not None
+    assert child.drift_unavailable_reason.startswith("AssertionComparisonError: ")
+
+
+def test_only_the_drift_arm_treats_its_own_refusals_as_unavailability():
+    """The drift arm's tuple is the one widened; the shared taxonomy is not."""
+    own = {AssertionComparisonError, RulingRecordReadError, CriterionReadError}
+    assert set(DRIFT_READ_FAILURES) - set(AUDIT_READ_FAILURES) == own
+    assert not own & set(AUDIT_READ_FAILURES)
+    assert not own & set(AUDIT_PUBLICATION_FAILURES)
