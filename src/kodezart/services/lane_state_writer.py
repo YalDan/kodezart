@@ -122,6 +122,11 @@ class TrackerLaneStateWriter:
     it changes; the first-push event does not, because its body is rendered
     by the port out of a closed event kind and the lane key, and this
     service cannot gate bytes it does not compose.
+
+    A node-session opening is posted ungated on the same basis (KOD-843).
+    Everything its key carries is a machine fact of the lane's own run: the
+    node invocation, the run identity and the session id the harness
+    observed. Nothing authored reaches it, and the port renders its body.
     """
 
     def __init__(

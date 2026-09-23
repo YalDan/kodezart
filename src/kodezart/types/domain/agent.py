@@ -333,7 +333,9 @@ class NodeSessionStartedEvent(AgentEvent):
     """An actual native opening, emitted by its addressed harness invocation.
 
     This stream value does not assert that a tracker event was published.
-    Durable publication remains a separate leased and gated write.
+    On the scoped arm the durable publication is a separate write:
+    ``TrackerLaneStateWriter.record_node_sessions`` posts each opening on the
+    lane's own stream, where ``COMPOSITION_SUBSTITUTED`` reads it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

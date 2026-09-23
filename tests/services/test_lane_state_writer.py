@@ -2745,7 +2745,7 @@ async def test_node_sessions_are_posted_once_each_under_their_invocation():
 
     Two openings of one invocation are two events; the same two handed over
     again — a resumed lane, or a retried post — add nothing; a third opening
-    later is posted on its own. What is posted names no body text.
+    later is posted on its own.
     """
     port = criteria_board()
     lane_state = writer(port, lane_repo())
