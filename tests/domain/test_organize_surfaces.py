@@ -100,6 +100,17 @@ OUTSIDE = (
 )
 
 
+GROOM_KINDS = "issue_description, issue_graph, issue_label_set"
+
+
+def said(kind, key):
+    """The evidence a groom residual carries, written out in full."""
+    return (
+        f"The groom phase needed {kind} on {key}, which is outside the set it "
+        f"declares ({GROOM_KINDS})."
+    )
+
+
 def findings(*outside):
     return surface_findings(
         outside=frozenset(outside),
@@ -126,12 +137,17 @@ def test_no_outside_surface_is_no_finding():
     assert findings() == ()
 
 
+def test_the_evidence_names_the_phase_the_kind_the_key_and_the_declared_kinds():
+    """The whole sentence, for a kind the groom row does not declare."""
+    (record,) = findings(OUTSIDE[1])
+    assert record.evidence == said("issue_split_set", "SCOPE-1")
+
+
 def test_the_same_refusal_composes_the_same_findings():
     """One order for every reader: owning key, then kind."""
-    assert findings(*OUTSIDE) == findings(*reversed(OUTSIDE))
-    assert [record.issue_id for record in findings(*OUTSIDE)] == [
-        "SCOPE-1",
-        "SCOPE-9",
+    assert [(record.issue_id, record.evidence) for record in findings(*OUTSIDE)] == [
+        ("SCOPE-1", said("issue_split_set", "SCOPE-1")),
+        ("SCOPE-9", said("issue_graph", "SCOPE-9")),
     ]
 
 
@@ -141,10 +157,56 @@ def test_two_addresses_on_one_item_are_two_findings():
         WritableSurface(kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key="SCOPE-1"))
         for kind in (SurfaceKind.ISSUE_GRAPH, SurfaceKind.ISSUE_SPLIT_SET)
     )
-    assert [record.issue_id for record in findings(graph, split)] == [
-        "SCOPE-1",
-        "SCOPE-1",
+    assert [
+        (record.issue_id, record.evidence) for record in findings(graph, split)
+    ] == [
+        ("SCOPE-1", said("issue_graph", "SCOPE-1")),
+        ("SCOPE-1", said("issue_split_set", "SCOPE-1")),
     ]
     assert {record.defect_class for record in findings(graph, split)} == {
         UNDECLARED_SURFACE
     }
+
+
+def test_many_addresses_compose_in_one_order_whatever_the_set_iterates():
+    """Owning key, then kind, then the declared kinds sorted, written out.
+
+    Nine addresses and every kind declared: an order that came from the
+    set's own iteration rather than the sort would match this one by chance
+    far too rarely to pass.
+    """
+    kinds = (
+        SurfaceKind.CRITERION_CHILD_SET,
+        SurfaceKind.ISSUE_GRAPH,
+        SurfaceKind.ISSUE_SPLIT_SET,
+    )
+    outside = frozenset(
+        WritableSurface(kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=key))
+        for key in reversed(MEMBERS)
+        for kind in reversed(kinds)
+    )
+    declared = ", ".join(
+        (
+            "container_description",
+            "container_status_update",
+            "criterion_child_set",
+            "criterion_sub_issue",
+            "issue_description",
+            "issue_graph",
+            "issue_label_set",
+            "issue_split_set",
+            "marker_comment",
+        )
+    )
+    composed = surface_findings(
+        outside=outside, phase="groom", declared=frozenset(SurfaceKind)
+    )
+    assert [(record.issue_id, record.evidence) for record in composed] == [
+        (
+            key,
+            f"The groom phase needed {kind} on {key}, which is outside the set "
+            f"it declares ({declared}).",
+        )
+        for key in ("SCOPE-1", "SCOPE-2", "SCOPE-3")
+        for kind in ("criterion_child_set", "issue_graph", "issue_split_set")
+    ]
