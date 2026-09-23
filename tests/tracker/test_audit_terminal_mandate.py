@@ -232,7 +232,7 @@ async def test_a_missing_branch_refutation_carries_a_mandate_verdict_in_each_sta
     "failure", ["session", "wrong-defect", "wrong-source", "inexact-quote"]
 )
 async def test_a_failed_terminal_mandate_carries_no_complete_report(
-    setup, tracker, server, failure
+    setup, tracker, server, tracker_writes, failure
 ):
     """A hunt that fails keeps the raw refutation beside its reason.
 
@@ -274,7 +274,9 @@ async def test_a_failed_terminal_mandate_carries_no_complete_report(
             "inexact-quote": "mandate_text",
         }[failure]
         executor.mandate_output["finding"][field] = "foreign"
+    before = tracker_writes()
     result = await build().run()
+    assert tracker_writes() == before
     child, parent = result.observations
     assert child.claim is not None
     assert parent.terminal.verdict is AuditVerdict.REFUTED
