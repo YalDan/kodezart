@@ -19,8 +19,10 @@ from pydantic import BaseModel, ValidationError, create_model
 
 from kodezart.domain.errors import LaneRecordWriteError
 from kodezart.domain.lane_record import (
+    REENTRY_SECTION,
     lane_record_body,
     next_lane_record,
+    parse_lane_record,
     render_lane_record,
 )
 from kodezart.domain.trajectory import fold_trajectory
@@ -368,6 +370,71 @@ verification instructions, reading satisfaction and Evidence on that sub-issue.
 Let only failing criteria drive new work."""
     assert rendered.endswith("\n\n" + expected)
     assert rendered.count("## Re-entry") == 1
+
+
+#: The re-entry section lane records were written with from 26dd593e
+#: (2026-09-14) until cd4eb635 (2026-09-23), spelled here byte for byte: the
+#: comments already on a board carry exactly these bytes, whatever the source
+#: now calls them.
+REENTRY_UNTIL_CD4EB635 = """## Re-entry
+
+Resume the branch identified by the LOOP role and the record's branch field.
+When pushedHeadSha is present, that branch exists on the remote at the recorded
+head; check out the existing branch. When pushedHeadSha is null, no remote copy
+was recorded: recover the existing branch before continuing. Never mint a new
+branch in place of a recorded association. Follow the explicit roles and
+derivedFrom links to the deliverable, other loop and recovery branches; do not
+infer their roles from their names. Associations survive reaping, so verify
+current remote liveness before checkout.
+
+Grade the existing commits against each criterion sub-issue's own Check and
+verification instructions, reading satisfaction and Evidence on that sub-issue.
+Let only failing criteria drive new work."""
+
+#: Every re-entry section a record on a board may still end with, other than
+#: the one a writer renders today.
+EARLIER_REENTRY_SECTIONS = (REENTRY_UNTIL_CD4EB635,)
+
+PREFIXES = {"run_state": "fixture-record"}
+
+
+def rendered_under(section: str) -> tuple[LaneRunState, str]:
+    """A record, and its comment as a writer using *section* would have left it."""
+    record = LaneRunState.model_validate(record_data())
+    current = render_lane_record(record=record, marker_prefixes=PREFIXES)
+    assert current.endswith("\n\n" + REENTRY_SECTION)
+    return record, current.removesuffix(REENTRY_SECTION) + section
+
+
+@pytest.mark.parametrize("section", EARLIER_REENTRY_SECTIONS)
+def test_a_record_written_under_an_earlier_reentry_section_reads_the_same(section):
+    """A comment already on a board stays this lane's record when the text moves.
+
+    The section is fixed text a writer appends, so a record written before it
+    last changed ends with the earlier bytes. Refusing those would leave the
+    lane unable to re-enter or be written again until someone edits the
+    comment by hand; it is read as the same record instead.
+    """
+    record, earlier = rendered_under(section)
+    assert section != REENTRY_SECTION
+    assert (
+        parse_lane_record(body=earlier, lane_key="lane:alpha", marker_prefixes=PREFIXES)
+        == record
+    )
+
+
+def test_a_reentry_section_no_writer_ever_rendered_is_refused():
+    """Only the exact texts a writer rendered are recognised, nothing near them."""
+    _, invented = rendered_under(
+        "## Re-entry\n\nResume at whatever tip the remote holds for the loop branch."
+    )
+    with pytest.raises(ValueError, match="fixed re-entry section is invalid"):
+        parse_lane_record(
+            body=invented, lane_key="lane:alpha", marker_prefixes=PREFIXES
+        )
+    # Not refused for its payload: the same body under the current section reads.
+    _, current = rendered_under(REENTRY_SECTION)
+    parse_lane_record(body=current, lane_key="lane:alpha", marker_prefixes=PREFIXES)
 
 
 def test_the_marker_and_the_body_compose_the_whole_rendered_record():

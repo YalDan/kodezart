@@ -25,6 +25,9 @@ RUN_STATE_PURPOSE = "run_state"
 #: can name it something a reader of the record would not recognise.
 LANDING_ROW_SUBJECT = "land: the best iteration this run reached"
 
+#: The re-entry section every record is written with. A writer renders this
+#: one and no other, so the next write of a record read under an earlier
+#: section migrates that comment to it.
 REENTRY_SECTION = """## Re-entry
 
 Resume at the record's last commit act, the sha of its final commits row, and
@@ -43,6 +46,29 @@ before checkout.
 Grade the existing commits against each criterion sub-issue's own Check and
 verification instructions, reading satisfaction and Evidence on that sub-issue.
 Let only failing criteria drive new work."""
+
+
+#: Every re-entry section a record was written with before the current one,
+#: exact to the byte. A comment rendered under one of them is still this lane's
+#: record: it is read as such, and its next write renders ``REENTRY_SECTION``.
+#: Nothing else is recognised, so an arbitrary text stays a refused framing.
+PREVIOUS_REENTRY_SECTIONS: tuple[str, ...] = (
+    # Written from 26dd593e (2026-09-14) until cd4eb635 (2026-09-23).
+    """## Re-entry
+
+Resume the branch identified by the LOOP role and the record's branch field.
+When pushedHeadSha is present, that branch exists on the remote at the recorded
+head; check out the existing branch. When pushedHeadSha is null, no remote copy
+was recorded: recover the existing branch before continuing. Never mint a new
+branch in place of a recorded association. Follow the explicit roles and
+derivedFrom links to the deliverable, other loop and recovery branches; do not
+infer their roles from their names. Associations survive reaping, so verify
+current remote liveness before checkout.
+
+Grade the existing commits against each criterion sub-issue's own Check and
+verification instructions, reading satisfaction and Evidence on that sub-issue.
+Let only failing criteria drive new work.""",
+)
 
 
 def lane_record_body(*, record: LaneRunState) -> str:
@@ -195,14 +221,24 @@ def parse_lane_record(
     """Read the declared record format, refusing damaged or ambiguous facts.
 
     Historical free-form comments require an explicit migration; guessing at
-    their prose is not a substitute for the recorded fields.
+    their prose is not a substitute for the recorded fields. The fixed
+    re-entry section is the current one or one of the exact earlier texts in
+    ``PREVIOUS_REENTRY_SECTIONS``, so a record written before the section last
+    changed stays readable until its next write renders the current one.
     """
     marker = compose_comment_marker(
         prefixes=marker_prefixes, purpose=RUN_STATE_PURPOSE, lane=lane_key
     )
     prefix = f"{marker}\n```json\n"
-    suffix = f"\n```\n\n{REENTRY_SECTION}"
-    if not body.startswith(prefix) or not body.endswith(suffix):
+    suffix = next(
+        (
+            framed
+            for section in (REENTRY_SECTION, *PREVIOUS_REENTRY_SECTIONS)
+            if body.endswith(framed := f"\n```\n\n{section}")
+        ),
+        None,
+    )
+    if not body.startswith(prefix) or suffix is None:
         raise ValueError("the record framing or fixed re-entry section is invalid")
     payload = body[len(prefix) : -len(suffix)]
     # JSON otherwise accepts repeated keys by silently taking the last value.
