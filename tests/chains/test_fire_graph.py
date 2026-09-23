@@ -13,6 +13,7 @@ from pathlib import Path
 from types import CodeType, FrameType, UnionType
 from typing import Annotated, Literal, Union, get_args, get_origin
 
+import pytest
 from fastapi import FastAPI
 from pydantic import BaseModel
 from pydantic_core import SchemaSerializer
@@ -23,6 +24,7 @@ from kodezart.adapters import asyncio_job_queue
 from kodezart.api.v1.endpoints import agent as agent_routes
 from kodezart.api.v1.endpoints import jobs as job_routes
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.composition.jobs import build_job_service
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.outcome import classify_outcome
 from kodezart.handlers import agent_handler
@@ -808,11 +810,91 @@ def test_every_route_the_app_serves_is_classified():
     """The app's whole route table, by equality, each row marked stream or not.
 
     Read off ``app.routes`` for every route class, not only the ones that
-    declare how they answer, so no spelling of a stream route escapes the
-    table: a new route of any kind reds here until it is classified.
+    declare how they answer, so a new route of any kind reds here until it
+    is classified.  Read under the configuration the test environment
+    builds; the rows another configuration or the lifespan adds are
+    measured below.
     """
     assert route_rows(create_app()) == sorted(ROUTES)
     assert stream_routes() != set()
+
+
+#: The rows ``http.debug`` adds to :data:`ROUTES`: the interactive schema
+#: pages, each one HTML body.  Measured with debug on, and driven there.
+DEBUG_ROUTES: dict[Row, tuple[bool, str]] = {
+    ("starlette.routing.Route", ("GET", "HEAD"), "/docs"): (
+        False,
+        "the interactive schema page, one HTML body",
+    ),
+    ("starlette.routing.Route", ("GET", "HEAD"), "/docs/oauth2-redirect"): (
+        False,
+        "the schema page's sign-in redirect, one HTML body",
+    ),
+    ("starlette.routing.Route", ("GET", "HEAD"), "/redoc"): (
+        False,
+        "the rendered schema page, one HTML body",
+    ),
+}
+
+#: The rows running the app's lifespan adds, under either debug setting.
+LIFESPAN_ROUTES: dict[Row, tuple[bool, str]] = {}
+
+
+@pytest.mark.parametrize("debug", [False, True], ids=["debug off", "debug on"])
+async def test_every_configuration_serves_the_classified_routes(
+    monkeypatch: pytest.MonkeyPatch, debug: bool
+) -> None:
+    """The route table under both ``debug`` settings, before and in the lifespan.
+
+    The app is built from the environment with ``http.debug`` set each way,
+    its rows read, then read again with its lifespan entered, the way a
+    served app is.  Each configuration adds exactly the rows measured for
+    it, so a stream route mounted only under a config flag, or registered
+    while the app starts, is a row nobody classified and reds here.  The
+    rows debug adds are driven on that app, and none of them streams.
+    """
+    monkeypatch.setenv("KODEZART_HTTP__DEBUG", "true" if debug else "false")
+    app = create_app()
+    assert app.state.config.http.debug is debug
+    assert set(DEBUG_ROUTES) & set(ROUTES) == set()
+    assert set(LIFESPAN_ROUTES) & {*ROUTES, *DEBUG_ROUTES} == set()
+    table = {**ROUTES, **(DEBUG_ROUTES if debug else {})}
+    before = route_rows(app)
+    assert before == sorted(table)
+    async with app.router.lifespan_context(app):
+        within = route_rows(app)
+    assert within == sorted({**table, **LIFESPAN_ROUTES})
+    if debug:
+        assert DEBUG_ROUTES != {}
+        answers = {
+            (method, path): await exchange(app, method, path)
+            for _, methods, path in DEBUG_ROUTES
+            for method in methods
+        }
+        statuses = {route: status for route, (status, _, _) in answers.items()}
+        assert statuses == dict.fromkeys(answers, 200)
+        assert {
+            (method, path): streams(answers[(method, path)][1])
+            for _, methods, path in DEBUG_ROUTES
+            for method in methods
+        } == {
+            (method, path): stream
+            for (_, methods, path), (stream, _) in DEBUG_ROUTES.items()
+            for method in methods
+        }
+
+
+#: What one exchange answered: its status, its headers and, when it is an
+#: event stream, its decoded frames.
+Answer = tuple[int, list[tuple[str, str]], list[dict[str, object]]]
+
+
+def streams(headers: list[tuple[str, str]]) -> bool:
+    """Whether *headers* announce an event stream, whatever else they carry."""
+    return any(
+        name == "content-type" and value.startswith("text/event-stream")
+        for name, value in headers
+    )
 
 
 def sse_frame(block: str) -> dict[str, object]:
@@ -842,20 +924,23 @@ async def exchange(
     *,
     body: Mapping[str, object] | None = None,
     on_frame: Callable[[dict[str, object]], Awaitable[None]] | None = None,
-) -> tuple[list[tuple[str, str]], list[dict[str, object]]]:
+) -> Answer:
     """One request through the app's own ASGI callable, read as it is sent.
 
-    The response's headers, and every SSE frame decoded by :func:`sse_frame`
-    the moment its body chunk is sent, handed to *on_frame* before the app
-    may send the next.  So the caller acts between two frames the way a
-    client reading the stream can, which a transport that collects the
-    whole body first cannot.  Bounded by ``ATTACH_BOUND`` per frame handler
-    and for the whole exchange.
+    The response's status and headers and, when the headers announce an
+    event stream, every SSE frame decoded by :func:`sse_frame` the moment
+    its body chunk is sent, handed to *on_frame* before the app may send
+    the next.  So the caller acts between two frames the way a client
+    reading the stream can, which a transport that collects the whole body
+    first cannot.  Any other body is read to its end and not decoded.
+    Bounded by ``ATTACH_BOUND`` per frame handler and for the whole
+    exchange.
     """
     payload = b"" if body is None else json.dumps(body).encode()
     sent = asyncio.Event()
     asked = False
     started: dict[str, object] = {}
+    headers: list[tuple[str, str]] = []
     pending = ""
     frames: list[dict[str, object]] = []
 
@@ -871,14 +956,18 @@ async def exchange(
         nonlocal pending
         if message["type"] == "http.response.start":
             started.update(message)
+            headers.extend(
+                (name.decode(), value.decode()) for name, value in message["headers"]
+            )
             return
-        pending += bytes(message.get("body", b"")).decode()
-        *blocks, pending = pending.split("\n\n")
-        for block in blocks:
-            frame = sse_frame(block)
-            frames.append(frame)
-            if on_frame is not None:
-                await asyncio.wait_for(on_frame(frame), timeout=ATTACH_BOUND)
+        if streams(headers):
+            pending += bytes(message.get("body", b"")).decode()
+            *blocks, pending = pending.split("\n\n")
+            for block in blocks:
+                frame = sse_frame(block)
+                frames.append(frame)
+                if on_frame is not None:
+                    await asyncio.wait_for(on_frame(frame), timeout=ATTACH_BOUND)
         if not message.get("more_body", False):
             sent.set()
 
@@ -897,13 +986,11 @@ async def exchange(
         "client": ("test", 1),
     }
     await asyncio.wait_for(app(scope, receive, send), timeout=ATTACH_BOUND)
-    assert started["status"] == 200, path
+    status = started["status"]
+    assert isinstance(status, int), path
     assert sent.is_set(), path
     assert pending == "", path
-    raw = started["headers"]
-    assert isinstance(raw, list), path
-    headers = [(name.decode(), value.decode()) for name, value in raw]
-    return headers, frames
+    return status, headers, frames
 
 
 class HeldFire:
@@ -934,16 +1021,23 @@ class HeldFire:
 BODY: dict[str, object] = {"prompt": "fix", "repoPath": "/tmp/fake"}
 
 
-async def emitted(
-    events: list[AgentEvent],
-) -> dict[tuple[str, str], tuple[list[tuple[str, str]], list[dict[str, object]]]]:
-    """What the app emits for *events* on every event-stream route it has.
+#: The one route whose run is held so that one attach meets the open job.
+WORKFLOW = ("POST", "/api/v1/agent/workflow")
 
-    Driven through the app's own routes, handler and queue: the query
-    stream, whose events are what the agent run yields; the workflow
-    stream, attached while its run is still going; and a later attach to
-    that finished job, which replays its buffer.  Returns each route's
-    headers and decoded frames, the workflow's leading handle taken off.
+
+async def emitted(events: list[AgentEvent]) -> dict[tuple[str, str], Answer]:
+    """What the app answers for *events* on every method of every route it has.
+
+    Driven through the app's own routes, handler and queue, every method
+    of every row of :data:`ROUTES`, whether the row is marked a stream or
+    not, so whether a route streams is what it answers rather than what
+    the table says: a job's path names the workflow's job, and a ``POST``
+    carries :data:`BODY`.  Returns each one's status, headers and decoded
+    frames, the workflow's leading handle taken off.  The query stream's
+    events are what the agent run yields; the workflow's run and every
+    other run the routes queue are the held engine's; a later attach to
+    the workflow's finished job replays its buffer.  Every job the drive
+    queued has finished before the queue is stopped.
 
     The workflow run is held after its first event until that event reaches
     the client.  The handle frame waits until the first event is in the
@@ -963,12 +1057,10 @@ async def emitted(
     fire = HeldFire(events)
     job: list[str] = []
     open_at_release: list[bool] = []
-    sent: dict[
-        tuple[str, str], tuple[list[tuple[str, str]], list[dict[str, object]]]
-    ] = {}
     async with attached_job_queue(
         app, fire, event_buffer_capacity=len(events)
     ) as queue:
+        app.state.job_service = build_job_service(registry=queue, checkpointer=None)
 
         async def attached(frame: dict[str, object]) -> None:
             if frame["type"] == "job_accepted":
@@ -979,19 +1071,62 @@ async def emitted(
                 open_at_release.append(state is not JobState.TERMINAL)
                 fire.released.set()
 
-        sent[("POST", "/api/v1/agent/query")] = await exchange(
-            app, "POST", "/api/v1/agent/query", body=BODY
-        )
-        headers, (handle, *run) = await exchange(
-            app, "POST", "/api/v1/agent/workflow", body=BODY, on_frame=attached
+        status, headers, (handle, *run) = await exchange(
+            app, *WORKFLOW, body=BODY, on_frame=attached
         )
         assert handle["type"] == "job_accepted"
         assert open_at_release == [True]
-        sent[("POST", "/api/v1/agent/workflow")] = (headers, run)
-        sent[("GET", "/api/v1/jobs/{job_id}/stream")] = await exchange(
-            app, "GET", f"/api/v1/jobs/{job[0]}/stream"
-        )
-    return sent
+        answers = {WORKFLOW: (status, headers, run)}
+        for _, methods, path in sorted(ROUTES):
+            for method in methods:
+                if (method, path) == WORKFLOW:
+                    continue
+                concrete = path.replace("{job_id}", job[0])
+                assert "{" not in concrete, path
+                answers[(method, path)] = await exchange(
+                    app, method, concrete, body=BODY if method == "POST" else None
+                )
+
+        async def settled() -> None:
+            while any(
+                record.state is not JobState.TERMINAL
+                for record in queue.registry.records.values()
+            ):
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(settled(), timeout=ATTACH_BOUND)
+    assert {
+        route: status
+        for route, (status, _, _) in answers.items()
+        if not 200 <= status < 300
+    } == {}
+    return answers
+
+
+def test_every_route_has_a_method_to_drive():
+    """Each row of the table names a method, so the drive above reaches it."""
+    assert [row for row in ROUTES if not row[1]] == []
+
+
+async def test_the_stream_column_is_what_each_route_answers():
+    """Whether a route streams is observed, not restated.
+
+    Every method of every row is driven, and a route streams exactly when
+    it answers with ``text/event-stream``.  The table's mark for each row
+    must equal that, so a route that starts streaming the terminal under
+    an unchanged class, method and path reds here until it is reclassified
+    and driven as a stream.
+    """
+    full = template()
+    answers = await emitted([full, full.model_copy()])
+    assert set(answers) == {
+        (method, path) for _, methods, path in ROUTES for method in methods
+    }
+    observed = {
+        row: {streams(answers[(method, row[2])][1]) for method in row[1]}
+        for row in ROUTES
+    }
+    assert observed == {row: {stream} for row, (stream, _) in ROUTES.items()}
 
 
 async def test_what_production_sends_for_the_terminal_is_its_fields_and_no_more():
@@ -1000,9 +1135,10 @@ async def test_what_production_sends_for_the_terminal_is_its_fields_and_no_more(
     Compared at the egress, not at a rendering helper: the frames are read
     off the app's own event-stream routes as they are sent, so a key the
     handler, the queue, a route or the SSE framing adds after an event is
-    rendered is on the wire here exactly when it is in production.  The
-    routes driven are held equal to the routes the table above marks as
-    streams, and each one's headers to the pinned set.  The workflow stream
+    rendered is on the wire here exactly when it is in production.  Every
+    route is driven, the routes that answer with an event stream are held
+    equal to the routes the table above marks as streams, and each one's
+    headers to the pinned set.  The workflow stream
     is attached while its run is going, so the queue's replay of an open job
     and its live fan-out both carry terminals here; the later attach reads
     the replay of the finished job.
@@ -1045,8 +1181,11 @@ async def test_what_production_sends_for_the_terminal_is_its_fields_and_no_more(
     assert len(built) == 2 * (len(combinations(full)) + len(variations(full)))
 
     sent = await emitted([terminal for _, terminal in built])
-    assert set(sent) == stream_routes()
-    for route, (headers, frames) in sent.items():
+    streamed = {route for route, (_, headers, _) in sent.items() if streams(headers)}
+    assert streamed == stream_routes()
+    for route in sorted(streamed):
+        status, headers, frames = sent[route]
+        assert status == 200, route
         assert headers == STREAM_HEADERS, route
         assert len(frames) == len(built), route
         for (name, terminal), frame in zip(built, frames, strict=True):
@@ -1153,7 +1292,7 @@ def source_digest(function: Callable[..., object]) -> str:
 async def egress_path(events: list[AgentEvent]) -> set[Callable[..., object]]:
     """Every production function the terminal passes through on its way out.
 
-    Observed, not listed: the app is driven over every route that streams
+    Observed, not listed: the app is driven over every route it serves
     (:func:`emitted`) with a profile hook on the thread.  Whenever a
     function of the shipped package is entered holding the terminal or its
     rendering, or hands one back — a return, or a generator's yield — every
@@ -1194,10 +1333,10 @@ async def test_the_egress_path_is_pinned_whole():
 
     The instances the egress check renders can only show a key for the
     values somebody built, so the code that could add one is pinned
-    instead: the path is derived by driving every stream route the table
-    marks and observing which production functions the terminal passes
-    through, and that set must equal :data:`EGRESS_PATH`, each function's
-    source still hashing to what the table holds.
+    instead: the path is derived by driving every route the table holds
+    and observing which production functions the terminal passes through,
+    and that set must equal :data:`EGRESS_PATH`, each function's source
+    still hashing to what the table holds.
     """
     full = template()
     derived = await egress_path([full, full.model_copy()])
