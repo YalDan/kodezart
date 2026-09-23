@@ -2474,6 +2474,52 @@ def _paired(target, value):
     return [(target, value)]
 
 
+def _local_bindings(tree):
+    """Each ``(name, value)`` the tree binds a plain name to, form by form.
+
+    An assignment (plain, annotated, chained, or unpacking tuples of equal
+    length), an assignment expression, a ``for`` target -- a loop's or a
+    comprehension's -- over a literal tuple, list or set, and a parameter's
+    default value.
+    """
+    pairs = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            pairs += [
+                pair for target in node.targets for pair in _paired(target, node.value)
+            ]
+        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)) and node.value:
+            pairs.append((node.target, node.value))
+        elif isinstance(
+            node, (ast.For, ast.AsyncFor, ast.comprehension)
+        ) and isinstance(node.iter, (ast.Tuple, ast.List, ast.Set)):
+            pairs += [
+                pair
+                for element in node.iter.elts
+                for pair in _paired(node.target, element)
+            ]
+    bound = [
+        (target.id, value) for target, value in pairs if isinstance(target, ast.Name)
+    ]
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            arguments = node.args
+            positional = [*arguments.posonlyargs, *arguments.args]
+            defaulted = positional[len(positional) - len(arguments.defaults) :]
+            bound += [
+                (argument.arg, default)
+                for argument, default in zip(defaulted, arguments.defaults, strict=True)
+            ]
+            bound += [
+                (argument.arg, default)
+                for argument, default in zip(
+                    arguments.kwonlyargs, arguments.kw_defaults, strict=True
+                )
+                if default is not None
+            ]
+    return bound
+
+
 def _attribute_classes(klass, namespace, modules):
     """The classes each instance attribute holds, as the class declares it.
 
@@ -2572,21 +2618,29 @@ def _calls_in(module, tree, functions):
                 else:
                     top = alias.name.partition(".")[0]
                     modules[top] = importlib.import_module(top)
-    # A local rebinding exists only in the tree: every plain name assigned
-    # from a name already known is the function too, to a fixed point.  Each
-    # pass adds a name or ends the loop, so it runs at most once per
-    # assignment.
-    rebindings = [
-        (target.id, node.value.id)
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        and isinstance(node.value, ast.Name)
-        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
-        if isinstance(target, ast.Name)
-    ]
+    # A local binding exists only in the tree: every plain name bound to a
+    # value that already resolves to the function is the function too, to a
+    # fixed point.  Each pass adds a name or ends the loop, so it runs at
+    # most once per binding.
+    bindings = _local_bindings(tree)
+
+    def names_function(value):
+        if isinstance(value, ast.NamedExpr):
+            return names_function(value.value)
+        if isinstance(value, ast.Name):
+            return value.id in names
+        owner = (
+            _module_named_by(value.value, modules)
+            if isinstance(value, ast.Attribute)
+            else None
+        )
+        return owner is not None and _is_one_of(
+            getattr(owner, value.attr, None), functions
+        )
+
     grown = True
     while grown:
-        added = {name for name, source in rebindings if source in names} - names
+        added = {name for name, value in bindings if names_function(value)} - names
         names |= added
         grown = bool(added)
 
@@ -2622,12 +2676,9 @@ def _calls_in(module, tree, functions):
         return ()
 
     def is_function(callee, receiver):
-        if isinstance(callee, ast.Name):
-            return callee.id in names
+        if names_function(callee):
+            return True
         if isinstance(callee, ast.Attribute):
-            owner = _module_named_by(callee.value, modules)
-            if owner is not None:
-                return _is_one_of(getattr(owner, callee.attr, None), functions)
             return any(
                 _is_one_of(
                     _unwrapped(inspect.getattr_static(klass, callee.attr, None)),
@@ -2675,18 +2726,20 @@ def callers_of(*functions):
 
     A call counts when its callee resolves to the function object itself:
     a name whose module-level value IS the function (so an aliased import or
-    a module-level rebinding counts), a name rebound from one of those inside
-    the module, an attribute of a module alias that resolves to it, or a
-    method reached through its own instance -- ``self.<method>`` inside the
-    class, or ``self.<attribute>.<method>`` where the class declares the
-    attribute's class (a class-body annotation, or an assignment from an
-    annotated parameter) and that class's attribute IS the function.  Each
-    caller is recorded as ``(module, qualified name of the outermost
-    function)``, so two modules or two classes never merge into one name,
-    and a call made in a closure is the node that holds it.  A call outside
-    any function -- a class body, a module-level lambda -- is recorded as
-    its own line, which no reach table can hold, so it is reported rather
-    than folded in.
+    a module-level rebinding counts); an attribute of a module alias that
+    resolves to it; a name bound anywhere in the module to one of those --
+    by assignment, tuple unpacking, an assignment expression, a ``for``
+    target over a literal tuple, list or set, or a parameter default --
+    followed to a fixed point; or a method reached through its own instance,
+    ``self.<method>`` inside the class, or ``self.<attribute>.<method>``
+    where the class declares the attribute's class (a class-body annotation,
+    or an assignment from an annotated parameter) and that class's attribute
+    IS the function.  Each caller is recorded as ``(module, qualified name
+    of the outermost function)``, so two modules or two classes never merge
+    into one name, and a call made in a closure is the node that holds it.
+    A call outside any function -- a class body, a module-level lambda -- is
+    recorded as its own line, which no reach table can hold, so it is
+    reported rather than folded in.
 
     An import made inside a function is read from the tree and resolved the
     same way: ``from ... import recorded_native_roster as x`` binds ``x``
