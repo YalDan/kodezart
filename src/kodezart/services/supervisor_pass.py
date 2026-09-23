@@ -1,8 +1,9 @@
-"""One tick over every declared scope: read each lane, observe its tally.
+"""One tick over every declared scope: read each lane, observe its tally
+and the questions it holds open.
 
 The pass holds no port. What it needs from the tracker is one reading per
 scope, injected as a callable, and one observation per lane, which the
-observer owns. It therefore cannot reach a repository, a session, a queue or
+observers own. It therefore cannot reach a repository, a session, a queue or
 a forge — not by convention, but because nothing it holds could.
 
 A lane's failure is the lane's. One damaged record does not decide anything
@@ -16,6 +17,8 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.domain.escalation_age_record import ScopePosition
+from kodezart.services.escalation_ageing_supervisor import EscalationAgeingSupervisor
 from kodezart.services.tally_supervisor import TallySupervisor
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.scope import ScopeRef
@@ -58,11 +61,13 @@ class SupervisorPass:
         scopes: Sequence[ScopeRef],
         read_ready: Callable[[ScopeRef], Awaitable[ScopeReadySet]],
         tally: TallySupervisor,
+        ageing: EscalationAgeingSupervisor,
         log: BoundLogger | None = None,
     ) -> None:
         self._scopes = tuple(scopes)
         self._read_ready = read_ready
         self._tally = tally
+        self._ageing = ageing
         self._log: BoundLogger = get_logger(__name__) if log is None else log
 
     async def run(self, _started_at: datetime) -> PassRun:
@@ -88,12 +93,24 @@ class SupervisorPass:
                 await self._log.aexception("supervisor_scope_failed", scope=ref.key)
                 failed.append(ref.key)
                 continue
+            position: ScopePosition | None
+            try:
+                position = await self._ageing.position(ready=ready)
+            except Exception:
+                # The questions of this scope cannot be aged without every
+                # member's record; its tallies are still observed.
+                await self._log.aexception(
+                    "supervisor_escalations_unobserved", scope=ref.key
+                )
+                failed.append(ref.key)
+                position = None
             for row in ready.ready:
                 await self._observe(
                     ready=ready,
                     lane_key=row.issue.issue_key,
                     roster=row.criteria,
                     gap=row.gap,
+                    position=position,
                     failed=failed,
                 )
             for issue in ready.closed:
@@ -102,6 +119,7 @@ class SupervisorPass:
                     lane_key=issue.issue_key,
                     roster=(),
                     gap=(),
+                    position=position,
                     failed=failed,
                 )
         if failed:
@@ -115,9 +133,14 @@ class SupervisorPass:
         lane_key: str,
         roster: Sequence[TrackerIssue],
         gap: Sequence[TrackerIssue],
+        position: ScopePosition | None,
         failed: list[str],
     ) -> None:
-        """One lane's own observation, whose failure is that lane's alone."""
+        """One lane's own observations, whose failure is that lane's alone.
+
+        The lane's open questions are those its own roster could have raised,
+        so a finished member, observed with no roster, ages none.
+        """
         try:
             await self._tally.observe(
                 scope_key=ready.scope.ref.key,
@@ -126,6 +149,13 @@ class SupervisorPass:
                 gap=gap,
                 criteria=ready.criteria,
             )
+            if position is not None:
+                await self._ageing.observe(
+                    scope_key=ready.scope.ref.key,
+                    lane_key=lane_key,
+                    criteria=roster,
+                    position=position,
+                )
         except Exception:
             await self._log.aexception(
                 "supervisor_lane_failed", scope=ready.scope.ref.key, lane=lane_key

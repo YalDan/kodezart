@@ -10,6 +10,7 @@ import structlog.testing
 from kodezart.composition.supervisor import build_supervisor_pass
 from kodezart.config.app import AppConfig
 from kodezart.domain.errors import LaneRecordReadError
+from kodezart.domain.lapse import lapse_escalation_key
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.tally_record import is_raised
 from kodezart.services.supervisor_pass import (
@@ -23,7 +24,7 @@ from kodezart.types.domain.operation import (
     OrganizeScopeBinding,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.run_alarm import LaneSubject
+from kodezart.types.domain.run_alarm import AlarmBound, AlarmSignal, LaneSubject
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
@@ -51,10 +52,15 @@ from tests.prompts.test_operation_config import EXAMPLE
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.services.lane_tally_fixtures import (
     BOUND,
+    HEAD,
     PREFIXES,
+    answer_question,
     board,
     checks,
     declared_set_fixture,
+    question_subject,
+    raise_lapse_question,
+    rewrite_record,
     subject,
 )
 from tests.services.test_prompt_pass import example_config
@@ -743,3 +749,227 @@ async def test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane(
         assert lane.graph.checkpointer is None
         assert lane.fire.native_graph.checkpointer is None
         assert lane.fire.checkpointer is None
+
+
+# ---------------------------------------------------------------------------
+# KOD-892: the composed tick ages each open lapse question on the run's own
+# recorded progress (KOD-507), from tracker state alone.
+# ---------------------------------------------------------------------------
+
+#: The criterion whose observation lapsed on lane B, and the question's key.
+LAPSED = "LANE-B/check"
+QUESTION = lapse_escalation_key(LAPSED)
+#: The commit the lapsed grading was taken at, which the question was raised
+#: at: the first commit lane B recorded.
+RAISED_AT = "1" * 40
+#: Lane C's own commits, which no question is about: its progress is what the
+#: tick term counts.
+C_COMMITS = ("c" * 40,)
+C_MOVED = ("c" * 40, "d" * 40, "e" * 40, "f" * 40)
+#: A tally bound no recorded series here reaches, so the tally arm stays quiet
+#: and every write a tick makes below is the ageing arm's.
+QUIET_TALLY = 100
+
+
+async def question_board(*, commits):
+    """Lane B holding one open lapse question, lane C holding none."""
+    operation = declared(scopes=(SCOPE,))
+    port = await board(
+        lanes=LANES,
+        commits=commits,
+        scope=SCOPE,
+        holder=supervisor_holder(operation_name=operation.operation_name),
+        prefixes=operation.marker_prefixes,
+    )
+    rewrite_record(port, "LANE-C", commits=C_COMMITS)
+    question = await raise_lapse_question(port, "LANE-B", LAPSED, graded_sha=RAISED_AT)
+    return port, operation, question
+
+
+def ageing_pass(port, operation, *, commits_bound, ticks_bound):
+    return build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            run_alarm_max_commits_without_closure=QUIET_TALLY,
+            run_alarm_escalation_age_max_commits=commits_bound,
+            run_alarm_escalation_age_max_ticks=ticks_bound,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=operation,
+        tracker=port,
+    )
+
+
+async def tick(scheduled):
+    async with asyncio.timeout(TICK_BOUND_SECONDS):
+        return await scheduled.run(FIXTURE_EPOCH)
+
+
+async def ageing_record(port):
+    return await port.read_run_alarm(
+        issue_key="LANE-B",
+        subject=question_subject("LANE-B", QUESTION),
+        signal=AlarmSignal.ESCALATION_AGEING,
+    )
+
+
+async def ageing_events(port, kind):
+    return [
+        event
+        for event in await port.lane_run_events(issue_key="LANE-B", lane_key="LANE-B")
+        if event.kind is kind and event.subject_key == f"escalation_ageing:{QUESTION}"
+    ]
+
+
+def tracker_writes(port):
+    return (list(port.comments), list(port.comment_writes), list(port.lease_writes))
+
+
+async def test_an_open_lapse_question_past_the_commit_bound_raises_one_named_alarm():
+    """Lane B recorded two commits since its question was raised, bound one.
+
+    The record names the commit field with its configured and observed
+    values, and its escalation reading is the question's own comment, so the
+    recorded question fed the reading. Replays of the tick, one of them after
+    lane C records another commit, write nothing: one record, one event.
+    """
+    port, operation, question = await question_board(
+        commits=(RAISED_AT, "b" * 40, HEAD)
+    )
+    scheduled = ageing_pass(port, operation, commits_bound=1, ticks_bound=10)
+
+    assert await tick(scheduled) is PassRun.RAN
+
+    stored = await ageing_record(port)
+    assert stored is not None
+    assert stored.bound == AlarmBound(
+        config_field="run_alarm_escalation_age_max_commits",
+        configured_value=1,
+        observed_value=2,
+    )
+    assert stored.readings[1].source_ref == question.comment_key
+    assert len(await ageing_events(port, RunEventKind.RUN_ALARM_RAISED)) == 1
+
+    written = tracker_writes(port)
+    assert await tick(scheduled) is PassRun.RAN
+    assert tracker_writes(port) == written
+    # Lane C's record is rewritten in place by its own writer, which is the
+    # test's change to the board; the tick over it adds nothing.
+    rewrite_record(port, "LANE-C", commits=(*C_COMMITS, "d" * 40))
+    written = tracker_writes(port)
+    assert await tick(scheduled) is PassRun.RAN
+    assert tracker_writes(port) == written
+
+
+async def test_the_question_past_only_the_tick_bound_raises_one_alarm_on_that_field():
+    """One commit since the raise, bound five; the scope's progress, bound two.
+
+    The first tick anchors the question and raises nothing. Lane C then
+    records three commits, and a freshly built pass — a killed run's
+    re-entry, holding nothing of the first — measures them from the stored
+    anchor and raises on the tick field alone.
+    """
+    port, operation, _ = await question_board(commits=(RAISED_AT, HEAD))
+    first = ageing_pass(port, operation, commits_bound=5, ticks_bound=2)
+    mark = len(port.comment_writes)
+
+    assert await tick(first) is PassRun.RAN
+
+    assert len(port.comment_writes) - mark == 1
+    anchored = await ageing_record(port)
+    assert anchored is not None
+    assert anchored.bound is None
+    assert len(anchored.readings) == 1
+    assert await ageing_events(port, RunEventKind.RUN_ALARM_RAISED) == []
+
+    rewrite_record(port, "LANE-C", commits=C_MOVED)
+    second = ageing_pass(port, operation, commits_bound=5, ticks_bound=2)
+    assert await tick(second) is PassRun.RAN
+
+    stored = await ageing_record(port)
+    assert stored is not None
+    assert stored.bound == AlarmBound(
+        config_field="run_alarm_escalation_age_max_ticks",
+        configured_value=2,
+        observed_value=3,
+    )
+    assert stored.readings[0] == anchored.readings[0]
+    assert len(await ageing_events(port, RunEventKind.RUN_ALARM_RAISED)) == 1
+
+    written = tracker_writes(port)
+    assert await tick(second) is PassRun.RAN
+    assert tracker_writes(port) == written
+
+
+@pytest.mark.parametrize("answered", ["before_first_tick", "after_the_raise"])
+async def test_the_same_question_answered_by_a_decision_record_raises_nothing(
+    answered,
+):
+    """A decision record against the question's key ends its ageing.
+
+    Answered before any tick observed it, the question is never anchored:
+    three ticks write nothing and announce nothing. Answered after it was
+    raised, the next tick clears the record to its anchor and announces the
+    clear once, under the same key the raise was announced under.
+    """
+    port, operation, question = await question_board(
+        commits=(RAISED_AT, "b" * 40, HEAD)
+    )
+    scheduled = ageing_pass(port, operation, commits_bound=1, ticks_bound=10)
+
+    if answered == "before_first_tick":
+        await answer_question(port, "LANE-B", question)
+        mark = len(port.comment_writes)
+        for _ in range(3):
+            assert await tick(scheduled) is PassRun.RAN
+        assert await ageing_record(port) is None
+        assert await ageing_events(port, RunEventKind.RUN_ALARM_RAISED) == []
+        assert await ageing_events(port, RunEventKind.RUN_ALARM_CLEARED) == []
+        assert port.comment_writes[mark:] == []
+        return
+
+    assert await tick(scheduled) is PassRun.RAN
+    assert len(await ageing_events(port, RunEventKind.RUN_ALARM_RAISED)) == 1
+    await answer_question(port, "LANE-B", question)
+
+    assert await tick(scheduled) is PassRun.RAN
+
+    cleared = await ageing_record(port)
+    assert cleared is not None
+    assert cleared.bound is None
+    assert len(cleared.readings) == 1
+    assert len(await ageing_events(port, RunEventKind.RUN_ALARM_CLEARED)) == 1
+    assert len(await ageing_events(port, RunEventKind.RUN_ALARM_RAISED)) == 1
+
+
+class RecordingPort:
+    """The port, recording every member anything asks it for."""
+
+    def __init__(self, port):
+        self._port = port
+        self.touched = []
+
+    def __getattr__(self, name):
+        self.touched.append(name)
+        return getattr(self._port, name)
+
+
+async def test_an_operation_declaring_no_escalation_prefix_is_refused_before_any_call():
+    operation = declared(scopes=(SCOPE,))
+    operation = operation.model_copy(
+        update={
+            "marker_prefixes": {
+                key: value
+                for key, value in operation.marker_prefixes.items()
+                if key != "escalation"
+            }
+        }
+    )
+    port = RecordingPort(FakeTrackerPort(issues=[], marker_prefixes=PREFIXES))
+
+    with pytest.raises(OperationMemberAbsentError) as refused:
+        ageing_pass(port, operation, commits_bound=1, ticks_bound=10)
+
+    assert refused.value.missing == "marker_prefixes['escalation']"
+    assert port.touched == []

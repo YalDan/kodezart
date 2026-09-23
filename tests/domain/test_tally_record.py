@@ -8,10 +8,10 @@ merely both read off one expression.
 import pytest
 
 from kodezart.domain.errors import RunShapeReadError
+from kodezart.domain.run_alarm_record import alarm_event_due
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.run_shape import COMMITS_WITHOUT_CLOSURE_BOUND, tally_unmoved
 from kodezart.domain.tally_record import (
-    alarm_event_due,
     anchor_of,
     is_raised,
     lane_start,
@@ -407,7 +407,9 @@ def test_the_event_due_is_read_from_this_signals_own_events():
         RunEventKind.RUN_ALARM_RAISED, subject_key="escalation_ageing"
     )
 
-    due = alarm_event_due(record=RAISED_STORED, events=(foreign_raised,))
+    due = alarm_event_due(
+        record=RAISED_STORED, raised=is_raised(RAISED_STORED), events=(foreign_raised,)
+    )
 
     assert due is not None
     assert due.kind is RunEventKind.RUN_ALARM_RAISED
@@ -415,7 +417,14 @@ def test_the_event_due_is_read_from_this_signals_own_events():
     assert due.subject_key == AlarmSignal.TALLY_UNMOVED.value
     # The stream already agreeing with the record owes nothing, however many
     # ticks the condition goes on firing for.
-    assert alarm_event_due(record=RAISED_STORED, events=(foreign_raised, due)) is None
+    assert (
+        alarm_event_due(
+            record=RAISED_STORED,
+            raised=is_raised(RAISED_STORED),
+            events=(foreign_raised, due),
+        )
+        is None
+    )
 
     foreign_cleared = event(
         RunEventKind.RUN_ALARM_CLEARED, subject_key="escalation_ageing"
@@ -423,6 +432,7 @@ def test_the_event_due_is_read_from_this_signals_own_events():
 
     owed_clear = alarm_event_due(
         record=QUIET_STORED,
+        raised=is_raised(QUIET_STORED),
         events=(event(RunEventKind.RUN_ALARM_RAISED), foreign_cleared),
     )
 
@@ -444,12 +454,18 @@ def test_an_event_of_another_kind_keyed_to_this_signal_is_not_this_signal_speaki
     another_kind = event(RunEventKind.LANE_PLATEAUED)
 
     assert (
-        alarm_event_due(record=RAISED_STORED, events=(raised_here, another_kind))
+        alarm_event_due(
+            record=RAISED_STORED,
+            raised=is_raised(RAISED_STORED),
+            events=(raised_here, another_kind),
+        )
         is None
     )
 
     owed_clear = alarm_event_due(
-        record=QUIET_STORED, events=(raised_here, another_kind)
+        record=QUIET_STORED,
+        raised=is_raised(QUIET_STORED),
+        events=(raised_here, another_kind),
     )
 
     assert owed_clear is not None
@@ -482,6 +498,10 @@ def test_an_event_of_another_kind_keyed_to_this_signal_is_not_this_signal_speaki
     ],
 )
 def test_the_stream_owes_a_transition_only_where_it_disagrees(record, posted, owed):
-    due = alarm_event_due(record=record, events=tuple(event(kind) for kind in posted))
+    due = alarm_event_due(
+        record=record,
+        raised=is_raised(record),
+        events=tuple(event(kind) for kind in posted),
+    )
 
     assert (None if due is None else due.kind) == owed

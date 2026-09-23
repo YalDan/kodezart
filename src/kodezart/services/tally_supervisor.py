@@ -7,50 +7,37 @@ between ticks in this process, which is what lets a killed run re-enter from
 tracker facts alone.
 
 Two writes exist and both are about the observation itself: the record, and
-the one transition event that announces it. No workflow state, no queue
-state, no criterion sub-issue and no description is touched — the role this
-service holds cannot reach any of them.
+the one transition event that announces it. Both go through the supervisor's
+one leased recorder, which can reach no workflow state, no queue state, no
+criterion sub-issue and no description.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.owned_tasks import settle
-from kodezart.core.protocols import RunAlarmTracker
-from kodezart.domain.run_alarm_record import run_alarm_marker, run_alarm_surface
-from kodezart.domain.tally_record import alarm_event_due, next_tally_record
+from kodezart.domain.tally_record import is_raised, next_tally_record
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.services.run_surface_lease import RunSurfaceLease
-from kodezart.types.domain.run_alarm import AlarmSignal, LaneSubject, RunAlarm
-from kodezart.types.domain.run_event import RunEventKind
-from kodezart.types.domain.surface import WritableSurface
+from kodezart.services.run_alarm_recorder import RunAlarmRecorder
+from kodezart.types.domain.run_alarm import AlarmSignal, LaneSubject
 from kodezart.types.domain.tracker import TrackerIssue
 
 SIGNAL = AlarmSignal.TALLY_UNMOVED
 
 
 class TallySupervisor:
-    """One lane's tally observation, written under the one surface it holds."""
+    """One lane's tally observation, written through the supervisor's recorder."""
 
     def __init__(
         self,
         *,
-        tracker: RunAlarmTracker,
         records: LaneRecordReader,
-        marker_prefixes: Mapping[str, str],
+        alarms: RunAlarmRecorder,
         max_commits_without_closure: int,
-        holder: str,
-        lease_seconds: float,
         log: BoundLogger | None = None,
     ) -> None:
-        if not holder.strip():
-            raise ValueError("a tally observation names the holder that writes it")
-        self._tracker = tracker
         self._records = records
-        self._marker_prefixes = dict(marker_prefixes)
+        self._alarms = alarms
         self._max_commits_without_closure = max_commits_without_closure
-        self._holder = holder
-        self._lease_seconds = lease_seconds
         self._log: BoundLogger = get_logger(__name__) if log is None else log
 
     async def observe(
@@ -71,14 +58,14 @@ class TallySupervisor:
         tick while an event without its record announces nothing.
         """
         subject = LaneSubject(scope_key=scope_key, lane_key=lane_key)
-        marker = run_alarm_marker(
-            subject=subject, signal=SIGNAL, marker_prefixes=self._marker_prefixes
-        )
+        # The address first: an operation that cannot address the record is
+        # refused before anything is read.
+        self._alarms.marker(subject=subject, signal=SIGNAL)
         located = await self._records.find(issue_key=lane_key, lane_key=lane_key)
         if located is None:
             return
         _, state = located
-        stored = await self._tracker.read_run_alarm(
+        stored = await self._alarms.read(
             issue_key=lane_key, subject=subject, signal=SIGNAL
         )
         desired = next_tally_record(
@@ -89,56 +76,12 @@ class TallySupervisor:
             criteria=criteria,
             record=state,
             max_commits_without_closure=self._max_commits_without_closure,
-            raised_by=self._holder,
+            raised_by=self._alarms.holder,
         )
         if desired is not None:
-            await self._write_record(
-                lane_key=lane_key,
-                surface=run_alarm_surface(issue_key=lane_key, marker=marker),
-                record=desired,
-            )
+            await self._alarms.write(issue_key=lane_key, record=desired)
         current = desired if desired is not None else stored
         if current is not None:
-            await self._announce(lane_key=lane_key, record=current)
-
-    async def _write_record(
-        self, *, lane_key: str, surface: WritableSurface, record: RunAlarm
-    ) -> None:
-        """Rewrite the one record at this address, under a lease on that address.
-
-        The lease is taken only around a write. It is itself a comment on the
-        carrier, so a tick that takes one on finding nothing to say would
-        write on every healthy tick and the quiet run would not be quiet.
-        """
-        async with RunSurfaceLease(
-            tracker=self._tracker,
-            job_id=self._holder,
-            surfaces=frozenset({surface}),
-            lease_seconds=self._lease_seconds,
-        ):
-            await settle(
-                self._tracker.record_run_alarm(
-                    issue_key=lane_key, alarm=record, holder=self._holder
-                )
+            await self._alarms.announce(
+                issue_key=lane_key, record=current, raised=is_raised(current)
             )
-
-    async def _announce(self, *, lane_key: str, record: RunAlarm) -> None:
-        """Post the transition the lane's stream still owes, or post nothing.
-
-        What is owed is read from the stream rather than from what this tick
-        wrote, so a condition firing across many ticks is announced once and
-        an announcement lost with its tick is made by the next one.
-        """
-        events = await self._tracker.lane_run_events(
-            issue_key=lane_key, lane_key=lane_key
-        )
-        due = alarm_event_due(record=record, events=events)
-        if due is None:
-            return
-        await settle(self._tracker.post_run_event(issue_key=lane_key, event=due))
-        announced = (
-            "supervisor_alarm_raised"
-            if due.kind is RunEventKind.RUN_ALARM_RAISED
-            else "supervisor_alarm_cleared"
-        )
-        await self._log.ainfo(announced, scope=record.subject.scope_key, lane=lane_key)

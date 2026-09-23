@@ -9,17 +9,30 @@ from datetime import datetime
 
 import pytest
 
+from kodezart.config.app import AppConfig
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.lane_record import RUN_STATE_PURPOSE, render_lane_record
+from kodezart.domain.lapse import lapse_escalation_key
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.run_event_stream import RUN_EVENT_PURPOSE
+from kodezart.domain.tracker_writes import marked_comment_body
+from kodezart.services.escalation_ageing_supervisor import EscalationAgeingSupervisor
+from kodezart.services.escalation_records import EscalationRecordReader
+from kodezart.services.lane_lapse_escalation import lapse_question
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.run_alarm_recorder import RunAlarmRecorder
 from kodezart.services.supervisor_pass import supervisor_holder
 from kodezart.services.tally_supervisor import SIGNAL, TallySupervisor
 from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.criterion_lifecycle import (
+    CriterionCrossOff,
+    CrossOffState,
+    RederivationClass,
+)
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
-from kodezart.types.domain.run_alarm import LaneSubject
-from kodezart.types.domain.run_state import LaneCommit, LaneRunState
+from kodezart.types.domain.run_alarm import AlarmSignal, EscalationSubject, LaneSubject
+from kodezart.types.domain.run_state import LaneCommit, LaneEscalation, LaneRunState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.fakes import FakeTrackerPort, make_tracker_issue
@@ -38,6 +51,7 @@ PREFIXES = {
     "run_state": "fixture-record",
     "run_event": "fixture-runevent",
     "run_alarm": "fixture-runalarm",
+    "escalation": "fixture-escalation",
 }
 #: The criteria-stage label the board's lanes carry, as the walker's own
 #: fixtures spell it, so a scoped read of this board selects them.
@@ -65,6 +79,10 @@ class Board:
     *holder* is the identity whose leases the release check reads. A board
     whose ticks are composed rather than built here leases under its own
     operation's pass identity, so the board states which one it expects.
+
+    *questions* holds the ``(lane, occurrence)`` pairs of the lapse questions
+    a test raised on the board, because each one's ageing record is an
+    address the tick may write under and no other question's is.
     """
 
     port: FakeTrackerPort
@@ -72,6 +90,7 @@ class Board:
     holder: str = HOLDER
     scope_keys: dict[str, str] = field(default_factory=dict)
     allowed: set[tuple[str, str]] = field(default_factory=set)
+    questions: set[tuple[str, str]] = field(default_factory=set)
     states: dict[str, tuple[str, WorkflowStateKind]] = field(default_factory=dict)
     state_changes: dict[str, datetime] = field(default_factory=dict)
 
@@ -261,6 +280,68 @@ def allow_foreign_write(port, *, lane, marker):
     entry.allowed.add((lane, marker))
 
 
+def question_subject(lane, occurrence, *, scope_key=SCOPE):
+    """The ageing address of the question *occurrence* on *lane*."""
+    return EscalationSubject(
+        scope_key=scope_key, member_id=occurrence, lane_key=lane, issue_id=lane
+    )
+
+
+async def raise_lapse_question(port, lane, criterion_key, *, graded_sha):
+    """Put the lapse question about *criterion_key* on *lane*, as its writer does.
+
+    The occurrence, the marker and the body are the writer's own composition,
+    so a board holding this question holds what a lapsed observation leaves.
+    The write is the test's and not the tick's, so it is named as a foreign
+    write, and the question's ageing address joins the tick's declared set.
+    """
+    occurrence = lapse_escalation_key(criterion_key)
+    question = lapse_question(
+        lane_key=lane,
+        cross_off=CriterionCrossOff(
+            criterion=criterion_key,
+            state=CrossOffState.passed,
+            rederivation_class=RederivationClass.observed,
+            exercised_paths=("src/",),
+            evidence=CriterionEvidence(
+                graded_sha=graded_sha, test=f"observed {criterion_key}"
+            ),
+        ),
+    )
+    marker = compose_comment_marker(
+        prefixes=port.marker_prefixes,
+        purpose="escalation",
+        lane=lane,
+        occurrence_key=occurrence,
+    )
+    allow_foreign_write(port, lane=lane, marker=marker)
+    entry = next(row for row in BOARDS if row.port is port)
+    entry.questions.add((lane, occurrence))
+    return await port.post_comment(
+        issue_key=lane,
+        body=marked_comment_body(
+            marker=marker, body=question.model_dump_json(by_alias=True)
+        ),
+    )
+
+
+async def answer_question(port, lane, question):
+    """A decision record replying to *question*, under the decision marker."""
+    payload = question.body.partition("\n")[2]
+    occurrence = LaneEscalation.model_validate_json(payload).escalation_key
+    marker = compose_comment_marker(
+        prefixes=port.marker_prefixes,
+        purpose="decision",
+        lane=lane,
+        occurrence_key=occurrence,
+    )
+    allow_foreign_write(port, lane=lane, marker=marker)
+    decision = await port.post_comment(issue_key=lane, body=f"{marker}\nAnswered.")
+    port.comments[port.comments.index(decision)] = decision.model_copy(
+        update={"reply_to": question.comment_key}
+    )
+
+
 def rewrite_record(port, lane, *, commits):
     """The record is one surface rewritten in place, as its own writer leaves it."""
     body = render_lane_record(
@@ -283,14 +364,33 @@ def operation(prefixes=PREFIXES):
     )
 
 
-def supervisor(port, *, bound=BOUND, holder=HOLDER):
-    return TallySupervisor(
+def recorder(port, *, holder=HOLDER):
+    """The supervisor's one leased writer over *port*."""
+    return RunAlarmRecorder(
         tracker=port,
-        records=LaneRecordReader(tracker=port, operation=operation()),
         marker_prefixes=port.marker_prefixes,
-        max_commits_without_closure=bound,
         holder=holder,
         lease_seconds=LEASE_SECONDS,
+    )
+
+
+def supervisor(port, *, bound=BOUND, holder=HOLDER):
+    return TallySupervisor(
+        records=LaneRecordReader(tracker=port, operation=operation()),
+        alarms=recorder(port, holder=holder),
+        max_commits_without_closure=bound,
+    )
+
+
+def ageing(port, *, holder=HOLDER, config=None):
+    """The ageing observer over the same board, as the composition builds it."""
+    return EscalationAgeingSupervisor(
+        sources=port,
+        escalations=EscalationRecordReader(tracker=port, operation=operation()),
+        records=LaneRecordReader(tracker=port, operation=operation()),
+        alarms=recorder(port, holder=holder),
+        operation=operation(),
+        config=AppConfig(_env_file=None) if config is None else config,
     )
 
 
@@ -345,6 +445,19 @@ def declared_pairs(entry):
         pairs.extend(
             (lane, alarm_marker(entry.port, lane, scope_key=entry.scope_keys[lane]))
             for lane in entry.lanes
+        )
+        pairs.extend(
+            (
+                lane,
+                run_alarm_marker(
+                    subject=question_subject(
+                        lane, occurrence, scope_key=entry.scope_keys[lane]
+                    ),
+                    signal=AlarmSignal.ESCALATION_AGEING,
+                    marker_prefixes=entry.port.marker_prefixes,
+                ),
+            )
+            for lane, occurrence in sorted(entry.questions)
         )
     return pairs
 

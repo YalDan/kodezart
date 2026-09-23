@@ -5,8 +5,12 @@ from collections.abc import Awaitable
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.comment_markers import configured_marker_prefix
+from kodezart.services.escalation_ageing_supervisor import EscalationAgeingSupervisor
+from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.pass_scheduler import ScheduledPass
+from kodezart.services.run_alarm_recorder import RunAlarmRecorder
 from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
     SupervisorPass,
@@ -33,15 +37,31 @@ def build_supervisor_pass(
     wrote it, and a re-entry by the same pass is re-acquisition rather than
     contention. It is not composed from ``dispatch_holder``: that names the
     process that holds fire claims, and a lease holder is never derived from it.
+
+    Both observers write through the one leased recorder. An operation that
+    cannot address the questions the ageing arm reads is refused here, typed,
+    before any backend call.
     """
+    configured_marker_prefix(operation.marker_prefixes, purpose="escalation")
     records = LaneRecordReader(tracker=tracker, operation=operation)
-    tally = TallySupervisor(
+    alarms = RunAlarmRecorder(
         tracker=tracker,
-        records=records,
         marker_prefixes=operation.marker_prefixes,
-        max_commits_without_closure=config.run_alarm_max_commits_without_closure,
         holder=supervisor_holder(operation_name=operation.operation_name),
         lease_seconds=config.tracker.surface_lease_seconds,
+    )
+    tally = TallySupervisor(
+        records=records,
+        alarms=alarms,
+        max_commits_without_closure=config.run_alarm_max_commits_without_closure,
+    )
+    ageing = EscalationAgeingSupervisor(
+        sources=tracker,
+        escalations=EscalationRecordReader(tracker=tracker, operation=operation),
+        records=records,
+        alarms=alarms,
+        operation=operation,
+        config=config,
     )
 
     def read_ready(ref: ScopeRef) -> Awaitable[ScopeReadySet]:
@@ -54,6 +74,7 @@ def build_supervisor_pass(
         scopes=tuple(row.scope for row in operation.organize_scopes),
         read_ready=read_ready,
         tally=tally,
+        ageing=ageing,
     )
     return ScheduledPass(
         name=SUPERVISOR_TICK_NAME,

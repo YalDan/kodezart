@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from typing_extensions import get_protocol_members
 
 from kodezart.composition.supervisor import build_supervisor_pass
-from kodezart.core.protocols import RunAlarmTracker
+from kodezart.core.protocols import (
+    EscalationAgeingReader,
+    EscalationResolutionReader,
+    RunAlarmTracker,
+)
 
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src"
 #: Where the scan starts. The composition module is one of them because it is
@@ -23,6 +27,8 @@ SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src"
 ENTRY_POINTS = (
     "kodezart.services.supervisor_pass",
     "kodezart.services.tally_supervisor",
+    "kodezart.services.escalation_ageing_supervisor",
+    "kodezart.services.run_alarm_recorder",
     "kodezart.composition.supervisor",
 )
 #: The one place the whole port is held on purpose, by design: the composition
@@ -78,13 +84,19 @@ SUPERVISOR_ROLE_MEMBERS = frozenset(
         "post_run_event",
     }
 )
-#: The slice's own three modules. The clock rules below are scoped to these
-#: rather than to the whole closure, because the scheduler that drives the tick
-#: legitimately holds a clock and an event loop; what is refused is a second
-#: one, of the observation's own.
+#: The observation's own modules, including the ones that compute an open
+#: question's age (KOD-507, KOD-851): no signal reads wall-clock time. The
+#: clock rules below are scoped to these rather than to the whole closure,
+#: because the scheduler that drives the tick legitimately holds a clock and an
+#: event loop; what is refused is a second one, of the observation's own.
 OWN_MODULES = (
     "kodezart.services.supervisor_pass",
     "kodezart.services.tally_supervisor",
+    "kodezart.services.escalation_ageing_supervisor",
+    "kodezart.services.run_alarm_recorder",
+    "kodezart.services.escalation_signals",
+    "kodezart.services.escalation_records",
+    "kodezart.domain.escalation_age_record",
     "kodezart.composition.supervisor",
 )
 #: Waiting, scheduling and reading the time are the scheduler's, so a module of
@@ -316,7 +328,7 @@ def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
     A pass that slept, armed a timer, or read a clock of its own would have a
     cadence and a notion of elapsed time that no configuration names, and a
     short sleep is invisible to a bounded integration tick. The rule is scoped
-    to the observation's own three modules: the scheduler it is registered on
+    to the observation's own modules: the scheduler it is registered on
     holds the event loop and the one clock, which is where they belong.
 
     ``from datetime import datetime`` stays admissible — it is the type of the
@@ -352,6 +364,21 @@ def test_the_supervisor_role_names_no_state_moving_method():
 
     assert members == SUPERVISOR_ROLE_MEMBERS
     assert members.isdisjoint(STATE_MOVING_CALLS), members & STATE_MOVING_CALLS
+
+
+def test_the_ageing_roles_name_only_reads():
+    """The roles an open question's age is read through hold no write at all.
+
+    Both are narrowings of the port, so the port satisfies any widening of
+    them; the member sets are pinned exactly for the reason the observation's
+    own role is.
+    """
+    resolution = get_protocol_members(EscalationResolutionReader)
+    ageing = get_protocol_members(EscalationAgeingReader)
+
+    assert resolution == {"read_escalation_resolution"}
+    assert ageing == {"list_comments", "read_escalation_resolution"}
+    assert ageing.isdisjoint(STATE_MOVING_CALLS), ageing & STATE_MOVING_CALLS
 
 
 def test_the_pass_factory_takes_no_runner_and_no_repository_collaborator():

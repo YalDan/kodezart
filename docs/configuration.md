@@ -154,16 +154,20 @@ counts still exclude the initial attempt and use the shared retry policy.
 ## Settings Reference
 
 Escalation ageing uses recorded run progress. The implementation defaults
-allow five lane commits or ten walker ticks after a question is raised;
-operators can set either count to zero to observe the first subsequent
-commit or tick. A counter must exceed its configured limit. These settings
-feed the read-only observation service, which no tick reaches.
+allow five lane commits after a question is raised, or ten walker ticks after
+it is first observed; operators can set either count to zero to observe the
+first subsequent commit or tick. A walker tick leaves no tracker fact of its
+own, so a tick is counted by the commits it records across the question's
+scope: the first observation anchors the scope's lane heads on the question's
+own record, and every later tick counts the commits recorded since. A tick
+records one or more commits, so this alarm can fire later than a raise-time
+anchor would, never earlier. A counter must exceed its configured limit.
 
-The supervisor tick that does exist observes one thing: each declared scope's
-ready lanes and finished members, and for each the lane tally arm of
-`TALLY_UNMOVED`. Per lane it reads the run-state record and the one alarm
-record at that lane's address, composes what the address should hold, and
-writes only when the two differ. It moves no state and opens no session. It
+The supervisor tick observes two things: each declared scope's ready lanes
+and finished members, and for each the lane tally arm of `TALLY_UNMOVED`; and
+for each ready lane the age of every open lapse question it holds. Per lane
+it reads the run-state record and the one alarm record at each address,
+composes what the address should hold, and writes only when the two differ. It moves no state and opens no session. It
 is registered only when the operation declares `[[organize_scopes]]` rows and
 the deployment dials a tracker; either one absent registers nothing and names
 which was missing in the boot log.
@@ -172,7 +176,7 @@ which was missing in the boot log.
 | --------------------------------- | ------------ | ------------------------ | ----------- | -------------------------------------------------------- |
 | `KODEZART_HTTP__PROJECT_NAME`           | `str`        | `kodezart`               |             | FastAPI application title                                |
 | `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_COMMITS` | `int` | `5` | >= 0 | Recorded lane commits allowed after an unanswered escalation's raise SHA. |
-| `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_TICKS` | `int` | `10` | >= 0 | Recorded walker ticks allowed after an unanswered escalation was raised. |
+| `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_TICKS` | `int` | `10` | >= 0 | Walker ticks allowed after an unanswered escalation is first observed, each tick counted by the commits it records across the escalation's scope. |
 | `KODEZART_RUN_ALARM_BARREN_TICK_MAX_FILES_CHANGED` | `int` | `10` | >= 0 | Recorded files changed against the lane base allowed on a tick closing no previously-open reference. |
 | `KODEZART_RUN_ALARM_BARREN_TICK_MAX_COMMITS_AHEAD` | `int` | `5` | >= 0 | Recorded commits ahead of the lane base allowed on a tick closing no previously-open reference. |
 | `KODEZART_RUN_ALARM_MAX_SURFACE_HOLDERS` | `int` | `1` | >= 0 | Distinct recorded run holders allowed on one complete writable-surface address. |

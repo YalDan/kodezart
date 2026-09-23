@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 
 from kodezart.config.app import AppConfig
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import EscalationResolutionReader, TrackerCriteriaReader
 from kodezart.domain.gap import compute_gap
 from kodezart.domain.run_shape import (
     BARREN_COMMITS_BOUND,
@@ -62,36 +62,9 @@ def observe_surface_contention(
     )
 
 
-async def observe_escalation_ageing(
-    *,
-    tracker: TrackerPort,
-    config: AppConfig,
-    scope_key: str,
-    lane_key: str,
-    escalation: AlarmReading,
-    commits: AlarmReading,
-    ticks_since_raise: AlarmReading,
-    raised_at_sha: str,
-    raised_by: str,
-) -> RunAlarm | None:
-    """Read current resolution and return the existing pure age observation."""
-    observation, _ = await read_escalation_ageing(
-        tracker=tracker,
-        config=config,
-        scope_key=scope_key,
-        lane_key=lane_key,
-        escalation=escalation,
-        commits=commits,
-        ticks_since_raise=ticks_since_raise,
-        raised_at_sha=raised_at_sha,
-        raised_by=raised_by,
-    )
-    return observation
-
-
 async def read_escalation_ageing(
     *,
-    tracker: TrackerPort,
+    tracker: EscalationResolutionReader,
     config: AppConfig,
     scope_key: str,
     lane_key: str,
@@ -151,7 +124,7 @@ async def read_escalation_ageing(
 
 async def observe_barren_tick(
     *,
-    tracker: TrackerPort,
+    tracker: TrackerCriteriaReader,
     config: AppConfig,
     scope_key: str,
     lane_key: str,
@@ -182,7 +155,7 @@ async def observe_barren_tick(
 
 async def read_barren_tick(
     *,
-    tracker: TrackerPort,
+    tracker: TrackerCriteriaReader,
     config: AppConfig,
     scope_key: str,
     lane_key: str,

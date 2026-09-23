@@ -98,6 +98,8 @@ does not exist.
 | ScopeStatusUpdates | LinearScopeStatusUpdates | The container-status role whole, read and write, one class over the tracker's caller |
 | SurfaceLeaseTracker | LinearMcpTracker | Exactly the lease calls a writing job's own lifetime makes, narrowed out of the port rather than added to it |
 | RunAlarmTracker | LinearMcpTracker | Exactly the tracker calls an observation of a run's shape makes: one keyed record read and rewritten under its own lease, one lane stream read and appended to. It holds no workflow state, queue state, criterion reset or description edit, so its holder cannot move a run's state |
+| EscalationResolutionReader | LinearMcpTracker | Whether a decision record answers one escalation; narrowed out of the port rather than added to it, and holding no write |
+| EscalationAgeingReader | LinearMcpTracker | The reads an escalation's age is measured from — its occurrence and lane record comments and its resolution — narrowed out of the port, holding no write |
 | LaneEventHistory | LinearMcpTracker | A lane's posted events read for a grading's provenance; narrowed out of the port rather than added to it, and holding no write |
 | LaneStateWriter | TrackerLaneStateWriter | Records the lane's run state in the same act as the commit that changed it |
 | WriteBackStep | _EscalationStep and the per-surface step bodies of the organize, amendment and audit writers | One writing step the verifier drives: the step owns its write and names the surface re-read after it |
@@ -917,7 +919,7 @@ sleep, timer or clock of its own. `composition/passes.py` registers it only
 when a tracker is dialled and the roster is non-empty; either one absent
 registers nothing and logs `supervisor_pass_not_wired` naming which. The pass
 holds no port at all: the scope read is injected as a callable and the
-observation is the observer's, so it can reach no repository, session, queue
+observation is the observers', so it can reach no repository, session, queue
 or forge.
 
 Per scope it observes every ready lane with that lane's own roster and gap,
@@ -943,8 +945,9 @@ lane moved while it still owed work — which is the only write a run that never
 stalls makes. There is no scope-subject alarm: a run event needs a lane key,
 and a scope's stall is some lane's stall.
 
-`services.tally_supervisor.TallySupervisor` is the writer the tick observes
-through.
+`services.tally_supervisor.TallySupervisor` is the first observer the tick
+runs, and `services.run_alarm_recorder.RunAlarmRecorder` is the one leased
+writer both observers write through.
 Per lane it reads the run-state record, reads the one alarm record at
 `(LaneSubject, TALLY_UNMOVED)` on that lane's issue, composes what the
 address should hold through `domain.tally_record`, and writes only when the
@@ -962,6 +965,23 @@ the lease and the holder recorded on the alarm are the same string. That
 string is the pass's own identity, the operation name with the tick name on it
 (`services/supervisor_pass.py::supervisor_holder`); it is not composed from
 `dispatch_holder`, which names the process that holds fire claims.
+
+`services.escalation_ageing_supervisor.EscalationAgeingSupervisor` is the
+second observer (KOD-892). Once per scope it reads every member's run-state
+record the ready read names — ready, blocked, unapproved and closed — as the
+scope's position; a damaged record leaves that scope's questions unobserved
+for the tick, logged as `supervisor_escalations_unobserved`, while its
+tallies are still observed. Per ready lane it asks, for each criterion of the
+lane's roster, whether the lapse question a lapsed observation raises
+(KOD-699) is on the lane's issue, through `EscalationRecordReader.find`. For
+each one there it reads the question's record at
+`(EscalationSubject, ESCALATION_AGEING)`, feeds the recorded question, the
+lane's commits and the tick-age count from the stored anchor to
+`services.escalation_signals.observe_recorded_escalation_ageing`, and writes
+through the recorder only when whether the question is raised changes. Its
+transition events are keyed per question, `escalation_ageing:<occurrence>`,
+so two questions on one lane are two streams; the tally arm's key stays
+`tally_unmoved`. Only lapse questions are aged.
 
 `services.scope_tally.observe_scope_tally` reads current native membership and
 strict issue classification twice before computing `tally_unmoved`. Its roster
@@ -1000,7 +1020,10 @@ arm raises with none.
 
 `domain.run_shape.escalation_ageing` measures an unresolved escalation in
 recorded lane commits after its raise SHA and recorded walker ticks since
-raise. Either count exceeding its own AppConfig limit returns the observation;
+raise. A walker tick leaves no tracker fact of its own (KOD-788); what it
+leaves is the commits the fired lane records, so a tick is counted by the
+commits every lane of the escalation's scope has recorded since the question
+was first observed. Either count exceeding its own AppConfig limit returns the observation;
 when both exceed, the commit bound has deterministic precedence. Equal counts
 remain clean. The function retains six readings in order: the escalation JSON,
 its resolution JSON, the ordered commit SHA projection, the tick-age count,
@@ -1008,9 +1031,9 @@ the configured commit limit and the configured tick limit. Each value keeps
 its source reference and original bytes. Replaying those readings with the
 alarm's subject and raising provenance reconstructs the same alarm.
 
-`services.run_shape.observe_escalation_ageing` consumes already-read tracker
-projections and reads the current addressed decision through `TrackerPort`.
-It has no writer or repository dependency. Missing escalation reads, malformed
+`services.run_shape.read_escalation_ageing` consumes already-read tracker
+projections and reads the current addressed decision through
+`EscalationResolutionReader`. It has no writer or repository dependency. Missing escalation reads, malformed
 counts, and absent or duplicate raise positions refuse observation; they do
 not manufacture an unanswered question or a clean result. The configured
 limits are nonnegative counts, defaulting to five commits and ten ticks.
@@ -1023,10 +1046,18 @@ with its count. Both native records and the exact decision resolution used
 by the shared observer are checked again; a changed source refuses the
 observation, including a newly answered or withdrawn decision. All returned readings preserve
 their source comment identities, and neither collector writes or reads Git.
-The walker's recorded tick-age input remains unwired, and no tick of any
-pass reaches these readers. Leased alarm persistence exists, but only the
-lane tally arm writes through it. These readers do not declare the complete
-signal table or a boot capability for it.
+The tick-age input is anchored once, on the question's own record: the first
+observation stores the scope's lane heads as the first reading of its
+`ESCALATION_AGEING` record at the existing `(subject, signal)` address, and
+every later tick counts the commits recorded after those heads
+(`domain.escalation_age_record`). A tick over unchanged tracker state counts
+the same commits and writes nothing, nothing reads a clock or counts the
+pass's own ticks, and a killed tick re-enters from the stored anchor alone. A
+question already answered when it is first observed is never anchored. The
+supervisor tick ages each lane's open lapse questions and writes their records
+through the same leased recorder as the tally arm; other escalation
+occurrences are not aged. These readers do not declare the complete signal
+table or a boot capability for it.
 
 `barren_tick_with_diff_growth` compares recorded files-changed and
 commits-ahead against their own configured bounds when a tick closes no
@@ -1054,7 +1085,7 @@ belongs to the separate record-consistency signal.
 The previous tick's open identities and established supersession references
 still require explicit supplied provenance. Their collectors remain separate
 work and no tick reaches them; leased alarm persistence exists, and only the
-lane tally arm writes through it. These bounded record reads do not provide
+lane tally and escalation ageing arms write through it. These bounded record reads do not provide
 an atomic tracker transaction or an execution event stream.
 
 `surface_contended` counts distinct opaque run-holder identities for one
@@ -1165,7 +1196,7 @@ The service performs no repository read or tracker write and does not turn
 an unreadable record into an empty lane. The signal's whole-record-staleness
 limit remains unchanged. Event-to-target collection for skipped writes remains separate work, and
 nothing observes this signal: the leased writer that exists observes the lane
-tally arm only.
+tally and escalation ageing arms only.
 
 `record_superseded` compares explicit assertions about the same field in the
 same lane. Its three raw readings contain the record's `LaneFieldValue`, an
@@ -1183,7 +1214,8 @@ order. The alarm retains all original readings and has no threshold bound.
 The field projection is an observation input, not a new run-event vocabulary;
 the event/record readers must supply those assertions and the commit order.
 Their collectors remain separate work, and nothing observes this signal: the
-leased writer that exists observes the lane tally arm only.
+leased writer that exists observes the lane tally and escalation ageing arms
+only.
 
 `rulings_outpace_closures` counts distinct machine-authored ruling identities
 added since the recorded last-closure snapshot. Its five readings preserve
@@ -1264,7 +1296,8 @@ existing member changing only state does not. No derived crossed flag or vendor 
 timestamp replaces this graph comparison. Both signals preserve their raw
 readings for replay; the structural signal has no threshold. Retaining prior
 snapshots remains separate work, and nothing observes either signal: the
-leased writer that exists observes the lane tally arm only.
+leased writer that exists observes the lane tally and escalation ageing arms
+only.
 ## Audit coverage selection
 
 `AuditCoverage` visits the supplied complete eligible snapshot in state-change

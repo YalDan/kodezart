@@ -99,7 +99,7 @@ async def test_collector_retains_typed_projection_and_preserves_native_record(tr
     payload = escalation().model_dump_json(by_alias=True, indent=2) + "\n"
     comment = await seed_escalation(tracker, payload=payload)
     await seed(tracker)
-    alarm = await observe_recorded_escalation_ageing(tracker=tracker, **arguments())
+    alarm, _ = await observe_recorded_escalation_ageing(tracker=tracker, **arguments())
     assert alarm.readings[0].value.value == escalation()
     assert comment.body.endswith(payload)
     assert alarm.readings[0].source_ref == comment.comment_key

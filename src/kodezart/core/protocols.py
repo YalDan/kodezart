@@ -1671,6 +1671,31 @@ class RunAlarmTracker(SurfaceLeaseTracker, Protocol):
 
 
 @runtime_checkable
+class EscalationResolutionReader(Protocol):
+    """Whether a decision record answers one escalation, and no write beside it.
+
+    A role narrowed out of the port rather than a widening of it: the age of
+    an open question is measured against its answer, and a reader of that
+    answer has no reason to hold anything that could give one.
+    """
+
+    async def read_escalation_resolution(
+        self, *, issue_key: str, lane_key: str, escalation_key: str
+    ) -> EscalationResolution: ...
+
+
+@runtime_checkable
+class EscalationAgeingReader(
+    TrackerCommentReader, EscalationResolutionReader, Protocol
+):
+    """The reads an escalation's age is measured from, and no write.
+
+    The occurrence and the lane record are comments, and the resolution is
+    the one addressed read above; the composite adds no member of its own.
+    """
+
+
+@runtime_checkable
 class LaneEventHistory(Protocol):
     """The one read a grading's provenance needs, and no write beside it.
 

@@ -892,23 +892,26 @@ KOD_806_STATE_MOVES = frozenset(
 #: against: the dispatch pass that resolves a base before a run exists,
 #: the lifecycle watcher's notes about a run that has already ended,
 #: boot-time vocabulary instatement, and the supervisor's own observation
-#: of a lane's tally — the one alarm record it rewrites at that lane's
-#: address and the two transition events that announce it.  That record is
+#: of a lane's tally and of each open lapse question's age — the one alarm
+#: record at each address and the transition events that announce it, both
+#: written through the supervisor's one leased recorder.  That record is
 #: arithmetic over facts the tracker already carries, so there is no
 #: authored commit to verify it against and re-judging it would be no
-#: second judgement (KOD-843).  None of them puts authored content on a
+#: second judgement (KOD-843).  The ageing record carries the lapse
+#: question's harness-composed text, never session prose (KOD-892).  None
+#: of them puts authored content on a
 #: surface — which is asserted below, not asserted here, so an authored
 #: write cannot be added under one of these entries.
 UNVERIFIED_WRITES = frozenset(
     {
         CallSite(
-            module="services/tally_supervisor.py",
-            function="TallySupervisor._write_record",
+            module="services/run_alarm_recorder.py",
+            function="RunAlarmRecorder.write",
             method="record_run_alarm",
         ),
         CallSite(
-            module="services/tally_supervisor.py",
-            function="TallySupervisor._announce",
+            module="services/run_alarm_recorder.py",
+            function="RunAlarmRecorder.announce",
             method="post_run_event",
         ),
         CallSite(

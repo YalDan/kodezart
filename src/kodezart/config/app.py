@@ -198,8 +198,9 @@ class AppConfig(BaseSettings):
         default=10,
         ge=0,
         description=(
-            "Recorded walker ticks allowed after an unanswered escalation "
-            "before an ageing observation fires."
+            "Walker ticks allowed after an unanswered escalation is first "
+            "observed, each tick counted by the commits it records across the "
+            "escalation's scope."
         ),
     )
     run_alarm_barren_tick_max_files_changed: int = Field(

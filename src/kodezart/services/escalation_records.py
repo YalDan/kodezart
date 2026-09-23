@@ -40,6 +40,34 @@ class EscalationRecordReader:
         record_ref: str | None = None,
     ) -> tuple[TrackerComment, LaneEscalation]:
         """Read native reference and fields together, with no legacy-text guess."""
+        found = await self.find(
+            issue_key=issue_key,
+            lane_key=lane_key,
+            escalation_key=escalation_key,
+            record_ref=record_ref,
+        )
+        if found is None:
+            raise EscalationReadError(
+                issue_key=issue_key,
+                lane_key=lane_key,
+                escalation_key=escalation_key,
+                reason="no comment carries the configured escalation marker",
+            )
+        return found
+
+    async def find(
+        self,
+        *,
+        issue_key: str,
+        lane_key: str,
+        escalation_key: str,
+        record_ref: str | None = None,
+    ) -> tuple[TrackerComment, LaneEscalation] | None:
+        """The addressed occurrence, or ``None`` when no comment carries its marker.
+
+        Absence is the one answer that is not a refusal: a question never
+        raised is not a damaged one. Every other refusal is ``read``'s.
+        """
 
         def refusal(reason: str) -> EscalationReadError:
             return EscalationReadError(
@@ -76,7 +104,7 @@ class EscalationRecordReader:
         except DuplicateCommentMarkerError as exc:
             raise refusal("several comments carry the escalation marker") from exc
         if comment is None:
-            raise refusal("no comment carries the configured escalation marker")
+            return None
         if record_ref is not None and comment.comment_key != record_ref:
             raise refusal("the escalation is not the supplied native record reference")
         if comment.reply_to is not None:

@@ -1,11 +1,12 @@
 """Collect escalation age from the recorded occurrence and its lane history."""
 
 from kodezart.config.app import AppConfig
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.protocols import EscalationAgeingReader
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.run_shape import read_escalation_ageing
+from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
@@ -18,7 +19,7 @@ from kodezart.types.domain.run_alarm import (
 
 async def observe_recorded_escalation_ageing(
     *,
-    tracker: TrackerPort,
+    tracker: EscalationAgeingReader,
     operation: OperationConfig,
     config: AppConfig,
     scope_key: str,
@@ -30,13 +31,17 @@ async def observe_recorded_escalation_ageing(
     ticks_since_raise: AlarmReading,
     raised_at_sha: str,
     raised_by: str,
-) -> RunAlarm | None:
+) -> tuple[RunAlarm | None, EscalationResolution]:
     """Use actual native sources, keeping the recorded tick input explicit.
 
     There is no repository lookup, wall clock, writer or implicit latest run.
     The complete commit order belongs to the addressed lane record. Both
     source records are checked again after the existing resolution consumer;
     drift refuses rather than clearing or publishing an old observation.
+
+    The resolution the observation was made against comes back with it, so a
+    caller can tell an answered question from an unanswered one that has not
+    yet aged, and never start measuring the first.
     """
     escalation_reader = EscalationRecordReader(tracker=tracker, operation=operation)
     lane_reader = LaneRecordReader(tracker=tracker, operation=operation)
@@ -100,4 +105,4 @@ async def observe_recorded_escalation_ageing(
                 "the escalation, lane history or resolution changed during observation"
             ),
         )
-    return result
+    return result, current_resolution

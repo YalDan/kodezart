@@ -182,6 +182,7 @@
   "tests/domain/test_detector_removal_report.py": 5,
   "tests/domain/test_dispatch_predicate.py": 36,
   "tests/domain/test_dispatch_rank_inputs.py": 48,
+  "tests/domain/test_escalation_age_record.py": 12,
   "tests/domain/test_escalation_ageing.py": 26,
   "tests/domain/test_fire_plateau.py": 16,
   "tests/domain/test_fire_spec.py": 5,
@@ -2971,6 +2972,14 @@
    "test_every_estimate_word_is_controlled",
    "test_the_guard_reddens_on_a_size_derived_rank_input",
    "test_the_plateau_bound_is_a_tick_count_and_not_a_rank_input"
+  ],
+  "tests/domain/test_escalation_age_record.py": [
+   "test_commits_since_counts_each_lane_after_its_anchored_head",
+   "test_the_anchor_is_every_recorded_lane_head_sorted",
+   "test_each_row_of_the_next_record_table",
+   "test_a_stored_record_whose_replay_differs_from_its_bound_refuses",
+   "test_an_answered_question_is_never_anchored",
+   "test_an_observation_about_another_subject_refuses"
   ],
   "tests/domain/test_escalation_ageing.py": [
    "test_each_count_arm_names_its_actual_limit",
