@@ -274,6 +274,17 @@ def test_designated_tests_skip_an_amended_record_and_an_undesignating_record():
     assert designated_tests((), amended=()) == ()
 
 
+def test_every_designation_of_one_record_is_designated():
+    """A record naming two tests protects both, in the record's own order."""
+    both = designating("record/one", CONTRACT, BOUNDARY)
+
+    assert [
+        (reference.path, reference.qualified_name)
+        for reference in designated_tests((both,), amended=())
+    ] == [CONTRACT, BOUNDARY]
+    assert designated_tests((both,), amended=()) == both.protected_tests
+
+
 def test_only_the_records_a_report_amended_are_exempt():
     first = designating("record/one", CONTRACT)
     second = designating("record/two", BOUNDARY)

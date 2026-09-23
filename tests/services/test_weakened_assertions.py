@@ -11,6 +11,7 @@ itself.
 import pytest
 
 from kodezart.adapters.git.source_reader import SubprocessGitSourceReader
+from kodezart.domain import gap
 from kodezart.domain.amendment import (
     AssertionWeakenedError,
     NativeWriteRefusalError,
@@ -73,6 +74,14 @@ async def commit_weakened(repo, paths):
         (repo / path).write_text("".join(BODIES[path].splitlines(keepends=True)[:2]))
     await git(repo, "add", ".")
     await git(repo, "commit", "-m", "weaken the designated tests")
+    return await git(repo, "rev-parse", "HEAD")
+
+
+async def commit_emptied(repo, path):
+    """Leave the named test with no assertion at all and commit; return the sha."""
+    (repo / path).write_text(f"def {NAMES[path]}():\n    pass\n")
+    await git(repo, "add", ".")
+    await git(repo, "commit", "-m", "empty the designated test")
     return await git(repo, "rev-parse", "HEAD")
 
 
@@ -290,3 +299,38 @@ async def test_two_tests_that_each_lost_an_assertion_mint_two_marks_under_one_le
         ]
         * 2
     )
+
+
+async def test_a_test_left_with_no_assertion_is_marked(repository):
+    """Losing every assertion is the plainest weakening, and it is marked.
+
+    The later reading of the designated definition carries nothing, so each
+    of its assertions is lost: the refusal carries one mark, and that mark
+    stands open in the lane's gap.
+    """
+    repo, start = repository
+    port = tracker()
+    before = criterion_children(port)
+    head = await commit_emptied(repo, FIRST)
+
+    with pytest.raises(AssertionWeakenedError) as caught:
+        await refuse(marks(port), repo, start, head, (designation(FIRST),))
+
+    minted = {
+        key: issue
+        for key, issue in criterion_children(port).items()
+        if key not in before
+    }
+    assert len(minted) == 1
+    (key,) = minted
+    assert caught.value.marks == (key,)
+    assert minted[key].state_kind is WorkflowStateKind.UNSTARTED
+    standing = [
+        issue.issue_key
+        for issue in gap.compute_gap(
+            criteria=await port.read_criteria(issue_key=SUBJECT),
+            supersession_refs={},
+        )
+        if issue.issue_key not in before
+    ]
+    assert standing == [key]

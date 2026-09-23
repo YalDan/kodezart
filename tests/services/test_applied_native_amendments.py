@@ -18,7 +18,12 @@ from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION
 from kodezart.domain.rulings import render_ruling
 from kodezart.services.ruling_records import RulingRecordReader
-from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent, Ruling
+from kodezart.types.domain.agent import (
+    NativeAmendmentEvent,
+    ResultEvent,
+    Ruling,
+    RulingProtectedTestRef,
+)
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.amendment_write import AmendmentRecord
 from kodezart.types.domain.assertion_drift import AssertionDeviationClaim
@@ -1121,6 +1126,121 @@ async def test_a_weakening_after_the_mark_was_crossed_off_is_marked_again(reposi
         }
         assert key in standing
         assert crossed not in standing
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_designated_test_left_with_no_assertion_is_marked(repository):
+    """A commit that empties the designated test of every assertion is marked.
+
+    Nothing of the definition's assertions survives into the harness commit,
+    so the loss is the whole of them: the push is refused, and the lane
+    carries exactly one open mark in its gap.
+    """
+    repo = repository[0]
+    port = tracker()
+    await designated_repository(repo, port)
+    before = set(port.issues)
+
+    async def empty(title, payload, kwargs):
+        if title != "NativeWriterOutput":
+            return
+        Path(kwargs["cwd"], PROTECTED_PATH).write_text(
+            f"def {PROTECTED_NAME}():\n    pass\n"
+        )
+
+    executor = Executor(claim=False, mutate=empty)
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        with pytest.raises(AssertionWeakenedError) as caught:
+            await drive(service, guard, repository)
+
+        minted = new_issues(port, before)
+        assert len(minted) == 1
+        (key,) = minted
+        assert minted[key].parent_key == SUBJECT
+        assert caught.value.marks == (key,)
+        standing = [
+            issue.issue_key
+            for issue in gap.compute_gap(
+                criteria=await port.read_criteria(issue_key=SUBJECT),
+                supersession_refs={},
+            )
+            if issue.issue_key not in before
+        ]
+        assert standing == [key]
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
+    finally:
+        await cleanup(workspace)
+
+
+#: A second test the same pinned record designates, beside the boundary test.
+SECOND_PATH = "tests/test_second_boundary.py"
+SECOND_NAME = "test_the_second_boundary_holds"
+SECOND_BODY = f"def {SECOND_NAME}():\n    assert answer() > 0\n"
+
+
+async def test_a_loss_in_a_records_second_designation_is_marked(repository):
+    """Every test a record designates is protected, not only its first.
+
+    One pinned record designates the boundary test and a second test, and
+    the commit weakens only the second. The loss is marked once, the mark
+    names the second test, and the push is refused.
+    """
+    repo = repository[0]
+    port = tracker()
+    data = ruling_data(issue_ref=SUBJECT)
+    data["protected_tests"] = (
+        RulingProtectedTestRef(
+            source_ref=data["ruling_id"],
+            path=PROTECTED_PATH,
+            qualified_name=PROTECTED_NAME,
+        ),
+        RulingProtectedTestRef(
+            source_ref=data["ruling_id"],
+            path=SECOND_PATH,
+            qualified_name=SECOND_NAME,
+        ),
+    )
+    pinned = Ruling.model_validate(data)
+    await port.post_comment(
+        issue_key=SUBJECT,
+        body=render_ruling(
+            ruling=pinned,
+            lane_key=SUBJECT,
+            marker_prefixes={"ruling": "fixture-pinned"},
+        ),
+    )
+    for path, body in ((PROTECTED_PATH, PROTECTED_BODY), (SECOND_PATH, SECOND_BODY)):
+        target = Path(repo, path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body)
+    await git(repo, "add", ".")
+    await git(repo, "commit", "-m", "the two designated boundary tests")
+    before = set(port.issues)
+
+    async def weaken_second(title, payload, kwargs):
+        if title != "NativeWriterOutput":
+            return
+        target = Path(kwargs["cwd"], SECOND_PATH)
+        assert target.read_text() == SECOND_BODY
+        target.write_text(f"def {SECOND_NAME}():\n    assert answer() is not None\n")
+
+    executor = Executor(claim=False, mutate=weaken_second)
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        with pytest.raises(AssertionWeakenedError) as caught:
+            await drive(service, guard, repository)
+
+        minted = new_issues(port, before)
+        assert len(minted) == 1
+        (key,) = minted
+        assert minted[key].parent_key == SUBJECT
+        assert caught.value.marks == (key,)
+        check = criterion_field_bodies(minted[key].body, field="Check")[0]
+        assert f"`{SECOND_PATH}::{SECOND_NAME}`" in check
+        assert PROTECTED_PATH not in check
         assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
     finally:
         await cleanup(workspace)
