@@ -163,6 +163,7 @@ def factory(
     phases=None,
     board=None,
     groom_gate_key=None,
+    groom_rubric_key=None,
 ):
     # *board* builds another owner over a board a previous owner already
     # worked: a case about a second entry into a stage needs the labels and
@@ -188,6 +189,12 @@ def factory(
     for mandate in operation_fields["organize_mandates"]:
         mandate["rubric_prompt_key"] = "organize_assess"
         mandate["admission_prompt_key"] = "organize_assess"
+    # *groom_rubric_key* gives the pre-approval row a rubric of its own, apart
+    # from its admission role, so a case can see which one the owner renders.
+    if groom_rubric_key is not None:
+        for mandate in operation_fields["organize_mandates"]:
+            if mandate["kind"] == "groom":
+                mandate["rubric_prompt_key"] = groom_rubric_key
     if tick:
         operation_fields["organize_scopes"] = [
             {
@@ -656,6 +663,39 @@ async def test_assessment_dispatch_uses_the_configured_admission_role():
         request().model_copy(update={"admission_prompt_key": PromptKey.ORGANIZE_VERIFY})
     )
     assert "Adversarially verify the current issue" in executor.calls[0]["prompt"]
+
+
+async def test_the_owner_renders_the_rows_own_rubric_into_both_judging_prompts():
+    """The row's rubric, not its admission role, is what both judges are shown.
+
+    The pre-approval row names the organizational rubric as its rubric and
+    the shared assess role as its admission role. The prompts the owner
+    actually sends — the assessment and the independent verification —
+    each carry every part of the organizational predicate, none of the
+    implementation test, and the member's own body.
+    """
+    from tests.prompts.test_organize_rubrics import FOUR_PARTS, IMPLEMENTATION_TEST
+
+    owner, _, executor = factory(
+        body=PREPARED_BODY, groom_rubric_key="organize_groom_rubric"
+    )
+    report = await run_owner(owner)
+    assert report.completed_phases == (MandateKind.GROOM,)
+    judged = [
+        call["prompt"]
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "AdmissionJudgment"
+    ]
+    verified = [prompt for prompt in judged if VERIFY_OPENING in prompt]
+    assessed = [prompt for prompt in judged if VERIFY_OPENING not in prompt]
+    assert verified
+    assert assessed
+    for prompt in judged:
+        for part in FOUR_PARTS:
+            assert part in prompt, part
+        for claim in IMPLEMENTATION_TEST:
+            assert claim not in prompt, claim
+        assert PREPARED_BODY in prompt
 
 
 async def test_an_approved_scope_admits_nobody_to_grooming_and_opens_no_session():
