@@ -1112,6 +1112,58 @@ async def test_the_port_criterion_read_cross_reads_the_listed_membership(
     assert port.issue_creations == []
 
 
+#: A second criterion under the deliverable child, so one member's criterion
+#: read answers two criteria and a repeat can land apart from its first copy.
+NESTED_OWED_TOO = "fire/owed-nested-2"
+
+
+def two_criteria_board() -> FakeTrackerPort:
+    """The nested-only board with a second criterion under the same child."""
+    port = nested_only_board()
+    port.issues[NESTED_OWED_TOO] = make_tracker_issue(
+        NESTED_OWED_TOO,
+        parent_key=DELIVERABLE_CHILD,
+        issue_labels=frozenset({"criterion"}),
+        body=criterion_body(NESTED_OWED_TOO),
+    )
+    return port
+
+
+async def test_a_criterion_answered_again_after_another_is_refused_as_a_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A repeat is a duplicate wherever it lands in the read, not only next door.
+
+    The child's criterion read answers ``[a, b, a]``: the repeat of ``a`` is
+    identical to the first copy and to the listed record, and sits under the
+    right parent, so only the duplicate refusal can decide it, and a check
+    that compared each answer with the one before it alone would admit it.
+    Compared on the whole refusal text, at the subtree read and at the entry.
+    """
+    port = two_criteria_board()
+    source = TrackerCriteria(tracker=port)
+    assert await subtree_outcome(source) == ("admitted", NESTED_OWED, NESTED_OWED_TOO)
+    read = port.read_criteria
+
+    async def answered_apart(*, issue_key: str) -> tuple[TrackerIssue, ...]:
+        """The read answers its first criterion again after the others."""
+        answered = tuple(await read(issue_key=issue_key))
+        return answered + answered[:1]
+
+    monkeypatch.setattr(port, "read_criteria", answered_apart)
+
+    assert [
+        criterion.issue_key
+        for criterion in await port.read_criteria(issue_key=DELIVERABLE_CHILD)
+    ] == [NESTED_OWED, NESTED_OWED_TOO, NESTED_OWED]
+    assert await subtree_outcome(source) == refused(DUPLICATE_REFUSAL)
+    with pytest.raises(ScopeReadError) as caught:
+        await source.read_entry(issue_key=SUBJECT)
+    assert ("refused", str(caught.value)) == refused(DUPLICATE_REFUSAL)
+    assert port.issue_writes == []
+    assert port.issue_creations == []
+
+
 def foreign_record() -> TrackerIssue:
     """A criterion record that differs from the nested one in every field."""
     return make_tracker_issue(

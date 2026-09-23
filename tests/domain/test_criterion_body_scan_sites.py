@@ -58,25 +58,27 @@ both tracker implementations.
 """
 
 import ast
-import importlib.util
 import re
 import sys
+import warnings
 from functools import cache
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
 from kodezart.domain import fire_spec
 from kodezart.domain.fire_spec import (
     _CRITERION_ROW,
+    CriterionField,
     _criterion_rows,
     criterion_check,
     criterion_field_bodies,
-    replace_criterion_fields,
     tracker_spec_from_issues,
 )
 from tests.domain.test_criterion_cross_off import callers_of, source_tree
 from tests.identity_guards import _constructor_names
+from tests.name_resolution import module_namespace
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 #: Where the criterion template grammar is written, and so the one module
@@ -93,7 +95,9 @@ RULE_MODULE = (
 #: The spellings of criterion-shaped content a scan would look for: a
 #: markdown checkbox, an authored ``AC-n`` identity, any template row
 #: label — including the alternation a row-label pattern is written as —
-#: and a bold row whose label is assembled somewhere else.
+#: and a bold row whose label is assembled somewhere else.  They decide what
+#: the body scan reports; what a row grammar is, is decided by what it
+#: matches, in ``is_row_grammar`` below.
 CRITERION_SHAPES = (
     re.compile(r"\[\s*[xX]?\s*\]"),
     re.compile(r"AC-"),
@@ -343,29 +347,68 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
     }
 
 
-def _docstring_ids(tree: ast.Module) -> set[int]:
-    """The nodes that are a module's, a class's or a function's docstring."""
-    return {
-        id(node.body[0].value)
-        for node in ast.walk(tree)
-        if isinstance(
-            node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+#: Every field a criterion row can carry, read off the grammar's own field type.
+ROW_FIELDS = get_args(CriterionField)
+
+
+def rendered_row(field: str) -> str:
+    """One criterion row, ``**{field}:** text``, the way the writers render it."""
+    return f"**{field}:** text"
+
+
+def matches_a_rendered_row(pattern: re.Pattern[str] | re.Pattern[bytes]) -> bool:
+    """Whether *pattern* matches a rendered row across its field name and colon.
+
+    Decided by what the pattern does, not by how it is written: a match that
+    takes in a row's field name and the colon after it recognises the row by
+    its label, whatever the pattern's text.  A match of the field word alone,
+    or of text around it, does not.
+    """
+    for field in ROW_FIELDS:
+        row = rendered_row(field)
+        start = row.index(field)
+        found = (
+            pattern.search(row)
+            if isinstance(pattern.pattern, str)
+            else pattern.search(row.encode("utf-8"))
         )
-        and node.body
-        and isinstance(node.body[0], ast.Expr)
-        and isinstance(node.body[0].value, ast.Constant)
-    }
+        if (
+            found is not None
+            and found.start() <= start
+            and found.end() > start + len(field)
+        ):
+            return True
+    return False
 
 
-def shaped_literals(tree: ast.Module) -> list[tuple[str, str]]:
-    """Every criterion-shaped literal outside a docstring, by the scope holding it.
+def is_row_grammar(text: str) -> bool:
+    """Whether a literal is a row grammar: a row label, or a pattern matching a row.
+
+    A text holding a rendered label ``**{field}:**`` is one, the way a
+    ``startswith`` or ``split`` parser holds it.  So is a text that compiles as
+    a regular expression matching a rendered row.  A text ``re`` warns about
+    still compiles, and is read as the pattern it compiles to.
+    """
+    if any(f"**{field}:**" in text for field in ROW_FIELDS):
+        return True
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("always")
+        try:
+            pattern = re.compile(text)
+        except re.error:
+            return False
+    return matches_a_rendered_row(pattern)
+
+
+def row_literals(tree: ast.Module) -> list[tuple[str, str]]:
+    """Every literal that is a row grammar, by the scope holding it.
 
     Whatever it is handed to — a compile call by position or by keyword, a
     name bound earlier, a matcher, a string built for writing — a literal is
     read where it is written.  Folded the way ``_literal_text`` folds, and
-    counted once at the widest expression that spells it.
+    counted once at the widest expression that is one; a literal that is none
+    is read part by part.
     """
-    docstrings = _docstring_ids(tree)
     found: list[tuple[str, str]] = []
 
     def walk(node: ast.AST, label: str) -> None:
@@ -373,12 +416,9 @@ def shaped_literals(tree: ast.Module) -> list[tuple[str, str]]:
             here = label
             if isinstance(child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
                 here = child.name if label == "<module>" else f"{label}.{child.name}"
-            if (
-                isinstance(child, ast.expr)
-                and id(child) not in docstrings
-                and _is_criterion_shaped(child)
-            ):
-                found.append((here, _literal_text(child) or ""))
+            text = _literal_text(child) if isinstance(child, ast.expr) else None
+            if text is not None and is_row_grammar(text):
+                found.append((here, text))
                 continue
             walk(child, here)
 
@@ -386,12 +426,55 @@ def shaped_literals(tree: ast.Module) -> list[tuple[str, str]]:
     return sorted(found)
 
 
+@cache
+def _row_literals_of(source: str) -> tuple[tuple[str, str], ...]:
+    """One module's row-grammar literals, read once per text."""
+    return tuple(row_literals(ast.parse(source)))
+
+
+def row_grammar_literals(sources: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
+    """Every module of *sources* holding a row-grammar literal, with each one."""
+    return {
+        module: list(_row_literals_of(source))
+        for module, source in sorted(sources.items())
+        if _row_literals_of(source)
+    }
+
+
+@cache
+def _row_patterns_of(module: str, source: str) -> tuple[str, ...]:
+    """The names one module's globals bind to a pattern matching a rendered row."""
+    return tuple(
+        sorted(
+            name
+            for name, value in module_namespace(module, source).items()
+            if isinstance(value, re.Pattern) and matches_a_rendered_row(value)
+        )
+    )
+
+
+def row_patterns(sources: dict[str, str]) -> dict[str, list[str]]:
+    """Every module of *sources* whose globals hold a row pattern, with its names.
+
+    The module as it runs: the package's own module for its text on disk, and
+    a planted or changed text run fresh under the same name.  So what is read
+    is the compiled object itself, however it was compiled, and whichever
+    module it was compiled in and imported from.  Module-level names only.
+    """
+    return {
+        module: list(_row_patterns_of(module, source))
+        for module, source in sorted(sources.items())
+        if _row_patterns_of(module, source)
+    }
+
+
 def grammar_uses(tree: ast.Module, names: frozenset[str]) -> list[tuple[str, str]]:
     """Every read of the grammar object, by scope and by what is read off it.
 
     A read of one of *names* as the receiver of an attribute is recorded
     under that attribute; any other read — handed on, aliased, returned — is
-    recorded as bare.
+    recorded as bare, and so is a string constant spelling one of *names*,
+    the way ``globals()`` or ``getattr`` is handed the word.
     """
     found: list[tuple[str, str]] = []
 
@@ -411,7 +494,7 @@ def grammar_uses(tree: ast.Module, names: frozenset[str]) -> list[tuple[str, str
                 isinstance(child, ast.Name)
                 and child.id in names
                 and isinstance(child.ctx, ast.Load)
-            ):
+            ) or (isinstance(child, ast.Constant) and child.value in names):
                 found.append((here, "<bare>"))
             walk(child, here)
 
@@ -419,46 +502,14 @@ def grammar_uses(tree: ast.Module, names: frozenset[str]) -> list[tuple[str, str
     return sorted(found)
 
 
-def compiled_row_patterns(source: str, directory: Path) -> list[str]:
-    """The names the owner's executed source binds to a criterion-shaped pattern.
-
-    The source is loaded as a module of its own, so what is read is the
-    compiled objects themselves and not how any of them was spelled: a
-    keyword, an aliased ``compile``, a name bound earlier and a text derived
-    from the grammar's own all end as a pattern object here.  Module-level
-    names only.
-    """
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / "criterion_grammar_owner.py"
-    path.write_text(source, encoding="utf-8")
-    spec = importlib.util.spec_from_file_location("criterion_grammar_owner", path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return sorted(
-        name
-        for name, value in vars(module).items()
-        if isinstance(value, re.Pattern)
-        and any(
-            shape.search(
-                value.pattern
-                if isinstance(value.pattern, str)
-                else value.pattern.decode("latin-1")
-            )
-            for shape in CRITERION_SHAPES
-        )
-    )
-
-
 def owner_grammar_readings(
-    source: str, directory: Path
+    source: str,
 ) -> tuple[list[str], list[tuple[str, str]], list[tuple[str, str]]]:
     """What the owner compiles, writes and reads of its row grammar."""
     tree = ast.parse(source)
     return (
-        compiled_row_patterns(source, directory),
-        shaped_literals(tree),
+        row_patterns({RULE_MODULE: source}).get(RULE_MODULE, []),
+        row_literals(tree),
         grammar_uses(tree, GRAMMAR_NAMES),
     )
 
@@ -469,40 +520,200 @@ GRAMMAR_NAMES = frozenset(
 )
 
 
-def test_the_owner_states_its_row_grammar_once(tmp_path):
+def test_a_row_grammar_is_what_matches_a_rendered_row():
+    """The rendered rows are rows the owner reads, one per field of the grammar.
+
+    So the predicate below speaks for the grammar's own rows, and a field the
+    grammar gains is a row it is asked about.
+    """
+    assert ROW_FIELDS
+    for field in ROW_FIELDS:
+        assert criterion_field_bodies(rendered_row(field), field=field) == ("text",)
+    assert matches_a_rendered_row(_CRITERION_ROW)
+
+
+@pytest.mark.parametrize(
+    ("text", "grammar"),
+    [
+        (_CRITERION_ROW.pattern, True),
+        (r"^ {0,3}\*\*(\w+):\*\*(.*)$", True),
+        (r"^\s*\*\*(Evidence):\*\*(.*)$", True),
+        (r"Evidence:\*\*", True),
+        ("**Evidence:**", True),
+        ("**Check:** ", True),
+        (fire_spec._FENCE.pattern, False),
+        (fire_spec._HEADING.pattern, False),
+        (fire_spec._LIST_ITEM.pattern, False),
+        ("", False),
+        ("Evidence", False),
+        ("**", False),
+        ("the Check a criterion states, and the Evidence it records", False),
+    ],
+)
+def test_a_literal_is_a_row_grammar_by_what_it_matches(text, grammar):
+    assert is_row_grammar(text) is grammar
+
+
+#: The literals outside the owner that are a row grammar, each with why it may
+#: be: every one renders rows for a writer, and none reads one.
+ROW_WRITERS = {
+    (
+        "domain/criterion_creation.py",
+        "criterion_body",
+        "**Check:** \n\n**Do:** \n\n**Evidence:**\n",
+    ): "Renders a new criterion's three rows, then reads them back through the "
+    "owner's field reader.",
+    (
+        "domain/criterion_evidence.py",
+        "render_evidence_field",
+        "**Evidence:**",
+    ): "Renders the Evidence row label the codec writes.",
+}
+
+
+def test_no_literal_outside_the_owner_is_a_row_grammar():
+    """A Check or Evidence row parser outside the owner has no literal to hold.
+
+    Every literal of the tree is read, and one that is a row grammar — a
+    pattern text that matches a rendered row, or a text holding a rendered
+    label — is allowed only as the owner's own grammar, once, or as a writer's
+    row registered with its reason.  A second grammar compiled anywhere,
+    handed on by name, imported into the owner's reader or matched with a
+    string method adds a literal, and reds.
+
+    Not seen: a grammar assembled at call time from pieces none of which is
+    a row grammar alone, such as a label built around a field name.
+    """
+    found = row_grammar_literals(source_tree())
+
+    assert found.pop(RULE_MODULE) == [("<module>", _CRITERION_ROW.pattern)]
+    assert sorted(
+        (module, scope, text)
+        for module, literals in found.items()
+        for scope, text in literals
+    ) == sorted(ROW_WRITERS)
+
+
+def test_no_module_outside_the_owner_binds_a_row_pattern():
+    """Every module of the package, as it runs, binds a row pattern only in the owner.
+
+    Read off the compiled objects in each module's globals, so a pattern
+    compiled in one module and imported into another is seen in both, and
+    inside the owner the one such object is the grammar, under its one name.
+    """
+    assert row_patterns(source_tree()) == {RULE_MODULE: sorted(GRAMMAR_NAMES)}
+
+
+EVIDENCE_ROW_TEXT = r"^\s*\*\*(Evidence):\*\*(.*)$"
+#: Each way a second Check or Evidence row parser could arrive outside the
+#: owner, as the module texts it would arrive as, with what it must add to
+#: the literals and to the compiled patterns read above.
+PLANTED_ROW_GRAMMARS = {
+    "evidence parser compiled elsewhere and imported into the reader": (
+        {
+            "domain/evidence_rows.py": "import re\n"
+            f"EVIDENCE_ROW = re.compile(r'{EVIDENCE_ROW_TEXT}')\n",
+            RULE_MODULE: source_tree()[RULE_MODULE].replace(
+                "        row = _CRITERION_ROW.match(line)\n"
+                "        if row is not None:\n"
+                "            if active:\n",
+                "        from kodezart.domain.evidence_rows import EVIDENCE_ROW as _E\n"
+                "\n"
+                "        row = _CRITERION_ROW.match(line) or _E.match(line)\n"
+                "        if row is not None:\n"
+                "            if active:\n",
+            ),
+        },
+        [("domain/evidence_rows.py", "<module>", EVIDENCE_ROW_TEXT)],
+        {"domain/evidence_rows.py": ["EVIDENCE_ROW"]},
+    ),
+    "pattern text imported and matched by re.match": (
+        {
+            "domain/evidence_rows.py": f"EVIDENCE_TEXT = r'{EVIDENCE_ROW_TEXT}'\n",
+            "services/evidence_reader.py": "import re\n"
+            "def evidence(body):\n"
+            "    from kodezart.domain.evidence_rows import EVIDENCE_TEXT\n"
+            "    return [\n"
+            "        re.match(EVIDENCE_TEXT, line) for line in body.splitlines()\n"
+            "    ]\n",
+        },
+        [("domain/evidence_rows.py", "<module>", EVIDENCE_ROW_TEXT)],
+        {},
+    ),
+    "startswith parser in a service": (
+        {
+            "services/evidence_reader.py": "def evidence(body):\n"
+            "    return [\n"
+            "        line.removeprefix('**Evidence:**')\n"
+            "        for line in body.splitlines()\n"
+            "        if line.startswith('**Evidence:**')\n"
+            "    ]\n",
+        },
+        [
+            ("services/evidence_reader.py", "evidence", "**Evidence:**"),
+            ("services/evidence_reader.py", "evidence", "**Evidence:**"),
+        ],
+        {},
+    ),
+}
+
+
+@pytest.mark.parametrize("planted", sorted(PLANTED_ROW_GRAMMARS))
+def test_a_row_parser_planted_outside_the_owner_is_a_literal_and_a_pattern(planted):
+    """A second row parser outside the owner is seen by what it holds.
+
+    Planted as the module texts it would arrive as — each planted text is
+    new to the tree, the owner's reader rewired included — and read by both
+    whole-tree readings: its literal, and its compiled pattern when it binds
+    one at module level.
+    """
+    files, literals, patterns = PLANTED_ROW_GRAMMARS[planted]
+    sources = {**source_tree(), **files}
+    assert all(source_tree().get(module) != text for module, text in files.items())
+
+    found = row_grammar_literals(sources)
+    found.pop(RULE_MODULE)
+
+    assert sorted(
+        (module, scope, text)
+        for module, literals in found.items()
+        for scope, text in literals
+    ) == sorted([*ROW_WRITERS, *literals])
+    assert row_patterns(sources) == {
+        RULE_MODULE: sorted(GRAMMAR_NAMES),
+        **patterns,
+    }
+
+
+def test_the_owner_states_its_row_grammar_once():
     """One row grammar in the owner, pinned on what it is and not how it is written.
 
-    Three readings, none keyed on the spelling of a compile call.  What
-    executes: loaded as a module of its own, the owner binds exactly one
-    criterion-shaped compiled pattern, under the one name that denotes the
-    grammar object, so a second pattern at module level reds however it was
-    compiled, and so does the identical text compiled again under a second
-    name, which re's cache hands back as the same object.  What is written:
-    its criterion-shaped literals are the grammar's own text once, at module
-    level, and the two row templates the amendment writer renders, so a
-    second pattern written anywhere in the owner, a sanctioned scope
-    included, adds a literal.  What is read: the grammar object is read only
-    as the receiver of ``match`` in the two sanctioned scopes, so a pattern
-    derived from its text, or the object handed on under another name, reds.
+    What a row grammar is, is decided by what it matches: a pattern that
+    matches a rendered row across its label, or a text holding a rendered
+    label.  Three readings of the owner, none keyed on the spelling of a
+    compile call.  What executes: run as a module, the owner binds exactly one
+    compiled pattern that matches a rendered row, under the one name that
+    denotes the grammar object, so a second such pattern at module level reds
+    however it was compiled and however generic its text, and so does the
+    identical text compiled again under a second name, which re's cache hands
+    back as the same object.  What is written: its row-grammar literals are
+    the grammar's own text once, at module level, so a second pattern written
+    anywhere in the owner, a sanctioned scope included, adds a literal.  What
+    is read: the grammar object is read only as the receiver of ``match`` in
+    the two sanctioned scopes, the field reader and the row locator the
+    amendment edit addresses rows through, so a pattern derived from its
+    text, the object handed on under another name, or the object reached by a
+    string spelling its name, reds.
 
-    Not seen: a pattern text assembled at run time from fragments none of
-    which is criterion-shaped, compiled inside a function, and any reach by
-    reflection; the behavioural floor named in the module docstring is where
-    a reader built that way dies.
+    Not seen: a grammar assembled at call time from pieces none of which is a
+    row grammar alone, and a name built at run time; the behavioural floor
+    named in the module docstring is where a reader built that way dies.
     """
-    compiled, literals, uses = owner_grammar_readings(
-        source_tree()[RULE_MODULE], tmp_path
-    )
+    compiled, literals, uses = owner_grammar_readings(source_tree()[RULE_MODULE])
 
     assert len(GRAMMAR_NAMES) == 1
     assert compiled == sorted(GRAMMAR_NAMES)
-    assert literals == sorted(
-        [
-            ("<module>", _CRITERION_ROW.pattern),
-            (replace_criterion_fields.__name__, "**:** \n\n"),
-            (replace_criterion_fields.__name__, "\n\n**:** \n"),
-        ]
-    )
+    assert literals == [("<module>", _CRITERION_ROW.pattern)]
     assert uses == sorted(
         (scope, "match")
         for scope in (criterion_field_bodies.__name__, _criterion_rows.__name__)
@@ -511,6 +722,7 @@ def test_the_owner_states_its_row_grammar_once(tmp_path):
 
 ROW_TEXT = r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$"
 EVIDENCE_TEXT = r"^ {0,3}\*\*Evidence:\*\*(.*)$"
+GENERIC_ROW_TEXT = r"^ {0,3}\*\*(\w+):\*\*(.*)$"
 #: Each way a second statement of the row grammar can be written into the
 #: owner: appended at module level, or put in place of a sanctioned read.
 SECOND_GRAMMARS = {
@@ -545,11 +757,32 @@ SECOND_GRAMMARS = {
         "_CRITERION_ROW.match(line)",
         "re.compile(_CRITERION_ROW.pattern).match(line)",
     ),
+    "generic row pattern used in a third function": (
+        None,
+        f"_ANY_ROW = re.compile(r'{GENERIC_ROW_TEXT}')\n"
+        "\n"
+        "def evidence_rows(body):\n"
+        "    return [\n"
+        "        found[2]\n"
+        "        for found in map(_ANY_ROW.match, body.splitlines())\n"
+        "        if found and found.group(1) == 'Evidence'\n"
+        "    ]\n",
+    ),
+    "grammar reached through globals()": (
+        None,
+        "def evidence_rows(body):\n"
+        "    row = globals()['_CRITERION_ROW']\n"
+        "    return [\n"
+        "        found[2]\n"
+        "        for found in map(row.match, body.splitlines())\n"
+        "        if found and found.group(1) == 'Evidence'\n"
+        "    ]\n",
+    ),
 }
 
 
 @pytest.mark.parametrize("planted", sorted(SECOND_GRAMMARS))
-def test_a_second_row_grammar_in_the_owner_changes_what_it_states(planted, tmp_path):
+def test_a_second_row_grammar_in_the_owner_changes_what_it_states(planted):
     source = source_tree()[RULE_MODULE]
     anchor, text = SECOND_GRAMMARS[planted]
     if anchor is None:
@@ -558,8 +791,7 @@ def test_a_second_row_grammar_in_the_owner_changes_what_it_states(planted, tmp_p
         assert source.count(anchor) == 2
         changed = source.replace(anchor, text, 1)
 
-    head = owner_grammar_readings(source, tmp_path / "head")
-    assert owner_grammar_readings(changed, tmp_path / "planted") != head
+    assert owner_grammar_readings(changed) != owner_grammar_readings(source)
 
 
 def test_the_grammar_is_reached_from_outside_by_call_and_never_re_matched():
