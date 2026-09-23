@@ -796,6 +796,10 @@ is written before the halt report returns, after the round's lease is
 released, as its own record on the item it names: one escalation per item and
 question, carrying the finding's evidence and the pass's interim reading, so
 two classes on one item are two records and one class raised twice is one.
+A record the phase may no longer write — on an item it is not admitted on, one
+that left the scope, or one whose judgement went stale — is not written and is
+named in the unrecorded halt instead, while the halt's other records still
+land.
 Whether the judgement behind the halt is still current is read once, before
 the first record, because each record's decision label is itself a change to
 the scope that judgement was bound to.

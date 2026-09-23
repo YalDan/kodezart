@@ -979,74 +979,78 @@ class OrganizeOwner:
                 if not await self._admission.is_live(result)
             }
         )
+        skipped: list[str] = []
         for (issue_key, question), evidence in records.items():
-            revision = await self._tracker.read_issue_revision(issue_key=issue_key)
-            if revision.issue.issue_key != issue_key:
-                raise OrganizeWriteRefusalError(
-                    issue_key=issue_key, reason="the escalation source identity changed"
-                )
-
-            async def before_write(
-                *, revision: TrackerIssueRevision = revision
-            ) -> None:
-                await self._require_revision(revision)
-                if revision.issue.issue_key in stale:
-                    raise OrganizeWriteRefusalError(
-                        issue_key=revision.issue.issue_key,
-                        reason="the escalation admission evidence is no longer current",
-                    )
-                await self._may_write(
-                    revision.issue.issue_key, phase=phase, scope=scope
-                )
-
-            occurrence = sha256(
-                f"{phase.spec.kind.value}\n{question}".encode()
-            ).hexdigest()
-            escalation = LaneEscalation(
-                issue_id=issue_key,
-                escalation_key=occurrence,
-                raised_by=job_id,
-                question=question,
-                interim_reading=(
-                    "Preparation stops; no completion marker "
-                    "or execution is authorized."
-                ),
-                interim_basis=evidence,
-                raised_at_sha=base_ref,
-            )
-            marker = compose_comment_marker(
-                prefixes=self._operation.marker_prefixes,
-                purpose="escalation",
-                lane=issue_key,
-                occurrence_key=occurrence,
-            )
-            surface = WritableSurface(
-                kind=SurfaceKind.MARKER_COMMENT,
-                ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
-                marker=marker,
-            )
-
-            async def apply(
-                finding: WriteBackFinding | None,
-                *,
-                issue_key: str = issue_key,
-                escalation: LaneEscalation = escalation,
-                before_write: Callable[[], Awaitable[None]] = before_write,
-            ) -> None:
-                if finding is not None:
-                    raise WriteBackReadError(
-                        "the escalation could not be independently confirmed"
-                    )
-                await before_write()
-                await self._escalations.raise_escalation(
-                    lane_key=issue_key,
-                    job_id=job_id,
-                    escalation=escalation,
-                    visibility=visibility,
-                    before_write=before_write,
-                )
-
             try:
+                revision = await self._tracker.read_issue_revision(issue_key=issue_key)
+                if revision.issue.issue_key != issue_key:
+                    raise OrganizeWriteRefusalError(
+                        issue_key=issue_key,
+                        reason="the escalation source identity changed",
+                    )
+
+                async def before_write(
+                    *, revision: TrackerIssueRevision = revision
+                ) -> None:
+                    await self._require_revision(revision)
+                    if revision.issue.issue_key in stale:
+                        raise OrganizeWriteRefusalError(
+                            issue_key=revision.issue.issue_key,
+                            reason=(
+                                "the escalation admission evidence is no longer current"
+                            ),
+                        )
+                    await self._may_write(
+                        revision.issue.issue_key, phase=phase, scope=scope
+                    )
+
+                occurrence = sha256(
+                    f"{phase.spec.kind.value}\n{question}".encode()
+                ).hexdigest()
+                escalation = LaneEscalation(
+                    issue_id=issue_key,
+                    escalation_key=occurrence,
+                    raised_by=job_id,
+                    question=question,
+                    interim_reading=(
+                        "Preparation stops; no completion marker "
+                        "or execution is authorized."
+                    ),
+                    interim_basis=evidence,
+                    raised_at_sha=base_ref,
+                )
+                marker = compose_comment_marker(
+                    prefixes=self._operation.marker_prefixes,
+                    purpose="escalation",
+                    lane=issue_key,
+                    occurrence_key=occurrence,
+                )
+                surface = WritableSurface(
+                    kind=SurfaceKind.MARKER_COMMENT,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+                    marker=marker,
+                )
+
+                async def apply(
+                    finding: WriteBackFinding | None,
+                    *,
+                    issue_key: str = issue_key,
+                    escalation: LaneEscalation = escalation,
+                    before_write: Callable[[], Awaitable[None]] = before_write,
+                ) -> None:
+                    if finding is not None:
+                        raise WriteBackReadError(
+                            "the escalation could not be independently confirmed"
+                        )
+                    await before_write()
+                    await self._escalations.raise_escalation(
+                        lane_key=issue_key,
+                        job_id=job_id,
+                        escalation=escalation,
+                        visibility=visibility,
+                        before_write=before_write,
+                    )
+
                 result = await self._verifier.write_back(
                     step=_WriteStep(surface, apply), ref=base_ref
                 )
@@ -1081,6 +1085,13 @@ class OrganizeOwner:
                     raise WriteBackReadError(
                         "the escalation classification remains unconfirmed"
                     )
+            except OrganizeWriteRefusalError:
+                # A record the phase may no longer write — an item it is not
+                # admitted on, one that left the scope, stale admission
+                # evidence or a changed identity — is never written. It is
+                # named unrecorded and the halt's other records still land.
+                skipped.append(issue_key)
+                continue
             except (
                 TrackerUnavailableError,
                 TrackerAccessDeniedError,
@@ -1093,13 +1104,26 @@ class OrganizeOwner:
                 return StageHaltReport(
                     EscalationUnrecordedHalt(
                         cause=StageHaltCause.ESCALATION_UNRECORDED,
-                        unrecorded_escalation_issue_ids=(issue_key,),
+                        unrecorded_escalation_issue_ids=tuple(
+                            dict.fromkeys((*skipped, issue_key))
+                        ),
                         admission_results=tuple(results),
                         questions=tuple(questions),
                         surviving_findings=tuple(findings),
                         write_back_results=tuple(write_back_results),
                     )
                 )
+        if skipped:
+            return StageHaltReport(
+                EscalationUnrecordedHalt(
+                    cause=StageHaltCause.ESCALATION_UNRECORDED,
+                    unrecorded_escalation_issue_ids=tuple(dict.fromkeys(skipped)),
+                    admission_results=tuple(results),
+                    questions=tuple(questions),
+                    surviving_findings=tuple(findings),
+                    write_back_results=tuple(write_back_results),
+                )
+            )
         return StageHaltReport.model_validate(
             {
                 "cause": cause,

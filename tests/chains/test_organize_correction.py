@@ -2,7 +2,6 @@
 
 import pytest
 
-from kodezart.domain.errors import OrganizeWriteRefusalError
 from tests.chains.test_organize import result
 from tests.chains.test_organize_owner import factory, run_owner
 from tests.tracker.conftest import CLAIMED_ISSUE
@@ -41,12 +40,14 @@ async def test_escalation_rechecks_approval_before_its_second_write(
 
     monkeypatch.setattr(executor, "stream", human_decision)
     monkeypatch.setattr(board, "call_tool", boundary)
-    try:
-        report = await run_owner(owner)
-        assert not approve_after_comment
+    report = await run_owner(owner)
+    if approve_after_comment:
+        # The label write re-reads approval and is refused: that record is
+        # named unrecorded rather than raised past the halt.
+        assert report.halt.cause == "escalation_unrecorded"
+        assert report.halt.unrecorded_escalation_issue_ids == (CLAIMED_ISSUE,)
+    else:
         assert report.halt.cause == "human_decision"
-    except OrganizeWriteRefusalError:
-        assert approve_after_comment
     assert len(comments) == 1
     assert ("needs decision" in board.server.issues[CLAIMED_ISSUE].labels) is (
         not approve_after_comment

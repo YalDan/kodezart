@@ -792,3 +792,77 @@ async def test_two_findings_of_different_classes_on_one_item_are_two_records(
         for record in escalations(board, SIBLING)
         if record.question in {"missing_source", "ambiguous_scope"}
     ) == ["ambiguous_scope", "missing_source"]
+
+
+@pytest.mark.parametrize("order", ["admitted_first", "unadmitted_first"])
+async def test_a_record_the_phase_may_not_write_is_named_unrecorded_and_the_rest_land(
+    monkeypatch, order
+):
+    """A finding on a member the row is not admitted on is never written.
+
+    The member carries its own approval label, so the pre-approval row may
+    not write it. Its record is named in the unrecorded halt, and the
+    admitted member's record lands whichever order the judge listed them.
+    """
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    admitted, unadmitted = "FIX-A", "FIX-N"
+    member(board, admitted, labels=[GROOM_MARKER])
+    member(board, unadmitted, labels=[GROOM_MARKER, "approved scope"])
+    formed = [spec_finding(admitted), spec_finding(unadmitted, "ambiguous_scope")]
+    if order == "unadmitted_first":
+        formed.reverse()
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {admitted: lambda _: buildable(admitted, *formed)},
+    )
+    report = await run_owner(owner)
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (unadmitted,)
+    (record,) = escalations(board, admitted, "missing_source")
+    assert record.interim_basis == spec_finding(admitted)["evidence"]
+    assert "needs decision" in board.server.issues[admitted].labels
+    assert escalations(board, unadmitted) == []
+    assert "needs decision" not in board.server.issues[unadmitted].labels
+
+
+async def test_a_halt_record_whose_admission_went_stale_is_named_unrecorded(
+    monkeypatch,
+):
+    """The judgement behind a record changed before the halt; that record waits.
+
+    The subject's body is edited after its last judgement, so the halt's
+    record of that judgement is not written and is named unrecorded; the
+    finding it carried on another member is still written there.
+    """
+    owner, board, executor = factory(
+        refuse_forever=True, bound=1, refusal={"findings": [spec_finding(SIBLING)]}
+    )
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    original = executor.stream
+    judged = []
+
+    async def stream(**kwargs):
+        async for event in original(**kwargs):
+            yield event
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        title = kwargs["output_format"]["schema"].get("title")
+        if title == "AdmissionJudgment" and keys and keys[-1] == CLAIMED_ISSUE:
+            judged.append(kwargs)
+            if len(judged) == 2:
+                # The subject's last judgement is taken; its body moves on.
+                board.server.issues[
+                    CLAIMED_ISSUE
+                ].description = "Edited elsewhere after the last judgement."
+
+    monkeypatch.setattr(executor, "stream", stream)
+    report = await run_owner(owner)
+    assert len(judged) == 2
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (CLAIMED_ISSUE,)
+    assert escalations(board, CLAIMED_ISSUE) == []
+    assert "needs decision" not in board.server.issues[CLAIMED_ISSUE].labels
+    (record,) = escalations(board, SIBLING, "missing_source")
+    assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+    assert "needs decision" in board.server.issues[SIBLING].labels
