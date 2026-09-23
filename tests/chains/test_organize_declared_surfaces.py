@@ -866,3 +866,43 @@ async def test_a_halt_record_whose_admission_went_stale_is_named_unrecorded(
     (record,) = escalations(board, SIBLING, "missing_source")
     assert record.interim_basis == spec_finding(SIBLING)["evidence"]
     assert "needs decision" in board.server.issues[SIBLING].labels
+
+
+async def test_approval_landing_before_a_grooming_halts_first_record_writes_nothing(
+    monkeypatch,
+):
+    """Approval between the halt's decision and its first record ends the row.
+
+    The round decides its halt, releases its set, and the scope is approved
+    before any record is written: every record re-reads approval first, so
+    none lands, and the halt names each record's item unrecorded.
+    """
+    owner, board, _ = factory(
+        refuse_forever=True, bound=1, refusal={"findings": [spec_finding(SIBLING)]}
+    )
+    member(board, SIBLING, labels=[GROOM_MARKER])
+    original = board.call_tool
+
+    async def approving(*, name, arguments):
+        response = await original(name=name, arguments=arguments)
+        # The round's own release is the first withdrawal of a lease marker.
+        labels = board.server.issues[CLAIMED_ISSUE].labels
+        if name == "delete_comment" and "approved scope" not in labels:
+            labels.append("approved scope")
+        return response
+
+    monkeypatch.setattr(board, "call_tool", approving)
+    report = await run_owner(owner)
+    assert "approved scope" in board.server.issues[CLAIMED_ISSUE].labels
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (CLAIMED_ISSUE, SIBLING)
+    for key in (CLAIMED_ISSUE, SIBLING):
+        assert escalations(board, key) == []
+        assert "needs decision" not in board.server.issues[key].labels
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_comment"
+        and str(args.get("body", "")).startswith("[organize-question:")
+    ]
+    assert board.grants() == []
