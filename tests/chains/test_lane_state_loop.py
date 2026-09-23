@@ -2371,6 +2371,8 @@ async def test_an_observed_grading_whose_paths_moved_is_taken_back_as_lapsed():
 
     _, current = await lane.criteria.read_entry(issue_key=SUBJECT)
     assert {criterion.id for criterion in current.criteria} == {CARRIED}
+    subject = await lane.port.read_issue(issue_key=SUBJECT)
+    assert subject.state_kind is not WorkflowStateKind.COMPLETED
     assert all(
         lane.port.issues[key].state_kind is WorkflowStateKind.COMPLETED
         for key in OWED_KEYS[1:]
