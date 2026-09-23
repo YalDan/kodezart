@@ -910,6 +910,108 @@ def test_a_local_decorator_named_like_the_declaration_shelters_nothing():
     assert site not in found.held_out
 
 
+#: Each planting imports a name from outside the package while a module
+#: inside it defines a class of that name: the constructor case hands the
+#: real verifier a step built from the outside name, and the annotation case
+#: types the verifier binding with it.  Neither module defines the name or
+#: imports it from the package.
+FOREIGN_NAMES = {
+    "constructor": (
+        (
+            "planted/step_class.py",
+            """
+from dataclasses import dataclass
+
+from kodezart.core.protocols import TrackerPort
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    tracker: TrackerPort
+
+    async def write(self, *, finding):
+        await self.tracker.post_comment(issue_key="K", body="b")
+""",
+        ),
+        (
+            "planted/foreign_step.py",
+            """
+from elsewhere import Step
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort, verifier: WriteBackVerifier) -> None:
+        self._tracker, self._verifier = tracker, verifier
+
+    async def publish(self) -> None:
+        await self._verifier.write_back(step=Step(None, self._tracker), ref="r")
+""",
+        ),
+    ),
+    "annotation": (
+        (
+            "planted/foreign_verifier.py",
+            """
+from dataclasses import dataclass
+
+from elsewhere import WriteBackVerifier
+
+from kodezart.core.protocols import TrackerPort
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    apply: object
+
+    async def write(self, *, finding):
+        await self.apply(finding)
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort, verifier: WriteBackVerifier) -> None:
+        self._tracker, self._verifier = tracker, verifier
+
+    async def publish(self) -> None:
+        async def put(finding):
+            await self._tracker.post_comment(issue_key="K", body="b")
+
+        await self._verifier.write_back(step=Step(None, put), ref="r")
+""",
+        ),
+    ),
+}
+FOREIGN_SITES = {
+    "constructor": CallSite(
+        module="planted/step_class.py", function="Step.write", method="post_comment"
+    ),
+    "annotation": CallSite(
+        module="planted/foreign_verifier.py",
+        function="Writer.publish.put",
+        method="post_comment",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(FOREIGN_NAMES))
+def test_a_name_imported_from_outside_the_package_grounds_nothing_inside_it(case):
+    """An outside import names nothing the census can read, whatever it spells.
+
+    The package has a class of the imported name, so a reader that fell back
+    from the import to any definition of that name would ground the planted
+    step, or type the planted verifier binding, and drive the write.  The
+    import names something outside the tree, so the write is refused.
+    """
+    found = census(*FOREIGN_NAMES[case])
+    site = FOREIGN_SITES[case]
+    assert site in found.sites
+    assert site in found.unadopted
+
+
 IMPOSTOR = '''
 from kodezart.core.protocols import TrackerPort
 
