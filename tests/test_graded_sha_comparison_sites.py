@@ -16,10 +16,12 @@ a class body, a function, a lambda, a comprehension):
 * **Which scopes read the graded sha directly?**  Reading it directly means
   an attribute read of the field, a name spelled as the field, a subscript
   or ``.get`` (or any other read) by the field's name or its serialisation
-  alias, a ``match`` class pattern keyed on it, or a variable annotated as
-  the Evidence record and used whole (iterated, dumped, handed on), which
-  reads every field it has.  Inside that same scope the value is followed
-  through every binding form to a fixed point: assignment, unpacking, a
+  alias, a dotted name one of whose segments is either (the path
+  ``attrgetter`` takes), a ``match`` class pattern keyed on it, or a
+  variable annotated as the Evidence record and used whole (iterated,
+  dumped, handed on), which reads every field it has.  Inside that same
+  scope the value is followed through every binding form to a fixed point:
+  assignment, unpacking, a
   container stored into by subscript, a ``for`` target, ``with ... as``,
   the walrus, a comprehension target, a ``match`` capture, a default
   argument whose default carries it, and a closure over a name that
@@ -216,6 +218,23 @@ def _defaults(node: ScopeNode) -> list[tuple[ast.arg, ast.expr]]:
     return paired
 
 
+def _spells_the_field(text: object) -> bool:
+    """Whether a string constant names the graded sha, alone or on a dotted path.
+
+    ``attrgetter("evidence.graded_sha")`` reads the field as surely as
+    ``attrgetter("graded_sha")`` does, so a dotted name any of whose segments
+    is a spelling is a read.  Prose is not a dotted name: a docstring or a log
+    message that mentions the field has a segment that is not an identifier,
+    and a longer identifier such as ``graded_sha_note`` is not the field.
+    """
+    if not isinstance(text, str):
+        return False
+    segments = text.split(".")
+    return all(
+        segment.isidentifier() for segment in segments
+    ) and not SPELLINGS.isdisjoint(segments)
+
+
 def _names_the_record(annotation: ast.AST | None) -> bool:
     return annotation is not None and any(
         (isinstance(node, ast.Name) and node.id == RECORD)
@@ -321,7 +340,7 @@ class _Module:
         if isinstance(node, ast.Attribute):
             return isinstance(node.ctx, ast.Load) and node.attr in SPELLINGS
         if isinstance(node, ast.Constant):
-            return node.value in SPELLINGS
+            return _spells_the_field(node.value)
         if isinstance(node, ast.MatchClass):
             return any(attribute in SPELLINGS for attribute in node.kwd_attrs)
         if not isinstance(node, ast.Name) or not isinstance(node.ctx, ast.Load):
@@ -636,6 +655,10 @@ PLANTS = {
         "from operator import attrgetter\n"
         "_planted = attrgetter('graded_sha')(evidence) != head_sha\n"
     ),
+    "a-dotted-attrgetter-path": (
+        "from operator import attrgetter\n"
+        "_planted = attrgetter('evidence.graded_sha')(cross_off) != head_sha\n"
+    ),
     "iterating-the-models-fields": (
         "for _key, _value in evidence:\n"
         "    if _key == 'graded_sha':\n"
@@ -830,6 +853,61 @@ def test_a_default_argument_lambda_in_the_lane_reader_is_reported():
     )
     assert any(finding.startswith(f"{site} uses it") for finding in found), found
     assert f"{site}.<lambda> reads the graded sha and is not registered" in found
+
+
+#: A read of the field through the dotted path ``attrgetter`` takes, written
+#: inside the lane reader's loop.
+DOTTED_READ = (
+    "if attrgetter('evidence.graded_sha')(cross_off) != head_sha:\n"
+    "    rederive.append(cross_off)\n"
+    "    continue\n"
+)
+
+
+def test_a_dotted_path_to_the_field_is_a_read_alone_and_in_the_lane_reader():
+    """``attrgetter("evidence.graded_sha")`` reads the field, wherever it is written."""
+    source = (
+        "from operator import attrgetter\n"
+        "def lapsed(cross_off, head_sha):\n"
+        "    return attrgetter('evidence.graded_sha')(cross_off) != head_sha\n"
+    )
+    assert findings(alone(source), REGISTERED) == [
+        "reader.py::lapsed reads the graded sha and is not registered"
+    ]
+    site = "domain/lapse.py::held_standing"
+    module = site.partition("::")[0]
+    anchor = "        state = graded_state(\n"
+    assert SHIPPED[module].count(anchor) == 1
+    written = SHIPPED[module].replace(
+        anchor, _indented(_indented(DOTTED_READ)) + anchor
+    )
+    found = findings(readers({module: written}), REGISTERED)
+    use = "if attrgetter('evidence.graded_sha')(cross_off) != head_sha:\n    ..."
+    assert found == [f"{site} uses it at {[use]} beyond its row, and not at []"]
+
+
+def test_a_string_that_only_mentions_the_field_is_not_a_read():
+    """Prose and a longer name stay out; only a dotted name reaching the field is in.
+
+    A docstring, a log message, a comment, a keyword naming the field to
+    write it, a name that merely starts with it, and a dotted path to another
+    field are not reads of the graded sha.
+    """
+    sources = (
+        "def noted(evidence, head_sha):\n"
+        '    """Reads evidence.graded_sha against the head."""\n'
+        "    return evidence.recorded_sha != head_sha\n",
+        "def logged(log, head_sha):\n"
+        "    log.info('evidence.graded_sha moved', head=head_sha)\n",
+        "def commented(head_sha):\n"
+        "    # attrgetter('evidence.graded_sha')\n"
+        "    return head_sha\n",
+        "def stamp(head_sha):\n    return Report(graded_sha=head_sha)\n",
+        "def note(row, head_sha):\n    return row['graded_sha_note'] != head_sha\n",
+        "def other(row, head_sha):\n"
+        "    return attrgetter('evidence.recorded_sha')(row) != head_sha\n",
+    )
+    assert [source for source in sources if alone(source)] == []
 
 
 def test_one_operand_holding_both_revisions_in_the_drift_detector_is_reported():
@@ -1046,15 +1124,23 @@ def test_the_stated_limit_is_evasion_and_it_is_not_seen():
     """What the docstring says this check does not claim, read as code.
 
     In each boundary case the function that reads the field directly is
-    reported, and the function comparing what it was handed is not.
+    reported, and the function comparing what it was handed is not.  What
+    ``eval`` is handed is out of reach only when the name is built at run
+    time: a literal dotted path to the field is a read wherever it is
+    written.
     """
     evasions = (
         "def lapsed(evidence, head_sha):\n"
         "    return getattr(evidence, 'graded' + '_sha') != head_sha\n"
         "def evaluated(evidence, head_sha):\n"
-        "    return eval('evidence.graded_sha') != head_sha\n"
+        "    return eval('evidence.graded' + '_sha') != head_sha\n"
     )
     assert alone(evasions) == {}
+    evaluated_literal = (
+        "def evaluated(evidence, head_sha):\n"
+        "    return eval('evidence.graded_sha') != head_sha\n"
+    )
+    assert frozenset(alone(evaluated_literal)) == {"reader.py::evaluated"}
     through_a_global = (
         "def keep(evidence):\n"
         "    global _RECORDED\n"
