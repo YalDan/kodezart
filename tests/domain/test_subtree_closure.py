@@ -95,6 +95,19 @@ def a_met_lane_check_over_an_open_child_deliverable() -> tuple[
     return facts_of(lane, child, child_open, lane_met), ("child-AC-1",)
 
 
+def a_finished_deliverable_over_an_open_criterion() -> tuple[
+    dict[str, TrackerIssue], tuple[str, ...]
+]:
+    """A deliverable's own Done decides nothing: its criterion still owes."""
+    lane = make_tracker_issue("lane")
+    child = make_tracker_issue(
+        "child", parent_key="lane", state_kind=WorkflowStateKind.COMPLETED
+    )
+    child_open = criterion("child-AC-1", parent="child")
+    lane_met = criterion("lane-AC-1", parent="lane", state=WorkflowStateKind.COMPLETED)
+    return facts_of(lane, child, child_open, lane_met), ("child-AC-1",)
+
+
 def a_cancellation_without_a_supersession() -> tuple[
     dict[str, TrackerIssue], tuple[str, ...]
 ]:
@@ -111,6 +124,7 @@ def a_cancellation_without_a_supersession() -> tuple[
         (closed_child_with_an_open_lane_check, ("lane-AC-1",), False),
         (every_criterion_completed, (), True),
         (a_met_lane_check_over_an_open_child_deliverable, ("child-AC-1",), False),
+        (a_finished_deliverable_over_an_open_criterion, ("child-AC-1",), False),
         (a_cancellation_without_a_supersession, (), True),
     ],
 )
