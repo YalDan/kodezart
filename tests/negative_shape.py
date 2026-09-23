@@ -60,6 +60,7 @@ SUPPRESSION: Final[re.Pattern[str]] = re.compile(
     r"|(?:ruff:\s*|flake8:\s*)?noqa"
     r"|mypy:"
     r"|(?:ruff:\s*)?isort:\s*(?:skip_file|skip|off)"
+    r"|ruff:\s*(?:disable|enable)\b"
     r"|fmt:\s*(?:off|on|skip)"
     r"|yapf:\s*(?:disable|enable))",
     re.IGNORECASE,
