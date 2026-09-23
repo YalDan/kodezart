@@ -4,12 +4,10 @@ import pytest
 
 from kodezart.domain import run_alarm_table
 from kodezart.domain.errors import RunShapeReadError
-from kodezart.domain.lane_alarms import OBSERVED_ALARMS
 from kodezart.domain.run_alarm_table import (
     ALARM_TABLE,
     AlarmTableError,
     alarm_raised,
-    alarm_scans,
     require_alarm_table,
 )
 from kodezart.domain.stream_signals import tally_regressed
@@ -58,15 +56,31 @@ def test_a_member_with_no_fold_refuses_the_boot_naming_every_one(monkeypatch, mi
         assert signal.value in str(caught.value)
 
 
-def test_the_supervisors_alarms_declare_the_issue_listing_and_nothing_else():
-    """Named per alarm, so a refusal says which alarms need the scan."""
-    assert alarm_scans(OBSERVED_ALARMS) == {
-        PassSignal.issues_changed: (
-            AlarmSignal.LAPSE_UNDISCHARGED,
-            AlarmSignal.TALLY_REGRESSED,
-            AlarmSignal.TALLY_UNMOVED,
-        )
-    }
+#: The whole scans column, written out member by member rather than read off
+#: the table: the issue listing for every signal whose readings come through
+#: rosters, criterion states or stage markers, and no boot probe for the
+#: signals read off comments and records alone.
+DECLARED_SCANS = {
+    AlarmSignal.TALLY_UNMOVED: {PassSignal.issues_changed},
+    AlarmSignal.TALLY_REGRESSED: {PassSignal.issues_changed},
+    AlarmSignal.LAPSE_UNDISCHARGED: {PassSignal.issues_changed},
+    AlarmSignal.ESCALATION_AGEING: set(),
+    AlarmSignal.WRITE_BACK_MISSING: set(),
+    AlarmSignal.SURFACE_CONTENDED: set(),
+    AlarmSignal.RECORD_SUPERSEDED: set(),
+    AlarmSignal.COMPOSITION_SUBSTITUTED: set(),
+    AlarmSignal.BARREN_TICK_WITH_DIFF_GROWTH: set(),
+    AlarmSignal.COMMITS_AHEAD_OF_RECORD: set(),
+    AlarmSignal.RULINGS_OUTPACE_CLOSURES: {PassSignal.issues_changed},
+    AlarmSignal.STRUCTURAL_WRITE_UNCROSSES_MILESTONE: {PassSignal.issues_changed},
+}
+
+
+def test_every_alarm_declares_exactly_the_scans_its_readings_come_through():
+    """The column is pinned whole, so no member's scans can drift unseen."""
+    assert {
+        signal: set(row.scans) for signal, row in ALARM_TABLE.items()
+    } == DECLARED_SCANS
 
 
 def test_a_stored_record_is_raised_exactly_when_its_readings_replay_to_one():

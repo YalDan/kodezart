@@ -14,7 +14,7 @@ alike, never by whether the record carries a bound — most signals raise
 with none.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -121,17 +121,6 @@ def require_alarm_table() -> None:
     missing = tuple(signal for signal in AlarmSignal if signal not in ALARM_TABLE)
     if missing:
         raise AlarmTableError(missing)
-
-
-def alarm_scans(
-    signals: Iterable[AlarmSignal],
-) -> dict[PassSignal, tuple[AlarmSignal, ...]]:
-    """Each scan the given alarms declare, with every alarm that declares it."""
-    declared: dict[PassSignal, list[AlarmSignal]] = {}
-    for signal in sorted(signals):
-        for scan in sorted(ALARM_TABLE[signal].scans):
-            declared.setdefault(scan, []).append(signal)
-    return {scan: tuple(alarms) for scan, alarms in declared.items()}
 
 
 def alarm_raised(record: RunAlarm | None) -> bool:
