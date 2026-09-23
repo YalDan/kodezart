@@ -3596,12 +3596,18 @@ class FakeTrackerPort:
     #: reads the source of each method defined on the class line of each of
     #: those.  There it finds each log moved, as a direct ``self.<log>``
     #: target or a mutating call on one, inside the port's reads alone, and
-    #: read for nothing but the append or extend that records it; a local
-    #: bound from ``self.<log>`` counts as the log, and a local bound from
-    #: ``self`` counts as ``self``.  It does not see ``setattr``,
-    #: ``self.__dict__``, a name built at run time or a module function
-    #: handed ``self``.  A read log that recorded a write, or decided an
-    #: answer, fails there.
+    #: read for nothing but the append or extend that records it.  The
+    #: instance is whatever name the method's own definition gives it; a
+    #: local bound from it — by a plain, a chained or an annotated
+    #: assignment, a walrus, a tuple unpacking or ``self or None`` — counts
+    #: as it, a local bound from ``self.<log>`` counts as the log, and
+    #: ``getattr(self, "<log>")`` with the log's name written out counts as
+    #: ``self.<log>``.  Outside its reach: a value handed across a function
+    #: boundary (a module function or a nested function handed ``self``),
+    #: a name built at run time, a binding made only when the function runs
+    #: (``setattr``, ``self.__dict__``) and a binding through a loop or a
+    #: context-manager target.  A read log that recorded a write, or
+    #: decided an answer, fails there.
     READ_LOGS: ClassVar[frozenset[str]] = frozenset(
         {
             "issue_reads",
