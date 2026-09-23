@@ -6,13 +6,22 @@ answer is taken once, at boot, and the refusal is a typed abort: no consumer
 asks again at tick time, no consumer names the refusal type, and no handler
 turns either into a log line the deployment then runs past.
 
-Everything the walk keys on is derived: the probe is the port member's own
-name, the abort is the error type's own name, the preflight is the function
-the composition root calls, and the scanned tree is the package that function
-is packaged in.  Nothing is listed by hand except the modules a capability
-vocabulary must live in — the port, the error, the adapters that implement
-the port, and the preflight itself — and each of those is derived from the
-production object that defines it.
+What the walk keys on is read off production objects.  The probe is the port
+member's own name, the abort is the error type's own name, and the
+vocabulary a consumer would branch on grows from both: the error's own
+instance attributes (read off an instance of it) and the backend's refusal
+marker, by its value and by the name of the adapter constant that holds it.
+The preflight is the function the composition root calls, the root is the
+module the lifespan is defined in, and the scanned tree is the package the
+preflight is packaged in.  The probe's holder is the one function the walk
+finds calling it; its reach is exclusive: the preflight alone calls the
+holder, and the lifespan alone calls the preflight.
+
+Where the vocabulary may be named is permitted per function, not per module.
+The port's and the error's modules are read off their objects; the
+implementers are the modules that define a function under the probe's name,
+found by the walk; and inside the preflight's module only its imports and
+the bodies of the preflight and the holder may name any of it.
 
 The handler check is "no handler lets it continue", not "no ``try`` encloses
 it", because the composition root's lifespan has one failure path around
@@ -34,16 +43,23 @@ The walk is textual and executes nothing, which is what lets it speak for the
 whole tree.  Its blind spots, which review has to read from the code instead:
 a probe reached through ``getattr`` with a computed name, and a refusal
 mapping passed through a variable into another function that branches on it
-without naming either the probe or the error.
+without naming either the probe or the error.  A scope revoked after boot is
+outside the boot check: the backend's refusal then arrives as a
+``TrackerUnavailableError``, which the pass gate's tick-time transport arm
+(``services/pass_gate.py``) handles as an outage.  The marker scan is what
+keeps a consumer from branching on that refusal's text instead.
 """
 
 import ast
 import contextlib
+import functools
 import sys
 from pathlib import Path
 
 import pytest
 
+from kodezart import main
+from kodezart.adapters.linear import tracker as linear_tracker
 from kodezart.composition.passes import verify_pass_preflight
 from kodezart.core.errors import PassGateCapabilityError
 from kodezart.core.protocols import TrackerPort
@@ -53,14 +69,25 @@ ASK = TrackerPort.verify_scan_capability.__name__
 ABORT = PassGateCapabilityError.__name__
 PREFLIGHT = verify_pass_preflight.__name__
 
+#: The refusal's own instance attributes: what a consumer holding the error
+#: would read to branch on it.
+ERROR_ATTRIBUTES = frozenset(vars(PassGateCapabilityError("", refusals=())))
+#: The backend's refusal marker, and every adapter constant holding it.
+MARKER = linear_tracker._SCOPE_REFUSAL_MARKER
+MARKER_NAMES = frozenset(
+    name for name, value in vars(linear_tracker).items() if value == MARKER
+)
+#: Every name a consumer of the capability answer would have to spell.
+VOCABULARY = frozenset({ASK, ABORT, MARKER}) | ERROR_ATTRIBUTES | MARKER_NAMES
+
 #: The package the preflight is packaged in, and so the tree this speaks for.
 PREFLIGHT_FILE = Path(sys.modules[verify_pass_preflight.__module__].__file__ or "")
 SOURCE_ROOT = PREFLIGHT_FILE.resolve().parents[1]
 PREFLIGHT_MODULE = PREFLIGHT_FILE.resolve().relative_to(SOURCE_ROOT).as_posix()
 
-#: Where a capability vocabulary belongs: the port that declares the question,
-#: the error that carries the refusal, the adapters that answer it, and the
-#: boot act that asks.  Each is read off its own production object.
+#: Where a capability vocabulary belongs: the port that declares the question
+#: and the error that carries the refusal, each read off its own production
+#: object; the implementers and the boot act are found by the walk below.
 PORT_MODULE = (
     Path(sys.modules[TrackerPort.__module__].__file__ or "")
     .resolve()
@@ -73,11 +100,15 @@ ERROR_MODULE = (
     .relative_to(SOURCE_ROOT)
     .as_posix()
 )
-#: The adapter package: the implementers, which must name the port's member to
-#: implement it at all.
-ADAPTERS = "adapters/"
-#: The composition root, where the boot act is called.
-ROOT_MODULE = "main.py"
+#: The composition root, where the boot act is called, and the one function
+#: in it that calls the boot act.
+ROOT_MODULE = (
+    Path(sys.modules[main.lifespan.__module__].__file__ or "")
+    .resolve()
+    .relative_to(SOURCE_ROOT)
+    .as_posix()
+)
+ROOT_FUNCTION = main.lifespan.__name__
 
 DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
@@ -244,12 +275,95 @@ def continuing(tree: ast.AST, name: str) -> list[str]:
     return found
 
 
-def module_trees() -> dict[str, ast.Module]:
-    """Every shipped module, parsed once, keyed by its path in the package."""
-    return {
-        path.relative_to(SOURCE_ROOT).as_posix(): ast.parse(path.read_text())
+@functools.cache
+def parsed_tree() -> tuple[tuple[str, ast.Module], ...]:
+    """Every shipped module, parsed once for the whole module."""
+    return tuple(
+        (path.relative_to(SOURCE_ROOT).as_posix(), ast.parse(path.read_text()))
         for path in sorted(SOURCE_ROOT.rglob("*.py"))
-    }
+    )
+
+
+def module_trees() -> dict[str, ast.Module]:
+    """Every shipped module keyed by its path in the package, a fresh mapping."""
+    return dict(parsed_tree())
+
+
+def callers(trees: dict[str, ast.Module], name: str) -> frozenset[str]:
+    """Every ``module::function`` that calls *name*."""
+    return frozenset(
+        f"{module}::{site}"
+        for module, tree in trees.items()
+        for site in call_sites(tree, name)
+    )
+
+
+def holder_of(trees: dict[str, ast.Module]) -> str:
+    """The one function that calls the probe, by its own name."""
+    [site] = callers(trees, ASK)
+    return site.partition("::")[2].rpartition(".")[2]
+
+
+def unreached(trees: dict[str, ast.Module], holder: str) -> list[str]:
+    """Every way the probe's holder or the boot act is reached from elsewhere.
+
+    The preflight alone calls the holder (unless the preflight is the holder,
+    with the probe inlined), and the lifespan alone calls the preflight.
+    """
+    found: list[str] = []
+    booting = f"{PREFLIGHT_MODULE}::{PREFLIGHT}"
+    if holder != PREFLIGHT and (reaching := callers(trees, holder)) != {booting}:
+        found.append(f"{holder} is called by {sorted(reaching)}")
+    root = f"{ROOT_MODULE}::{ROOT_FUNCTION}"
+    if (reaching := callers(trees, PREFLIGHT)) != {root}:
+        found.append(f"{PREFLIGHT} is called by {sorted(reaching)}")
+    return found
+
+
+def implementers(trees: dict[str, ast.Module]) -> frozenset[str]:
+    """The modules that define a function under the probe's own name."""
+    return frozenset(
+        module
+        for module, tree in trees.items()
+        if any(
+            isinstance(node, FUNCTIONS) and node.name == ASK for node in ast.walk(tree)
+        )
+    )
+
+
+def naming(trees: dict[str, ast.Module]) -> frozenset[str]:
+    """Every module that names any of the capability vocabulary."""
+    return frozenset(
+        module for module, tree in trees.items() if VOCABULARY & names(tree)
+    )
+
+
+def consumers(trees: dict[str, ast.Module], holder: str) -> frozenset[str]:
+    """Every module, or preflight-module statement, naming the vocabulary.
+
+    The port's and the error's modules and the implementers may name it.  In
+    the preflight's module only the imports and the bodies of the preflight
+    and the holder may; any other top-level statement there that names it is
+    reported by its own name.
+    """
+    permitted = {PORT_MODULE, ERROR_MODULE} | implementers(trees)
+    allowed = {PREFLIGHT, holder}
+    found: set[str] = set()
+    for module in naming(trees):
+        if module in permitted:
+            continue
+        if module != PREFLIGHT_MODULE:
+            found.add(module)
+            continue
+        for statement in trees[module].body:
+            if isinstance(statement, (ast.Import, ast.ImportFrom)):
+                continue
+            if isinstance(statement, FUNCTIONS) and statement.name in allowed:
+                continue
+            if VOCABULARY & names(statement):
+                label = getattr(statement, "name", f"line {statement.lineno}")
+                found.add(f"{module}::{label}")
+    return frozenset(found)
 
 
 def test_the_capability_probe_is_called_from_the_boot_preflight_alone():
@@ -259,42 +373,27 @@ def test_the_capability_probe_is_called_from_the_boot_preflight_alone():
     caller would be a second time the answer could be taken, and a tick-time
     caller would be the silent gate itself.
     """
-    sites = {
-        f"{module}::{site}"
-        for module, tree in module_trees().items()
-        for site in call_sites(tree, ASK)
-    }
+    trees = module_trees()
+    sites = callers(trees, ASK)
     assert len(sites) == 1, sorted(sites)
     [site] = sites
-    module, _, holder = site.partition("::")
-    assert module == PREFLIGHT_MODULE
-    #: The boot act itself calls the body that asks.
-    preflight = next(
-        node
-        for node in ast.walk(module_trees()[PREFLIGHT_MODULE])
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == PREFLIGHT
-    )
-    assert call_sites(preflight, holder.rpartition(".")[2])
+    assert site.partition("::")[0] == PREFLIGHT_MODULE
+    # The preflight alone reaches the holder, and the lifespan alone reaches
+    # the preflight: no second path to the answer, handled or not.
+    assert unreached(trees, holder_of(trees)) == []
 
 
 def test_no_consumer_names_the_capability_answer():
-    """Outside the port, the error, the adapters and the boot act: nobody.
+    """Outside the port, the error, the implementers and the boot act: nobody.
 
-    A consumer that names either has somewhere to put a runtime branch on
+    A consumer that names the probe, the error, the error's refusals or the
+    backend's refusal marker has somewhere to put a runtime branch on
     capability, which is the degradation this criterion refuses.
     """
-    naming = {
-        module for module, tree in module_trees().items() if {ASK, ABORT} & names(tree)
-    }
-    permitted = {PORT_MODULE, ERROR_MODULE, PREFLIGHT_MODULE}
-    consumers = {
-        module
-        for module in naming
-        if module not in permitted and not module.startswith(ADAPTERS)
-    }
-    assert naming
-    assert consumers == set(), sorted(consumers)
+    trees = module_trees()
+    assert {PREFLIGHT_MODULE, ERROR_MODULE} <= naming(trees)
+    found = consumers(trees, holder_of(trees))
+    assert found == frozenset(), sorted(found)
 
 
 def test_no_handler_lets_the_probe_or_the_boot_refusal_continue():
@@ -356,6 +455,28 @@ def lifespan_around(guarded: str) -> str:
             "        return []\n",
             "name",
             id="a-consumer-naming-the-abort",
+        ),
+        pytest.param(
+            "async def tick(gate, log):\n"
+            "    try:\n"
+            "        return await gate.scan()\n"
+            "    except Exception as exc:\n"
+            f"        if hasattr(exc, {sorted(ERROR_ATTRIBUTES)[0]!r}):\n"
+            "            return []\n"
+            "        raise\n",
+            "name",
+            id="a-consumer-testing-the-errors-attribute",
+        ),
+        pytest.param(
+            "async def tick(gate):\n"
+            "    try:\n"
+            "        return await gate.scan()\n"
+            "    except Exception as exc:\n"
+            f"        if {MARKER!r} in str(exc):\n"
+            "            return []\n"
+            "        raise\n",
+            "name",
+            id="a-consumer-testing-the-refusal-marker",
         ),
         pytest.param(
             "async def preflight(tracker, log, signals):\n"
@@ -450,14 +571,81 @@ def lifespan_around(guarded: str) -> str:
 def test_each_detector_reports_a_planted_site(body, detector):
     tree = ast.parse(body)
     if detector == "call":
-        assert call_sites(tree, ASK)
+        assert len(callers({**module_trees(), PLANTED: tree}, ASK)) == 2
     elif detector == "name":
-        assert {ASK, ABORT} & names(tree)
+        trees = {**module_trees(), PLANTED: tree}
+        assert PLANTED in consumers(trees, holder_of(module_trees()))
     elif detector == "probe":
         assert handled_calls(tree, ASK)
         assert continuing(tree, ASK)
     else:
         assert continuing(tree, PREFLIGHT)
+
+
+#: Where a planted consumer sits in the package: a services-shaped module
+#: outside every permitted one.
+PLANTED = "services/planted.py"
+
+
+def with_preflight_statement(body: str) -> dict[str, ast.Module]:
+    """The shipped tree, with *body* appended to the preflight's own module."""
+    trees = module_trees()
+    source = (SOURCE_ROOT / PREFLIGHT_MODULE).read_text()
+    trees[PREFLIGHT_MODULE] = ast.parse(source + "\n\n" + body)
+    return trees
+
+
+def test_a_second_handled_caller_of_the_holder_is_reported():
+    """A tick-time closure that asks through the holder is a second path."""
+    holder = holder_of(module_trees())
+    trees = with_preflight_statement(
+        "def report_builder():\n"
+        "    async def report(config):\n"
+        "        try:\n"
+        f"            await {holder}(config=config)\n"
+        f"        except {ABORT}:\n"
+        "            pass\n"
+        "    return report\n"
+    )
+    assert unreached(trees, holder)
+    assert f"{PREFLIGHT_MODULE}::report_builder" in consumers(trees, holder)
+
+
+def test_a_second_caller_of_the_boot_act_is_reported():
+    """The lifespan is the one caller of the preflight."""
+    trees = {
+        **module_trees(),
+        PLANTED: ast.parse(f"async def tick(config):\n    await {PREFLIGHT}(config)\n"),
+    }
+    assert unreached(trees, holder_of(module_trees()))
+
+
+def test_a_probe_inlined_into_the_preflight_satisfies_the_reach():
+    """The holder may be the preflight itself: then nothing else reaches it."""
+    trees = {
+        PREFLIGHT_MODULE: ast.parse(
+            f"async def {PREFLIGHT}(tracker, signals):\n"
+            f"    await tracker.{ASK}(signals=signals)\n"
+        ),
+        ROOT_MODULE: ast.parse(
+            f"async def {ROOT_FUNCTION}(app):\n    await {PREFLIGHT}(app.tracker, [])\n"
+        ),
+    }
+    assert holder_of(trees) == PREFLIGHT
+    assert unreached(trees, PREFLIGHT) == []
+
+
+def test_a_preflight_module_function_naming_the_abort_is_reported():
+    """Inside the preflight's module the permission is per function."""
+    holder = holder_of(module_trees())
+    trees = with_preflight_statement(
+        "async def tick(gate):\n"
+        "    try:\n"
+        "        return await gate.scan()\n"
+        f"    except {ABORT}:\n"
+        "        return None\n"
+    )
+    assert f"{PREFLIGHT_MODULE}::tick" in consumers(trees, holder)
 
 
 @pytest.mark.parametrize(
