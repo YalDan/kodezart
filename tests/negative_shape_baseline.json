@@ -390,7 +390,7 @@
   "tests/test_name_resolution.py": 40,
   "tests/test_organize_portability.py": 14,
   "tests/test_release.py": 4,
-  "tests/test_suppression_baseline.py": 44,
+  "tests/test_suppression_baseline.py": 46,
   "tests/tools/test_scratch_scope.py": 60,
   "tests/tracker/test_alarm_independent.py": 4,
   "tests/tracker/test_artifact_native_fields.py": 9,
@@ -5568,7 +5568,8 @@
    "test_the_configuration_scan_sees_a_new_per_file_row",
    "test_the_project_file_is_the_only_tool_configuration",
    "test_the_configuration_scan_reads_every_directory_the_walk_reaches",
-   "test_the_gate_skips_a_test_only_for_a_gated_mark_it_carries"
+   "test_the_gate_skips_a_test_only_for_a_gated_mark_it_carries",
+   "test_the_runner_table_carries_exactly_the_pinned_keys"
   ],
   "tests/tools/test_scratch_scope.py": [
    "test_build_writes_three_lanes_with_their_criteria_and_one_blocker_edge",
