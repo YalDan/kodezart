@@ -221,6 +221,91 @@ def roles_off_the_aggregate(text: str) -> frozenset[str]:
     )
 
 
+@cache
+def class_defs(text: str) -> dict[str, ast.ClassDef]:
+    """Every class the port module declares, Protocol or not, by name."""
+    return {
+        node.name: node
+        for node in ast.parse(text).body
+        if isinstance(node, ast.ClassDef)
+    }
+
+
+def bound_in_body(node: ast.ClassDef) -> frozenset[str]:
+    """Every name a class body binds: a definition, an assignment, a field."""
+    bound: set[str] = set()
+    for item in node.body:
+        if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef):
+            bound.add(item.name)
+        elif isinstance(item, ast.Assign):
+            bound.update(
+                target.id for target in item.targets if isinstance(target, ast.Name)
+            )
+        elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+            bound.add(item.target.id)
+    return frozenset(bound)
+
+
+def runtime_checkable_classes(text: str) -> frozenset[str]:
+    """Every class of the module that carries ``@runtime_checkable``."""
+    return frozenset(
+        name
+        for name, node in class_defs(text).items()
+        if any(
+            (isinstance(decorator, ast.Name) and decorator.id == "runtime_checkable")
+            or (
+                isinstance(decorator, ast.Attribute)
+                and decorator.attr == "runtime_checkable"
+            )
+            for decorator in node.decorator_list
+        )
+    )
+
+
+def stray_classes(text: str) -> dict[str, tuple[str, ...]]:
+    """Every class touching the tracker surface that is not a role declared as one.
+
+    A class of the port module, Protocol or not, touches the surface when
+    its own body binds a member of the port or when it composes a role, at
+    any depth. Each such class but the aggregate must be a role, must name
+    ``Protocol`` among its own bases and must carry ``@runtime_checkable``;
+    the report names what each one that is not lacks.
+    """
+    classes = class_defs(text)
+    known = roles(text)
+    surface = port_members()
+    checkable = runtime_checkable_classes(text)
+    bases = {
+        name: {base.id for base in node.bases if isinstance(base, ast.Name)}
+        for name, node in classes.items()
+    }
+
+    def composes_a_role(name: str, seen: frozenset[str] = frozenset()) -> bool:
+        return any(
+            base in known or (base not in seen and composes_a_role(base, seen | {name}))
+            for base in bases.get(name, ())
+        )
+
+    report: dict[str, tuple[str, ...]] = {}
+    for name, node in sorted(classes.items()):
+        if name == AGGREGATE or not (
+            bound_in_body(node) & surface or composes_a_role(name)
+        ):
+            continue
+        lacking = tuple(
+            reason
+            for reason, holds in (
+                ("a role", name in known),
+                ("Protocol", "Protocol" in bases[name]),
+                ("runtime_checkable", name in checkable),
+            )
+            if not holds
+        )
+        if lacking:
+            report[name] = lacking
+    return report
+
+
 def twice_declared(text: str) -> dict[str, tuple[str, ...]]:
     """Every member declared on more than one role, with the roles that do."""
     own = own_declarations(text)

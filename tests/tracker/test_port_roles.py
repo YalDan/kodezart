@@ -69,6 +69,8 @@ from tests.tracker.role_register import (
     redeclared_from_a_base,
     roles,
     roles_off_the_aggregate,
+    runtime_checkable_classes,
+    stray_classes,
     tree_under_tests,
     twice_declared,
     uncredited_roles,
@@ -255,6 +257,68 @@ def test_a_role_dropped_from_the_aggregate_is_reported():
     grown = text[:start] + text[start:].replace(line, "\n", 1)
 
     assert roles_off_the_aggregate(grown) == frozenset({role})
+
+
+def test_every_class_that_touches_the_surface_is_a_role_declared_as_one():
+    text = port_module_text()
+
+    assert stray_classes(text) == {}
+    assert roles(text) <= runtime_checkable_classes(text)
+
+
+def test_no_role_answers_nothing_of_the_surface():
+    text = port_module_text()
+    disjoint = {
+        name
+        for name in own_declarations(text)
+        if not members_declared(text, name) & port_members()
+    }
+
+    assert disjoint & roles(text) == set()
+
+
+#: Each way a class can touch the tracker surface without being a role
+#: declared as one: the text that arrives, and the class the report names.
+PLANTED_STRAYS = {
+    "a mixed protocol": (
+        "\n\n@runtime_checkable\nclass MixedIssueNotes(Protocol):\n"
+        "    async def {member}(self) -> None: ...\n"
+        "    def scratch_note(self) -> str: ...\n",
+        "MixedIssueNotes",
+    ),
+    "a role grown off the surface": (
+        "\n\n@runtime_checkable\nclass OrphanReader({role}, Protocol):\n"
+        "    async def orphan_read(self) -> None: ...\n",
+        "OrphanReader",
+    ),
+    "a class that names no Protocol": (
+        "\n\nclass OrganizeScratch({role}):\n    ...\n",
+        "OrganizeScratch",
+    ),
+    "a role without the runtime check": (
+        "\n\nclass Unchecked({role}, Protocol):\n    ...\n",
+        "Unchecked",
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_STRAYS))
+def test_a_class_touching_the_surface_that_is_not_a_role_is_reported(form):
+    text = port_module_text()
+    member = sorted(port_members())[0]
+    role = min(declaring_roles(text))
+    planted, name = PLANTED_STRAYS[form]
+    grown = text + planted.format(member=member, role=role)
+
+    reports = (
+        stray_classes(grown),
+        twice_declared(grown),
+        redeclared_from_a_base(grown),
+        {AGGREGATE: ()} if own_declarations(grown)[AGGREGATE] else {},
+    )
+
+    assert name in stray_classes(grown)
+    assert [bool(report) for report in reports].count(True) == 1
 
 
 @pytest.mark.parametrize(
