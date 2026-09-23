@@ -77,6 +77,7 @@ from tests.fakes import FakeTrackerPort
 from tests.tracker.role_register import (
     ADAPTERS,
     AGGREGATE,
+    COMPOSITION,
     EXEMPT_UNTIL_KOD_390,
     PORT_MODULE,
     RUN_RECORD_EXEMPTION,
@@ -772,6 +773,36 @@ def kod_390_role() -> str:
 
 def test_no_module_outside_the_allowlist_annotates_the_whole_port():
     assert aggregate_annotations(source_tree()) == ()
+
+
+def test_a_new_composition_module_may_hold_the_port_and_the_adapter():
+    """The allowlist is the composition package, not today's list of its modules.
+
+    The same text in a consumer is named by the whole-port and adapter
+    reports, so the composition path is what lets it through.
+    """
+    root = (
+        f"from {LinearMcpTracker.__module__} import {LinearMcpTracker.__name__}\n"
+        f"from {TrackerPort.__module__} import {AGGREGATE}\n\n\n"
+        f"def build(*, caller: object) -> {AGGREGATE}:\n"
+        f"    port: {AGGREGATE} = {LinearMcpTracker.__name__}(caller=caller)\n"
+        f"    return port\n"
+    )
+
+    def naming(path: str) -> list[str]:
+        sources = source_tree()
+        assert path not in sources
+        sources[path] = root
+        reports = {
+            "aggregate": aggregate_annotations(sources),
+            "credit": tuple(uncredited_roles(sources)),
+            "default": tuple(defaulted_role_parameters(sources)),
+            "adapter": adapter_importers(sources),
+        }
+        return [name for name, report in reports.items() if path in report]
+
+    assert naming(f"{COMPOSITION}planted_root.py") == []
+    assert naming("services/planted_root.py") == ["aggregate", "adapter"]
 
 
 def test_every_role_a_module_takes_is_called_or_handed_on():
