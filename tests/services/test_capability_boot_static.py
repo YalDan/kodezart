@@ -35,13 +35,25 @@ again, which
 ``tests/test_lifespan_cleanup.py::test_partial_startup_releases_every_resource_it_acquired[preflight]``
 shows for a failing preflight.  So a handler around the preflight is allowed
 exactly when it carries the failure out, on Python's own rule: ``except …
-as name`` unbinds ``name`` when the handler ends, so the handler carries the
-failure only if its last statement is an unconditional ``raise`` (bare, or
-of the bound name or an alias of it), or if it unconditionally assigns the
-exception to another name that a ``raise`` in the enclosing function names.
-A ``raise`` under a condition, a loop or a ``try`` inside the handler is a
-path that does not raise.  ``except*`` is a handler too, and a ``with``
-over ``suppress`` is a handler that never raises.
+as name`` unbinds ``name`` when the handler ends.  No statement in the
+handler may return, continue or break, on any path.  Then the handler
+carries the failure only if its last statement is a ``raise`` (bare, or of
+the bound name or an alias of it), or if its last statement stores the
+exception in another name that nothing else rebinds and that a ``raise`` in
+the enclosing function reaches unconditionally: under no loop, no ``if``
+but one testing that name's presence, and no ``try`` that drops it.  A
+``raise`` under a condition, a loop or a ``try`` inside the handler is a
+path that does not raise.  ``except*`` is a handler too, a ``with`` over
+``suppress`` is a handler that never raises, and a ``finally`` that
+returns, continues or breaks lets the run go on whatever its handlers do.
+On every edge the callee is awaited directly, as its own statement or an
+assignment's value: a call handed to another call, such as a ``gather``
+that can return the failure as a value, is reported.
+
+The static check is backed by behaviour: every boot refusal in
+``tests/services/test_prompt_passes.py`` is asserted with ``http.debug``
+both off and on, so a boot that runs past a refusal in either mode fails
+there whatever its spelling.
 
 The walk is textual and executes nothing, which is what lets it speak for the
 whole tree.  Its blind spots, which review has to read from the code instead:
@@ -180,15 +192,41 @@ def suppresses(item: ast.withitem) -> bool:
     )
 
 
+#: The statements that leave a block by another way than its end or a raise.
+JUMPS = (ast.Return, ast.Continue, ast.Break)
+#: The nodes whose bodies are another scope's: a jump inside one leaves that
+#: scope, not the block that holds its definition.
+SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+
+def jumps(statements: list[ast.stmt]) -> list[ast.stmt]:
+    """Every ``return``, ``continue`` or ``break`` in *statements*.
+
+    Nested definitions are not entered: their jumps leave their own scope.
+    The walk is over a finite tree and visits each node once.
+    """
+    found: list[ast.stmt] = []
+    stack: list[ast.AST] = list(statements)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, SCOPES):
+            continue
+        if isinstance(node, JUMPS):
+            found.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return found
+
+
 def handled_calls(tree: ast.AST, name: str) -> list[Guard]:
-    """Every handler-holding ``try``, ``except*`` or ``suppress`` around *name*.
+    """Every guard around *name*: a ``try`` or ``except*`` holding a handler
+    or a ``finally`` that jumps, and a ``with`` over ``suppress``.
 
     Only the guarded body counts: a call in a handler, an ``else`` or a
     ``finally`` is not one the guard can swallow.
     """
     enclosing: list[Guard] = []
     for node in ast.walk(tree):
-        if isinstance(node, TRIES) and node.handlers:
+        if isinstance(node, TRIES) and (node.handlers or jumps(node.finalbody)):
             guarded: list[ast.stmt] = node.body
         elif isinstance(node, WITHS) and any(suppresses(item) for item in node.items):
             guarded = node.body
@@ -203,58 +241,188 @@ def handled_calls(tree: ast.AST, name: str) -> list[Guard]:
     return enclosing
 
 
-def enclosing_function(tree: ast.AST, node: ast.AST) -> ast.AST:
-    """The innermost function holding *node*, or the module when none does."""
-    parents = {
+def parent_map(tree: ast.AST) -> dict[int, ast.AST]:
+    """Each node's parent, keyed by the child's identity."""
+    return {
         id(child): parent
         for parent in ast.walk(tree)
         for child in ast.iter_child_nodes(parent)
     }
+
+
+def enclosing_function(tree: ast.AST, node: ast.AST) -> ast.AST:
+    """The innermost function holding *node*, or the module when none does."""
+    parents = parent_map(tree)
     current = parents.get(id(node))
     while current is not None and not isinstance(current, FUNCTIONS):
         current = parents.get(id(current))
     return tree if current is None else current
 
 
+def stored_alias(statement: ast.stmt, bound: set[str]) -> str | None:
+    """The one name *statement* stores a name of *bound* in, if it does."""
+    if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+        target: ast.expr = statement.targets[0]
+        value = statement.value
+    elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+        target, value = statement.target, statement.value
+    else:
+        return None
+    if (
+        isinstance(target, ast.Name)
+        and isinstance(value, ast.Name)
+        and value.id in bound
+    ):
+        return target.id
+    return None
+
+
+def checks_presence(test: ast.expr, alias: str) -> bool:
+    """Whether *test* asks only whether *alias* holds a failure.
+
+    ``alias`` or ``alias is not None``: after the handler stored the failure
+    in it, true on every path through that handler.
+    """
+    if isinstance(test, ast.Name):
+        return test.id == alias
+    return (
+        isinstance(test, ast.Compare)
+        and isinstance(test.left, ast.Name)
+        and test.left.id == alias
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.IsNot)
+        and isinstance(test.comparators[0], ast.Constant)
+        and test.comparators[0].value is None
+    )
+
+
+def hands_on(handler: ast.ExceptHandler) -> bool:
+    """Whether *handler* ends by returning or raising what it caught."""
+    last = handler.body[-1]
+    if isinstance(last, ast.Raise):
+        return last.exc is None or (
+            isinstance(last.exc, ast.Name) and last.exc.id == handler.name
+        )
+    return (
+        isinstance(last, ast.Return)
+        and isinstance(last.value, ast.Name)
+        and last.value.id == handler.name
+    )
+
+
+def raises_unconditionally(
+    node: ast.Raise, alias: str, function: ast.AST, parents: dict[int, ast.AST]
+) -> bool:
+    """Whether every way to *node*'s function reaching it raises *alias*.
+
+    Climbing from the ``raise`` to *function*: a nested definition, a
+    ``with`` over anything but ``suppress``, the body of an ``if`` that tests
+    only the alias's presence, and the body of a ``try`` each of whose
+    handlers hands the failure on are the only enclosures allowed.  A loop,
+    any other ``if``, a conditional expression, a ``match``, a ``try``'s
+    handler, ``else`` or ``finally``, and a ``try`` whose handler drops the
+    failure or whose ``finally`` jumps, each make it conditional.  The climb
+    follows parents up a finite tree, so it ends.
+    """
+    child: ast.AST = node
+    current = parents.get(id(node))
+    while current is not None and current is not function:
+        if isinstance(current, ast.If):
+            if not (
+                any(child is item for item in current.body)
+                and checks_presence(current.test, alias)
+            ):
+                return False
+        elif isinstance(current, TRIES):
+            if not (
+                any(child is item for item in current.body)
+                and all(hands_on(handler) for handler in current.handlers)
+                and not jumps(current.finalbody)
+            ):
+                return False
+        elif isinstance(current, WITHS):
+            if any(suppresses(item) for item in current.items):
+                return False
+        elif isinstance(
+            current,
+            (ast.For, ast.AsyncFor, ast.While, ast.IfExp, ast.Match, ast.ExceptHandler),
+        ):
+            return False
+        child, current = current, parents.get(id(current))
+    return current is function
+
+
+def rebound_elsewhere(
+    alias: str, handler: ast.ExceptHandler, function: ast.AST
+) -> list[ast.Name]:
+    """Every binding of *alias* in *function* other than the handler's store.
+
+    An initializer to ``None`` placed before the handler is not one: it is
+    what the handler's store replaces.  Any other store, walrus, loop or
+    ``with`` target or ``del`` of the alias is.
+    """
+    inside = {id(node) for node in ast.walk(handler)}
+    initializers = {
+        id(target)
+        for statement in ast.walk(function)
+        if isinstance(statement, (ast.Assign, ast.AnnAssign))
+        and statement.lineno < handler.lineno
+        and isinstance(statement.value, ast.Constant)
+        and statement.value.value is None
+        for target in (
+            statement.targets
+            if isinstance(statement, ast.Assign)
+            else [statement.target]
+        )
+    }
+    return [
+        node
+        for node in ast.walk(function)
+        if isinstance(node, ast.Name)
+        and node.id == alias
+        and not isinstance(node.ctx, ast.Load)
+        and id(node) not in inside
+        and id(node) not in initializers
+    ]
+
+
 def carries(handler: ast.ExceptHandler, function: ast.AST) -> bool:
     """Whether every path out of *handler* raises the failure it caught.
 
-    Its last statement is an unconditional ``raise`` of nothing, the bound
-    name or an alias of it; or one of its own statements assigns the
-    exception to another name, which a ``raise`` in *function* (nested
-    functions included, the handler's own conditional raises excluded)
-    names.  The bound name itself never counts past the handler, because
+    No statement in the handler returns, continues or breaks, on any path
+    (nested definitions aside).  Then either its last statement is a
+    ``raise`` of nothing, the bound name or an alias the handler made of it;
+    or its last statement stores the failure in another name, nothing else
+    in *function* rebinds that name but an initializer to ``None`` before
+    the handler, and a ``raise`` of it in *function* (nested functions
+    included) is reached unconditionally, as :func:`raises_unconditionally`
+    decides.  The bound name itself never counts past the handler, because
     Python unbinds it when the handler ends.
     """
+    if jumps(handler.body):
+        return False
     bound = {handler.name} if handler.name is not None else set()
     aliases: set[str] = set()
     for statement in handler.body:
-        value = statement.value if isinstance(statement, ast.Assign) else None
-        if isinstance(statement, ast.AnnAssign):
-            value = statement.value
-        if isinstance(value, ast.Name) and value.id in bound | aliases:
-            targets = (
-                statement.targets
-                if isinstance(statement, ast.Assign)
-                else [statement.target]
-                if isinstance(statement, ast.AnnAssign)
-                else []
-            )
-            aliases.update(
-                target.id for target in targets if isinstance(target, ast.Name)
-            )
+        stored = stored_alias(statement, bound | aliases)
+        if stored is not None:
+            aliases.add(stored)
     last = handler.body[-1]
-    if isinstance(last, ast.Raise) and (
-        last.exc is None
-        or (isinstance(last.exc, ast.Name) and last.exc.id in bound | aliases)
-    ):
-        return True
+    if isinstance(last, ast.Raise):
+        return last.exc is None or (
+            isinstance(last.exc, ast.Name) and last.exc.id in bound | aliases
+        )
+    alias = stored_alias(last, bound | aliases)
+    if alias is None or rebound_elsewhere(alias, handler, function):
+        return False
     inside = {id(node) for node in ast.walk(handler)}
+    parents = parent_map(function)
     return any(
         isinstance(node, ast.Raise)
         and id(node) not in inside
         and isinstance(node.exc, ast.Name)
-        and node.exc.id in aliases
+        and node.exc.id == alias
+        and raises_unconditionally(node, alias, function, parents)
         for node in ast.walk(function)
     )
 
@@ -263,7 +431,8 @@ def continuing(tree: ast.AST, name: str) -> list[str]:
     """Every guard around *name* that lets the run go on, by line.
 
     A ``suppress`` always does; a ``try`` or ``except*`` does through any
-    handler that does not carry the failure out.
+    handler that does not carry the failure out, and through a ``finally``
+    that returns, continues or breaks.
     """
     found: list[str] = []
     for guard in handled_calls(tree, name):
@@ -276,6 +445,30 @@ def continuing(tree: ast.AST, name: str) -> list[str]:
             for handler in guard.handlers
             if not carries(handler, function)
         )
+        found.extend(
+            f"line {jump.lineno}: finally {ast.unparse(jump)}"
+            for jump in jumps(guard.finalbody)
+        )
+    return found
+
+
+def indirect_calls(tree: ast.AST, name: str) -> list[str]:
+    """Every call of *name* not awaited directly as its own statement, by line.
+
+    The call must be the operand of an ``await`` that is a statement of its
+    own or the value of an assignment.  A call passed to another call (a
+    ``gather`` that can return the failure as a value), a coroutine stored
+    unawaited, or an ``await`` inside a larger expression is reported.
+    """
+    parents = parent_map(tree)
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and called_name(node) == name):
+            continue
+        awaited = parents.get(id(node))
+        statement = parents.get(id(awaited)) if isinstance(awaited, ast.Await) else None
+        if not isinstance(statement, (ast.Expr, ast.Assign, ast.AnnAssign)):
+            found.append(f"line {node.lineno}: {name} is not awaited on its own")
     return found
 
 
@@ -359,7 +552,8 @@ def run_past_edges(
     """Every edge of *chain* whose callee's result is swallowed or run past.
 
     The probe edge may sit under no handler at all; every other edge may sit
-    only under a handler that carries the failure out.
+    only under a handler that carries the failure out.  On every edge the
+    callee is awaited directly, as its own statement or an assignment's value.
     """
     found: list[str] = []
     for module, caller, callee in chain:
@@ -369,6 +563,7 @@ def run_past_edges(
             if callee == ASK
             else continuing(tree, callee)
         )
+        reported.extend(indirect_calls(tree, callee))
         found.extend(f"{module}::{caller} -> {callee}: {item}" for item in reported)
     return found
 
@@ -764,6 +959,189 @@ def test_the_boot_chain_derived_from_a_clean_chain_reports_nothing():
         ),
         pytest.param(
             {
+                "holding": (
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    f"except {ABORT} as exc:\n"
+                    "    if config.http.debug:\n"
+                    "        await log.awarning('refused', error=str(exc))\n"
+                    "        return\n"
+                    "    raise\n"
+                )
+            },
+            id="the-holder-edge-returning-under-debug-before-a-bare-raise",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "for attempt in range(1):\n"
+                    "    try:\n"
+                    f"        {HOLDER_CALL}"
+                    f"    except {ABORT}:\n"
+                    "        if config.http.debug:\n"
+                    "            continue\n"
+                    "        raise\n"
+                )
+            },
+            id="the-holder-edge-continuing-under-debug-before-a-bare-raise",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "while True:\n"
+                    "    try:\n"
+                    f"        {HOLDER_CALL}"
+                    f"    except {ABORT}:\n"
+                    "        if config.http.debug:\n"
+                    "            break\n"
+                    "        raise\n"
+                    "    break\n"
+                )
+            },
+            id="the-holder-edge-breaking-under-debug-before-a-bare-raise",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "refused = None\n"
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    f"except {ABORT} as exc:\n"
+                    "    refused = exc\n"
+                    "    await log.awarning('refused', error=str(exc))\n"
+                    "if refused is not None and not config.http.debug:\n"
+                    "    raise refused\n"
+                )
+            },
+            id="the-holder-edge-logging-after-storing-the-failure",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "refused = None\n"
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    f"except {ABORT} as exc:\n"
+                    "    refused = exc\n"
+                    "if refused is not None and not config.http.debug:\n"
+                    "    raise refused\n"
+                )
+            },
+            id="the-holder-edge-deferring-its-raise-past-a-debug-test",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "refused = None\n"
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    f"except {ABORT} as exc:\n"
+                    "    refused = exc\n"
+                    "if refused is not None:\n"
+                    "    pass\n"
+                    "else:\n"
+                    "    raise refused\n"
+                )
+            },
+            id="the-holder-edge-raising-its-stored-failure-on-the-other-arm",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "refused = None\n"
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    f"except {ABORT} as exc:\n"
+                    "    refused = exc\n"
+                    "if config.http.debug:\n"
+                    "    refused = None\n"
+                    "if refused is not None:\n"
+                    "    raise refused\n"
+                )
+            },
+            id="the-holder-edge-clearing-its-stored-failure-under-debug",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "refused = None\n"
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    f"except {ABORT} as exc:\n"
+                    "    refused = exc\n"
+                    "for pending in [refused] * int(not config.http.debug):\n"
+                    "    raise refused\n"
+                )
+            },
+            id="the-holder-edge-raising-its-stored-failure-in-a-loop",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "refused = None\n"
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    f"except {ABORT} as exc:\n"
+                    "    refused = exc\n"
+                    f"with contextlib.suppress({ABORT}):\n"
+                    "    if refused is not None:\n"
+                    "        raise refused\n"
+                )
+            },
+            id="the-holder-edge-raising-its-stored-failure-under-suppress",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "refused = None\n"
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    f"except {ABORT} as exc:\n"
+                    "    refused = exc\n"
+                    "try:\n"
+                    "    if refused is not None:\n"
+                    "        raise refused\n"
+                    f"except {ABORT} as again:\n"
+                    "    await log.awarning('refused', error=str(again))\n"
+                )
+            },
+            id="the-holder-edge-raising-its-stored-failure-into-a-handler-that-drops-it",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "try:\n"
+                    f"    {HOLDER_CALL}"
+                    "finally:\n"
+                    "    if config.http.debug:\n"
+                    "        return\n"
+                )
+            },
+            id="the-holder-edge-under-a-finally-that-returns-under-debug",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "await asyncio.gather(\n"
+                    "    {holder}(config=config, tracker=tracker),\n"
+                    "    return_exceptions=config.http.debug,\n"
+                    ")\n"
+                )
+            },
+            id="the-holder-edge-gathered-returning-its-failure-under-debug",
+        ),
+        pytest.param(
+            {
+                "holding": (
+                    "pending = {holder}(config=config, tracker=tracker)\n"
+                    "if not config.http.debug:\n"
+                    "    await pending\n"
+                )
+            },
+            id="the-holder-edge-held-unawaited-and-awaited-outside-debug",
+        ),
+        pytest.param(
+            {
                 "booting": (
                     "try:\n"
                     f"    {PREFLIGHT_CALL}"
@@ -788,6 +1166,39 @@ def test_a_guard_on_any_edge_of_the_boot_chain_is_reported(edge):
         if name in edge
     ]
     assert reported.startswith(f"{module}::{caller} -> {callee}: "), reported
+
+
+def test_a_stored_failure_raised_through_an_unwind_that_hands_it_on_is_carried():
+    """The composition root's own shape at the root edge is not reported.
+
+    The handler stores the failure; a nested unwind raises it after a
+    presence test, inside a ``with`` and a ``try`` whose handler returns the
+    failure for the caller to raise.  Each of those enclosures leaves the
+    raise reached on every path through the handler.
+    """
+    tree = ast.parse(
+        "async def lifespan(app, cleanup):\n"
+        "    failure = None\n"
+        "    try:\n"
+        f"        {PREFLIGHT_CALL}"
+        "        yield\n"
+        "    except BaseException as exc:\n"
+        "        failure = exc\n"
+        "    async def unwind():\n"
+        "        try:\n"
+        "            async with cleanup:\n"
+        "                if failure is not None:\n"
+        "                    raise failure\n"
+        "        except BaseException as exc:\n"
+        "            return exc\n"
+        "        return None\n"
+        "    cleanup_error = await unwind()\n"
+        "    if cleanup_error is not None:\n"
+        "        raise cleanup_error\n"
+    )
+    assert handled_calls(tree, PREFLIGHT)
+    assert continuing(tree, PREFLIGHT) == []
+    assert indirect_calls(tree, PREFLIGHT) == []
 
 
 def test_a_preflight_module_function_naming_the_abort_is_reported():
