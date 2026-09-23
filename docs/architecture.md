@@ -478,7 +478,11 @@ recovered rather than replaced. It treats absent or reaped remote refs
 explicitly. Satisfaction and Evidence remain on the criterion issues.
 
 The reader recognizes this declared format; old free-form manual comments need
-an explicit migration. A formatter and cold tracker read do not implement the
+an explicit migration. The fixed re-entry section is read as the current text
+or as one of the exact earlier texts kept in `PREVIOUS_REENTRY_SECTIONS`, each
+dated in the source, and any other text is refused. A writer renders only the
+current one, so the next write of a record read under an earlier text migrates
+that comment in place. A formatter and cold tracker read do not implement the
 committing node's collection/write operation, its first-push notification,
 first-class branch-association persistence, or a complete mid-loop kill test.
 Mandatory write leases and the recorded association-storage conflict remain

@@ -28,7 +28,11 @@ from kodezart.domain.fire_spec import (
     replace_criterion_fields,
 )
 from kodezart.domain.issue_tree import SubtreeClosure
-from kodezart.domain.lane_record import LANDING_ROW_SUBJECT, RUN_STATE_PURPOSE
+from kodezart.domain.lane_record import (
+    LANDING_ROW_SUBJECT,
+    REENTRY_SECTION,
+    RUN_STATE_PURPOSE,
+)
 from kodezart.domain.lapse import GradedState
 from kodezart.domain.run_event_stream import (
     RUN_EVENT_PURPOSE,
@@ -61,6 +65,7 @@ from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneBinding, LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
+from tests.domain.test_lane_record import EARLIER_REENTRY_SECTIONS
 from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
 from tests.lane_fixture import LaneGit, LaneRepo, LosingBoard, lane_operation
 
@@ -312,6 +317,40 @@ async def test_a_landing_is_a_row_on_the_record_and_skipped_where_there_is_none(
     assert [
         entry for entry in logs if entry["event"] == "lane_landing_not_recorded"
     ] == []
+
+
+@pytest.mark.parametrize("section", EARLIER_REENTRY_SECTIONS)
+async def test_the_next_write_of_an_earlier_record_renders_the_current_reentry(
+    section,
+):
+    """A record read under an earlier re-entry text is migrated by its next write.
+
+    The comment on the board ends with the section a writer rendered before it
+    changed. The writer reads it as the lane's record, and the commit after it
+    edits that same comment into the current section, so the earlier text
+    goes away with the next act and not by hand.
+    """
+    port, repo = board(), lane_repo()
+    lane_state = writer(port, repo)
+    first = await make_commit(lane_state, repo, 1)
+    stored = record_comments(port)[0]
+    assert stored.body.endswith("\n\n" + REENTRY_SECTION)
+    earlier = stored.model_copy(
+        update={"body": stored.body.removesuffix(REENTRY_SECTION) + section}
+    )
+    port.comments[port.comments.index(stored)] = earlier
+    _, read = await LaneRecordReader(tracker=port, operation=lane_operation()).read(
+        issue_key=LANE, lane_key=LANE
+    )
+    assert read == first
+
+    second = await make_commit(lane_state, repo, 2)
+
+    [rewritten] = record_comments(port)
+    assert rewritten.comment_key == stored.comment_key
+    assert rewritten.body.endswith("\n\n" + REENTRY_SECTION)
+    assert section not in rewritten.body
+    assert [row.sha for row in second.commits] == repo.shas
 
 
 async def test_the_tenth_commit_edits_the_one_record_and_posts_nothing():
