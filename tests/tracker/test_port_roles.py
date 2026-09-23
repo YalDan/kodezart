@@ -48,6 +48,7 @@ gate over ``src/`` refuses already.
 
 import importlib
 import importlib.util
+import inspect
 import re
 import sys
 from collections.abc import Mapping
@@ -411,6 +412,8 @@ def test_the_aggregate_declares_no_member_of_its_own():
     text = port_module_text()
 
     assert own_declarations(text)[AGGREGATE] == frozenset()
+    assert [name for name in vars(TrackerPort) if not name.startswith("_")] == []
+    assert inspect.get_annotations(TrackerPort) == {}
 
 
 def test_every_member_of_the_surface_is_declared_on_exactly_one_role():
@@ -675,6 +678,26 @@ PLANTED_PLACEMENTS = {
     "a member shadowing its base": (
         "\n\n@runtime_checkable\nclass Shadowing({owner}, Protocol):\n"
         "    async def {member}(self) -> None: ...\n",
+        "redeclared",
+    ),
+    "a member annotated on the aggregate": (
+        "\n\n@runtime_checkable\nclass {aggregate}(Protocol):\n"
+        "    {member}: Callable[..., Awaitable[None]]\n",
+        "aggregate",
+    ),
+    "a member assigned on the aggregate": (
+        "\n\n@runtime_checkable\nclass {aggregate}(Protocol):\n"
+        "    {member} = {owner}.{member}\n",
+        "aggregate",
+    ),
+    "a member annotated over its base": (
+        "\n\n@runtime_checkable\nclass Shadowing({owner}, Protocol):\n"
+        "    {member}: Callable[..., Awaitable[None]]\n",
+        "redeclared",
+    ),
+    "a member assigned over its base": (
+        "\n\n@runtime_checkable\nclass Shadowing({owner}, Protocol):\n"
+        "    {member} = {owner}.{member}\n",
         "redeclared",
     ),
 }

@@ -211,15 +211,13 @@ def protocol_defs(text: str) -> dict[str, ast.ClassDef]:
 
 @cache
 def own_declarations(text: str) -> dict[str, frozenset[str]]:
-    """The public members each of those classes declares in its own body."""
+    """The public members each of those classes declares in its own body.
+
+    A member is declared by a ``def``, an assignment or an annotation alike,
+    so a method re-bound as a field of a role is declared there too.
+    """
     return {
-        name: frozenset(
-            item.name
-            for item in node.body
-            if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
-            and not item.name.startswith("_")
-        )
-        for name, node in protocol_defs(text).items()
+        name: public(bound_in_body(node)) for name, node in protocol_defs(text).items()
     }
 
 
