@@ -96,12 +96,15 @@ RULE_MODULE = (
 #: The spellings of criterion-shaped content a scan would look for: a
 #: markdown checkbox, an authored ``AC-n`` identity, any template row
 #: label — including the alternation a row-label pattern is written as —
-#: and a bold row whose label is assembled somewhere else.
+#: a bold row whose label is assembled somewhere else, and a pattern for a
+#: bold row label whose label is a capture group (``\*\*(\w+):\*\*``),
+#: which reads every row label and leaves choosing the field to a compare.
 CRITERION_SHAPES = (
     re.compile(r"\[\s*[xX]?\s*\]"),
     re.compile(r"AC-"),
     re.compile(r"(Check|Do|Evidence|Class)(\\?\*)*\s*[:|]"),
     re.compile(r"\*\*[^*]*:\*\*"),
+    re.compile(r"(?:\\\*\\\*|\\\*\{2\})\(.+?\)\s*:\s*(?:\\\*\\\*|\\\*\{2\})"),
 )
 #: Module-level entry points that match a pattern against text, and the
 #: same names called on a compiled pattern.
@@ -525,6 +528,16 @@ def test_the_grammar_is_reached_from_outside_by_call_and_never_re_matched():
         "ROW = rx(r'^\\*\\*Evidence:\\*\\*(.*)$')\n"
         "def evidence(issue):\n"
         "    return ROW.match(issue.body)\n",
+        "import re\n"
+        "ROW = re.compile(r'^ {0,3}\\*\\*(\\w+):\\*\\*(.*)$')\n"
+        "def evidence(body):\n"
+        "    for line in body.splitlines():\n"
+        "        row = ROW.match(line)\n"
+        "        if row is not None and row[1] == 'Evidence':\n"
+        "            return row[2]\n",
+        "import re\n"
+        "def labels(body):\n"
+        "    return re.findall(r'\\*{2}(?P<label>[A-Z][a-z]+):\\*{2}', body)\n",
     ],
 )
 def test_every_spelling_of_a_body_scan_is_reported(body):
@@ -550,6 +563,10 @@ def test_every_spelling_of_a_body_scan_is_reported(body):
         "    return criterion_field_bodies(issue.body, field='Check')"
         " != (criterion.text,)\n",
         "def live(issue, recorded):\n    return body_digest(issue.body) == recorded\n",
+        "import re\n"
+        "BOLD = re.compile(r'\\*\\*(.+?)\\*\\*')\n"
+        "def plain(text):\n"
+        "    return BOLD.sub(r'\\1', text)\n",
     ],
 )
 def test_naming_criterion_shaped_text_without_matching_it_is_not_a_site(body):
