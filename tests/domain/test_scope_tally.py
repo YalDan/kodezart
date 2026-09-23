@@ -73,6 +73,10 @@ def observe(readings, subject=SUBJECT):
         {"one": ["criteria-ready", "body-ready"], "two": []},
         {"one": ["criteria-ready"], "two": None},
         {"one": ["criteria-ready"]},
+        # The only member not carrying is the one whose read is empty or
+        # missing, so a missing read counted as carrying would close these.
+        {"one": ["criteria-ready", "body-ready"], "two": None},
+        {"one": ["criteria-ready", "body-ready"]},
     ],
 )
 async def test_zero_partial_empty_and_missing_marker_reads_remain_open(labels):
