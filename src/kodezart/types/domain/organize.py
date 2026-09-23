@@ -325,9 +325,10 @@ class MandatePhaseRole(CamelCaseModel):
     run; approval admits every member to it and it is complete only when
     every member carries its marker.
 
-    ``write_surfaces`` is the whole of what the phase may write on a
+    ``write_surfaces`` is the kinds a round of the phase may write on a
     member: the set a round leases, the bound every write is held to, and
     the reservation of graph change to the row that runs before approval.
+    The halt's escalation is written after the round, under its own lease.
     """
 
     model_config = ConfigDict(frozen=True)
