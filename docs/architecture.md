@@ -1731,8 +1731,8 @@ is either driven by `WriteBackVerifier.write_back` or declared derived beside
 the function that makes it.
 `kodezart.domain.write_adoption.take_census` states that over the installed
 source rather than over a list. The census covers the roles `DialledTracker`
-is dialled as; a writer that reaches the tracker session through another
-port is not part of that surface and is not censused here.
+is dialled as; a dialled role's `call_tool`, which names no write verb, is
+outside the surface and is not censused here.
 
 The write surface is read off the roles the tracker is dialled as: the
 fields of `DialledTracker` whose type is declared in `kodezart.core.protocols`,
@@ -1744,7 +1744,9 @@ bookkeeping is an artifact write.
 A call site is every call of an artifact write through a receiver other than
 `self`, and every place such a write is taken as a value (bound to a name,
 handed to a partial, passed as a callback); one taken at module or class
-level is a site of the module. A write taken as a value is never driven, even
+level is a site of the module. A write named by reflection, a string naming
+it handed to the builtin `getattr` or to `operator.methodcaller`, is a call
+site as well. A write taken as a value is never driven, even
 inside a driven function: the write it stands for is made wherever the value
 is later called. Driven is proven by declared types, never by a name or a shape: a
 call resolves only through the enclosing scopes, the module's own
