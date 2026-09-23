@@ -88,6 +88,20 @@ def test_canceled_and_duplicate_are_excluded_on_state_alone_and_named_beside_the
     assert set(inspect.signature(gap.compute_gap).parameters) == {"criteria"}
 
 
+def test_membership_is_on_state_alone_whatever_labels_the_criterion_carries():
+    """A label named like an excluding state or a supersession excludes nothing."""
+    labelled = criterion("labelled").model_copy(
+        update={
+            "issue_labels": frozenset(
+                {"criterion", "superseded", "canceled", "duplicate"}
+            )
+        }
+    )
+
+    assert gap.gap_membership(labelled) is GapMembership.OWED
+    assert gap.compute_gap([labelled]) == CriterionGap(owed=(labelled,), excluded=())
+
+
 @pytest.mark.parametrize(
     "body",
     ["", "**Evidence:** —", "**Evidence:** prior-sha\nThe decision text stays exact"],
