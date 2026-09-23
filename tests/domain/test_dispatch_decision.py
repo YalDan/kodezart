@@ -100,9 +100,16 @@ the static guard pins to be seen; the scope flow's lane selector
 (``ScopeWorkflowEngine._select``), its re-fire reading (``_settle``) and the
 dispatch pass's hand-off after the selection are not among those bodies. A
 size rule that moves nothing at these extremes — a threshold beyond them —
-is not seen; in the scope flow the subtree's great deal is ``SCOPE_MANY``
-per part, because the ready read re-reads every lane's subtree on every
-tick. In the scope flow a lane whose body and title are both empty has no
+is not seen, and the extremes are these numbers: a text of 5000 lines, a
+collection of 200 (labels, edges of each unread kind, children, criteria,
+comments), an integer of a thousand million, an age of a hundred years; in
+the scope flow the subtree's great deal is ``SCOPE_MANY`` = 12 per part,
+because the ready read re-reads every lane's subtree on every tick, so the
+largest gap a lane owes is ``SCOPE_GAP_BOUND`` = 26 open criteria (its two
+own, twelve under it and one under each of twelve children), on a roster of
+38. A rule passing over a lane that owes more than 26 is not seen, and a
+test holds it unseen; the same rule at 25 is caught, and a test holds that
+too. In the scope flow a lane whose body and title are both empty has no
 subject and is refused before its graph launches, so there the everything
 case leaves the title alone and the title is varied on its own. What a
 fire does inside its sessions is scripted, so which criteria a fire closes
@@ -118,8 +125,8 @@ import asyncio
 import builtins
 import re
 import types
-from collections.abc import AsyncGenerator, Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import AsyncGenerator, Callable, Iterable, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Union, get_args, get_origin
@@ -143,6 +150,7 @@ from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.tracker import (
     IssuePriority,
@@ -401,6 +409,10 @@ LONG_TIME = timedelta(days=100 * 365)
 #: re-reads every lane's subtree several times a tick, one port read each.
 SCOPE_MANY = 12
 
+#: The subtree parts that add open criteria under a heavy ready lane: its
+#: own many criteria, and one under each of its many children.
+SCOPE_OPEN_PARTS = ("criteria", "sub_issues")
+
 HOUR = timedelta(hours=1)
 
 #: The board: distinct ages, priorities that differ except for one pair,
@@ -475,6 +487,12 @@ RANK_ORDER = ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3")
 #: one no fire closes. The first is the lane's own criterion, which the
 #: scope board names ``<lane>/check``.
 SCOPE_CHECKS = ("check", "second")
+
+#: The largest gap any scope variation gives a lane: its own criteria and
+#: ``SCOPE_MANY`` under each open part. A lane owing more is never seen
+#: here, so a threshold rule above this number is not caught; two tests
+#: hold that bound as a fact.
+SCOPE_GAP_BOUND = len(SCOPE_CHECKS) + SCOPE_MANY * len(SCOPE_OPEN_PARTS)
 
 #: How a grading's prompt names the criteria it asks about: between these
 #: two markers of the evaluator's template, one criterion per line, its
@@ -1231,3 +1249,79 @@ async def test_the_scope_flow_does_not_move_when_a_size_moves(case: str) -> None
     port = scope_lanes(variation)
     assert port.issues != scope_lanes(None).issues or port.comments, case
     assert await scope_decision(port) == SCOPE_BASE_DECISION
+
+
+def passing_over_gaps_above(
+    threshold: int,
+) -> Callable[..., object]:
+    """``_select`` with a threshold rule planted in front of it.
+
+    A lane owing more than *threshold* criteria is passed over: the ready
+    set the selector is handed is the read one less those lanes. The rule
+    reads the gap alone, so what it moves, it moves by size.
+    """
+    original = ScopeWorkflowEngine._select
+
+    def _select(
+        self: ScopeWorkflowEngine,
+        *,
+        ready: ScopeReadySet,
+        delivers: bool,
+        rested: Sequence[str],
+    ) -> object:
+        trimmed = replace(
+            ready,
+            ready=tuple(row for row in ready.ready if len(row.gap) <= threshold),
+        )
+        return original(self, ready=trimmed, delivers=delivers, rested=rested)
+
+    return _select
+
+
+#: The variation whose lanes owe the most: every subtree part under the
+#: first-parity lanes.
+SCOPE_HEAVIEST = "everything-first"
+
+
+async def test_a_threshold_above_the_gap_bound_is_unseen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stated limit, held: no lane here owes more than the bound.
+
+    The heaviest scope board's largest gap is exactly ``SCOPE_GAP_BOUND``,
+    and a rule passing over any lane owing more than that moves nothing:
+    the walk decides what the base walk decides. So a threshold rule above
+    the bound is not seen by these variations, which is what the Limit
+    paragraph says.
+    """
+    variation = SCOPE_VARIATIONS[SCOPE_HEAVIEST]
+    assert variation.subtree == SUBTREE and set(SCOPE_OPEN_PARTS) <= set(SUBTREE)
+    port = scope_lanes(variation)
+    ready = await read_scope_ready(ref=SCOPE, tracker=port)
+    assert max(len(lane.gap) for lane in ready.ready) == SCOPE_GAP_BOUND
+    monkeypatch.setattr(
+        ScopeWorkflowEngine, "_select", passing_over_gaps_above(SCOPE_GAP_BOUND)
+    )
+    assert await scope_decision(port) == SCOPE_BASE_DECISION
+
+
+async def test_the_same_threshold_at_the_gap_bound_is_caught(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The positive control: one below the bound, the same rule is caught.
+
+    Passing over a lane owing more than ``SCOPE_GAP_BOUND - 1`` criteria
+    leaves every heavy lane of the heaviest board unfired, so the walk's
+    decision is not the base decision, and the variation that holds this
+    board reds on it.
+    """
+    variation = SCOPE_VARIATIONS[SCOPE_HEAVIEST]
+    port = scope_lanes(variation)
+    monkeypatch.setattr(
+        ScopeWorkflowEngine, "_select", passing_over_gaps_above(SCOPE_GAP_BOUND - 1)
+    )
+    decided = await scope_decision(port)
+    assert decided != SCOPE_BASE_DECISION
+    fired, _, failures, _ = decided
+    assert set(fired) == set(RANK_ORDER) - variation.heavy
+    assert failures == ()
