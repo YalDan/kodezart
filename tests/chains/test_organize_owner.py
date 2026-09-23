@@ -16,11 +16,13 @@ from kodezart.composition.organize import build_organize_owner, build_organize_t
 from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.core.prompt_namespaces import operation_bindings
+from kodezart.domain.criterion_creation import criterion_body
 from kodezart.domain.errors import (
     OrganizeAdmissionIdentityError,
     OrganizeWriteRefusalError,
     SurfaceLeaseError,
 )
+from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.organize import stage_rows
 from kodezart.services import organize_owner
 from kodezart.services.agent_service import AgentService
@@ -82,6 +84,7 @@ class BoardExecutor:
         wrong_proposal=False,
         refusal=None,
         criteria=("Check prepared bytes",),
+        checks=None,
     ):
         self.board = board
         self.calls = []
@@ -89,6 +92,9 @@ class BoardExecutor:
         self.wrong_proposal = wrong_proposal
         self.refusal = refusal
         self.criteria = tuple(criteria)
+        #: When given, the i-th proposed criterion carries ``checks[i]`` as
+        #: its Check, verbatim; otherwise the Check is derived from its title.
+        self.checks = None if checks is None else tuple(checks)
 
     async def stream(self, **kwargs):
         self.calls.append(kwargs)
@@ -122,11 +128,15 @@ class BoardExecutor:
                         "criteria": [
                             {
                                 "title": title,
-                                "check": f"{title} match the declared source.",
+                                "check": (
+                                    f"{title} match the declared source."
+                                    if self.checks is None
+                                    else self.checks[index]
+                                ),
                                 "do": f"Compare the source and {title.lower()}.",
                                 "runnable_test": "tests/fixture/test_criterion.py",
                             }
-                            for title in self.criteria
+                            for index, title in enumerate(self.criteria)
                         ],
                     }
                 else:
@@ -167,6 +177,7 @@ def factory(
     gate=None,
     under_approval=False,
     criteria=("Check prepared bytes",),
+    checks=None,
     phases=None,
     board=None,
     groom_gate_key=None,
@@ -230,6 +241,7 @@ def factory(
         wrong_proposal=wrong_proposal,
         refusal=refusal,
         criteria=criteria,
+        checks=checks,
     )
     # The built port, reachable from the board a case already holds: a case
     # about what the owner does with an answer replaces one method here
@@ -362,6 +374,196 @@ async def test_the_run_stage_owner_does_ticket_then_criteria_and_replays_dry():
     assert [phase.value for phase in second.completed_phases] == ["ticket", "criteria"]
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
     assert len(executor.calls) == sessions
+
+
+#: A checklist a person wrote in the parent's body, one item per line. The
+#: body and the Checks the session proposes are both built from this one
+#: tuple, so the two cannot drift apart.
+CHECKLIST_ITEMS = (
+    "The export names every source file it read.",
+    "The export lists its rows sorted by path.",
+    "The export carries the version of the `LaneReader` that wrote it.",
+)
+CHECKLIST_TITLES = ("Sources named", "Rows sorted", "Reader versioned")
+CHECKLIST = "## Acceptance\n\n" + "".join(f"- [ ] {item}\n" for item in CHECKLIST_ITEMS)
+CHECKLIST_BODY = f"The export is specified by its source.\n\n{CHECKLIST}"
+#: The criterion child a person already made for the first item.
+ADOPTED_CHILD = "claimed-checklist-first"
+
+
+#: The opening of the criteria author's prompt, which no other session carries.
+AUTHOR_OPENING = "Author criterion sub-issue proposals"
+
+
+def authors(executor):
+    """How many criteria-author sessions the executor has opened so far."""
+    return sum(AUTHOR_OPENING in call["prompt"] for call in executor.calls)
+
+
+def criteria_row_only(rows):
+    return tuple(row for row in rows if row.spec.kind is MandateKind.CRITERIA)
+
+
+def criterion_children(board):
+    """Every criterion child of the parent, by key, as the board holds it."""
+    return {
+        key: issue
+        for key, issue in board.server.issues.items()
+        if issue.parent_id == CLAIMED_ISSUE and "check" in issue.labels
+    }
+
+
+def minted_under_parent(board):
+    """Every save call on the board that carries the parent as its parent."""
+    return [
+        arguments
+        for name, arguments in board.calls
+        if name.startswith("save_") and arguments.get("parentId") == CLAIMED_ISSUE
+    ]
+
+
+def judges_the_checklist(monkeypatch, board, executor):
+    """Script the parent's admission off the board: owed until every item is.
+
+    Until the criteria author has been opened in a run, the parent's
+    judgements find the criteria owed, which is what a run the stage is owed
+    again opens with; after that the parent is buildable exactly when every
+    checklist item is some child's Check.  Returns the switch a test sets to
+    open a run owing the stage again.
+    """
+    opening = [True]
+    judged = executor.stream
+
+    async def judging(**kwargs):
+        if AUTHOR_OPENING in kwargs["prompt"]:
+            opening[0] = False
+        async for event in judged(**kwargs):
+            payload = event.structured_output
+            if (
+                kwargs["output_format"]["schema"].get("title") == "AdmissionJudgment"
+                and payload.get("issue_id") == CLAIMED_ISSUE
+            ):
+                stated = {
+                    check
+                    for child in criterion_children(board).values()
+                    for check in criterion_field_bodies(
+                        child.description, field="Check"
+                    )
+                }
+                if opening[0] or set(CHECKLIST_ITEMS) - stated:
+                    event = result(
+                        structured_output={
+                            "issue_id": CLAIMED_ISSUE,
+                            "verdict": "not_buildable",
+                            "evidence": "A checklist item is no criterion's Check.",
+                            "refusal_kind": "spec_gap",
+                            "invented_decision": "Adopt every checklist item.",
+                        }
+                    )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", judging)
+    return opening
+
+
+async def test_a_body_checklist_is_adopted_item_by_item_and_a_rerun_mints_nothing(
+    monkeypatch,
+):
+    """One criterion per checklist item, its text verbatim, and nothing twice.
+
+    The first item already has its criterion, so the stage mints the other
+    two and leaves that one alone. The second run removes the parent's
+    criteria marker, so the stage is owed again: its session proposes the same
+    three Checks, the stage reads the children for itself, every proposed
+    Check is already a child's, and nothing is minted. The body carrying the
+    checklist is never written.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    owner, board, executor = factory(
+        under_approval=True,
+        body=CHECKLIST_BODY,
+        criteria=CHECKLIST_TITLES,
+        checks=CHECKLIST_ITEMS,
+        phases=criteria_row_only,
+    )
+    parent = board.server.issues[CLAIMED_ISSUE]
+    parent.labels.append("body complete")
+    adopted_body = criterion_body(
+        parent_key=CLAIMED_ISSUE, check=CHECKLIST_ITEMS[0], do="Read the export."
+    )
+    board.server.issues[ADOPTED_CHILD] = FakeMcpIssue(
+        id=ADOPTED_CHILD,
+        parent_id=CLAIMED_ISSUE,
+        labels=["check"],
+        description=adopted_body,
+        status="Todo",
+        status_type="unstarted",
+    )
+    opening = judges_the_checklist(monkeypatch, board, executor)
+
+    report = await run_owner(owner)
+
+    assert report.halt is None
+    children = criterion_children(board)
+    minted = {key: issue for key, issue in children.items() if key != ADOPTED_CHILD}
+    assert len(minted) == 2
+    assert all(issue.status_type == "unstarted" for issue in minted.values())
+    assert sorted(
+        criterion_field_bodies(issue.description, field="Check")
+        for issue in minted.values()
+    ) == sorted((item,) for item in CHECKLIST_ITEMS[1:])
+    assert children[ADOPTED_CHILD].description == adopted_body
+    assert parent.description == CHECKLIST_BODY
+    # The session was shown the checklist as written and told to adopt it.
+    (authored,) = [
+        call["prompt"] for call in executor.calls if AUTHOR_OPENING in call["prompt"]
+    ]
+    assert CHECKLIST in authored
+    assert (
+        "When the issue body already carries a checklist a person wrote, adopt it"
+        in " ".join(authored.split())
+    )
+
+    # The same reading of the call log that finds no mint below finds these.
+    assert len(minted_under_parent(board)) == 2
+
+    first = {key: issue.description for key, issue in children.items()}
+    parent.labels.remove("criteria complete")
+    board.calls.clear()
+    opening[0] = True
+    authored_before = authors(executor)
+
+    second = await run_owner(owner)
+
+    assert second.halt is None
+    # The stage was owed again and its session proposed the checklist again,
+    # so what minted nothing is the stage's own check before creating.
+    assert authors(executor) == authored_before + 1
+    assert "criteria complete" in parent.labels
+    assert minted_under_parent(board) == []
+    assert {
+        key: issue.description for key, issue in criterion_children(board).items()
+    } == first
+    assert parent.description == CHECKLIST_BODY
+
+
+async def test_two_identical_proposed_checks_refuse_the_stage_and_mint_nothing():
+    """A checklist item proposed twice is refused before any criterion is made."""
+    owner, board, _ = factory(
+        under_approval=True,
+        body=CHECKLIST_BODY,
+        criteria=CHECKLIST_TITLES[:2],
+        checks=(CHECKLIST_ITEMS[0], CHECKLIST_ITEMS[0]),
+        phases=criteria_row_only,
+    )
+    board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+
+    with pytest.raises(OrganizeWriteRefusalError, match="duplicate proposed Check"):
+        await run_owner(owner)
+
+    assert criterion_children(board) == {}
+    assert minted_under_parent(board) == []
 
 
 async def test_single_admission_round_stops_with_durable_refusal_and_no_completion():
