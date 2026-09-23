@@ -1,5 +1,6 @@
 """Empty membership is one reading; an empty fire cannot start the real loop."""
 
+from typing import get_args
 from unittest.mock import Mock
 
 import pytest
@@ -7,6 +8,7 @@ from pydantic import ValidationError
 
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.domain.errors import CriterionReadError, EmptyFireCriteriaError
+from kodezart.domain.fire_spec import CriterionField, criterion_field_bodies
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_ralph_loop import _make_loop, _run_kwargs
 from tests.fakes import (
@@ -24,6 +26,24 @@ from tests.tracker.test_linear_mcp_tracker import tracker_over
 PARENT = "empty-subject/1"
 CHILD = "criterion/one"
 LABEL = "acceptance-condition"
+PARENT_ROW = "A parent's own row cannot mint a child."
+#: One parent body per row the criterion grammar reads, read off the grammar's
+#: own field type, so a fallback that minted a parent out of any one of its
+#: rows meets a body carrying exactly that row.
+PARENT_TEMPLATE_ROWS = tuple(
+    f"**{field}:** {PARENT_ROW}" for field in get_args(CriterionField)
+)
+
+
+def test_every_parent_template_row_is_legible_to_the_field_reader():
+    """The per-field floor bodies are not vacuous: each row reads as its field."""
+    assert PARENT_TEMPLATE_ROWS
+    assert [
+        criterion_field_bodies(body, field=field)
+        for field, body in zip(
+            get_args(CriterionField), PARENT_TEMPLATE_ROWS, strict=True
+        )
+    ] == [(PARENT_ROW,)] * len(PARENT_TEMPLATE_ROWS)
 
 
 @pytest.fixture
@@ -45,6 +65,7 @@ def server():
         # so this body reads empty and refuses like every other one here.
         "**Check:** A parent's own row cannot mint a child.\n\n**Evidence:** —",
         "",
+        *PARENT_TEMPLATE_ROWS,
     ],
 )
 async def test_parent_heading_shapes_all_read_empty_and_refuse_fire(

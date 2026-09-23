@@ -58,6 +58,7 @@ both tracker implementations.
 """
 
 import ast
+import importlib.util
 import re
 import sys
 from functools import cache
@@ -71,6 +72,7 @@ from kodezart.domain.fire_spec import (
     _criterion_rows,
     criterion_check,
     criterion_field_bodies,
+    replace_criterion_fields,
     tracker_spec_from_issues,
 )
 from tests.domain.test_criterion_cross_off import callers_of, source_tree
@@ -330,16 +332,234 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
     )
     # A scope name is not enough to close the owner, because a second
     # statement of the grammar matched inside one of those two scopes adds no
-    # third name.  So what the owner binds to a criterion-shaped pattern is
-    # pinned as well: exactly the names that denote the one grammar object the
-    # readers read, so a second compiled row pattern reds here wherever in the
-    # module it is used, and a rename of the grammar moves both sides at once.
-    # What this does not see is a criterion-shaped literal matched inline,
-    # bound to nothing, inside one of those same two scopes; the behavioural
-    # floor named in the module docstring is where that dies.
+    # third name.  The names this syntactic reading binds to a compiled
+    # criterion-shaped pattern must be exactly the names that denote the one
+    # grammar object, so a rename moves both sides at once.  It sees only a
+    # ``<module>.compile`` call over a literal, bound by assignment.  The pins
+    # that do not read how a pattern is compiled, with their stated limits,
+    # are in ``test_the_owner_states_its_row_grammar_once`` below.
     assert _pattern_names(ast.parse(sources[RULE_MODULE])) == {
         name for name, value in vars(fire_spec).items() if value is _CRITERION_ROW
     }
+
+
+def _docstring_ids(tree: ast.Module) -> set[int]:
+    """The nodes that are a module's, a class's or a function's docstring."""
+    return {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(
+            node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+        )
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+    }
+
+
+def shaped_literals(tree: ast.Module) -> list[tuple[str, str]]:
+    """Every criterion-shaped literal outside a docstring, by the scope holding it.
+
+    Whatever it is handed to — a compile call by position or by keyword, a
+    name bound earlier, a matcher, a string built for writing — a literal is
+    read where it is written.  Folded the way ``_literal_text`` folds, and
+    counted once at the widest expression that spells it.
+    """
+    docstrings = _docstring_ids(tree)
+    found: list[tuple[str, str]] = []
+
+    def walk(node: ast.AST, label: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            here = label
+            if isinstance(child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+                here = child.name if label == "<module>" else f"{label}.{child.name}"
+            if (
+                isinstance(child, ast.expr)
+                and id(child) not in docstrings
+                and _is_criterion_shaped(child)
+            ):
+                found.append((here, _literal_text(child) or ""))
+                continue
+            walk(child, here)
+
+    walk(tree, "<module>")
+    return sorted(found)
+
+
+def grammar_uses(tree: ast.Module, names: frozenset[str]) -> list[tuple[str, str]]:
+    """Every read of the grammar object, by scope and by what is read off it.
+
+    A read of one of *names* as the receiver of an attribute is recorded
+    under that attribute; any other read — handed on, aliased, returned — is
+    recorded as bare.
+    """
+    found: list[tuple[str, str]] = []
+
+    def walk(node: ast.AST, label: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            here = label
+            if isinstance(child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+                here = child.name if label == "<module>" else f"{label}.{child.name}"
+            if (
+                isinstance(child, ast.Attribute)
+                and isinstance(child.value, ast.Name)
+                and child.value.id in names
+            ):
+                found.append((here, child.attr))
+                continue
+            if (
+                isinstance(child, ast.Name)
+                and child.id in names
+                and isinstance(child.ctx, ast.Load)
+            ):
+                found.append((here, "<bare>"))
+            walk(child, here)
+
+    walk(tree, "<module>")
+    return sorted(found)
+
+
+def compiled_row_patterns(source: str, directory: Path) -> list[str]:
+    """The names the owner's executed source binds to a criterion-shaped pattern.
+
+    The source is loaded as a module of its own, so what is read is the
+    compiled objects themselves and not how any of them was spelled: a
+    keyword, an aliased ``compile``, a name bound earlier and a text derived
+    from the grammar's own all end as a pattern object here.  Module-level
+    names only.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "criterion_grammar_owner.py"
+    path.write_text(source, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("criterion_grammar_owner", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return sorted(
+        name
+        for name, value in vars(module).items()
+        if isinstance(value, re.Pattern)
+        and any(
+            shape.search(
+                value.pattern
+                if isinstance(value.pattern, str)
+                else value.pattern.decode("latin-1")
+            )
+            for shape in CRITERION_SHAPES
+        )
+    )
+
+
+def owner_grammar_readings(
+    source: str, directory: Path
+) -> tuple[list[str], list[tuple[str, str]], list[tuple[str, str]]]:
+    """What the owner compiles, writes and reads of its row grammar."""
+    tree = ast.parse(source)
+    return (
+        compiled_row_patterns(source, directory),
+        shaped_literals(tree),
+        grammar_uses(tree, GRAMMAR_NAMES),
+    )
+
+
+#: Every name the owner binds to the one grammar object, by identity.
+GRAMMAR_NAMES = frozenset(
+    name for name, value in vars(fire_spec).items() if value is _CRITERION_ROW
+)
+
+
+def test_the_owner_states_its_row_grammar_once(tmp_path):
+    """One row grammar in the owner, pinned on what it is and not how it is written.
+
+    Three readings, none keyed on the spelling of a compile call.  What
+    executes: loaded as a module of its own, the owner binds exactly one
+    criterion-shaped compiled pattern, under the one name that denotes the
+    grammar object, so a second pattern at module level reds however it was
+    compiled, and so does the identical text compiled again under a second
+    name, which re's cache hands back as the same object.  What is written:
+    its criterion-shaped literals are the grammar's own text once, at module
+    level, and the two row templates the amendment writer renders, so a
+    second pattern written anywhere in the owner, a sanctioned scope
+    included, adds a literal.  What is read: the grammar object is read only
+    as the receiver of ``match`` in the two sanctioned scopes, so a pattern
+    derived from its text, or the object handed on under another name, reds.
+
+    Not seen: a pattern text assembled at run time from fragments none of
+    which is criterion-shaped, compiled inside a function, and any reach by
+    reflection; the behavioural floor named in the module docstring is where
+    a reader built that way dies.
+    """
+    compiled, literals, uses = owner_grammar_readings(
+        source_tree()[RULE_MODULE], tmp_path
+    )
+
+    assert len(GRAMMAR_NAMES) == 1
+    assert compiled == sorted(GRAMMAR_NAMES)
+    assert literals == sorted(
+        [
+            ("<module>", _CRITERION_ROW.pattern),
+            (replace_criterion_fields.__name__, "**:** \n\n"),
+            (replace_criterion_fields.__name__, "\n\n**:** \n"),
+        ]
+    )
+    assert uses == sorted(
+        (scope, "match")
+        for scope in (criterion_field_bodies.__name__, _criterion_rows.__name__)
+    )
+
+
+ROW_TEXT = r"^ {0,3}\*\*(Check|Do|Evidence|Class):\*\*(.*)$"
+EVIDENCE_TEXT = r"^ {0,3}\*\*Evidence:\*\*(.*)$"
+#: Each way a second statement of the row grammar can be written into the
+#: owner: appended at module level, or put in place of a sanctioned read.
+SECOND_GRAMMARS = {
+    "keyword compile": (
+        None,
+        f"_EVIDENCE_ROW = re.compile(pattern=r'{EVIDENCE_TEXT}')\n",
+    ),
+    "name bound earlier": (
+        None,
+        f"_EVIDENCE_TEXT = r'{EVIDENCE_TEXT}'\n"
+        "_EVIDENCE_ROW = re.compile(_EVIDENCE_TEXT)\n",
+    ),
+    "aliased compile": (
+        None,
+        f"from re import compile as _rx\n_EVIDENCE_ROW = _rx(r'{EVIDENCE_TEXT}')\n",
+    ),
+    "text derived from the grammar": (
+        None,
+        "_EVIDENCE_ROW = re.compile("
+        "_CRITERION_ROW.pattern.replace('Check', 'Evidence'))\n",
+    ),
+    "identical text compiled again": (
+        None,
+        f"_ROW_AGAIN = re.compile(r'{ROW_TEXT}')\n",
+    ),
+    "alias of the grammar object": (None, "_ROW = _CRITERION_ROW\n"),
+    "inline in a sanctioned scope": (
+        "_CRITERION_ROW.match(line)",
+        f"re.compile(pattern=r'{ROW_TEXT}').match(line)",
+    ),
+    "recompiled in a sanctioned scope": (
+        "_CRITERION_ROW.match(line)",
+        "re.compile(_CRITERION_ROW.pattern).match(line)",
+    ),
+}
+
+
+@pytest.mark.parametrize("planted", sorted(SECOND_GRAMMARS))
+def test_a_second_row_grammar_in_the_owner_changes_what_it_states(planted, tmp_path):
+    source = source_tree()[RULE_MODULE]
+    anchor, text = SECOND_GRAMMARS[planted]
+    if anchor is None:
+        changed = source + "\n" + text
+    else:
+        assert source.count(anchor) == 2
+        changed = source.replace(anchor, text, 1)
+
+    head = owner_grammar_readings(source, tmp_path / "head")
+    assert owner_grammar_readings(changed, tmp_path / "planted") != head
 
 
 def test_the_grammar_is_reached_from_outside_by_call_and_never_re_matched():

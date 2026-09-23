@@ -7,6 +7,7 @@ from kodezart.types.domain.tracker import EnsureAction, MappingKind, MappingRef
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import FakeMcpIssue, FakeTrackerPort
 from tests.tracker.conftest import fixture_server
+from tests.tracker.test_empty_fire_entry import PARENT_TEMPLATE_ROWS
 
 PARENT = "parent/42"
 FIRST = "condition/alpha"
@@ -73,6 +74,9 @@ async def test_successful_empty_is_distinct_from_a_failed_parent_read(tracker):
         # reader that handed a parent's body to the field reader would mint a
         # child out of. The reader answers the same empty family for it.
         "**Check:** A parent's own row cannot mint a child.\n\n**Evidence:** —",
+        # One body per row the grammar reads, so a reader minting a child out
+        # of any single field of a parent's text meets that field alone.
+        *PARENT_TEMPLATE_ROWS,
     ],
 )
 async def test_parent_text_cannot_mint_criterion_membership(tracker, body):
