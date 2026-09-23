@@ -491,8 +491,9 @@ def test_the_engineering_standard_names_eight_principles_and_no_ninth() -> None:
 
     The append is the reach claimed. The ``design_review`` fragment names
     the principles again in a parenthesis; it is composed into the two
-    changeset graders rather than carried by every session, and its own
-    clause tests pin it (KOD-883), not this one.
+    changeset graders rather than carried by every session, and that
+    parenthesis is outside this test's reach. The clause tests beside it
+    (KOD-883) stop before the parenthesis, so they do not pin it either.
     """
     rules = fragment("house_rules")
     paragraph = engineering_standard()
