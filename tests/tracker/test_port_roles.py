@@ -39,14 +39,17 @@ a call that type-checks against a role it does not carry, which the type
 gate over ``src/`` refuses already.
 """
 
+import importlib
+import inspect
+import pkgutil
 import re
 from collections.abc import Mapping
+from types import ModuleType
 
 import pytest
 from typing_extensions import get_protocol_members
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
-from kodezart.core import protocols
 from kodezart.core.protocols import ScopeWalkTracker, TrackerPort
 from tests.chains.test_write_back_adoption import write_methods
 from tests.domain.test_criterion_cross_off import source_tree
@@ -106,22 +109,54 @@ def deleted_member_sites(tree: Mapping[str, str]) -> list[str]:
     )
 
 
-def classes_holding_a_deleted_write() -> dict[str, tuple[str, ...]]:
+def modules_holding_the_surface() -> tuple[ModuleType, ...]:
+    """The port module, every module of the vendor adapter's package, the double.
+
+    Read off the live objects: the port and the double by the module their
+    aggregate lives in, the adapter package by walking the package the
+    adapter's own module belongs to.
+    """
+    package = importlib.import_module(LinearMcpTracker.__module__.rsplit(".", 1)[0])
+    return (
+        importlib.import_module(TrackerPort.__module__),
+        *(
+            importlib.import_module(found.name)
+            for found in pkgutil.walk_packages(
+                package.__path__, prefix=f"{package.__name__}."
+            )
+        ),
+        importlib.import_module(FakeTrackerPort.__module__),
+    )
+
+
+def classes_defined_in(modules: tuple[ModuleType, ...]) -> frozenset[type]:
+    """Every class each of *modules* defines itself, not one it imports."""
+    return frozenset(
+        cls
+        for module in modules
+        for _, cls in inspect.getmembers(module, inspect.isclass)
+        if cls.__module__ == module.__name__
+    )
+
+
+def classes_holding_a_deleted_write(
+    classes: frozenset[type] | None = None,
+) -> dict[str, tuple[str, ...]]:
     """Every live class of the port, adapter or double that binds a deleted write.
 
     Read off the objects rather than the text, so a write bound by
     assignment, or under a name built at runtime, is seen as well as a
-    ``def``.
+    ``def``; and every class those modules define is read, not only the ones
+    one composed class reaches, so a double composed into nothing is seen.
     """
-    classes = {
-        *TrackerPort.__mro__,
-        *(getattr(protocols, role) for role in roles(port_module_text())),
-        *LinearMcpTracker.__mro__,
-        *FakeTrackerPort.__mro__,
-    }
+    found = (
+        classes_defined_in(modules_holding_the_surface())
+        if classes is None
+        else classes
+    )
     return {
         cls.__qualname__: held
-        for cls in classes
+        for cls in found
         if (held := tuple(sorted(DELETED_ISSUE_WRITES & set(vars(cls)))))
     }
 
@@ -236,6 +271,30 @@ def test_no_class_of_the_port_adapter_or_double_holds_a_deleted_write():
     assert classes_holding_a_deleted_write() == {}
     for whole in (TrackerPort, LinearMcpTracker, FakeTrackerPort):
         assert not any(hasattr(whole, name) for name in DELETED_ISSUE_WRITES)
+
+
+def test_the_classes_read_are_every_class_those_modules_define():
+    """The double's consumer doubles sit outside every composed class's MRO."""
+    classes = classes_defined_in(modules_holding_the_surface())
+    composed_somewhere = {
+        *TrackerPort.__mro__,
+        *LinearMcpTracker.__mro__,
+        *FakeTrackerPort.__mro__,
+    }
+
+    assert {TrackerPort, LinearMcpTracker, FakeTrackerPort} <= classes
+    assert classes - composed_somewhere
+
+
+@pytest.mark.parametrize("name", sorted(DELETED_ISSUE_WRITES))
+def test_a_deleted_write_bound_on_a_class_is_named(name):
+    """A write bound after the class body, where no text clause reads, is named."""
+    revived = type("Revived", (FakeTrackerPort,), {})
+    setattr(revived, name, FakeTrackerPort._create_issue)
+
+    assert classes_holding_a_deleted_write(frozenset({revived})) == {
+        revived.__qualname__: (name,)
+    }
 
 
 @pytest.mark.parametrize("name", sorted(DELETED_ISSUE_WRITES))
