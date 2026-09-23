@@ -65,10 +65,17 @@ def test_scan_window_row_is_spent_and_the_files_own_rule_stands_alone():
     status update's timestamp the next pass's checkpoint are each pinned
     whole, read from the template.  With the base remainder pinned whole
     beside them, a window bound or a marker advance written anywhere in the
-    base fails whatever its wording.
+    base fails whatever its wording.  The base's own asserts on the same two
+    sentences stand beside the pins as the base had them.
     """
     text = template()
     assert text.count("Scan window:") == 1
+    assert (
+        "Scan window: issues updated since the most recent status update posted by "
+        "a prior grooming pass" in text
+    )
+    assert "first ever pass: 7 days back, once" in text
+    assert "its timestamp is the next pass's mention-scan checkpoint" in text
     assert the_sentence_naming(text, "Scan window:") == SCAN_WINDOW
     assert (
         the_sentence_naming(text, "its timestamp is the next pass's")
