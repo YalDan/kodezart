@@ -27,7 +27,7 @@ from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
     WorkflowCompleteEvent,
 )
-from kodezart.types.domain.check_observation import ObservedChecks
+from kodezart.types.domain.check_observation import AbsentChecks, ObservedChecks
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
@@ -774,6 +774,71 @@ def deliver_returning_green_checks(at):
     return deliver_through(at)
 
 
+def reusing_the_pr(at):
+    """The lane's pull request is already open, so delivery reuses it.
+
+    Opening one on this arm is a failure of the reach itself, not a refusal.
+    """
+    at.wire.pr = {
+        "html_url": GATED_PR.url,
+        "number": GATED_PR.number,
+        "title": "Native PR",
+    }
+
+    async def opened(*args, **kwargs):
+        raise AssertionError("the reuse arm opened a pull request")
+
+    at.lane._delivery._open_pr = opened
+
+
+def no_run_at_the_ref(at):
+    """No check run appears at the lane head although checks are declared."""
+    ci = at.lane._delivery._ci
+
+    async def absent(**kwargs):
+        return AbsentChecks(summary="No check run appeared at the lane head")
+
+    async def declared(**kwargs):
+        return True
+
+    ci.wait_for_checks = absent
+    ci.checks_declared = declared
+
+
+def deliver_commenting_on_red_checks_of_the_reused_pr(at):
+    """The comment on red checks, on a pull request delivery reused."""
+    reusing_the_pr(at)
+    return deliver_commenting_on_red_checks(at)
+
+
+def deliver_commenting_on_no_run(at):
+    """No run at the ref: the set arrives as the comment clears."""
+    no_run_at_the_ref(at)
+    at.lane._delivery._gate = ArrivingGate(at, OutboundDestination.PR_COMMENT)
+    return deliver_through(at, remediation_available=False)
+
+
+def deliver_returning_after_the_comment_on_no_run(at):
+    """No run at the ref: the set arrives once the comment posts."""
+    no_run_at_the_ref(at)
+    creator = at.lane._delivery._pr_creator
+    comment = creator.comment_on_pr
+
+    async def commented(**kwargs):
+        posted = await comment(**kwargs)
+        at.arrive()
+        return posted
+
+    creator.comment_on_pr = commented
+    return deliver_through(at, remediation_available=False)
+
+
+def deliver_returning_green_checks_of_the_reused_pr(at):
+    """Green checks on a reused pull request: the set arrives once observed."""
+    reusing_the_pr(at)
+    return deliver_returning_green_checks(at)
+
+
 def deliver_step_handing_to_the_coordinator(at):
     """A reviewed, merged fire: the set arrives as the step hands it over."""
     coordinator = at.lane._delivery
@@ -795,12 +860,15 @@ def deliver_step_handing_to_the_coordinator(at):
 #:
 #: The routes were found by reading each node: every call in it that reaches
 #: the barrier, directly or through another gated node, and each arm of the
-#: node that reaches that call.  The final re-check in the coordinator's
-#: delivery is reached on two arms: straight from green checks, and after
-#: the comment on red checks posts.  A route whose call comes first is
-#: driven with the set in the state from the start; a later one is driven
-#: through the node's earlier barriers on the tracker's roster, with the set
-#: arriving just before that call.
+#: node that reaches that call.  In the coordinator's delivery, the pull
+#: request is opened or reused, and the comment is entered on red checks or
+#: on no run at the ref: the comment's re-check is reached on red checks of
+#: an opened or a reused pull request and on no run, and the final re-check
+#: on green checks of an opened or a reused pull request and after either
+#: comment posts.  A route whose call comes first is driven with the set in
+#: the state from the start; a later one is driven through the node's
+#: earlier barriers on the tracker's roster, with the set arriving just
+#: before that call.
 SNAPSHOT_GATED_REACH = {
     node_of(RalphWorkflowEngine._merge_to_feature): {
         "entry": lambda at: at.lane.fire._merge_to_feature(at.entered(), at.config),
@@ -849,8 +917,18 @@ SNAPSHOT_GATED_REACH = {
         "entry": deliver_entering,
         "opening the PR": deliver_opening_the_pr,
         "comment on red checks": deliver_commenting_on_red_checks,
+        "comment on red checks of the reused PR": (
+            deliver_commenting_on_red_checks_of_the_reused_pr
+        ),
+        "comment on no run at the ref": deliver_commenting_on_no_run,
         "return after the comment on red checks": deliver_returning_after_the_comment,
+        "return after the comment on no run at the ref": (
+            deliver_returning_after_the_comment_on_no_run
+        ),
         "return on green checks": deliver_returning_green_checks,
+        "return on green checks of the reused PR": (
+            deliver_returning_green_checks_of_the_reused_pr
+        ),
     },
     node_of(LaneDeliveryCoordinator._require_current): {
         "entry": lambda at: at.lane._delivery._require_current(
