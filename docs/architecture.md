@@ -90,7 +90,7 @@ does not exist.
 | FireCriteriaReader | TrackerCriteria | Refreshes current native criterion obligations at execution, retry and replay barriers |
 | FireCriteriaSource | TrackerCriteria | Composes the typed native subject specification from the admitted subject and its subtree's criteria, and supplies current criterion reads |
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
-| TrackerScopeApprovalReader | LinearMcpTracker | The three reads an approval question needs — a node's own labels, its parent edge, the per-issue cascade — narrowed out of the port; a scope run's entry and the heartbeat depend on it alone |
+| TrackerScopeApprovalReader | LinearMcpTracker | The three reads a scope-member question needs — a node's own labels, its parent edge, the per-issue cascade — narrowed out of the port; a scope run's entry, the heartbeat and the organize owner depend on it alone |
 | LaneStateTracker | LinearMcpTracker | Exactly the tracker calls the lane's own state writer makes, narrowed out of the port rather than added to it |
 | CriterionReopener | LinearMcpTracker | The one state move the audit makes (a refuted finished criterion back to unstarted), narrowed out of the port rather than added to it |
 | ScopeStatusWriter | LinearScopeStatusUpdates | The scope terminal's one write, a role beside the port rather than a member of it; built over the tracker's caller the way the record sink is |
@@ -191,11 +191,16 @@ and walks its parent edge upward. A milestone carries no label level at all: no
 native object of that kind holds a configured label, so its owning project is
 the first node in the chain, and a label planted on the milestone's backing data
 approves nothing. Composed as one function over the role, so the readers of that
-answer depend on no writer. The same walk answers any configured scope member,
-asked with the member rather than fixed to approval, so a milestone-addressed
-scope is groomed on its owning project's triage member exactly as it is run on
-that project's approval, resolved once per reading of the gate and never once
-per member issue.
+answer depend on no writer. For a container-addressed scope the same walk
+answers every configured scope member, asked with the member rather than fixed
+to approval, so a milestone-addressed scope is groomed on its owning project's
+triage member exactly as it is run on that project's approval, resolved once per
+reading of the gate and never once per member issue. An issue-addressed scope is
+bounded differently: its approval member is the per-issue cascade, and any other
+member is the addressed issue's own configured labels, read off that issue
+alone. A project above the issue that carries triage does not open an
+issue-addressed scope's pre-approval gate; continuing the walk above an issue
+for a non-approval member would need a read this role does not have.
 
 `read_scope_plan` applies native stage barriers at the actual scoped engine
 entry before any execution arm is selected. Its `require_scope_plan_reads`

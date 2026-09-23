@@ -813,9 +813,9 @@ class TrackerContextReader(Protocol):
 class TrackerScopeApprovalReader(Protocol):
     """Read approval the way it is granted: as a label on a node, cascading down.
 
-    The three reads an approval question needs and nothing else, so a scope
-    run's entry and the pass that submits one depend on no writer and no
-    other read.
+    The three reads a scope-member question needs and nothing else, so a
+    scope run's entry, the pass that submits one and the organize owner's
+    gate depend on no writer and no other read.
     """
 
     async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
