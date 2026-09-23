@@ -489,6 +489,24 @@ def test_a_repeated_opening_of_one_session_is_one_session():
     assert substituted(opened((SINGLE, "session-a"), (SINGLE, "session-a"))) is None
 
 
+#: One opening exactly as the lane's writer posts it: the key dumped by alias.
+#: Posted openings are never removed and every model in the key forbids
+#: unknown fields, so a renamed field would make each stored opening
+#: unreadable. The literal is written out here, never derived from the model.
+POSTED_OPENING = (
+    '{"invocation":{"run":{"kind":"fire","name":"LANE-7",'
+    '"started_at":"2026-01-01T00:00:00Z"},"nodeKey":"evaluation",'
+    '"invocationKey":"evaluation-1","declaredSessions":1},"sessionId":"session-a"}'
+)
+
+
+def test_a_posted_session_openings_wire_form_is_pinned():
+    key = NodeSessionKey(invocation=SINGLE, session_id="session-a")
+
+    assert key.model_dump_json(by_alias=True) == POSTED_OPENING
+    assert NodeSessionKey.model_validate_json(POSTED_OPENING) == key
+
+
 @pytest.mark.parametrize(
     "name",
     [
