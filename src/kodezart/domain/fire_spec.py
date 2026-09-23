@@ -1,7 +1,7 @@
 """Capture a tracker subject and its own criterion identities without I/O."""
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from hashlib import sha256
 from typing import Literal
 
@@ -62,18 +62,27 @@ def _without_comments(line: str, *, comment: bool) -> tuple[str, bool]:
     return "".join(parts), comment
 
 
-def criterion_field_bodies(body: str, *, field: CriterionField) -> tuple[str, ...]:
-    """Read one template field, excluding quoted row labels and HTML comments."""
-    checks: list[str] = []
-    lines: list[str] = []
-    active = False
+def _template_lines(body: str) -> Iterator[tuple[str | None, int, str]]:
+    """Walk *body* once: each line's row label or None, its offset and its text.
+
+    The one traversal of the criterion template rows in the source: the only
+    function that matches a row label, under the fence and comment rules it
+    applies, so the field reader and the edit below see the same rows. The
+    text is what a field reader keeps of the line: the rest of the row after
+    its label on a row, the raw line inside a fence, and the line with its
+    HTML comments removed elsewhere. The offset is where the line begins in
+    *body*, counting every earlier line whole with its terminator, whichever
+    boundary ``str.splitlines`` split it on.
+    """
     fence: tuple[str, int] | None = None
     comment = False
-    for line in body.splitlines():
+    offset = 0
+    for original in body.splitlines(keepends=True):
+        begin = offset
+        offset += len(original)
+        line = original.splitlines()[0]
         delimiter = _FENCE.match(line)
         if fence is not None:
-            if active:
-                lines.append(line)
             if (
                 delimiter is not None
                 and delimiter[1][0] == fence[0]
@@ -81,22 +90,34 @@ def criterion_field_bodies(body: str, *, field: CriterionField) -> tuple[str, ..
                 and not delimiter[2].strip()
             ):
                 fence = None
+            yield None, begin, line
             continue
         line, comment = _without_comments(line, comment=comment)
         delimiter = _FENCE.match(line)
         if delimiter is not None:
             fence = delimiter[1][0], len(delimiter[1])
-            if active:
-                lines.append(line)
+            yield None, begin, line
             continue
         row = _CRITERION_ROW.match(line)
-        if row is not None:
+        if row is None:
+            yield None, begin, line
+        else:
+            yield row[1], begin, row[2]
+
+
+def criterion_field_bodies(body: str, *, field: CriterionField) -> tuple[str, ...]:
+    """Read one template field, excluding quoted row labels and HTML comments."""
+    checks: list[str] = []
+    lines: list[str] = []
+    active = False
+    for label, _, text in _template_lines(body):
+        if label is not None:
             if active:
                 checks.append("\n".join(lines).strip())
-            active = row[1] == field
-            lines = [row[2]] if active else []
+            active = label == field
+            lines = [text] if active else []
         elif active:
-            lines.append(line)
+            lines.append(text)
     if active:
         checks.append("\n".join(lines).strip())
     return tuple(checks)
@@ -155,35 +176,12 @@ def deliverables_section(body: str) -> tuple[str, ...]:
 def _criterion_rows(body: str) -> tuple[tuple[str, int], ...]:
     """Every visible template row in *body*, as its label and where it begins.
 
-    The reader's own fence and comment rules decide what is visible, so a
-    row label inside a fenced block or behind an HTML comment is no row.
+    Read off the one traversal, so a row label inside a fenced block or
+    behind an HTML comment is no row here either.
     """
-    rows: list[tuple[str, int]] = []
-    fence: tuple[str, int] | None = None
-    comment = False
-    offset = 0
-    for original in body.splitlines(keepends=True):
-        line = original.rstrip("\r\n")
-        delimiter = _FENCE.match(line)
-        if fence is not None:
-            if (
-                delimiter is not None
-                and delimiter[1][0] == fence[0]
-                and len(delimiter[1]) >= fence[1]
-                and not delimiter[2].strip()
-            ):
-                fence = None
-        else:
-            line, comment = _without_comments(line, comment=comment)
-            delimiter = _FENCE.match(line)
-            if delimiter is not None:
-                fence = delimiter[1][0], len(delimiter[1])
-            else:
-                row = _CRITERION_ROW.match(line)
-                if row is not None:
-                    rows.append((row[1], offset))
-        offset += len(original)
-    return tuple(rows)
+    return tuple(
+        (label, begin) for label, begin, _ in _template_lines(body) if label is not None
+    )
 
 
 def _duplicated(names: Sequence[str]) -> tuple[str, ...]:

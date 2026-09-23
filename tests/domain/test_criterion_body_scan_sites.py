@@ -68,6 +68,7 @@ import pytest
 from kodezart.domain.fire_spec import (
     criterion_check,
     criterion_field_bodies,
+    replace_criterion_fields,
     tracker_spec_from_issues,
 )
 from tests.domain.test_criterion_cross_off import callers_of, source_tree
@@ -317,8 +318,24 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
     found = body_scan_sites(sources)
 
     assert set(found) == {RULE_MODULE}
-    # Not vacuous: the owner is seen matching its own pattern.
-    assert found[RULE_MODULE]
+    # One scope of the owner matches, and it is the one row traversal: a
+    # second loop over the rows with its own match, however faithful a copy,
+    # is a second parser that can drift from the first.
+    (traversal,) = found[RULE_MODULE]
+    # The field reader and the edit both reach that traversal by call, so the
+    # one scope that matches is the one both of them read the rows through.
+    rule = ast.parse(sources[RULE_MODULE])
+    reaching = {traversal}
+    while True:
+        grown = reaching | {
+            caller for name in reaching for caller in callers_of(rule, name=name)
+        }
+        if grown == reaching:
+            break
+        reaching = grown
+    assert {criterion_field_bodies.__name__, replace_criterion_fields.__name__} <= (
+        reaching - {traversal}
+    )
 
 
 def test_the_grammar_is_reached_from_outside_by_call_and_never_re_matched():
