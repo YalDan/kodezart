@@ -231,17 +231,22 @@ async def test_a_v020_file_claims_dispatches_and_records_its_outcome(tmp_path):
     ]
 
 
-async def test_a_declared_marker_table_is_taken_as_written(tmp_path):
+@pytest.mark.parametrize(
+    ("table", "declared"),
+    [('run_outcome = "x"\n', {"run_outcome": "x"}), ("", {})],
+    ids=["one-purpose", "empty"],
+)
+async def test_a_declared_marker_table_is_taken_as_written(tmp_path, table, declared):
+    """A declared table, even an empty one, is never extended by the defaults."""
     path = tmp_path / "operation.toml"
     path.write_text(
-        'operation_name = "o"\nworkspace = "w"\n\n[marker_prefixes]\n'
-        'run_outcome = "x"\n',
+        f'operation_name = "o"\nworkspace = "w"\n\n[marker_prefixes]\n{table}',
         encoding="utf-8",
     )
 
     loaded = read_operation_file(path)
 
-    assert loaded.config.marker_prefixes == {"run_outcome": "x"}
+    assert loaded.config.marker_prefixes == declared
     assert loaded.defaulted == ()
     assert loaded.ignored == ()
     with pytest.raises(OperationMemberAbsentError) as refused:
