@@ -573,7 +573,7 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
 
 
 @pytest.mark.parametrize(
-    "max_iterations,failing,verdict,settled,cost,refusals,rounds,at_ceiling,plateaued",
+    "max_iterations,failing,verdict,settled,cost,refused,rounds,at_ceiling,plateaued",
     [
         pytest.param(
             3,
@@ -581,7 +581,7 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             None,
-            1,
+            (1,),
             2,
             False,
             False,
@@ -593,7 +593,7 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.rejected,
             WorkflowStateKind.UNSTARTED,
             None,
-            1,
+            (1,),
             2,
             True,
             False,
@@ -605,21 +605,21 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.rejected,
             WorkflowStateKind.UNSTARTED,
             None,
-            2,
+            (1, 2),
             4,
             True,
             False,
             id="repeated_refusal_then_graded_rounds_to_the_ceiling",
         ),
         pytest.param(
-            5,
+            6,
             2,
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             None,
-            2,
+            (1, 2),
             5,
-            True,
+            False,
             False,
             id="repeated_refusal_then_two_failing_rounds_then_cleared",
         ),
@@ -629,11 +629,23 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.rejected,
             WorkflowStateKind.UNSTARTED,
             None,
-            2,
+            (1, 2),
             5,
             False,
             True,
             id="repeated_refusal_then_an_ordinary_plateau",
+        ),
+        pytest.param(
+            5,
+            3,
+            AcceptVerdict.rejected,
+            WorkflowStateKind.UNSTARTED,
+            None,
+            (3,),
+            4,
+            False,
+            True,
+            id="two_graded_rounds_then_a_refusal_then_a_plateau",
         ),
         pytest.param(
             3,
@@ -641,7 +653,7 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             "uneconomic",
-            1,
+            (1,),
             2,
             False,
             False,
@@ -653,7 +665,7 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             "affordable",
-            1,
+            (1,),
             2,
             False,
             False,
@@ -665,7 +677,7 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
             "unmeasured",
-            1,
+            (1,),
             2,
             False,
             False,
@@ -680,7 +692,7 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
     verdict,
     settled,
     cost,
-    refusals,
+    refused,
     rounds,
     at_ceiling,
     plateaued,
@@ -711,20 +723,29 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
     a refusal, or to a repeated one, that fires before the ceiling ends that row
     early.
 
-    Two more rows follow the same two refusals with three graded rounds, so the
-    plateau stop is asked with the ceiling still ahead. In one, with a ceiling of
-    five, the criterion fails rounds three and four and everything passes round
-    five, which is accepted. In the other, with a ceiling of six, the criterion
-    fails every graded round and the loop ends at an ordinary plateau at round
-    five, one round under its ceiling. Only graded rounds are records, and a
-    plateau stop that counted a refusal as a stalled round would end both rows
-    at round four.
+    Two more rows follow the same two refusals with three graded rounds, both
+    with a ceiling of six, so the plateau stop and the cleared gate are asked
+    with the ceiling still ahead. In one, the criterion fails rounds three and
+    four and everything passes round five, which is accepted one round under
+    its ceiling, so a cleared-gate stop withheld after a repeated refusal runs
+    that row to six. In the other, the criterion fails every graded round and
+    the loop ends at an ordinary plateau at round five, one round under its
+    ceiling. Only graded rounds are records, and a plateau stop that counted a
+    refusal as a stalled round would end both rows at round four.
+
+    The last row puts the refusal after graded rounds: with a ceiling of five,
+    rounds one and two claim nothing and fail the criterion, round three claims
+    the absent capability, and round four claims nothing and fails it again.
+    The records are rounds one, two and four, and the loop ends at an ordinary
+    plateau at round four, one round under its ceiling. A plateau stop that
+    counted the refusal round as a stalled round would end that row refused at
+    round three.
     """
     port = None
     writes = 0
     dispatched: list[list[str]] = []
-    classified_before_round_two: list[bool] = []
-    states_before_round_two: list[WorkflowStateKind] = []
+    classified_after_first_refusal: list[bool] = []
+    states_after_first_refusal: list[WorkflowStateKind] = []
 
     async def answers(title, payload, kwargs):
         nonlocal writes
@@ -749,12 +770,12 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
             payload["measured_by"] = "timed the actual base demonstration"
         elif title == "NativeWriterOutput":
             writes += 1
-            if writes == 2:
-                classified_before_round_two.append(
+            if writes == refused[0] + 1:
+                classified_after_first_refusal.append(
                     "decision" in port.issues[DIRECT_OWED].issue_labels
                 )
-                states_before_round_two.append(port.issues[DIRECT_OWED].state_kind)
-            if writes > refusals:
+                states_after_first_refusal.append(port.issues[DIRECT_OWED].state_kind)
+            if writes not in refused:
                 payload["claims"] = []
         elif title == "AcceptanceCriteriaOutput":
             keys = dispatched_keys(kwargs["prompt"], port)
@@ -790,12 +811,12 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
                 elif isinstance(value, NativeAmendmentEvent):
                     reports.append(value)
         assert writes == rounds
-        assert [bool(event.report.upheld) for event in reports] == [True] * refusals + [
-            False
-        ] * (rounds - refusals)
-        refused = [event.report.upheld[0] for event in reports[:refusals]]
+        assert [bool(event.report.upheld) for event in reports] == [
+            write in refused for write in range(1, rounds + 1)
+        ]
+        refusals = [event.report.upheld[0] for event in reports if event.report.upheld]
         escalated = cost in (None, "uneconomic")
-        for refusal in refused:
+        for refusal in refusals:
             assert refusal.subject.id == DIRECT_OWED
             assert (
                 refusal.reason
@@ -812,22 +833,21 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
         # Each refusal is an occurrence of its own, with its own record and,
         # when escalated, its own escalation, even on a sub-issue already
         # classified `decision` by the one before.
-        assert (
-            len({refusal.publication.record.artifact.native_ref for refusal in refused})
-            == refusals
-        )
+        assert len(
+            {refusal.publication.record.artifact.native_ref for refusal in refusals}
+        ) == len(refused)
         assert len(
             {
                 refusal.publication.escalation.artifact.native_ref
-                for refusal in refused
+                for refusal in refusals
                 if refusal.publication.kind == "escalated"
             }
-        ) == (refusals if escalated else 0)
-        assert classified_before_round_two == [escalated]
-        assert states_before_round_two == [entered]
+        ) == (len(refused) if escalated else 0)
+        assert classified_after_first_refusal == [escalated]
+        assert states_after_first_refusal == [entered]
         # One evaluation per graded round, and the refused criterion was in
         # what each of them graded.
-        assert len(dispatched) == rounds - refusals
+        assert len(dispatched) == rounds - len(refused)
         assert all(DIRECT_OWED in keys for keys in dispatched)
         assert last is not None
         iteration = last["iteration"]
@@ -837,9 +857,9 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
         # The ceiling rows stop at their ceiling; the others stop below it.
         assert (iteration.iteration == max_iterations) is at_ceiling
         # A refusal round leaves no record of its own: only graded rounds do.
-        assert [record.iteration for record in iteration.trajectory.records] == list(
-            range(refusals + 1, rounds + 1)
-        )
+        assert [record.iteration for record in iteration.trajectory.records] == [
+            write for write in range(1, rounds + 1) if write not in refused
+        ]
         assert iteration.trajectory.plateaued is plateaued
         assert port.issues[DIRECT_OWED].state_kind is settled
     finally:
