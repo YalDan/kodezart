@@ -17,7 +17,9 @@ a class body, a function, a lambda, a comprehension):
   an attribute read of the field, a name spelled as the field, a subscript
   or ``.get`` (or any other read) by the field's name or its serialisation
   alias, a dotted name one of whose segments is either (the path
-  ``attrgetter`` takes), a ``match`` class pattern keyed on it, or a
+  ``attrgetter`` takes), a format field whose dotted or bracketed segments
+  include either (``'{0.evidence.graded_sha}'.format(...)``,
+  ``'{gradedSha}'.format(**row)``), a ``match`` class pattern keyed on it, or a
   variable annotated as the Evidence record and used whole (iterated,
   dumped, handed on), which reads every field it has.  The annotation names
   the record by the record's own name or by object: each name in it is
@@ -77,6 +79,7 @@ record's annotation is seen.
 import ast
 import copy
 import json
+import re
 import sys
 import typing
 from collections import Counter
@@ -87,6 +90,7 @@ from importlib.abc import SourceLoader
 from importlib.util import resolve_name
 from inspect import signature
 from pathlib import Path
+from string import Formatter
 from types import ModuleType
 from typing import (
     Annotated,
@@ -253,6 +257,26 @@ def _defaults(node: ScopeNode) -> list[tuple[ast.arg, ast.expr]]:
     return paired
 
 
+def _format_fields(text: str) -> Iterator[str]:
+    """Each replacement field's name in *text* read as a format string.
+
+    A field nested in another's format spec is read too.  The walk ends:
+    each spec is a part of the text it was read from, so every one is
+    shorter than the last.
+    """
+    pending = [text]
+    while pending:
+        try:
+            parsed = list(Formatter().parse(pending.pop()))
+        except ValueError:
+            parsed = []
+        for _, field, spec, _ in parsed:
+            if field is not None:
+                yield field
+            if spec:
+                pending.append(spec)
+
+
 def _spells_the_field(text: object) -> bool:
     """Whether a string constant names the graded sha, alone or on a dotted path.
 
@@ -261,13 +285,22 @@ def _spells_the_field(text: object) -> bool:
     is a spelling is a read.  Prose is not a dotted name: a docstring or a log
     message that mentions the field has a segment that is not an identifier,
     and a longer identifier such as ``graded_sha_note`` is not the field.
+
+    A format field is a path too: ``"{0.evidence.graded_sha}".format(x)``
+    reads the field through ``getattr``, and ``"{gradedSha}".format(**row)``
+    by its alias, so a field name whose dotted or bracketed segments include
+    a spelling is a read.
     """
     if not isinstance(text, str):
         return False
     segments = text.split(".")
-    return all(
-        segment.isidentifier() for segment in segments
-    ) and not SPELLINGS.isdisjoint(segments)
+    return (
+        all(segment.isidentifier() for segment in segments)
+        and not SPELLINGS.isdisjoint(segments)
+    ) or any(
+        not SPELLINGS.isdisjoint(re.split(r"[.\[\]]", field))
+        for field in _format_fields(text)
+    )
 
 
 def _package(module: str) -> str:
@@ -989,6 +1022,11 @@ PLANTS = {
     "a-rebinding-before-a-compare": (
         "latest_head = evidence.graded_sha\n_planted = latest_head != head_sha\n"
     ),
+    "a-format-field-path": (
+        "_planted = '{0.evidence.graded_sha}'.format(cross_off) != head_sha\n"
+    ),
+    "a-format-key-by-alias": "_planted = '{gradedSha}'.format(**row) != head_sha\n",
+    "an-f-string-of-the-field": "_planted = f'{evidence.graded_sha}' != head_sha\n",
 }
 
 
@@ -1176,6 +1214,49 @@ def test_a_string_that_only_mentions_the_field_is_not_a_read():
         "    return attrgetter('evidence.recorded_sha')(row) != head_sha\n",
     )
     assert [source for source in sources if alone(source)] == []
+
+
+def test_a_format_field_naming_the_field_is_a_read_alone_and_in_the_audit_observation():
+    """A format string reads the field through the path its field names."""
+    for block in (
+        "_planted = '{0.evidence.graded_sha}'.format(cross_off) != head_sha\n",
+        "_planted = '{gradedSha}'.format(**row) != head_sha\n",
+    ):
+        source = "def lapsed(cross_off, row, head_sha):\n" + _indented(block)
+        assert findings(alone(source), REGISTERED) == [
+            "reader.py::lapsed reads the graded sha and is not registered"
+        ], block
+        site = "chains/audit_evidence.py::AuditEvidenceVerifier._observe"
+        assert findings(planted(site, block), REGISTERED) == [
+            f"{site} uses it at {[block.strip()]} beyond its row, and not at []"
+        ], block
+
+
+def test_a_format_string_with_no_field_naming_it_is_not_a_read():
+    """A log format with no such field, and an f-string of other values, stay out.
+
+    An f-string that prints the graded sha is a read already, by the
+    attribute it prints: none of its constant parts spells the field.
+    """
+    sources = (
+        "def logged(log, evidence, head_sha):\n"
+        "    log.info('{0.recorded_sha} moved to {1}'.format(evidence, head_sha))\n",
+        "def noted(row, head_sha):\n"
+        "    return '{graded_sha_note}'.format(**row) != head_sha\n",
+        "def said(head_sha):\n    return '{} is the head {head!r:>{width}}'\n",
+        "def printed(evidence, head_sha):\n"
+        "    return f'moved from {evidence.recorded_sha} to {head_sha}'\n",
+    )
+    assert [source for source in sources if alone(source)] == []
+    shown = "def shown(evidence):\n    return f'graded at {evidence.graded_sha}'\n"
+    assert alone(shown) == {
+        "reader.py::shown": Counter({"return f'graded at {evidence.graded_sha}'": 1})
+    }
+    assert not any(
+        _spells_the_field(node.value)
+        for node in ast.walk(ast.parse(shown))
+        if isinstance(node, ast.Constant)
+    )
 
 
 def test_one_operand_holding_both_revisions_in_the_drift_detector_is_reported():
