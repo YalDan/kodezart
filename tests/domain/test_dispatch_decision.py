@@ -10,8 +10,8 @@ The dispatch pass. The dispatcher is built the way the composition root
 builds it — through ``build_dispatch_runtime``, the function ``main.py``
 calls, over the fake tracker and a scripted queue — and its passes are run
 until the board is drained. What is recorded is the sequence of issues
-claimed and the sequence of fires enqueued, which is what the hand-off to
-``launch`` produces.
+claimed, the sequence of fires enqueued and the lane each fire was enqueued
+on, which is what the hand-off to ``launch`` produces.
 
 The scope flow. In a scope deployment the lane that fires is chosen by
 ``ScopeWorkflowEngine``, which ``build_workflow_engine`` (the function
@@ -76,7 +76,8 @@ invariant under every non-rank, non-eligibility input the board holds, at
 the extremes above. So a size read off the board anywhere between the read
 and the fire — a rebinding at boot, a subclass built at the root, a
 validator on the row, an eligibility clause, a table consulted after the
-selection, a hook in the rank value, a tie-break among equal priorities, an
+selection, an enqueue lane chosen after it, a hook in the rank value, a
+tie-break among equal priorities, an
 age shifted by a size, a count over the edges no clause reads, a count over
 the labels no clause reads, a lane skipped or chosen by its gap or by the
 fraction of its work still open (a count over an eligibility input, the
@@ -454,11 +455,16 @@ HEAVY_SETS: dict[str, frozenset[str]] = {
     **{f"alone-{issue.issue_key}": frozenset({issue.issue_key}) for issue in BOARD},
 }
 
+#: The fire-queue lane the composed dispatcher enqueues on: the
+#: configuration's default, which the pass here runs under.
+DISPATCH_LANE = "tracker"
+
 #: Exact. The decision over the base board: every issue claimed and enqueued
-#: once, in rank order.
+#: once, in rank order, every fire on the one dispatch lane.
 BASE_DECISION = (
     ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3"),
     ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3"),
+    (DISPATCH_LANE,) * 6,
 )
 
 #: The rank order of the board's issues, which is the order the scope flow
@@ -659,8 +665,8 @@ async def decision(
     *,
     children: Sequence[TrackerIssue] = (),
     comments: Sequence[TrackerComment] = (),
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Issues claimed and fires enqueued, pass by pass, until the board drains.
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Issues claimed, fires enqueued and their lanes, until the board drains.
 
     Built through the composition root's own function. Bounded: a board of
     N issues drains in at most N passes, and one more pass must enqueue
@@ -709,6 +715,7 @@ async def decision(
         return (
             tuple(tracker.claim_writes),
             tuple(request.issue_key for _, request in queue.submissions),
+            tuple(lane for lane, _ in queue.submissions),
         )
     finally:
         queue.released.set()
@@ -1071,7 +1078,7 @@ def test_every_equal_priority_pair_is_split_both_ways() -> None:
 
 
 async def test_the_composed_dispatcher_drains_the_board_in_rank_order() -> None:
-    """The base decision: priority first, age second, every issue once.
+    """The base decision: priority first, age second, every issue once, one lane.
 
     The literal is written out, so a recorder that saw nothing, or a
     dispatcher composed some other way, fails here before any variation is
