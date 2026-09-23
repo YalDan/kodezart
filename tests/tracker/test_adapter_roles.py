@@ -6,7 +6,12 @@ answered by two classes. None of them constructs anything: the constructor,
 the caller, the configured vocabularies and every helper that calls no
 public member belong to the one session class, which declares no public
 member and sits once at the root of the composed adapter. So one adapter
-object is one session, holding the one caller it was given.
+object is one session, holding the one caller it was given. That is read by
+object too: no class the adapter package builds over the session, but the
+session, defines ``_send`` or ``_call`` or has code reading ``self._caller``;
+after the scripted run the adapter still holds that one caller and no
+other, through every container it keeps; and a role class built alone
+outside the adapters is found whatever name it is imported or bound under.
 
 Each role class also answers its whole role: it is built over the role
 classes of the declaring roles its role composes and of the classes whose
@@ -20,8 +25,11 @@ the shape.
 """
 
 import ast
+import copy
 import inspect
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from types import CodeType, FunctionType, ModuleType
 
 import pytest
 
@@ -31,18 +39,24 @@ from tests.domain.test_criterion_cross_off import source_tree
 from tests.fakes import FakeLinearMcpServer
 from tests.tracker.role_register import (
     ADAPTERS,
+    UNBOUND,
+    adapter_package_modules,
+    bound_object,
     class_per_role,
+    classes_defined_in,
     classes_outside_one_role,
     declared_by_role,
     edge_report,
     final_name,
     implementation_classes,
     members_declared,
+    namespace,
     nodes,
     port_module_text,
     roles_implemented_nowhere,
     roles_implemented_twice,
 )
+from tests.tracker.test_linear_call_log import STEPS, run, scripted_adapter
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 #: The shared session: the base the composed adapter's resolution order ends
@@ -111,15 +125,105 @@ def whole_holds(text: str = MODULE_TEXT) -> list[str]:
 
 
 def role_class_constructions(sources: dict[str, str]) -> list[str]:
-    """Every call outside the adapters that builds an adapter role class."""
-    built = set(role_classes())
-    return sorted(
-        f"{path}: {name}"
-        for path, text in sources.items()
-        if not path.startswith(f"{ADAPTERS}/")
-        for node in nodes(text)
-        if isinstance(node, ast.Call) and (name := final_name(node.func) or "") in built
+    """Every call outside the adapters that builds an adapter role class.
+
+    The callee is resolved by object in the calling module's namespace, so
+    a role class imported under another name, reached through a module
+    alias or bound to an alias is the class it is; a name nothing binds is
+    read as spelled.
+    """
+    module = inspect.getmodule(LinearMcpTracker)
+    built = {getattr(module, name): name for name in role_classes()}
+    found: list[str] = []
+    for path, text in sources.items():
+        if path.startswith(f"{ADAPTERS}/"):
+            continue
+        scope = namespace(path, text)
+        for node in nodes(text):
+            if not isinstance(node, ast.Call):
+                continue
+            target = bound_object(node.func, scope)
+            if target is UNBOUND:
+                if (name := final_name(node.func) or "") in built.values():
+                    found.append(f"{path}: {name}")
+            elif isinstance(target, type) and target in built:
+                found.append(f"{path}: {built[target]}")
+    return sorted(found)
+
+
+def reads_the_caller(value: object) -> bool:
+    """Whether *value*'s code, or code nested in it, reads an attribute ``_caller``."""
+    function = (
+        value.__func__
+        if isinstance(value, staticmethod | classmethod)
+        else value.fget
+        if isinstance(value, property)
+        else value
     )
+    code = getattr(function, "__code__", None)
+    stack = [code] if isinstance(code, CodeType) else []
+    while stack:
+        current = stack.pop()
+        if "_caller" in current.co_names:
+            return True
+        stack.extend(item for item in current.co_consts if isinstance(item, CodeType))
+    return False
+
+
+def private_callers(
+    classes: Iterable[type] | None = None,
+) -> dict[str, tuple[str, ...]]:
+    """Every class over the session, but the session, that reaches the caller itself.
+
+    Read by object over every class the adapter package defines that is built
+    over the session: one that defines ``_send`` or ``_call``, or a member
+    whose code reads ``self._caller``, would send through a caller of its own.
+    """
+    found = (
+        [
+            cls
+            for cls in classes_defined_in(adapter_package_modules())
+            if issubclass(cls, SESSION) and cls is not SESSION
+        ]
+        if classes is None
+        else list(classes)
+    )
+    return {
+        cls.__qualname__: held
+        for cls in sorted(found, key=lambda cls: cls.__qualname__)
+        if (
+            held := tuple(
+                sorted(
+                    name
+                    for name, value in vars(cls).items()
+                    if name in {"_send", "_call"} or reads_the_caller(value)
+                )
+            )
+        )
+    }
+
+
+def callers_held(root: object) -> list[object]:
+    """Every tool caller *root* holds, through containers and the objects in them."""
+    found: list[object] = []
+    seen: set[int] = set()
+    stack = list(vars(root).values())
+    while stack:
+        item = stack.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        if isinstance(item, McpToolCaller):
+            found.append(item)
+        elif isinstance(item, Mapping):
+            stack.extend([*item.keys(), *item.values()])
+        elif isinstance(item, list | tuple | set | frozenset):
+            stack.extend(item)
+        elif not isinstance(item, type | ModuleType | FunctionType) and hasattr(
+            item, "__dict__"
+        ):
+            stack.extend(vars(item).values())
+    return found
 
 
 def test_every_class_of_the_adapter_declares_exactly_one_roles_members():
@@ -185,6 +289,69 @@ def test_one_adapter_object_holds_the_one_caller_it_was_given():
 def test_nothing_outside_the_adapters_builds_an_adapter_role_class():
     """Composition holds the composed adapter; a role class alone is built nowhere."""
     assert role_class_constructions(source_tree()) == []
+
+
+#: Each way a module could build a role class alone, and the class it builds.
+PLANTED_CONSTRUCTIONS = {
+    "by its own name": (
+        "from {module} import {name}\n\n\n"
+        "def build(caller):\n    return {name}(caller=caller)\n"
+    ),
+    "under an import alias": (
+        "from {module} import {name} as _Built\n\n\n"
+        "def build(caller):\n    return _Built(caller=caller)\n"
+    ),
+    "through a module alias": (
+        "import {module} as linear\n\n\n"
+        "def build(caller):\n    return linear.{name}(caller=caller)\n"
+    ),
+    "under an assignment alias": (
+        "from {module} import {name}\n\nBuilt = {name}\n\n\n"
+        "def build(caller):\n    return Built(caller=caller)\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_CONSTRUCTIONS))
+def test_a_role_class_built_under_any_name_is_reported(form):
+    name = min(role_classes())
+    path = "composition/planted_build.py"
+    text = PLANTED_CONSTRUCTIONS[form].format(
+        module=LinearMcpTracker.__module__, name=name
+    )
+
+    assert role_class_constructions({path: text}) == [f"{path}: {name}"]
+
+
+def test_no_class_over_the_session_reaches_the_caller_itself():
+    session_readers = private_callers([SESSION])
+
+    assert session_readers[SESSION.__qualname__]
+    assert private_callers() == {}
+
+
+def test_a_class_that_sends_through_its_own_caller_is_reported():
+    """A role class with its own ``_send``, reading the session's caller."""
+    base = getattr(inspect.getmodule(LinearMcpTracker), min(role_classes()))
+
+    async def _send(self: object, tool: str, arguments: object) -> object:
+        own = vars(self).setdefault("_own_caller", copy.copy(self._caller))
+        return await own.call_tool(name=tool, arguments=arguments)
+
+    revived = type("OwnCaller", (base,), {"_send": _send})
+
+    assert private_callers([revived]) == {"OwnCaller": ("_send",)}
+
+
+async def test_after_a_scripted_run_the_adapter_holds_only_its_caller():
+    """Re-read after use, through containers, not only right after it is built."""
+    tracker, caller, _ = scripted_adapter()
+
+    await run(STEPS, tracker, [])
+    held = callers_held(tracker)
+
+    assert caller in held
+    assert [value for value in held if value is not caller] == []
 
 
 def planted(*, name: str, base: str, members: frozenset[str]) -> str:

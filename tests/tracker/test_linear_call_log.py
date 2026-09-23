@@ -431,11 +431,8 @@ async def run(
     return log
 
 
-async def call_log(
-    entered: list[tuple[str, frozenset[str]]] | None = None,
-    sent: list[tuple[str, ...]] | None = None,
-) -> tuple[Entry, ...]:
-    """Run the script and return every tool call as (step, tool, argument keys)."""
+def scripted_adapter() -> tuple[object, object, list[tuple[str, Mapping[str, object]]]]:
+    """The adapter the script drives, the caller it was given, and its call list."""
     board, _ = fixture()
     tracker = tracker_over(
         board.server,
@@ -444,9 +441,18 @@ async def call_log(
         ledger=board.ledger,
         marker_prefixes=PREFIXES,
     )
+    return tracker, board, board.calls
+
+
+async def call_log(
+    entered: list[tuple[str, frozenset[str]]] | None = None,
+    sent: list[tuple[str, ...]] | None = None,
+) -> tuple[Entry, ...]:
+    """Run the script and return every tool call as (step, tool, argument keys)."""
+    tracker, _, calls = scripted_adapter()
     scope = ScopeMcpServer()
     return (
-        *await run(STEPS, tracker, board.calls, entered, sent),
+        *await run(STEPS, tracker, calls, entered, sent),
         *await run(
             SCOPE_STEPS, linear_over_fake_mcp(scope), scope.calls, entered, sent
         ),
