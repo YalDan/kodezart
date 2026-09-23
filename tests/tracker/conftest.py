@@ -6,6 +6,7 @@ adapter joins the suite by adding one entry to ``TRACKER_ADAPTERS`` — no
 test is copied, which is the whole point of a port-level suite.
 """
 
+import sys
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -13,12 +14,7 @@ from inspect import isawaitable
 
 import pytest
 
-from kodezart.adapters.linear.tracker import (
-    _TOOL_DELETE_COMMENT,
-    _TOOL_SAVE_COMMENT,
-    _TOOL_SAVE_ISSUE,
-    LinearMcpTracker,
-)
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
@@ -646,14 +642,24 @@ def tracker_writes(
     return observed_writes(tracker, server)
 
 
-#: The adapter's mutation tools, read off the adapter's OWN names rather
-#: than spelled here.  Three, not two: the comment delete is a write like
-#: the save is, and an observation that counted the saves alone reported a
-#: released lease or a withdrawn comment as no write at all.  Derived from
-#: the constants so a tool renamed in the adapter and left behind here
-#: cannot quietly narrow what a case is allowed to call untouched.
+#: The verbs a backend tool READS with.  Closed: a tool whose verb is not
+#: one of these is a write, so a verb the adapter gains later is watched
+#: the day it arrives rather than waved through.
+READ_TOOL_VERBS: frozenset[str] = frozenset({"get", "list"})
+
+#: The adapter's mutation tools, read off the adapter's OWN declarations
+#: rather than spelled here: every tool constant its module declares whose
+#: verb is not a read.  Not a hand-picked few — the comment delete, the
+#: document save and every label instatement are writes like the issue
+#: save is, and an observation that counted a subset reported the rest as
+#: no write at all.  Derived, so a tool the adapter adds or renames cannot
+#: quietly narrow what a case is allowed to call untouched.
 ADAPTER_WRITE_TOOLS: frozenset[str] = frozenset(
-    {_TOOL_SAVE_ISSUE, _TOOL_SAVE_COMMENT, _TOOL_DELETE_COMMENT}
+    value
+    for name, value in vars(sys.modules[LinearMcpTracker.__module__]).items()
+    if name.startswith("_TOOL_")
+    and isinstance(value, str)
+    and value.split("_", 1)[0] not in READ_TOOL_VERBS
 )
 
 
