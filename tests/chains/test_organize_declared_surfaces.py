@@ -517,11 +517,12 @@ LATE = "FIX-LATE"
 FOREIGN = "FIX-2"
 
 
-def edging(board, executor, monkeypatch, peer, *, join=None):
+def edging(board, executor, monkeypatch, peer, *, join=None, findings=()):
     """An author that adds one dependency edge, and a judge that waits for it.
 
     *join* is called during each admission session, which is where a case
-    about a member the round never declared has the scope gain one.
+    about a member the round never declared has the scope gain one. The
+    judge's refusal carries *findings*.
     """
     original = executor.stream
 
@@ -552,6 +553,7 @@ def edging(board, executor, monkeypatch, peer, *, join=None):
                             "evidence": "The recorded dependency is absent.",
                             "refusal_kind": "spec_gap",
                             "invented_decision": "Record the dependency.",
+                            "findings": list(findings),
                         }
                     )
                 return
@@ -720,6 +722,7 @@ STUCK = "FIX-STUCK"
 EARLY = "FIX-EARLY"
 GROOM_MARKER = "graph complete"
 INTERIM = "Preparation stops; no completion marker or execution is authorized."
+PREPARED = "Prepared body grounded in the source."
 
 
 def spec_finding(owner, defect_class="missing_source", evidence=None):
@@ -849,6 +852,9 @@ async def test_every_open_finding_is_written_to_its_own_item_before_the_halt_ret
         "human_decision",
         "admission_exhausted",
         "residual",
+        "residual_with_findings",
+        "removed_with_findings",
+        "residual_then_halt",
         "author_decision",
         "repaired_then_halt",
     ],
@@ -890,14 +896,21 @@ async def test_a_halt_inside_a_round_carries_the_findings_left_open(monkeypatch,
         )
         assert question.interim_basis == "Two sources name different deliverables."
         return
-    if cause == "residual":
+    if cause in ("residual", "residual_with_findings"):
         # One subject's write needs a member that joined mid-round, then the
-        # next subject exhausts its admission rounds in the same round.
+        # next subject exhausts its admission rounds in the same round. In
+        # ``residual_with_findings`` the judgement that sent the subject to
+        # its author also carries a finding on the sibling, which the
+        # residual leaves behind and the halt still writes.
         def join():
             if LATE not in board.server.issues:
                 member(board, LATE)
 
-        edging(board, executor, monkeypatch, LATE, join=join)
+        carried = ()
+        if cause == "residual_with_findings":
+            member(board, SIBLING, labels=[GROOM_MARKER])
+            carried = (spec_finding(SIBLING),)
+        edging(board, executor, monkeypatch, LATE, join=join, findings=carried)
         member(board, STUCK)
         original = executor.stream
 
@@ -913,11 +926,102 @@ async def test_a_halt_inside_a_round_carries_the_findings_left_open(monkeypatch,
         monkeypatch.setattr(executor, "stream", stuck)
         report = await run_owner(owner)
         assert report.halt.cause == "admission_exhausted"
+        assert escalations(board, LATE, "undeclared_surface")
+        if cause == "residual":
+            assert [
+                (finding.issue_id, finding.defect_class)
+                for finding in report.halt.surviving_findings
+            ] == [(LATE, "undeclared_surface")]
+            return
         assert [
             (finding.issue_id, finding.defect_class)
             for finding in report.halt.surviving_findings
-        ] == [(LATE, "undeclared_surface")]
+        ] == [(LATE, "undeclared_surface"), (SIBLING, "missing_source")]
+        (record,) = escalations(board, SIBLING, "missing_source")
+        assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+        return
+    if cause == "removed_with_findings":
+        # The earlier member's judgement carries a finding on the sibling.
+        # Its author's write lands, the board then moves it out of the
+        # scope, and the member after it exhausts its admission rounds in
+        # the same round: the finding the removal left behind is written.
+        member(board, SIBLING, labels=[GROOM_MARKER])
+        member(board, EARLY, description="Draft awaiting preparation.")
+        member(board, STUCK)
+        judging(
+            board,
+            executor,
+            monkeypatch,
+            {
+                EARLY: lambda _: refusal(EARLY, "spec_gap", spec_finding(SIBLING)),
+                STUCK: lambda _: refusal(STUCK, "spec_gap"),
+            },
+        )
+        judged = executor.stream
+
+        async def removing(**kwargs):
+            early = board.server.issues[EARLY]
+            if early.description == PREPARED and early.parent_id == CLAIMED_ISSUE:
+                early.parent_id = None
+            async for event in judged(**kwargs):
+                yield event
+
+        monkeypatch.setattr(executor, "stream", removing)
+        report = await run_owner(owner)
+        assert report.halt.cause == "admission_exhausted"
+        assert board.server.issues[EARLY].description == PREPARED
+        assert board.server.issues[EARLY].parent_id is None
+        assert (SIBLING, "missing_source") in {
+            (finding.issue_id, finding.defect_class)
+            for finding in report.halt.surviving_findings
+        }
+        (record,) = escalations(board, SIBLING, "missing_source")
+        assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+        assert escalations(board, EARLY) == []
+        return
+    if cause == "residual_then_halt":
+        # Round one's dry round forms a finding on the subject. In round two
+        # its author's write needs a member that joined mid-round, so it
+        # becomes a residual and the subject is never verified again; the
+        # member after it then halts, and the subject's finding is written.
+        member(board, STUCK)
+
+        def subject(n):
+            if n == 3 and LATE not in board.server.issues:
+                member(board, LATE)
+            if n == 2:
+                return buildable(CLAIMED_ISSUE, spec_finding(CLAIMED_ISSUE))
+            return buildable(CLAIMED_ISSUE)
+
+        seen = judging(
+            board,
+            executor,
+            monkeypatch,
+            {
+                CLAIMED_ISSUE: subject,
+                STUCK: lambda n: (
+                    buildable(STUCK) if n == 1 else refusal(STUCK, "human_decision")
+                ),
+            },
+        )
+        authoring(
+            executor,
+            monkeypatch,
+            {
+                "kind": "graph",
+                "issue_id": CLAIMED_ISSUE,
+                "changes": [{"kind": "blocked_by", "add": [LATE]}],
+            },
+        )
+        report = await run_owner(owner)
+        assert report.halt.cause == "human_decision"
+        # Assessed in round one, judged by its dry round, assessed again in
+        # round two, and never verified there.
+        assert seen[CLAIMED_ISSUE] == 3
+        assert edge_writes(board) == []
         assert escalations(board, LATE, "undeclared_surface")
+        (record,) = escalations(board, CLAIMED_ISSUE, "missing_source")
+        assert record.interim_basis == spec_finding(CLAIMED_ISSUE)["evidence"]
         return
     # Round one: the dry round forms a finding on the marked sibling, and
     # the working member is clean at admission but refused by the dry round.
