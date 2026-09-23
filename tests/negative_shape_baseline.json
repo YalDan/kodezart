@@ -5005,7 +5005,7 @@
    "test_an_identity_a_successor_absorbed_is_still_addressable_at_the_write",
    "test_the_family_is_read_again_after_the_session_and_before_the_write",
    "test_a_family_read_that_fails_at_the_write_records_nothing_and_says_so",
-   "test_the_ruling_step_and_the_fire_entry_read_one_subtree_function"
+   "test_the_question_step_and_the_fire_entry_read_one_subtree_function"
   ],
   "tests/services/test_git_source_lookup.py": [
    "test_actual_deleted_file_is_absent_only_at_the_selected_revision",
