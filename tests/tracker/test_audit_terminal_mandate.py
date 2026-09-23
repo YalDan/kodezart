@@ -326,6 +326,40 @@ async def test_terminal_facts_changing_during_mandate_refuse_whole_sweep(
         await build().run()
 
 
+async def test_a_surface_changing_under_an_unpinned_mandate_hunt_refuses_the_sweep(
+    setup, tracker, server
+):
+    """The headless hunt re-reads its surfaces after the session too.
+
+    The branch is gone, so the hunt runs with no head pin, and the parent's
+    instructions change while it runs: the surface set it judged is not the
+    one standing afterwards.  The hunt itself refuses its verdict, leaving
+    the raw refutation beside that reason, and the sweep over the same
+    snapshot is refused rather than reporting coverage.
+    """
+    build, executor, git, _, _, forge, *_ = setup
+    await terminal_ready(tracker, server, forge)
+    git._remote_branch_shas["ordinary-name"] = None
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
+            await tracker.update_issue(issue_key=ROOT, body="Changed instructions.")
+
+    executor.during = during
+    sweep = build()
+    snapshot = await sweep.prepare()
+    parent = await sweep.observe_target(snapshot=snapshot, target=snapshot.targets[1])
+
+    assert parent.terminal.branch_head is None
+    assert parent.terminal.verdict is AuditVerdict.REFUTED
+    assert parent.terminal_report is None
+    assert "mandating surface set changed during verification" in (
+        parent.unavailable_reason
+    )
+    with pytest.raises(AuditClaimReadError):
+        await sweep.require_current(snapshot, (parent,))
+
+
 async def test_actual_terminal_mandate_cancellation_propagates_after_release(
     setup, tracker, server
 ):
