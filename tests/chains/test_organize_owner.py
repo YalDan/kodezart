@@ -1217,11 +1217,18 @@ async def test_a_raising_stage_report_leaves_the_escalation_recorded(monkeypatch
     stage_report_step(monkeypatch, board, raises=RuntimeError("stage report failed"))
     with pytest.raises(RuntimeError, match="stage report failed"):
         await run_owner(owner)
-    escalations = {
-        comment.issue_id: comment.body
+    written = [
+        comment
         for comment in board.server.comments
         if comment.body.startswith(ESCALATION_MARKER)
+    ]
+    # One record per item: the refusal's own on the subject, one per finding.
+    assert Counter(comment.issue_id for comment in written) == {
+        CLAIMED_ISSUE: 1,
+        named[0]: 1,
+        named[1]: 1,
     }
+    escalations = {comment.issue_id: comment.body for comment in written}
     assert set(escalations) == {CLAIMED_ISSUE, *named}
     assert "The current body omits the required source." in escalations[CLAIMED_ISSUE]
     for key in named:
