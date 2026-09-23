@@ -3672,6 +3672,20 @@ SUPPLIED_HOLDER_WRITES: Mapping[str, HolderWrite] = {
 }
 
 
+#: The writes the table addresses to the claimable issue itself, read off
+#: the table, so a write added there on that issue joins the case below.
+ISSUE_SURFACE_WRITES: Mapping[str, HolderWrite] = {
+    method: row
+    for method, row in SUPPLIED_HOLDER_WRITES.items()
+    if row.surface.ref == CLAIMED_REF
+}
+#: Every surface kind a holder can take on that one issue: each written
+#: one, and its graph address, which the table writes on a child instead.
+ISSUE_SURFACES = frozenset(
+    {row.surface for row in ISSUE_SURFACE_WRITES.values()} | {CLAIMED_GRAPH}
+)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class PeerChange:
     """One change of the child's graph that writes another issue's graph too.
@@ -3857,6 +3871,84 @@ class TestSuppliedHolderWrites:
         )
         assert tracker_writes() == written
         assert await row.effect(tracker) == before
+
+    def test_the_issues_surfaces_are_one_of_each_kind(self) -> None:
+        """The case below walks one address of every kind the issue is written at."""
+        assert {surface.kind for surface in ISSUE_SURFACES} == {
+            SurfaceKind.ISSUE_DESCRIPTION,
+            SurfaceKind.MARKER_COMMENT,
+            SurfaceKind.ISSUE_LABEL_SET,
+            SurfaceKind.ISSUE_GRAPH,
+            SurfaceKind.ISSUE_SPLIT_SET,
+            SurfaceKind.CRITERION_CHILD_SET,
+        }
+        assert len(ISSUE_SURFACES) == 6
+        assert len(ISSUE_SURFACE_WRITES) == 5
+
+    @pytest.mark.parametrize(
+        "held",
+        sorted(ISSUE_SURFACES, key=lambda surface: surface.kind.value),
+        ids=lambda surface: surface.kind.value,
+    )
+    async def test_a_holder_of_one_kind_on_an_issue_holds_no_other_kind_there(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+        held: WritableSurface,
+    ) -> None:
+        """The surface kind is part of the address a holder takes.
+
+        One holder takes one kind of surface on the issue, live, and then
+        tries the write of every OTHER kind the port writes on that same
+        issue: each is refused naming that other kind, its issue, its
+        marker and no current holder, with nothing written and nothing it
+        would move moved.  A second holder then asks for every other
+        surface of the issue at once and is granted all of them: holding
+        one kind of an issue's surfaces is not holding the issue.
+        """
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({held}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        others = {
+            method: row
+            for method, row in ISSUE_SURFACE_WRITES.items()
+            if row.surface.kind is not held.kind
+        }
+        assert {row.surface.kind for row in others.values()} == {
+            surface.kind for surface in ISSUE_SURFACES
+        } - {held.kind, SurfaceKind.ISSUE_GRAPH}
+
+        for method in sorted(others):
+            row = others[method]
+            before = await row.effect(tracker)
+            written = tracker_writes()
+            with pytest.raises(SurfaceLeaseError) as refused:
+                await row.write(tracker, JOB_A)
+            assert (
+                refused.value.surface_kind,
+                refused.value.scope_kind,
+                refused.value.scope_key,
+                refused.value.marker,
+                refused.value.current_holder,
+            ) == (
+                row.surface.kind.value,
+                ScopeKind.ISSUE.value,
+                CLAIMED_ISSUE,
+                row.surface.marker,
+                None,
+            ), method
+            assert tracker_writes() == written, method
+            assert await row.effect(tracker) == before, method
+
+        granted = await tracker.acquire_surfaces(
+            surfaces=ISSUE_SURFACES - {held},
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert granted.holder == JOB_B
+        assert granted.surfaces == ISSUE_SURFACES - {held}
 
     @pytest.mark.parametrize("change", sorted(GRAPH_PEER_CHANGES))
     @pytest.mark.parametrize("standing", ["unheld", "expired", "foreign"])
