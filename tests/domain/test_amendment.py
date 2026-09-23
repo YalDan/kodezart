@@ -440,6 +440,16 @@ _FAULT_OUTSIDE = {
     "missing_resource": "network access for the demonstration",
 }
 
+#: A measured cost the measurement shows is incurred, before either half of how
+#: it was produced is taken away by a row.
+_UNECONOMIC_COST = {
+    "assertion": "The demonstration costs too much to run.",
+    "measurement": {
+        "observed": "Executed once at base; 9 hours observed",
+        "affordable": False,
+    },
+}
+
 
 @pytest.mark.parametrize(
     "judgment_changes,claimed,environment,expected",
@@ -540,6 +550,38 @@ _FAULT_OUTSIDE = {
             UpheldReason.GROUND_NOT_REPRODUCED,
             id="cost_unmeasured_is_not_undemonstrability",
         ),
+        pytest.param(
+            {
+                "finding": _FAULT_OUTSIDE | {"cost_claim": _UNECONOMIC_COST},
+                "measured_by": None,
+            },
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="cost_measured_with_no_instrument_is_not_undemonstrability",
+        ),
+        pytest.param(
+            {
+                "finding": _FAULT_OUTSIDE
+                | {"cost_claim": _UNECONOMIC_COST | {"measurement": None}},
+                "measured_by": "Reproduced recorded command at base",
+            },
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="cost_instrument_with_no_measurement_is_not_undemonstrability",
+        ),
+        pytest.param(
+            {
+                "finding": _FAULT_OUTSIDE | {"cost_claim": _UNECONOMIC_COST},
+                "measured_by": "Reproduced recorded command at base",
+                "citations": [],
+            },
+            "network",
+            {CheckPrerequisite.NETWORK: False},
+            UpheldReason.GROUND_NOT_REPRODUCED,
+            id="cost_measured_uncited_is_not_undemonstrability",
+        ),
     ],
 )
 def test_the_fault_line_is_asked_after_cost_and_before_reproduction(
@@ -556,11 +598,12 @@ def test_the_fault_line_is_asked_after_cost_and_before_reproduction(
     fault line still asks the fault line before any ground, and that landed
     order is pinned here, the reproduction half by the unreproduced row.
 
-    The three cost rows each claim a capability the declared environment lacks,
-    so only the cost can decide them: a departure resting on a cost claim
-    returns its own measured reason, or the ground when nothing was measured,
-    and never the environment reason, which the capability rows beside them
-    reach.
+    The cost rows each claim a capability the declared environment lacks, so
+    only the cost can decide them: a departure resting on a cost claim returns
+    its own measured reason, or the ground when nothing was measured, and never
+    the environment reason, which the capability rows beside them reach. A
+    measurement counts only whole: one with no instrument, an instrument with no
+    measurement, or a measurement cited by nothing each resolve to the ground.
     """
     value = amended()
     claim = AmendmentClaim.model_validate(
@@ -856,6 +899,7 @@ def test_cost_never_authorizes_amendment_and_requires_recorded_base_measurement(
         ("drop_measured_by", "retains the actual measurement"),
         ("omit_measured_by", "Field required"),
         ("contradicting_affordability", "match the measured affordability"),
+        ("contradicting_uneconomic", "must match the measured affordability"),
     ],
 )
 def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_amendment(
@@ -878,7 +922,9 @@ def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_am
     The contradicting row flips the measured affordability and leaves the reason
     alone on purpose: flipping the reason instead would also trip the completed
     refusal's publication rule, and which validator speaks first is not something
-    this assertion depends on.
+    this assertion depends on. The reverse row does flip the reason, to the
+    uneconomic one over an affordable measurement, and escalates it, so the
+    publication rule is satisfied and only the affordability rule can speak.
     """
     value = record(reason="cost_measured_affordable").model_dump()
     cost = value["judgment"]["finding"]["cost_claim"]
@@ -888,6 +934,13 @@ def test_a_measured_cost_reason_keeps_its_measurement_and_never_authorizes_an_am
         value["judgment"]["measured_by"] = None
     elif mutation == "omit_measured_by":
         del value["judgment"]["measured_by"]
+    elif mutation == "contradicting_uneconomic":
+        value["reason"] = "cost_measured_uneconomic"
+        value["publication"] = {
+            "kind": "escalated",
+            "record": value["publication"]["record"],
+            "escalation": value["publication"]["record"],
+        }
     else:
         cost["measurement"]["affordable"] = False
     with pytest.raises(ValidationError) as failure:
