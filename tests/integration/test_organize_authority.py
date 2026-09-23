@@ -205,6 +205,9 @@ async def test_a_port_that_swallows_the_marker_write_ends_grooming_before_the_ju
     port.scope_label_members[SCOPE] = frozenset({ScopeLabel.TRIAGE})
     organizer, operation, executor = groomer(port, lanes=lanes)
     journal = swallow_marker_writes(port, executor)
+    # The lane carries a label that is not the marker before the run, so the
+    # refusal below is about the marker's absence and not an empty label set.
+    assert port.issues["A"].issue_labels - {GROOM_MARKER}
 
     with pytest.raises(OrganizeWriteRefusalError, match="did not read back"):
         await organizer.run(
