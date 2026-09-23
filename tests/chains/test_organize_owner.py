@@ -1022,8 +1022,13 @@ async def test_a_partially_marked_scope_marks_only_the_member_that_lacks_it(
         description=PREPARED_BODY,
         labels=["graph complete"],
     )
+    # A configured issue label that is not the marker: the member lacking
+    # the marker is told apart from one carrying any label at all.
     board.server.issues["unmarked-child"] = FakeMcpIssue(
-        id="unmarked-child", parent_id=CLAIMED_ISSUE, description=PREPARED_BODY
+        id="unmarked-child",
+        parent_id=CLAIMED_ISSUE,
+        description=PREPARED_BODY,
+        labels=["candidate issue"],
     )
     writes = record_classification_writes(board, monkeypatch)
     report = await run_owner(owner)
@@ -1066,24 +1071,34 @@ def session_titles(calls):
     return [call["output_format"]["schema"].get("title") for call in calls]
 
 
-async def test_a_marker_the_board_does_not_report_halts_the_mandate(monkeypatch):
+@pytest.mark.parametrize(
+    ("under_approval", "marker", "label"),
+    [(False, "groomed", "graph complete"), (True, "body", "body complete")],
+    ids=["pre-approval-groom", "run-stage-ticket"],
+)
+async def test_a_marker_the_board_does_not_report_halts_the_mandate(
+    monkeypatch, under_approval, marker, label
+):
     """The pass reads the member back itself, and before any judge is asked.
 
     The refusal is the typed write refusal, raised inside the leased write:
     no completed phase is reported, the marker is absent from the board, and
     no write-back judgment is opened for the member after the write although
-    admission judgments did run before it.
+    admission judgments did run before it. The same holds for the
+    pre-approval row's marker and for the first run stage's, since both are
+    written by the one terminal act: each row writes its own configured
+    marker key, which the board shows as that key's label.
     """
-    owner, board, executor = factory()
+    owner, board, executor = factory(under_approval=under_approval)
     # A configured label the member already carries and that is not the
     # marker: the refusal is about the marker's absence, not an empty set.
     board.server.issues[CLAIMED_ISSUE].labels.append("candidate issue")
     writes = swallow_marker_writes(board, executor, monkeypatch)
     with pytest.raises(OrganizeWriteRefusalError, match="did not read back"):
         await run_owner(owner)
-    assert [(key, marker) for key, marker, _ in writes] == [(CLAIMED_ISSUE, "groomed")]
+    assert [(key, written) for key, written, _ in writes] == [(CLAIMED_ISSUE, marker)]
     assert "candidate issue" in board.server.issues[CLAIMED_ISSUE].labels
-    assert "graph complete" not in board.server.issues[CLAIMED_ISSUE].labels
+    assert label not in board.server.issues[CLAIMED_ISSUE].labels
     opened_before = writes[0][2]
     assert "AdmissionJudgment" in session_titles(executor.calls[:opened_before])
     assert session_titles(executor.calls[opened_before:]) == []
