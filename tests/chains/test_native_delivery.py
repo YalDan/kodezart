@@ -1,6 +1,5 @@
 """The production native constructor runs the actual fire/delivery graph."""
 
-import collections
 import json
 
 import httpx
@@ -57,7 +56,6 @@ from tests.chains.test_native_fire import (
     CountingTracker,
     NativeExecutor,
     NativeSourceReader,
-    calls_to,
     change_tracker,
     engine,
     function_at,
@@ -65,6 +63,7 @@ from tests.chains.test_native_fire import (
     node_of,
     persisted_artifact,
     reached_through_callers,
+    routes_to,
 )
 from tests.chains.test_native_fresh_boundaries import prepare
 from tests.fakes import (
@@ -612,16 +611,13 @@ async def test_paused_terminal_requires_current_pr_without_repeating_delivery(da
 #: through a helper is a gated node too, beside the helper (KOD-652).
 SNAPSHOT_GATED_NODES = reached_through_callers(require_current_native_snapshot)
 
-#: How many calls in each gated node reach the barrier: a call to the
-#: barrier itself, or to another gated node.  Each such call is a route by
-#: which a carried-in set can meet the barrier, so each needs its own reach.
-SNAPSHOT_GATED_ROUTES = dict(
-    collections.Counter(
-        calls_to(
-            require_current_native_snapshot,
-            *filter(None, map(function_at, SNAPSHOT_GATED_NODES)),
-        )
-    )
+#: How many routes each gated node has to the barrier: one per call that
+#: reaches it -- to the barrier itself, or to another gated node -- and per
+#: arm of the node that reaches that call.  Each such route is a way a
+#: carried-in set can meet the barrier, so each needs its own reach.
+SNAPSHOT_GATED_ROUTES = routes_to(
+    require_current_native_snapshot,
+    *filter(None, map(function_at, SNAPSHOT_GATED_NODES)),
 )
 
 #: The lane's open pull request, as a delivery that opened it records it.
@@ -749,6 +745,21 @@ def deliver_commenting_on_red_checks(at):
     return deliver_through(at, remediation_available=False)
 
 
+def deliver_returning_after_the_comment(at):
+    """Red checks with no round left: the set arrives once the comment posts."""
+    at.wire.red_first = True
+    creator = at.lane._delivery._pr_creator
+    comment = creator.comment_on_pr
+
+    async def commented(**kwargs):
+        posted = await comment(**kwargs)
+        at.arrive()
+        return posted
+
+    creator.comment_on_pr = commented
+    return deliver_through(at, remediation_available=False)
+
+
 def deliver_returning_green_checks(at):
     """Green checks: the set arrives once they are observed, before the return."""
     ci = at.lane._delivery._ci
@@ -783,11 +794,13 @@ def deliver_step_handing_to_the_coordinator(at):
 #: statement about every route of every gated node.
 #:
 #: The routes were found by reading each node: every call in it that reaches
-#: the barrier, directly or through another gated node, and the arm of the
-#: node that takes it.  A route whose call comes first is driven with the set
-#: in the state from the start; a later one is driven through the node's
-#: earlier barriers on the tracker's roster, with the set arriving just
-#: before that call.
+#: the barrier, directly or through another gated node, and each arm of the
+#: node that reaches that call.  The final re-check in the coordinator's
+#: delivery is reached on two arms: straight from green checks, and after
+#: the comment on red checks posts.  A route whose call comes first is
+#: driven with the set in the state from the start; a later one is driven
+#: through the node's earlier barriers on the tracker's roster, with the set
+#: arriving just before that call.
 SNAPSHOT_GATED_REACH = {
     node_of(RalphWorkflowEngine._merge_to_feature): {
         "entry": lambda at: at.lane.fire._merge_to_feature(at.entered(), at.config),
@@ -836,6 +849,7 @@ SNAPSHOT_GATED_REACH = {
         "entry": deliver_entering,
         "opening the PR": deliver_opening_the_pr,
         "comment on red checks": deliver_commenting_on_red_checks,
+        "return after the comment on red checks": deliver_returning_after_the_comment,
         "return on green checks": deliver_returning_green_checks,
     },
     node_of(LaneDeliveryCoordinator._require_current): {
@@ -861,11 +875,12 @@ def test_every_derived_gated_node_has_a_reach_and_every_reach_a_node():
 
 
 def test_every_route_to_the_barrier_has_its_own_reach():
-    """Each gated node has one reach per call of its that reaches the barrier.
+    """Each gated node has one reach per route of its to the barrier.
 
-    A new arm that reaches the barrier by its own call, directly or through
-    a helper, needs its own entry; an arm that stops reaching it leaves one
-    behind (KOD-652).
+    A route is a call that reaches the barrier, directly or through a
+    helper, on one arm of the node that reaches that call.  A new call, or a
+    new arm into an existing call, needs its own entry; one that stops
+    reaching the barrier leaves one behind (KOD-652).
     """
     assert {
         node: len(routes) for node, routes in SNAPSHOT_GATED_REACH.items()
