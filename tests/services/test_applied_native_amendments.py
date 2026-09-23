@@ -17,16 +17,18 @@ from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.domain.issue_tree import SubtreeClosure
 from kodezart.domain.model_surfaces import MODEL_CLASSIFICATION
 from kodezart.domain.rulings import render_ruling
-from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent
+from kodezart.services.ruling_records import RulingRecordReader
+from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent, Ruling
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.amendment_write import AmendmentRecord
 from kodezart.types.domain.assertion_drift import AssertionDeviationClaim
-from kodezart.types.domain.operation import CheckPrerequisite
+from kodezart.types.domain.operation import CheckPrerequisite, OperationConfig
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.chains.test_native_fire import DIRECT_DONE, DIRECT_OWED, SUBJECT, tracker
+from tests.domain.test_rulings import ruling_data
 from tests.services.test_native_amendments import (
     AMENDED_CHECK,
     PROTECTED_BODY,
@@ -1125,6 +1127,121 @@ async def test_an_amended_designation_lets_its_test_change_without_a_mark(reposi
         assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
         assert await git(repo, "ls-remote", "origin", "refs/heads/native-test")
         assert criterion_children(port) == before
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_weakening_beside_an_amended_criterion_is_still_marked(repository):
+    """An amendment the run made elsewhere exempts nothing it did not amend.
+
+    The writer claims a departure from one of the lane's criteria, the claim
+    is reproduced and the criterion's text is amended, and in the same commit
+    the designated test loses its assertion. The report is not empty, but it
+    amended no pinned record, so the designation stands and the loss is marked.
+    """
+    repo = repository[0]
+    port = tracker()
+    await designated_repository(repo, port)
+    before = criterion_children(port)
+    executor = Executor(reproduced=True, mutate=weaken)
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        with pytest.raises(AssertionWeakenedError) as caught:
+            await drive(service, guard, repository)
+
+        # The criterion amendment landed: the claimed criterion carries the
+        # amended Check on the board.
+        assert AMENDED_CHECK in port.issues[DIRECT_OWED].body
+        minted = {
+            key: issue
+            for key, issue in criterion_children(port).items()
+            if key not in before
+        }
+        assert len(minted) == 1
+        assert caught.value.marks == tuple(minted)
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
+    finally:
+        await cleanup(workspace)
+
+
+async def test_amending_one_record_leaves_another_records_designation_standing(
+    repository,
+):
+    """Only the record the run amended is exempt; the other one still marks.
+
+    Two records are pinned on the lane: one designates nothing and is the
+    subject of a reproduced, amended claim; the other designates the boundary
+    test, which the same commit weakens without a claim. The loss is marked,
+    and the mark names the designating record, not the amended one.
+    """
+    repo = repository[0]
+    port = tracker()
+    designating = await designated_repository(repo, port)
+    amended = Ruling.model_validate(
+        ruling_data(
+            issue_ref=SUBJECT,
+            question="Which reading does the other record pin?",
+        )
+    )
+    await port.post_comment(
+        issue_key=SUBJECT,
+        body=render_ruling(
+            ruling=amended,
+            lane_key=SUBJECT,
+            marker_prefixes={"ruling": "fixture-pinned"},
+        ),
+    )
+    before = criterion_children(port)
+    resolution = "The corrected answer follows the reproduced base evidence."
+
+    async def answers(title, payload, kwargs):
+        await weaken(title, payload, kwargs)
+        if title == "AmendmentTextOutput":
+            payload["replacement"] = {
+                "kind": "ruling",
+                "subject": {"kind": "ruling", "id": amended.ruling_id},
+                "resolution": resolution,
+                "rejected_alternative": "The independently refuted prior reading.",
+                "repo_evidence": ["policy.py"],
+            }
+
+    executor = Executor(
+        reproduced=True,
+        subject={"kind": "ruling", "id": amended.ruling_id},
+        mutate=answers,
+    )
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        with pytest.raises(AssertionWeakenedError) as caught:
+            await drive(service, guard, repository)
+
+        # The claimed record was amended on the board; the designating one
+        # was not.
+        records = {
+            record.ruling_id: record
+            for _, record in await RulingRecordReader(
+                tracker=port,
+                operation=OperationConfig(
+                    operation_name="fixture",
+                    workspace="fixture",
+                    marker_prefixes={"ruling": "fixture-pinned"},
+                ),
+            ).read_issue(issue_key=SUBJECT)
+        }
+        assert records[amended.ruling_id].resolution == resolution
+        assert records[designating.ruling_id].resolution == designating.resolution
+        minted = {
+            key: issue
+            for key, issue in criterion_children(port).items()
+            if key not in before
+        }
+        assert len(minted) == 1
+        (key,) = minted
+        assert caught.value.marks == (key,)
+        check = criterion_field_bodies(minted[key].body, field="Check")[0]
+        assert designating.ruling_id in check
+        assert amended.ruling_id not in check
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
     finally:
         await cleanup(workspace)
 
