@@ -1977,6 +1977,24 @@ class TestScanCapability:
         assert PassSignal.issues_changed not in refusals
 
     @pytest.mark.parametrize("refused_signals", [REFUSED], indirect=True)
+    async def test_exactly_the_refused_signals_are_refused_wherever_they_are_asked(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A refusal marks its own signal, not every signal asked after it.
+
+        The refused signal is asked FIRST and every answerable one after it,
+        so a probe that carried a refusal forward onto the signals that
+        followed would name them too.
+        """
+        asked = [*REFUSED, *(signal for signal in PassSignal if signal not in REFUSED)]
+        assert asked[0] in REFUSED and asked[-1] not in REFUSED
+
+        refusals = await tracker.verify_scan_capability(signals=asked)
+
+        assert set(refusals) == set(REFUSED)
+
+    @pytest.mark.parametrize("refused_signals", [REFUSED], indirect=True)
     async def test_a_signal_that_was_not_asked_about_is_not_answered(
         self,
         tracker: TrackerPort,
