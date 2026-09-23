@@ -55,12 +55,13 @@ def names_the_enum(value: ast.expr, aliases: frozenset[str]) -> bool:
 
 
 def duplicate_kind_sites(source: str) -> int:
-    """How many times *source* names the Duplicate kind, in any spelling.
+    """How many times *source* names the Duplicate kind, in the shapes below.
 
-    Three shapes: an attribute ``DUPLICATE`` on the enum, whether the enum is
-    spelled by its own name, by a name a from-import aliased it to, or as an
-    attribute of a module; and a string constant that is exactly the kind's
-    value, which is the same member to a string enum.
+    Four shapes: an attribute ``DUPLICATE`` on the enum, and a subscript of
+    the enum by the member's name, whether the enum is spelled by its own
+    name, by a name a from-import aliased it to, or as an attribute of a
+    module; and a string constant that is exactly the kind's value, which is
+    the same member to a string enum.
     """
     tree = ast.parse(source)
     aliases = enum_aliases(tree)
@@ -70,6 +71,12 @@ def duplicate_kind_sites(source: str) -> int:
         if (
             isinstance(node, ast.Attribute)
             and node.attr == WorkflowStateKind.DUPLICATE.name
+            and names_the_enum(node.value, aliases)
+        )
+        or (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.slice, ast.Constant)
+            and node.slice.value == WorkflowStateKind.DUPLICATE.name
             and names_the_enum(node.value, aliases)
         )
         or (
@@ -106,8 +113,9 @@ def open_criteria(criteria, *, ref):
 
 
 #: One planted source per spelling the scan must see besides the bare enum:
-#: the kind's string value, the enum reached through a module alias, and the
-#: enum imported under another name.
+#: the kind's string value, the enum reached through a module alias, the
+#: enum imported under another name, and the enum subscripted by the
+#: member's name.
 RESPELLINGS = {
     "string-value": (
         "counting = [c for c in criteria\n"
@@ -120,6 +128,10 @@ RESPELLINGS = {
     "enum-alias": (
         "from kodezart.types.domain.tracker import WorkflowStateKind as Kind\n"
         "PAIR = {Kind.CANCELED, Kind.DUPLICATE}\n"
+    ),
+    "member-subscript": (
+        "counting = [c for c in criteria if c.state_kind not in\n"
+        "            {WorkflowStateKind.CANCELED, WorkflowStateKind['DUPLICATE']}]\n"
     ),
 }
 
