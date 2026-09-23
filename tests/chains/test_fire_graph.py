@@ -1,4 +1,18 @@
-"""The actual compiled fire excludes every delivery node and route."""
+"""The fire's hand-off adds no field to its state or to its terminal event.
+
+Inside the reach of this module's pins: the fire's state keys; the terminal
+event model and every model it reaches, including their serialisation and
+validation machinery and their ``extra`` setting; the terminal the
+tracker-native graph's completion node emits for every outcome; and the
+coordinator's public surface, pinned beside the lane's delivery tests.
+
+Outside the reach: transport after serialisation, meaning the SSE framing,
+the queue's buffering and ASGI middleware.  None of these is the hand-off;
+they carry whatever bytes they are given.  The route table, the stream
+column and the egress path are pinned below as they stand, and each of
+those pins states what it holds; none claims to cover every route to the
+wire.
+"""
 
 import ast
 import asyncio
@@ -1297,7 +1311,8 @@ DEBUG_ROUTES: dict[Row, tuple[bool, str]] = {
     ),
 }
 
-#: The rows running the app's lifespan adds, under either debug setting.
+#: The rows running the app's lifespan adds, under either debug setting, in
+#: the test environment's configuration: no tracker and no operation config.
 LIFESPAN_ROUTES: dict[Row, tuple[bool, str]] = {}
 
 
@@ -1307,12 +1322,15 @@ async def test_every_configuration_serves_the_classified_routes(
 ) -> None:
     """The route table under both ``debug`` settings, before and in the lifespan.
 
-    The app is built from the environment with ``http.debug`` set each way,
-    its rows read, then read again with its lifespan entered, the way a
-    served app is.  Each configuration adds exactly the rows measured for
-    it, so a stream route mounted only under a config flag, or registered
-    while the app starts, is a row nobody classified and reds here.  The
-    rows debug adds are driven on that app, and none of them streams.
+    The app is built from the test environment with ``http.debug`` set each
+    way, its rows read, then read again with its lifespan entered, the way
+    a served app is.  Each of those adds exactly the rows measured for it,
+    so a route mounted only under ``debug``, or registered while an app of
+    this configuration starts, is a row nobody classified and reds here.
+    That is the reach: the lifespan is run with no tracker and no operation
+    config, so a route registered only when one of those is configured is
+    not read here.  The rows debug adds are driven on that app, and none of
+    them streams.
     """
     monkeypatch.setenv("KODEZART_HTTP__DEBUG", "true" if debug else "false")
     app = create_app()
@@ -1572,11 +1590,14 @@ def test_every_route_has_a_method_to_drive():
 async def test_the_stream_column_is_what_each_route_answers():
     """Whether a route streams is observed, not restated.
 
-    Every method of every row is driven, and a route streams exactly when
-    it answers with ``text/event-stream``.  The table's mark for each row
-    must equal that, so a route that starts streaming the terminal under
-    an unchanged class, method and path reds here until it is reclassified
-    and driven as a stream.
+    Every method of every row is driven once, with a JSON body on a
+    ``POST`` and the request headers :func:`exchange` sends, and a route
+    streams exactly when it answers with ``text/event-stream``.  The
+    table's mark for each row must equal that, so a route that starts
+    streaming the terminal for that request under an unchanged class,
+    method and path reds here until it is reclassified and driven as a
+    stream.  A route that streams only for another request — another
+    ``Accept`` header, another body — is not driven as one here.
     """
     full = template()
     answers = await emitted([full, full.model_copy()])
@@ -1595,14 +1616,15 @@ async def test_what_production_sends_for_the_terminal_is_its_fields_and_no_more(
 
     Compared at the egress, not at a rendering helper: the frames are read
     off the app's own event-stream routes as they are sent, so a key the
-    handler, the queue, a route or the SSE framing adds after an event is
-    rendered is on the wire here exactly when it is in production.  Every
-    route is driven, the routes that answer with an event stream are held
-    equal to the routes the table above marks as streams, and each one's
-    headers to the pinned set.  The workflow stream
-    is attached while its run is going, so the queue's replay of an open job
-    and its live fan-out both carry terminals here; the later attach reads
-    the replay of the finished job.
+    handler, the queue, a route or the SSE framing adds for one of the
+    instances built here is on the wire here.  A key added for a value no
+    instance holds is not; that is what the machinery and completion-node
+    pins above are for.  Every route is driven, the routes that answer
+    with an event stream are held equal to the routes the table above marks
+    as streams, and each one's headers to the pinned set.  The workflow
+    stream is attached while its run is going, so the queue's replay of an
+    open job and its live fan-out both carry terminals here; the later
+    attach reads the replay of the finished job.
 
     Per instance, an equality against the keys the model derives for it,
     and every value in the shape its field declares, recursively.  The
@@ -1657,14 +1679,18 @@ async def test_what_production_sends_for_the_terminal_is_its_fields_and_no_more(
 #: from a file under it runs production code.
 PACKAGE_ROOT = Path(inspect.getfile(kodezart)).parent
 
-#: Every function between a terminal event and the bytes a client reads, on
-#: every route that streams it, each with the sha256 of its source text.
-#: A key the handler, the queue or the framing adds for some values of the
-#: terminal and not others is added in one of these, whatever values the
-#: egress check renders, so the functions are pinned whole: a change to any
-#: of them — or a function joining or leaving the path — has to update this
-#: table deliberately, which is the review this pin exists to force.  Held
-#: equal to the path as the drive below observes it.
+#: Every function of the shipped package the drive below observes holding
+#: the terminal, or its rendering, as an argument or a return value on a
+#: route that streams it, and every package function on the stack at that
+#: moment, each with the sha256 of its source text.  Pinned whole: a change
+#: to any of them — or a function joining or leaving the observed set — has
+#: to update this table deliberately, which is the review this pin exists to
+#: force.  Held equal to the set as the drive observes it.  What it pins is
+#: these functions' text as they stand.  It does not claim that no other
+#: code can put a key on the wire: a function that holds the terminal only
+#: in a local between its call and its return is not observed, and
+#: transport after serialisation — the SSE framing, the queue's buffering,
+#: ASGI middleware — is outside this module's reach.
 EGRESS_PATH: dict[Callable[..., object], str] = {
     asyncio_job_queue.AsyncioJobQueue._worker: (
         "55544aa6ca52e76b284c27b3d9de15540a8f597454659d529fdd9bfaa78a9cf6"
@@ -1719,7 +1745,9 @@ def carries_terminal(value: object) -> bool:
     """Whether *value* is the terminal, or its rendering on the way out.
 
     The event itself, the mapping the handler renders it to, or the SSE
-    frame text that mapping is formatted into.
+    frame text that mapping is formatted into.  Bytes, and an ASGI message
+    carrying them, are not recognised: transport after serialisation is
+    outside this module's reach.
     """
     if isinstance(value, WorkflowCompleteEvent):
         return True
@@ -1751,17 +1779,19 @@ def source_digest(function: Callable[..., object]) -> str:
 
 
 async def egress_path(events: list[AgentEvent]) -> set[Callable[..., object]]:
-    """Every production function the terminal passes through on its way out.
+    """Every production function observed holding the terminal on its way out.
 
     Observed, not listed: the app is driven over every route it serves
     (:func:`emitted`) with a profile hook on the thread.  Whenever a
     function of the shipped package is entered holding the terminal or its
-    rendering, or hands one back — a return, or a generator's yield — every
-    production function on the stack at that moment is on the path: the
-    worker that publishes the event, the queue's stream that replays and
-    fans it out, the handler that renders it, the route that frames it.
-    Bounded by the calls the drive makes and, per call, by the stack's
-    depth.
+    rendering among its arguments, or hands one back — a return, or a
+    generator's yield — every production function on the stack at that
+    moment is in the set: the worker that publishes the event, the queue's
+    stream that replays and fans it out, the handler that renders it, the
+    route that frames it.  A function that holds the terminal only in a
+    local between those two moments, and one that works on bytes, is not
+    observed.  Bounded by the calls the drive makes and, per call, by the
+    stack's depth.
     """
     path: set[CodeType] = set()
     root = str(PACKAGE_ROOT)
@@ -1790,14 +1820,16 @@ async def egress_path(events: list[AgentEvent]) -> set[Callable[..., object]]:
 
 
 async def test_the_egress_path_is_pinned_whole():
-    """Every function between the terminal and the wire, by object and source.
+    """The functions observed holding the terminal, by object and source.
 
     The instances the egress check renders can only show a key for the
-    values somebody built, so the code that could add one is pinned
-    instead: the path is derived by driving every route the table holds
-    and observing which production functions the terminal passes through,
-    and that set must equal :data:`EGRESS_PATH`, each function's source
-    still hashing to what the table holds.
+    values somebody built, so the code observed handling the terminal is
+    pinned as well: the set is derived by driving every route the table
+    holds and observing which production functions are entered with the
+    terminal or hand it back, and that set must equal :data:`EGRESS_PATH`,
+    each function's source still hashing to what the table holds.  What
+    this pins is that text; the hand-off claim itself rests on the state,
+    the terminal's machinery and the completion node, pinned above.
     """
     full = template()
     derived = await egress_path([full, full.model_copy()])
