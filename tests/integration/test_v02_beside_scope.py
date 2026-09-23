@@ -18,7 +18,7 @@ import structlog.testing
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import OriginRoutedWorkflowEngine
-from kodezart.composition.organize import scope_lane
+from kodezart.composition.organize import scope_queue_lane
 from kodezart.composition.passes import build_dispatch_runtime, verify_pass_preflight
 from kodezart.composition.tracker import DialledTracker
 from kodezart.core.logging import get_logger
@@ -234,7 +234,7 @@ async def test_a_scope_team_gets_no_per_issue_pass_while_the_other_team_keeps_al
             ), (key, sweep)
 
     # The heartbeat's lane is never the lane a per-issue fire waits on.
-    assert scope_lane(config) != config.dispatch_lane
+    assert scope_queue_lane(config) != config.dispatch_lane
 
     # The per-issue team's dispatch pass scans as it does with no scope row,
     # over the same doubles. Cadence, budget, record identity and gates are

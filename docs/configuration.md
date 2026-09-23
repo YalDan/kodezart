@@ -819,7 +819,8 @@ pass takes the place of the withheld dispatch scan and reuses its knobs —
 `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` and
 `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` — and submits onto
 `KODEZART_DISPATCH_LANE` followed by `:scope`, a lane of its own, so a per-issue
-fire never waits behind a scope run. The organize tick is registered as
+fire never waits behind a scope run the heartbeat submitted. A scope run posted
+over HTTP takes the endpoint's own lane instead. The organize tick is registered as
 `organize`, leaving `grooming_pass` to the per-issue grooming session. The
 heartbeat adds no configuration field of its own, opens no
 session and writes nothing to the tracker. A row that is not approved is

@@ -36,7 +36,8 @@ concerns.
   `grooming_pass` stays the per-issue grooming session's name; its runs keep the
   grooming record identity. The `scope_heartbeat` pass submits on
   `KODEZART_DISPATCH_LANE` followed by `:scope`, so a per-issue fire never
-  queues behind a scope run.
+  queues behind a scope run the heartbeat submitted; a scope run posted over
+  HTTP takes the endpoint's own lane.
 - A v0.2 operation file boots as it is (KOD-903), as the one exception to the
   no-fallback rule: `[[initiatives]]` is accepted and ignored, a file with no
   `[marker_prefixes]` table gets the markers v0.2 wrote for the per-issue path,

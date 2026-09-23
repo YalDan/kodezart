@@ -17,7 +17,6 @@ import pytest
 import structlog.testing
 
 from kodezart.adapters.toml_operation_config import load_operation_config
-from kodezart.composition.organize import scope_lane
 from kodezart.composition.passes import (
     DispatchRuntime,
     build_dispatch_runtime,
@@ -542,7 +541,7 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
     (row,) = operation.organize_scopes
     assert await heartbeat.run(FIXTURE_EPOCH) is PassRun.RAN
     ((lane, request),) = queue.submissions
-    assert lane == scope_lane(config)
+    assert lane == f"{config.dispatch_lane}:scope"
     assert request.scope == row.scope == STANDING_SCOPE
     assert request.repo_url == row.repo_url
     # And the pass is the same instance across ticks: its own memory of the

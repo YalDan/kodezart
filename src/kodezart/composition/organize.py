@@ -205,14 +205,15 @@ def verify_organize_configuration(
     return True
 
 
-def scope_lane(config: AppConfig) -> str:
+def scope_queue_lane(config: AppConfig) -> str:
     """The queue lane the heartbeat submits a scope run on.
 
     Its own lane beside the per-issue dispatch lane, because a lane runs one
     job at a time and a deployment running both flows would otherwise queue a
-    per-issue fire behind a whole scope run.  Derived from the dispatch lane
-    rather than a fixed name, so it can never equal whatever lane the
-    deployment configures for dispatch.
+    per-issue fire behind a scope run the heartbeat submitted.  A scope run
+    posted over HTTP takes the endpoint's own lane, which this does not
+    govern.  Derived from the dispatch lane rather than a fixed name, so it
+    can never equal whatever lane the deployment configures for dispatch.
     """
     return f"{config.dispatch_lane}:scope"
 
@@ -258,7 +259,7 @@ def build_scope_heartbeat(
         registry=registry,
         bindings=operation.organize_scopes,
         trunks={repo.url: repo.trunk for repo in operation.repos},
-        lane=scope_lane(config),
+        lane=scope_queue_lane(config),
     )
 
 
