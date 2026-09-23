@@ -300,7 +300,13 @@ def test_the_pair_binds_both_halves_and_neither_has_a_default():
     assert CriterionCrossOff.model_config["extra"] == "forbid"
     graded = CriterionEvidence.model_fields["graded_sha"]
     assert graded.is_required()
-    assert any(getattr(item, "pattern", None) for item in graded.metadata)
+    # The sha's shape is asserted by what the model does with one: forty hex
+    # digits are a sha, and an empty value or no value at all is not.
+    forty_hex = "0123456789abcdef" * 2 + "01234567"
+    assert CriterionEvidence(graded_sha=forty_hex, test="t").graded_sha == forty_hex
+    for missing in ("", None):
+        with pytest.raises(ValidationError):
+            CriterionEvidence.model_validate({"gradedSha": missing, "test": "t"})
 
     with pytest.raises(ValidationError):
         CriterionCrossOff(criterion="C-1", state=CrossOffState.passed)
