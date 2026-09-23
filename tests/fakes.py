@@ -3587,13 +3587,19 @@ class FakeTrackerPort:
     #: "nothing was written" comparison (``nothing_written``) leaves out.  A
     #: subclass that keeps a read counter of its own adds it here.
     #:
-    #: Derived by what the logs are, not trusted: the census beside this
-    #: module runs every read the port declares on a fresh board and holds
+    #: Derived by what the logs are, not trusted.  The census beside this
+    #: module runs every read the port declares on its full board and holds
     #: the attributes those reads move, only ever by appending, equal to this
-    #: set; it reads every method of this double and of each subclass and
-    #: finds each read log moved inside the port's reads alone; and it shows
-    #: every write moving the state outside the logs.  A read log that
-    #: recorded a write fails there.
+    #: set, and it shows every write moving the state outside the logs.  It
+    #: also reads the source of each method defined on the class line of
+    #: this double and of each subclass that declares ``READ_LOGS`` and is
+    #: imported when the census runs.  There it finds each log moved, as a
+    #: direct ``self.<log>`` target or a mutating call on one, inside the
+    #: port's reads alone, and read for nothing but the append or extend that
+    #: records it; a local bound from ``self.<log>`` counts as the log.  It
+    #: does not see ``setattr``, ``self.__dict__`` or a name built at run
+    #: time.  A read log that recorded a write, or decided an answer, fails
+    #: there.
     READ_LOGS: ClassVar[frozenset[str]] = frozenset(
         {
             "issue_reads",
@@ -5293,6 +5299,12 @@ def _comparable(value: object) -> object:
     because the keys this double holds (a surface, a scope reference) are
     hashable without being orderable and an order is what makes two
     renderings of one state compare equal.
+
+    A callable that is not a class — the double's clock — is kept as it is,
+    not rendered as its attributes, which for a function are none at all and
+    would make every function compare equal.  A function compares as itself
+    and a deep copy keeps it the same object, so a clock rebound by a call
+    is a moved attribute.
     """
     if isinstance(value, Mapping):
         return tuple(
@@ -5305,6 +5317,8 @@ def _comparable(value: object) -> object:
         return tuple(sorted(repr(member) for member in value))
     if isinstance(value, Sequence) and not isinstance(value, str | bytes):
         return tuple(_comparable(item) for item in value)
+    if callable(value) and not isinstance(value, type):
+        return value
     if type(value).__eq__ is object.__eq__ and hasattr(value, "__dict__"):
         return _comparable(vars(value))
     return value
