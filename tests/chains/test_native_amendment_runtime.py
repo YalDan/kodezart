@@ -573,13 +573,14 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
 
 
 @pytest.mark.parametrize(
-    "max_iterations,fails_owed,verdict,settled",
+    "max_iterations,fails_owed,verdict,settled,cost",
     [
         pytest.param(
             3,
             False,
             AcceptVerdict.accepted,
             WorkflowStateKind.COMPLETED,
+            False,
             id="cleared_gate",
         ),
         pytest.param(
@@ -587,12 +588,21 @@ async def test_an_amendment_refused_loop_leaves_only_its_own_cross_offs(reposito
             True,
             AcceptVerdict.rejected,
             WorkflowStateKind.UNSTARTED,
+            False,
             id="iteration_ceiling",
+        ),
+        pytest.param(
+            3,
+            False,
+            AcceptVerdict.accepted,
+            WorkflowStateKind.COMPLETED,
+            True,
+            id="measured_uneconomic_cost",
         ),
     ],
 )
 async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_the_loop(
-    repository, max_iterations, fails_owed, verdict, settled
+    repository, max_iterations, fails_owed, verdict, settled, cost
 ):
     """The refusal round grades nothing and the next round drives the criterion.
 
@@ -603,20 +613,38 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
     the loop then ends by an ordinary stop, the cleared gate below the ceiling in
     one row and the ceiling itself in the other. The refusal round spends its
     seat of the iteration budget as any round does; there is no special case.
+
+    The cost row refuses the same claim at the measured uneconomic reason
+    instead: its judgment carries a measured, cited cost that decides before the
+    capability is asked, and the criterion, its state unmoved, is in round two's
+    driving set just the same.
     """
     port = None
     writes = 0
     dispatched: list[list[str]] = []
     classified_before_round_two: list[bool] = []
+    states_before_round_two: list[WorkflowStateKind] = []
 
     async def answers(title, payload, kwargs):
         nonlocal writes
-        if title == "NativeWriterOutput":
+        if title == "AmendmentJudgment" and cost:
+            payload["finding"] = UNVERIFIABLE_HERE | {
+                "cost_claim": {
+                    "assertion": "The demonstration costs too much to run.",
+                    "measurement": {
+                        "observed": "Executed once at base; 9 hours observed",
+                        "affordable": False,
+                    },
+                }
+            }
+            payload["measured_by"] = "timed the actual base demonstration"
+        elif title == "NativeWriterOutput":
             writes += 1
             if writes > 1:
                 classified_before_round_two.append(
                     "decision" in port.issues[DIRECT_OWED].issue_labels
                 )
+                states_before_round_two.append(port.issues[DIRECT_OWED].state_kind)
                 payload["claims"] = []
         elif title == "AcceptanceCriteriaOutput":
             keys = dispatched_keys(kwargs["prompt"], port)
@@ -637,6 +665,7 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
         max_iterations=max_iterations,
         runner_environment={CheckPrerequisite.NETWORK: False},
     )
+    entered = port.issues[DIRECT_OWED].state_kind
     reports = []
     last = None
     try:
@@ -651,9 +680,14 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
         assert writes == 2
         assert [bool(event.report.upheld) for event in reports] == [True, False]
         refusal = reports[0].report.upheld[0]
-        assert refusal.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+        assert refusal.reason is (
+            UpheldReason.COST_MEASURED_UNECONOMIC
+            if cost
+            else UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+        )
         assert refusal.publication.kind == "escalated"
         assert classified_before_round_two == [True]
+        assert states_before_round_two == [entered]
         # One evaluation, and the refused criterion was in what it graded.
         assert len(dispatched) == 1
         assert DIRECT_OWED in dispatched[0]
