@@ -668,6 +668,49 @@ async def test_a_canceled_child_with_no_check_refuses_no_creation_under_its_pare
     ]
 
 
+async def test_the_criteria_author_cannot_write_the_parent_body(monkeypatch):
+    """A body proposal from the criteria author is refused, and nothing is written.
+
+    The session answers with the parent's body stripped of its checklist,
+    the one write that would take the items away from their adoption.  The
+    stage refuses it as another write surface before any description write,
+    so the parent's body is still the one the person wrote.
+    """
+    owner, board, executor = checklist_owner()
+    stripped = CHECKLIST_BODY.replace(CHECKLIST, "")
+    assert CHECKLIST in CHECKLIST_BODY and CHECKLIST not in stripped
+    answered = executor.stream
+
+    async def a_body_instead(**kwargs):
+        if AUTHOR_OPENING in kwargs["prompt"]:
+            executor.calls.append(kwargs)
+            yield result(
+                structured_output={
+                    "kind": "body",
+                    "issue_id": CLAIMED_ISSUE,
+                    "body": stripped,
+                }
+            )
+            return
+        async for event in answered(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", a_body_instead)
+
+    with pytest.raises(OrganizeWriteRefusalError, match="another write surface"):
+        await run_owner(owner)
+
+    assert authors(executor) == 1
+    assert board.server.issues[CLAIMED_ISSUE].description == CHECKLIST_BODY
+    assert [
+        arguments
+        for name, arguments in board.calls
+        if name == "save_issue"
+        and "description" in arguments
+        and "parentId" not in arguments
+    ] == []
+
+
 async def test_two_identical_proposed_checks_refuse_the_stage_and_mint_nothing():
     """A checklist item proposed twice is refused before any criterion is made."""
     owner, board, _ = factory(
