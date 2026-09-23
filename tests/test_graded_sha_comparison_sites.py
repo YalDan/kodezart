@@ -44,8 +44,10 @@ a class body, a function, a lambda, a comprehension):
   called: a comparison, a rebinding, a default-argument lambda, a container
   built from it.  The rule is the one scope whose uses are not pinned:
   weighing the pair is its whole job.  Each consultation of it is resolved
-  by object: its callee must be the rule in the rule's own module, so a
-  definition shadowing the rule under the pinned call's text is red.
+  by object, through the module's bindings and in the module's own
+  namespace after import: its callee must be the rule in the rule's own
+  module, so a definition, a star import or a ``globals()`` store
+  shadowing the rule under the pinned call's text is red.
 
 The field and its alias are read off ``CriterionEvidence.model_fields``; the
 rule's module and name are read off the rule itself; the scanned tree is the
@@ -1911,12 +1913,17 @@ def _bindings_of(tree: ast.Module, module: str, name: str) -> list[object]:
 def _misdirected(module: str, text: str) -> list[str]:
     """Each consultation of the rule in *module* whose callee is not the rule.
 
-    The callee is resolved by object: its name (or the name its dotted path
-    starts from) must be bound, everywhere in the module, only to the rule or
-    to the module the rule lives in.  A pinned consultation pins the call's
-    text, so a definition shadowing the rule is caught here or nowhere.
+    The callee is resolved by object, twice.  Statically, its name (or the
+    name its dotted path starts from) must be bound, everywhere in the
+    module, only to the rule or to the module the rule lives in.  In the
+    module's own namespace after import (see ``_namespace``), the name, or
+    its dotted route, must be the rule itself: a star import, a ``globals()``
+    store and any other module-level rebinding have run by then.  A pinned
+    consultation pins the call's text, so a rule shadowed under the pinned
+    call's text is caught here or nowhere.
     """
     tree = ast.parse(text)
+    namespace = _namespace(module, text)
     misdirected: list[str] = []
     for node in ast.walk(tree):
         if not _is_rule_call(node):
@@ -1936,15 +1943,34 @@ def _misdirected(module: str, text: str) -> list[str]:
         ]
         for attribute in attributes[1:]:
             callees = [getattr(value, attribute, None) for value in callees]
-        if not callees or not all(callee is graded_state for callee in callees):
+        if (
+            not callees
+            or not all(callee is graded_state for callee in callees)
+            or _looked_up(node.func, namespace) is not graded_state
+        ):
             misdirected.append(ast.unparse(node))
     return misdirected
 
 
 def test_every_consultation_calls_the_rule_itself_by_object():
-    """Each pinned ``graded_state(...)`` resolves to the rule in its home module."""
+    """Each pinned ``graded_state(...)`` resolves to the rule in its home module.
+
+    Read in each consulting module as imported, too: the name each
+    consultation calls is the rule itself.
+    """
     consulting = sorted({site.partition("::")[0] for site in CALLERS})
     assert consulting
+    for module in consulting:
+        imported = vars(import_module(_module_name(module)))
+        calls = [
+            node
+            for node in ast.walk(ast.parse(SHIPPED[module]))
+            if isinstance(node, ast.Call) and _is_rule_call(node)
+        ]
+        assert calls, module
+        assert all(_looked_up(call.func, imported) is graded_state for call in calls), (
+            module
+        )
     assert {module: _misdirected(module, SHIPPED[module]) for module in consulting} == {
         module: [] for module in consulting
     }
@@ -1973,6 +1999,52 @@ def test_a_definition_shadowing_the_rule_in_a_caller_is_reported():
     assert _misdirected(module, shadowed) == [
         f"{RULE}({GRADED}=evidence.{GRADED}, head_sha=head)"
     ]
+
+
+#: A second rule under another name, written into a caller to be bound as
+#: the rule's name at module level.
+SHADOW = (
+    "def _shadow(**reading: str) -> GradedState:\n"
+    "    recorded, head = reading.values()\n"
+    "    return GradedState.counted if recorded == head else GradedState.lapsed\n"
+)
+
+
+def test_a_rule_rebound_through_globals_in_a_caller_is_reported():
+    """A ``globals()`` store rebinds the name the pinned call reads.
+
+    Nothing the census pins changes, and the call no longer reaches the
+    rule; storing the rule itself there changes nothing.
+    """
+    module = "chains/audit_evidence.py"
+    call = f"{RULE}({GRADED}=evidence.{GRADED}, head_sha=head)"
+    rebound = SHIPPED[module] + f"\n\n{SHADOW}globals()['{RULE}'] = _shadow\n"
+    assert findings(readers({module: rebound}), REGISTERED) == []
+    assert _misdirected(module, rebound) == [call]
+    itself = SHIPPED[module] + f"\n\nglobals()['{RULE}'] = {RULE}\n"
+    assert _misdirected(module, itself) == []
+
+
+def test_a_rule_shadowed_by_a_star_import_in_a_caller_is_reported(monkeypatch):
+    """A star import of a module defining its own rule rebinds the name.
+
+    A star import of the rule's own module keeps it the rule.
+    """
+    module = "chains/audit_evidence.py"
+    call = f"{RULE}({GRADED}=evidence.{GRADED}, head_sha=head)"
+    other = ModuleType(f"{SOURCE.name}.chains._zz_rule")
+
+    def shadow(**reading: str) -> bool:
+        recorded, head = reading.values()
+        return recorded == head
+
+    vars(other).update({"__all__": [RULE], RULE: shadow})
+    monkeypatch.setitem(sys.modules, other.__name__, other)
+    starred = SHIPPED[module] + f"\n\nfrom {other.__name__} import *\n"
+    assert findings(readers({module: starred}), REGISTERED) == []
+    assert _misdirected(module, starred) == [call]
+    home = SHIPPED[module] + f"\n\nfrom {graded_state.__module__} import *\n"
+    assert _misdirected(module, home) == []
 
 
 def test_a_consultation_is_resolved_through_whatever_import_binds_it():
