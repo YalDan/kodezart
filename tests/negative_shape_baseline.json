@@ -379,7 +379,7 @@
   "tests/test_audit_lane_placement.py": 13,
   "tests/test_composition_root.py": 35,
   "tests/test_criterion_resolution_boundary.py": 14,
-  "tests/test_default_run_isolation.py": 16,
+  "tests/test_default_run_isolation.py": 31,
   "tests/test_fakes_state.py": 8,
   "tests/test_forge_origin_selection.py": 46,
   "tests/test_graded_sha_comparison_sites.py": 22,
@@ -5403,7 +5403,11 @@
    "test_an_http_client_request_off_the_machine_is_refused",
    "test_a_wide_scope_fixture_setup_is_refused",
    "test_an_item_with_a_gated_mark_runs_unguarded",
-   "test_an_unmarked_item_runs_guarded"
+   "test_an_unmarked_item_runs_guarded",
+   "test_every_address_off_this_machine_is_refused",
+   "test_the_guard_was_on_while_this_module_was_collected",
+   "test_a_refusal_the_code_caught_fails_its_item",
+   "test_no_proxy_variable_is_set_inside_a_guarded_test"
   ],
   "tests/test_fakes_state.py": [
    "test_every_journal_the_check_reaches_is_written_to_here",

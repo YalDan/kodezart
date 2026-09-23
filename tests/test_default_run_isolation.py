@@ -9,8 +9,14 @@ the exemption a gated mark earns, and the refusal a fixture's setup meets.
 
 The guard is in-process: a child process, name resolution and ``sendto`` on
 a datagram socket are outside it, as ``tests/conftest.py`` states.
+
+A limit of the skip census, recorded here: on a host with no IPv6 loopback
+the IPv6 loopback case has an empty parameter set, which the runner reports
+as one skip, and the skip-form census in ``tests/test_suppression_baseline.py``
+does not count an empty parameter set.
 """
 
+import os
 import socket
 import tempfile
 from collections.abc import Iterator
@@ -21,12 +27,21 @@ import pytest
 
 from tests.conftest import (
     GATED_MARKERS,
+    PROXY_VARIABLES,
     LiveReachError,
+    _no_swallowed_refusal,
     guarded,
     leaves_the_machine,
-    pytest_runtest_protocol,
+    pytest_runtest_setup,
+    pytest_runtest_teardown,
+    refusal_failure,
     take_refusals,
 )
+
+#: Whether the guard was already on while this module was imported, which is
+#: during collection: the guard is installed before collection, so module
+#: import runs under it as a test body does.
+GUARDED_AT_IMPORT = guarded()
 
 #: A documentation address (TEST-NET-3): routable in form, reserved in fact.
 OFF_MACHINE = ("203.0.113.1", 443)
@@ -84,6 +99,33 @@ def test_a_default_run_item_cannot_reach_a_non_loopback_address() -> None:
     refused_then_reaches_loopback("connect_ex")
 
 
+@pytest.mark.parametrize(
+    ("family", "address"),
+    [
+        pytest.param(
+            socket.AF_INET6, ("2001:db8::1", 443, 0, 0), id="ipv6-documentation"
+        ),
+        pytest.param(socket.AF_INET, ("example.invalid", 443), id="host-name"),
+        pytest.param(socket.AF_INET, ("192.168.0.1", 443), id="private-range"),
+    ],
+)
+def test_every_address_off_this_machine_is_refused(
+    family: socket.AddressFamily, address: tuple[object, ...]
+) -> None:
+    """An IPv6 address, a host name and a private range are all refused.
+
+    A host name is refused by name, before any resolution: only
+    ``localhost`` names this machine. Each probe is non-blocking, so a
+    guard that let the call through could not hold the test on a timeout.
+    """
+    with socket.socket(family, socket.SOCK_STREAM) as probe:
+        probe.setblocking(False)
+        with pytest.raises(LiveReachError) as refused:
+            probe.connect(address)
+    assert refused.value.address == address
+    assert take_refusals() == [refused.value]
+
+
 def test_a_default_run_item_still_reaches_loopback() -> None:
     """A listening socket on this machine is reached as before."""
     with (
@@ -107,8 +149,9 @@ def test_localhost_by_name_is_this_machine() -> None:
 
 
 #: The IPv6 loopback case, generated only where the host has an IPv6
-#: loopback to bind: a host without one has no such address to reach, and
-#: the case is then absent from the run rather than skipped in it.
+#: loopback to bind. A host without one has no such address to reach: the
+#: parameter set is then empty, and the runner reports the case as one
+#: skip (the limit the module docstring records).
 IPV6_LOOPBACK = ["::1"] if _has_ipv6_loopback() else []
 
 
@@ -203,11 +246,9 @@ class MarkedItem:
 
 def guarded_while_running(item: MarkedItem) -> bool:
     """Whether the guard is on while *item* runs; it must be on again after."""
-    protocol = pytest_runtest_protocol(item=item, nextitem=None)
-    next(protocol)
+    pytest_runtest_setup(item=item)
     during = guarded()
-    with pytest.raises(StopIteration):
-        protocol.send(None)
+    pytest_runtest_teardown(item=item, nextitem=None)
     assert guarded()
     return during
 
@@ -230,3 +271,63 @@ def test_an_unmarked_item_runs_guarded() -> None:
     for item in (MarkedItem(), MarkedItem("asyncio")):
         assert not leaves_the_machine(item)
         assert guarded_while_running(item)
+
+
+def test_the_guard_was_on_while_this_module_was_collected() -> None:
+    """Collection runs guarded, and ``guarded`` does not answer yes by default."""
+    assert GUARDED_AT_IMPORT
+
+
+def test_a_refusal_the_code_caught_fails_its_item(request) -> None:
+    """The swallowed-refusal check is on every item, and it answers.
+
+    A refusal made and caught here stands untaken on the record, as it would
+    after code under test swallowed it; the check turns it into a failure
+    message naming it. Once the refusals are taken there is nothing left to
+    fail on.
+    """
+    assert _no_swallowed_refusal.__name__ in request.fixturenames
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setblocking(False)
+        try:
+            probe.connect(OFF_MACHINE)
+        except LiveReachError:
+            pass
+    untaken = take_refusals()
+    assert [refused.address for refused in untaken] == [OFF_MACHINE]
+    failure = refusal_failure(untaken)
+    assert failure is not None
+    assert repr(OFF_MACHINE) in failure
+    assert refusal_failure(take_refusals()) is None
+
+
+def test_no_proxy_variable_is_set_inside_a_guarded_test(monkeypatch) -> None:
+    """The proxy variables are out while guarded and back while lifted.
+
+    Six names, both cases of three. Planted here as an environment would
+    carry them, the guard going back on takes them out, and lifting it for a
+    gated item puts them back as they were.
+    """
+    assert len(PROXY_VARIABLES) == 6
+    assert guarded()
+    assert [name for name in PROXY_VARIABLES if name in os.environ] == []
+
+    (gated,) = list(GATED_MARKERS)[:1]
+    item = MarkedItem(gated)
+    planted = {name: f"http://127.0.0.1:9/{name}" for name in PROXY_VARIABLES}
+    pytest_runtest_setup(item=item)
+    for name, value in planted.items():
+        monkeypatch.setenv(name, value)
+    pytest_runtest_teardown(item=item, nextitem=None)
+    assert [name for name in PROXY_VARIABLES if name in os.environ] == []
+
+    pytest_runtest_setup(item=item)
+    assert {name: os.environ.get(name) for name in PROXY_VARIABLES} == planted
+    pytest_runtest_teardown(item=item, nextitem=None)
+    assert guarded()
+    assert [name for name in PROXY_VARIABLES if name in os.environ] == []
+    # Nothing planted here stays kept for a later gated item to restore.
+    pytest_runtest_setup(item=item)
+    for name in PROXY_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    pytest_runtest_teardown(item=item, nextitem=None)
