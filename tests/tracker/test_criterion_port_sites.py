@@ -404,6 +404,20 @@ def mint_surfaces(sources: dict[str, str]) -> dict[str, list[str]]:
     return by_module(inside, lambda tree: scopes_naming(tree, attribute=MINT_SURFACE))
 
 
+def mint_callers(sources: dict[str, str]) -> dict[str, list[str]]:
+    """Every module of *sources* that calls the mint, with its calling scopes."""
+    return by_module(sources, lambda tree: callers_of(tree, name=MINT))
+
+
+def callers_outside_the_holders(callers: dict[str, list[str]]) -> list[str]:
+    """The modules calling the mint other than its two holders, sorted.
+
+    The one comparison the guard below and the planted control share, so a
+    loosened comparison fails the control rather than passing silently.
+    """
+    return sorted(set(callers) - {OWNER, MARKS})
+
+
 def test_the_criteria_stage_is_the_only_caller_of_the_criterion_mint():
     """The mint is declared on two roles, implemented once, called once each.
 
@@ -428,9 +442,9 @@ def test_the_criteria_stage_is_the_only_caller_of_the_criterion_mint():
             }
         ),
     }
-    callers = by_module(sources, lambda tree: callers_of(tree, name=MINT))
+    callers = mint_callers(sources)
 
-    assert set(callers) == {OWNER, MARKS}
+    assert callers_outside_the_holders(callers) == []
     assert len(callers[OWNER]) == 1
     assert callers[OWNER][0].startswith(
         f"{OrganizeOwner.__name__}.{OrganizeOwner._author_write.__name__}."
@@ -469,8 +483,8 @@ MINT_REPORTS = {
     "implementations": lambda sources: by_module(
         sources, lambda tree: definitions_of(tree, name=MINT)
     ),
-    "callers": lambda sources: by_module(
-        sources, lambda tree: callers_of(tree, name=MINT)
+    "callers outside the holders": lambda sources: callers_outside_the_holders(
+        mint_callers(sources)
     ),
     "surfaces": mint_surfaces,
     "creations": lambda sources: by_module(sources, labelled_child_creations),
@@ -485,7 +499,7 @@ PLANTED_MINTS = {
         f"    return await tracker.{MINT}(\n"
         f"        parent_key='p', title='t', check='c', do='d', holder='h'\n"
         f"    )\n",
-        "callers",
+        "callers outside the holders",
     ),
     "a second implementation": (
         "services/second_port.py",
