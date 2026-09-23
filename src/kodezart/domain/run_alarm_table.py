@@ -136,6 +136,11 @@ def alarm_raised(record: RunAlarm | None) -> bool:
     threshold it never crossed, a bound on a record that replays to nothing
     — was written by something other than this arithmetic, and reading it
     either way would report a threshold nobody measured.
+
+    A record whose signal has no row raises ``KeyError`` rather than being
+    answered: the boot refuses a table short of any member, so there is no
+    runtime arm for a missing fold, and answering "not raised" would switch
+    the signal off.
     """
     if record is None:
         return False
