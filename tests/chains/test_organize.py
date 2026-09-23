@@ -2608,8 +2608,8 @@ class RosterReads:
     At each call every board call already on the board's log is counted by
     its name, whatever the name, so any board read made between a stage's
     snapshot and its gap call shows up in the tally: the snapshot's own
-    reads, the scope labels and each retained admission's freshness read
-    are what a caller subtracts to see anything else. The inputs and the
+    reads, the stage's gate reading and each retained admission's freshness
+    read are what a caller subtracts to see anything else. The inputs and the
     answer are kept whole, so the pre-query can be asked the same question
     the gap was asked.
     """
@@ -2640,14 +2640,15 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     times: the ticket snapshot, the ticket barrier, the criteria snapshot and
     the criteria barrier. Each stage asks the gap over exactly its own
     snapshot. The obligation read the gap is built from is that listing and
-    the snapshot's revision reads, with the scope labels. The pre-query is
+    the snapshot's revision reads, with the stage's gate reading. The
+    pre-query is
     not a second read — it is the cardinality of the answer the gap already
     gave.
 
     Every board call before each gap is counted by name, and the tally is
     asserted whole on both rows. The units are measured here with the real
     reader: one snapshot (the listing, one revision read per member and the
-    scope labels) and one freshness read (one issue's revision, then the
+    stage's gate reading) and one freshness read (one issue's revision, then the
     scope's context over the listed members, with every call name that
     context read makes, its comment reads included).
 
@@ -2673,11 +2674,16 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     for member in members:
         await reader.read_issue_revision(issue_key=member.issue_key)
     revisions = board_tally(board)
-    await reader.read_scope_labels(ref=scope)
-    labels = board_tally(board)
+    # Each run stage's gate, read the way the owner reads it. Both stages
+    # here gate on approval or on an issue classification, which the owner
+    # answers from the cascade and from each member's own labels, so the
+    # gate reading reads nothing of the board.
+    for phase in second._phases:
+        await second._carried_members(scope, phase)
+        assert board_tally(board) == Counter()
     # One read per member: the unit a re-read of the snapshot would add.
     assert revisions["get_issue"] == len(members)
-    snapshot = listing + revisions + labels
+    snapshot = listing + revisions
     # One retained admission's freshness read: its revision, then the
     # scope's context over the roster the round already holds.
     await reader.read_issue_revision(issue_key=CLAIMED_ISSUE)
@@ -2750,7 +2756,7 @@ async def test_a_later_round_lists_the_roster_once_before_its_gap(monkeypatch):
     Between the two criteria gaps, round one's sessions and its dry pass
     read the board, and then round two opens on its snapshot. From that
     snapshot to round two's gap the whole tally is one snapshot (the
-    listing, one revision read per member and the scope labels), one
+    listing, one revision read per member and the stage's gate reading), one
     approval reading per lane in the round's roster, and one freshness read
     per body-live retained admission, each unit measured here by running the
     real reader. Any other board read before round two's gap, of any name,
@@ -2778,7 +2784,7 @@ async def test_a_later_round_lists_the_roster_once_before_its_gap(monkeypatch):
 
     def opening(**kwargs):
         # The loop reads the stage's unlabelled members right after its own
-        # snapshot and scope labels, so that snapshot opens the round.
+        # snapshot and gate reading, so that snapshot opens the round.
         round_start.append(snapshot_at[-1])
         return unlabelled(**kwargs)
 
@@ -2798,14 +2804,20 @@ async def test_a_later_round_lists_the_roster_once_before_its_gap(monkeypatch):
     spy, board, _executor, report = await h.entry_refutation(monkeypatch)
     scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
     reader = board.tracker()
+    gated, _board, _gated_executor = h.factory(under_approval=True, board=board)
     board.calls.clear()
     members = await reader.scope_issues(ref=scope)
     listing = board_tally(board)
     per_read = listing["list_issues"]
     for member in members:
         await reader.read_issue_revision(issue_key=member.issue_key)
-    await reader.read_scope_labels(ref=scope)
     snapshot = listing + board_tally(board)
+    # Each run stage's gate, read the way the owner reads it: approval or an
+    # issue classification, answered from the cascade and from each member's
+    # own labels, so the gate reading reads nothing of the board.
+    for phase in gated._phases:
+        await gated._carried_members(scope, phase)
+        assert board_tally(board) == Counter()
     approval = Counter()
     for lane in h.LANES:
         await reader.execution_approved(issue_key=lane)
