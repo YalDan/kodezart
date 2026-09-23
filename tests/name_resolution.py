@@ -2614,13 +2614,15 @@ def module_file(dotted: str, root: Path = SOURCE_ROOT) -> Path | None:
     A module's own ``.py``, or a package's ``__init__.py``: a package is a
     module too, and its ``__init__`` is what runs when anything is imported
     out of it, so a walk that could name only ``<name>.py`` never read the
-    one file a re-export through the package executes.
+    one file a re-export through the package executes.  Where a directory
+    ``<name>/`` with an ``__init__.py`` stands beside a ``<name>.py``, the
+    package is what Python's finder runs, so the package is what is named.
     """
     head, *rest = dotted.split(".")
     if head != root.name or not all(part.isidentifier() for part in rest):
         return None
     base = root.joinpath(*rest)
-    for candidate in (base.with_suffix(".py") if rest else None, base / "__init__.py"):
+    for candidate in (base / "__init__.py", base.with_suffix(".py") if rest else None):
         if candidate is not None and candidate.is_file():
             return candidate
     return None
@@ -2673,6 +2675,139 @@ def _dotted_literal(text: str) -> str | None:
     return dotted if all(part.isidentifier() for part in dotted.split(".")) else None
 
 
+def handed_on(node: ast.AST) -> list[tuple[str, ast.expr]]:
+    """Each local name *node* binds, with an expression it binds that name to.
+
+    An assignment, an annotated assignment and a walrus hand their value on,
+    and a ``for`` over a tuple or list display hands on each element of it.
+    The target is read whole: a tuple or list target pairs each of its names
+    with every element of a tuple or list value (``_P, _Q = pkg, None``), so
+    the one name that is handed a module is among them whatever position it
+    holds.
+    """
+    if isinstance(node, ast.Assign):
+        pairs = [(target, node.value) for target in node.targets]
+    elif isinstance(node, ast.AnnAssign | ast.NamedExpr) and node.value is not None:
+        pairs = [(node.target, node.value)]
+    elif isinstance(node, ast.For) and isinstance(node.iter, ast.Tuple | ast.List):
+        pairs = [(node.target, element) for element in node.iter.elts]
+    else:
+        return []
+    return [bound for target, value in pairs for bound in _paired(target, value)]
+
+
+def _paired(target: ast.expr, value: ast.expr) -> list[tuple[str, ast.expr]]:
+    """Each name *target* binds, with the part of *value* it can be handed."""
+    if isinstance(target, ast.Name):
+        return [(target.id, value)]
+    if isinstance(target, ast.Tuple | ast.List) and isinstance(
+        value, ast.Tuple | ast.List
+    ):
+        return [
+            bound
+            for element in target.elts
+            for handed in value.elts
+            for bound in _paired(element, handed)
+        ]
+    return []
+
+
+#: What a call that loads a module by name is called, however it is reached.
+LOADERS = frozenset({"import_module", "__import__"})
+
+
+def _argument(call: ast.Call, position: int, keyword: str) -> ast.expr | None:
+    """What *call* hands the parameter at *position*, or named *keyword*."""
+    if position < len(call.args):
+        return call.args[position]
+    return next((each.value for each in call.keywords if each.arg == keyword), None)
+
+
+def _text(node: ast.expr | None) -> str | None:
+    """The string *node* is written as, when it is a string literal."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def loaded_by(
+    call: ast.Call, *, loader: str, module: str, root: Path = SOURCE_ROOT
+) -> tuple[str | None, frozenset[str]]:
+    """What a call of *loader* written in *module* evaluates to, and loads.
+
+    ``importlib.import_module(name, package)`` resolves a leading-dot *name*
+    against *package* when that is a string literal or ``__package__``,
+    which is *module*'s own package (``package_of``).
+    ``__import__(name, globals, locals, fromlist, level)`` resolves a literal
+    int *level* against *module*'s own package, the one its ``globals()``
+    carry, loads each literal *fromlist* entry beside the module, and
+    evaluates to the top-level package unless a fromlist is given.  Each
+    argument is read by position or by keyword.  ``(None, {})`` when the
+    name is not a literal, or a relative name has no package to resolve by.
+    """
+    name = _text(_argument(call, 0, "name"))
+    if name is None:
+        return None, frozenset()
+    fromlist: tuple[str, ...] = ()
+    if loader == "import_module":
+        level = len(name) - len(name.lstrip("."))
+        name = name.lstrip(".")
+        anchor = _argument(call, 1, "package")
+        package = (
+            package_of(module, root)
+            if isinstance(anchor, ast.Name) and anchor.id == "__package__"
+            else _text(anchor)
+        )
+    else:
+        written = _argument(call, 4, "level")
+        level = (
+            written.value
+            if isinstance(written, ast.Constant) and type(written.value) is int
+            else 0
+        )
+        package = package_of(module, root)
+        listed = _argument(call, 3, "fromlist")
+        if isinstance(listed, ast.List | ast.Tuple):
+            fromlist = tuple(
+                text for element in listed.elts if (text := _text(element)) is not None
+            )
+    if level and package is None:
+        return None, frozenset()
+    dotted = absolute_module(
+        ast.ImportFrom(module=name or None, names=[], level=level),
+        package=package or "",
+    )
+    if dotted is None:
+        return None, frozenset()
+    value = (
+        dotted if loader == "import_module" or fromlist else dotted.partition(".")[0]
+    )
+    return value, frozenset({dotted, *(f"{dotted}.{each}" for each in fromlist)})
+
+
+def exported_names(path: Path) -> frozenset[str]:
+    """Every string literal a module assigns to its ``__all__``.
+
+    What ``from package import *`` loads beside the package: each name its
+    ``__init__`` lists that is a submodule is imported by the star import.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return frozenset(
+        text
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign)
+        and node.value is not None
+        and any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in (
+                node.targets if isinstance(node, ast.Assign) else [node.target]
+            )
+        )
+        for element in ast.walk(node.value)
+        if isinstance(element, ast.Constant) and isinstance(text := element.value, str)
+    )
+
+
 def modules_named(
     tree: ast.Module, *, module: str, root: Path = SOURCE_ROOT
 ) -> frozenset[str]:
@@ -2686,25 +2821,33 @@ def modules_named(
     * a from-imported name that is itself a module or a subpackage;
     * a relative import, resolved against *module*'s own package
       (``package_of``);
+    * a star import, with each name the package's ``__init__`` lists in a
+      literal ``__all__`` (``exported_names``) that is a submodule;
     * a string literal that spells a module, or an attribute of one, by its
       absolute dotted name (``module.attr`` or ``module:attr``), which is how
       ``importlib.import_module``, ``__import__``, ``pkgutil.resolve_name``
       or any lazy loader names one;
-    * an attribute chain off an imported module or package that spells a
-      module (``import kodezart.adapters`` and then
-      ``kodezart.adapters.git.service.X``), including off a local name the
-      module or package was handed to by assignment (``_binding``'s forms),
-      grown to a fixed point.
+    * a call of ``importlib.import_module`` or ``__import__`` with a literal
+      name, relative ones and a ``fromlist`` included (``loaded_by``);
+    * an attribute chain that spells a module off anything that evaluates
+      to one: an imported module or package (``import kodezart.adapters``
+      and then ``kodezart.adapters.git.service.X``), a loader call, a
+      ``getattr`` with a literal name, either arm of a conditional
+      expression, an operand of ``and``/``or``, and a local name the module
+      was handed to by any of ``handed_on``'s bindings, grown to a fixed
+      point.
 
     Every node of the tree is read, so a lazy import inside a function is
     read as well, and the attribute chains are read only once every import
     and alias is known, so the order the nodes are written in decides
-    nothing.  Not read: a module name built at run time, a relative name
-    handed to ``importlib.import_module`` (its ``package=`` is a run-time
-    value), a module handed on by argument, return or container, and
-    ``eval`` or ``exec``.
+    nothing.  Not read, as the one stated limit of every static guard: a
+    module handed across a function boundary -- returned from a helper,
+    passed as an argument, or read out of a container -- a module name built
+    at run time, and a binding made only when a function runs (a
+    ``globals()`` write inside a function body); nor ``eval`` or ``exec``.
     """
     package = package_of(module, root)
+    loaders = resolve(tree, names=LOADERS)
     named: set[str] = set()
     local: dict[str, set[str]] = {}
     for node in ast.walk(tree):
@@ -2722,6 +2865,8 @@ def modules_named(
                 continue
             named.add(base)
             for alias in node.names:
+                if alias.name == "*" and (init := module_file(base, root)):
+                    named.update(f"{base}.{each}" for each in exported_names(init))
                 candidate = f"{base}.{alias.name}"
                 if module_file(candidate, root) is not None:
                     named.add(candidate)
@@ -2730,12 +2875,31 @@ def modules_named(
             literal = _dotted_literal(node.value)
             if literal is not None:
                 named.add(literal)
+        elif isinstance(node, ast.Call) and (called := loaders.denotes(node.func)):
+            if called in LOADERS:
+                named.update(
+                    loaded_by(node, loader=called, module=module, root=root)[1]
+                )
 
-    def spelled_off_local(node: ast.expr) -> set[str]:
-        head, _, rest = (_spelling(node) or "").partition(".")
-        return {
-            f"{dotted}.{rest}" if rest else dotted for dotted in local.get(head, ())
-        }
+    def values(node: ast.expr) -> set[str]:
+        """Every dotted name *node* can evaluate to, off a module it reaches."""
+        if isinstance(node, ast.Name):
+            return set(local.get(node.id, ()))
+        if isinstance(node, ast.Attribute):
+            return {f"{dotted}.{node.attr}" for dotted in values(node.value)}
+        if isinstance(node, ast.IfExp):
+            return values(node.body) | values(node.orelse)
+        if isinstance(node, ast.BoolOp):
+            return {dotted for operand in node.values for dotted in values(operand)}
+        if isinstance(node, ast.Call):
+            called = loaders.denotes(node.func)
+            if called in LOADERS:
+                value, _ = loaded_by(node, loader=called, module=module, root=root)
+                return set() if value is None else {value}
+            attribute = _text(node.args[1]) if len(node.args) >= 2 else None
+            if _spelling(node.func) == "getattr" and attribute is not None:
+                return {f"{dotted}.{attribute}" for dotted in values(node.args[0])}
+        return set()
 
     # A module handed to another name: only names that are modules are taken,
     # so the growth is bounded by the files under *root* and terminates.
@@ -2743,21 +2907,18 @@ def modules_named(
     while grown:
         grown = False
         for node in ast.walk(tree):
-            targets, value = _binding(node)
-            if value is None:
-                continue
-            handed = {
-                dotted
-                for dotted in spelled_off_local(value)
-                if module_file(dotted, root) is not None
-            }
-            for target in targets:
+            for target, value in handed_on(node):
+                handed = {
+                    dotted
+                    for dotted in values(value)
+                    if module_file(dotted, root) is not None
+                }
                 if not handed <= local.setdefault(target, set()):
                     local[target] |= handed
                     grown = True
     for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute):
-            named.update(spelled_off_local(node))
+        if isinstance(node, ast.Attribute | ast.Call):
+            named.update(values(node))
     return frozenset(
         reached
         for dotted in named

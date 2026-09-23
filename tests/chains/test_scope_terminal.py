@@ -1198,10 +1198,16 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
 
     What is reached is keyed on the file that runs (``module_closure``), over
     every package: a package ``__init__`` on the way, a relative import, a
-    subpackage, a module named by a string literal and an attribute chain
-    off an imported package are each followed, and each has a planted control
-    below. Not followed: a module name built at run time, and ``eval`` or
-    ``exec``.
+    subpackage, a star import, a loader call and a string literal naming a
+    module, and an attribute chain off anything ``modules_named`` resolves
+    to a module are each followed, and each has a planted control in
+    ``PLANTED_REACHES``. Not followed, as ``modules_named`` states in full:
+    a module handed across a function boundary (returned from a helper,
+    passed as an argument, or read out of a container), a module name built
+    at run time, a binding made only when a function runs, and ``eval`` or
+    ``exec``; ``UNSEEN_REACHES`` holds each as unseen. The act's behaviour is
+    pinned beside this: a whole walk's terminal asks the composed git port
+    nothing.
 
     Non-vacuous in both directions. The name set is held against an anchor per
     noun and the anchor set against its own count, so neither a derivation gone
@@ -1235,14 +1241,51 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
     assert git_port_offenders() == {}
 
 
+async def test_the_terminal_asks_the_composed_git_port_nothing(monkeypatch):
+    """The same claim pinned by behaviour, which no spelling can go around.
+
+    Whatever module the act loaded a ref read through, the read would have to
+    ask a git port, and the one a walk is composed with is this harness's.
+    Over repositories that commit as a real lane does, so the lanes' own
+    deliveries ask that port for refs and its log is live; the terminal's
+    report, observed from its start to its return, adds nothing to it.
+    """
+    harness = resumable(
+        repos=WalkRepos(), port=board(lanes=("A", "B")), lanes=("A", "B")
+    )
+    report = ScopeTerminal.report
+    during = []
+
+    async def observed(self, *, ready):
+        before = len(harness.git.calls)
+        event = await report(self, ready=ready)
+        during.append(harness.git.calls[before:])
+        return event
+
+    monkeypatch.setattr(ScopeTerminal, "report", observed)
+
+    events = await bounded_walk(harness)
+
+    assert len(terminals(events)) == 1
+    assert "remote_branch_sha" in {name for name, *_ in harness.git.calls}
+    assert during == [[]]
+
+
 #: One planted package tree per way a module of the act can load another
 #: module without an import node that names it: each tree puts a remote-ref
 #: read in a module and has the act reach it by the row's spelling. The walk
 #: used to follow none of them, so the act could load a ref read through any
-#: of these with the guard above green. The last rows hold the resolver's
-#: own reach: an attribute chain off a name the package was assigned to, a
-#: chain written before the lazy import that binds its head, and a string
-#: literal naming an attribute of the module, in both dotted and ``:`` form.
+#: of these with the guard above green. The later rows hold the resolver's
+#: own reach: an attribute chain off a name the package was handed to (by
+#: assignment, annotated assignment, walrus, ``for`` over a display, a tuple
+#: target, an import alias or a from-import), off a conditional expression,
+#: an ``or`` operand, a literal ``getattr`` or a loader call (``__import__``
+#: evaluating to the top-level package), a chain written before the lazy
+#: import that binds its head, a string literal naming an attribute of the
+#: module in both dotted and ``:`` form, each loader with a relative name or
+#: a ``fromlist``, a star import through the package's ``__all__`` however it
+#: is assigned, and a package standing beside a module of the same name,
+#: which is the file Python runs.
 REF_READ = (
     "async def read_remote_head(git):\n"
     "    return await git.remote_branch_sha('.', 'origin', 'main')\n"
@@ -1345,7 +1388,232 @@ PLANTED_REACHES = {
         },
         "kodezart.services.reads",
     ),
+    "attribute-chain-off-a-tuple-target": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services\n\n"
+                "_PACKAGE, _SPARE = kodezart.services, None\n"
+                "READ = _PACKAGE.reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-an-annotated-assignment": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services\n\n"
+                "_PACKAGE: object = kodezart.services\n"
+                "READ = _PACKAGE.reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-a-walrus": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services\n\n"
+                "if _PACKAGE := kodezart.services:\n"
+                "    READ = _PACKAGE.reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-a-for-target": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services\n\n"
+                "for _PACKAGE in (kodezart.services,):\n"
+                "    READ = _PACKAGE.reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-a-conditional-expression": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services\n\n"
+                "_PACKAGE = kodezart.services if __debug__ else None\n"
+                "READ = _PACKAGE.reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-an-or-operand": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services\n\n"
+                "READ = (None or kodezart.services).reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-an-import-alias": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services as _services\n\n"
+                "READ = _services.reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-a-from-imported-package": (
+        {
+            "services/scope_terminal.py": (
+                "from kodezart import services as _services\n\n"
+                "READ = _services.reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "literal-getattr": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services\n\n"
+                "READ = getattr(kodezart.services, 'reads').read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-a-loaded-package": (
+        {
+            "services/scope_terminal.py": (
+                "import importlib\n\n"
+                "READ = importlib.import_module('kodezart.services').reads\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-a-dunder-import": (
+        {
+            "services/scope_terminal.py": (
+                "READ = __import__('kodezart.services').services.reads\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "relative-import-module-with-a-literal-package": (
+        {
+            "services/scope_terminal.py": (
+                "import importlib\n\n"
+                "READS = importlib.import_module('.reads', 'kodezart.services')\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "relative-import-module-with-its-own-package": (
+        {
+            "services/scope_terminal.py": (
+                "from importlib import import_module\n\n"
+                "READS = import_module('.reads', package=__package__)\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "relative-dunder-import": (
+        {
+            "services/scope_terminal.py": (
+                "READS = __import__('reads', globals(), locals(), ['x'], 1)\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "dunder-import-fromlist": (
+        {
+            "services/scope_terminal.py": (
+                "REACHED = __import__('kodezart.services', fromlist=['reads'])\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "star-import-through-all": (
+        {
+            "services/__init__.py": "__all__ = ['reads']\n",
+            "services/scope_terminal.py": "from kodezart.services import *\n",
+        },
+        "kodezart.services.reads",
+    ),
+    "star-import-through-an-extended-all": (
+        {
+            "services/__init__.py": "__all__ = []\n__all__ += ['reads']\n",
+            "services/scope_terminal.py": "from kodezart.services import *\n",
+        },
+        "kodezart.services.reads",
+    ),
+    "star-import-through-an-annotated-all": (
+        {
+            "services/__init__.py": "__all__: list[str] = ['reads']\n",
+            "services/scope_terminal.py": "from kodezart.services import *\n",
+        },
+        "kodezart.services.reads",
+    ),
+    "package-beside-a-module-of-its-name": (
+        {
+            "services/gitshadow.py": "",
+            "services/gitshadow/__init__.py": REF_READ,
+            "services/scope_terminal.py": "from . import gitshadow\n",
+        },
+        "kodezart.services.gitshadow",
+    ),
 }
+
+
+#: The one stated limit of every static guard, each shape held as unseen: a
+#: module handed across a function boundary (returned from a helper, passed
+#: as an argument, or read out of a container a helper built), a module name
+#: built at run time, and
+#: a binding made only when a function runs. The act reaches the package's
+#: ``__init__`` in each, and never the module that reads the ref.
+UNSEEN_REACHES = {
+    "returned-from-a-helper": (
+        "import kodezart.services\n\n"
+        "def _package():\n"
+        "    return kodezart.services\n\n"
+        "READ = _package().reads.read_remote_head\n"
+    ),
+    "passed-as-an-argument": (
+        "import kodezart.services\n\n"
+        "def _read(package):\n"
+        "    return package.reads.read_remote_head\n\n"
+        "READ = _read(kodezart.services)\n"
+    ),
+    "read-out-of-a-container-a-helper-built": (
+        "import kodezart.services\n\n"
+        "def _packages():\n"
+        "    return [kodezart.services]\n\n"
+        "READ = _packages()[0].reads.read_remote_head\n"
+    ),
+    "name-built-at-run-time": (
+        "import importlib\n\nimport kodezart.services\n\n"
+        "READS = importlib.import_module('kodezart.services.' + 'reads')\n"
+    ),
+    "bound-only-when-a-function-runs": (
+        "import kodezart.services\n\n"
+        "def _bind():\n"
+        "    globals()['_PACKAGE'] = kodezart.services\n\n"
+        "def read():\n"
+        "    return _PACKAGE.reads.read_remote_head\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("act", UNSEEN_REACHES.values(), ids=list(UNSEEN_REACHES))
+def test_the_git_port_scan_does_not_follow_its_stated_limit(act, tmp_path):
+    """What ``modules_named`` states it does not read is held unread here."""
+    root = tmp_path / "kodezart"
+    planted = {
+        "__init__.py": "",
+        "services/__init__.py": "",
+        "services/reads.py": REF_READ,
+        "services/scope_terminal.py": act,
+    }
+    for relative, text in planted.items():
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(text)
+
+    reached = module_closure(TERMINAL_SEED, within=GIT_PORT_REACH, root=root)
+
+    assert "kodezart.services" in reached
+    assert "kodezart.services.reads" not in reached
 
 
 @pytest.mark.parametrize(
