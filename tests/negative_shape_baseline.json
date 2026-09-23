@@ -216,7 +216,7 @@
   "tests/domain/test_run_alarm.py": 16,
   "tests/domain/test_run_alarm_payload.py": 4,
   "tests/domain/test_run_alarm_record.py": 6,
-  "tests/domain/test_run_alarm_table.py": 9,
+  "tests/domain/test_run_alarm_table.py": 20,
   "tests/domain/test_run_event_table.py": 11,
   "tests/domain/test_scope_approval.py": 3,
   "tests/domain/test_scope_container.py": 15,
@@ -3463,7 +3463,12 @@
    "test_a_member_with_no_fold_refuses_the_boot_naming_every_one",
    "test_every_alarm_declares_exactly_the_scans_its_readings_come_through",
    "test_a_stored_record_is_raised_exactly_when_its_readings_replay_to_one",
-   "test_a_record_carrying_a_bound_its_readings_never_crossed_refuses"
+   "test_a_record_carrying_a_bound_its_readings_never_crossed_refuses",
+   "test_every_member_carries_its_exact_string_value",
+   "test_every_member_brings_a_fold_pair",
+   "test_every_member_fires_on_one_fixture_and_is_quiet_on_its_twin",
+   "test_each_widening_is_a_fixture_pair_on_its_members_own_fold",
+   "test_each_member_is_answered_by_the_function_named_for_it"
   ],
   "tests/domain/test_run_event_table.py": [
    "test_vocabulary_and_notification_partition_are_complete",
