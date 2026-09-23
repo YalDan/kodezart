@@ -1,5 +1,6 @@
 """The lane's record is one comment the committing act keeps current."""
 
+import dataclasses
 import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
@@ -30,7 +31,7 @@ from kodezart.domain.fire_spec import (
     criterion_ref,
     replace_criterion_fields,
 )
-from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
+from kodezart.domain.issue_tree import SubtreeClosure, index_issue_tree, open_criteria
 from kodezart.domain.lane_record import (
     LANDING_ROW_SUBJECT,
     REENTRY_SECTION,
@@ -1099,32 +1100,41 @@ def criterion_body(key: str) -> str:
 CHILD = f"{LANE}/child"
 #: A criterion sub-issue of the deliverable child, below the fire's own family.
 CHILD_CRITERION = f"{CHILD}/criterion"
+#: A deliverable child of that child, and the criterion it owns: two
+#: containers below the fire.
+GRANDCHILD = f"{CHILD}/grandchild"
+GRANDCHILD_CRITERION = f"{GRANDCHILD}/criterion"
 
 
 def criteria_board(
     *,
     bodies: dict[str, str] | None = None,
     keys: Sequence[str] = CRITERIA,
-    descendant: bool = False,
+    depth: int = 0,
 ) -> FakeTrackerPort:
     """The lane, its criterion sub-issues, and one issue that is not a criterion.
 
-    With *descendant*, that child owns a criterion sub-issue of its own, so
-    the board carries a subtree below the fire's direct family.
+    At *depth* one, that child owns a criterion sub-issue of its own, so the
+    board carries a subtree below the fire's direct family; at depth two, the
+    child also has a deliverable child of its own that owns one criterion.
     """
     overrides = bodies or {}
-    below = (
-        [
-            make_tracker_issue(
-                CHILD_CRITERION,
-                parent_key=CHILD,
-                issue_labels=frozenset({"criterion"}),
-                body=criterion_body(CHILD_CRITERION),
-            )
-        ]
-        if descendant
-        else []
-    )
+    below = [
+        make_tracker_issue(
+            criterion,
+            parent_key=container,
+            issue_labels=frozenset({"criterion"}),
+            body=criterion_body(criterion),
+        )
+        for container, criterion in (
+            (CHILD, CHILD_CRITERION),
+            (GRANDCHILD, GRANDCHILD_CRITERION),
+        )[:depth]
+    ]
+    if depth >= 2:
+        below.append(
+            make_tracker_issue(GRANDCHILD, parent_key=CHILD, body="a plain grandchild")
+        )
     return FakeTrackerPort(
         issues=[
             make_tracker_issue(LANE, body="the lane's own text"),
@@ -1188,6 +1198,7 @@ async def tick(
     keys: Sequence[str] = CRITERIA,
     failed: Sequence[str] = (),
     reasons: Mapping[CriterionId, UndemonstratedReason] = NO_WITHDRAWALS,
+    lane: LaneBinding | None = None,
 ) -> None:
     """One attempt's whole verdict, written the way the evaluator writes it.
 
@@ -1197,7 +1208,7 @@ async def tick(
     """
     results = graded(keys, failed=failed)
     await lane_state.write_cross_offs(
-        lane=binding(),
+        lane=binding() if lane is None else lane,
         dispatched=dispatched(keys),
         cross_offs=cross_offs_for(
             results=results,
@@ -1674,19 +1685,15 @@ async def test_a_tick_on_a_sub_issue_with_no_evidence_row_writes_one():
     )
 
 
-def owning_closure(
-    port: FakeTrackerPort, *, below: Sequence[str] = ()
-) -> SubtreeClosure:
+def owning_closure(port: FakeTrackerPort) -> SubtreeClosure:
     """The rollup a reader of the owning issue answers its state from.
 
     Over the lane and the criteria under it: the plain child beside them
     carries no criterion of its own, which the rollup reads as a subtree
-    nothing could finish rather than as this lane's gap.  *below* names the
-    descendants to read as well, for a board whose child owns a criterion,
-    because the rollup is over the whole subtree and not the direct family.
+    nothing could finish rather than as this lane's gap.
     """
     return SubtreeClosure(
-        facts={key: port.issues[key] for key in (LANE, *CRITERIA, *below)},
+        facts={key: port.issues[key] for key in (LANE, *CRITERIA)},
         ref=ScopeRef(kind=ScopeKind.ISSUE, key=LANE),
     )
 
@@ -1699,6 +1706,19 @@ def stream(port: FakeTrackerPort) -> list[LaneRunEvent]:
             lane_key=LANE,
             marker_prefixes=lane_operation().marker_prefixes,
         )
+    )
+
+
+def subtree_closure(port: FakeTrackerPort) -> SubtreeClosure:
+    """The rollup over the whole subtree the board holds beneath the lane.
+
+    The facts are every row of the board, indexed the way production's own
+    subtree read indexes them, so no descendant is left out by a list here.
+    """
+    ref = ScopeRef(kind=ScopeKind.ISSUE, key=LANE)
+    return SubtreeClosure(
+        facts=index_issue_tree(root=LANE, rows=tuple(port.issues.values()), ref=ref),
+        ref=ref,
     )
 
 
@@ -2820,10 +2840,23 @@ LATER_SHA = "2" * 40
 
 
 async def rollup_board(arm: str) -> tuple[FakeTrackerPort, SubtreeClosure]:
-    """The board the real writer leaves after one of the four arms."""
-    port = criteria_board(descendant=arm == "descendant")
+    """The board the real writer leaves after one of the five arms.
+
+    Every sub-issue beneath the fire is a criterion or owns one, so the
+    rollup reads the whole subtree production reads.  The child's criterion
+    is finished by the same writer, bound to that child, on every arm but
+    the two that leave a descendant criterion open.
+    """
+    port = criteria_board(depth=2 if arm == "deep" else 1)
     lane_state = writer(port, lane_repo())
     await tick(lane_state, sha=STANDING_SHA)
+    if arm != "descendant":
+        await tick(
+            lane_state,
+            sha=STANDING_SHA,
+            keys=[CHILD_CRITERION],
+            lane=dataclasses.replace(binding(), lane_key=CHILD),
+        )
     match arm:
         case "refuted":
             await tick(lane_state, sha=LATER_SHA, failed=[LANE_CHECK])
@@ -2834,10 +2867,9 @@ async def rollup_board(arm: str) -> tuple[FakeTrackerPort, SubtreeClosure]:
                 standing_sha=STANDING_SHA,
                 head_sha=LATER_SHA,
             )
-        case "met" | "descendant":
+        case "met" | "descendant" | "deep":
             pass
-    below = (CHILD, CHILD_CRITERION) if arm == "descendant" else ()
-    return port, owning_closure(port, below=below)
+    return port, subtree_closure(port)
 
 
 @pytest.mark.parametrize(
@@ -2870,6 +2902,14 @@ async def rollup_board(arm: str) -> tuple[FakeTrackerPort, SubtreeClosure]:
             WorkflowStateKind.COMPLETED,
             id="descendant",
         ),
+        pytest.param(
+            "deep",
+            (GRANDCHILD_CRITERION,),
+            STANDING_SHA,
+            [],
+            WorkflowStateKind.COMPLETED,
+            id="deep",
+        ),
     ],
 )
 async def test_the_rollup_over_the_subtree_answers_one_lane_check_four_ways(
@@ -2881,12 +2921,17 @@ async def test_the_rollup_over_the_subtree_answers_one_lane_check_four_ways(
     sub-issues of the fire is shown by structure, not by wording: it carries
     the same label, is written by the same ``write_cross_offs``, makes the
     same state move, keeps the same Evidence row and is read by the same gap
-    arm as its siblings.  Every row reads a board the writer left, so no
-    fact the rollup answers from was authored by this fixture.
+    arm as its siblings.  That no second set of lane checks is written by
+    another path is held by ``tests/test_issue_state_write_sites.py``.  Every
+    finished criterion was finished by the writer, and the rollup reads every
+    row of the board through production's own subtree indexing; the open
+    descendant criterion on the last two rows is open by the board's default.
 
     The gap attaches no verdict: each member is the board row itself.  On the
     descendant row the fire's own family is all finished, so a reading that
-    stopped at the direct family would call the fire done (KOD-790).
+    stopped at the direct family would call the fire done (KOD-790); on the
+    deep row the open criterion sits two containers down, so the rollup is
+    recursive and not one level deep.
 
     The fire's state is asked first, of a closure nothing has read yet, so
     it is computed and not read back from the gap below.  The lane check's
@@ -2904,7 +2949,7 @@ async def test_the_rollup_over_the_subtree_answers_one_lane_check_four_ways(
         graded_at
     )
     assert [event.subject_key for event in refutations(port)] == refuted
-    if arm == "descendant":
+    if arm in {"descendant", "deep"}:
         assert open_criteria(closure.criteria(LANE), ref=closure.ref) == ()
 
 
