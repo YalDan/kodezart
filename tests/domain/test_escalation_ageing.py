@@ -377,8 +377,8 @@ SIGNAL_MODULES = [
             "kodezart.types.domain.run_alarm",
         },
     ),
-    # The two landed folds over a lane's rulings and its milestone graph: the
-    # same kind of module, held to the same rules.
+    # The two landed folds over a lane's decisions and its milestone graph:
+    # the same kind of module, held to the same rules.
     (
         mandate_graph,
         {

@@ -401,6 +401,26 @@ reported. A lapse repeated in a later iteration finds the sub-issue already
 unstarted and writes nothing at all. Nothing else is written: no parent's
 state, and no comment per criterion.
 
+What the tick's two criterion signals read of these take-backs has known limits,
+and each is behaviour rather than an oversight. The take-back moves the
+criterion first and posts its account last, for the reason given above; so a
+lost post, or the designed stop when a third party amends the sub-issue under
+the move, leaves the criterion in Todo with `issue_crossed_off` as the lane's
+last account of it, and that raises `TALLY_REGRESSED` for the lane's own
+take-back. The native amendment reset
+(`services/amendment_writeback.py`, wired into the scoped loop by
+`composition/engine.py`) and the audit reopen (`services/audit_reopen.py`) each
+move a crossed-off criterion back to Todo and post no account on the lane's
+stream, so each raises `TALLY_REGRESSED`: that is the literal reading of a
+criterion out of Done with no `criterion_refuted` event. A criterion moved by
+hand to Backlog or Triage raises nothing, because only a move back to the
+unstarted state is the regression. A criterion finished before
+`issue_crossed_off` existed has no account on any stream and is never observed.
+And a criterion record already raised is not rewritten when its criterion
+leaves the scope's criterion reading or is re-parented, because the record's
+address is composed from the criterion's parent and the tick only reads the
+criteria the scope still carries.
+
 Which criteria an iteration is asked about follows from the same reading. The
 loop remembers what its last evaluation graded as graph state, and at the next
 iteration asks, for each of those gradings, whether it still stands at the new
@@ -922,9 +942,13 @@ now stands unstarted: something moved it back and nobody reported it. A
 refutation is the lane reporting that move, and a lapse is not a regression, so
 neither raises. `domain.stream_signals.lapse_undischarged` raises when the last
 account is a lapse, the criterion is still owed, and the lane is not ready on
-this tick — nothing on the scope path takes a claim, and the walk re-derives
-exactly the ready lanes, so "nothing will re-derive it" is "not ready". Both
-raise with no bound. A criterion record is written only when what the address
+this tick. Nothing on the scope path takes a claim, so "nothing will re-derive
+it" is read through a proxy, and the proxy is exactly "not ready on this tick".
+Two things it does not tell apart follow from that. A ready lane the current
+walk invocation has rested — `services/scope_runtime.py` passes over the lanes
+in that invocation's own `rested` list — counts as re-derived, because the next
+invocation offers it again. And a ready lane that no walk runs at all is not
+distinguished from one a walk will run. Both raise with no bound. A criterion record is written only when what the address
 says differs from what the tick observed, where absence says not raised, so a
 healthy walk writes none; and it is never announced on the stream, whose
 transitions are the lane's.
