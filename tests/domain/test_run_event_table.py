@@ -13,6 +13,7 @@ from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_event import (
     DERIVED_RUN_EVENTS,
+    EVIDENCE_ROW_WRITES,
     RUN_EVENT_PUBLISHERS,
     SILENT_STATE_EVENTS,
     UNDEMONSTRATED_EVENT_KINDS,
@@ -183,3 +184,21 @@ def test_every_undemonstrated_reason_names_its_own_event_kind():
     kinds = tuple(UNDEMONSTRATED_EVENT_KINDS.values())
     assert len(set(kinds)) == len(kinds)
     assert set(kinds) <= set(RunEventKind)
+
+
+def test_the_evidence_row_writes_are_the_two_gradings_that_restamp_the_row():
+    """The kinds a restamp trace reads as the row's history, and no reading's.
+
+    A pass and a take-back each restamp the Evidence row, and each is posted
+    by the lane and derives the state it moves. No undemonstrated reading's
+    kind is among them: that reading writes no row (KOD-506, KOD-610).
+    """
+    assert EVIDENCE_ROW_WRITES == {
+        RunEventKind.CRITERION_PASSED,
+        RunEventKind.CRITERION_REFUTED,
+    }
+    assert EVIDENCE_ROW_WRITES <= DERIVED_RUN_EVENTS
+    assert {RUN_EVENT_PUBLISHERS[kind] for kind in EVIDENCE_ROW_WRITES} == {
+        RunEventPublisher.LANE
+    }
+    assert EVIDENCE_ROW_WRITES.isdisjoint(UNDEMONSTRATED_EVENT_KINDS.values())

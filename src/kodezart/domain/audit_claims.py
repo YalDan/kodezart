@@ -9,6 +9,7 @@ from kodezart.types.domain.audit_runtime import (
     AuditDeferral,
     AuditPublication,
 )
+from kodezart.types.domain.run_event import EVIDENCE_ROW_WRITES
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 
@@ -52,18 +53,23 @@ def mandate_escalation_key(*, issue_key: str) -> str:
 def evidence_row_history(
     *, events: Sequence[LaneRunEvent], criterion_key: str
 ) -> tuple[str, ...]:
-    """The commits this criterion's grading was recorded at, in write order.
+    """The commits this criterion's Evidence row was written at, in write order.
 
     An event keyed to another subject is another criterion's grading, and
-    one naming no commit is not a grading at all.  Nothing else narrows the
-    set: the stream is append-only, so its own order is the order the
-    gradings landed, and no roster of event kinds is written down here to
-    go stale.
+    one naming no commit is not a grading at all.  An event of a kind that
+    writes no Evidence row is not in that row's history either: an
+    undemonstrated reading is keyed to the criterion at a sha, but the row
+    still names the grading before it, so the history must end there too
+    (KOD-506, KOD-610).  The kinds that do write the row are named once,
+    beside the vocabulary.  Nothing else narrows the set: the stream is
+    append-only, so its own order is the order the writes landed.
     """
     return tuple(
         event.graded_sha
         for event in events
-        if event.subject_key == criterion_key and event.graded_sha is not None
+        if event.subject_key == criterion_key
+        and event.kind in EVIDENCE_ROW_WRITES
+        and event.graded_sha is not None
     )
 
 

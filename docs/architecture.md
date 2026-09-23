@@ -1433,8 +1433,8 @@ A criterion's Evidence row names the commit its grading was read at, and
 restamping that row is a write nothing used to answer for. `AuditReadSweep`
 now traces it: `AuditRestampVerifier` reads the lane issue's own append-only
 run-event stream through the narrowed `LaneEventHistory` role, keeps the
-events keyed to this criterion that name a commit, and asks whether the row's
-commit is the one the LAST recorded grading names. It holds, otherwise it is
+events keyed to this criterion that record a write of its Evidence row, and
+asks whether the row's commit is the one the LAST recorded grading names. It holds, otherwise it is
 refuted — never unverifiable, because the stream was read rather than left
 unsettled, and `AuditRestampTrace` refuses that verdict at construction.
 
@@ -1451,6 +1451,15 @@ still carries no comment. Without the passing entry the history would hold
 only the refutations, and the ordinary lifecycle — refuted at one commit, then
 passed at the next — would read as a row pointing behind its last recorded
 grading and be refuted for having been legitimately restamped (KOD-506).
+
+Only those two kinds are the row's history (`EVIDENCE_ROW_WRITES`). An
+undemonstrated reading posts its own event keyed to the criterion at the sha
+it read, but it writes no Evidence row and moves no state: a criterion finished
+at one commit and read as undemonstrated at the next keeps the row of the
+earlier grading, finished. Read as an entry, that event would leave the row
+behind the history's last commit and refute a row nothing rewrote, so the
+history leaves it out and ends where the row does in every state a cross-off
+can leave (KOD-506, KOD-610).
 
 A criterion whose history holds no recorded grading was never restamped by its
 lane and is not traced at all: an empty history is a row no lane write accounts

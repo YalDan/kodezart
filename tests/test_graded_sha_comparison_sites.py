@@ -93,7 +93,8 @@ EXEMPT = {
     ),
     "domain/audit_claims.py::evidence_row_history": (
         "not a revision comparison at all: an event is selected by the subject "
-        "it is keyed to, and a grading naming no commit is dropped"
+        "it is keyed to and by whether its kind writes the Evidence row, and a "
+        "grading naming no commit is dropped"
     ),
     "domain/audit_claims.py::restamp_verdict": (
         "the last recorded grading against the row's own recorded commit: "

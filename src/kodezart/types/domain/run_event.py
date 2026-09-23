@@ -120,6 +120,19 @@ UNDEMONSTRATED_EVENT_KINDS: Mapping[UndemonstratedReason, RunEventKind] = {
 }
 
 
+#: The event kinds that record a write of a criterion's Evidence row.
+#:
+#: A passing cross-off restamps the row and posts ``criterion_passed``; a
+#: take-back restamps it and posts ``criterion_refuted``.  An undemonstrated
+#: reading is keyed to the same criterion at a sha too, but it writes no row,
+#: so it is no entry in that row's write history: read as one, a criterion
+#: finished at one commit and read as undemonstrated at the next would carry
+#: a row the history does not end at (KOD-506, KOD-610).
+EVIDENCE_ROW_WRITES = frozenset(
+    {RunEventKind.CRITERION_PASSED, RunEventKind.CRITERION_REFUTED}
+)
+
+
 class RunEventTableError(ValueError):
     """A configured deployment cannot account for its complete event set."""
 

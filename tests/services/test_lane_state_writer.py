@@ -7,6 +7,7 @@ import pytest
 
 from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.adapters.reference_content_scanner import ReferenceContentScanner
+from kodezart.domain.audit_claims import evidence_row_history, restamp_verdict
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criteria_grading import NO_WITHDRAWALS
 from kodezart.domain.criterion_cross_off import (
@@ -38,6 +39,7 @@ from kodezart.domain.run_event_stream import (
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.types.domain.agent import CriterionResult
+from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.branch import BranchRole
 from kodezart.types.domain.criteria import CriterionId, TrackerCriterion
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
@@ -1880,6 +1882,58 @@ async def test_every_reading_that_came_back_empty_is_recorded_under_its_own_kind
     assert [(event.kind, event.subject_key, event.graded_sha) for event in posted] == [
         (UNDEMONSTRATED_EVENT_KINDS[reason], unread, "8" * 40)
     ]
+
+
+@pytest.mark.parametrize("reason", list(UndemonstratedReason))
+async def test_the_rows_write_history_ends_where_the_row_does_in_every_state(reason):
+    """No state a cross-off leaves has a row behind its own write history.
+
+    Three criteria are finished at one head, and the next attempt leaves each
+    in a different state: one refuted and taken back, one read as
+    undemonstrated under *reason*, one passed again; that one then lapses at
+    a third head. The audit's restamp trace reads the lane's stream as each
+    Evidence row's write history (KOD-506), so for every criterion the last
+    commit that history names must be the one its row names.
+
+    The undemonstrated one is the case that can go wrong. It is still
+    finished, its row still names the first head, and its reading posted its
+    own event at the second: that event is its only entry at the second head,
+    and no ``criterion_passed`` is posted for it, because nothing restamped
+    its row (KOD-610). A writer that posted a pass for it, or a history that
+    read its reading as a row write, leaves the row behind the history.
+    """
+    port = criteria_board()
+    lane_state = writer(port, lane_repo())
+    broken, unread, kept = CRITERIA
+    first, second, third = "1" * 40, "2" * 40, "3" * 40
+    await tick(lane_state, sha=first)
+
+    await tick(
+        lane_state, sha=second, failed=[broken], reasons=withheld([unread], reason)
+    )
+    await lapse(lane_state, key=kept, standing_sha=second, head_sha=third)
+
+    posted = stream(port)
+    assert [
+        (event.kind, event.graded_sha)
+        for event in posted
+        if event.subject_key == unread
+    ] == [
+        (RunEventKind.CRITERION_PASSED, first),
+        (UNDEMONSTRATED_EVENT_KINDS[reason], second),
+    ]
+    assert port.issues[unread].state_kind is WorkflowStateKind.COMPLETED
+    rows = {
+        key: parse_criterion_evidence(port.issues[key].body).graded_sha
+        for key in CRITERIA
+    }
+    assert rows == {broken: second, unread: first, kept: second}
+    for key in CRITERIA:
+        history = evidence_row_history(events=posted, criterion_key=key)
+        assert history[-1] == rows[key], key
+        assert restamp_verdict(history=history, graded_sha=rows[key]) is (
+            AuditVerdict.HOLDS
+        )
 
 
 async def test_a_refutation_and_an_unverified_reading_share_one_board_read():

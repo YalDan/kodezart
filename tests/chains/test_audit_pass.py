@@ -27,9 +27,10 @@ from kodezart.types.domain.audit_terminal import (
     TerminalDiscrepancy,
 )
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
-from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_event import UNDEMONSTRATED_EVENT_KINDS, RunEventKind
 from kodezart.types.domain.run_state import LaneRunState
 from tests.adapters.test_github_api import _make_client
 from tests.domain.test_lane_record import record_data
@@ -448,6 +449,33 @@ async def test_a_restamp_is_traced_to_the_last_grading_and_not_to_any_earlier_on
     assert trace is not None
     assert trace.history == (RESTAMPED_AT, LATER_GRADING)
     assert trace.verdict is AuditVerdict.REFUTED
+
+
+@pytest.mark.parametrize("reason", list(UndemonstratedReason))
+async def test_an_undemonstrated_reading_after_the_row_is_no_write_of_it(
+    tracker, reason
+):
+    """A reading that wrote no row does not move where the row's history ends.
+
+    The criterion was passed at the commit the row names, and a later attempt
+    read it as undemonstrated: that reading posts its own event, keyed to this
+    criterion at the later commit, and writes neither the row nor the state.
+    The row's history is its writes, so it still ends at the row's commit and
+    the restamp holds. Read as an entry, the reading would refute a row that
+    nothing rewrote (KOD-506, KOD-610).
+    """
+    await record_grading(
+        tracker, kind=RunEventKind.CRITERION_PASSED, graded_sha=RESTAMPED_AT
+    )
+    await record_grading(
+        tracker, kind=UNDEMONSTRATED_EVENT_KINDS[reason], graded_sha=LATER_GRADING
+    )
+    trace = await AuditRestampVerifier(events=tracker).observe(
+        request=restamp_request(), evidence=evidence_row(RESTAMPED_AT)
+    )
+    assert trace is not None
+    assert trace.history == (RESTAMPED_AT,)
+    assert trace.verdict is AuditVerdict.HOLDS
 
 
 async def test_another_criterions_grading_at_the_same_commit_traces_nothing(tracker):
