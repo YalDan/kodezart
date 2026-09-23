@@ -266,15 +266,21 @@ class TrackerLaneStateWriter:
 
     async def record_pull_request(
         self, *, lane_key: str, pr: LanePR, visibility: RepoVisibility
-    ) -> LaneRunState:
+    ) -> LaneRunState | None:
         """Put the delivered pull request on this lane's record, in place.
 
         The record is read through the one reader every other reader of it
         uses, so a damaged or duplicated record refuses here rather than being
-        replaced by a record composed out of a delivery; a lane no comment
-        addresses refuses for the same reason — a delivery is no basis for a
-        first record. A pull request the record already carries writes nothing
-        at all, so a second delivery of the same head is not a second write.
+        replaced by a record composed out of a delivery. A delivery is no
+        basis for a first record either, the way a landing is not: a lane no
+        comment addresses — a commit pushed whose record write then failed
+        reaches this — has no record for the pull request to ride on, so
+        nothing is written, the skip is logged as
+        ``lane_pull_request_not_recorded`` with the lane and the pull request,
+        and ``None`` is returned so the delivery completes instead of failing
+        after its pull request was opened. A pull request the record already
+        carries writes nothing at all, so a second delivery of the same head
+        is not a second write.
 
         The bytes go through the gate under the run's resolved *visibility*,
         the one the commit write of the same record body asked under: this
@@ -289,10 +295,13 @@ class TrackerLaneStateWriter:
         except LaneRecordReadError as exc:
             raise self._unreadable(lane_key=lane_key, exc=exc) from exc
         if located is None:
-            raise LaneRecordWriteError(
-                lane_key=lane_key,
+            await self._log.awarning(
+                "lane_pull_request_not_recorded",
+                lane=lane_key,
+                pull_request=pr.url,
                 reason="no record of this lane exists to carry a pull request",
             )
+            return None
         prior_comment, prior = located
         if prior.pr == pr:
             return prior

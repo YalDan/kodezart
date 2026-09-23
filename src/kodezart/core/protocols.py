@@ -1790,13 +1790,15 @@ class LaneStateWriter(Protocol):
 
     async def record_pull_request(
         self, *, lane_key: str, pr: LanePR, visibility: RepoVisibility
-    ) -> LaneRunState:
+    ) -> LaneRunState | None:
         """Set *pr* on the lane's one record, editing that record in place.
 
         Where a lane's delivery is retained is its record, so the step that
-        delivered writes it there. A lane with no record refuses: a delivery
-        is no basis for composing a first record. A pull request the record
-        already carries writes nothing.
+        delivered writes it there. A lane with no record has nothing for the
+        pull request to ride on, and a delivery is no basis for composing a
+        first record: the write is skipped and logged, ``None`` is returned,
+        and the delivery completes. A pull request the record already carries
+        writes nothing.
 
         *visibility* is the run's resolved visibility, the same one the
         commit write gated that record body under: one record body asked one

@@ -373,10 +373,11 @@ later commits post nothing, so the lane's comment count stops growing after it.
 `record_pull_request` is another. The lane graph's delivering step makes it
 after the delivery coordinator returns, so where a completed delivery is
 retained is the record and not a graph checkpoint: it reads the record through
-the same reader, refuses a lane that has none rather than composing a first
-record out of a delivery, writes nothing when the record already carries that
-pull request, and otherwise edits the one marker comment in place under the
-prior body it just read.
+the same reader, writes nothing when the record already carries that pull
+request, and otherwise edits the one marker comment in place under the prior
+body it just read. A lane with no record gets no first record composed out of a
+delivery: the write is skipped, the writer logs `lane_pull_request_not_recorded`
+with the lane and the pull request, and delivery completes.
 
 `record_landing` is the stall exit's best act on that same record, through the
 same writer. The landing step makes it on every stall exit that has a best
