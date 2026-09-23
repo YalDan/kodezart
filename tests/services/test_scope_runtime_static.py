@@ -50,6 +50,7 @@ from pathlib import Path
 import pytest
 
 from kodezart.services import scope_runtime
+from tests.name_resolution import absolute_module
 
 #: How a checkpoint is read, and how one is addressed.
 FORBIDDEN = frozenset({"aget_state", "get_state", "checkpointer", "thread_id"})
@@ -88,12 +89,7 @@ def dotted_module(node: ast.ImportFrom, *, module: str) -> str | None:
     the scanned module's own root: that spelling imports nothing at all, and
     whatever name it carries is no module inside the package either.
     """
-    if not node.level:
-        return node.module
-    package = module.split(".")[: -node.level]
-    if not package:
-        return None
-    return ".".join([*package, node.module] if node.module else package)
+    return absolute_module(node, package=module.rpartition(".")[0])
 
 
 def imported_modules(
@@ -102,7 +98,7 @@ def imported_modules(
     *,
     module: str,
 ) -> set[str]:
-    """Every module the source imports from *prefixes*, by every spelling.
+    """Every module the source imports from *prefixes*, by three spellings.
 
     Three forms name a module, not one, and a walk that followed a subset of
     them would be defeated by a spelling rather than by leaving the package:
@@ -111,16 +107,19 @@ def imported_modules(
     ``from kodezart.services import x`` carries it as the imported name
     beside the package.  The third is read only when the dotted part is
     exactly a followed package and the candidate module exists on disk, so
-    ``from kodezart.services import SomeClass`` out of a package's own
-    ``__init__`` yields nothing (KOD-585).
+    ``from kodezart.services import SomeClass`` yields nothing: a name
+    re-exported through a package's ``__init__`` is NOT followed to the
+    module defining it, and the ``__init__`` itself is not scanned.  The
+    terminal's walk does not use this function: it keys on the file that runs
+    through ``tests/name_resolution.py``'s ``module_closure`` (KOD-585).
 
     All three are read relatively as well as absolutely: *module* says which
     module *tree* is, and ``dotted_module`` resolves each ``from``'s level
     against it, so ``from . import x``, ``from .x import y`` and ``from
     ..pkg.x import y`` are the same three forms and land in the same arms.
     What is not read is a module reached through no import node of this tree
-    at all — an attribute chain off a parent package another module
-    imported.
+    at all: an attribute chain off a parent package another module
+    imported, or a module named by a string literal.
     """
     packages = tuple(prefix.rstrip(".") for prefix in prefixes)
     found: set[str] = set()

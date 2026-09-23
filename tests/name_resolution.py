@@ -573,3 +573,192 @@ def rebound_words(source: str, *, names: Collection[str]) -> frozenset[str]:
         ):
             found.add(node.value)
     return frozenset(found)
+
+
+def module_file(dotted: str, root: Path = SOURCE_ROOT) -> Path | None:
+    """The file importing *dotted* executes, when it names one under *root*.
+
+    A module's own ``.py``, or a package's ``__init__.py``: a package is a
+    module too, and its ``__init__`` is what runs when anything is imported
+    out of it, so a walk that could name only ``<name>.py`` never read the
+    one file a re-export through the package executes.
+    """
+    head, *rest = dotted.split(".")
+    if head != root.name or not all(part.isidentifier() for part in rest):
+        return None
+    base = root.joinpath(*rest)
+    for candidate in (base.with_suffix(".py") if rest else None, base / "__init__.py"):
+        if candidate is not None and candidate.is_file():
+            return candidate
+    return None
+
+
+def package_of(module: str, root: Path = SOURCE_ROOT) -> str:
+    """The package a relative import inside *module* is resolved against.
+
+    The module's parent, except for a package's own ``__init__``, which is
+    its own package: ``from . import x`` there names a sibling of the
+    ``__init__`` and not of the package.
+    """
+    path = module_file(module, root)
+    if path is not None and path.name == "__init__.py":
+        return module
+    return module.rpartition(".")[0]
+
+
+def absolute_module(node: ast.ImportFrom, *, package: str) -> str | None:
+    """The absolute module *node* imports out of, however it is spelled.
+
+    ``node.level`` is resolved against *package*, as Python resolves it:
+    one dot is the package itself, each further dot its parent.  ``None``
+    for a level that climbs past the top-level package, which imports
+    nothing at all.
+    """
+    if not node.level:
+        return node.module
+    parts = package.split(".") if package else []
+    keep = len(parts) - (node.level - 1)
+    if keep <= 0:
+        return None
+    base = parts[:keep]
+    return ".".join([*base, node.module] if node.module else base)
+
+
+def _with_parents(dotted: str) -> list[str]:
+    """*dotted* and every package above it, each of which importing it runs."""
+    parts = dotted.split(".")
+    return [".".join(parts[:end]) for end in range(1, len(parts) + 1)]
+
+
+def _dotted_literal(text: str) -> str | None:
+    """The dotted name a string literal spells, ``module:attr`` read as dots.
+
+    ``None`` unless every part is an identifier, so prose that happens to
+    open with a module's name spells nothing.
+    """
+    dotted = text.replace(":", ".")
+    return dotted if all(part.isidentifier() for part in dotted.split(".")) else None
+
+
+def modules_named(
+    tree: ast.Module, *, module: str, root: Path = SOURCE_ROOT
+) -> frozenset[str]:
+    """Every module under *root* that loading what *tree* names executes.
+
+    Keyed on the file that runs rather than on how the import is spelled:
+
+    * each import's module and every package above it, so a package's
+      ``__init__`` is read whenever anything is imported through it -- a
+      name re-exported there is reached exactly as the module defining it;
+    * a from-imported name that is itself a module or a subpackage;
+    * a relative import, resolved against *module*'s own package
+      (``package_of``);
+    * a string literal that spells a module, or an attribute of one, by its
+      absolute dotted name (``module.attr`` or ``module:attr``), which is how
+      ``importlib.import_module``, ``__import__``, ``pkgutil.resolve_name``
+      or any lazy loader names one;
+    * an attribute chain off an imported module or package that spells a
+      module (``import kodezart.adapters`` and then
+      ``kodezart.adapters.git.service.X``), including off a local name the
+      module or package was handed to by assignment (``_binding``'s forms),
+      grown to a fixed point.
+
+    Every node of the tree is read, so a lazy import inside a function is
+    read as well, and the attribute chains are read only once every import
+    and alias is known, so the order the nodes are written in decides
+    nothing.  Not read: a module name built at run time, a relative name
+    handed to ``importlib.import_module`` (its ``package=`` is a run-time
+    value), a module handed on by argument, return or container, and
+    ``eval`` or ``exec``.
+    """
+    package = package_of(module, root)
+    named: set[str] = set()
+    local: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                named.add(alias.name)
+                if alias.asname is not None:
+                    local.setdefault(alias.asname, set()).add(alias.name)
+                else:
+                    head = alias.name.partition(".")[0]
+                    local.setdefault(head, set()).add(head)
+        elif isinstance(node, ast.ImportFrom):
+            base = absolute_module(node, package=package)
+            if base is None:
+                continue
+            named.add(base)
+            for alias in node.names:
+                candidate = f"{base}.{alias.name}"
+                if module_file(candidate, root) is not None:
+                    named.add(candidate)
+                    local.setdefault(alias.asname or alias.name, set()).add(candidate)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            literal = _dotted_literal(node.value)
+            if literal is not None:
+                named.add(literal)
+
+    def spelled_off_local(node: ast.expr) -> set[str]:
+        head, _, rest = (_spelling(node) or "").partition(".")
+        return {
+            f"{dotted}.{rest}" if rest else dotted for dotted in local.get(head, ())
+        }
+
+    # A module handed to another name: only names that are modules are taken,
+    # so the growth is bounded by the files under *root* and terminates.
+    grown = True
+    while grown:
+        grown = False
+        for node in ast.walk(tree):
+            targets, value = _binding(node)
+            if value is None:
+                continue
+            handed = {
+                dotted
+                for dotted in spelled_off_local(value)
+                if module_file(dotted, root) is not None
+            }
+            for target in targets:
+                if not handed <= local.setdefault(target, set()):
+                    local[target] |= handed
+                    grown = True
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            named.update(spelled_off_local(node))
+    return frozenset(
+        reached
+        for dotted in named
+        for reached in _with_parents(dotted)
+        if module_file(reached, root) is not None
+    )
+
+
+def module_closure(
+    seed: str, *, within: Collection[str], root: Path = SOURCE_ROOT
+) -> frozenset[str]:
+    """Every module *seed* reaches through modules inside the *within* packages.
+
+    Transitive: each module taken is read with ``modules_named``, and a
+    module it names is followed when it is one of *within* or inside one;
+    a module outside them is not taken.  Bounded by the modules already
+    taken, so an import cycle terminates.
+    """
+    packages = tuple(within)
+    reached: set[str] = set()
+    pending = [seed]
+    while pending:
+        module = pending.pop()
+        if module in reached:
+            continue
+        reached.add(module)
+        path = module_file(module, root)
+        if path is None:
+            continue
+        pending.extend(
+            named
+            for named in modules_named(
+                ast.parse(path.read_text(encoding="utf-8")), module=module, root=root
+            )
+            if any(named == p or named.startswith(f"{p}.") for p in packages)
+        )
+    return frozenset(reached)
