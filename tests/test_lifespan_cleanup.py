@@ -12,6 +12,7 @@ from kodezart import main
 from kodezart.adapters.job_registry import InMemoryJobRegistry
 from kodezart.composition.jobs import build_job_queue
 from kodezart.config.app import AppConfig
+from kodezart.core.errors import PassGateCapabilityError
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.session import PermissionMode
 from tests.fakes import FakeScopeStatusWriter
@@ -249,6 +250,42 @@ async def test_partial_startup_releases_every_resource_it_acquired(resources, fa
         assert len(released(resources)) == len(set(released(resources)))
     finally:
         resources.failures.clear()
+        await settle_fixture(resources)
+
+
+async def test_a_capability_refusal_at_preflight_ends_startup_carrying_it(
+    resources, monkeypatch
+):
+    """The preflight's capability refusal is the error startup dies of.
+
+    Nothing after the preflight is booted, what boot had acquired is
+    released, and the error the lifespan raises is the refusal itself with
+    every refusal it named, not a log line and not another error.
+    """
+    refusals = (
+        "approved_changed gates dispatch: auth_insufficient_scope",
+        "reviews_changed gates grooming_pass: auth_insufficient_scope",
+    )
+    refusal = PassGateCapabilityError(
+        "the tracker credential cannot answer a configured pass gate signal",
+        refusals=refusals,
+    )
+
+    async def refuse(**kwargs):
+        resources.events.append("preflight")
+        raise refusal
+
+    monkeypatch.setattr(main, "verify_pass_preflight", refuse)
+    try:
+        with pytest.raises(PassGateCapabilityError) as caught:
+            async with resources.app.router.lifespan_context(resources.app):
+                raise AssertionError("startup was expected to fail")
+        assert caught.value is refusal
+        assert caught.value.refusals == refusals
+        assert resources.events[-3:] == ["preflight", "tracker.close", "forge.close"]
+        assert "recorder" not in resources.events
+        assert resources.transports[0].closed and resources.transports[1].closed
+    finally:
         await settle_fixture(resources)
 
 
