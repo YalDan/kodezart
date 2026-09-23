@@ -39,12 +39,9 @@ that give a parent a criterion-shaped body and read nothing out of it; a
 tuple of literal prefixes handed to a string matcher, because only one
 expression's own literal parts are folded and a tuple is not folded, so
 ``line.startswith(("- [ ]", "- [x]"))`` shows the matcher no shaped
-argument; a matcher imported by bare name out of the pattern library
-(``from re import findall``, or ``compile as rx``), because a matcher call
-is read as an attribute of its module and not as a plain name; a matcher
-called with keyword arguments, such as ``re.search(pattern=…, string=…)``,
-because only a call's positional arguments are read; and any matcher
-reached by reflection.
+argument; a matcher called with keyword arguments, such as
+``re.search(pattern=…, string=…)``, because only a call's positional
+arguments are read; and any matcher reached by reflection.
 
 Under every spelling this layer does not see lies the behavioural floor,
 which is where a fallback that mints membership out of a parent's prose
@@ -146,12 +143,39 @@ def _is_criterion_shaped(node: ast.expr) -> bool:
     return text is not None and any(shape.search(text) for shape in CRITERION_SHAPES)
 
 
-def _compiles_a_criterion_shape(node: ast.expr) -> bool:
+def _bare_matchers(tree: ast.Module) -> dict[str, str]:
+    """{local name: pattern-library function} for every name imported bare.
+
+    ``from re import findall`` and ``from re import compile as rx`` bind the
+    library's matcher to a plain name, which a call then spells with no
+    module in front of it; read from the module's own imports, so a call
+    through that name is the matcher it was imported as.
+    """
+    return {
+        alias.asname or alias.name: alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "re"
+        for alias in node.names
+        if alias.name in RE_MATCHERS | {"compile"}
+    }
+
+
+def _called_matcher(func: ast.expr, bare: dict[str, str]) -> str | None:
+    """The pattern-library function a call's callee names, however spelled."""
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return bare.get(func.id)
+    return None
+
+
+def _compiles_a_criterion_shape(
+    node: ast.expr, bare: dict[str, str] | None = None
+) -> bool:
     """Whether this expression is a pattern compiled over such a spelling."""
     return (
         isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "compile"
+        and _called_matcher(node.func, bare or {}) == "compile"
         and bool(node.args)
         and _is_criterion_shaped(node.args[0])
     )
@@ -159,6 +183,7 @@ def _compiles_a_criterion_shape(node: ast.expr) -> bool:
 
 def _pattern_names(tree: ast.Module) -> set[str]:
     """Every identity bound to a compiled criterion-shaped pattern."""
+    bare = _bare_matchers(tree)
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
@@ -167,7 +192,7 @@ def _pattern_names(tree: ast.Module) -> set[str]:
             targets = [node.target]
         else:
             continue
-        if node.value is None or not _compiles_a_criterion_shape(node.value):
+        if node.value is None or not _compiles_a_criterion_shape(node.value, bare):
             continue
         for target in targets:
             if isinstance(target, ast.Name):
@@ -177,7 +202,9 @@ def _pattern_names(tree: ast.Module) -> set[str]:
     return names
 
 
-def _matches_criterion_shaped_text(node: ast.AST, names: set[str]) -> bool:
+def _matches_criterion_shaped_text(
+    node: ast.AST, names: set[str], bare: dict[str, str]
+) -> bool:
     """Whether this expression puts criterion-shaped content against text."""
     if isinstance(node, ast.Compare):
         return any(
@@ -186,13 +213,14 @@ def _matches_criterion_shaped_text(node: ast.AST, names: set[str]) -> bool:
     if not isinstance(node, ast.Call):
         return False
     func = node.func
+    matcher = _called_matcher(func, bare)
+    if matcher in RE_MATCHERS and node.args and _is_criterion_shaped(node.args[0]):
+        return True
     if not isinstance(func, ast.Attribute):
         return False
     if func.attr in TEXT_MATCHERS and any(
         _is_criterion_shaped(argument) for argument in node.args
     ):
-        return True
-    if func.attr in RE_MATCHERS and node.args and _is_criterion_shaped(node.args[0]):
         return True
     if func.attr in RE_MATCHERS:
         owner = func.value
@@ -200,13 +228,14 @@ def _matches_criterion_shaped_text(node: ast.AST, names: set[str]) -> bool:
             return True
         if isinstance(owner, ast.Attribute) and owner.attr in names:
             return True
-        if _compiles_a_criterion_shape(owner):
+        if _compiles_a_criterion_shape(owner, bare):
             return True
     return False
 
 
 def _sites(tree: ast.Module, names: set[str]) -> set[str]:
     """Label each scope that matches criterion-shaped content, once per scope."""
+    bare = _bare_matchers(tree)
     found: set[str] = set()
 
     def walk(node: ast.AST, label: str | None) -> None:
@@ -216,7 +245,7 @@ def _sites(tree: ast.Module, names: set[str]) -> set[str]:
                 here = child.name if label is None else f"{label}.{child.name}"
             elif label is None:
                 here = f"line {child.lineno}"
-            if _matches_criterion_shaped_text(child, names):
+            if _matches_criterion_shaped_text(child, names, bare):
                 found.add(here or "")
             walk(child, here)
 
@@ -400,6 +429,19 @@ def test_the_grammar_is_reached_from_outside_by_call_and_never_re_matched():
         "from kodezart.domain.fire_spec import _CRITERION_ROW as ROW\n"
         "def rows(issue):\n"
         "    return ROW.match(issue.body)\n",
+        "from re import findall\n"
+        "def evidence(issue):\n"
+        "    return findall(r'^\\*\\*Evidence:\\*\\*(.*)$', issue.body)\n",
+        "from re import search as seek\n"
+        "def evidence(issue):\n"
+        "    return seek(r'\\*\\*Evidence:\\*\\*', issue.body)\n",
+        "from re import compile as rx\n"
+        "def evidence(issue):\n"
+        "    return rx(r'\\*\\*Evidence:\\*\\*(.*)').match(issue.body)\n",
+        "from re import compile as rx\n"
+        "ROW = rx(r'^\\*\\*Evidence:\\*\\*(.*)$')\n"
+        "def evidence(issue):\n"
+        "    return ROW.match(issue.body)\n",
     ],
 )
 def test_every_spelling_of_a_body_scan_is_reported(body):
@@ -446,8 +488,9 @@ def test_one_body_scanning_twice_is_one_site_and_two_bodies_are_two():
 
 #: Each way a second body scan could arrive, as the module text it would
 #: arrive as: a checkbox scan, a second row pattern, a split on a row
-#: label, a pattern compiled in one module and matched in another, and a
-#: scan for an authored ``AC-n`` identity alone — five in all.
+#: label, a pattern compiled in one module and matched in another, a scan
+#: for an authored ``AC-n`` identity alone, and a matcher imported by bare
+#: name out of the pattern library — six in all.
 PLANTED_SCANS = {
     "checkbox-scan": {
         "services/reader.py": "def criteria(issue):\n"
@@ -474,6 +517,11 @@ PLANTED_SCANS = {
         "services/reader.py": "def ids(issue):\n"
         "    return [line for line in issue.body.splitlines()"
         " if 'AC-' in line]\n"
+    },
+    "bare-matcher-import": {
+        "services/reader.py": "from re import search\n"
+        "def evidence(issue):\n"
+        "    return search(r'^\\*\\*Evidence:\\*\\*(.*)$', issue.body)\n"
     },
 }
 
