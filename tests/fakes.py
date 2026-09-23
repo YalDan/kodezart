@@ -4264,6 +4264,11 @@ class FakeTrackerPort:
         )
         if existing is not None:
             return existing
+        if "criterion" in self.approval_classifications:
+            raise CriterionReadError(
+                issue_key=parent_key,
+                reason="criterion classification aliases human approval",
+            )
         surface = WritableSurface(
             kind=SurfaceKind.CRITERION_CHILD_SET,
             ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),

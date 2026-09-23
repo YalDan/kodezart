@@ -34,6 +34,7 @@ from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.criterion_evidence import apply_evidence, parse_criterion_evidence
 from kodezart.domain.errors import (
     ApprovalLabelWriteError,
+    CriterionReadError,
     DuplicateWorkRefError,
     PrincipalAuthoredSurfaceError,
     StaleWriteError,
@@ -2641,6 +2642,44 @@ class TestApprovalLabelWrites:
         assert len(server.calls) == asked
         after = await aliasing_tracker.read_issue(issue_key=CLAIMED_ISSUE)
         assert after.issue_labels == before.issue_labels
+        assert aliasing_writes() == written
+
+    async def test_minting_a_criterion_whose_classification_aliases_approval_is_refused(
+        self,
+        aliasing_tracker: TrackerPort,
+        aliasing_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """A new criterion carries its classification, so minting one names it.
+
+        Where that classification spells the approved member, creating a
+        criterion under the parent's own child-set grant would grant
+        admission to the child it makes. The creation is refused with the
+        aliasing named, and nothing is mutated: the parent's criteria and
+        the observed write log are exactly as they were. The refusal is
+        asserted before any mutation, not before any request: the seam
+        reads the family and the parent before it knows which label it
+        would write.
+        """
+        await aliasing_tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_CRITERION_CHILD_SET}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        before = await aliasing_tracker.read_criteria(issue_key=CLAIMED_ISSUE)
+        written = aliasing_writes()
+
+        with pytest.raises(CriterionReadError) as refused:
+            await aliasing_tracker.create_criterion_if_absent(
+                parent_key=CLAIMED_ISSUE,
+                title="a criterion whose label would admit its parent",
+                check="the minted criterion carries its classification label",
+                do="mint it under the parent's own criterion-child grant",
+                holder=JOB_A,
+            )
+
+        assert refused.value.issue_key == CLAIMED_ISSUE
+        assert "aliases human approval" in refused.value.reason
+        assert await aliasing_tracker.read_criteria(issue_key=CLAIMED_ISSUE) == before
         assert aliasing_writes() == written
 
     async def test_a_classification_that_is_not_the_approval_member_still_writes(
