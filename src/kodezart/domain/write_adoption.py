@@ -248,9 +248,14 @@ def _declarations(
 
 
 class _Grant:
-    """What becomes driven, grounded or a sink once one sink is reached."""
+    """What becomes driven, grounded or a sink once one sink is reached.
 
-    __slots__ = ("driven", "grounded", "sinks")
+    *appliers* keeps each applier a grounded constructor was handed beside
+    the node that handed it, because that one mention is the grant and any
+    other mention of the applier's name is a use the grant cannot vouch for.
+    """
+
+    __slots__ = ("appliers", "driven", "grounded", "sinks")
 
     def __init__(
         self,
@@ -258,10 +263,29 @@ class _Grant:
         grounded: frozenset[Source],
         driven: frozenset[Source],
         sinks: frozenset[tuple[Source, str]],
+        appliers: frozenset[tuple[Source, int]] = frozenset(),
     ) -> None:
         self.grounded = grounded
         self.driven = driven
         self.sinks = sinks
+        self.appliers = appliers
+
+
+class _Growth:
+    """One fixed point of the grants: what is driven, and by which grant."""
+
+    __slots__ = ("appliers", "driven", "steps")
+
+    def __init__(
+        self,
+        *,
+        driven: frozenset[Source],
+        appliers: Mapping[Source, frozenset[int]],
+        steps: frozenset[Source],
+    ) -> None:
+        self.driven = driven
+        self.appliers = appliers
+        self.steps = steps
 
 
 def _driven_functions(index: SourceIndex, entry: DriveEntry) -> frozenset[Source]:
@@ -276,12 +300,40 @@ def _driven_functions(index: SourceIndex, entry: DriveEntry) -> frozenset[Source
     guessed at.  Finally, a function is driven when every reference to its
     name anywhere in the tree resolves, at least one resolves to it, and
     every call that resolves to it stands in a driven function.
+
+    Construction alone is never the whole grant.  Once the grants have
+    grown, a granted applier or step member that any undriven function
+    calls loses its grant, and so does an applier whose name is mentioned
+    anywhere but in a call or the constructor argument that granted it.
+    The growth is then taken again without it, until nothing more is
+    withdrawn, because a withdrawn grant can take delegations resting on it
+    down too.
     """
     handed = _handed_arguments(index)
+    delegations = _delegations(index)
+    callers = _resolved_callers(index)
+    withheld: frozenset[Source] = frozenset()
+    while True:
+        growth = _grow(index, entry, handed, delegations, withheld)
+        withdrawn = _withdrawn(index, growth, callers)
+        if withdrawn <= withheld:
+            return growth.driven
+        withheld |= withdrawn
+
+
+def _grow(
+    index: SourceIndex,
+    entry: DriveEntry,
+    handed: Mapping[tuple[Source, str], tuple[tuple[Source, ast.expr], ...]],
+    delegations: Mapping[Source, frozenset[Source]],
+    withheld: frozenset[Source],
+) -> _Growth:
+    """Grow the grants from *entry*, granting nothing in *withheld*."""
     sinks = {(entry.verifier, entry.step_parameter)}
     grounded: set[Source] = set()
     driven: set[Source] = set()
-    delegations = _delegations(index)
+    appliers: dict[Source, set[int]] = {}
+    steps: set[Source] = set()
     spent: set[tuple[Source, str]] = set()
     settled: set[Source] = set()
     changed = True
@@ -295,21 +347,74 @@ def _driven_functions(index: SourceIndex, entry: DriveEntry) -> frozenset[Source
             for holder, argument in handed.get(sink, ()):
                 grant = _grant(index, holder, argument)
                 grounded |= grant.grounded
-                driven |= grant.driven
                 sinks |= grant.sinks
+                for applier, mention in grant.appliers:
+                    if applier not in withheld:
+                        appliers.setdefault(applier, set()).add(mention)
+                        driven.add(applier)
         for owner in tuple(grounded):
             if owner in settled:
                 continue
             settled.add(owner)
             changed = True
             step = _step_grant(index, owner, entry.step_method)
+            if step.driven & withheld:
+                continue
             driven |= step.driven
+            steps |= step.driven
             sinks |= step.sinks
-        for holder, callers in delegations.items():
-            if holder not in driven and callers <= driven:
+        for holder, calling in delegations.items():
+            if holder not in driven and holder not in withheld and calling <= driven:
                 driven.add(holder)
                 changed = True
-    return frozenset(driven)
+    return _Growth(
+        driven=frozenset(driven),
+        appliers={applier: frozenset(ids) for applier, ids in appliers.items()},
+        steps=frozenset(steps),
+    )
+
+
+def _withdrawn(
+    index: SourceIndex,
+    growth: _Growth,
+    callers: Mapping[Source, frozenset[Source]],
+) -> frozenset[Source]:
+    """The grants *growth* made that something outside a write-back uses.
+
+    A step member is reached by name all over the tree, through the
+    protocol, so only its resolved calls are weighed.  An applier is a
+    local, so every mention of its name where it is visible is weighed too.
+    """
+    withdrawn: set[Source] = set()
+    for granted in (*growth.appliers, *growth.steps):
+        if not callers.get(granted, frozenset()) <= growth.driven:
+            withdrawn.add(granted)
+    for applier, granting in growth.appliers.items():
+        name = applier.function.rsplit(".", 1)[-1]
+        for holder, reference in index.references(name):
+            if (
+                holder is None
+                or not isinstance(reference, ast.Name)
+                or index.nested(holder, name) != applier
+                or id(reference) in granting
+            ):
+                continue
+            call = index.call_of(reference)
+            if call is None or index.resolve(holder, call) != applier:
+                withdrawn.add(applier)
+                break
+    return frozenset(withdrawn)
+
+
+def _resolved_callers(index: SourceIndex) -> Mapping[Source, frozenset[Source]]:
+    """For each function, every function holding a call resolved to it."""
+    found: dict[Source, set[Source]] = {}
+    for holder in index.functions:
+        for call in index.direct_calls(holder):
+            target = index.resolve(holder, call)
+            if target is not None:
+                found.setdefault(target, set()).add(holder)
+    return {target: frozenset(holders) for target, holders in found.items()}
 
 
 def _handed_arguments(
@@ -336,7 +441,7 @@ def _handed_arguments(
 def _grant(index: SourceIndex, holder: Source, argument: ast.expr) -> _Grant:
     """What handing *argument* to a sink says about the tree around it."""
     grounded: set[Source] = set()
-    driven: set[Source] = set()
+    appliers: set[tuple[Source, int]] = set()
     sinks: set[tuple[Source, str]] = set()
     parameters_here = index.parameter_names(holder)
     bindings = index.bindings(holder)
@@ -359,7 +464,7 @@ def _grant(index: SourceIndex, holder: Source, argument: ast.expr) -> _Grant:
                 if isinstance(passed, ast.Name):
                     local = index.nested(holder, passed.id)
                     if local is not None:
-                        driven.add(local)
+                        appliers.add((local, id(passed)))
         elif isinstance(expression, ast.Name):
             if expression.id in parameters_here:
                 sinks.add((holder, expression.id))
@@ -367,8 +472,9 @@ def _grant(index: SourceIndex, holder: Source, argument: ast.expr) -> _Grant:
                 pending.extend(bindings.get(expression.id, ()))
     return _Grant(
         grounded=frozenset(grounded),
-        driven=frozenset(driven),
+        driven=frozenset(applier for applier, _ in appliers),
         sinks=frozenset(sinks),
+        appliers=frozenset(appliers),
     )
 
 

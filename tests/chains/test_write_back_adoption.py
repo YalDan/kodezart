@@ -1364,6 +1364,95 @@ def test_a_step_wired_straight_at_the_port_fails_the_static_check():
     )
 
 
+#: Writers the verifier drives that something else also reaches: an
+#: applier handed to a grounded step and then called again outside it, one
+#: kept aside under another name after the hand-over, and a grounded step
+#: whose own write a plain method invokes on a fresh instance.
+CALLED_OUTSIDE = {
+    "applier-kept-aside": (
+        DRIVEN.replace(
+            'await self._verifier.write_back(step=Step(None, put), ref="r")\n',
+            'await self._verifier.write_back(step=Step(None, put), ref="r")\n'
+            "        self._later = put\n",
+        ),
+        CallSite(
+            module="planted/called_outside.py",
+            function="Writer.publish.put",
+            method="post_comment",
+        ),
+    ),
+    "leaked-applier": (
+        DRIVEN.replace(
+            'await self._verifier.write_back(step=Step(None, put), ref="r")\n',
+            'await self._verifier.write_back(step=Step(None, put), ref="r")\n'
+            "        await put(None)\n",
+        ),
+        CallSite(
+            module="planted/called_outside.py",
+            function="Writer.publish.put",
+            method="post_comment",
+        ),
+    ),
+    "step-invoked-directly": (
+        """
+from dataclasses import dataclass
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    tracker: TrackerPort
+
+    async def write(self, *, finding):
+        await self.tracker.post_comment(issue_key="K", body="b")
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort, verifier: WriteBackVerifier) -> None:
+        self._tracker, self._verifier = tracker, verifier
+
+    async def publish(self) -> None:
+        await self._verifier.write_back(step=Step(None, self._tracker), ref="r")
+
+    async def shortcut(self) -> None:
+        await Step(None, self._tracker).write(finding=None)
+""",
+        CallSite(
+            module="planted/called_outside.py",
+            function="Step.write",
+            method="post_comment",
+        ),
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(CALLED_OUTSIDE))
+def test_a_driven_writer_something_else_calls_is_not_driven(case):
+    """Construction beside the verifier is no grant once anything else calls it.
+
+    The applier is still handed to a grounded step, and the step is still
+    handed to the real verifier, but one more call reaches the write with
+    no write-back around it, or the applier is kept under a name the census
+    cannot follow, so the write is refused.  The untouched driven planting
+    beside it stays driven, which is the control.
+    """
+    text, site = CALLED_OUTSIDE[case]
+    found = census(("planted/called_outside.py", text), ("planted/driven.py", DRIVEN))
+    assert site in found.sites
+    assert site in found.unadopted
+    assert (
+        CallSite(
+            module="planted/driven.py",
+            function="Writer.publish.put",
+            method="post_comment",
+        )
+        in found.driven
+    )
+
+
 def test_the_boot_gate_and_the_guard_are_one_census():
     """What boot refuses is what this guard reads, over the same source.
 
