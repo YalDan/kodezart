@@ -567,10 +567,11 @@ async def test_the_counted_reading_is_taken_from_the_rerun_snapshot(setup):
     """The exclusions a claim states are the ones its own snapshot leaves out.
 
     The rerun reports a check the first observation did not, and fails that
-    one alone: a differing red set is unclassified, so the claim is
-    unverifiable, and the exclusions it states are the second snapshot's.
-    Reading them off the first would make the record refuse its own arm, and
-    the reason would then name an exception class instead of the fact.
+    one alone.  Outside the roster, that red is green for this claim: the
+    rerun is a rostered flake, so the claim holds, and the exclusions it
+    states are the second snapshot's.  Reading them off the first would
+    make the record refuse its own arm, and the reason would then name an
+    exception class instead of the fact.
     """
     ci = FakeCIMonitor(
         passed=False,
@@ -580,12 +581,52 @@ async def test_the_counted_reading_is_taken_from_the_rerun_snapshot(setup):
         observed_sha_by_ref={SHA: SHA},
     )
     result = await setup(ci).observe(REQUEST)
-    assert result.verdict is AuditVerdict.UNVERIFIABLE
-    assert result.red.red_class is CheckRedClass.UNCLASSIFIED
+    assert result.verdict is AuditVerdict.HOLDS
+    assert result.red.red_class is CheckRedClass.RUNNER_FLAKE
     assert result.checks.check_names == NAMES | {LATE}
     assert result.excluded_check_names == frozenset({LATE})
-    assert "unclassified" in result.reason
+    assert "rerun is green" in result.reason
     assert "ValidationError" not in result.reason
+
+
+async def test_a_red_reproduced_in_the_rostered_checks_refutes_beside_an_unrostered_one(
+    setup,
+):
+    """The first red spans a rostered and an unrostered check; the rerun
+    reproduces the rostered one alone.  The red the arm counts is reproduced,
+    so the claim is refuted: the unrostered red neither joins the red being
+    classified nor makes the rerun differ from it."""
+    ci = FakeCIMonitor(
+        passed=False,
+        failed_names=frozenset({"unit", UNROSTERED}),
+        check_names=NAMES | {UNROSTERED},
+        rerun_results=[(False, "the rostered red again", frozenset({"unit"}))],
+        observed_sha_by_ref={SHA: SHA},
+    )
+    result = await setup(ci).observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    assert result.red.red_class is CheckRedClass.WORK_DEFECT
+    assert result.excluded_check_names == frozenset({UNROSTERED})
+    assert ci.rerun_calls == [(REPO, SHA)]
+
+
+async def test_a_rerun_red_only_outside_the_roster_is_a_rostered_flake(setup):
+    """The first red is in a rostered check; the rerun is red only in a check
+    the repository does not roster.  Every rostered check is green on the
+    rerun, so the red was a flake and the claim holds."""
+    ci = FakeCIMonitor(
+        passed=False,
+        failed_names=frozenset({"unit"}),
+        check_names=NAMES | {UNROSTERED},
+        rerun_results=[(False, "red outside the roster", frozenset({UNROSTERED}))],
+        observed_sha_by_ref={SHA: SHA},
+    )
+    result = await setup(ci).observe(REQUEST)
+    assert result.verdict is AuditVerdict.HOLDS
+    assert result.red.red_class is CheckRedClass.RUNNER_FLAKE
+    assert result.checks.failed_check_names == frozenset({UNROSTERED})
+    assert result.excluded_check_names == frozenset({UNROSTERED})
+    assert AuditForgeObservation.model_validate_json(result.model_dump_json()) == result
 
 
 @pytest.mark.parametrize("backend", ["fake", "github"])

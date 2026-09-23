@@ -147,6 +147,7 @@ class AuditForgeVerifier:
                 repo_url=repository.url,
                 initial=checks,
                 max_attempts=self._config.delivery_red_rerun_max_attempts,
+                counted=checks.check_names - counted.excluded,
             )
             if isinstance(red.observation, AbsentChecks):
                 return result(
@@ -163,13 +164,11 @@ class AuditForgeVerifier:
             match red.red_class:
                 case CheckRedClass.RUNNER_FLAKE:
                     self._require_roster(checks, required)
-                    return result(AuditVerdict.HOLDS, "a same-SHA rerun is green")
+                    return result(
+                        AuditVerdict.HOLDS,
+                        "a same-SHA rerun is green in the rostered checks",
+                    )
                 case CheckRedClass.WORK_DEFECT:
-                    if not counted.failures:
-                        return result(
-                            AuditVerdict.UNVERIFIABLE,
-                            "the reproduced red is in no rostered check",
-                        )
                     return result(AuditVerdict.REFUTED, "same-SHA checks reproduce red")
                 case CheckRedClass.ENVIRONMENT_PREREQUISITE_UNMET:
                     return result(

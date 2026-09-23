@@ -18,16 +18,28 @@ async def classify_red_checks(
     repository: RepoEntry | None,
     initial: ObservedChecks,
     max_attempts: int,
+    counted: frozenset[str] | None = None,
 ) -> CheckRedObservation:
     """Classify an already-observed red, preserving the immutable commit.
 
     An explicitly unmet prerequisite wins before a rerun is consumed.
     Otherwise every observation contributes: a later return to the original
     failing set cannot erase an earlier differing red set.
+
+    With *counted*, only those checks decide: every red set is read as its
+    failures among them, so a red outside them is neither the red being
+    classified nor a reproduction of it, and a rerun red only outside them
+    is green for this classification.  Without it every reported check
+    counts.
     """
-    if initial.checks_passed or max_attempts < 0:
+
+    def failures(observed: ObservedChecks) -> frozenset[str]:
+        failed = observed.failed_check_names
+        return failed if counted is None else failed & counted
+
+    original = failures(initial)
+    if not original or max_attempts < 0:
         raise ValueError("classification requires red checks and a nonnegative bound")
-    original = initial.failed_check_names
     unmet = repository is not None and any(
         repository.runner_environment.get(prerequisite) is False
         for step in repository.checks
@@ -57,13 +69,13 @@ async def classify_red_checks(
                 ref=initial.commit_sha,
                 reason="re-observed checks changed the immutable commit",
             )
-        if isinstance(result, AbsentChecks) or result.checks_passed:
+        if isinstance(result, AbsentChecks) or not failures(result):
             return CheckRedObservation(
                 red_class=CheckRedClass.RUNNER_FLAKE,
                 observation=result,
             )
         observed = result
-        reproduced = reproduced and observed.failed_check_names == original
+        reproduced = reproduced and failures(observed) == original
     return CheckRedObservation(
         red_class=CheckRedClass.WORK_DEFECT
         if reproduced
