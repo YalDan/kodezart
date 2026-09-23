@@ -154,6 +154,11 @@ class AuditOverclaimObservation(CamelCaseModel):
     record_ref: str
     check: str
 
+    @property
+    def verdict(self) -> AuditVerdict:
+        """REFUTED when any standing reading is, as the judgment reports it."""
+        return self.judgment.verdict
+
 
 class OverclaimReportEntry(CamelCaseModel):
     """The category remains explicit even when two readings have equal evidence."""

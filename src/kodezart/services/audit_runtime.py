@@ -171,8 +171,9 @@ def _accept_own_write(
 def _unmandated_refutations(observation: AuditReadObservation) -> tuple[str, ...]:
     """Why a lapsed observation's refutations stand without a mandate verdict.
 
-    A lapse still traces its restamp and reads its forge checks at the
-    graded commit, and each REFUTED reading there is hunted.  One whose hunt
+    A lapse still traces its restamp, reads its forge checks at the graded
+    commit and runs its over-claim and detector-removal readings, and each
+    REFUTED reading there is hunted.  One whose hunt
     failed carries the raw refutation beside the reason and no report, and
     that is a refutation emitted without its mandate verdict, not a grading
     behind the head.  A reason with no refutation beside it is not one.
@@ -192,6 +193,20 @@ def _unmandated_refutations(observation: AuditReadObservation) -> tuple[str, ...
         and observation.forge_unavailable_reason is not None
     ):
         reasons.append(observation.forge_unavailable_reason)
+    if (
+        observation.overclaim_reading is not None
+        and observation.overclaim_reading.verdict is AuditVerdict.REFUTED
+        and observation.overclaims is None
+        and observation.overclaim_unavailable_reason is not None
+    ):
+        reasons.append(observation.overclaim_unavailable_reason)
+    if (
+        observation.removal_reading is not None
+        and observation.removal_reading.verdict is AuditVerdict.REFUTED
+        and observation.detector_removal is None
+        and observation.removal_unavailable_reason is not None
+    ):
+        reasons.append(observation.removal_unavailable_reason)
     return tuple(reasons)
 
 
@@ -244,12 +259,18 @@ def _raw_observations(
             observation.restamp,
             observation.forge,
             observation.terminal,
-            None
-            if observation.overclaims is None
-            else observation.overclaims.observation,
-            None
-            if observation.detector_removal is None
-            else observation.detector_removal.observation,
+            observation.overclaim_reading
+            or (
+                None
+                if observation.overclaims is None
+                else observation.overclaims.observation
+            ),
+            observation.removal_reading
+            or (
+                None
+                if observation.detector_removal is None
+                else observation.detector_removal.observation
+            ),
         )
         if item is not None
     )

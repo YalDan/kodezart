@@ -29,6 +29,7 @@ from kodezart.types.domain.audit import (
     AuditVerdict,
 )
 from kodezart.types.domain.audit_detection_removal import (
+    DetectorRemovalObservation,
     DetectorRemovalReport,
     DetectorRemovalReportEntry,
 )
@@ -40,6 +41,7 @@ from kodezart.types.domain.audit_evidence import (
 )
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
 from kodezart.types.domain.audit_overclaim import (
+    AuditOverclaimObservation,
     AuditOverclaimReport,
     OverclaimReportEntry,
 )
@@ -58,12 +60,15 @@ from kodezart.types.domain.tracker import WorkflowStateKind
 #: why the hunt could not.  A REFUTED value in an arm with neither is a
 #: refutation emitted without its mandate verdict, which the observation
 #: refuses to be built as: that refusal is the sweep's own completeness
-#: assertion (KOD-516).
+#: assertion (KOD-516).  The over-claim and detector-removal rows read the
+#: raw observation, which is REFUTED when any reading nested in it is.
 MANDATED_ARMS: tuple[tuple[str, str, str], ...] = (
     ("terminal", "terminal_report", "unavailable_reason"),
     ("forge", "forge_report", "forge_unavailable_reason"),
     ("restamp", "restamp_report", "unavailable_reason"),
     ("evidence", "claim", "unavailable_reason"),
+    ("overclaim_reading", "overclaims", "overclaim_unavailable_reason"),
+    ("removal_reading", "detector_removal", "removal_unavailable_reason"),
 )
 
 
@@ -86,6 +91,10 @@ class AuditReadObservation:
     overclaim_unavailable_reason: str | None = None
     detector_removal: DetectorRemovalReport | None = None
     removal_unavailable_reason: str | None = None
+    #: The raw over-claim and detector-removal observations, kept whether
+    #: or not their mandate hunts completed them into the reports above.
+    overclaim_reading: AuditOverclaimObservation | None = None
+    removal_reading: DetectorRemovalObservation | None = None
     forge: AuditForgeObservation | None = None
     forge_report: AuditClaimReport | None = None
     forge_unavailable_reason: str | None = None
@@ -352,7 +361,7 @@ class AuditReadSweep:
 
     async def _observe_overclaims(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
-    ) -> AuditOverclaimReport:
+    ) -> tuple[AuditOverclaimObservation, AuditOverclaimReport | None, str | None]:
         request = target.request
         if not isinstance(request, AuditClaimRequest):
             raise AuditClaimReadError(
@@ -361,38 +370,44 @@ class AuditReadSweep:
         if self._overclaims is None:
             raise AuditClaimReadError("the over-claim verifier is not configured")
         observed = await self._overclaims.observe(request)
-        reports: list[OverclaimReportEntry] = []
-        for reading in observed.judgment.checks:
-            reports.append(
-                OverclaimReportEntry(
-                    kind=reading.kind,
-                    report=await self._mandates.complete(
-                        AuditMandateRequest(
-                            claim=AuditClaimObservation(
-                                judgment=AuditClaimJudgment(
-                                    criterion_key=observed.judgment.criterion_key,
-                                    verdict=reading.verdict,
-                                    evidence=reading.evidence,
+        try:
+            reports: list[OverclaimReportEntry] = []
+            for reading in observed.judgment.checks:
+                reports.append(
+                    OverclaimReportEntry(
+                        kind=reading.kind,
+                        report=await self._mandates.complete(
+                            AuditMandateRequest(
+                                claim=AuditClaimObservation(
+                                    judgment=AuditClaimJudgment(
+                                        criterion_key=observed.judgment.criterion_key,
+                                        verdict=reading.verdict,
+                                        evidence=reading.evidence,
+                                    ),
+                                    head_sha=observed.head_sha,
+                                    record_ref=observed.record_ref,
+                                    check=observed.check,
                                 ),
-                                head_sha=observed.head_sha,
-                                record_ref=observed.record_ref,
-                                check=observed.check,
-                            ),
-                            defect_class=(
-                                f"{reading.kind.value} over-claim: {observed.check}"
-                            ),
-                            surfaces=surfaces,
-                            repo_url=request.repo_url,
-                            cache_key=request.cache_key,
-                        )
-                    ),
+                                defect_class=(
+                                    f"{reading.kind.value} over-claim: {observed.check}"
+                                ),
+                                surfaces=surfaces,
+                                repo_url=request.repo_url,
+                                cache_key=request.cache_key,
+                            )
+                        ),
+                    )
                 )
-            )
-        return AuditOverclaimReport(observation=observed, reports=tuple(reports))
+            report = AuditOverclaimReport(observation=observed, reports=tuple(reports))
+        except AUDIT_READ_FAILURES as exc:
+            # The raw readings stay beside the reason: a refutation whose
+            # hunt failed is kept, never dropped with the report.
+            return observed, None, f"{type(exc).__name__}: {exc}"
+        return observed, report, None
 
     async def _observe_removals(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
-    ) -> DetectorRemovalReport:
+    ) -> tuple[DetectorRemovalObservation, DetectorRemovalReport | None, str | None]:
         request = target.request
         if not isinstance(request, AuditClaimRequest):
             raise AuditClaimReadError(
@@ -401,19 +416,28 @@ class AuditReadSweep:
         if self._removals is None:
             raise AuditClaimReadError("the detector-removal verifier is not configured")
         observed = await self._removals.observe(request)
-        reports = []
-        for finding in observed.judgment.findings or (None,):
-            report = await self._mandates.complete(
-                AuditMandateRequest(
-                    claim=observed.claim(finding),
-                    defect_class=observed.defect_class(finding),
-                    surfaces=surfaces,
-                    repo_url=request.repo_url,
-                    cache_key=request.cache_key,
+        try:
+            reports = []
+            for finding in observed.judgment.findings or (None,):
+                report = await self._mandates.complete(
+                    AuditMandateRequest(
+                        claim=observed.claim(finding),
+                        defect_class=observed.defect_class(finding),
+                        surfaces=surfaces,
+                        repo_url=request.repo_url,
+                        cache_key=request.cache_key,
+                    )
                 )
+                reports.append(
+                    DetectorRemovalReportEntry(finding=finding, report=report)
+                )
+            completed = DetectorRemovalReport(
+                observation=observed, reports=tuple(reports)
             )
-            reports.append(DetectorRemovalReportEntry(finding=finding, report=report))
-        return DetectorRemovalReport(observation=observed, reports=tuple(reports))
+        except AUDIT_READ_FAILURES as exc:
+            # The raw finding stays beside the reason, as the over-claim's does.
+            return observed, None, f"{type(exc).__name__}: {exc}"
+        return observed, completed, None
 
     async def _observe_forge(
         self, target: AuditRequestTarget, surfaces: tuple[WritableSurface, ...]
@@ -539,8 +563,10 @@ class AuditReadSweep:
             observation = AuditReadObservation(
                 target, unavailable_reason=f"{type(exc).__name__}: {exc}"
             )
+        overclaim_reading = None
         overclaims = None
         overclaim_reason = None
+        removal_reading = None
         removals = None
         removal_reason = None
         forge = None
@@ -548,11 +574,19 @@ class AuditReadSweep:
         forge_reason = None
         if "criterion" in target.issue.issue_labels:
             try:
-                overclaims = await self._observe_overclaims(target, surfaces)
+                (
+                    overclaim_reading,
+                    overclaims,
+                    overclaim_reason,
+                ) = await self._observe_overclaims(target, surfaces)
             except AUDIT_READ_FAILURES as exc:
                 overclaim_reason = f"{type(exc).__name__}: {exc}"
             try:
-                removals = await self._observe_removals(target, surfaces)
+                (
+                    removal_reading,
+                    removals,
+                    removal_reason,
+                ) = await self._observe_removals(target, surfaces)
             except AUDIT_READ_FAILURES as exc:
                 removal_reason = f"{type(exc).__name__}: {exc}"
             try:
@@ -572,6 +606,8 @@ class AuditReadSweep:
             overclaim_unavailable_reason=overclaim_reason,
             detector_removal=removals,
             removal_unavailable_reason=removal_reason,
+            overclaim_reading=overclaim_reading,
+            removal_reading=removal_reading,
             forge=forge,
             forge_report=forge_report,
             forge_unavailable_reason=forge_reason,
