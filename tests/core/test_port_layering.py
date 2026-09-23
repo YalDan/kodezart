@@ -5,18 +5,24 @@ outside, so both checks read it off the code rather than off a list: the
 port module's own classes, resolved the way a type checker resolves them,
 and every module under the layer directories, parsed. A new protocol, a new
 member or a new module is scanned the day it lands, and the scanned surface
-is never written down beside it.
+is never written down beside it. A port member is held to what it may name
+(the domain's own types and the standard library) rather than to one
+forbidden prefix, and the walk is shown, on a module planted to break it,
+to see every shape it claims to.
 """
 
 import ast
 import importlib.util
 import inspect
+import sys
 import typing
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType, NoneType
 
 import pytest
+from pydantic.fields import FieldInfo
 
 from kodezart.core import protocols
 from kodezart.core.protocols import SurfaceLeaseTracker, TrackerPort
@@ -35,43 +41,102 @@ def _names_vendor(module: str) -> bool:
     return module == VENDOR_PACKAGE or module.startswith(f"{VENDOR_PACKAGE}.")
 
 
+def _admitted(module: str) -> bool:
+    """Whether a port may name a type from this module at all.
+
+    The domain's own vocabulary and the standard library, nothing else:
+    stated as what is admitted rather than as one forbidden prefix, so a
+    vendor SDK imported straight into the port is refused as surely as an
+    adapter's own type.
+    """
+    if module == "builtins" or module.partition(".")[0] in sys.stdlib_module_names:
+        return True
+    return module.startswith(f"{PACKAGE}.") and not _names_vendor(module)
+
+
 def _protocol_classes(module: ModuleType) -> list[type]:
-    """Every class the port module itself defines with ``Protocol`` as a base."""
-    tree = ast.parse(Path(inspect.getfile(module)).read_text(encoding="utf-8"))
+    """Every protocol class the module itself defines, read at runtime.
+
+    A ``Protocol[T]`` base and a ``typing.Protocol`` base are the same
+    protocol to the interpreter, so the class is asked, not its spelling.
+    """
     return [
-        getattr(module, node.name)
-        for node in tree.body
-        if isinstance(node, ast.ClassDef)
-        and any(
-            isinstance(base, ast.Name) and base.id == "Protocol" for base in node.bases
-        )
+        value
+        for value in vars(module).values()
+        if isinstance(value, type)
+        and value.__module__ == module.__name__
+        and getattr(value, "_is_protocol", False)
     ]
 
 
-def _own_members(cls: type) -> Iterator[tuple[str, object]]:
-    """The public callables a protocol declares in its own body."""
+def _own_callables(cls: type) -> Iterator[tuple[str, list[object]]]:
+    """The public callables a protocol declares in its own body.
+
+    Each comes with every object whose signature it declares: a
+    ``classmethod`` or ``staticmethod`` unwrapped, every ``overload``
+    variant beside the implementation, and a property's getter.
+    """
     for name, value in vars(cls).items():
         if name.startswith("_"):
             continue
+        if isinstance(value, classmethod | staticmethod):
+            value = value.__func__
         if isinstance(value, property):
             if value.fget is not None:
-                yield name, value.fget
+                yield name, [value.fget]
         elif callable(value):
-            yield name, value
+            yield name, [value, *typing.get_overloads(value)]
 
 
-def _leaves(annotation: object, seen: set[int]) -> Iterator[object]:
-    """Every object an annotation is built from: origins, arguments, aliases."""
+def _own_members(
+    cls: type,
+) -> Iterator[tuple[str, Callable[[], list[dict[str, object]]]]]:
+    """Every member a protocol declares in its own body, with its resolver.
+
+    The callables and the annotated attributes both: an attribute typed in
+    a vendor's model is as much a port member as a method returning one.
+    Resolution is deferred to the caller, so a member that cannot be
+    resolved is reported under its own name.
+    """
+    for name, targets in _own_callables(cls):
+        yield (
+            name,
+            lambda targets=targets: [
+                typing.get_type_hints(target, include_extras=True) for target in targets
+            ],
+        )
+    for name in vars(cls).get("__annotations__", {}):
+        if name.startswith("_"):
+            continue
+        yield (
+            name,
+            lambda name=name: [
+                {name: typing.get_type_hints(cls, include_extras=True)[name]}
+            ],
+        )
+
+
+def _leaves(annotation: object, seen: set[int]) -> Iterator[tuple[object, bool]]:
+    """Every object an annotation is built from, each marked if metadata.
+
+    Origins, arguments, a type alias's value, and ``Annotated`` metadata;
+    the flag says a leaf is ``Annotated`` metadata rather than a type.
+    """
     if id(annotation) in seen:
         return
     seen.add(id(annotation))
-    yield annotation
+    yield annotation, False
     if isinstance(annotation, list | tuple):
         for item in annotation:
             yield from _leaves(item, seen)
         return
     if isinstance(annotation, typing.TypeAliasType):
         yield from _leaves(annotation.__value__, seen)
+    if typing.get_origin(annotation) is typing.Annotated:
+        yield from _leaves(annotation.__origin__, seen)
+        for item in annotation.__metadata__:
+            yield item, True
+        return
     origin = typing.get_origin(annotation)
     if origin is not None:
         yield from _leaves(origin, seen)
@@ -79,44 +144,158 @@ def _leaves(annotation: object, seen: set[int]) -> Iterator[object]:
         yield from _leaves(argument, seen)
 
 
+def _foreign(leaf: object, *, metadata: bool) -> str | None:
+    """The module a leaf comes from when a port may not name it, else None."""
+    module = getattr(leaf, "__module__", None)
+    if not isinstance(module, str) or _admitted(module):
+        return None
+    if metadata and isinstance(leaf, FieldInfo):
+        return None
+    return module
+
+
+@dataclass(frozen=True)
+class PortFindings:
+    """What one walk of a module's protocols found, per member."""
+
+    classes: list[type]
+    resolved: dict[tuple[str, str], set[object]]
+    unresolvable: list[str]
+    foreign: list[str]
+
+
+def port_findings(module: ModuleType) -> PortFindings:
+    """Walk every member of every protocol the module defines.
+
+    Resolving a member and walking its leaves happen inside the one
+    wrapper that names the member, so a name no reader can resolve —
+    in a signature, in a type alias's value, or in text that does not
+    parse — is reported against that member, never skipped.
+    """
+    classes = _protocol_classes(module)
+    resolved: dict[tuple[str, str], set[object]] = {}
+    unresolvable: list[str] = []
+    foreign: list[str] = []
+    for cls in classes:
+        for name, resolve in _own_members(cls):
+            member = f"{cls.__name__}.{name}"
+            try:
+                leaves = [
+                    leaf
+                    for hints in resolve()
+                    for annotation in hints.values()
+                    for leaf in _leaves(annotation, set())
+                ]
+            except (NameError, TypeError, AttributeError, SyntaxError) as error:
+                unresolvable.append(f"{member}: {error}")
+                continue
+            types = resolved.setdefault((cls.__name__, name), set())
+            for leaf, metadata in leaves:
+                if isinstance(leaf, type):
+                    types.add(leaf)
+                module_name = _foreign(leaf, metadata=metadata)
+                if module_name is not None:
+                    foreign.append(f"{member}: {leaf!r} ({module_name})")
+    return PortFindings(
+        classes=classes,
+        resolved=resolved,
+        unresolvable=unresolvable,
+        foreign=foreign,
+    )
+
+
 def test_no_port_member_annotation_resolves_to_a_vendor_module() -> None:
-    """A port whose signature names an adapter type is no port at all.
+    """A port whose signature names anything but domain vocabulary is no port.
 
     Every annotation is RESOLVED, not read as text, so an alias, a union
-    member, a generic argument or a type alias's value that leads to a
-    vendor module is found wherever it sits. A name that does not resolve
-    is a failure naming the member, never a skipped member: an annotation
-    nobody can resolve is one nobody can check.
+    member, a generic argument, ``Annotated`` metadata or a type alias's
+    value is found wherever it sits, and every leaf must come from the
+    standard library or from this package outside its adapters: a vendor
+    SDK's type is refused as surely as an adapter's own. ``pydantic`` is
+    admitted only as ``Annotated`` field metadata. A name that does not
+    resolve is a failure naming the member, never a skipped member: an
+    annotation nobody can resolve is one nobody can check.
     """
-    classes = _protocol_classes(protocols)
-    visited: set[tuple[str, str]] = set()
-    resolved: set[object] = set()
-    unresolvable: list[str] = []
-    vendor: list[str] = []
-    for cls in classes:
-        for name, member in _own_members(cls):
-            try:
-                hints = typing.get_type_hints(member, include_extras=True)
-            except (NameError, TypeError, AttributeError) as error:
-                unresolvable.append(f"{cls.__name__}.{name}: {error}")
-                continue
-            if not hints:
-                continue
-            visited.add((cls.__name__, name))
-            for annotation in hints.values():
-                for leaf in _leaves(annotation, set()):
-                    if isinstance(leaf, type):
-                        resolved.add(leaf)
-                    module = getattr(leaf, "__module__", None)
-                    if isinstance(module, str) and _names_vendor(module):
-                        vendor.append(f"{cls.__name__}.{name}: {leaf!r}")
+    found = port_findings(protocols)
 
-    assert unresolvable == []
-    assert vendor == []
-    assert ("SurfaceLeaseTracker", "acquire_surfaces") in visited
-    assert {WritableSurface, SurfaceLease} <= resolved
-    assert len(classes) >= 40
-    assert len(visited) >= 150
+    assert found.unresolvable == []
+    assert found.foreign == []
+    assert SurfaceLease in found.resolved[("SurfaceLeaseTracker", "acquire_surfaces")]
+    for name in ("acquire_surfaces", "renew_surfaces", "release_surfaces"):
+        assert WritableSurface in found.resolved[("SurfaceLeaseTracker", name)]
+    assert len(found.classes) >= 57
+    assert len(found.resolved) >= 150
+
+
+#: A port module with one clean member and every shape the walk must see.
+PLANTED_PORT = """
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Protocol, TypeVar
+
+import httpx
+
+from kodezart.adapters.linear.markers import LinearMarkers
+from kodezart.adapters.linear.wire import LinearIssueWire
+from kodezart.types.domain.surface import SurfaceLease
+
+if TYPE_CHECKING:
+    from kodezart.adapters.linear.tracker import LinearMcpTracker
+
+
+class Planted(Protocol):
+    wire: LinearMarkers
+
+    def hidden(self) -> "LinearMcpTracker": ...
+
+    def listed(self) -> Sequence[LinearIssueWire]: ...
+
+    def fetched(self) -> httpx.Response: ...
+
+    def clean(self, *, lease: SurfaceLease) -> SurfaceLease | None: ...
+
+
+T = TypeVar("T")
+
+
+class GenericPlanted(Protocol[T]):
+    def read(self, *, item: T) -> LinearIssueWire: ...
+"""
+
+
+def test_the_walk_reports_every_planted_shape_and_nothing_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard's own reach, shown on a module that breaks it on purpose.
+
+    A quoted name imported only for the type checker, an adapter type as
+    a generic argument, a generic protocol's member, an annotated
+    attribute and a vendor SDK's type are each reported against their own
+    member; the one clean member is not.
+    """
+    name = "planted_port_probe"
+    path = tmp_path / f"{name}.py"
+    path.write_text(PLANTED_PORT, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, name, module)
+    spec.loader.exec_module(module)
+
+    found = port_findings(module)
+
+    def members(entries: list[str]) -> set[str]:
+        return {entry.partition(":")[0] for entry in entries}
+
+    assert {cls.__name__ for cls in found.classes} == {"Planted", "GenericPlanted"}
+    assert members(found.unresolvable) == {"Planted.hidden"}
+    assert members(found.foreign) == {
+        "Planted.wire",
+        "Planted.listed",
+        "Planted.fetched",
+        "GenericPlanted.read",
+    }
+    assert any("(httpx)" in entry for entry in found.foreign)
+    assert SurfaceLease in found.resolved[("Planted", "clean")]
 
 
 def _module_name(path: Path) -> str:
@@ -203,7 +382,7 @@ LEASE_CONTRACTS: dict[str, dict[str, object]] = {
         "return": NoneType,
     },
 }
-LEASE_MEMBERS = tuple(name for name, _ in _own_members(SurfaceLeaseTracker))
+LEASE_MEMBERS = tuple(name for name, _ in _own_callables(SurfaceLeaseTracker))
 
 
 def test_the_lease_role_declares_at_least_the_three_lease_calls() -> None:
