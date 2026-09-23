@@ -50,6 +50,7 @@
   "tests/api/v1/test_job_acceptance.py": 11,
   "tests/api/v1/test_jobs.py": 181,
   "tests/api/v1/test_scope_request_boundary.py": 44,
+  "tests/artifact_trap.py": 1,
   "tests/audit_replacements.py": 5,
   "tests/chains/test_accept_gate.py": 46,
   "tests/chains/test_amendment_review_reentry.py": 17,
@@ -391,6 +392,7 @@
   "tests/services/test_weakened_assertions.py": 24,
   "tests/spec/test_model_agreement.py": 73,
   "tests/test_artifact_directory_sites.py": 11,
+  "tests/test_artifact_trap.py": 15,
   "tests/test_association_read_sites.py": 12,
   "tests/test_audit_lane_placement.py": 13,
   "tests/test_capability_checked_at_boot.py": 9,
@@ -5562,6 +5564,16 @@
    "test_a_planted_read_is_reported",
    "test_a_planted_write_only_module_is_not_reported",
    "test_prose_naming_the_directory_is_not_a_module_naming_it"
+  ],
+  "tests/test_artifact_trap.py": [
+   "test_each_event_kind_under_the_directory_is_recorded",
+   "test_the_same_act_outside_a_trap_records_nothing",
+   "test_every_event_kind_the_trap_records_has_a_control",
+   "test_the_spellings_a_static_walk_missed_are_recorded",
+   "test_a_trapped_block_that_reads_under_the_directory_fails",
+   "test_a_segment_that_only_resembles_the_directory_is_not_recorded",
+   "test_an_act_outside_the_writer_is_not_permitted_even_when_it_writes",
+   "test_the_writers_persist_is_recorded_and_permitted"
   ],
   "tests/test_association_read_sites.py": [
    "test_the_names_the_walk_keys_on_are_productions_own",

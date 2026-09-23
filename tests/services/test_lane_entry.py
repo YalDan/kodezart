@@ -8,6 +8,8 @@ disagree about the head (KOD-684), and which head a resumed lane is handed:
 always the one its record names, never a remote reading (KOD-705).
 """
 
+from collections.abc import Iterator
+
 import pytest
 import structlog.testing
 
@@ -24,8 +26,17 @@ from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.lane_entry import ResumedLane
 from kodezart.types.domain.run_state import LaneBinding, LaneCommit, LaneRunState
+from tests.artifact_trap import nothing_read_under_the_directory
 from tests.chains.test_native_fire import native_operation
 from tests.fakes import FakeGitService, FakeTrackerPort, make_tracker_issue
+
+
+@pytest.fixture(autouse=True)
+def _artifact_directory_trap() -> Iterator[None]:
+    """KOD-708: a lane's entry is gathered reading nothing under the directory."""
+    with nothing_read_under_the_directory():
+        yield
+
 
 LANE = "KOD-684"
 BASE = "trunk"

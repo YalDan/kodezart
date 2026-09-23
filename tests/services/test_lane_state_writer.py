@@ -2,7 +2,7 @@
 
 import dataclasses
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import NamedTuple
 
@@ -84,12 +84,21 @@ from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.run_state import LaneBinding, LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
+from tests.artifact_trap import nothing_read_under_the_directory
 from tests.domain.test_lane_record import (
     EARLIER_REENTRY_IDS,
     EARLIER_REENTRY_SECTIONS,
 )
 from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
 from tests.lane_fixture import LaneGit, LaneRepo, LosingBoard, lane_operation
+
+
+@pytest.fixture(autouse=True)
+def _artifact_directory_trap() -> Iterator[None]:
+    """KOD-707: recording a lane reads nothing under the artifact directory."""
+    with nothing_read_under_the_directory():
+        yield
+
 
 LANE = "LANE-1"
 #: The remote this lane's repository is on, named unlike the production

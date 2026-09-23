@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from collections.abc import Iterator
 from unittest.mock import AsyncMock
 
 import pytest
@@ -14,6 +15,7 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.tracker import TrackerComment
+from tests.artifact_trap import nothing_read_under_the_directory
 from tests.domain.test_lane_record import (
     RECORD_CHAINS,
     association_chains,
@@ -27,6 +29,14 @@ from tests.tracker.conftest import (
 )
 from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_comment_pages import CommentPageServer, comment
+
+
+@pytest.fixture(autouse=True)
+def _artifact_directory_trap() -> Iterator[None]:
+    """KOD-708: a lane is reconstructed reading nothing under the directory."""
+    with nothing_read_under_the_directory():
+        yield
+
 
 PREFIXES = {"run_state": "fixture-record"}
 OPERATION = OperationConfig(

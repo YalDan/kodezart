@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -94,6 +95,7 @@ from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.adapters.test_github_api import _make_client
 from tests.api.v1.test_jobs import _build_app
+from tests.artifact_trap import nothing_read_under_the_directory
 from tests.chains.test_native_fire import (
     NativeExecutor,
     NativeSourceReader,
@@ -125,6 +127,14 @@ from tests.lane_fixture import (
     base_echo,
     criteria_echo,
 )
+
+
+@pytest.fixture(autouse=True)
+def _artifact_directory_trap() -> Iterator[None]:
+    """KOD-707: nothing a run does reads under the artifact directory."""
+    with nothing_read_under_the_directory():
+        yield
+
 
 ORIGIN = "file:///scope-repository.git"
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scoped-project")
