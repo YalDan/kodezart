@@ -976,10 +976,14 @@ async def test_a_marker_the_board_does_not_report_halts_the_mandate(monkeypatch)
     admission judgments did run before it.
     """
     owner, board, executor = factory()
+    # A configured label the member already carries and that is not the
+    # marker: the refusal is about the marker's absence, not an empty set.
+    board.server.issues[CLAIMED_ISSUE].labels.append("candidate issue")
     writes = swallow_marker_writes(board, executor, monkeypatch)
     with pytest.raises(OrganizeWriteRefusalError, match="did not read back"):
         await run_owner(owner)
     assert [(key, marker) for key, marker, _ in writes] == [(CLAIMED_ISSUE, "groomed")]
+    assert "candidate issue" in board.server.issues[CLAIMED_ISSUE].labels
     assert "graph complete" not in board.server.issues[CLAIMED_ISSUE].labels
     opened_before = writes[0][2]
     assert "AdmissionJudgment" in session_titles(executor.calls[:opened_before])
@@ -1092,8 +1096,11 @@ async def test_the_marker_gate_is_not_the_judges_verdict(monkeypatch):
 async def test_a_marker_that_reads_back_completes_the_phase(monkeypatch):
     """The green control: the same pass, over a board that keeps the write.
 
-    The member is read back after the marker write and before its write-back
-    judgment, and the phase completes on the label the board reports.
+    Recorded from the moment the write returns, so the adapter's own read
+    inside the write is not counted: the member is read twice before its
+    write-back judgment opens — the pass's own read-back, then the
+    verifier's re-read of the artifact — and the phase completes on the label
+    the board reports. A read-back moved after the judgment would leave one.
     """
     owner, board, executor = factory()
     port = board.built_tracker
@@ -1102,10 +1109,11 @@ async def test_a_marker_that_reads_back_completes_the_phase(monkeypatch):
     events = []
 
     async def writing(*, issue_key, classification, holder=None):
-        events.append(("write", issue_key, len(executor.calls)))
-        return await original_write(
+        answer = await original_write(
             issue_key=issue_key, classification=classification, holder=holder
         )
+        events.append(("write", issue_key, len(executor.calls)))
+        return answer
 
     async def reading(*, issue_key):
         events.append(("read", issue_key, len(executor.calls)))
@@ -1118,11 +1126,18 @@ async def test_a_marker_that_reads_back_completes_the_phase(monkeypatch):
     assert [phase.value for phase in report.completed_phases] == ["groom"]
     assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
     written = next(i for i, event in enumerate(events) if event[0] == "write")
-    read_back = next(
-        event for event in events[written + 1 :] if event[:2] == ("read", CLAIMED_ISSUE)
+    titles = session_titles(executor.calls)
+    judged = next(
+        i
+        for i, title in enumerate(titles)
+        if i >= events[written][2] and title == "WriteBackFinding"
     )
-    # The marker's own judgment is opened only after the pass read it back.
-    assert "WriteBackFinding" in session_titles(executor.calls[read_back[2] :])
+    reads_before_judgment = [
+        event
+        for event in events[written + 1 :]
+        if event[:2] == ("read", CLAIMED_ISSUE) and event[2] <= judged
+    ]
+    assert len(reads_before_judgment) == 2, events
 
 
 async def test_full_scope_finding_exhausts_the_actual_convergence_bound(monkeypatch):
