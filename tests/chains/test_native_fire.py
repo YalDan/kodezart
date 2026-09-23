@@ -2992,15 +2992,15 @@ def callers_of(*functions):
       one enclosing it.
 
     A binding holds only in its own scope, so a same-named local of another
-    function, a method of another class with the same name, and a
-    same-named function of another module are not the function.
+    function, a method of another class with the same name (through
+    ``self``, a declared attribute or that class itself), and a same-named
+    function of another module are not the function.
 
     Not seen, and held unseen by the same control: a conditional
     expression; starred unpacking; a ``for`` over a name bound to a
     sequence; a module bound to a local name by assignment; an instance
-    held anywhere but ``self``, a declared ``self`` attribute, or a local
-    narrowed from one (a parameter, a local it was built into); a mapping;
-    ``functools.partial``; and anything assembled at run time.
+    held in a parameter, or in a local it was built into; a mapping;
+    ``functools.partial``; and a name assembled at run time.
 
     Each caller is recorded as ``(module, qualified name of the outermost
     function)``, so two modules or two classes never merge into one name,
