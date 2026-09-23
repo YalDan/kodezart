@@ -307,6 +307,7 @@
   "tests/prompts/test_set_completeness.py": 10,
   "tests/prompts/test_skills_loadouts.py": 16,
   "tests/prompts/test_supervision_adoption.py": 16,
+  "tests/prompts/test_supervision_block_adoption.py": 26,
   "tests/prompts/test_v5_board_hierarchy.py": 12,
   "tests/prompts/test_v5_fragments.py": 34,
   "tests/prompts/test_v5_lenses.py": 6,
@@ -4280,6 +4281,21 @@
    "test_scan_window_row_is_spent_and_the_files_own_rule_stands_alone",
    "test_build_verification_reports_the_composition_beside_the_per_ref_verdicts",
    "test_the_queue_terminal_turns_on_demonstration_and_not_on_a_merge"
+  ],
+  "tests/prompts/test_supervision_block_adoption.py": [
+   "test_the_seven_self_contained_sections_are_byte_identical_in_their_extent",
+   "test_the_block_file_is_the_text_of_record",
+   "test_the_by_effect_sections_carry_every_sentence_and_differ_only_where_repointed",
+   "test_the_by_effect_sections_carry_no_cadence_word",
+   "test_every_tag_a_repointed_reference_names_is_a_top_level_template_section",
+   "test_every_adopted_section_sits_between_top_level_sections_never_inside_one",
+   "test_the_template_is_not_the_block_and_holds_no_other_top_level_heading",
+   "test_the_opus_grooming_prompt_renders_with_every_adopted_section",
+   "test_the_authority_github_rule_points_at_supervision_boundaries",
+   "test_no_sentence_of_the_template_forbids_commits_pushes_or_branches",
+   "test_the_github_boundary_lines_are_pinned_whole",
+   "test_the_github_acts_are_the_ones_supervision_boundaries_grants",
+   "test_every_github_sentence_outside_supervision_boundaries_only_reads"
   ],
   "tests/prompts/test_v5_board_hierarchy.py": [
    "test_the_board_hierarchy_is_declared_exactly_once",
