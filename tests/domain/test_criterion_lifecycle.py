@@ -1304,20 +1304,21 @@ def verdict_enum_fields(
 ) -> tuple[tuple[str, object], ...]:
     """Every enum-annotated field of a record that carries a graded sha.
 
-    The mirror of the ban beside it, read the same way: that one reports a
-    partition member's boolean fields, this one reports the fields whose
-    annotation IS an enum, and both read the partition off the tree.  A
-    field is recognised by the type it names and never by its own name, so
-    a verdict widened to ``str`` leaves this table rather than staying in
-    it under a name the table kept, and a verdict widened to ``Enum |
-    None`` leaves it too, because the annotation is carried here as the
-    object and not as the word it renders as.
+    The mirror of the ban beside it: that one reports a partition member's
+    boolean fields, this one reports the fields whose own top-level
+    annotation is itself an Enum class, and both read the partition off the
+    tree through ``carries_graded_sha``.  Nothing inside the annotation is
+    unfolded.  A field is recognised by the type it names and never by its
+    own name, so a verdict widened to ``str`` leaves this table rather than
+    staying in it under a name the table kept; a verdict widened to ``Enum
+    | None`` leaves it, because a union is not an Enum class; and a
+    ``Literal`` of enum members leaves it, because a narrowed verdict is not
+    the enum.
 
     Blind spot, stated where the ban beside it states its own (KOD-592): an
-    enum inside a sub-model field is not unfolded, because
-    ``fields_reaching`` unfolds typing arguments only.  These helpers
-    unfold exactly what it unfolds, so all three agree about what the
-    partition is.
+    enum inside a sub-model field is not unfolded, so a verdict carried only
+    through a sub-model is outside this table and outside the widened
+    reading below.
     """
     return tuple(
         (f"{name}.{field}", info.annotation)
@@ -1331,19 +1332,33 @@ def verdict_enum_fields(
 def widened_verdict_fields(
     records: dict[str, type[BaseModel]], names: frozenset[str]
 ) -> tuple[tuple[str, object], ...]:
-    """A partition member's field, named as a verdict here, reaching no enum.
+    """A partition member's verdict field annotated as no enum class.
 
-    *names* is derived from the table above rather than written down, so
-    the set of names a verdict is carried under moves with the partition.
-    Without this, a record joining the partition with ``verdict: str``
-    would be absent from the table above and reported by nothing.
+    A field is a verdict here in either of two ways.  By name: *names* is
+    derived from the table above rather than written down, so a record
+    joining the partition with ``verdict: str`` is reported although the
+    table above does not hold it.  By annotation: a field whose annotation
+    reaches, through ``fields_reaching``, an enum the table over *records*
+    holds, without being that enum, so ``prior_verdict: AuditVerdict |
+    None`` is reported under a name no table row carries.
+
+    Blind spots: a verdict carried under a new name with an annotation that
+    reaches no enum of the table (``outcome: str``) is not seen; and every
+    enum-annotated partition field lends its name to the name rule, so an
+    enum ``kind`` joining the partition would make a partition member's
+    ``Literal`` discriminator under that name a reported field.
     """
+    enums = {annotation for _, annotation in verdict_enum_fields(records)}
     return tuple(
         (f"{name}.{field}", info.annotation)
         for name, record in sorted(records.items())
         if carries_graded_sha(record)
         for field, info in sorted(record.model_fields.items())
-        if field in names and not _is_enum(info.annotation)
+        if not _is_enum(info.annotation)
+        and (
+            field in names
+            or any(field in fields_reaching(record, enum) for enum in enums)
+        )
     )
 
 
@@ -1566,7 +1581,14 @@ def verdict_names() -> frozenset[str]:
 
 @pytest.mark.parametrize("field", sorted(verdict_names()))
 @pytest.mark.parametrize(
-    "annotation", [str, int, AuditVerdict | None, Literal["holds", "refuted"]]
+    "annotation",
+    [
+        str,
+        int,
+        AuditVerdict | None,
+        Literal["holds", "refuted"],
+        Literal[AuditVerdict.HOLDS],
+    ],
 )
 def test_a_widened_verdict_beside_a_graded_sha_leaves_the_table_and_is_reported(
     field, annotation
@@ -1582,6 +1604,21 @@ def test_a_widened_verdict_beside_a_graded_sha_leaves_the_table_and_is_reported(
     assert verdict_enum_fields(records) == ()
     assert widened_verdict_fields(records, names) == (
         (f"probe.Probe.{field}", annotation),
+    )
+
+
+@pytest.mark.parametrize("field", ["prior_verdict", "outcome"])
+def test_a_widened_verdict_under_a_name_no_table_row_carries_is_reported(field):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        **{field: (AuditVerdict | None, None)},
+    )
+    records = {**domain_records(), "probe.Probe": probe}
+    assert field not in verdict_names()
+    assert widened_verdict_fields(records, verdict_names()) == (
+        (f"probe.Probe.{field}", AuditVerdict | None),
     )
 
 
