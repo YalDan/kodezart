@@ -6,34 +6,70 @@ nothing about who put it there. That is an absence, so it is pinned as one —
 over a surface the code derives rather than a list kept by hand, because a
 hand-listed scan stops speaking for a module somebody adds to the path.
 
-The surface is the predicate's own reach: start at the two methods that decide
-admission and follow every call they make that resolves to a function — a
-bare name imported from the service or domain packages, a sibling method
-called on ``self``, a function called through an imported module, an import
-under an ``as`` alias, and a module-level function of the types package — and
-repeat. The types package's classes are not followed: a predicate that raises
-a domain error has not made a decision in that error's module, which is what
-keeps the surface the decisions and not the whole tree.
+The surface is the predicate's own reach, derived by object after import:
+start at the two methods that decide admission and follow every call that
+resolves to a function defined anywhere in the ``kodezart`` package, and
+repeat. A call resolves through the module's own namespace, so the walk
+follows
+
+- a bare name, whether the module defines it or imports it, under an ``as``
+  alias or through a package ``__init__`` re-export;
+- a function reached through an imported module, and a static or class
+  method reached through an imported class (``GatePolicy.restricted(x)``);
+- a sibling method called on ``self``, and one read by ``getattr`` with a
+  literal name;
+- the constructor and the methods of a class called on its result
+  (``GatePolicy(x).blocks()``);
+- a method called on, and a property read from, ``self.<attr>``, through the
+  attribute's declared type: a class annotation, or the annotation of the
+  ``__init__`` parameter the attribute is assigned from;
+- a bound method, or a value, held in a local name.
+
+A class the predicate only names or constructs, such as the error it raises,
+is not a decision the predicate delegates to, which is what keeps the surface
+the decisions and not the whole tree. A method of a port protocol is not
+followed either: it is a declaration, and a decision behind it lives in an
+adapter below the port, outside the dispatch predicate.
+
+Outside every static guard's reach:
+
+- a value handed across a function boundary, where the other function is not
+  resolved at this site (returned from a helper, stored on an object and read
+  elsewhere, or passed through a container built elsewhere);
+- a name built at run time;
+- a binding made only when a function runs (``setattr`` or ``globals()``
+  inside a function body).
+
+A parameter of the function being walked is such a value, so a method called
+on one is not followed. Each shape the walk follows and each shape of the
+limit has a planted control below.
 """
 
 import ast
+import builtins
+import importlib
+import inspect
 import re
+import sys
+import typing
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from kodezart.types.domain.operation import ScopeLabel
 
 SOURCE = Path(__file__).resolve().parents[2] / "src" / "kodezart"
+#: The package whose functions the walk follows, wherever in it they live.
+PACKAGE = "kodezart"
 #: Where the walk starts: the one admission predicate and the one gate reading.
 ROOTS = (
     ("services/organize_owner.py", "OrganizeOwner._admitted"),
     ("services/organize_owner.py", "OrganizeOwner._carried_members"),
 )
-#: The packages a decision on this path may live in.
-PACKAGES = ("kodezart.services.", "kodezart.domain.")
-#: The package whose module-level functions are followed, and not its classes.
-TYPES = "kodezart.types."
+
 
 #: Every word stem a principal or a setter role could be named by. An
 #: identifier or a string is split into words — on underscores, on case
@@ -45,30 +81,8 @@ STEMS = ("approver", "principal", "setter")
 ROLE_TYPE = "PrincipalRole"
 
 
-def _module_path(module: str, source: Path = SOURCE) -> Path:
-    return source / Path(*module.split(".")[1:]).with_suffix(".py")
-
-
 def _tree(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"))
-
-
-def _imported_names(tree: ast.Module) -> dict[str, tuple[str, str]]:
-    """Local name -> the module and the name it was imported as.
-
-    ``from m import f as g`` binds ``g`` to ``(m, f)``; ``import m.n as x``
-    binds ``x`` to ``(m.n, "")``, a module rather than a name in one.
-    """
-    names: dict[str, tuple[str, str]] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module is not None:
-            for alias in node.names:
-                names[alias.asname or alias.name] = (node.module, alias.name)
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.asname is not None:
-                    names[alias.asname] = (alias.name, "")
-    return names
 
 
 def _functions(tree: ast.Module) -> dict[str, ast.AST]:
@@ -87,97 +101,252 @@ def _functions(tree: ast.Module) -> dict[str, ast.AST]:
     return found
 
 
-def _is_function(module: str, name: str, source: Path = SOURCE) -> bool:
-    """Whether *name* is a function of *module*, rather than a type it declares."""
-    path = _module_path(module, source)
-    if not path.exists():
-        return False
-    node = _functions(_tree(path)).get(name)
-    return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+@dataclass(frozen=True)
+class _Instance:
+    """A value of *cls*: ``self``, a declared attribute, or a constructed one."""
+
+    cls: type
+    constructed: bool = False
 
 
-def _module_of(target: tuple[str, str], source: Path) -> str | None:
-    """The module an imported name refers to, when it is a module at all."""
-    module, name = target
-    candidate = f"{module}.{name}" if name else module
-    return candidate if _module_path(candidate, source).exists() else None
+#: What a name the walk cannot read resolves to.
+_UNREAD = object()
+#: A method of a port protocol: a declaration, not a decision.
+_PORT = object()
 
 
-def _callee(
-    call: ast.Call,
-    *,
-    module: str,
-    qualified: str,
-    imports: dict[str, tuple[str, str]],
-    source: Path,
-) -> tuple[str, str] | None:
-    """The module and qualified name a call resolves to, if the walk follows it."""
-    func = call.func
-    if isinstance(func, ast.Name):
-        target = imports.get(func.id)
-        if target is None or not target[1]:
+def _module_name(path: str, package: str) -> str:
+    parts = Path(path).with_suffix("").parts
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join((package, *parts))
+
+
+def _is_ours(function: object, package: str) -> bool:
+    module = getattr(function, "__module__", None) or ""
+    return module == package or module.startswith(f"{package}.")
+
+
+def _definition(function: Callable[..., object]) -> ast.AST | None:
+    """The ``def`` of *function* in its module's source, by qualified name."""
+    module = sys.modules[function.__module__]
+    tree = ast.parse(Path(inspect.getfile(module)).read_text(encoding="utf-8"))
+    parts = function.__qualname__.split(".")
+    node: ast.AST = tree
+    for part in parts:
+        node = next(
+            (
+                child
+                for child in ast.iter_child_nodes(node)
+                if isinstance(
+                    child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+                )
+                and child.name == part
+            ),
+            None,
+        )
+        if node is None:
             return None
-        origin, name = target
-        if origin.startswith(PACKAGES) or origin.startswith(TYPES):
-            return origin, name
+    return node
+
+
+def _owner_class(function: Callable[..., object]) -> type | None:
+    """The class a method is defined in, read from its qualified name."""
+    owner: object = sys.modules[function.__module__]
+    parts = function.__qualname__.split(".")[:-1]
+    if not parts or "<locals>" in parts:
         return None
-    if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)):
-        return None
-    owner = func.value.id
-    if owner == "self" and "." in qualified:
-        return module, f"{qualified.split('.')[0]}.{func.attr}"
-    target = imports.get(owner)
-    if target is None:
-        return None
-    origin = _module_of(target, source)
-    if origin is not None and origin.startswith((*PACKAGES, TYPES)):
-        return origin, func.attr
-    return None
+    for part in parts:
+        owner = inspect.getattr_static(owner, part, None)
+    return owner if isinstance(owner, type) else None
+
+
+def _is_port(cls: type) -> bool:
+    return bool(getattr(cls, "_is_protocol", False))
+
+
+def _classes_in(annotation: object) -> list[type]:
+    """The classes a declared type names, through unions and optionals."""
+    if isinstance(annotation, type):
+        return [annotation]
+    return [cls for arg in typing.get_args(annotation) for cls in _classes_in(arg)]
+
+
+def _hints(target: object) -> dict[str, object]:
+    try:
+        return typing.get_type_hints(target)
+    except (NameError, TypeError):
+        return {}
+
+
+def _declared_attributes(cls: type) -> dict[str, list[type]]:
+    """Attribute -> its declared classes: class annotations, then ``__init__``.
+
+    An ``__init__`` assignment ``self.a = p`` (or a tuple of them) gives
+    ``a`` the annotation of the parameter ``p``.
+    """
+    declared = {name: _classes_in(hint) for name, hint in _hints(cls).items()}
+    init = inspect.getattr_static(cls, "__init__", None)
+    if (
+        not inspect.isfunction(init)
+        or init.__module__.split(".")[0] != cls.__module__.split(".")[0]
+    ):
+        return declared
+    parameters = _hints(init)
+    definition = _definition(init)
+    if definition is None:
+        return declared
+    for node in ast.walk(definition):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            pairs = (
+                zip(target.elts, node.value.elts, strict=False)
+                if isinstance(target, ast.Tuple) and isinstance(node.value, ast.Tuple)
+                else [(target, node.value)]
+            )
+            for stored, value in pairs:
+                if (
+                    isinstance(stored, ast.Attribute)
+                    and isinstance(stored.value, ast.Name)
+                    and stored.value.id == "self"
+                    and isinstance(value, ast.Name)
+                    and value.id in parameters
+                ):
+                    declared[stored.attr] = _classes_in(parameters[value.id])
+    return declared
+
+
+class _Reach:
+    """What one function's body resolves to, read by object after import."""
+
+    def __init__(self, function: Callable[..., object], package: str) -> None:
+        self._package = package
+        self._namespace = vars(sys.modules[function.__module__])
+        self._self = _owner_class(function)
+        self._locals: dict[str, object] = {}
+        self.followed: list[Callable[..., object]] = []
+
+    def bind_locals(self, definition: ast.AST) -> None:
+        """Names bound in the body to one whole expression, read in turn."""
+        bindings = [
+            (target.id, node.value)
+            for node in ast.walk(definition)
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        ] + [
+            (node.target.id, node.value)
+            for node in ast.walk(definition)
+            if isinstance(node, ast.NamedExpr)
+        ]
+        # Each pass can only read a binding the last one left open, so the
+        # passes are bounded by the number of bindings.
+        for _ in range(len(bindings) + 1):
+            opened = {
+                name: value
+                for name, bound in bindings
+                if name not in self._locals
+                and (value := self.read(bound)) is not _UNREAD
+            }
+            if not opened:
+                break
+            self._locals.update(opened)
+
+    def _attribute(self, base: object, name: str) -> object:
+        if isinstance(base, _Instance):
+            if base.constructed:
+                self._follow(inspect.getattr_static(base.cls, "__init__", None))
+            declared = _declared_attributes(base.cls).get(name)
+            if declared:
+                return _Instance(declared[0])
+            base = base.cls
+        if isinstance(base, type) and _is_port(base):
+            return _PORT
+        if isinstance(base, (type, ModuleType)):
+            found = inspect.getattr_static(base, name, _UNREAD)
+            if isinstance(found, (staticmethod, classmethod)):
+                return found.__func__
+            if isinstance(found, property):
+                self._follow(found.fget)
+            return found
+        return _UNREAD
+
+    def read(self, node: ast.AST) -> object:
+        """The object *node* names, or what a value of a class it names is."""
+        if isinstance(node, ast.Name):
+            if node.id == "self" and self._self is not None:
+                return _Instance(self._self)
+            for scope in (self._locals, self._namespace, vars(builtins)):
+                if node.id in scope:
+                    return scope[node.id]
+            return _UNREAD
+        if isinstance(node, ast.Attribute):
+            base = self.read(node.value)
+            return _UNREAD if base is _UNREAD else self._attribute(base, node.attr)
+        if isinstance(node, ast.Call):
+            callee = self.read(node.func)
+            if callee is getattr and len(node.args) >= 2:
+                name = node.args[1]
+                base = self.read(node.args[0])
+                if isinstance(name, ast.Constant) and isinstance(name.value, str):
+                    if base is not _UNREAD:
+                        return self._attribute(base, name.value)
+                return _UNREAD
+            if isinstance(callee, type):
+                return _Instance(callee, constructed=True)
+            return _UNREAD
+        return _UNREAD
+
+    def _follow(self, target: object) -> None:
+        if inspect.isfunction(target) and _is_ours(target, self._package):
+            self.followed.append(target)
+
+    def calls(self, definition: ast.AST) -> list[Callable[..., object]]:
+        """Every function of the package this body calls or reads a property of."""
+        for node in ast.walk(definition):
+            if isinstance(node, ast.Call):
+                self._follow(self.read(node.func))
+            elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+                self.read(node)
+        return self.followed
 
 
 def gate_path_modules(
-    *, source: Path = SOURCE, roots: tuple[tuple[str, str], ...] = ROOTS
+    *,
+    source: Path = SOURCE,
+    roots: tuple[tuple[str, str], ...] = ROOTS,
+    package: str = PACKAGE,
 ) -> list[str]:
-    """The modules the admission decision actually reaches, derived.
+    """The modules the admission decision actually reaches, derived by object.
 
-    Returned as repository-relative paths under ``src/kodezart``, in the order
-    the frontier reached them, so a failure names the module it found.
+    Returned as paths under the package's source directory, in the order the
+    frontier reached them, so a failure names the module it found.
     """
-    start = "kodezart." + roots[0][0].removesuffix(".py").replace("/", ".")
-    frontier = [(start, name) for _, name in roots]
-    seen_modules = [start]
-    visited: set[tuple[str, str]] = set()
+    frontier: list[Callable[..., object]] = []
+    for path, qualified in roots:
+        owner: object = importlib.import_module(_module_name(path, package))
+        for part in qualified.split("."):
+            owner = inspect.getattr_static(owner, part)
+        assert inspect.isfunction(owner), qualified
+        frontier.append(owner)
+    seen_modules: list[str] = []
+    visited: set[Callable[..., object]] = set()
     while frontier:
-        module, qualified = frontier.pop(0)
-        if (module, qualified) in visited:
+        function = frontier.pop(0)
+        if function in visited:
             continue
-        visited.add((module, qualified))
-        tree = _tree(_module_path(module, source))
-        definition = _functions(tree).get(qualified)
+        visited.add(function)
+        if function.__module__ not in seen_modules:
+            seen_modules.append(function.__module__)
+        definition = _definition(function)
         if definition is None:
             continue
-        imports = _imported_names(tree)
-        for node in ast.walk(definition):
-            if not isinstance(node, ast.Call):
-                continue
-            callee = _callee(
-                node,
-                module=module,
-                qualified=qualified,
-                imports=imports,
-                source=source,
-            )
-            if callee is None:
-                continue
-            origin, called = callee
-            if not _is_function(origin, called, source):
-                # A type the decision names, not a decision it delegates to.
-                continue
-            if origin not in seen_modules:
-                seen_modules.append(origin)
-            frontier.append((origin, called))
+        reach = _Reach(function, package)
+        reach.bind_locals(definition)
+        frontier.extend(reach.calls(definition))
     return [
-        _module_path(module, source).relative_to(source).as_posix()
+        Path(inspect.getfile(sys.modules[module])).relative_to(source).as_posix()
         for module in seen_modules
     ]
 
@@ -190,7 +359,7 @@ def test_the_derivation_reaches_the_decisions_and_not_the_whole_tree() -> None:
     an approver are not, and both are named here rather than merely absent:
     a scan over the whole tree would report the prompt binding that renders
     the approver and the error prose that names one, so a guard written that
-    way would be red on the day it landed.
+    way would be red on the day it landed. Nothing keeps them out but reach.
     """
     reached = gate_path_modules()
     assert reached == [
@@ -211,75 +380,255 @@ def test_the_derivation_starts_at_definitions_that_exist() -> None:
         assert name in functions, name
 
 
-#: A restriction the planted decision delegates to, one module per call shape.
+#: The planted decision every call shape below delegates to.
 PLANTED_POLICY = "def restricted(operation):\n    return operation is None\n"
+PLANTED_CLASS = (
+    "class GatePolicy:\n"
+    "    def __init__(self, operation):\n"
+    "        self.operation = operation\n\n"
+    "    @staticmethod\n"
+    "    def restricted(operation):\n"
+    "        return operation is None\n\n"
+    "    @classmethod\n"
+    "    def closed(cls, operation):\n"
+    "        return operation is None\n\n"
+    "    def blocks(self):\n"
+    "        return self.operation is None\n\n"
+    "    @property\n"
+    "    def shut(self):\n"
+    "        return self.operation is None\n"
+)
+PLANTED_PORT = (
+    "from typing import Protocol\n\n\n"
+    "class GatePort(Protocol):\n"
+    "    def restricted(self) -> bool: ...\n"
+)
 
-#: One control per call shape the walk claims to follow: the planted owner's
-#: module source, and the module the walk must reach through it.
-CALL_CONTROLS = (
-    (
-        "sibling-method",
-        "from kodezart.domain.gate_policy import restricted\n\n\n"
+
+def _owner(imports: str, admitted: str, *, init: str = "", extra: str = "") -> str:
+    """A planted owner whose ``_admitted`` body is *admitted*, in a template.
+
+    ``{pkg}`` in the text is the planted package's name.
+    """
+    return (
+        f"{imports}\n\n\n{extra}"
         "class OrganizeOwner:\n"
+        f"{init}"
         "    def _admitted(self):\n"
-        "        return self._gate_restricted()\n\n"
+        f"{admitted}\n"
         "    def _carried_members(self):\n"
         "        return None\n\n"
         "    def _gate_restricted(self):\n"
-        "        return restricted(None)\n",
-        "domain/gate_policy.py",
+        "        return restricted(None)\n"
+    )
+
+
+FROM_POLICY = "from {pkg}.domain.gate_policy import restricted"
+FROM_CLASS = "from {pkg}.domain.gate_class import GatePolicy\n" + FROM_POLICY
+POLICY_FILES = {"domain/gate_policy.py": PLANTED_POLICY}
+CLASS_FILES = {**POLICY_FILES, "domain/gate_class.py": PLANTED_CLASS}
+HELD = (
+    "    def __init__(self, policy: GatePolicy) -> None:\n"
+    "        self._policy = policy\n\n"
+)
+
+#: One control per call shape the walk claims to follow: the planted owner's
+#: source, the other planted files, and the modules the walk must reach.
+CALL_CONTROLS = (
+    (
+        "sibling-method",
+        _owner(FROM_POLICY, "        return self._gate_restricted()\n"),
+        POLICY_FILES,
+        ["domain/gate_policy.py"],
     ),
     (
         "module-qualified",
-        "from kodezart.domain import gate_policy\n\n\n"
-        "class OrganizeOwner:\n"
-        "    def _admitted(self):\n"
-        "        return gate_policy.restricted(None)\n\n"
-        "    def _carried_members(self):\n"
-        "        return None\n",
-        "domain/gate_policy.py",
+        _owner(
+            FROM_POLICY + "\nfrom {pkg}.domain import gate_policy",
+            "        return gate_policy.restricted(None)\n",
+        ),
+        POLICY_FILES,
+        ["domain/gate_policy.py"],
     ),
     (
         "types-function",
-        "from kodezart.types.domain.gate_policy import restricted\n\n\n"
-        "class OrganizeOwner:\n"
-        "    def _admitted(self):\n"
-        "        return restricted(None)\n\n"
-        "    def _carried_members(self):\n"
-        "        return None\n",
-        "types/domain/gate_policy.py",
+        _owner(
+            "from {pkg}.types.domain.gate_policy import restricted",
+            "        return restricted(None)\n",
+        ),
+        {"types/domain/gate_policy.py": PLANTED_POLICY},
+        ["types/domain/gate_policy.py"],
     ),
     (
         "aliased-import",
-        "from kodezart.domain.gate_policy import restricted as blocked\n\n\n"
-        "class OrganizeOwner:\n"
-        "    def _admitted(self):\n"
-        "        return blocked(None)\n\n"
-        "    def _carried_members(self):\n"
-        "        return None\n",
-        "domain/gate_policy.py",
+        _owner(
+            FROM_POLICY
+            + "\nfrom {pkg}.domain.gate_policy import restricted as blocked",
+            "        return blocked(None)\n",
+        ),
+        POLICY_FILES,
+        ["domain/gate_policy.py"],
+    ),
+    (
+        "same-module-function",
+        _owner(
+            FROM_POLICY,
+            "        return _gate_closed(None)\n",
+            extra=(
+                "def _gate_closed(operation):\n    return restricted(operation)\n\n\n"
+            ),
+        ),
+        POLICY_FILES,
+        ["domain/gate_policy.py"],
+    ),
+    (
+        "static-method",
+        _owner(FROM_CLASS, "        return GatePolicy.restricted(None)\n"),
+        CLASS_FILES,
+        ["domain/gate_class.py"],
+    ),
+    (
+        "class-method",
+        _owner(FROM_CLASS, "        return GatePolicy.closed(None)\n"),
+        CLASS_FILES,
+        ["domain/gate_class.py"],
+    ),
+    (
+        "constructed-then-called",
+        _owner(FROM_CLASS, "        return GatePolicy(None).blocks()\n"),
+        CLASS_FILES,
+        ["domain/gate_class.py"],
+    ),
+    (
+        "declared-attribute-method",
+        _owner(FROM_CLASS, "        return self._policy.blocks()\n", init=HELD),
+        CLASS_FILES,
+        ["domain/gate_class.py"],
+    ),
+    (
+        "declared-attribute-property",
+        _owner(FROM_CLASS, "        return self._policy.shut\n", init=HELD),
+        CLASS_FILES,
+        ["domain/gate_class.py"],
+    ),
+    (
+        "package-re-export",
+        _owner(
+            "from {pkg}.domain import restricted", "        return restricted(None)\n"
+        ),
+        {
+            **POLICY_FILES,
+            "domain/__init__.py": (
+                "from {pkg}.domain.gate_policy import restricted as restricted\n"
+            ),
+        },
+        ["domain/gate_policy.py"],
+    ),
+    (
+        "another-package",
+        _owner(
+            "from {pkg}.core.gate_rights import restricted",
+            "        return restricted(None)\n",
+        ),
+        {"core/gate_rights.py": PLANTED_POLICY},
+        ["core/gate_rights.py"],
+    ),
+    (
+        "bound-method-in-a-local",
+        _owner(
+            FROM_POLICY,
+            "        check = self._gate_restricted\n        return check()\n",
+        ),
+        POLICY_FILES,
+        ["domain/gate_policy.py"],
+    ),
+    (
+        "getattr-with-a-literal-name",
+        _owner(FROM_POLICY, "        return getattr(self, '_gate_restricted')()\n"),
+        POLICY_FILES,
+        ["domain/gate_policy.py"],
+    ),
+    # What the walk does not follow, each a shape it is handed: a port
+    # protocol's method is a declaration, and a decision behind it lives in
+    # an adapter below the port.
+    (
+        "port-protocol-method",
+        _owner(
+            FROM_POLICY + "\nfrom {pkg}.core.ports import GatePort",
+            "        return self._port.restricted()\n",
+            init=(
+                "    def __init__(self, port: GatePort) -> None:\n"
+                "        self._port = port\n\n"
+            ),
+        ),
+        {**POLICY_FILES, "core/ports.py": PLANTED_PORT},
+        [],
+    ),
+    # The stated limit, one shape each.
+    (
+        "limit-value-across-a-function-boundary",
+        _owner(
+            FROM_CLASS,
+            "        return self._made().blocks()\n\n"
+            "    def _made(self):\n"
+            "        return GatePolicy(None)\n",
+        ),
+        CLASS_FILES,
+        [],
+    ),
+    (
+        "limit-name-built-at-run-time",
+        _owner(
+            FROM_POLICY, "        return getattr(self, '_gate_' + 'restricted')()\n"
+        ),
+        POLICY_FILES,
+        [],
+    ),
+    (
+        "limit-binding-made-when-a-function-runs",
+        _owner(
+            FROM_POLICY,
+            "        setattr(type(self), '_late', staticmethod(restricted))\n"
+            "        return self._late(None)\n",
+        ),
+        POLICY_FILES,
+        [],
     ),
 )
 
 
+def _plant(tmp_path: Path, name: str, files: dict[str, str]) -> Path:
+    """Write a planted package *name* under *tmp_path*, every directory a package."""
+    package = tmp_path / name
+    for path, text in files.items():
+        planted = package / path
+        planted.parent.mkdir(parents=True, exist_ok=True)
+        planted.write_text(text.replace("{pkg}", name), encoding="utf-8")
+    for directory in (package, *package.rglob("*")):
+        if directory.is_dir() and not (directory / "__init__.py").exists():
+            (directory / "__init__.py").write_text("", encoding="utf-8")
+    return package
+
+
 @pytest.mark.parametrize(
-    ("owner", "reached"),
-    [(owner, reached) for _, owner, reached in CALL_CONTROLS],
-    ids=[shape for shape, _, _ in CALL_CONTROLS],
+    ("shape", "owner", "files", "reached"),
+    CALL_CONTROLS,
+    ids=[shape for shape, _, _, _ in CALL_CONTROLS],
 )
 def test_the_derivation_follows_each_call_shape(
-    tmp_path: Path, owner: str, reached: str
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    shape: str,
+    owner: str,
+    files: dict[str, str],
+    reached: list[str],
 ) -> None:
-    for module, text in (
-        ("services/organize_owner.py", owner),
-        (reached, PLANTED_POLICY),
-    ):
-        path = tmp_path / module
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    assert gate_path_modules(source=tmp_path) == [
+    name = "planted_gate_" + re.sub(r"\W", "_", shape)
+    source = _plant(tmp_path, name, {**files, "services/organize_owner.py": owner})
+    monkeypatch.syspath_prepend(str(tmp_path))
+    assert gate_path_modules(source=source, package=name) == [
         "services/organize_owner.py",
-        reached,
+        *reached,
     ]
 
 
