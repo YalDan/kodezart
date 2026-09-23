@@ -1,19 +1,22 @@
 """Every refutation the sweep produces carries a mandate verdict (KOD-516).
 
-The range is every REFUTED value the sweep emits, raw observations included.
-Each verdict-bearing arm of a sweep observation is either completed by its
-mandate-completed report or stands beside the reason its hunt could not run;
-the observation refuses to be built any other way, and that refusal is the
-sweep's own completeness assertion.  Which arms bear a verdict is read off
-the observation's own field types, so an arm added later is under the rule
-the moment it exists rather than when somebody remembers to list it.
+The range is the verdict-bearing fields of the sweep's observation: every
+field whose type holds a model declaring a verdict, found at any depth of
+that type (inside an optional, a tuple or a root model).  Each such arm is
+either completed by its mandate-completed report or stands beside the
+reason its hunt could not run; the observation refuses to be built any
+other way, and that refusal is the sweep's own completeness assertion.
+Which arms bear a verdict is read off the observation's own field types, so
+an arm added later is under the rule the moment it exists rather than when
+somebody remembers to list it.
 """
 
+from collections.abc import Iterator
 from dataclasses import replace
 from typing import get_args, get_type_hints
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 
 from kodezart.chains.audit_sweep import MANDATED_ARMS, AuditReadObservation
 from kodezart.domain.errors import AgentSDKError
@@ -171,17 +174,32 @@ async def refuted_arm(arm, setup, tracker, server):
     return (await build().run()).observations[0]
 
 
-@pytest.mark.parametrize("arm", [row[0] for row in MANDATED_ARMS])
+#: The completeness rule's rows, stated here independently of the table
+#: under test: each verdict-bearing arm, the field its mandate verdict
+#: completes it in, and the field naming why its hunt could not run.
+ARMS = (
+    ("terminal", "terminal_report", "unavailable_reason"),
+    ("forge", "forge_report", "forge_unavailable_reason"),
+    ("restamp", "restamp_report", "unavailable_reason"),
+    ("evidence", "claim", "unavailable_reason"),
+)
+
+
+@pytest.mark.parametrize(
+    ("arm", "completed", "reason"), ARMS, ids=[row[0] for row in ARMS]
+)
 async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion(
-    setup, tracker, server, arm
+    setup, tracker, server, arm, completed, reason
 ):
     """Drop the mandate verdict from a refutation the sweep produced: refused.
 
     The control keeps the same raw refutation beside the reason its hunt
     could not run, which is the shape a genuinely failed hunt takes, and is
     built; so the refusal is about the missing verdict and nothing else.
+    The rows are this test's own, so a row the table loses or alters fails
+    here rather than taking its case away with it.
     """
-    completed, reason = {row[0]: row[1:] for row in MANDATED_ARMS}[arm]
+    assert set(MANDATED_ARMS) == set(ARMS)
     observation = await refuted_arm(arm, setup, tracker, server)
     assert getattr(observation, arm).verdict is AuditVerdict.REFUTED
     assert getattr(observation, completed) is not None
@@ -196,15 +214,28 @@ async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion
     assert getattr(control, arm) == getattr(observation, arm)
 
 
+def verdict_models(hint: object) -> Iterator[type[BaseModel]]:
+    """Every model declaring a verdict that *hint* holds, at any depth.
+
+    A container or union is read through its arguments, and a root model
+    through its root, so ``tuple[X, ...] | None`` holds ``X`` as surely as
+    ``X`` does.
+    """
+    for member in get_args(hint):
+        yield from verdict_models(member)
+    if isinstance(hint, type) and issubclass(hint, BaseModel):
+        if issubclass(hint, RootModel):
+            yield from verdict_models(hint.model_fields["root"].annotation)
+        elif "verdict" in hint.model_fields:
+            yield hint
+
+
 def verdict_bearing_fields() -> frozenset[str]:
-    """The observation's fields whose type is a model declaring a verdict."""
+    """The observation's fields whose type holds a model declaring a verdict."""
     return frozenset(
         name
         for name, hint in get_type_hints(AuditReadObservation).items()
-        for member in (get_args(hint) or (hint,))
-        if isinstance(member, type)
-        and issubclass(member, BaseModel)
-        and "verdict" in member.model_fields
+        if any(verdict_models(hint))
     )
 
 
