@@ -1,11 +1,14 @@
 """PR114 real-Git exit and ref-invariance scenarios.
 
 The named scenarios exercise cleanup and publication invariance directly.
-Which exits there ARE is read off the step's own source rather than
-remembered: every ``raise`` statement in the union step's modules is a site
-one scenario must name, and a scenario that names one proves it drove that
-site from the traceback it caught, not from the wording of a message.  The
-census says which exits exist; only the scenarios are runtime proof.
+Which exits there ARE is read off the step's own source and off what it
+asks, rather than remembered.  Every ``raise`` statement in the union
+step's modules is a site one scenario must name, and a scenario that names
+one proves it drove that site from the traceback it caught, not from the
+wording of a message.  Every member the step asks of a port it is handed is
+a collaborator failure one row must plant, from its first call, and the
+row proves the planted error is the one that left.  The census says which
+exits exist; only the scenarios are runtime proof.
 """
 
 import ast
@@ -15,7 +18,7 @@ import importlib
 import inspect
 import operator
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from functools import partial
 from pathlib import Path
@@ -30,6 +33,7 @@ from kodezart.domain.errors import (
     CheckChainExecutionError,
     GitOperationError,
     MergeConflictError,
+    TransientAPIError,
     UnionHeadReadError,
     UnionUnstableError,
 )
@@ -114,7 +118,9 @@ class Asked:
     recorder.  A member that can be called comes back as ``Forwarded``, never
     as the port's own bound method, so no read through it (``__self__``,
     ``__func__``, a closure cell) reaches the unrecorded port; a member that
-    cannot be called comes back as the port holds it.  The proxy's own state
+    cannot be called comes back as the port holds it.  A member named in
+    *failing* is still recorded, and comes back failing with the error its
+    entry makes (``COLLABORATOR_FAILURES``).  The proxy's own state
     is not handed out for copying or pickling either.  Out of reach, and so
     stated: ``object.__getattribute__`` on the slots of the proxy or of what
     it hands back (``test_reading_the_recorders_own_slots_is_not_recorded``),
@@ -122,21 +128,47 @@ class Asked:
     ``eval``/``exec``.
     """
 
-    __slots__ = ("_names", "_port")
+    __slots__ = ("_failing", "_names", "_port")
 
-    def __init__(self, port: object) -> None:
+    def __init__(
+        self,
+        port: object,
+        *,
+        failing: Mapping[str, Callable[[], BaseException]] | None = None,
+    ) -> None:
         object.__setattr__(self, "_port", port)
         object.__setattr__(self, "_names", [])
+        object.__setattr__(self, "_failing", {} if failing is None else failing)
 
     def __getattribute__(self, name: str) -> object:
         if _is_dunder(name):
             return object.__getattribute__(self, name)
         object.__getattribute__(self, "_names").append(name)
         member = getattr(object.__getattribute__(self, "_port"), name)
+        planted = object.__getattribute__(self, "_failing").get(name)
+        if planted is not None:
+            return Forwarded(_raising(member, planted))
         return Forwarded(member) if callable(member) else member
 
     def __getstate__(self) -> object:
         raise TypeError("a recorded port is not copied")
+
+
+def _raising(
+    member: object, planted: Callable[[], BaseException]
+) -> Callable[..., object]:
+    """*member*, failing the way its port fails: when awaited, if it is awaited."""
+    if inspect.iscoroutinefunction(member):
+
+        async def fail_when_awaited(*_: object, **__: object) -> object:
+            raise planted()
+
+        return fail_when_awaited
+
+    def fail(*_: object, **__: object) -> object:
+        raise planted()
+
+    return fail
 
 
 def asked_of(proxy: Asked) -> tuple[str, ...]:
@@ -226,17 +258,12 @@ def exit_sites() -> dict[str, tuple[str, frozenset[int]]]:
 EXIT_SITES: dict[str, tuple[str, frozenset[int]]] = exit_sites()
 
 
-def passed_through(error: BaseException) -> frozenset[tuple[str, int]]:
-    """Every (file, line) *error* left a frame through, and the errors behind it.
+def errors_behind(error: BaseException) -> list[BaseException]:
+    """*error* and every error behind it, by cause or by context.
 
-    A traceback holds one entry per frame the error passed through, at the
-    line it left that frame by, so the line of the raise statement that sent
-    it is among them however the message reads.  A cancellation awaited from
-    outside its task is a fresh error whose context is the one the step
-    raised, so the context and the cause are followed too, bounded by the
-    errors already read.
+    Bounded by the errors already read, each read once.
     """
-    lines: set[tuple[str, int]] = set()
+    found: list[BaseException] = []
     seen: set[int] = set()
     pending: list[BaseException | None] = [error]
     while pending:
@@ -244,12 +271,25 @@ def passed_through(error: BaseException) -> frozenset[tuple[str, int]]:
         if current is None or id(current) in seen:
             continue
         seen.add(id(current))
-        lines.update(
-            (frame.filename, frame.lineno)
-            for frame in traceback.extract_tb(current.__traceback__)
-        )
+        found.append(current)
         pending.extend((current.__cause__, current.__context__))
-    return frozenset(lines)
+    return found
+
+
+def passed_through(error: BaseException) -> frozenset[tuple[str, int]]:
+    """Every (file, line) *error* left a frame through, and the errors behind it.
+
+    A traceback holds one entry per frame the error passed through, at the
+    line it left that frame by, so the line of the raise statement that sent
+    it is among them however the message reads.  A cancellation awaited from
+    outside its task is a fresh error whose context is the one the step
+    raised, so the context and the cause are followed too.
+    """
+    return frozenset(
+        (frame.filename, frame.lineno)
+        for current in errors_behind(error)
+        for frame in traceback.extract_tb(current.__traceback__)
+    )
 
 
 class Fixture:
@@ -275,9 +315,19 @@ class Fixture:
         self.handed: list[tuple[str, Asked]] = []
         self.built: list[ScopeUnionCoordinator] = []
         self.harness: list[object] = []
+        self.planted: list[tuple[str, BaseException]] = []
 
-    def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:
-        """The production step, each port it is handed wrapped in a recorder."""
+    def coordinator(
+        self,
+        runner: object = None,
+        *,
+        failing: Mapping[str, tuple[str, ...]] | None = None,
+    ) -> ScopeUnionCoordinator:
+        """The production step, each port it is handed wrapped in a recorder.
+
+        *failing* names, by parameter, the members that port fails on from
+        their first call, with the error ``PLANTED_ERRORS`` gives it.
+        """
         ports = {
             "tracker": self.tracker,
             "refs": self.tracker,
@@ -288,7 +338,18 @@ class Fixture:
             ),
         }
         assert set(ports) == set(PORT_PARAMETERS), sorted(ports)
-        handed = {name: Asked(port) for name, port in ports.items()}
+        planted = {
+            name: {
+                member: partial(self._plant, name, member)
+                for member in (failing or {}).get(name, ())
+            }
+            for name in ports
+        }
+        # What a row plants is the harness, not something the step holds.
+        self.harness.extend(planted.values())
+        handed = {
+            name: Asked(port, failing=planted[name]) for name, port in ports.items()
+        }
         self.handed.extend(handed.items())
         step = ScopeUnionCoordinator(
             scope_kind=PROJECT.kind,
@@ -300,6 +361,11 @@ class Fixture:
         )
         self.built.append(step)
         return step
+
+    def _plant(self, parameter: str, member: str) -> BaseException:
+        error = PLANTED_ERRORS[parameter](member)
+        self.planted.append((member, error))
+        return error
 
     def refused_holdings(self) -> list[str]:
         """The class of everything a step built here holds that it may not hold.
@@ -334,6 +400,19 @@ class Fixture:
             name: sorted(self.asked(name) - declared(port))
             for name, port in PORT_PARAMETERS.items()
             if self.asked(name) - declared(port)
+        }
+
+    def unrowed_asks(self) -> dict[str, list[str]]:
+        """Each port's reads of a member no collaborator-failure row fails."""
+        rowed = {
+            (parameter, members[-1]) for parameter, members in COLLABORATOR_FAILURES
+        }
+        return {
+            name: sorted(
+                member for member in self.asked(name) if (name, member) not in rowed
+            )
+            for name in PORT_PARAMETERS
+            if any((name, member) not in rowed for member in self.asked(name))
         }
 
     def sha(self, lane: str) -> str:
@@ -755,11 +834,13 @@ async def drive_cancellation(fixture) -> BaseException:
     return caught.value
 
 
-#: Every way verifying leaves, each with the raise site it drives: a key of
+#: Every way verifying leaves by a raise the step's modules write, and the
+#: named ways it returns, each with the raise site it drives: a key of
 #: EXIT_SITES, or None where it returns, or where what it raises is a
 #: collaborator's own error passing through.  The census below requires the
 #: named sites to be every raise the step's modules write, so an exit added
-#: without a scenario fails there rather than standing unwitnessed.
+#: without a scenario fails there rather than standing unwitnessed.  Leaving
+#: because a collaborator failed is COLLABORATOR_FAILURES, below.
 EXIT_SCENARIOS = (
     ("a green union", None, RecordingPublisher, drive_green, None),
     (
@@ -949,6 +1030,7 @@ async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
         path, lines = EXIT_SITES[site]
         assert {(path, line) for line in lines} & passed_through(raised), (name, site)
     assert fixture.undeclared_reads() == {}, name
+    assert fixture.unrowed_asks() == {}, name
     assert fixture.built, name
     assert allowed_as(fixture.git) == "port", name
     assert fixture.refused_holdings() == [], name
@@ -959,6 +1041,101 @@ async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
     assert (
         await pinned.git(fixture.observer, "worktree", "list", "--porcelain")
     ).count("worktree ") == 1
+
+
+#: Every way verifying leaves because a port it asks failed: each member the
+#: step asks of a port, failing from its first call.  Which members those are
+#: is not remembered here.  Every exit, failure and return row requires that
+#: each member the step asked on it has a row in this table
+#: (``Fixture.unrowed_asks``), so a member the step starts asking fails there
+#: until a row makes it fail.  ``is_repo`` is asked only once creating the
+#: scratch tree has failed, so its row fails both, and the row is about the
+#: last one.  Stated bound: a member failing on a later call than its first
+#: (a second lane's merge, the head read after composing) is not a row.
+COLLABORATOR_FAILURES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("tracker", ("require_scope_plan_reads",)),
+    ("tracker", ("scope_issues",)),
+    ("tracker", ("read_planning_issue",)),
+    ("tracker", ("read_criteria",)),
+    ("refs", ("work_refs",)),
+    ("git", ("remote_branch_sha",)),
+    ("git", ("has_replace_refs",)),
+    ("git", ("fetch",)),
+    ("git", ("create_worktree",)),
+    ("git", ("create_worktree", "is_repo")),
+    ("git", ("merge_scratch_head",)),
+    ("git", ("current_sha",)),
+    ("git", ("remove_worktree",)),
+    ("runner", ("run_chain",)),
+)
+
+#: What each port fails with when a row plants its failure: the kind of error
+#: its implementations raise.
+PLANTED_ERRORS: dict[str, Callable[[str], BaseException]] = {
+    "tracker": lambda member: TransientAPIError(f"{member}: the tracker failed"),
+    "refs": lambda member: TransientAPIError(f"{member}: the ref read failed"),
+    "git": lambda member: GitOperationError(f"{member}: git failed"),
+    "runner": lambda member: CheckChainExecutionError(
+        cwd="", step_name=None, reason=f"{member}: the runner failed"
+    ),
+}
+
+#: What verifying can leave by when a planted failure is the error behind it:
+#: the planted error itself, or the step's refusal raised from it.
+LEAVING_ERRORS: tuple[type[BaseException], ...] = (
+    TransientAPIError,
+    GitOperationError,
+    CheckChainExecutionError,
+    UnionHeadReadError,
+)
+
+
+def test_every_failure_row_plants_a_member_its_port_declares() -> None:
+    """Not parametrised: the table is not empty, and each row is well formed.
+
+    Each row names a port the step is handed, members that port declares,
+    and a port with an error to fail with.
+    """
+    assert COLLABORATOR_FAILURES
+    assert set(PLANTED_ERRORS) == set(PORT_PARAMETERS)
+    for parameter, members in COLLABORATOR_FAILURES:
+        assert members, parameter
+        assert set(members) <= declared(PORT_PARAMETERS[parameter]), members
+
+
+@pytest.mark.parametrize(
+    "parameter, members",
+    COLLABORATOR_FAILURES,
+    ids=[
+        f"{parameter}.{'+'.join(members)}"
+        for parameter, members in COLLABORATOR_FAILURES
+    ],
+)
+async def test_a_failing_collaborator_leaves_every_ref_and_publishes_nothing(
+    tmp_path, parameter, members
+):
+    """Verifying leaves when a port it asks fails, and publishes nothing then either.
+
+    The row proves its exit from the error it caught: the error planted on
+    the row's last member is that error or behind it.  On that exit no port
+    was asked a member it does not declare, every member asked has a row,
+    the step holds nothing it may not hold, nothing was asked to publish and
+    every ref is where it was.
+    """
+    fixture = await build_delivery(tmp_path / "world", git=RecordingPublisher())
+    before = await fixture.refs()
+
+    with pytest.raises(LEAVING_ERRORS) as caught:
+        await fixture.coordinator(failing={parameter: members}).verify()
+
+    planted = {id(error) for member, error in fixture.planted if member == members[-1]}
+    assert planted, members
+    assert planted & {id(error) for error in errors_behind(caught.value)}, members
+    assert fixture.undeclared_reads() == {}, members
+    assert fixture.unrowed_asks() == {}, members
+    assert fixture.refused_holdings() == [], members
+    assert fixture.git.publications == [], members
+    assert await fixture.refs() == before, members
 
 
 async def test_the_ports_the_step_is_handed_record_what_it_asks(tmp_path):
@@ -1077,6 +1254,22 @@ async def test_a_read_the_port_does_not_declare_is_reported(tmp_path) -> None:
     getattr(dict(fixture.handed)["git"], "close_pull_request", None)
 
     assert fixture.undeclared_reads() == {"git": ["close_pull_request"]}
+
+
+async def test_a_member_no_failure_row_fails_is_reported(tmp_path) -> None:
+    """Guards every row's ``unrowed_asks() == {}``: it can report one.
+
+    Not parametrised.  One read of a member the git port declares and no row
+    fails, and the report names it, on that port alone.
+    """
+    fixture = await build_delivery(tmp_path / "world")
+    fixture.coordinator()
+
+    assert fixture.unrowed_asks() == {}
+
+    getattr(dict(fixture.handed)["git"], "push", None)
+
+    assert fixture.unrowed_asks() == {"git": ["push"]}
 
 
 #: A branch no repository in the fixture has, so the merge and the deletion

@@ -379,6 +379,7 @@ async def test_verifying_leaves_every_open_pull_request_open(
 
     after = await lifecycles(forge)
     assert fixture.undeclared_reads() == {}, name
+    assert fixture.unrowed_asks() == {}, name
     assert fixture.refused_holdings() == [], name
     assert (result is first) is reused, name
     assert (result.checks is not None) is composed, name
