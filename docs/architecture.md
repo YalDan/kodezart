@@ -529,13 +529,15 @@ do.
 The marker is the stage's terminal act, and it is keyed on the member and the
 marker alone: a member already carrying it is never written again. It is
 written inside the run's own lease on the member's label surface, and the job
-that holds that lease is named as the write's holder, so the adapter checks the
-grant before it writes and on every retry, and a marker is never written
-without the run's provenance. Still inside that lease, the pass re-reads the
-member and requires the marker in its reported label set before the
-independent verification of the write runs, so a phase converges only on a
-marker the board reports: a write the board accepted and does not report is a
-typed write refusal, never a verification round a judge could pass.
+that holds that lease is named as the write's holder, so the port checks the
+grant before it writes and on every retry and refuses the write for any other
+holder or for a lapsed lease. The holder is an authorization checked at write
+time, not a record: the label carries no holder, and the lease markers naming
+the job are deleted when the lease is released. Still inside that lease, the
+pass re-reads the member and requires the marker in its reported label set
+before the independent verification of the write runs, so a phase converges
+only on a marker the board reports: a write the board accepted and does not
+report is a typed write refusal, never a verification round a judge could pass.
 
 Setting the approval label is what starts a scope run. The `scope_heartbeat`
 pass reads each `[[organize_scopes]]` row on the dispatch cadence and submits a
