@@ -5,18 +5,34 @@ over are stated once. Every set a guard compares is computed here from a
 live object or from the source text; the only literal sets are the named
 exemptions and the two allowlisted sites, which are what the criteria state
 rather than scanned surfaces.
+
+A name in an annotation means the object it resolves to: each module is
+imported and read with its own imports and aliases, so an import alias, an
+assignment alias, a type alias and a quoted annotation name the role or the
+aggregate they are bound to, whatever they are spelled as.
+
+Outside every static guard's reach:
+- a value handed across a function boundary, where the other function is
+  not resolved at this site (returned from a helper, stored on an object
+  and read elsewhere, or passed through a container built elsewhere);
+- a name built at run time;
+- a binding made only when a function runs (``setattr`` or ``globals()``
+  inside a function body).
 """
 
 import ast
+import dataclasses
 import importlib
 import inspect
 import pkgutil
 import re
+import typing
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from types import ModuleType
+from typing import TypeAliasType
 
 from typing_extensions import get_protocol_members, is_protocol
 
@@ -178,7 +194,10 @@ def zero_callers(sources: Mapping[str, str], members: frozenset[str]) -> frozens
     something that is not a tracker role.
     """
     called = frozenset().union(
-        *(called_members(text) for text in production_modules(sources).values())
+        *(
+            called_members(text, path)
+            for path, text in production_modules(sources).items()
+        )
     )
     return members - called
 
@@ -276,6 +295,7 @@ def roles(text: str) -> frozenset[str]:
     )
 
 
+@cache
 def port_objects() -> dict[str, type]:
     """The aggregate and every role, as the live classes the port module defines."""
     module = importlib.import_module(TrackerPort.__module__)
@@ -609,9 +629,163 @@ def admits_none(annotation: ast.expr) -> bool:
     return False
 
 
+@dataclass(frozen=True)
+class Alias:
+    """An expression a module binds a name to, read where it is bound."""
+
+    value: ast.expr
+
+
+#: What a name that nothing binds resolves to.
+UNBOUND = object()
+
+
+def top_level(body: list[ast.stmt]) -> list[ast.stmt]:
+    """Every statement a module runs at import, through its ``if`` and ``try``."""
+    found: list[ast.stmt] = []
+    for node in body:
+        found.append(node)
+        if isinstance(node, ast.If | ast.Try):
+            found.extend(top_level([*node.body, *node.orelse]))
+        if isinstance(node, ast.Try):
+            found.extend(top_level(node.finalbody))
+    return found
+
+
+def imported(name: str) -> object:
+    """The module *name*, or nothing when there is none to import."""
+    try:
+        return importlib.import_module(name)
+    except ImportError:
+        return UNBOUND
+
+
+def module_bindings(text: str, path: str | None) -> dict[str, object]:
+    """Every name *text* binds at import by an import, an assignment or an alias.
+
+    An import is resolved to the object it imports; an assignment or a type
+    alias keeps its expression, read in the same bindings when it is used.
+    """
+    bound: dict[str, object] = {}
+    for node in top_level(ast.parse(text).body):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    bound[alias.asname] = imported(alias.name)
+                else:
+                    head = alias.name.split(".", 1)[0]
+                    bound[head] = imported(head)
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:
+                if path is None:
+                    continue
+                package = [PACKAGE, *path.split("/")[:-1]]
+                anchor = package[: len(package) - (node.level - 1)]
+                base = ".".join([*anchor, *([node.module] if node.module else [])])
+            source = imported(base)
+            for alias in node.names:
+                value = getattr(source, alias.name, UNBOUND)
+                if value is UNBOUND:
+                    value = imported(f"{base}.{alias.name}")
+                bound[alias.asname or alias.name] = value
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1:
+            if isinstance(node.targets[0], ast.Name):
+                bound[node.targets[0].id] = Alias(node.value)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            if isinstance(node.target, ast.Name):
+                bound[node.target.id] = Alias(node.value)
+        elif isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
+            bound[node.name.id] = Alias(node.value)
+    return bound
+
+
 @cache
-def annotation_names(text: str) -> dict[str, frozenset[str]]:
-    """Every name *text* annotates with, and what it annotates with it."""
+def namespace(path: str | None, text: str) -> dict[str, object]:
+    """The names *text* resolves in: its module's live globals and its own bindings.
+
+    The module at *path* is imported and its globals read, so a name means
+    the object it is bound to; the text's own imports and aliases are laid
+    over them, so a module whose text differs from the one on disk, or that
+    is not on disk at all, resolves what it binds itself.
+    """
+    live: dict[str, object] = {}
+    if path is not None:
+        found = imported(module_name(path))
+        if isinstance(found, ModuleType):
+            live = dict(vars(found))
+    return {**live, **module_bindings(text, path)}
+
+
+def resolved_names(annotation: ast.expr, scope: Mapping[str, object]) -> frozenset[str]:
+    """Every port class *annotation* names, by the object each name resolves to.
+
+    A name, a qualified name, an import alias, an assignment alias, a type
+    alias or a quoted annotation is resolved in *scope* to its object; a
+    class the port module defines is named by its own name, whatever it was
+    spelled as, and anything else names nothing. A name *scope* does not
+    bind, such as one bound only inside a function, is read as spelled.
+    """
+    port_module = TrackerPort.__module__
+
+    def lookup(node: ast.expr, seen: frozenset[str]) -> object:
+        if isinstance(node, ast.Name):
+            value = scope.get(node.id, UNBOUND)
+            if isinstance(value, Alias) and node.id not in seen:
+                if isinstance(value.value, ast.Name | ast.Attribute):
+                    return lookup(value.value, seen | {node.id})
+            return value
+        if isinstance(node, ast.Attribute):
+            owner = lookup(node.value, seen)
+            if owner is UNBOUND or isinstance(owner, Alias):
+                return UNBOUND
+            return getattr(owner, node.attr, UNBOUND)
+        return UNBOUND
+
+    def of_object(value: object, seen: frozenset[str]) -> set[str]:
+        if isinstance(value, Alias):
+            return of_expression(value.value, seen)
+        if isinstance(value, type) and value.__module__ == port_module:
+            return {value.__name__}
+        if isinstance(value, TypeAliasType):
+            return of_object(value.__value__, seen)
+        if isinstance(value, str):
+            try:
+                return of_expression(ast.parse(value, mode="eval").body, seen)
+            except SyntaxError:
+                return set()
+        if isinstance(value, typing.ForwardRef):
+            return of_object(value.__forward_arg__, seen)
+        return set().union(*(of_object(arg, seen) for arg in typing.get_args(value)))
+
+    def of_expression(node: ast.expr, seen: frozenset[str]) -> set[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return of_object(node.value, seen)
+        if isinstance(node, ast.Name):
+            if node.id in seen:
+                return set()
+            value = scope.get(node.id, UNBOUND)
+            if value is UNBOUND:
+                return {node.id}
+            return of_object(value, seen | {node.id})
+        if isinstance(node, ast.Attribute):
+            value = lookup(node, seen)
+            return {node.attr} if value is UNBOUND else of_object(value, seen)
+        return set().union(
+            *(
+                of_expression(child, seen)
+                for child in ast.iter_child_nodes(node)
+                if isinstance(child, ast.expr)
+            )
+        )
+
+    return frozenset(of_expression(annotation, frozenset()))
+
+
+@cache
+def annotation_names(text: str, path: str | None = None) -> dict[str, frozenset[str]]:
+    """Every port class *text* annotates with, resolved, and what it annotates."""
+    scope = namespace(path, text)
     found: dict[str, set[str]] = {}
     for node in nodes(text):
         annotated: list[tuple[str, ast.expr]] = []
@@ -624,13 +798,13 @@ def annotation_names(text: str) -> dict[str, frozenset[str]]:
         elif isinstance(node, ast.AnnAssign):
             annotated = [(ast.unparse(node.target), node.annotation)]
         for held, annotation in annotated:
-            for name in names_in(annotation):
+            for name in resolved_names(annotation, scope):
                 found.setdefault(name, set()).add(held)
     return {name: frozenset(holders) for name, holders in found.items()}
 
 
 @cache
-def called_members(text: str) -> frozenset[str]:
+def called_members(text: str, path: str | None = None) -> frozenset[str]:
     """Every member name *text* calls on a tracker role it holds.
 
     A call counts only when its receiver is a role binding: a parameter or
@@ -641,7 +815,7 @@ def called_members(text: str) -> frozenset[str]:
     """
     known = roles(port_module_text()) | {AGGREGATE} | set(implemented_protocols())
     return frozenset().union(
-        *(members_called_on(binding, text) for binding in bindings(text, known)),
+        *(members_called_on(binding, text) for binding in bindings(text, known, path)),
         frozenset(),
     )
 
@@ -671,6 +845,7 @@ class Receiver:
     name: str
     position: int | None
     annotation: ast.expr | None
+    scope: Mapping[str, object] = dataclasses.field(default_factory=dict, compare=False)
 
 
 @cache
@@ -683,8 +858,9 @@ def receivers(sources: tuple[tuple[str, str], ...]) -> dict[str, list[list[Recei
     and is not one of them.
     """
     found: dict[str, list[list[Receiver]]] = {}
-    for _, text in sources:
+    for path, text in sources:
         parent = enclosing(text)
+        scope = namespace(path, text)
         for node in nodes(text):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 arguments = node.args
@@ -692,10 +868,10 @@ def receivers(sources: tuple[tuple[str, str], ...]) -> dict[str, list[list[Recei
                 if isinstance(parent.get(node), ast.ClassDef) and positional:
                     positional = positional[1:]
                 taken = [
-                    Receiver(argument.arg, index, argument.annotation)
+                    Receiver(argument.arg, index, argument.annotation, scope)
                     for index, argument in enumerate(positional)
                 ] + [
-                    Receiver(argument.arg, None, argument.annotation)
+                    Receiver(argument.arg, None, argument.annotation, scope)
                     for argument in arguments.kwonlyargs
                 ]
                 found.setdefault(node.name, []).append(taken)
@@ -715,7 +891,7 @@ def receivers(sources: tuple[tuple[str, str], ...]) -> dict[str, list[list[Recei
                 ]
                 found.setdefault(node.name, []).append(
                     [
-                        Receiver(field.target.id, index, field.annotation)
+                        Receiver(field.target.id, index, field.annotation, scope)
                         for index, field in enumerate(fields)
                         if isinstance(field.target, ast.Name)
                     ]
@@ -774,8 +950,15 @@ def assigned_pairs(scope: ast.AST) -> list[tuple[ast.expr, ast.expr]]:
     return pairs
 
 
-def bindings(text: str, known: frozenset[str]) -> list[Binding]:
-    """Every role-typed parameter and annotated field *text* declares."""
+def bindings(
+    text: str, known: frozenset[str], path: str | None = None
+) -> list[Binding]:
+    """Every role-typed parameter and annotated field *text* declares.
+
+    A role is the object an annotation resolves to in the module's own
+    namespace, so an alias of a role binds the role it names.
+    """
+    scope = namespace(path, text)
     tree = nodes(text)[0]
     parent = enclosing(text)
 
@@ -793,7 +976,7 @@ def bindings(text: str, known: frozenset[str]) -> list[Binding]:
             where = f"{owner.name}." if isinstance(owner, ast.ClassDef) else ""
             for argument in parameters(node):
                 held = (
-                    names_in(argument.annotation) & known
+                    resolved_names(argument.annotation, scope) & known
                     if argument.annotation is not None
                     else frozenset()
                 )
@@ -847,7 +1030,7 @@ def bindings(text: str, known: frozenset[str]) -> list[Binding]:
                         attribute_scope=owner,
                         container=holds_in_a_container(item.annotation),
                     )
-                    for role in sorted(names_in(item.annotation) & known)
+                    for role in sorted(resolved_names(item.annotation, scope) & known)
                 )
         elif isinstance(node, ast.ClassDef):
             for item in node.body:
@@ -866,7 +1049,7 @@ def bindings(text: str, known: frozenset[str]) -> list[Binding]:
                         attribute_scope=node,
                         container=holds_in_a_container(item.annotation),
                     )
-                    for role in sorted(names_in(item.annotation) & known)
+                    for role in sorted(resolved_names(item.annotation, scope) & known)
                 )
     return found
 
@@ -985,7 +1168,9 @@ def credited(
                     )
                     if not matches or receiver.annotation is None:
                         continue
-                    for role in names_in(receiver.annotation) & known:
+                    for role in (
+                        resolved_names(receiver.annotation, receiver.scope) & known
+                    ):
                         found.update({role, *composed(register, role)})
     return frozenset(found)
 
@@ -1023,7 +1208,7 @@ def uncredited_roles(
             continue
         idle = sorted(
             f"{binding.label}: {role}"
-            for binding in bindings(text, known)
+            for binding in bindings(text, known, path)
             for role in (
                 ({binding.role} | composed(register, binding.role)) & declaring
             )
@@ -1034,12 +1219,17 @@ def uncredited_roles(
     return report
 
 
-def aggregate_aliases(text: str) -> frozenset[str]:
-    """Every name *text* binds to the whole port, by assignment or type alias."""
+def aggregate_aliases(text: str, path: str | None = None) -> frozenset[str]:
+    """Every name *text* binds to the whole port, by assignment or type alias.
+
+    The value is resolved by object, so an alias of an alias, or of a name
+    imported under another name, is an alias of the port too.
+    """
+    scope = namespace(path, text)
     bound: set[str] = set()
     for node in nodes(text):
         if isinstance(node, ast.Assign | ast.AnnAssign | ast.TypeAlias):
-            if node.value is None or AGGREGATE not in names_in(node.value):
+            if node.value is None or AGGREGATE not in resolved_names(node.value, scope):
                 continue
             targets = (
                 node.targets
@@ -1053,18 +1243,15 @@ def aggregate_aliases(text: str) -> frozenset[str]:
 def aggregate_annotations(sources: Mapping[str, str]) -> tuple[str, ...]:
     """Every consumer that names the whole port, under its name or an alias.
 
-    An alias is a name any module binds to the aggregate, the port module
-    included; a consumer binding one is reported as well as one annotating
-    with one.
+    An annotation is resolved to the object it names, so the port imported
+    under another name, bound to an alias or quoted is the port; a consumer
+    binding an alias of it is reported as well as one annotating with one.
     """
-    spellings = {AGGREGATE}.union(
-        *(aggregate_aliases(text) for text in sources.values())
-    )
     return tuple(
         path
         for path, text in sorted(sources.items())
         if consumer(path)
-        and (spellings & set(annotation_names(text)) or aggregate_aliases(text))
+        and (AGGREGATE in annotation_names(text, path) or aggregate_aliases(text, path))
     )
 
 
@@ -1080,6 +1267,7 @@ def defaulted_role_parameters(sources: Mapping[str, str]) -> dict[str, tuple[str
     for path, text in sorted(sources.items()):
         if not consumer(path):
             continue
+        scope = namespace(path, text)
         loose: set[str] = set()
         for function in functions(text):
             arguments = function.args
@@ -1097,7 +1285,7 @@ def defaulted_role_parameters(sources: Mapping[str, str]) -> dict[str, tuple[str
             for argument in parameters(function):
                 if (
                     argument.annotation is None
-                    or not names_in(argument.annotation) & known
+                    or not resolved_names(argument.annotation, scope) & known
                 ):
                     continue
                 if (
@@ -1113,7 +1301,7 @@ def defaulted_role_parameters(sources: Mapping[str, str]) -> dict[str, tuple[str
                 if (
                     isinstance(field, ast.AnnAssign)
                     and isinstance(field.target, ast.Name)
-                    and names_in(field.annotation) & known
+                    and resolved_names(field.annotation, scope) & known
                     and (field.value is not None or admits_none(field.annotation))
                 ):
                     loose.add(f"{node.name}.{field.target.id}")
@@ -1203,7 +1391,7 @@ def unreached_roles(sources: Mapping[str, str], register: str) -> frozenset[str]
         name
         for path in first_party_closure(sources)
         if consumer(path) or allowlisted(path)
-        for name in annotation_names(sources[path])
+        for name in annotation_names(sources[path], path)
         if name in known
     }
     reached = named.union(*(composed(register, name) for name in named))
