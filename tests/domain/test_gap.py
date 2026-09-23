@@ -269,6 +269,45 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
         for case in arms
         if isinstance(case.pattern, ast.MatchValue)
     ) == sorted(WorkflowStateKind.__members__)
+    # Nothing before the match can answer for a state either: after the
+    # docstring, the body is the label refusal and then the match, whose
+    # subject is the one parameter's own state.
+    statements = membership.body
+    if isinstance(statements[0], ast.Expr) and isinstance(
+        statements[0].value, ast.Constant
+    ):
+        statements = statements[1:]
+    assert [type(statement) for statement in statements] == [ast.If, ast.Match]
+    refusal, match = statements
+    assert [type(statement) for statement in refusal.body] == [ast.Raise]
+    assert refusal.orelse == []
+    (parameter,) = membership.args.args
+    assert ast.dump(match.subject) == ast.dump(
+        ast.Attribute(
+            value=ast.Name(id=parameter.arg, ctx=ast.Load()),
+            attr="state_kind",
+            ctx=ast.Load(),
+        )
+    )
+    # And no function of the module names a state outside a match pattern:
+    # a name is read as the object it is bound to in the module, and a
+    # string equal to a state's value names that state too.
+    in_patterns = {id(node) for case in arms for node in ast.walk(case.pattern)}
+    assert in_patterns
+    namespace = vars(gap)
+    state_values = {member.value for member in WorkflowStateKind}
+
+    def names_a_state(node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            bound = namespace.get(node.id)
+            return bound is WorkflowStateKind or isinstance(bound, WorkflowStateKind)
+        return isinstance(node, ast.Constant) and node.value in state_values
+
+    assert [
+        ast.unparse(node)
+        for node in ast.walk(tree)
+        if id(node) not in in_patterns and names_a_state(node)
+    ] == []
 
 
 @pytest.mark.parametrize(
@@ -278,5 +317,77 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
 def test_purity_guard_rejects_builtin_io_without_executing_it(monkeypatch, call):
     source = inspect.getsource(gap) + f"\ndef unexpected_io():\n    {call}\n"
     monkeypatch.setattr(inspect, "getsource", lambda _: source)
+    with pytest.raises(AssertionError):
+        test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm()
+
+
+_MATCH = "    match criterion.state_kind:\n"
+_MEMBERSHIPS = (
+    "    memberships = [(criterion, gap_membership(criterion))"
+    " for criterion in criteria]\n"
+)
+_CLOSED = "(States.COMPLETED, States.CANCELED, States.DUPLICATE)"
+
+
+def _defaulted(closed: str) -> str:
+    """compute_gap answering OWED itself for every state *closed* leaves out."""
+    return (
+        "    memberships = [\n"
+        "        (\n"
+        "            criterion,\n"
+        "            gap_membership(criterion)\n"
+        f"            if criterion.state_kind in {closed}\n"
+        "            else GapMembership.OWED,\n"
+        "        )\n"
+        "        for criterion in criteria\n"
+        "    ]\n"
+    )
+
+
+#: One default arm per spelling the shape guard reads: before the match, in
+#: the match's subject, in compute_gap through the enum, through an alias the
+#: module binds to it and through a state's string value, and a label check
+#: that excludes before the state is read.
+DEFAULT_ARMS: dict[str, tuple[str, str]] = {
+    "before-the-match": (
+        _MATCH,
+        "    if criterion.state_kind not in (WorkflowStateKind.COMPLETED,):\n"
+        "        return GapMembership.OWED\n" + _MATCH,
+    ),
+    "in-the-subject": (
+        _MATCH,
+        "    match (\n"
+        "        criterion.state_kind\n"
+        "        if criterion.state_kind in (WorkflowStateKind.COMPLETED,)\n"
+        "        else WorkflowStateKind.STARTED\n"
+        "    ):\n",
+    ),
+    "in-compute-gap": (
+        _MEMBERSHIPS,
+        _defaulted(_CLOSED.replace("States.", "WorkflowStateKind.")),
+    ),
+    "through-an-alias": (_MEMBERSHIPS, _defaulted(_CLOSED)),
+    "by-value": (_MEMBERSHIPS, _defaulted('("completed", "canceled", "duplicate")')),
+    "by-label": (
+        _MATCH,
+        '    if "superseded" in criterion.issue_labels:\n'
+        "        return GapMembership.EXCLUDED\n" + _MATCH,
+    ),
+}
+
+
+@pytest.mark.parametrize("spelling", list(DEFAULT_ARMS))
+def test_the_shape_guard_rejects_a_default_arm_however_it_is_spelled(
+    monkeypatch, spelling
+):
+    """Each spelling of a default the guard reads is refused, never executed."""
+    old, new = DEFAULT_ARMS[spelling]
+    source = inspect.getsource(gap)
+    assert source.count(old) == 1
+    planted = source.replace(old, new)
+    monkeypatch.setattr(inspect, "getsource", lambda _: planted)
+    # The alias is bound in the module, as an import of it would bind it: the
+    # guard reads the name as the object it names, not as its spelling.
+    monkeypatch.setattr(gap, "States", WorkflowStateKind, raising=False)
     with pytest.raises(AssertionError):
         test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm()
