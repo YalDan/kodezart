@@ -149,9 +149,9 @@ reaches the remote only when its work is consolidated. Both read as
 Two settings bound it, both with shipped defaults:
 `KODEZART_UNION_CHECK_STEP_TIMEOUT_SECONDS` is the wall clock one check step
 gets, and `KODEZART_UNION_STALE_MAX_ATTEMPTS` is how many times a measurement
-is retried while the heads keep moving under it. These two are the walk's only
-settings. How many fires in a row may close nothing before a lane rests is not
-one of them: it is one, fixed in code.
+is retried while the heads keep moving under it. These two are the union
+measurement's only settings. How many fires in a row may close nothing before a
+lane rests is not a setting: it is one, fixed in code.
 
 ## Stopping and re-entering
 
