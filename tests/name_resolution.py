@@ -2716,7 +2716,7 @@ def _paired(target: ast.expr, value: ast.expr) -> list[tuple[str, ast.expr]]:
 LOADERS = frozenset({"import_module", "__import__"})
 
 
-def _argument(call: ast.Call, position: int, keyword: str) -> ast.expr | None:
+def _loader_argument(call: ast.Call, position: int, keyword: str) -> ast.expr | None:
     """What *call* hands the parameter at *position*, or named *keyword*."""
     if position < len(call.args):
         return call.args[position]
@@ -2745,28 +2745,28 @@ def loaded_by(
     argument is read by position or by keyword.  ``(None, {})`` when the
     name is not a literal, or a relative name has no package to resolve by.
     """
-    name = _text(_argument(call, 0, "name"))
+    name = _text(_loader_argument(call, 0, "name"))
     if name is None:
         return None, frozenset()
     fromlist: tuple[str, ...] = ()
     if loader == "import_module":
         level = len(name) - len(name.lstrip("."))
         name = name.lstrip(".")
-        anchor = _argument(call, 1, "package")
+        anchor = _loader_argument(call, 1, "package")
         package = (
             package_of(module, root)
             if isinstance(anchor, ast.Name) and anchor.id == "__package__"
             else _text(anchor)
         )
     else:
-        written = _argument(call, 4, "level")
+        written = _loader_argument(call, 4, "level")
         level = (
             written.value
             if isinstance(written, ast.Constant) and type(written.value) is int
             else 0
         )
         package = package_of(module, root)
-        listed = _argument(call, 3, "fromlist")
+        listed = _loader_argument(call, 3, "fromlist")
         if isinstance(listed, ast.List | ast.Tuple):
             fromlist = tuple(
                 text for element in listed.elts if (text := _text(element)) is not None
