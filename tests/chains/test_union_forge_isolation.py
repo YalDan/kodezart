@@ -23,14 +23,17 @@ from kodezart.config.app import AppConfig
 from kodezart.core import protocols
 from kodezart.domain.errors import CheckChainExecutionError
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.types.domain.operation import CheckStep
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.union import UnionOutcome
 from kodezart.types.domain.union_tick import ScopeUnionRequest
 from tests.chains.test_delivery_coordinator import RECORD_OPERATION, RaisingRunner
 from tests.chains.test_delivery_coordinator import delivery as delivery
 from tests.chains.test_delivery_coordinator import repository as repository
 from tests.chains.test_union_exit_invariance import (
     CONFLICTING_EDITS,
+    FAILING_CHECKS,
     INDEPENDENT_EDITS,
     UNION_MODULES,
     RecordingPublisher,
@@ -359,16 +362,61 @@ async def lifecycles(
 #: had moved since it was measured.  ``composed`` says which of the first two;
 #: ``reused`` asks twice on one step and requires the second answer to be the
 #: first result OBJECT, which is the only thing that says reuse was the return
-#: taken rather than a second measurement that merely compares equal.
-RETURN_PATHS: tuple[tuple[str, dict[str, tuple[str, str]], bool, bool], ...] = (
-    ("independent edits", INDEPENDENT_EDITS, True, False),
-    ("conflicting edits", CONFLICTING_EDITS, False, False),
-    ("unchanged heads asked twice", INDEPENDENT_EDITS, True, True),
+#: taken rather than a second measurement that merely compares equal.  The
+#: composed return carries a green or a red chain, and the reuse return hands
+#: back whichever kind was cached — green, red or a merge conflict — so each of
+#: those is a row of its own, and ``outcome`` says which one the row drove.
+#: ``checks`` replaces the declared chain, or keeps it when None.
+RETURN_PATHS: tuple[
+    tuple[
+        str,
+        dict[str, tuple[str, str]],
+        tuple[CheckStep, ...] | None,
+        bool,
+        bool,
+        UnionOutcome,
+    ],
+    ...,
+] = (
+    ("independent edits", INDEPENDENT_EDITS, None, True, False, UnionOutcome.GREEN),
+    ("conflicting edits", CONFLICTING_EDITS, None, False, False, UnionOutcome.RED),
+    (
+        "a failing chain",
+        INDEPENDENT_EDITS,
+        FAILING_CHECKS,
+        True,
+        False,
+        UnionOutcome.RED,
+    ),
+    (
+        "unchanged heads asked twice",
+        INDEPENDENT_EDITS,
+        None,
+        True,
+        True,
+        UnionOutcome.GREEN,
+    ),
+    (
+        "conflicting edits asked twice",
+        CONFLICTING_EDITS,
+        None,
+        False,
+        True,
+        UnionOutcome.RED,
+    ),
+    (
+        "a failing chain asked twice",
+        INDEPENDENT_EDITS,
+        FAILING_CHECKS,
+        True,
+        True,
+        UnionOutcome.RED,
+    ),
 )
 
 
 @pytest.mark.parametrize(
-    "name, edits, composed, reused",
+    "name, edits, checks, composed, reused, outcome",
     RETURN_PATHS,
     ids=[row[0] for row in RETURN_PATHS],
 )
@@ -376,8 +424,10 @@ async def test_verifying_leaves_every_open_pull_request_open(
     tmp_path,
     name: str,
     edits: dict[str, tuple[str, str]],
+    checks: tuple[CheckStep, ...] | None,
     composed: bool,
     reused: bool,
+    outcome: UnionOutcome,
 ) -> None:
     """Read back around the verify, not asserted of the step's own surface.
 
@@ -385,12 +435,14 @@ async def test_verifying_leaves_every_open_pull_request_open(
     lifecycle of every open request is the same fact after the union step
     returns as it was before it was called — on EACH way it returns, because a
     lifecycle write placed on the return the read-back never drives is a write
-    nothing here would see.  The reuse row reads back around its SECOND ask, so
-    the return under measurement is the one that composes nothing.
+    nothing here would see.  The reuse rows read back around their SECOND ask,
+    so the return under measurement is the one that composes nothing.
     """
     fixture = await build_delivery(
         tmp_path / "world", edits=edits, git=ReachableForgeGit()
     )
+    if checks is not None:
+        fixture.with_checks(checks)
     forge = fixture.git.forge
     coordinator = fixture.coordinator()
     first = await coordinator.verify() if reused else None
@@ -402,6 +454,7 @@ async def test_verifying_leaves_every_open_pull_request_open(
     assert (result is first) is reused, name
     assert (result.checks is not None) is composed, name
     assert (result.merge_conflict is not None) is not composed, name
+    assert result.outcome is outcome, name
     assert (before, after) == (ALL_OPEN, ALL_OPEN), name
 
 
