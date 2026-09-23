@@ -1,13 +1,33 @@
-"""Native semantic addresses and report arithmetic preserve exact identities."""
+"""Native semantic addresses and report arithmetic preserve exact identities.
 
+The session roots below are derived by a static reading of every call in
+``src/kodezart``, each name resolved by object in its module's namespace after
+import. What that reading does not read, stated once and held by a committed
+negative for each shape: a value handed across a function boundary, where the
+other function is not resolved at this site (returned from a helper, stored on
+an object and read elsewhere, or passed through a container built elsewhere); a
+name built at run time; a binding made only when a function runs (`setattr` or
+`globals()` inside a function body).
+"""
+
+import ast
+import builtins
+import functools
 import importlib
+import importlib.util
+import inspect
+import operator
 import pkgutil
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from types import ModuleType
 from typing import get_args, get_origin
 
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+import kodezart
 import kodezart.types.domain as types_domain
 from kodezart.domain.amendment import (
     NativeWriteRefusalError,
@@ -34,6 +54,7 @@ from kodezart.types.domain.amendment import (
     UpheldJudgment,
     UpheldReason,
 )
+from kodezart.types.domain.amendment_write import AmendmentTextOutput
 from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.criteria import FindingEvidence
 from kodezart.types.domain.operation import CheckPrerequisite
@@ -644,15 +665,341 @@ def _annotation_types(annotation):
         yield from _annotation_types(argument)
 
 
-#: The models a session fills in, directly or as the verdict it is judged by.
-SESSION_ROOTS = (
-    AmendmentClaim,
-    AmendmentJudgment,
-    UpheldJudgment,
-    UpheldAmendment,
-    NativeWriterOutput,
-    FindingEvidence,
-)
+#: The parameters through which a session is handed the schema of its output:
+#: a judged session's ``output_schema`` and an executor's ``output_format``,
+#: whose ``schema`` entry is that schema.
+SCHEMA_PARAMETERS = frozenset({"output_schema", "output_format"})
+
+#: How many bindings deep one argument is followed before the walk gives up, so
+#: a binding that names itself, directly or around a cycle, ends the walk.
+RESOLUTION_DEPTH = 8
+
+_MISSING = object()
+
+
+@dataclass(frozen=True)
+class _Instance:
+    """An instance of *cls* built at the call site, known by its class alone."""
+
+    cls: type
+
+
+@dataclass(frozen=True)
+class _Bound:
+    """A function bound to an instance, so its first parameter is already filled."""
+
+    function: Callable[..., object]
+
+
+@dataclass(frozen=True)
+class _Scope:
+    """What one call site's names denote: its functions' bindings, then the module."""
+
+    #: The module's own namespace after import.
+    namespace: Mapping[str, object]
+    #: The local bindings of each enclosing function, innermost first.
+    bindings: tuple[Mapping[str, tuple[ast.expr, ...]], ...] = ()
+
+
+def _local_bindings(function):
+    """Every value a function body binds to a plain name, walrus bindings included."""
+    found: dict[str, list[ast.expr]] = {}
+    for node in ast.walk(function):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign | ast.NamedExpr) and node.value:
+            targets = [node.target]
+        else:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                found.setdefault(target.id, []).append(node.value)
+    return {name: tuple(values) for name, values in found.items()}
+
+
+def _is_schema_method(value):
+    """Whether *value* is ``model_json_schema`` bound to one model class."""
+    return (
+        inspect.ismethod(value)
+        and isinstance(value.__self__, type)
+        and issubclass(value.__self__, BaseModel)
+        and value.__func__ is BaseModel.model_json_schema.__func__
+    )
+
+
+def _attribute(receiver, name):
+    """What ``receiver.name`` denotes, read without running a descriptor."""
+    if isinstance(receiver, _Instance):
+        value = inspect.getattr_static(receiver.cls, name, _MISSING)
+        return [_Bound(value)] if inspect.isfunction(value) else []
+    if name == "__dict__" and isinstance(receiver, ModuleType | type):
+        return [vars(receiver)]
+    value = inspect.getattr_static(receiver, name, _MISSING)
+    if value is _MISSING:
+        return []
+    if isinstance(value, classmethod) and isinstance(receiver, type):
+        return [value.__get__(None, receiver)]
+    return [value]
+
+
+def _call_values(node, scope, depth):
+    """What a call evaluates to, for the calls that only look a name up.
+
+    ``getattr``, ``vars``, ``importlib.import_module``, ``__import__`` and
+    ``operator.attrgetter`` with literal names; a model's own
+    ``model_json_schema``; and a class, whose call is an instance of it.
+    """
+    literals = [
+        [value for value in _values(argument, scope, depth) if isinstance(value, str)]
+        for argument in node.args
+    ]
+    receivers = _values(node.args[0], scope, depth) if node.args else []
+    found: list[object] = []
+    for callee in _values(node.func, scope, depth):
+        if callee is getattr and len(literals) >= 2:
+            found += [
+                value
+                for receiver in receivers
+                for name in literals[1]
+                for value in _attribute(receiver, name)
+            ]
+        elif callee is vars:
+            found += [
+                vars(receiver)
+                for receiver in receivers
+                if isinstance(receiver, ModuleType | type)
+            ]
+        elif callee is importlib.import_module and literals:
+            found += [importlib.import_module(name) for name in literals[0]]
+        elif callee is __import__ and literals:
+            for name in literals[0]:
+                importlib.import_module(name)
+                found.append(importlib.import_module(name.partition(".")[0]))
+        elif callee is operator.attrgetter and literals:
+            found += [operator.attrgetter(name) for name in literals[0]]
+        elif isinstance(callee, operator.attrgetter):
+            found += [
+                callee(receiver)
+                for receiver in receivers
+                if isinstance(receiver, ModuleType | type)
+            ]
+        elif _is_schema_method(callee):
+            found.append(callee())
+        elif isinstance(callee, type):
+            found.append(_Instance(callee))
+    return found
+
+
+def _values(node, scope, depth=0):
+    """Every object an expression can evaluate to, read from the code it names.
+
+    A name is looked up in the enclosing functions' bindings, innermost first,
+    then in the module's namespace after import, then among the builtins. An
+    attribute, a subscript with a literal key, a dict display's values, both
+    arms of a conditional, a walrus and a call that only looks a name up are
+    followed from there, at most ``RESOLUTION_DEPTH`` deep. Anything else
+    evaluates to nothing.
+    """
+    if depth > RESOLUTION_DEPTH:
+        return []
+    depth += 1
+    if isinstance(node, ast.Constant):
+        return [node.value]
+    if isinstance(node, ast.Name):
+        for bindings in scope.bindings:
+            if node.id in bindings:
+                return [
+                    value
+                    for bound in bindings[node.id]
+                    for value in _values(bound, scope, depth)
+                ]
+        for namespace in (scope.namespace, vars(builtins)):
+            if node.id in namespace:
+                return [namespace[node.id]]
+        return []
+    if isinstance(node, ast.Attribute):
+        return [
+            value
+            for receiver in _values(node.value, scope, depth)
+            for value in _attribute(receiver, node.attr)
+        ]
+    if isinstance(node, ast.Subscript):
+        return [
+            container[key]
+            for container in _values(node.value, scope, depth)
+            if isinstance(container, Mapping)
+            for key in _values(node.slice, scope, depth)
+            if isinstance(key, str) and key in container
+        ]
+    if isinstance(node, ast.Dict):
+        return [
+            value for entry in node.values for value in _values(entry, scope, depth)
+        ]
+    if isinstance(node, ast.IfExp):
+        return _values(node.body, scope, depth) + _values(node.orelse, scope, depth)
+    if isinstance(node, ast.NamedExpr):
+        return _values(node.value, scope, depth)
+    if isinstance(node, ast.Call):
+        return _call_values(node, scope, depth)
+    return []
+
+
+def _positional(node, scope):
+    """Each positional argument of a call, paired with the parameter it lands on.
+
+    The callee is resolved by object: a function, a method read off its class
+    and called with an explicit instance, a method bound to an instance built
+    at the call site or held in a local, or the callee a ``functools.partial``
+    wraps, whose own positional arguments come first. A starred list or tuple
+    display is spread in place.
+    """
+    arguments: list[ast.expr] = []
+    for argument in node.args:
+        if isinstance(argument, ast.Starred) and isinstance(
+            argument.value, ast.List | ast.Tuple
+        ):
+            arguments += argument.value.elts
+        else:
+            arguments.append(argument)
+    for callee in _values(node.func, scope):
+        targets, handed = [callee], arguments
+        if callee is functools.partial and arguments:
+            targets, handed = _values(arguments[0], scope), arguments[1:]
+        for target in targets:
+            function = target.function if isinstance(target, _Bound) else target
+            if not inspect.isfunction(function):
+                continue
+            parameters = [
+                parameter.name
+                for parameter in inspect.signature(function).parameters.values()
+                if parameter.kind
+                in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD)
+            ][isinstance(target, _Bound) :]
+            yield from zip(parameters, handed, strict=False)
+
+
+def _lambda_defaults(node):
+    """Each parameter of a lambda that has a default, with that default."""
+    arguments = node.args
+    positional = [*arguments.posonlyargs, *arguments.args]
+    yield from zip(
+        positional[len(positional) - len(arguments.defaults) :],
+        arguments.defaults,
+        strict=True,
+    )
+    for parameter, default in zip(
+        arguments.kwonlyargs, arguments.kw_defaults, strict=True
+    ):
+        if default is not None:
+            yield parameter, default
+
+
+def _handed_arguments(node, scope):
+    """Every expression a call or a lambda hands a session as its output schema.
+
+    A keyword argument, an entry of a ``**`` dict display with a literal key, a
+    positional argument that lands on the parameter, and a lambda's default.
+    """
+    if isinstance(node, ast.Lambda):
+        for parameter, default in _lambda_defaults(node):
+            if parameter.arg in SCHEMA_PARAMETERS:
+                yield default
+        return
+    for keyword in node.keywords:
+        if keyword.arg in SCHEMA_PARAMETERS:
+            yield keyword.value
+        elif keyword.arg is None and isinstance(keyword.value, ast.Dict):
+            for key, value in zip(
+                keyword.value.keys, keyword.value.values, strict=True
+            ):
+                if isinstance(key, ast.Constant) and key.value in SCHEMA_PARAMETERS:
+                    yield value
+    for parameter, argument in _positional(node, scope):
+        if parameter in SCHEMA_PARAMETERS:
+            yield argument
+
+
+def handed_schemas(tree, namespace):
+    """Every object one module hands a session as the schema of its output.
+
+    Every call and lambda in *tree* is read in its own scope: the bindings of
+    the functions around it, then *namespace*, the module's namespace after
+    import. The walk visits each node of the tree once.
+    """
+    found: list[object] = []
+
+    def visit(node, bindings):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+            bindings = (_local_bindings(node), *bindings)
+        if isinstance(node, ast.Call | ast.Lambda):
+            scope = _Scope(namespace, bindings)
+            for argument in _handed_arguments(node, scope):
+                found.extend(_values(argument, scope))
+        for child in ast.iter_child_nodes(node):
+            visit(child, bindings)
+
+    visit(tree, ())
+    return found
+
+
+def schema_models(schemas, models):
+    """The models of *models* whose schema is one of *schemas*, and the rest.
+
+    Returns every matching model, then every schema no model produces. Only a
+    dict is a schema; any other object handed over is not counted.
+    """
+    produced = [(model, model.model_json_schema()) for model in models]
+    matched: list[type[BaseModel]] = []
+    unmatched: list[object] = []
+    for handed in schemas:
+        if not isinstance(handed, dict):
+            continue
+        found = [model for model, schema in produced if schema == handed]
+        matched += found
+        if not found:
+            unmatched.append(handed)
+    return matched, unmatched
+
+
+@functools.cache
+def session_roots():
+    """Every model whose schema ``src/kodezart`` hands a session for its output.
+
+    Derived by reading every call in every module of the installed package,
+    resolved against that module after import, and matching each schema handed
+    over to the model that produces it. Returns the roots and every schema that
+    no model produces.
+    """
+    modules = [
+        importlib.import_module(info.name)
+        for info in pkgutil.walk_packages(kodezart.__path__, f"{kodezart.__name__}.")
+    ]
+    models = [
+        value
+        for module in modules
+        for value in vars(module).values()
+        if isinstance(value, type)
+        and issubclass(value, BaseModel)
+        and value.__module__ == module.__name__
+    ]
+    schemas = [
+        schema
+        for module in modules
+        for schema in handed_schemas(
+            ast.parse(Path(module.__file__).read_text(encoding="utf-8")), vars(module)
+        )
+    ]
+    roots, unmatched = schema_models(schemas, models)
+    return tuple(
+        sorted(set(roots), key=lambda model: (model.__module__, model.__qualname__))
+    ), unmatched
+
+
+#: The verdicts a session's judgment is judged by. The code builds them from a
+#: validated judgment and hands no session their schema, so the derivation does
+#: not find them; they are held here so the snapshot still pins them and the
+#: refusal publications they carry.
+JUDGED_BY = (UpheldJudgment, UpheldAmendment)
 
 
 def _reachable_models(roots):
@@ -703,15 +1050,742 @@ def _declared_models():
                 yield value
 
 
+#: Every field of every model in the session-facing closure, with its declared
+#: type as ``repr`` renders it. Taken from the closure at this commit; a model or
+#: field added, removed or retyped anywhere in the closure changes it.
+SESSION_CLOSURE = {
+    "AcceptanceCriteriaOutput": {
+        "criteria_results": "list[kodezart.types.domain.agent.CriterionResult]",
+        "sherlock_flags": "list[kodezart.types.domain.accept.SherlockFlag]",
+    },
+    "AdmissionJudgment": {
+        "root": (
+            "typing.Annotated[kodezart.types.domain.organize.BuildableAdmission | "
+            "kodezart.types.domain.organize.RefusedAdmission | "
+            "kodezart.types.domain.organize.UnverifiableAdmission, "
+            "FieldInfo(annotation=NoneType, required=True, discriminator='verdict')]"
+        ),
+    },
+    "AmendmentClaim": {
+        "subject": (
+            "kodezart.types.domain.amendment.CriterionSubject | "
+            "kodezart.types.domain.amendment.RulingSubject"
+        ),
+        "stage": "typing.Literal['implementation']",
+        "ground": "<enum 'AmendmentGround'>",
+        "departure": "<class 'str'>",
+        "claimed_capability": (
+            "kodezart.types.domain.operation.CheckPrerequisite | None"
+        ),
+    },
+    "AmendmentJudgment": {
+        "subject": (
+            "kodezart.types.domain.amendment.CriterionSubject | "
+            "kodezart.types.domain.amendment.RulingSubject"
+        ),
+        "base_sha": "<class 'str'>",
+        "ground": "<enum 'AmendmentGround'>",
+        "reproduced": "<class 'bool'>",
+        "finding": "<class 'kodezart.types.domain.criteria.FindingEvidence'>",
+        "citations": "tuple[kodezart.types.domain.amendment.BaseCitation, ...]",
+        "measured_by": (
+            "typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])]]"
+        ),
+    },
+    "AmendmentTextOutput": {
+        "replacement": (
+            "kodezart.types.domain.amendment_write.CriterionReplacement | "
+            "kodezart.types.domain.amendment_write.RulingReplacement | "
+            "kodezart.types.domain.amendment_write.PreservedSubject"
+        ),
+        "explanation": "<class 'str'>",
+    },
+    "AuditBytePair": {
+        "source_sha": "<class 'str'>",
+        "source_path": "<class 'str'>",
+        "artifact_path": "<class 'str'>",
+    },
+    "AuditClaimJudgment": {
+        "criterion_key": "<class 'str'>",
+        "verdict": "+ClaimVerdict",
+        "evidence": "<class 'str'>",
+    },
+    "AuditMandateJudgment": {
+        "root": "MandateJudgment",
+    },
+    "AuditOverclaimJudgment": {
+        "criterion_key": "<class 'str'>",
+        "checks": "tuple[kodezart.types.domain.audit_overclaim.OverclaimReading, ...]",
+        "byte_pairs": "tuple[kodezart.types.domain.audit_overclaim.AuditBytePair, ...]",
+    },
+    "BaseCitation": {
+        "path": "<class 'str'>",
+        "quote": "<class 'str'>",
+    },
+    "BaseDemonstration": {
+        "command": "<class 'str'>",
+        "satisfied_at_base": "<class 'bool'>",
+    },
+    "BlockedByChange": {
+        "add": (
+            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
+        ),
+        "remove": (
+            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
+        ),
+        "kind": "typing.Literal['blocked_by']",
+    },
+    "BodyProposal": {
+        "kind": "typing.Literal['body']",
+        "issue_id": "<class 'str'>",
+        "body": "<class 'str'>",
+    },
+    "BranchNameOutput": {
+        "slug": "<class 'str'>",
+    },
+    "BuildableAdmission": {
+        "verdict": "typing.Literal[<AdmissionVerdict.BUILDABLE: 'buildable'>]",
+        "issue_id": "<class 'str'>",
+        "evidence": "<class 'str'>",
+        "findings": "tuple[kodezart.types.domain.organize.SpecFinding, ...]",
+    },
+    "CodeReference": {
+        "location": "<class 'str'>",
+        "note": "<class 'str'>",
+    },
+    "CommitMessageOutput": {
+        "title": "<class 'str'>",
+        "body": "<class 'str'>",
+    },
+    "ContentAuditFinding": {
+        "category": (
+            "typing.Union[typing.Literal[<RedactionCategory.ORG_PRIVATE: "
+            "'org_private'>], kodezart.types.domain.gating.DurabilityCategory]"
+        ),
+        "start": "int | None",
+        "end": "int | None",
+        "rationale": "<class 'str'>",
+    },
+    "ContentAuditOutput": {
+        "findings": "list[kodezart.types.domain.agent.ContentAuditFinding]",
+    },
+    "Contradiction": {
+        "criterion_ids": (
+            "list[typing.Annotated[kodezart.types.domain.criteria.CriterionId, "
+            "FieldInfo(annotation=NoneType, required=True, metadata=["
+            "_PydanticGeneralMetadata(pattern='^AC-[1-9][0-9]*$')])]]"
+        ),
+        "explanation": "<class 'str'>",
+    },
+    "CostClaim": {
+        "assertion": "<class 'str'>",
+        "measurement": "kodezart.types.domain.criteria.CostMeasurement | None",
+    },
+    "CostMeasurement": {
+        "observed": "<class 'str'>",
+        "affordable": "<class 'bool'>",
+    },
+    "CriteriaProposal": {
+        "kind": "typing.Literal['criteria']",
+        "issue_id": "<class 'str'>",
+        "criteria": (
+            "tuple[kodezart.types.domain.organize_owner.CriterionProposal, ...]"
+        ),
+    },
+    "CriteriaValidationOutput": {
+        "findings": "list[kodezart.types.domain.criteria.CriterionFinding]",
+        "contradictions": "list[kodezart.types.domain.criteria.Contradiction]",
+    },
+    "CriterionFinding": {
+        "criterion_id": "kodezart.types.domain.criteria.CriterionId",
+        "verdict": "<enum 'CriterionVerdict'>",
+        "smallest_repair": "<enum 'RepairKind'>",
+        "refutation": "str | None",
+        "missing_resource": "str | None",
+        "cost_claim": "kodezart.types.domain.criteria.CostClaim | None",
+        "base_demonstration": "kodezart.types.domain.criteria.BaseDemonstration | None",
+        "pinned_literals": "list[str]",
+        "forbidden_class": (
+            "kodezart.types.domain.criteria.ForbiddenCriterionClass | None"
+        ),
+        "undeclared_switch_arms": "list[str]",
+    },
+    "CriterionProposal": {
+        "title": "<class 'str'>",
+        "check": "<class 'str'>",
+        "do": "<class 'str'>",
+    },
+    "CriterionReplacement": {
+        "kind": "typing.Literal['criterion']",
+        "subject": "<class 'kodezart.types.domain.amendment.CriterionSubject'>",
+        "check": "<class 'str'>",
+        "do": "<class 'str'>",
+    },
+    "CriterionResult": {
+        "criterion_id": "kodezart.types.domain.criteria.CriterionId",
+        "criterion": "<class 'str'>",
+        "passed": "<class 'bool'>",
+        "reasoning": "<class 'str'>",
+        "rederivation_class": "<enum 'RederivationClass'>",
+        "exercised_paths": "tuple[str, ...]",
+    },
+    "CriterionSubject": {
+        "kind": "typing.Literal['criterion']",
+        "id": "kodezart.types.domain.criteria.CriterionId",
+    },
+    "CritiqueFlag": {
+        "subject": "<class 'str'>",
+        "reason": "<class 'str'>",
+    },
+    "DeletedDetectionFinding": {
+        "mechanism": (
+            "<class 'kodezart.types.domain.audit_detection_removal.RemovedSourceQuote'>"
+        ),
+        "detector": (
+            "<class 'kodezart.types.domain.audit_detection_removal.RemovedSourceQuote'>"
+        ),
+        "absence_demonstration": "<class 'str'>",
+    },
+    "DetectorRemovalJudgment": {
+        "criterion_key": "kodezart.types.domain.criterion_ref.CriterionRef",
+        "verdict": "<enum 'AuditVerdict'>",
+        "evidence": "<class 'str'>",
+        "findings": (
+            "tuple[kodezart.types.domain.audit_detection_removal.DeletedDetectionFind"
+            "ing, ...]"
+        ),
+    },
+    "DraftedCriterion": {
+        "text": "<class 'str'>",
+    },
+    "EscalatedRefusal": {
+        "kind": "typing.Literal['escalated']",
+        "record": "<class 'kodezart.types.domain.write_back.WriteBackResult'>",
+        "escalation": "<class 'kodezart.types.domain.write_back.WriteBackResult'>",
+    },
+    "FileChange": {
+        "file_path": "<class 'str'>",
+        "change_type": "typing.Literal['create', 'modify', 'delete']",
+        "description": "<class 'str'>",
+        "rationale": "<class 'str'>",
+    },
+    "FindingEvidence": {
+        "verdict": "<enum 'CriterionVerdict'>",
+        "smallest_repair": "<enum 'RepairKind'>",
+        "refutation": "str | None",
+        "missing_resource": "str | None",
+        "cost_claim": "kodezart.types.domain.criteria.CostClaim | None",
+        "base_demonstration": "kodezart.types.domain.criteria.BaseDemonstration | None",
+        "pinned_literals": "list[str]",
+        "forbidden_class": (
+            "kodezart.types.domain.criteria.ForbiddenCriterionClass | None"
+        ),
+        "undeclared_switch_arms": "list[str]",
+    },
+    "GeneratedCriteriaOutput": {
+        "criteria": "list[kodezart.types.domain.criteria.DraftedCriterion]",
+        "reasoning": "<class 'str'>",
+    },
+    "GraphProposal": {
+        "kind": "typing.Literal['graph']",
+        "issue_id": "<class 'str'>",
+        "changes": (
+            "tuple[typing.Annotated[kodezart.types.domain.organize_graph.ParentChange"
+            " | kodezart.types.domain.organize_graph.BlockedByChange | "
+            "kodezart.types.domain.organize_graph.RelatedToChange | "
+            "kodezart.types.domain.organize_graph.PriorityChange | "
+            "kodezart.types.domain.organize_graph.MilestoneChange, "
+            "FieldInfo(annotation=NoneType, required=True, discriminator='kind')], "
+            "...]"
+        ),
+    },
+    "MilestoneChange": {
+        "kind": "typing.Literal['milestone']",
+        "milestone_id": (
+            "typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])]]"
+        ),
+    },
+    "NativeWriterOutput": {
+        "claims": "tuple[kodezart.types.domain.amendment.AmendmentClaim, ...]",
+    },
+    "OrganizeProposal": {
+        "root": (
+            "typing.Annotated[kodezart.types.domain.organize_owner.BodyProposal | "
+            "kodezart.types.domain.organize_owner.CriteriaProposal | "
+            "kodezart.types.domain.organize_graph.GraphProposal | "
+            "kodezart.types.domain.organize_graph.SplitProposal | "
+            "kodezart.types.domain.organize_owner.UnresolvedProposal | "
+            "kodezart.types.domain.organize_owner.UnavailableProposal, "
+            "FieldInfo(annotation=NoneType, required=True, discriminator='kind')]"
+        ),
+    },
+    "OverclaimReading": {
+        "kind": "<enum 'OverclaimKind'>",
+        "verdict": "<enum 'AuditVerdict'>",
+        "evidence": "<class 'str'>",
+        "recomputed_value": "str | None",
+        "missing_artifact": "str | None",
+    },
+    "PRDescriptionOutput": {
+        "title": "<class 'str'>",
+        "description": "<class 'str'>",
+    },
+    "ParentChange": {
+        "kind": "typing.Literal['parent']",
+        "parent_id": (
+            "typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])]]"
+        ),
+    },
+    "PreservedSubject": {
+        "kind": "typing.Literal['preserved']",
+    },
+    "PriorityChange": {
+        "kind": "typing.Literal['priority']",
+        "priority": "<enum 'IssuePriority'>",
+    },
+    "RecordedRefusal": {
+        "kind": "typing.Literal['recorded']",
+        "record": "<class 'kodezart.types.domain.write_back.WriteBackResult'>",
+    },
+    "RefusedAdmission": {
+        "verdict": "typing.Literal[<AdmissionVerdict.NOT_BUILDABLE: 'not_buildable'>]",
+        "issue_id": "<class 'str'>",
+        "evidence": "<class 'str'>",
+        "findings": "tuple[kodezart.types.domain.organize.SpecFinding, ...]",
+        "invented_decision": "<class 'str'>",
+        "refusal_kind": "<enum 'RefusalKind'>",
+    },
+    "RelatedToChange": {
+        "add": (
+            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
+        ),
+        "remove": (
+            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
+        ),
+        "kind": "typing.Literal['related_to']",
+    },
+    "RemediationPlan": {
+        "instructions": "<class 'str'>",
+    },
+    "RemovedSourceQuote": {
+        "path": "<class 'str'>",
+        "line": "<class 'int'>",
+        "text": "<class 'str'>",
+    },
+    "RulingAnswer": {
+        "issue_ref": "<class 'str'>",
+        "question": "<class 'str'>",
+        "ruling_class": "<enum 'RulingClass'>",
+        "resolution": "<class 'str'>",
+        "rejected_alternative": (
+            "typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])]]"
+        ),
+        "repo_evidence": (
+            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
+        ),
+        "supersedes_question": (
+            "typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])]]"
+        ),
+        "deliverable": (
+            "typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])]]"
+        ),
+    },
+    "RulingOutput": {
+        "rulings": "tuple[kodezart.types.domain.agent.RulingAnswer, ...]",
+    },
+    "RulingReplacement": {
+        "kind": "typing.Literal['ruling']",
+        "subject": "<class 'kodezart.types.domain.amendment.RulingSubject'>",
+        "resolution": "<class 'str'>",
+        "rejected_alternative": (
+            "typing.Optional[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])]]"
+        ),
+        "repo_evidence": (
+            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
+        ),
+    },
+    "RulingSubject": {
+        "kind": "typing.Literal['ruling']",
+        "id": "kodezart.types.domain.ruling_id.RulingId",
+    },
+    "SherlockFlag": {
+        "criterion_id": "typing.Optional[kodezart.types.domain.criteria.CriterionId]",
+        "concern": "<class 'str'>",
+    },
+    "SpecFinding": {
+        "issue_id": "<class 'str'>",
+        "defect_class": "<class 'str'>",
+        "evidence": "<class 'str'>",
+        "role": "<enum 'DefectRole'>",
+        "mandate_text": "str | None",
+    },
+    "SplitChildProposal": {
+        "deliverable_key": "<class 'str'>",
+        "title": "<class 'str'>",
+        "body": "<class 'str'>",
+    },
+    "SplitProposal": {
+        "kind": "typing.Literal['split']",
+        "issue_id": "<class 'str'>",
+        "children": (
+            "tuple[kodezart.types.domain.organize_graph.SplitChildProposal, ...]"
+        ),
+    },
+    "TicketDraftOutput": {
+        "title": "<class 'str'>",
+        "summary": "<class 'str'>",
+        "context": "<class 'str'>",
+        "references": "list[kodezart.types.domain.agent.CodeReference]",
+        "required_changes": "list[kodezart.types.domain.agent.FileChange]",
+        "out_of_scope": "list[str]",
+        "open_questions": "list[str]",
+        "sherlock_flags": "list[kodezart.types.domain.agent.CritiqueFlag]",
+    },
+    "TicketReviewOutput": {
+        "approved": "<class 'bool'>",
+        "feedback": "<class 'str'>",
+        "suggestions": "list[str]",
+    },
+    "TrackerArtifact": {
+        "surface": "<class 'kodezart.types.domain.surface.WritableSurface'>",
+        "native_ref": "<class 'str'>",
+        "content": "<class 'str'>",
+    },
+    "UnavailableProposal": {
+        "kind": "typing.Literal['unavailable']",
+        "issue_id": "<class 'str'>",
+        "capability": "typing.Literal['criterion_edit']",
+        "evidence": "<class 'str'>",
+    },
+    "UnresolvedProposal": {
+        "kind": "typing.Literal['unresolved']",
+        "issue_id": "<class 'str'>",
+        "question": "<class 'str'>",
+        "evidence": "<class 'str'>",
+    },
+    "UnverifiableAdmission": {
+        "verdict": "typing.Literal[<AdmissionVerdict.UNVERIFIABLE: 'unverifiable'>]",
+        "issue_id": "<class 'str'>",
+        "evidence": "<class 'str'>",
+        "findings": "tuple[kodezart.types.domain.organize.SpecFinding, ...]",
+        "missing_artifact": "<class 'str'>",
+        "pending_blocker_id": "<class 'str'>",
+    },
+    "UpheldAmendment": {
+        "verdict": "typing.Literal['upheld']",
+        "claim": "<class 'kodezart.types.domain.amendment.AmendmentClaim'>",
+        "reason": "<enum 'UpheldReason'>",
+        "judgment": "<class 'kodezart.types.domain.amendment.AmendmentJudgment'>",
+        "publication": (
+            "kodezart.types.domain.amendment.RecordedRefusal | "
+            "kodezart.types.domain.amendment.EscalatedRefusal"
+        ),
+    },
+    "UpheldJudgment": {
+        "verdict": "typing.Literal['upheld']",
+        "claim": "<class 'kodezart.types.domain.amendment.AmendmentClaim'>",
+        "reason": "<enum 'UpheldReason'>",
+        "judgment": "<class 'kodezart.types.domain.amendment.AmendmentJudgment'>",
+    },
+    "WriteBackFinding": {
+        "verdict": "<enum 'AuditVerdict'>",
+        "evidence": "<class 'str'>",
+        "cited_refs": (
+            "tuple[typing.Annotated[str, FieldInfo(annotation=NoneType, "
+            "required=True, metadata=[MinLen(min_length=1), "
+            "_PydanticGeneralMetadata(pattern='\\\\S')])], ...]"
+        ),
+    },
+    "WriteBackResult": {
+        "verdict": "<enum 'AuditVerdict'>",
+        "artifact": "<class 'kodezart.types.domain.audit.TrackerArtifact'>",
+        "rounds": "tuple[kodezart.types.domain.write_back.WriteBackFinding, ...]",
+    },
+}
+
+
+def test_the_session_roots_are_every_model_a_session_is_handed_as_its_schema():
+    """The roots are derived from the code, so a new session output is a new root.
+
+    Every call in ``src/kodezart`` that hands a session a schema through
+    ``output_schema`` or through ``output_format``'s ``schema`` is resolved to the
+    model that produces that schema. The amendment author's output, the judge's
+    judgment and the writer's claims are among them, and every schema handed over
+    is some model's, so none is skipped for want of a model to match.
+    """
+    roots, unmatched = session_roots()
+    assert roots
+    assert unmatched == []
+    assert {AmendmentTextOutput, AmendmentJudgment, NativeWriterOutput} <= set(roots)
+    assert {
+        AmendmentClaim,
+        AmendmentJudgment,
+        UpheldJudgment,
+        UpheldAmendment,
+        NativeWriterOutput,
+        FindingEvidence,
+        AmendmentTextOutput,
+    } <= set(_reachable_models((*roots, *JUDGED_BY)))
+
+
+#: What every planted module starts with: the schemas and model it hands over,
+#: a session call that takes anything, and a judge whose second parameter is the
+#: schema. The prelude alone hands nothing over.
+PLANTED_PRELUDE = """\
+import functools
+import importlib
+import operator
+
+import kodezart.types.domain.agent as agent
+from kodezart.types.domain.agent import AMENDMENT_JUDGMENT_SCHEMA
+from kodezart.types.domain.agent import AMENDMENT_TEXT_SCHEMA
+from kodezart.types.domain.agent import AMENDMENT_TEXT_SCHEMA as ALIASED
+from kodezart.types.domain.amendment_write import AmendmentTextOutput
+
+
+def run(*args, **kwargs):
+    return None
+
+
+def judge(prompt, output_schema):
+    return None
+
+
+class Judge:
+    def judge(self, prompt, output_schema):
+        return None
+"""
+
+#: One planted body per form the derivation follows, each handing a session the
+#: amendment author's schema (or, for the conditional, one of two schemas).
+FOLLOWED_FORMS = {
+    "imported_name": "def f():\n    run(output_schema=AMENDMENT_TEXT_SCHEMA)\n",
+    "import_alias": "def f():\n    run(output_schema=ALIASED)\n",
+    "module_attribute": (
+        "def f():\n    run(output_schema=agent.AMENDMENT_TEXT_SCHEMA)\n"
+    ),
+    "module_assignment": "SAME = ALIASED\n\n\ndef f():\n    run(output_schema=SAME)\n",
+    "output_format_display": (
+        'def f():\n    run(output_format={"type": "json_schema", "schema": ALIASED})\n'
+    ),
+    "local_binding": (
+        'def f():\n    shape = {"schema": ALIASED}\n    run(output_format=shape)\n'
+    ),
+    "annotated_local_binding": (
+        "def f():\n"
+        '    shape: dict[str, object] = {"schema": ALIASED}\n'
+        "    run(output_format=shape)\n"
+    ),
+    "walrus": (
+        "def f():\n    if (schema := ALIASED):\n        run(output_schema=schema)\n"
+    ),
+    "walrus_in_the_argument": (
+        "def f():\n    run(output_schema=(schema := ALIASED))\n"
+    ),
+    "closure": (
+        "def f():\n"
+        "    schema = ALIASED\n"
+        "    def g():\n"
+        "        run(output_schema=schema)\n"
+    ),
+    "closure_through_a_nested_class": (
+        "def f():\n"
+        "    schema = ALIASED\n"
+        "    class Inner:\n"
+        "        def g(self):\n"
+        "            run(output_schema=schema)\n"
+    ),
+    "literal_getattr": (
+        'def f():\n    run(output_schema=getattr(agent, "AMENDMENT_TEXT_SCHEMA"))\n'
+    ),
+    "attrgetter": (
+        "def f():\n"
+        '    run(output_schema=operator.attrgetter("AMENDMENT_TEXT_SCHEMA")(agent))\n'
+    ),
+    "vars_subscript": (
+        'def f():\n    run(output_schema=vars(agent)["AMENDMENT_TEXT_SCHEMA"])\n'
+    ),
+    "dunder_dict_subscript": (
+        'def f():\n    run(output_schema=agent.__dict__["AMENDMENT_TEXT_SCHEMA"])\n'
+    ),
+    "import_module": (
+        "def f():\n"
+        "    run(output_schema=importlib.import_module(\n"
+        '        "kodezart.types.domain.agent"\n'
+        "    ).AMENDMENT_TEXT_SCHEMA)\n"
+    ),
+    "dunder_import": (
+        "def f():\n"
+        '    run(output_schema=__import__("kodezart.types.domain.agent")\n'
+        "        .types.domain.agent.AMENDMENT_TEXT_SCHEMA)\n"
+    ),
+    "model_json_schema": (
+        "def f():\n    run(output_schema=AmendmentTextOutput.model_json_schema())\n"
+    ),
+    "double_star_display": 'def f():\n    run(**{"output_schema": ALIASED})\n',
+    "positional": 'def f():\n    judge("prompt", ALIASED)\n',
+    "starred_display": 'def f():\n    judge(*["prompt", ALIASED])\n',
+    "method_with_explicit_instance": (
+        'def f():\n    Judge.judge(Judge(), "prompt", ALIASED)\n'
+    ),
+    "bound_method_in_a_local": (
+        'def f():\n    bound = Judge().judge\n    bound("prompt", ALIASED)\n'
+    ),
+    "partial_keyword": (
+        "def f():\n    return functools.partial(run, output_schema=ALIASED)\n"
+    ),
+    "partial_positional": (
+        'def f():\n    return functools.partial(judge, "prompt", ALIASED)\n'
+    ),
+    "lambda_default": "HANDLER = lambda output_schema=ALIASED: output_schema\n",
+    "keyword_only_lambda_default": (
+        "HANDLER = lambda *, output_schema=ALIASED: output_schema\n"
+    ),
+    "conditional": (
+        "def f(flag):\n"
+        "    run(output_schema=(\n"
+        "        AMENDMENT_JUDGMENT_SCHEMA if flag else AMENDMENT_TEXT_SCHEMA\n"
+        "    ))\n"
+    ),
+}
+
+#: One planted body per shape in the stated limit. Each hands the same schema
+#: over, and none of them is read.
+LIMIT_SHAPES = {
+    "parameter": "def f(schema):\n    run(output_schema=schema)\n",
+    "returned_from_a_helper": (
+        "def make():\n    return ALIASED\n\n\ndef f():\n    run(output_schema=make())\n"
+    ),
+    "stored_on_an_object": (
+        "class Holder:\n    def f(self):\n        run(output_schema=self.schema)\n"
+    ),
+    "container_built_elsewhere": (
+        "def options():\n"
+        '    return {"schema": ALIASED}\n'
+        "\n\n"
+        "def f():\n"
+        '    run(output_schema=options()["schema"])\n'
+    ),
+    "method_on_self": (
+        "class Caller(Judge):\n"
+        "    def f(self):\n"
+        '        self.judge("prompt", ALIASED)\n'
+    ),
+    "name_built_at_run_time": (
+        "def f():\n"
+        '    run(output_schema=getattr(agent, "AMENDMENT_TEXT" + "_SCHEMA"))\n'
+    ),
+    "globals_inside_a_function": (
+        "def bind():\n"
+        '    globals()["LATER"] = ALIASED\n'
+        "\n\n"
+        "def f():\n"
+        "    run(output_schema=LATER)\n"
+    ),
+    "setattr_inside_a_function": (
+        "import sys\n"
+        "\n\n"
+        "def bind():\n"
+        '    setattr(sys.modules[__name__], "LATER", ALIASED)\n'
+        "\n\n"
+        "def f():\n"
+        "    run(output_schema=LATER)\n"
+    ),
+}
+
+
+def _planted(tmp_path, body):
+    """Import a planted module and return what it hands a session, as models."""
+    source = f"{PLANTED_PRELUDE}\n\n{body}"
+    path = tmp_path / "planted_session_call.py"
+    path.write_text(source, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    handed = handed_schemas(ast.parse(source), vars(module))
+    return schema_models(handed, (AmendmentJudgment, AmendmentTextOutput))
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        pytest.param(
+            body,
+            {AmendmentJudgment, AmendmentTextOutput}
+            if name == "conditional"
+            else {AmendmentTextOutput},
+            id=name,
+        )
+        for name, body in FOLLOWED_FORMS.items()
+    ],
+)
+def test_the_root_derivation_follows_each_form_that_hands_a_schema(
+    tmp_path, body, expected
+):
+    """Each form the derivation reads is seen handing its schema to a session."""
+    models, unmatched = _planted(tmp_path, body)
+    assert set(models) == expected
+    assert unmatched == []
+
+
+@pytest.mark.parametrize("body", LIMIT_SHAPES.values(), ids=LIMIT_SHAPES.keys())
+def test_the_root_derivation_does_not_read_past_its_stated_limit(tmp_path, body):
+    """Each shape in the stated limit hands a schema over and is not seen."""
+    assert _planted(tmp_path, body) == ([], [])
+
+
+def test_the_root_derivation_prelude_and_a_cycle_hand_nothing_over(tmp_path):
+    """The prelude alone is silent, a cycle of bindings ends, and a bare schema counts.
+
+    A schema no candidate model produces is returned as unmatched, so the
+    derivation's own check that every schema handed over is some model's can
+    fail.
+    """
+    assert _planted(tmp_path, "") == ([], [])
+    cycle = "def f():\n    a = b\n    b = a\n    run(output_schema=a)\n"
+    assert _planted(tmp_path, cycle) == ([], [])
+    bare = 'BARE = {"type": "object"}\n\n\ndef f():\n    run(output_schema=BARE)\n'
+    assert _planted(tmp_path, bare) == ([], [{"type": "object"}])
+
+
 def test_no_field_can_carry_a_session_observed_probe_outcome():
     """A probe outcome is a capability paired with a truth value about this host.
 
     Undemonstrability is resolved from configuration alone, so no model a session
     fills in may offer a seat for what a session claims to have observed about
     this environment. The session-facing set is the closure of every model
-    reachable from the roots a session fills, nested ones included, and the exact
-    field names of every model in that closure are pinned, so a new field on a
-    root, a citation, a demonstration or a cost claim cannot appear unnoticed.
+    reachable from the derived session roots and from the verdicts a judgment is
+    judged by, nested ones included. Every field of every model in that closure
+    is pinned with its declared type, so a field added, removed or retyped on a
+    root, a citation, a demonstration or a cost claim cannot pass unnoticed.
 
     The snapshot is the net because the shape of a probe outcome cannot be told
     apart from legitimate session-observed truth values by type alone: a
@@ -725,51 +1799,16 @@ def test_no_field_can_carry_a_session_observed_probe_outcome():
     field pairing capabilities with truth values is the repository's own
     declared environment, which is configuration.
     """
-    session_models = _reachable_models(SESSION_ROOTS)
+    roots, _ = session_roots()
+    session_models = _reachable_models((*roots, *JUDGED_BY))
     assert session_models
-    assert {model.__name__: set(model.model_fields) for model in session_models} == {
-        "AmendmentClaim": {
-            "subject",
-            "stage",
-            "ground",
-            "departure",
-            "claimed_capability",
-        },
-        "AmendmentJudgment": {
-            "subject",
-            "base_sha",
-            "ground",
-            "reproduced",
-            "finding",
-            "citations",
-            "measured_by",
-        },
-        "UpheldJudgment": {"verdict", "claim", "reason", "judgment"},
-        "UpheldAmendment": {"verdict", "claim", "reason", "judgment", "publication"},
-        "NativeWriterOutput": {"claims"},
-        "FindingEvidence": {
-            "verdict",
-            "smallest_repair",
-            "refutation",
-            "missing_resource",
-            "cost_claim",
-            "base_demonstration",
-            "pinned_literals",
-            "forbidden_class",
-            "undeclared_switch_arms",
-        },
-        "BaseCitation": {"path", "quote"},
-        "BaseDemonstration": {"command", "satisfied_at_base"},
-        "CostClaim": {"assertion", "measurement"},
-        "CostMeasurement": {"affordable", "observed"},
-        "CriterionSubject": {"kind", "id"},
-        "RulingSubject": {"kind", "id"},
-        "RecordedRefusal": {"kind", "record"},
-        "EscalatedRefusal": {"kind", "record", "escalation"},
-        "TrackerArtifact": {"native_ref", "surface", "content"},
-        "WriteBackFinding": {"verdict", "cited_refs", "evidence"},
-        "WriteBackResult": {"verdict", "rounds", "artifact"},
-    }
+    assert len({model.__name__ for model in session_models}) == len(session_models)
+    assert {
+        model.__name__: {
+            name: repr(field.annotation) for name, field in model.model_fields.items()
+        }
+        for model in session_models
+    } == SESSION_CLOSURE
     session_facing = {
         (model.__name__, name): field.annotation
         for model in session_models
