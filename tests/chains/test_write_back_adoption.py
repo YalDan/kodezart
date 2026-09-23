@@ -918,11 +918,11 @@ class Production:
 
 LIFECYCLE = "services/tracker_lifecycle.py"
 WALKER = "services/scope_runtime.py"
-#: The founder's ruling KOD-806 holds the lifecycle writer's state moves
-#: outside this check while the seam it covers is undecided.  They are
-#: named as call sites and compared exactly: once the ruling is lifted and
-#: the moves run inside a write-back, these entries stop matching what the
-#: tree holds and this check says so rather than quietly passing.
+#: KOD-806 holds the lifecycle writer's state moves outside this check
+#: while the seam it covers is undecided.  They are named as call sites and
+#: compared exactly: once those moves run inside a write-back, these entries
+#: stop matching what the tree holds and this check says so rather than
+#: quietly passing.
 KOD_806_STATE_MOVES = frozenset(
     {
         CallSite(
