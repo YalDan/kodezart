@@ -168,9 +168,12 @@ def value_holders(sources: dict[str, str], *, identity: str) -> dict[str, ast.Mo
 
     Not counted, each a module this walk does not scan: a carrier reached as
     an attribute when the import itself routes to no carrier's module —
-    ``import kodezart``, a package's ``__init__`` or a relative import, which
-    the resolver maps to no module of the tree — and a carrier a module only
-    re-exports by importing it, because re-exporting is not declaring.  The
+    ``import kodezart``, a package's ``__init__``, a relative import,
+    ``importlib.import_module`` or ``sys.modules``, which the resolver maps
+    to no module of the tree — a carrier a module only re-exports by
+    importing it, because re-exporting is not declaring, and a carrier bound
+    by an assignment rather than declared by ``def`` or ``class``, such as a
+    union of carrier classes, because only a definition is a carrier here.  The
     attribute leg below matches the identity's own name only; matching every
     carrier's name there would also scan modules that spell a carrier method
     as an attribute of an unrelated value.
