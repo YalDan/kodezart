@@ -125,8 +125,14 @@ def test_every_exempted_member_is_a_member_of_the_port_today():
     """An exemption naming no member would hide nothing and say something false.
 
     The day KOD-798 deletes the run-record members this reddens, and the
-    exemption goes with them.
+    exemption goes with them. The run-record exemption is compared with the
+    criterion's own list of four, written out here as KOD-836 words it: a
+    name dropped from it, or one added to it, changes what the zero-caller
+    guard lets through.
     """
+    assert RUN_RECORD_EXEMPTION == frozenset(
+        {"record_run_alarm", "read_run_alarm", "post_run_event", "lane_run_events"}
+    )
     assert RUN_RECORD_EXEMPTION <= port_members()
     assert EXEMPT_UNTIL_KOD_390 <= port_members()
 
