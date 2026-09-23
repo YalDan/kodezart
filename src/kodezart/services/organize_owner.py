@@ -139,6 +139,7 @@ class _HaltRequestError(Exception):
         questions: tuple[UnresolvedProposal, ...] = (),
         bound: OrganizeBoundEvidence | None = None,
         write_back_results: tuple[WriteBackResult, ...] = (),
+        findings: tuple[SpecFinding, ...] = (),
     ) -> None:
         super().__init__(cause.value)
         self.cause = cause
@@ -146,6 +147,9 @@ class _HaltRequestError(Exception):
         self.questions = questions
         self.bound = bound
         self.write_back_results = write_back_results
+        # Findings of the judgement the halt interrupted, when no result
+        # carries them to the halt.
+        self.findings = findings
 
 
 def _created_context(context: OrganizeContext, child: TrackerIssue) -> OrganizeContext:
@@ -1303,6 +1307,7 @@ class OrganizeOwner:
                                     raise _HaltRequestError(
                                         cause=StageHaltCause.HUMAN_DECISION,
                                         results=(),
+                                        findings=result.findings,
                                         questions=(
                                             UnresolvedProposal(
                                                 kind="unresolved",
@@ -1484,9 +1489,10 @@ class OrganizeOwner:
                         questions=request.questions,
                         bound=request.bound,
                         write_back_results=request.write_back_results,
-                        # Every finding still open: the last dry round's and
-                        # the residuals this round formed before it halted.
-                        findings=(*findings, *residuals),
+                        # Every finding still open: the last dry round's,
+                        # the residuals this round formed before it halted,
+                        # and those of the judgement the halt interrupted.
+                        findings=(*findings, *residuals, *request.findings),
                         phase=phase,
                         scope=scope,
                         job_id=job_id,

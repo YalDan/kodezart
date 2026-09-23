@@ -741,10 +741,46 @@ async def test_every_open_finding_is_written_to_its_own_item_before_the_halt_ret
     assert max(written) < min(reported)
 
 
-@pytest.mark.parametrize("cause", ["human_decision", "admission_exhausted", "residual"])
+@pytest.mark.parametrize(
+    "cause", ["human_decision", "admission_exhausted", "residual", "author_decision"]
+)
 async def test_a_halt_inside_a_round_carries_the_findings_left_open(monkeypatch, cause):
     """A halt inside a round writes what earlier rounds and this one left open."""
     owner, board, executor = factory(convergence_bound=2, bound=1)
+    if cause == "author_decision":
+        # The judgement that sends the subject to its author carries a
+        # finding on the sibling; the author answers with a question, and
+        # the halt that question raises still writes the judgement's finding.
+        member(board, SIBLING, labels=[GROOM_MARKER])
+        judging(
+            board,
+            executor,
+            monkeypatch,
+            {CLAIMED_ISSUE: lambda _: buildable(CLAIMED_ISSUE, spec_finding(SIBLING))},
+        )
+        authoring(
+            executor,
+            monkeypatch,
+            {
+                "kind": "unresolved",
+                "issue_id": CLAIMED_ISSUE,
+                "question": "Which declared source is authoritative?",
+                "evidence": "Two sources name different deliverables.",
+            },
+        )
+        report = await run_owner(owner)
+        assert report.halt.cause == "human_decision"
+        assert (SIBLING, "missing_source") in {
+            (finding.issue_id, finding.defect_class)
+            for finding in report.halt.surviving_findings
+        }
+        (record,) = escalations(board, SIBLING, "missing_source")
+        assert record.interim_basis == spec_finding(SIBLING)["evidence"]
+        (question,) = escalations(
+            board, CLAIMED_ISSUE, "Which declared source is authoritative?"
+        )
+        assert question.interim_basis == "Two sources name different deliverables."
+        return
     if cause == "residual":
         # One subject's write needs a member that joined mid-round, then the
         # next subject exhausts its admission rounds in the same round.
