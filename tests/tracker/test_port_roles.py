@@ -9,11 +9,13 @@ between roles moves the guard with it and a member declared twice is named.
 The second half is the caller question. A member no production module calls
 is a capability nothing uses, carried on every implementation for no
 consumer. The list of such members is derived: every member of the whole
-port, found as a member call on a role binding in the parsed modules of the
-shipped tree outside the port module, the vendor adapters and the test tree,
-so a member spelled only in a comment, a docstring or a string has no caller,
-nor has a same-named method called on an object that is no tracker role, and
-a call moved into one of those three places is no caller either. A caller in a
+port and every method of a protocol the vendor adapter's package implements,
+so a role narrowed beside the port is asked too. Each is found as a member
+call on a role binding in the parsed modules of the shipped tree outside the
+port module, the vendor adapters and the test tree, so a member spelled only
+in a comment, a docstring or a string has no caller, nor has a same-named
+method called on an object that is no tracker role, and a call moved into
+one of those three places is no caller either. A caller in a
 module the run does not reach still counts, as the criterion words it, and
 the reachability of its role is pinned separately. It holds nothing but two
 named exemptions — the four run-record members KOD-798 decides, and the
@@ -41,8 +43,6 @@ gate over ``src/`` refuses already.
 """
 
 import importlib
-import inspect
-import pkgutil
 import re
 from collections.abc import Mapping
 from types import ModuleType
@@ -51,7 +51,13 @@ import pytest
 from typing_extensions import get_protocol_members
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
-from kodezart.core.protocols import ScopeWalkTracker, TrackerPort
+from kodezart.core.protocols import (
+    ScopeStatusReader,
+    ScopeStatusUpdates,
+    ScopeStatusWriter,
+    ScopeWalkTracker,
+    TrackerPort,
+)
 from tests.chains.test_write_back_adoption import write_methods
 from tests.domain.test_criterion_cross_off import source_tree
 from tests.fakes import FakeTrackerPort
@@ -64,16 +70,20 @@ from tests.tracker.role_register import (
     TESTS,
     UNWIRED_CONSUMER_ROLES,
     adapter_importers,
+    adapter_package_modules,
     aggregate_annotations,
     annotation_names,
     call_pattern,
     called_members,
+    classes_defined_in,
     composed,
     declared_bases,
     declaring_roles,
     defaulted_role_parameters,
     first_party_closure,
+    implemented_protocols,
     members_declared,
+    method_members,
     monoliths,
     own_declarations,
     port_members,
@@ -83,6 +93,7 @@ from tests.tracker.role_register import (
     roles,
     roles_off_the_aggregate,
     runtime_checkable_classes,
+    scanned_members,
     stray_classes,
     tree_under_tests,
     twice_declared,
@@ -117,26 +128,10 @@ def modules_holding_the_surface() -> tuple[ModuleType, ...]:
     aggregate lives in, the adapter package by walking the package the
     adapter's own module belongs to.
     """
-    package = importlib.import_module(LinearMcpTracker.__module__.rsplit(".", 1)[0])
     return (
         importlib.import_module(TrackerPort.__module__),
-        *(
-            importlib.import_module(found.name)
-            for found in pkgutil.walk_packages(
-                package.__path__, prefix=f"{package.__name__}."
-            )
-        ),
+        *adapter_package_modules(),
         importlib.import_module(FakeTrackerPort.__module__),
-    )
-
-
-def classes_defined_in(modules: tuple[ModuleType, ...]) -> frozenset[type]:
-    """Every class each of *modules* defines itself, not one it imports."""
-    return frozenset(
-        cls
-        for module in modules
-        for _, cls in inspect.getmembers(module, inspect.isclass)
-        if cls.__module__ == module.__name__
     )
 
 
@@ -164,9 +159,20 @@ def classes_holding_a_deleted_write(
 
 def test_no_port_member_lacks_a_production_caller_beyond_the_exemptions():
     assert (
-        zero_callers(source_tree(), port_members()) - RUN_RECORD_EXEMPTION
+        zero_callers(source_tree(), scanned_members()) - RUN_RECORD_EXEMPTION
         == EXEMPT_UNTIL_KOD_390
     )
+
+
+def test_the_methods_scanned_are_every_role_the_adapter_package_implements():
+    """The roles narrowed beside the port are asked about as well (KOD-829)."""
+    narrowed = {ScopeStatusWriter, ScopeStatusReader, ScopeStatusUpdates}
+
+    assert narrowed <= set(implemented_protocols().values())
+    assert set(implemented_protocols()) >= roles(port_module_text()) | {AGGREGATE}
+    for role in narrowed:
+        assert method_members(role) <= scanned_members()
+    assert scanned_members() - port_members()
 
 
 def test_every_exempted_member_is_a_member_of_the_port_today():
@@ -185,15 +191,17 @@ def test_every_exempted_member_is_a_member_of_the_port_today():
     assert EXEMPT_UNTIL_KOD_390 <= port_members()
 
 
-def single_caller(sources: Mapping[str, str]) -> tuple[str, str]:
-    """A member one production module calls, and that module."""
+def single_caller(
+    sources: Mapping[str, str], members: frozenset[str] | None = None
+) -> tuple[str, str]:
+    """A member of *members* one production module calls, and that module."""
     callers = {
         name: [
             path
             for path, text in production_modules(sources).items()
             if name in called_members(text)
         ]
-        for name in sorted(port_members())
+        for name in sorted(port_members() if members is None else members)
     }
     return next(
         (name, modules[0]) for name, modules in callers.items() if len(modules) == 1
@@ -209,6 +217,17 @@ def test_a_member_whose_only_caller_goes_is_reported():
     del sources[module]
 
     assert name in zero_callers(sources, members)
+
+
+def test_a_narrowed_role_method_whose_only_caller_goes_is_reported():
+    """A method off the port, on a role the adapter implements, is scanned too."""
+    sources = source_tree()
+    name, module = single_caller(sources, scanned_members() - port_members())
+    assert name not in zero_callers(sources, scanned_members())
+
+    del sources[module]
+
+    assert name in zero_callers(sources, scanned_members())
 
 
 #: The places a call does not count as a caller, as KOD-836 words it: the
@@ -254,6 +273,67 @@ def test_a_member_spelled_but_not_called_has_no_caller(form):
 
     assert call_pattern(name).search(sources[module])
     assert name in zero_callers(sources, port_members())
+
+
+#: Each way a module holds a role and calls a member on it, and whether the
+#: call is a caller: the role itself, however it is bound, or an element
+#: drawn from a container of it; the container itself is not the role.
+PLANTED_CALLERS = {
+    "a parameter": (
+        "def use(*, tracker: {role}) -> None:\n    tracker.{name}()\n",
+        True,
+    ),
+    "an annotated local": (
+        "def use(found) -> None:\n    tracker: {role} = found\n    tracker.{name}()\n",
+        True,
+    ),
+    "an annotated attribute": (
+        "class Use:\n    def __init__(self, found) -> None:\n"
+        "        self._tracker: {role} = found\n\n"
+        "    def run(self) -> None:\n        self._tracker.{name}()\n",
+        True,
+    ),
+    "an element a method draws": (
+        "def use(*, trackers: Mapping[str, {role}]) -> None:\n"
+        '    tracker = trackers.get("k")\n    tracker.{name}()\n',
+        True,
+    ),
+    "a subscripted element": (
+        "def use(*, trackers: Mapping[str, {role}]) -> None:\n"
+        '    trackers["k"].{name}()\n',
+        True,
+    ),
+    "an iterated element": (
+        "def use(*, trackers: Sequence[{role}]) -> None:\n"
+        "    for tracker in trackers:\n        tracker.{name}()\n",
+        True,
+    ),
+    "an element of a container kept on self": (
+        "class Use:\n"
+        "    def __init__(self, *, trackers: Mapping[str, {role}]) -> None:\n"
+        "        self._trackers: dict[str, {role}] = dict(trackers)\n\n"
+        "    def run(self) -> None:\n"
+        '        tracker = self._trackers.get("k")\n        tracker.{name}()\n',
+        True,
+    ),
+    "the container itself": (
+        "def use(*, trackers: Mapping[str, {role}]) -> None:\n    trackers.{name}()\n",
+        False,
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_CALLERS))
+def test_a_call_counts_on_every_form_of_a_role_binding(form):
+    sources = source_tree()
+    text = port_module_text()
+    name, module = single_caller(sources)
+    (role,) = (owner for owner in roles(text) if name in own_declarations(text)[owner])
+    planted, counts = PLANTED_CALLERS[form]
+    sources[module] = planted.format(role=role, name=name)
+
+    assert call_pattern(name).search(sources[module])
+    assert (name not in zero_callers(sources, port_members())) is counts
 
 
 def test_a_caller_of_the_exempted_read_empties_its_exemption():
