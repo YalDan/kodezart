@@ -1086,10 +1086,24 @@ Two things it does not tell apart follow from that. A ready lane the current
 walk invocation has rested — `services/scope_runtime.py` passes over the lanes
 in that invocation's own `rested` list — counts as re-derived, because the next
 invocation offers it again. And a ready lane that no walk runs at all is not
-distinguished from one a walk will run. Both raise with no bound. A criterion record is written only when what the address
-says differs from what the tick observed, where absence says not raised, so a
-healthy walk writes none; and it is never announced on the stream, whose
-transitions are the lane's.
+distinguished from one a walk will run.
+
+Two further limits of the criterion reading are stated rather than built.
+Nested member lanes: a member whose parent is also a member reads its account
+from the lane whose stream announced it, and a criterion under two member lanes
+is observed through the announcing lane only — each lane reads its own stream
+and never the other's. So when both lanes graded a criterion, each is read by
+its own last word: the outer lane's `issue_crossed_off`, with the criterion back
+in Todo after the inner lane took it back as a lapse, raises `TALLY_REGRESSED`
+on the outer lane. Presence is read per scope: a lane blocked in one scope and
+ready in another is observed as each scope reads it, so the scope that reads it
+blocked can raise `LAPSE_UNDISCHARGED` at its own address while the other
+scope's walk re-derives the lane.
+
+Both criterion signals raise with no bound. A criterion record is written only
+when what the address says differs from what the tick observed, where absence
+says not raised, so a healthy walk writes none; and it is never announced on
+the stream, whose transitions are the lane's.
 
 `domain.stream_signals.composition_substituted` reads the lane's stream alone:
 its `node_session_started` events, grouped by the invocation each is keyed to,

@@ -256,8 +256,9 @@ def allow_foreign_write(port, *, lane, marker):
     """Name one write on *port* outside the lanes' own declared set.
 
     Either a holder other than the supervisor makes it, or it is the
-    supervisor's own at an address the set does not enumerate, such as a
-    criterion under a lane's deliverable child.
+    supervisor's own at an address the set does not enumerate: a criterion
+    under a lane's deliverable child, or one a lane observes under a nested
+    member lane.
 
     The declared-set check reads the tick's own writes, so a write a test
     makes on purpose has to be named before it is made. Naming it keeps the

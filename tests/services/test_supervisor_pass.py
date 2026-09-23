@@ -525,6 +525,63 @@ async def test_a_lapse_under_a_waiting_lanes_deliverable_child_is_raised_at_it()
     assert alarm_raised(records[0])
 
 
+async def test_a_criterion_under_two_member_lanes_is_read_by_each_lanes_own_word():
+    """Nested member lanes each read their own stream, and never each other's.
+
+    LANE-B/child is a member whose parent LANE-B is a member too, and both are
+    ready. Both graded the child's criterion and crossed it off; the child then
+    took it back as a lapse, and it stands in Todo. The child's last word is
+    the lapse, and a ready lane discharges it, so the child writes nothing
+    about it. LANE-B's last word is still the crossing-off, so LANE-B raises a
+    regression for the take-back the child announced: the stated limit.
+    """
+    outer, inner = "LANE-B", "LANE-B/child"
+    port = await board(lanes=(outer, inner))
+    shared = checks(inner)[0]
+    said = {
+        outer: (RunEventKind.ISSUE_CROSSED_OFF,),
+        inner: (RunEventKind.ISSUE_CROSSED_OFF, RunEventKind.CRITERION_LAPSED),
+    }
+    for lane, kinds in said.items():
+        for kind in kinds:
+            await port.post_run_event(
+                issue_key=lane,
+                event=LaneRunEvent(
+                    kind=kind, lane_key=lane, subject_key=shared, graded_sha=HEAD
+                ),
+            )
+    through_outer = CriterionSubject(
+        scope_key=SCOPE, issue_id=inner, member_id=shared, lane_key=outer
+    )
+    # The criterion sits under the inner lane, so the outer lane's address for
+    # it is the supervisor's own write outside the outer lane's direct set.
+    allow_foreign_write(
+        port,
+        lane=outer,
+        marker=run_alarm_marker(
+            subject=through_outer,
+            signal=AlarmSignal.TALLY_REGRESSED,
+            marker_prefixes=port.marker_prefixes,
+        ),
+    )
+
+    await pass_over(port, readings={REF: ready_set(lanes=(outer, inner))}).run(
+        FIXTURE_EPOCH
+    )
+
+    def criterion_records(rows):
+        return [
+            (row.subject, row.signal, alarm_raised(row))
+            for row in rows
+            if isinstance(row.subject, CriterionSubject)
+        ]
+
+    assert criterion_records(await port.read_run_alarms(issue_key=outer)) == [
+        (through_outer, AlarmSignal.TALLY_REGRESSED, True)
+    ]
+    assert criterion_records(await port.read_run_alarms(issue_key=inner)) == []
+
+
 @pytest.mark.parametrize("stopped", ["the lane observation", "the scope read"])
 async def test_cancellation_is_not_swallowed(stopped):
     """Neither boundary contains the caller's stop, only a lane's own failure.
