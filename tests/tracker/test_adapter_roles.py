@@ -19,12 +19,17 @@ from pathlib import Path
 import pytest
 
 from kodezart.adapters.linear.tracker import LinearMcpTracker
+from kodezart.core.protocols import McpToolCaller
+from tests.domain.test_criterion_cross_off import source_tree
 from tests.fakes import FakeLinearMcpServer
 from tests.tracker.role_register import (
+    ADAPTERS,
     class_per_role,
     classes_outside_one_role,
     declared_by_role,
+    final_name,
     implementation_classes,
+    nodes,
     roles_implemented_nowhere,
     roles_implemented_twice,
 )
@@ -80,6 +85,33 @@ def whole_declares(text: str = MODULE_TEXT) -> frozenset[str]:
     return public(declared(class_bodies(text)[WHOLE]))
 
 
+def whole_holds(text: str = MODULE_TEXT) -> list[str]:
+    """Everything the composed adapter's own body holds besides its docstring."""
+    body = class_bodies(text)[WHOLE]
+    return [
+        ast.unparse(item)
+        for item in body
+        if not (
+            item is body[0]
+            and isinstance(item, ast.Expr)
+            and isinstance(item.value, ast.Constant)
+            and isinstance(item.value.value, str)
+        )
+    ]
+
+
+def role_class_constructions(sources: dict[str, str]) -> list[str]:
+    """Every call outside the adapters that builds an adapter role class."""
+    built = set(role_classes())
+    return sorted(
+        f"{path}: {name}"
+        for path, text in sources.items()
+        if not path.startswith(f"{ADAPTERS}/")
+        for node in nodes(text)
+        if isinstance(node, ast.Call) and (name := final_name(node.func) or "") in built
+    )
+
+
 def test_every_class_of_the_adapter_answers_for_exactly_one_role():
     classes = role_classes()
 
@@ -96,11 +128,18 @@ def test_only_the_session_constructs_and_it_declares_no_member():
     assert whole_declares() == frozenset()
 
 
+def test_the_composed_adapter_declares_nothing_at_all():
+    """Its body is its docstring: no private, no assignment, no constructor."""
+    assert whole_holds() == []
+
+
 def test_the_composed_adapter_holds_every_role_class_over_one_session():
     resolution = [cls.__name__ for cls in LinearMcpTracker.__mro__]
 
     assert set(role_classes()) <= set(resolution)
-    assert resolution.count(SESSION.__name__) == 1
+    assert [
+        cls for cls in LinearMcpTracker.__mro__[:-1] if "__init__" in vars(cls)
+    ] == [SESSION]
     assert all(issubclass(cls, SESSION) for cls in LinearMcpTracker.__mro__[:-2])
 
 
@@ -109,9 +148,20 @@ def test_one_adapter_object_holds_the_one_caller_it_was_given():
     adapter = tracker_over(caller)
 
     held = [value for value in vars(adapter).values() if value is caller]
+    callers = [
+        name
+        for name, value in vars(adapter).items()
+        if value is not caller and isinstance(value, McpToolCaller)
+    ]
 
     assert adapter._caller is caller
     assert len(held) == 1
+    assert callers == []
+
+
+def test_nothing_outside_the_adapters_builds_an_adapter_role_class():
+    """Composition holds the composed adapter; a role class alone is built nowhere."""
+    assert role_class_constructions(source_tree()) == []
 
 
 def planted(*, name: str, base: str, members: frozenset[str]) -> str:
