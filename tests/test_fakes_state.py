@@ -79,6 +79,8 @@ from kodezart.types.domain.tracker import (
     ClaimStatus,
     IssuePriority,
     IssueQuery,
+    IssueRelation,
+    IssueRelationKind,
     MappingKind,
     MappingRef,
     ReviewQuery,
@@ -1037,11 +1039,13 @@ async def full_board(
     fire entry's stage label and approval, an asset with its type and size,
     the reviews, a recorded repository, a body's authorship and held
     writer, a refused scan, the approval aliases and a comment read
-    refusal; and the fields no write fills — on one issue a blocked-by
-    relation, the milestone, an assignee and the project in both
-    spellings; a comment on a second issue, in reply to one on the first;
-    a claim that names its current holder; a base spec with an input and a
-    role; a work ref with a pushed head.  Every paged collection — the
+    refusal; and the fields no write fills — on one issue past the seeded
+    three, and on the issue every keyed read asks for, a blocked-by
+    relation, the milestone, an assignee, the project in both spellings
+    and (on the asked one) a parent; a comment on a second issue, in reply
+    to one on the first, and a reply on the asked issue itself; a claim
+    that names its current holder; a base spec with an input and a role; a
+    work ref with a pushed head.  Every paged collection — the
     issues and the reviews — holds one more entry than the largest page any
     read case asks the double for, so a paged read always leaves something
     it paged past.  Every attribute but the read logs holds something, and
@@ -1095,13 +1099,44 @@ async def full_board(
         project=PROJECT.key,
         project_id=f"{PROJECT.key}-id",
     ).model_copy(update={"milestone_key": MILESTONE.key, "assignee_key": HOLDER})
+    # The key every keyed read asks for fills every field of its model as
+    # well, so a read that erases a field on the very entry it was asked
+    # for moves it: a blocked-by relation, the project in both spellings,
+    # the milestone, an assignee and a parent.  Held to that, per keyed
+    # read case, by :func:`test_every_keyed_read_asks_for_a_fully_seeded_entry`.
+    asked = port.issues[ISSUE]
+    port.issues[ISSUE] = asked.model_copy(
+        update={
+            "relations": (
+                IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=OTHER),
+            ),
+            "project": PROJECT.key,
+            "project_id": f"{PROJECT.key}-id",
+            "milestone_key": MILESTONE.key,
+            "assignee_key": HOLDER,
+            "parent_key": OTHER,
+        }
+    )
     (first_comment, *_) = port.comments
+    assert first_comment.issue_key == ISSUE
     port.comments.append(
         TrackerComment(
             comment_key="comment-on-another-issue",
             issue_key=OTHER,
             author_key=HOLDER,
             body="a reply on another issue",
+            created_at=FIXTURE_EPOCH,
+            reply_to=first_comment.comment_key,
+        )
+    )
+    # And a reply on the asked issue itself, so its own comments fill every
+    # field of theirs, the reply relation among them.
+    port.comments.append(
+        TrackerComment(
+            comment_key="reply-on-the-asked-issue",
+            issue_key=ISSUE,
+            author_key=HOLDER,
+            body="a reply on the asked issue",
             created_at=FIXTURE_EPOCH,
             reply_to=first_comment.comment_key,
         )
@@ -1326,6 +1361,62 @@ async def test_the_census_board_holds_something_in_every_attribute(
         if not all(fields_held(value).values())
     } == {}
     assert len({comment.issue_key for comment in port.comments}) >= 2
+
+
+def keyed_reads() -> list[str]:
+    """Every read case whose call names the asked key, read off the call's source.
+
+    A read case addresses the asked key when its call loads the name
+    ``ISSUE``; the rest address the workspace, a container or a document.
+    Bounded by the read cases.
+    """
+    found: list[str] = []
+    for case in READS:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(CASES[case].call)))
+        if any(
+            isinstance(node, ast.Name)
+            and node.id == "ISSUE"
+            and isinstance(node.ctx, ast.Load)
+            for node in ast.walk(tree)
+        ):
+            found.append(case)
+    return found
+
+
+def test_the_keyed_reads_are_derived_and_name_the_reads_the_seeds_are_for() -> None:
+    """The keyed reads are a non-empty derived list holding the two reads seeded for."""
+    keyed = keyed_reads()
+    assert {"an issue read", "the comments read"} < set(keyed)
+    assert set(keyed) < set(READS)
+
+
+@pytest.mark.parametrize("double", census_doubles(), ids=lambda double: double.__name__)
+@pytest.mark.parametrize("case", keyed_reads())
+async def test_every_keyed_read_asks_for_a_fully_seeded_entry(
+    case: str, double: type[FakeTrackerPort]
+) -> None:
+    """The entry each keyed read asks for fills every field of its model.
+
+    The board test above asks that some instance fills each field.  A read
+    that rewrites the entry it was asked for — erasing its relations, its
+    milestone, its assignee, or the reply relation on its comments —
+    moves nothing unless THAT entry filled them.  So on the board each
+    keyed read case runs on, its setup done, the issue at the asked key
+    fills every field :func:`fields_held` reports for its model, and the
+    comments on it, together, fill every field of theirs.
+    """
+    port = await case_board(case, double)
+    issue = port.issues[ISSUE]
+    assert (
+        sorted(field for field, filled in fields_held(issue).items() if not filled)
+        == []
+    )
+    comments = [comment for comment in port.comments if comment.issue_key == ISSUE]
+    assert comments != []
+    assert (
+        sorted(field for field, filled in fields_held(comments).items() if not filled)
+        == []
+    )
 
 
 @pytest.mark.parametrize("double", census_doubles(), ids=lambda double: double.__name__)
