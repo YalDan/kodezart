@@ -252,6 +252,9 @@ the readiness read and at the spec read alike: it joins no gap, no
 specification and no unresolved list, and it refuses nothing (KOD-794). The gap
 arithmetic reads the criterion's own state kind and nothing else, so no second
 input and no inferred reference decides what an abandoned criterion means.
+A member whose every criterion is Canceled or Duplicate owes nothing and reads
+closed at the readiness read, while a fire entered on such a subject is refused
+as empty at the spec read.
 Full walker dispatch and pre-loop revalidation remain separate;
 valid scoped entries still raise the explicit unavailable-walker error after
 recording the current ready and blocked keys.
@@ -970,10 +973,9 @@ are ten files and five commits; both are configurable nonnegative counts.
 The read-only `observe_barren_tick` service uses `read_criteria` and the shared
 criterion gap arithmetic to obtain current closure. Done closes a criterion,
 and Canceled and Duplicate count for nothing. It retains the returned closure
-projection
-for replay and makes no tracker writes or version-control calls. Its shared
-`read_barren_tick` assembly also retains the exact criterion snapshot used
-for that observation. `observe_recorded_barren_tick` supplies both growth
+projection for replay and makes no tracker writes or version-control calls. Its
+shared `read_barren_tick` assembly also retains the exact criterion snapshot
+used for that observation. `observe_recorded_barren_tick` supplies both growth
 counters from an actual `LaneRecordReader` read, carrying the native comment
 identity and that record's head on each projection. It checks the addressed
 comment and complete criterion snapshot again before returning; source drift
@@ -1580,21 +1582,22 @@ through the port, which admits it and lists nothing, and then measures
 criterion membership over that subject's subtree through the same scope
 membership read every later barrier re-takes. One reading answers both the
 specification the fire is graded against and the roster its loop starts on, so
-the captured specification names every criterion sub-issue under the subject —
-its own children and, recursively, its deliverable children's. A subtree
-holding none is refused with `EmptyFireCriteriaError` naming the subject,
-before the question step and before the loop's graph is dispatched (the pinned
-interim on KOD-786; what the walk does with such a member is decided there, not
-here). A criterion the board Canceled or closed as a Duplicate neither joins
-the specification nor refuses that read, and a subtree whose every criterion is
-one of those is refused as empty. There is no second, narrower reading in which the subject's own
-criterion children alone admit or refuse a fire (KOD-790). The question step asks one read-only
-pass under the `fire_time_ruling` role what the subject text and the current
-Checks leave open, pins each answer on the issue whose text raised it, reads it
-back, and only then enters the loop. The identities an answer may address are
-the subject and its criterion sub-issues, read from the tracker again after that
-pass and before the write, so a sub-issue the board removed or reparented while
-the pass ran no longer resolves and an answer addressed to one ends the fire
+the captured specification names every criterion sub-issue under the subject
+that counts — its own children and, recursively, its deliverable children's. A
+subtree holding none is refused with `EmptyFireCriteriaError` naming the
+subject, before the question step and before the loop's graph is dispatched (the
+pinned interim on KOD-786; what the walk does with such a member is decided
+there, not here). A criterion the board Canceled or closed as a Duplicate
+neither joins the specification nor refuses that read, and a subtree whose every
+criterion is one of those is refused as empty. There is no second, narrower
+reading in which the subject's own criterion children alone admit or refuse a
+fire (KOD-790). The question step asks one read-only pass under the
+`fire_time_ruling` role what the subject text and the current Checks leave open,
+pins each answer on the issue whose text raised it, reads it back, and only then
+enters the loop. The identities an answer may address are the subject and its
+criterion sub-issues, read from the tracker again after that pass and before the
+write, so a sub-issue the board removed or reparented while the pass ran no
+longer resolves and an answer addressed to one ends the fire
 `ruling_unrecorded` with nothing written. An open question whose answer cannot be
 confirmed on the tracker ends the fire `ruling_unrecorded`, with the loop
 un-entered. An answer that names work the subject's own `Deliverables` section

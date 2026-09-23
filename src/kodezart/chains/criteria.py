@@ -306,9 +306,11 @@ class TrackerCriteria:
 
         A counting roster that comes out empty is refused — a subtree
         holding no criterion at all, and equally one whose criteria were
-        every one of them abandoned — for the same reason the readiness read
-        refuses such a member: there is no obligation for a delivery to be
-        the discharge of.
+        every one of them abandoned — because there is no obligation for a
+        delivery to be the discharge of. The readiness read parts from this
+        reading on purpose: there a member whose every criterion was
+        abandoned owes nothing and reads closed, while here it has nothing
+        to deliver and is refused.
         """
         unfinished = sorted(
             key for key, issue in criteria.items() if is_open(issue.state_kind)

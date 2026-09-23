@@ -142,8 +142,7 @@ async def test_a_criterion_never_graded_is_owed_with_no_graded_sha_and_not_refut
     """No grading on record is a criterion still owed, never one knocked down.
 
     The record reaches the gap exactly as the tracker holds it — no verdict
-    is attached to it, and the only state that makes the read demand
-    something more of a criterion is a cancellation, which this is not.
+    is attached to it, and its unstarted state alone is what makes it owed.
     """
     fixture = await ready_fixture(subtree(kind="unstarted", body=UNGRADED_BODY))
 
