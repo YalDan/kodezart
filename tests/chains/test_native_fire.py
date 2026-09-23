@@ -2885,35 +2885,51 @@ def routes_to(*functions):
 def callers_of(*functions):
     """Every function in the package that calls *functions*, found by identity.
 
-    A call counts when its callee resolves to the function object itself:
-    a name whose module-level value IS the function (so an aliased import or
-    a module-level rebinding counts); an attribute of a module alias that
-    resolves to it; a method reached through its own instance,
-    ``self.<method>`` inside the class, or ``self.<attribute>.<method>``
-    where the class declares the attribute's class (a class-body annotation,
-    or an assignment from an annotated parameter) and that class's attribute
-    IS the function, or ``<local>.<method>`` where the local was bound to
-    such a ``self`` attribute; or a name the calling function (or one
-    enclosing it) binds to any of those -- by assignment, tuple unpacking,
-    an assignment expression, a ``for`` target over a literal tuple, list or
-    set, or a parameter default -- followed to a fixed point.  A binding
-    holds only in its own scope, so a same-named local of another function
-    is not the function.  Each caller is recorded as ``(module, qualified name
-    of the outermost function)``, so two modules or two classes never merge
-    into one name, and a call made in a closure is the node that holds it.
-    A call outside any function -- a class body, a module-level lambda -- is
-    recorded as its own line, which no reach table can hold, so it is
-    reported rather than folded in.
+    A call counts when its callee resolves to the function object itself.
+    Followed, each held by a control over ``RESOLVER_PROBE`` below:
 
-    An import made inside a function is read from the tree and resolved the
-    same way: ``from ... import recorded_native_roster as x`` binds ``x``
-    when the object imported IS the function, ``import a.b as m`` binds
-    ``m`` to that module, and a plain ``import a.b.c`` binds ``a`` to the
-    top-level package, from which ``a.b.c.recorded_native_roster`` reaches
-    the function attribute by attribute.  Not seen: a function reached
-    through any other object (an instance held anywhere but in ``self``, a
-    declared ``self`` attribute or a local bound to one, a mapping, a
-    ``functools.partial``).
+    - a direct call, through a name whose module-level value IS the function
+      (so an aliased import or a module-level rebinding counts);
+    - ``self.<method>`` inside the class, and ``self.<attribute>.<method>``
+      where the class declares the attribute's class and that class's
+      attribute IS the function, a ``staticmethod`` or ``classmethod``
+      unwrapped;
+    - a declaration by an ``Optional[...]``, ``Union[...]`` or ``|``
+      annotation, a class-body annotation, an annotated assignment to
+      ``self.<attribute>``, or an assignment from an annotated parameter;
+    - a plain ``import a.b.c`` inside a function, which binds ``a`` to the
+      top-level package, from which ``a.b.c.<function>`` reaches the
+      function attribute by attribute; ``import a.b as m`` and
+      ``from ... import <function> as x`` inside a function; and a module
+      alias;
+    - a name bound, in the calling function or one enclosing it, to any of
+      these by plain, chained or annotated assignment, by unpacking a tuple
+      into one of equal length with no starred target, by a walrus (and a
+      walrus as the callee), by a ``for`` or comprehension target over a
+      literal tuple or list, or by a positional or keyword-only parameter
+      default, followed to a fixed point;
+    - a bound method held in a local (``check = self._require_current``,
+      ``check = self._delivery._require_current``, or by a walrus), and an
+      attribute narrowed through a local (``delivery = self._delivery``,
+      then ``delivery._require_current(...)``).
+
+    A binding holds only in its own scope, so a same-named local of another
+    function, a method of another class with the same name, and a
+    same-named function of another module are not the function.
+
+    Not seen, and held unseen by the same control: a conditional
+    expression; starred unpacking; a ``for`` over a name bound to a
+    sequence; a module bound to a local name; an instance held anywhere but
+    ``self``, a declared ``self`` attribute, or a local narrowed from one (a
+    parameter, a local it was built into); a mapping; ``functools.partial``;
+    and anything assembled at run time.
+
+    Each caller is recorded as ``(module, qualified name of the outermost
+    function)``, so two modules or two classes never merge into one name,
+    and a call made in a closure is the node that holds it.  A call outside
+    any function -- a class body, a module-level lambda -- is recorded as its
+    own line, which no reach table can hold, so it is reported rather than
+    folded in.
     """
     return tuple(sorted(set(calls_to(*functions))))
 
