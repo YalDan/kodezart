@@ -6,7 +6,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.protocols import QualityGate
+from kodezart.core.protocols import FireCriteriaSource, QualityGate
 from kodezart.domain.outcome import classify_outcome
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -48,7 +48,13 @@ from tests.workflow_factory import make_fire_workflow
 DELIVERY_FIELDS = {"pr_url", "pr_number", "ci_status", "ci_summary", "ci_passed"}
 
 
-def fire(*, artifacts=None, executor=None, quality: QualityGate | None = None):
+def fire(
+    *,
+    artifacts=None,
+    executor=None,
+    quality: QualityGate | None = None,
+    criteria: FireCriteriaSource | None = None,
+):
     return make_fire_workflow(
         service=AgentService(
             git_base_url="https://github.com",
@@ -78,6 +84,7 @@ def fire(*, artifacts=None, executor=None, quality: QualityGate | None = None):
         criteria_max_regeneration_rounds=1,
         fan_in_max_attempts=2,
         artifact_persister=artifacts,
+        criteria=criteria,
     )
 
 
