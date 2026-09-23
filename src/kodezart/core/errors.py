@@ -456,6 +456,39 @@ class TrackerWriterAttributionError(Exception):
         self.field: str = field
 
 
+class McpServerNameClashError(Exception):
+    """Raised at boot when one session would be given two servers of one name.
+
+    Names BOTH servers, each with the field its name is read from, and the
+    session kind that would receive both: renaming either one is the whole
+    fix, and an operator told only that a name clashed would have to find
+    which two settings spelled it.  Refused before anything is served,
+    because the alternative is every session of that kind refusing to start
+    on a board nobody is watching.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        knowledge_server: str,
+        knowledge_field: str,
+        tracker_server: str,
+        tracker_field: str,
+        session_type: str,
+    ) -> None:
+        super().__init__(
+            f"{message} (knowledge server {knowledge_server!r} from "
+            f"{knowledge_field}; tracker server {tracker_server!r} from "
+            f"{tracker_field}; both attached to {session_type} sessions)"
+        )
+        self.knowledge_server: str = knowledge_server
+        self.knowledge_field: str = knowledge_field
+        self.tracker_server: str = tracker_server
+        self.tracker_field: str = tracker_field
+        self.session_type: str = session_type
+
+
 class PromptNamespaceCollisionError(Exception):
     """Raised at boot when the three binding namespaces are not disjoint."""
 

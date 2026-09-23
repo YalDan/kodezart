@@ -55,6 +55,7 @@ CITED_ERRORS: frozenset[str] = frozenset(
         "TrackerEnsureConflictError",
         "TrackerCredentialShapeError",
         "McpCredentialRefusedError",
+        "McpServerNameClashError",
     },
 )
 

@@ -17,9 +17,11 @@ from kodezart.adapters.linear.tracker import (
     is_long_lived_credential,
 )
 from kodezart.adapters.mcp.http_tool_caller import HttpMcpToolCaller
+from kodezart.adapters.mcp.mapping import TRACKER_SESSION
 from kodezart.config.tracker import TrackerSettings
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
+    McpServerNameClashError,
     TrackerCredentialShapeError,
     TrackerWriterAttributionError,
 )
@@ -35,7 +37,7 @@ from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.organize import split_label_key
-from kodezart.types.domain.session import HttpMcpServer
+from kodezart.types.domain.session import HttpMcpServer, KnowledgeGrant
 from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 
 #: Where the tracker credential is read from, named in the refusal because
@@ -49,6 +51,11 @@ AGENT_IDENTITY_FIELD: Final[str] = "agent_identities"
 #: The capability every refusal below names, so an operator reading one
 #: knows which boot check spoke.
 ATTRIBUTABLE_WRITER: Final[str] = "attributable writer"
+
+#: Where each server's name is read from, named in the name-clash refusal
+#: because renaming either one is the fix.
+KNOWLEDGE_SERVER_NAME_FIELD: Final[str] = "KODEZART_KNOWLEDGE__SERVER_NAME"
+TRACKER_SERVER_NAME_FIELD: Final[str] = "KODEZART_TRACKER__SERVER_NAME"
 
 
 def tracker_mcp_server(*, settings: TrackerSettings, token: str) -> HttpMcpServer:
@@ -79,6 +86,32 @@ def session_tracker_server(
     if token is None:
         return None
     return tracker_mcp_server(settings=settings, token=token.get_secret_value())
+
+
+def refuse_server_name_clash(
+    *, grant: KnowledgeGrant, tracker_server: HttpMcpServer | None
+) -> None:
+    """Refuse a deployment whose sessions would get two servers of one name.
+
+    The tracker server is attached to the scheduled passes whenever a tracker
+    credential is configured, and the knowledge server to every session kind
+    the grant names. Where both reach the scheduled passes under one name,
+    one of them would replace the other, so boot refuses and names both.
+    The session mapping refuses the same clash again when a session starts,
+    as the last line of defence for a caller that skipped boot.
+    """
+    if tracker_server is None or not grant.grants(TRACKER_SESSION):
+        return
+    if grant.server_name != tracker_server.name:
+        return
+    raise McpServerNameClashError(
+        "the knowledge server and the tracker server share one name",
+        knowledge_server=grant.server_name,
+        knowledge_field=KNOWLEDGE_SERVER_NAME_FIELD,
+        tracker_server=tracker_server.name,
+        tracker_field=TRACKER_SERVER_NAME_FIELD,
+        session_type=TRACKER_SESSION.value,
+    )
 
 
 def make_mcp_tool_caller(

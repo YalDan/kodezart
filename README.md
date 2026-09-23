@@ -858,6 +858,7 @@ it could not resolve. Nothing runs until you fix it.
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
 | `TrackerEnsureConflictError` | C | A value the operation *owns* exists with a conflicting definition, or two declared entries claim one backend value. Reconcile the workspace or the config by hand; boot will not alter either for you. |
 | `TrackerCredentialShapeError` naming a field and a shape | C | `KODEZART_TRACKER__TOKEN` does not hold the long-lived key shape the backend accepts. Mint the personal key from step 1 and set that instead; nothing here refreshes a token that expires. |
+| `McpServerNameClashError` naming both servers | C | `KODEZART_TRACKER__TOKEN` is set, the knowledge grant names `scheduled_pass`, and `KODEZART_KNOWLEDGE__SERVER_NAME` equals `KODEZART_TRACKER__SERVER_NAME`, so one session would be given two servers of one name. Rename either one. |
 | `McpCredentialRefusedError` before any session log line | C | The key is the right shape and the server would not take it: revoked, mistyped, or minted in another workspace. Mint a fresh one per step 1. |
 
 *Observable result:* one of the three states, identified by name, with no line

@@ -44,11 +44,12 @@ from kodezart.composition.records import _knowledge_caller
 from kodezart.composition.tracker import (
     DialledTracker,
     make_mcp_tool_caller,
+    refuse_server_name_clash,
     session_tracker_server,
 )
 from kodezart.config.app import AppConfig
 from kodezart.config.tracker import TrackerSettings
-from kodezart.core.errors import McpSessionClosedError
+from kodezart.core.errors import McpServerNameClashError, McpSessionClosedError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.run_recorder import RunRecorder
@@ -68,15 +69,17 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunOutcome, RunRecord
-from kodezart.types.domain.session import HttpMcpServer, PermissionMode
+from kodezart.types.domain.session import HttpMcpServer, PermissionMode, SessionType
 from kodezart.types.domain.tracker import TrackerIssue
 from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
+    FIXTURE_KNOWLEDGE_SERVER,
     FakeFireReport,
     FakeTrackerPort,
     ManagedFakeLinearMcpServer,
     PassThroughGate,
     RecordingLogSink,
+    knowledge_grant_for,
     make_tracker_issue,
 )
 from tests.services.test_prompt_pass import example_config
@@ -626,9 +629,16 @@ def test_the_tracker_server_reaches_the_executor_through_composition() -> None:
     Built by the one composition function that reads the definition the
     programmatic client dials, from the same settings and the same token.
     """
-    wired = _executor_keywords()["tracker_server"]
+    tree = ast.parse(ROOT.read_text(encoding="utf-8"))
+    (bound,) = [
+        ast.unparse(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and [ast.unparse(target) for target in node.targets] == ["tracker_server"]
+    ]
 
-    assert wired == (
+    assert _executor_keywords()["tracker_server"] == "tracker_server"
+    assert bound == (
         "session_tracker_server(settings=config.tracker, token=tracker_token)"
     )
 
@@ -668,6 +678,45 @@ def test_the_tracker_server_is_rendered_in_one_place_only(monkeypatch) -> None:
     assert caller._server.server_name == SENTINEL_TRACKER.name
     assert wired is SENTINEL_TRACKER
     assert session_tracker_server(settings=settings, token=None) is None
+
+
+#: A tracker credential of the vendor's shape; nothing here presents it.
+CLASH_TOKEN = SecretStr("lin_api_" + "C" * 40)
+
+
+@pytest.mark.parametrize(
+    ("granted", "tracker_name", "token", "refused"),
+    [
+        (SessionType.SCHEDULED_PASS, FIXTURE_KNOWLEDGE_SERVER, CLASH_TOKEN, True),
+        (SessionType.SCHEDULED_PASS, "linear", CLASH_TOKEN, False),
+        (SessionType.TICKET_FIRE, FIXTURE_KNOWLEDGE_SERVER, CLASH_TOKEN, False),
+        (SessionType.SCHEDULED_PASS, FIXTURE_KNOWLEDGE_SERVER, None, False),
+    ],
+    ids=["clash", "other_name", "not_granted_to_passes", "no_token"],
+)
+def test_a_shared_server_name_refuses_only_where_both_reach_one_session(
+    granted, tracker_name, token, refused
+) -> None:
+    """The refusal needs all three: a token, the passes granted, one name.
+
+    Without a token no session is given the tracker; with the knowledge
+    server granted to other kinds only, the two never meet in one session;
+    with different names they sit side by side.
+    """
+    grant = knowledge_grant_for(granted)
+    tracker = session_tracker_server(
+        settings=TrackerSettings(server_name=tracker_name), token=token
+    )
+
+    if refused:
+        with pytest.raises(McpServerNameClashError) as clash:
+            refuse_server_name_clash(grant=grant, tracker_server=tracker)
+        assert clash.value.knowledge_server == FIXTURE_KNOWLEDGE_SERVER
+        assert clash.value.tracker_server == FIXTURE_KNOWLEDGE_SERVER
+        assert clash.value.knowledge_field == "KODEZART_KNOWLEDGE__SERVER_NAME"
+        assert clash.value.tracker_field == "KODEZART_TRACKER__SERVER_NAME"
+    else:
+        assert refuse_server_name_clash(grant=grant, tracker_server=tracker) is None
 
 
 def test_the_executor_keywords_are_read_off_a_real_call() -> None:

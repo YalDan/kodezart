@@ -454,7 +454,10 @@ the audit judges) whenever `KODEZART_TRACKER__TOKEN` is set, from the same
 tracker settings the in-process client dials (`KODEZART_TRACKER__SERVER_NAME`,
 `KODEZART_TRACKER__SERVER_URL`, `KODEZART_TRACKER__AUTH_HEADER`,
 `KODEZART_TRACKER__AUTH_SCHEME`), and to no other session kind; with no token, no session is given it. There is no setting of its
-own. Every session runs with `strict_mcp_config`, so a server definition in the
+own. Where a token is set and the grant names `scheduled_pass`, the two servers
+must have different names: boot refuses with `McpServerNameClashError`, naming
+both, when `KODEZART_KNOWLEDGE__SERVER_NAME` equals
+`KODEZART_TRACKER__SERVER_NAME`. Every session runs with `strict_mcp_config`, so a server definition in the
 session's working directory is never loaded beside these:
 
 | Session kind | MCP servers kodezart attaches |

@@ -48,6 +48,9 @@ concerns.
   built from the same tracker settings and credential the in-process client
   dials; no other session kind is, and no token gives none (KOD-846).
   `strict_mcp_config` stays on for every session. There is no new setting.
+  Where the knowledge grant also names `scheduled_pass`, a knowledge server
+  named like the tracker server refuses boot with `McpServerNameClashError`,
+  which names both.
 - `docs/operation.scope.toml` declares `[queue_states]`, which the grooming and
   fire-prep sessions read, and `docs/running-a-scope.md` sets
   `KODEZART_DISPATCH_WORKFLOW=scope`.

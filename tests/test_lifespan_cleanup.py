@@ -14,7 +14,7 @@ from kodezart.composition.jobs import build_job_queue
 from kodezart.config.app import AppConfig
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.types.domain.session import PermissionMode
-from tests.fakes import FakeScopeStatusWriter
+from tests.fakes import NO_KNOWLEDGE_GRANT, FakeScopeStatusWriter
 
 
 class LifecycleError(Exception):
@@ -147,7 +147,9 @@ def resources(monkeypatch):
     monkeypatch.setattr(main, "verify_pass_preflight", boot("preflight"))
     monkeypatch.setattr(main, "build_run_recorder", recorder)
     monkeypatch.setattr(main, "boot_skills", boot("skills"))
-    monkeypatch.setattr(main, "boot_knowledge_grant", boot("knowledge_grant"))
+    monkeypatch.setattr(
+        main, "boot_knowledge_grant", boot("knowledge_grant", NO_KNOWLEDGE_GRANT)
+    )
     monkeypatch.setattr(main, "fire_record_template", lambda **_kwargs: None)
     monkeypatch.setattr(main, "ClaudeClientExecutor", lambda **_kwargs: None)
     monkeypatch.setattr(main, "build_outbound_gate", boot("gate"))
@@ -818,6 +820,58 @@ async def test_actual_lifespan_gives_the_executor_the_tracker_server_only_with_a
         assert wired.headers == expected.headers
     else:
         assert wired is None
+
+
+async def test_actual_lifespan_refuses_a_tracker_server_named_like_the_knowledge_server(
+    resources, monkeypatch, tmp_path
+):
+    """Boot refuses, naming both servers, before any session could be given them.
+
+    A tracker token is configured and the knowledge grant names the scheduled
+    passes, so both servers would be attached to one session kind under one
+    name. The refusal comes before the executor is built, and every transport
+    boot opened is released.
+    """
+    from kodezart.adapters.toml_operation_config import OperationFile
+    from kodezart.core.errors import McpServerNameClashError
+    from kodezart.types.domain.session import SessionType
+    from tests.core.test_tracker_settings import TOKEN
+    from tests.fakes import FIXTURE_KNOWLEDGE_SERVER, knowledge_grant_for
+    from tests.tracker.test_tracker_boot import operation_config
+
+    config = AppConfig(
+        _env_file=None,
+        operation_config=str(tmp_path / "operation.toml"),
+        tracker={"token": TOKEN, "server_name": FIXTURE_KNOWLEDGE_SERVER},
+    )
+    resources.app.state.config = config
+    monkeypatch.setattr(
+        main,
+        "read_operation_file",
+        lambda _path: OperationFile(operation_config(), (), ()),
+    )
+
+    async def grant(**kwargs):
+        return knowledge_grant_for(SessionType.SCHEDULED_PASS)
+
+    monkeypatch.setattr(main, "boot_knowledge_grant", grant)
+    built = []
+
+    def executor(**kwargs):
+        built.append(kwargs)
+
+    monkeypatch.setattr(main, "ClaudeClientExecutor", executor)
+    with pytest.raises(McpServerNameClashError) as refused:
+        async with resources.app.router.lifespan_context(resources.app):
+            raise AssertionError("boot was expected to refuse")
+
+    assert refused.value.knowledge_server == FIXTURE_KNOWLEDGE_SERVER
+    assert refused.value.tracker_server == FIXTURE_KNOWLEDGE_SERVER
+    assert "KODEZART_KNOWLEDGE__SERVER_NAME" in str(refused.value)
+    assert "KODEZART_TRACKER__SERVER_NAME" in str(refused.value)
+    assert refused.value.session_type == SessionType.SCHEDULED_PASS.value
+    assert built == []
+    assert all(transport.closed for transport in resources.transports[:2])
 
 
 @pytest.mark.parametrize("custom", [False, True])

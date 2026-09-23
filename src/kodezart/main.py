@@ -23,6 +23,7 @@ from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.records import build_run_recorder
 from kodezart.composition.tracker import (
     boot_tracker,
+    refuse_server_name_clash,
     session_tracker_server,
 )
 from kodezart.composition.workspace import build_git_stack
@@ -132,25 +133,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         skills = await boot_skills(settings=config.agent, prompts=prompts, log=log)
         app.state.skills = skills
 
+        knowledge_grant = await boot_knowledge_grant(
+            knowledge=config.knowledge,
+            prompts=prompts,
+            log=log,
+        )
         # The tracker's server definition, from the same settings and token the
         # client above dials with: a configured credential gives the grooming
         # and fire-prep sessions the tracker, and no credential gives them none.
         tracker_token = config.tracker.token
+        tracker_server = session_tracker_server(
+            settings=config.tracker, token=tracker_token
+        )
+        # Both servers a scheduled pass may be given are known here, so a name
+        # they share refuses boot rather than every such session.
+        refuse_server_name_clash(grant=knowledge_grant, tracker_server=tracker_server)
         executor = ClaudeClientExecutor(
             model=config.agent.model,
             setting_sources=config.agent.setting_sources,
-            knowledge_grant=await boot_knowledge_grant(
-                knowledge=config.knowledge,
-                prompts=prompts,
-                log=log,
-            ),
+            knowledge_grant=knowledge_grant,
             output_style=config.agent.output_style,
             fire_record=fire_record_template(
                 knowledge=config.knowledge, operation=operation, prompts=prompts
             ),
-            tracker_server=session_tracker_server(
-                settings=config.tracker, token=tracker_token
-            ),
+            tracker_server=tracker_server,
         )
         gate = await build_outbound_gate(
             config=config,

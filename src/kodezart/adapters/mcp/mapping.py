@@ -125,7 +125,9 @@ def map_knowledge_mcp(
     The one mapping of servers per session kind: the knowledge server per
     the grant, and the tracker server to the scheduled passes when a tracker
     definition is present.  A tracker server named like the knowledge server
-    refuses rather than replacing it.
+    refuses rather than replacing it.  Boot refuses that clash first, naming
+    both servers; this refusal is the last line of defence, for a caller
+    that builds an executor without booting.
 
     Exhaustive over the vocabulary with no default arm, so a session kind
     added later fails to type-check rather than reaching the SDK default
