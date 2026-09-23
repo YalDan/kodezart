@@ -423,7 +423,7 @@ reply carrier. The native arm's `rule_open_questions` step writes these records
 before its loop; see the scoped execution boundary in `docs/architecture.md`.
 
 `RulingRecordReader` enumerates the current configured ruling comments through
-`TrackerPort.list_comments`, preserving each native comment key and decoded
+`TrackerCommentReader.list_comments`, preserving each native comment key and decoded
 record. Successful absence is an empty tuple; malformed records, duplicate
 identities, foreign ownership and incomplete reads refuse. A fresh reader
 observes replay edits through the existing marker upsert primitive.

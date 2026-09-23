@@ -1,7 +1,7 @@
 # Model agreement checks
 
 The spec conformance module reads model membership through
-`TrackerPort.read_labeled_issues`, using the `criterion_lifecycle` semantic key
+`ModelMemberReader.read_labeled_issues`, using the `criterion_lifecycle` semantic key
 in the existing `OperationConfig.issue_labels` mapping. Configure its value as
 the workspace's model marker. The query includes archived issues and every
 workflow state. It follows all pages, hydrates full issues, and refuses duplicate

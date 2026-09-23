@@ -385,6 +385,8 @@ _DERIVED_SET_NOUNS: tuple[str, ...] = (
     "endpoints?",
     "adapters?",
     "criteria",
+    "roles?",
+    "members?",
 )
 
 _NOUNS = "|".join(_DERIVED_SET_NOUNS)
@@ -462,6 +464,8 @@ def test_the_counted_claim_pattern_matches_the_instances_it_was_written_for() ->
         "### Event Types (18 total)",
         "**Streaming events (11)**:",
         "**Workflow events (6)**:",
+        "the port is composed of 41 tracker roles",
+        "its 56 members",
     ):
         assert _COUNTED_CLAIM.search(claim) is not None, claim
 
