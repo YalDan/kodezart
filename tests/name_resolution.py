@@ -2513,16 +2513,20 @@ def rebound_words(source: str, *, names: Collection[str]) -> frozenset[str]:
     binds the module's own word.  The tables are a finite tree and each is
     taken once.
 
-    Two writes the table does not record are read beside it: an attribute
-    stored or deleted under the word (``module.Word = ...``), and the word
-    spelled as a whole string literal, which is the only way a write through
-    a string (``globals()["Word"] = ...``, ``setattr(m, "Word", ...)``) can
-    name it.  So a quoted annotation of the word, or an ``__all__`` entry
-    naming it, is reported as well.
+    Three writes the table does not record are read beside it, each by
+    the one place the word can then be spelled: an attribute stored or
+    deleted under the word (``module.Word = ...``, ``del module.Word``);
+    the word as a whole string literal (``globals()["Word"] = ...``,
+    ``setattr(m, "Word", ...)``); and the word as a keyword argument
+    (``globals().update(Word=...)``, ``vars(m).update(Word=...)``), which
+    writes it through a namespace with no string and no name node.  So a
+    quoted annotation of the word, an ``__all__`` entry naming it, or a
+    keyword of that name in any call is reported as well.
 
     An import is not reported: which import binds a word, and out of which
-    module, is the caller's to judge.  Not read: a word built at run time,
-    and ``eval`` or ``exec``.
+    module, is the caller's to judge.  Not read: a word the source never
+    spells whole -- one built at run time, or handed in from another
+    function -- and ``eval`` or ``exec``.
     """
     wanted = frozenset(names)
     found: set[str] = set()
@@ -2553,7 +2557,55 @@ def rebound_words(source: str, *, names: Collection[str]) -> frozenset[str]:
             and node.value in wanted
         ):
             found.add(node.value)
+        elif isinstance(node, ast.keyword) and node.arg in wanted:
+            found.add(node.arg)
     return frozenset(found)
+
+
+def namespace_after_import(
+    path: Path, root: Path = SOURCE_ROOT
+) -> Mapping[str, object]:
+    """``vars(module)`` of the module at *path* under *root*, once imported.
+
+    A module of the installed package is imported by its dotted name, so the
+    namespace read is the one every importer of it sees.  A file under any
+    other root -- a control's planted tree -- is executed once from its own
+    path under a private name and never entered in ``sys.modules``, so a
+    planted module can never stand in for a real one.
+    """
+    relative = path.relative_to(root).with_suffix("")
+    parts = relative.parts[:-1] if relative.name == "__init__" else relative.parts
+    if root.resolve() == SOURCE_ROOT.resolve():
+        return vars(importlib.import_module(".".join((root.name, *parts))))
+    spec = importlib.util.spec_from_file_location("_".join(("planted", *parts)), path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"{path} names no module that can be executed")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return vars(module)
+
+
+def object_named(node: ast.expr, namespace: Mapping[str, object]) -> object | None:
+    """The object *node* names in *namespace*, read without running anything.
+
+    A name is looked up in the namespace, an attribute is read off the object
+    its receiver names with ``inspect.getattr_static``, and a subscript names
+    the object it subscripts (``Protocol[T]`` names ``Protocol``).  ``None``
+    for anything else, and for a name or attribute the namespace does not
+    hold -- a name bound only inside a function body is one.
+    """
+    if isinstance(node, ast.Subscript):
+        return object_named(node.value, namespace)
+    if isinstance(node, ast.Name):
+        return namespace.get(node.id)
+    if isinstance(node, ast.Attribute):
+        try:
+            return inspect.getattr_static(
+                object_named(node.value, namespace), node.attr
+            )
+        except AttributeError:
+            return None
+    return None
 
 
 def module_file(dotted: str, root: Path = SOURCE_ROOT) -> Path | None:
