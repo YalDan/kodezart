@@ -20,12 +20,21 @@ spelled, and a subscript of the bare ``issue`` name is neither. That function
 is pinned by its WHOLE body, not by that expression alone: the unparsed
 statements after its docstring are compared to the one written return, so the
 definition has room for no statement at all — nothing may substitute the issue
-before the read, and nothing may rebind the name the return calls. And because
-a call is pinned by the word it spells and never by what that word resolves
-to, a second register states the resolution as a fact: every name the module
-binds is disjoint from every name it imports from the domain types, so
-``priority_rank`` inside this module means the domain order and not a function
-standing in its place.
+before the read. A call is pinned there by the word it spells, so a second
+register reads the module's binding syntax: every name a statement of the
+module binds is disjoint from every name it imports from the domain types.
+That register reads syntax. What a name resolves to at run time is pinned by
+object on the dispatch path below.
+
+The dispatch path is derived from the live function that makes a rank: every
+definition that hands it rows or that it hands on to, found by what their
+reads resolve to, not by name. Each definition on it is pinned by the ``def``
+its live code object was compiled from, with its decorators, its whole body
+and the home of every object it reads. So a size table cannot sit in front
+of a rank in the orderings, in the producer's pass, in its scan or in the
+domain order one call deeper, and a decorator, a rebinding, a ``globals()``
+or ``setattr`` write, or a module-level ``def`` of an imported word moves
+what a name resolves to. The path test states its own limits.
 
 Two weaker nets sit outside the shape pins. One collects every ``len(...)``
 whose argument is an attribute and asserts none of those attributes is a text
@@ -49,12 +58,13 @@ only when its key or arguments spell or denote a rank name themselves: a key
 that reaches the rank through a helper — a named function, or a lambda that
 calls one — is not registered, and the helper's body is not read. What the
 registers read is what a key reads, not what those names were computed from,
-so a size folded into a rank input *before* the ordering — a rank input
-rewritten from a count, whether in the producer or inside a registered
-definition — reaches the ordering under the rank input's own name and is
-outside every pin here. The ordering surface is matched by the word a callee
-spells, so a ``sorted`` reached under another name — ``from builtins import
-sorted as s``, or ``s = sorted`` — is no ordering expression here, even though
+so a size folded into a rank input *before* the ordering reaches the
+ordering under the rank input's own name and is outside these registers; on
+the dispatch path it is caught by the whole-body pin of the definition that
+folds it, and off that path it is outside every pin here. The ordering
+surface is matched by the word a callee spells, so a ``sorted`` reached under
+another name — ``from builtins import sorted as s``, or ``s = sorted`` — is
+no ordering expression here, even though
 the resolver beside this guard denotes both spellings as ``sorted``. An
 ordering expression here is one of the six calls named above or a ``__lt__``:
 ``bisect.insort``, ``heapq.heapify`` and ``heapq.heappush`` order by a key and
@@ -89,9 +99,11 @@ the text-length net.
 
 import ast
 import dataclasses
+import functools
 import inspect
+import sys
 import types
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Union, get_args, get_origin
@@ -104,7 +116,22 @@ from kodezart.types.domain.dispatch import IssueSnapshot
 from kodezart.types.domain.scope_ready import ScopeReadyLane
 from kodezart.types.domain.topology import ReadyIssue
 from kodezart.types.domain.tracker import TrackerIssue, priority_rank
-from tests.name_resolution import definitions, parsed, resolve, source_tree
+from tests.name_resolution import (
+    SOURCE_ROOT,
+    compiled_def,
+    declares,
+    definitions,
+    home,
+    in_package,
+    package_functions,
+    parsed,
+    planted_module,
+    references,
+    resolve,
+    source_tree,
+    unwrapped,
+    written_methods,
+)
 
 #: Every word a rank consults, read off the code: the rank value, the two
 #: functions that make one, and every field of a row or a ready entry whose
@@ -643,6 +670,502 @@ PLATEAU = "domain/fire_plateau.py"
 NUMERIC = (int, float, Decimal)
 
 
+# ---------------------------------------------------------------------------
+# The dispatch path, derived from the objects and pinned by what executes
+# ---------------------------------------------------------------------------
+
+
+def row_type(start: types.FunctionType) -> type:
+    """The row a rank is made from, read off the one parameter of *start*."""
+    (parameter,) = inspect.signature(start, eval_str=True).parameters.values()
+    return parameter.annotation
+
+
+def _takes(function: types.FunctionType, row: type) -> bool:
+    return any(
+        declares(parameter.annotation, row)
+        for parameter in inspect.signature(function, eval_str=True).parameters.values()
+    )
+
+
+def _returns(function: types.FunctionType, row: type) -> bool:
+    signature = inspect.signature(function, eval_str=True)
+    return declares(signature.return_annotation, row)
+
+
+def _owner(function: types.FunctionType) -> object:
+    """The class a method is written in, or ``None`` for a module-level one."""
+    if "<locals>" in function.__qualname__ or "." not in function.__qualname__:
+        return None
+    outer, *inner = function.__qualname__.split(".")[:-1]
+    return functools.reduce(getattr, inner, function.__globals__[outer])
+
+
+def _receiver_calls(function: types.FunctionType) -> frozenset[str]:
+    """Every method *function* calls on its own receiver."""
+    made = compiled_def(function)
+    positional = [*made.args.posonlyargs, *made.args.args]
+    if not positional:
+        return frozenset()
+    receiver = positional[0].arg
+    return frozenset(
+        node.func.attr
+        for node in ast.walk(made)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == receiver
+    )
+
+
+def dispatch_path(
+    start: types.FunctionType, *, functions: Sequence[types.FunctionType]
+) -> tuple[types.FunctionType, ...]:
+    """Every definition a rank passes through, found from the objects.
+
+    Starts at *start*, the live function that makes a rank, and grows to a
+    fixed point under three rules, each over what the definitions resolve to
+    rather than what they spell:
+
+    - **climb**: a definition taking the row type as a parameter is joined
+      by every one of *functions* that references it — through a global, a
+      module attribute, an import inside it, a ``functools.partial`` or a
+      bound method;
+    - **suppliers**: a method is joined by every method of its own class it
+      calls on its receiver whose return declares the row type, which is how
+      rows arrive at the producer's pass from its scan;
+    - **forward**: every package function a definition on the path
+      references joins, and so does every method written in a package class
+      it references.
+    """
+    row = row_type(start)
+    reached = {
+        id(function): {id(unwrapped(value)) for value in references(function).values()}
+        for function in functions
+    }
+    path: dict[int, types.FunctionType] = {id(start): start}
+    while True:
+        before = len(path)
+        for function in tuple(path.values()):
+            for value in map(unwrapped, references(function).values()):
+                if isinstance(value, types.FunctionType) and in_package(value):
+                    path.setdefault(id(value), value)
+                elif isinstance(value, type) and in_package(value):
+                    for method in written_methods(value):
+                        path.setdefault(id(method), method)
+            if _takes(function, row):
+                for other in functions:
+                    if id(function) in reached[id(other)]:
+                        path.setdefault(id(other), other)
+            owner = _owner(function)
+            if isinstance(owner, type):
+                for name in _receiver_calls(function):
+                    method = unwrapped(inspect.getattr_static(owner, name, None))
+                    if isinstance(method, types.FunctionType) and _returns(method, row):
+                        path.setdefault(id(method), method)
+        if len(path) == before:
+            return tuple(path.values())
+
+
+@dataclasses.dataclass(frozen=True)
+class Executed:
+    """What one definition on the path runs, read off its live object."""
+
+    #: The decorators written on the ``def`` its code was compiled from.
+    decorators: tuple[str, ...]
+    #: That ``def``'s statements after its docstring, unparsed.
+    body: str
+    #: Every read it resolves, spelling -> the home of the object reached.
+    reads: Mapping[str, str]
+
+
+def executed(function: types.FunctionType) -> Executed:
+    """What *function* runs: its compiled ``def`` and where each read lands."""
+    made = compiled_def(function)
+    return Executed(
+        decorators=tuple(ast.unparse(decorator) for decorator in made.decorator_list),
+        body=body_text(made),
+        reads={
+            spelling: home(value) for spelling, value in references(function).items()
+        },
+    )
+
+
+#: The whole body of the producer's pass, from its scan to its hand-off.
+RUN_PASS_BODY = "\n".join(
+    (
+        "team_keys = self._operation.team_keys_for_repo(self._repo_url)",
+        "snapshot = await self._scan(team_keys)",
+        "eligible: list[TrackerIssue] = []",
+        "exclusions: list[IssueExclusion] = []",
+        "for issue in snapshot:",
+        "    exclusion = await self._exclude(issue, team_keys=team_keys)",
+        "    if exclusion is None:",
+        "        eligible.append(issue)",
+        "    else:",
+        "        exclusions.append(exclusion)",
+        "rows = tuple((IssueSnapshot(issue_key=issue.issue_key, "
+        "priority=issue.priority, state_name=issue.state_name, "
+        "created_at=issue.created_at) for issue in snapshot))",
+        "selection = select_top_ranked(eligible, draw=self._draw)",
+        "if selection is None:",
+        "    await self._log.ainfo('dispatch_empty_eligible_set', "
+        "outcome=DispatchOutcome.empty_eligible_set.value, "
+        "snapshot=[row.issue_key for row in rows], "
+        "exclusions=[{'issueKey': item.issue_key, 'clause': item.clause.value} "
+        "for item in exclusions])",
+        "    return DispatchReport(outcome=DispatchOutcome.empty_eligible_set, "
+        "snapshot=rows, exclusions=tuple(exclusions), eligible=())",
+        "await self._log.ainfo('dispatch_ranked', order=list(ranked_order(eligible)), "
+        "tied=list(selection.tied), winner=selection.winner_key)",
+        "return await self._claim_and_enqueue(selection=selection, "
+        "eligible=eligible, rows=rows, exclusions=tuple(exclusions))",
+    )
+)
+
+#: Exact. Every definition on the dispatch path, by the home of its live
+#: object, with what it runs: no decorators, its whole body, and the home of
+#: everything it reads. Measured, not assumed: the walk reaches these seven
+#: and no other.
+DISPATCH_PATH: dict[str, Executed] = {
+    "kodezart.domain.dispatch.rank_key": Executed(
+        decorators=(),
+        body=RANK_KEY_BODY,
+        reads={
+            "RankKey": "kodezart.domain.dispatch.RankKey",
+            "priority_rank": "kodezart.types.domain.tracker.priority_rank",
+        },
+    ),
+    "kodezart.domain.dispatch.RankKey.__lt__": Executed(
+        decorators=(),
+        body="return (self.priority_rank, self.created_at) < "
+        "(other.priority_rank, other.created_at)",
+        reads={},
+    ),
+    "kodezart.types.domain.tracker.priority_rank": Executed(
+        decorators=(),
+        body="return PRIORITY_RANK_ORDER.index(priority)",
+        reads={
+            "PRIORITY_RANK_ORDER": "(<IssuePriority.URGENT: 'urgent'>, "
+            "<IssuePriority.HIGH: 'high'>, <IssuePriority.MEDIUM: 'medium'>, "
+            "<IssuePriority.LOW: 'low'>, <IssuePriority.NONE: 'none'>)",
+        },
+    ),
+    "kodezart.domain.dispatch.select_top_ranked": Executed(
+        decorators=(),
+        body="\n".join(
+            (
+                "if not issues:",
+                "    return None",
+                "best = min((rank_key(issue) for issue in issues))",
+                "tied = tuple(sorted((issue.issue_key for issue in issues "
+                "if rank_key(issue) == best)))",
+                "if len(tied) == 1:",
+                "    return Selection(winner_key=tied[0], tied=tied)",
+                "return Selection(winner_key=draw(tied), tied=tied)",
+            )
+        ),
+        reads={
+            "Selection": "kodezart.domain.dispatch.Selection",
+            "min": "builtins.min",
+            "tuple": "builtins.tuple",
+            "sorted": "builtins.sorted",
+            "len": "builtins.len",
+            "rank_key": "kodezart.domain.dispatch.rank_key",
+        },
+    ),
+    "kodezart.domain.dispatch.ranked_order": Executed(
+        decorators=(),
+        body="return tuple((issue.issue_key for issue in sorted(issues, "
+        "key=lambda issue: (rank_key(issue).priority_rank, "
+        "rank_key(issue).created_at, issue.issue_key))))",
+        reads={
+            "tuple": "builtins.tuple",
+            "sorted": "builtins.sorted",
+            "rank_key": "kodezart.domain.dispatch.rank_key",
+        },
+    ),
+    "kodezart.services.fire_dispatcher.FireDispatcher.run_pass": Executed(
+        decorators=(),
+        body=RUN_PASS_BODY,
+        reads={
+            "DispatchReport": "kodezart.types.domain.dispatch.DispatchReport",
+            "list": "builtins.list",
+            "tuple": "builtins.tuple",
+            "select_top_ranked": "kodezart.domain.dispatch.select_top_ranked",
+            "IssueSnapshot": "kodezart.types.domain.dispatch.IssueSnapshot",
+            "DispatchOutcome": "kodezart.types.domain.dispatch.DispatchOutcome",
+            "ranked_order": "kodezart.domain.dispatch.ranked_order",
+        },
+    ),
+    "kodezart.services.fire_dispatcher.FireDispatcher._scan": Executed(
+        decorators=(),
+        body="\n".join(
+            (
+                "found: list[TrackerIssue] = []",
+                "for team_key in team_keys:",
+                "    found.extend(await self._tracker.scan_issues("
+                "query=IssueQuery(queue_state=QueueState.APPROVED, "
+                "team_key=team_key, page_size=self._query_page_size)))",
+                "return tuple(found)",
+            )
+        ),
+        reads={
+            "tuple": "builtins.tuple",
+            "IssueQuery": "kodezart.types.domain.tracker.IssueQuery",
+            "QueueState": "kodezart.types.domain.operation.QueueState",
+        },
+    ),
+}
+
+#: A size table planted on the dispatch path, as ``module -> (anchor ->
+#: planted, ...)`` over the shipped source, with the qualified name of the
+#: definition it reaches. The first five change what a name resolves to and
+#: leave every body written in the module byte-identical: a decorator, a
+#: rebinding after the ``def``, a ``globals()`` write, a ``setattr`` on the
+#: module and a module-level ``def`` of the imported name. The rest put the
+#: table inside a body: the function that makes the rank, both orderings,
+#: the producer's pass and its scan, and the domain order one call deeper —
+#: its body, and the table it reads.
+_SIZES = "_SIZES: dict = {}\n\n\n"
+_WRAPPER = (
+    "def _through(make):\n"
+    "    @functools.wraps(make)\n"
+    "    def wrapped(issue):\n"
+    "        return make(_SIZES.get(issue, issue))\n"
+    "\n"
+    "    return wrapped\n"
+    "\n"
+    "\n"
+)
+PRODUCER = "services/fire_dispatcher.py"
+DOMAIN_ORDER = "types/domain/tracker.py"
+RANK_KEY_DEF = "def rank_key(issue: TrackerIssue) -> RankKey:\n"
+SELECTION_CLASS = "@dataclass(frozen=True)\nclass Selection:\n"
+IMPORTS = "from collections.abc import Callable, Collection, Mapping, Sequence\n"
+SIZE_TABLES: dict[str, tuple[str, str, tuple[tuple[str, str], ...]]] = {
+    "decorated_rank_key": (
+        DISPATCH,
+        "rank_key",
+        (
+            (IMPORTS, f"import functools\n{IMPORTS}"),
+            (RANK_KEY_DEF, f"{_SIZES}{_WRAPPER}@_through\n{RANK_KEY_DEF}"),
+        ),
+    ),
+    "rebound_rank_key": (
+        DISPATCH,
+        "rank_key",
+        (
+            (IMPORTS, f"import functools\n{IMPORTS}"),
+            (
+                SELECTION_CLASS,
+                f"{_SIZES}{_WRAPPER}rank_key = _through(rank_key)\n\n\n"
+                f"{SELECTION_CLASS}",
+            ),
+        ),
+    ),
+    "globals_write": (
+        DISPATCH,
+        "rank_key",
+        (
+            (
+                RANK_KEY_DEF,
+                f"{_SIZES}globals()['priority_rank'] = "
+                f"lambda priority: _SIZES.get(priority, 0)\n\n\n{RANK_KEY_DEF}",
+            ),
+        ),
+    ),
+    "setattr_on_the_module": (
+        DISPATCH,
+        "rank_key",
+        (
+            (IMPORTS, f"import sys\n{IMPORTS}"),
+            (
+                RANK_KEY_DEF,
+                f"{_SIZES}def _sized(priority):\n    return _SIZES.get(priority, 0)"
+                "\n\n\nsetattr(sys.modules[__name__], 'priority_rank', _sized)\n\n\n"
+                f"{RANK_KEY_DEF}",
+            ),
+        ),
+    ),
+    "module_def_of_the_imported_name": (
+        DISPATCH,
+        "rank_key",
+        (
+            (
+                RANK_KEY_DEF,
+                f"{_SIZES}def priority_rank(priority):\n"
+                "    return _SIZES.get(priority, 0)\n\n\n"
+                f"{RANK_KEY_DEF}",
+            ),
+        ),
+    ),
+    "rank_key_body": (
+        DISPATCH,
+        "rank_key",
+        (
+            (
+                f'{RANK_KEY_DEF}    """Primary rank (Urgent first, None last), '
+                'secondary oldest-first."""\n',
+                f'{_SIZES}{RANK_KEY_DEF}    """Primary rank (Urgent first, None '
+                'last), secondary oldest-first."""\n'
+                "    issue = _SIZES.get(issue, issue)\n",
+            ),
+        ),
+    ),
+    "select_top_ranked_body": (
+        DISPATCH,
+        "select_top_ranked",
+        (
+            (SELECTION_CLASS, f"{_SIZES}{SELECTION_CLASS}"),
+            (
+                "    if not issues:\n",
+                "    issues = [_SIZES.get(issue, issue) for issue in issues]\n"
+                "    if not issues:\n",
+            ),
+        ),
+    ),
+    "ranked_order_body": (
+        DISPATCH,
+        "ranked_order",
+        (
+            (SELECTION_CLASS, f"{_SIZES}{SELECTION_CLASS}"),
+            (
+                "        for issue in sorted(\n            issues,\n",
+                "        for issue in sorted(\n"
+                "            [_SIZES.get(issue, issue) for issue in issues],\n",
+            ),
+        ),
+    ),
+    "producer_pass_body": (
+        PRODUCER,
+        "FireDispatcher.run_pass",
+        (
+            ("class FireDispatcher:\n", f"{_SIZES}class FireDispatcher:\n"),
+            (
+                "        selection = select_top_ranked(eligible, draw=self._draw)\n",
+                "        eligible = [_SIZES.get(issue, issue) for issue in eligible]\n"
+                "        selection = select_top_ranked(eligible, draw=self._draw)\n",
+            ),
+        ),
+    ),
+    "producer_scan_body": (
+        PRODUCER,
+        "FireDispatcher._scan",
+        (
+            ("class FireDispatcher:\n", f"{_SIZES}class FireDispatcher:\n"),
+            (
+                "        return tuple(found)\n",
+                "        return tuple(_SIZES.get(issue, issue) for issue in found)\n",
+            ),
+        ),
+    ),
+    "domain_order_body": (
+        DOMAIN_ORDER,
+        "priority_rank",
+        (
+            (
+                "def priority_rank(priority: IssuePriority) -> int:\n",
+                f"{_SIZES}def priority_rank(priority: IssuePriority) -> int:\n",
+            ),
+            (
+                "    return PRIORITY_RANK_ORDER.index(priority)\n",
+                "    return PRIORITY_RANK_ORDER.index(priority) + "
+                "_SIZES.get(priority, 0)\n",
+            ),
+        ),
+    ),
+    "domain_order_table": (
+        DOMAIN_ORDER,
+        "priority_rank",
+        (
+            (
+                "    IssuePriority.URGENT,\n    IssuePriority.HIGH,\n",
+                "    IssuePriority.HIGH,\n    IssuePriority.URGENT,\n",
+            ),
+        ),
+    ),
+}
+
+#: The five that leave every body in the module as written.
+RESOLVED_ELSEWHERE = frozenset(
+    {
+        "decorated_rank_key",
+        "rebound_rank_key",
+        "globals_write",
+        "setattr_on_the_module",
+        "module_def_of_the_imported_name",
+    }
+)
+
+#: A module that reaches the function making a rank under each ordinary
+#: spelling, each in its own definition taking rows, and one definition that
+#: reaches it under none.
+CALLERS = """\
+import functools
+import importlib
+
+import kodezart.domain.dispatch as ranking
+from kodezart.domain.dispatch import rank_key as key_of
+from kodezart.types.domain.tracker import TrackerIssue
+
+_ALIAS = key_of
+_PARTIAL = functools.partial(key_of)
+
+
+class Ranker:
+    def key(self, issue: TrackerIssue):
+        return key_of(issue)
+
+
+_BOUND = Ranker().key
+
+
+def by_import_alias(rows):
+    return sorted(rows, key=key_of)
+
+
+def by_module_attribute(rows):
+    return sorted(rows, key=ranking.rank_key)
+
+
+def by_import_inside(rows):
+    from kodezart.domain.dispatch import rank_key
+
+    return sorted(rows, key=rank_key)
+
+
+def by_module_alias(rows):
+    return sorted(rows, key=_ALIAS)
+
+
+def by_partial(rows):
+    return sorted(rows, key=_PARTIAL)
+
+
+def by_conditional(rows):
+    return sorted(rows, key=key_of if rows else len)
+
+
+def by_getattr_literal(rows):
+    return sorted(rows, key=getattr(ranking, "rank_key"))
+
+
+def by_import_module_literal(rows):
+    return sorted(
+        rows, key=importlib.import_module("kodezart.domain.dispatch").rank_key
+    )
+
+
+def by_bound_method(rows):
+    return sorted(rows, key=_BOUND)
+
+
+def by_no_route(rows):
+    return sorted(rows)
+"""
+
+
 def test_the_rank_key_is_priority_then_age_and_nothing_else():
     """The rank is a priority and an age, made from two reads and two calls.
 
@@ -657,10 +1180,10 @@ def test_the_rank_key_is_priority_then_age_and_nothing_else():
     It is a claim about the whole function too, because a statement before the
     return leaves that expression byte-identical while substituting the issue
     it reads or the function it calls. So the body after the docstring is
-    written out as well, leaving room for no statement at all, and the module's
-    bound names are asserted disjoint from what it imports from the domain
-    types: the return calls ``priority_rank``, and in this module that word can
-    mean nothing but the domain order it is imported as.
+    written out as well, leaving room for no statement at all, and no binding
+    statement of the module rebinds a name it imports from the domain types.
+    Both read the written module. What ``priority_rank`` resolves to when the
+    function runs is pinned by object in the dispatch path test.
     """
     tree = PARSED[DISPATCH]
     comparison = _defined(tree, COMPARISON)
@@ -1045,3 +1568,119 @@ def test_the_plateau_bound_is_a_tick_count_and_not_a_rank_input():
     assert PLATEAU not in modules
     assert text_length_reads(PARSED[PLATEAU]) & text_columns() == frozenset()
     assert estimate_identifiers(PARSED[PLATEAU]) == frozenset()
+
+
+def _module_name(relative: str) -> str:
+    """The dotted module a path of the source tree is imported as."""
+    return ".".join((SOURCE_ROOT.name, *relative.removesuffix(".py").split("/")))
+
+
+def _reach(owner: object, qualname: str) -> types.FunctionType:
+    """The function *qualname* names inside *owner*, attribute by attribute."""
+    return functools.reduce(getattr, qualname.split("."), owner)
+
+
+def test_every_definition_on_the_dispatch_path_runs_exactly_what_is_registered():
+    """What reaches a rank, pinned by what executes rather than what is spelled.
+
+    The path is derived from the live function that makes a rank, so no list
+    of names is kept by hand: whatever reaches it — the orderings that call
+    it, the producer's pass that hands them its rows, the scan those rows
+    come from, and everything each of those calls in the package — is on it.
+    Each definition is pinned by the ``def`` its live code was compiled
+    from: its decorators, its whole body after the docstring, and the home
+    of every object its reads resolve to. So a size table cannot be put
+    before any of these ranks under any spelling that runs: in a body it
+    moves the body, and anywhere else — a decorator, a rebinding, a write to
+    the module's globals, a ``def`` of the same word — it moves what a name
+    resolves to. The derived path is compared with the register by
+    equality, so a walk rule undone shrinks it and reds here.
+
+    Limits, stated. Rows are made by the tracker adapter behind the port the
+    scan calls, and that port is not walked. A supplier reached through a
+    collaborator attribute (``self._tracker``), a method replaced on the
+    instance, and a function reached through a container or an instance are
+    not followed. A filter reads rows without changing them, since the rows
+    are frozen models, and the eligibility clauses are outside the walk. The
+    injected tie-break draw is not walked. A method a class decorator or a
+    metaclass generates is compiled from no file of the tree and is not on
+    the path; the rank's own fields are pinned above. A name built at run
+    time for ``getattr``, ``importlib`` or ``__dict__``, and ``eval`` or
+    ``exec``, are deliberate evasion and out of scope.
+    """
+    functions = package_functions()
+    assert functions
+    path = dispatch_path(rank_key, functions=functions)
+    reached = {home(function): executed(function) for function in path}
+
+    assert row_type(rank_key) is TrackerIssue
+    assert len(reached) == len(path)
+    assert reached == DISPATCH_PATH
+
+
+def test_a_size_table_anywhere_on_the_path_moves_what_it_runs(tmp_path):
+    """The control for the path pin, over planted live modules.
+
+    Each case is planted into the shipped source and the module is run, so
+    the definition read is the live object the planted code makes, through
+    the same function the pin reads. The first five leave the whole written
+    body of the function that makes a rank as the earlier pins require it,
+    and leave the module's bindings disjoint from its domain imports —
+    asserted here, so this shows it is the resolution that catches them.
+    """
+    assert SIZE_TABLES
+    assert RESOLVED_ELSEWHERE <= set(SIZE_TABLES)
+    for case, (relative, qualname, hunks) in SIZE_TABLES.items():
+        source = PACKAGE[relative]
+        for anchor, planted in hunks:
+            assert source.count(anchor) == 1, case
+            source = source.replace(anchor, planted)
+        directory = tmp_path / case
+        directory.mkdir()
+        name = _module_name(relative)
+        shipped = _reach(sys.modules[name], qualname)
+        live = _reach(planted_module(source, name=name, directory=directory), qualname)
+
+        assert executed(shipped) == DISPATCH_PATH[home(shipped)], case
+        assert executed(live) != DISPATCH_PATH[home(shipped)], case
+        if case in RESOLVED_ELSEWHERE:
+            tree = ast.parse(source)
+            assert body_text(_defined(tree, rank_key.__name__)) == RANK_KEY_BODY
+            assert bound_names(tree) & imported_domain_names(tree) == frozenset()
+
+
+def test_the_walk_finds_a_caller_of_the_rank_under_every_spelling(tmp_path):
+    """The control for the walk's climb and forward rules.
+
+    The planted module reaches the function that makes a rank under each
+    ordinary spelling — an aliased import, a module attribute, an import
+    inside the function, a module-level alias, a ``functools.partial``, a
+    conditional expression, ``getattr`` and ``importlib`` with a literal,
+    and a bound method one definition further out — and each reaching
+    definition is on the path. The one that reaches it under none is not,
+    so the walk is not everything. Over no package function at all, the
+    forward rule alone still reaches the domain order and the comparison.
+    """
+    module = planted_module(CALLERS, name="planted_callers", directory=tmp_path)
+    callers = tuple(
+        value
+        for value in vars(module).values()
+        if isinstance(value, types.FunctionType) and value.__module__ == module.__name__
+    )
+    spellings = {caller.__name__ for caller in callers} - {"by_no_route"}
+    path = {
+        home(function)
+        for function in dispatch_path(rank_key, functions=(*callers, module.Ranker.key))
+    }
+    forward = {home(function) for function in dispatch_path(rank_key, functions=())}
+
+    assert len(spellings) == 9
+    for spelling in spellings:
+        assert f"planted_callers.{spelling}" in path, spelling
+    assert "planted_callers.Ranker.key" in path
+    assert "planted_callers.by_no_route" not in path
+    assert forward == {
+        "kodezart.domain.dispatch.rank_key",
+        "kodezart.domain.dispatch.RankKey.__lt__",
+        "kodezart.types.domain.tracker.priority_rank",
+    }

@@ -20,6 +20,11 @@ Construction-form detection is not restated: ``identity_guards``'s
 ``model_value_sites`` already answers it with its own controls, and a guard
 that needs it imports it from there.
 
+The last group of functions resolves by object rather than by spelling: they
+read live functions — the ``def`` a code object was compiled from, and what
+each of its reads resolves to in the namespace it runs in — so they import
+what they read. Their own limits are stated on :func:`references`.
+
 Blind spots, stated once: a tuple-unpacking target binds nothing here, a
 starred argument lands on no parameter, and a string constant is a value,
 never a route to a name.  The receiver offset applies when the first parameter
@@ -36,9 +41,18 @@ package writes either form.
 """
 
 import ast
+import builtins
+import dis
+import functools
+import importlib
+import importlib.util
+import linecache
+import sys
+import types
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import get_args
 
 import kodezart
 
@@ -515,3 +529,253 @@ def bound_names(
         if grown == set(names):
             return names
         names = frozenset(grown)
+
+
+# ---------------------------------------------------------------------------
+# Resolution by object: what a live definition reads, not what it spells
+# ---------------------------------------------------------------------------
+
+#: A value no route reaches, distinct from every value a route can reach.
+_UNREACHED = object()
+
+
+@functools.cache
+def _parsed_file(filename: str) -> ast.Module:
+    """The module a code object was compiled from, read through ``linecache``."""
+    return ast.parse("".join(linecache.getlines(filename)))
+
+
+def compiled_def(
+    function: types.FunctionType,
+) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    """The ``def`` the live *function*'s code object was compiled from.
+
+    Found by the code object, not by the name the function is reached under:
+    a function replaced by a wrapper — a decorator, or a rebinding such as
+    ``f = wrap(f)`` — is the wrapper's own ``def`` here, whatever
+    ``functools.wraps`` copied onto it. A decorated ``def`` starts at its
+    first decorator, which is the line the code object records.
+    """
+    code = function.__code__
+    for node in ast.walk(_parsed_file(code.co_filename)):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        first = min([node.lineno, *(line.lineno for line in node.decorator_list)])
+        if node.name == code.co_name and first == code.co_firstlineno:
+            return node
+    raise AssertionError(f"no def in {code.co_filename} compiles to {function!r}")
+
+
+def _global_reads(code: types.CodeType) -> frozenset[str]:
+    """Every name *code*, or code nested in it, loads from the module globals."""
+    names = {
+        instruction.argval
+        for instruction in dis.get_instructions(code)
+        if instruction.opname == "LOAD_GLOBAL"
+    }
+    for constant in code.co_consts:
+        if isinstance(constant, types.CodeType):
+            names |= _global_reads(constant)
+    return frozenset(names)
+
+
+def unwrapped(value: object) -> object:
+    """*value* with ``functools.partial``, bound methods and method wrappers undone."""
+    while True:
+        if isinstance(value, functools.partial):
+            value = value.func
+        elif isinstance(value, types.MethodType | staticmethod | classmethod):
+            value = value.__func__
+        else:
+            return value
+
+
+def _local_imports(node: ast.AST) -> dict[str, object]:
+    """Local spelling -> the object an import inside a definition binds."""
+    bound: dict[str, object] = {}
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Import):
+            for alias in inner.names:
+                if alias.asname is not None:
+                    bound[alias.asname] = importlib.import_module(alias.name)
+                else:
+                    top = alias.name.split(".")[0]
+                    bound[top] = importlib.import_module(top)
+        elif (
+            isinstance(inner, ast.ImportFrom)
+            and inner.level == 0
+            and inner.module is not None
+        ):
+            module = importlib.import_module(inner.module)
+            for alias in inner.names:
+                bound[alias.asname or alias.name] = getattr(module, alias.name)
+    return bound
+
+
+def references(function: types.FunctionType) -> dict[str, object]:
+    """Spelling -> the object each read of *function* resolves to, live.
+
+    Read off the ``def`` its code was compiled from and resolved in the
+    namespace it runs in: a global read (the names its bytecode loads as
+    globals, so a parameter or local of the same word is not one), a
+    builtin, an import inside the definition, an attribute of a module
+    reached any of those ways, and ``getattr`` of a module or
+    ``importlib.import_module`` with a string literal. So an alias, a
+    rebinding, a ``globals()`` or ``setattr`` write and a module-level
+    ``def`` of the same word are each read as the object the function
+    will call. A read through a receiver that is no module — an attribute
+    of ``self``, of a parameter or of a class — is not resolved.
+    """
+    node = compiled_def(function)
+    namespace = function.__globals__
+    reads = _global_reads(function.__code__)
+    local = _local_imports(node)
+
+    def value_of(expr: ast.AST) -> object:
+        if isinstance(expr, ast.Name):
+            if expr.id in local:
+                return local[expr.id]
+            if expr.id not in reads:
+                return _UNREACHED
+            if expr.id in namespace:
+                return namespace[expr.id]
+            return getattr(builtins, expr.id, _UNREACHED)
+        if isinstance(expr, ast.Attribute):
+            base = value_of(expr.value)
+            if isinstance(base, types.ModuleType):
+                return getattr(base, expr.attr, _UNREACHED)
+            return _UNREACHED
+        if isinstance(expr, ast.Call) and expr.args:
+            literal = expr.args[-1]
+            if not (
+                isinstance(literal, ast.Constant) and isinstance(literal.value, str)
+            ):
+                return _UNREACHED
+            callee = value_of(expr.func)
+            if callee is getattr and len(expr.args) == 2:
+                base = value_of(expr.args[0])
+                if isinstance(base, types.ModuleType):
+                    return getattr(base, literal.value, _UNREACHED)
+            if callee is importlib.import_module and len(expr.args) == 1:
+                return importlib.import_module(literal.value)
+        return _UNREACHED
+
+    found: dict[str, object] = {}
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Name | ast.Attribute | ast.Call):
+            value = value_of(inner)
+            if value is not _UNREACHED:
+                found[ast.unparse(inner)] = value
+    return found
+
+
+def home(value: object) -> str:
+    """Where *value* was made: ``module.qualname``, a module's name, or its repr.
+
+    Read off the object, so two spellings of one object share a home and a
+    stand-in under the same word does not.
+    """
+    if isinstance(value, types.ModuleType):
+        return value.__name__
+    qualname = getattr(value, "__qualname__", None)
+    module = getattr(value, "__module__", None)
+    if isinstance(qualname, str) and isinstance(module, str):
+        return f"{module}.{qualname}"
+    return repr(value)
+
+
+def written(function: types.FunctionType) -> bool:
+    """Whether *function* was compiled from a file of the source tree."""
+    return Path(function.__code__.co_filename).is_relative_to(SOURCE_ROOT)
+
+
+def in_package(value: object) -> bool:
+    """Whether *value* was made by a module of the production package."""
+    module = getattr(value, "__module__", None)
+    return isinstance(module, str) and (
+        module == SOURCE_ROOT.name or module.startswith(f"{SOURCE_ROOT.name}.")
+    )
+
+
+def written_methods(owner: type) -> tuple[types.FunctionType, ...]:
+    """Every method *owner*'s own body writes, nested classes' included.
+
+    A ``staticmethod``, a ``classmethod`` and each function of a
+    ``property`` are the function written. A method a class decorator or a
+    metaclass generates — a dataclass's ``__eq__``, a model's validator
+    wrapper — is compiled from no file of the tree and is not one.
+    """
+    found: list[types.FunctionType] = []
+    for value in vars(owner).values():
+        if isinstance(value, property):
+            candidates: tuple[object, ...] = (value.fget, value.fset, value.fdel)
+        else:
+            candidates = (unwrapped(value),)
+        for candidate in candidates:
+            nested = getattr(candidate, "__qualname__", "")
+            if not nested.startswith(f"{owner.__qualname__}."):
+                continue
+            if isinstance(candidate, types.FunctionType) and written(candidate):
+                found.append(candidate)
+            elif isinstance(candidate, type):
+                found.extend(written_methods(candidate))
+    return tuple(found)
+
+
+def package_functions(root: Path = SOURCE_ROOT) -> tuple[types.FunctionType, ...]:
+    """Every function the package writes: module level and every class's methods.
+
+    Each module under *root* is imported and read as it runs, so a function
+    is found by the object a module holds, whatever it is bound as there.
+    """
+    found: dict[int, types.FunctionType] = {}
+    for path in sorted(root.rglob("*.py")):
+        parts = [
+            part
+            for part in path.relative_to(root).with_suffix("").parts
+            if part != "__init__"
+        ]
+        module = importlib.import_module(".".join([root.name, *parts]))
+        for value in vars(module).values():
+            value = unwrapped(value)
+            if getattr(value, "__module__", None) != module.__name__:
+                continue
+            if isinstance(value, types.FunctionType) and written(value):
+                found[id(value)] = value
+            elif isinstance(value, type):
+                found.update((id(method), method) for method in written_methods(value))
+    return tuple(found.values())
+
+
+def declares(annotation: object, wanted: type) -> bool:
+    """Whether an evaluated annotation declares *wanted* anywhere inside it."""
+    return annotation is wanted or any(
+        declares(one, wanted) for one in get_args(annotation)
+    )
+
+
+def planted_module(source: str, *, name: str, directory: Path) -> types.ModuleType:
+    """*source* run as the module *name*, from a file in *directory*.
+
+    So a guard's control reads a live object built from planted source
+    through the same functions that read the shipped one. The module is in
+    ``sys.modules`` under *name* while it runs, so a write through
+    ``sys.modules[__name__]`` lands on it, and the shipped module is put
+    back afterwards.
+    """
+    path = directory / f"{name.replace('.', '_')}.py"
+    path.write_text(source, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"{path} cannot be loaded as {name}")
+    module = importlib.util.module_from_spec(spec)
+    shipped = sys.modules.get(name)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if shipped is None:
+            del sys.modules[name]
+        else:
+            sys.modules[name] = shipped
+    return module
