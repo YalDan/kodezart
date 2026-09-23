@@ -1573,6 +1573,117 @@ async def test_a_split_the_pre_approval_row_authors_is_a_finding_not_a_write(
     assert escalations(board, CLAIMED_ISSUE, "undeclared_surface")
 
 
+OTHER = "FIX-OTHER"
+
+#: What the subject's author answers first, and what it answers as the
+#: repair once the write-back verifier refutes that first write.
+REPAIRS = {
+    "another_kind": (
+        {
+            "kind": "body",
+            "issue_id": CLAIMED_ISSUE,
+            "body": "Prepared body grounded in the source.",
+        },
+        {
+            "kind": "split",
+            "issue_id": CLAIMED_ISSUE,
+            "children": [
+                {
+                    "deliverable_key": "first-deliverable",
+                    "title": "Prepared split",
+                    "body": "Prepared source-grounded child specification.",
+                }
+            ],
+        },
+        "author returned another write surface",
+    ),
+    "another_peer_set": (
+        {
+            "kind": "graph",
+            "issue_id": CLAIMED_ISSUE,
+            "changes": [{"kind": "blocked_by", "add": [SIBLING]}],
+        },
+        {
+            "kind": "graph",
+            "issue_id": CLAIMED_ISSUE,
+            "changes": [{"kind": "blocked_by", "add": [OTHER]}],
+        },
+        "graph repair returned another set of affected surfaces",
+    ),
+}
+
+
+@pytest.mark.parametrize("repair", sorted(REPAIRS))
+async def test_a_repair_that_needs_other_addresses_is_refused_before_it_writes(
+    monkeypatch, repair
+):
+    """The bound is weighed once, so a repair may not reach past it.
+
+    The first write is weighed against the declared set. The write-back
+    verifier refutes it, and the author's repair answers with another kind
+    of write (``another_kind``) or a graph change on another peer
+    (``another_peer_set``): either needs addresses that weighing never saw,
+    so the repair is refused with the landed reason and writes nothing.
+    """
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
+    first, second, reason = REPAIRS[repair]
+    owner, board, executor = factory(convergence_bound=2, bound=2)
+    member(board, SIBLING)
+    member(board, OTHER)
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            CLAIMED_ISSUE: lambda n: (
+                refusal(CLAIMED_ISSUE, "spec_gap")
+                if n == 1
+                else buildable(CLAIMED_ISSUE)
+            )
+        },
+    )
+    judged = executor.stream
+    proposals = []
+    repaired_at = []
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if title == "OrganizeProposal" and keys and keys[-1] == CLAIMED_ISSUE:
+            executor.calls.append(kwargs)
+            proposals.append(kwargs)
+            if len(proposals) > 1:
+                repaired_at.append(len(board.calls))
+            yield result(structured_output=first if len(proposals) == 1 else second)
+            return
+        if title == "WriteBackFinding" and not repaired_at:
+            executor.calls.append(kwargs)
+            yield result(
+                structured_output={
+                    "verdict": "refuted",
+                    "evidence": "The written artifact omits the declared source.",
+                    "cited_refs": ["tests/missing.py"],
+                }
+            )
+            return
+        async for event in judged(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+    with pytest.raises(OrganizeWriteRefusalError, match=reason):
+        await run_owner(owner)
+    assert len(proposals) == 2
+    (at,) = repaired_at
+    assert [args for name, args in board.calls[at:] if name == "save_issue"] == []
+    assert not [
+        args
+        for name, args in board.calls
+        if name == "save_issue" and ("parentId" in args or OTHER in str(args))
+    ]
+    assert board.grants() == []
+
+
 async def test_a_body_the_criteria_row_authors_is_a_finding_not_a_write(monkeypatch):
     """The criteria stage declares no description, so a body it authors is refused."""
     owner, board, executor = factory(
