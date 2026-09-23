@@ -20,9 +20,16 @@ from kodezart.domain.errors import (
 )
 from kodezart.types.domain.agent import SystemEvent
 from kodezart.types.domain.dispatch import PassRun
-from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
 from tests.chains.test_organize import result as organize_result
-from tests.fakes import SUPPRESS_ALL_SKILLS, PassThroughGate, make_prompt_provider
+from tests.fakes import (
+    SUPPRESS_ALL_SKILLS,
+    TRACKER_WRITE_JOURNALS,
+    PassThroughGate,
+    handed_over,
+    make_prompt_provider,
+    tracker_state,
+)
 from tests.integration.test_scope_entry import (
     GROOM_MARKER,
     HEARTBEAT_CONFIG,
@@ -80,55 +87,132 @@ def markers(port):
     }
 
 
-#: Every write log of the board a side could leave a mark in.
-LOGS = (
-    "comment_writes",
-    "issue_writes",
-    "classification_writes",
-    "lease_writes",
-    "lease_releases",
+#: Every write journal the board keeps, read off the double's own register
+#: of them rather than listed here, so a journal the double gains is read by
+#: every case below the day it is added.
+LOGS = tuple(sorted(TRACKER_WRITE_JOURNALS))
+
+#: The journals a side's own work lands in: its markers, the native stamps
+#: its writes leave, its lease, and, for a run, the evidence row and the
+#: completion its lanes' evaluations write on each criterion child they
+#: close. Every other journal gains nothing on either side.
+OWN = frozenset(
+    {
+        "classification_writes",
+        "self_writes",
+        "lease_writes",
+        "lease_releases",
+        "issue_writes",
+        "workflow_writes",
+    }
 )
+
+
+def criterion(key):
+    """The criterion child a lane's evaluation closes."""
+    return f"{key}/check"
+
+
+def standing(port, key):
+    """What a mark of either side could change on one member.
+
+    Its labels, its queue state and its workflow state, each as an entry of
+    one set, so a mark spelled as a queue state or a state move shows up
+    beside a label.
+    """
+    issue = port.issues[key]
+    return frozenset(
+        {
+            *issue.issue_labels,
+            *(f"queue_state: {state.value}" for state in issue.queue_states),
+            f"state_name: {issue.state_name}",
+        }
+    )
 
 
 @dataclass(frozen=True)
 class Before:
-    """Where the board stood before one side acted: every label, every log."""
+    """Where the board stood before one side acted.
 
-    labels: dict
+    Every member, every log, and the holders of the leases standing then.
+    """
+
+    members: dict
     logs: dict
+    held: frozenset
+
+
+def _reading(port, name):
+    """A journal as a position to slice from, or whole where it is no list."""
+    journal = getattr(port, name)
+    if isinstance(journal, list):
+        return len(journal)
+    return tracker_state(port)[name]
 
 
 def before(port):
     return Before(
-        labels={key: port.issues[key].issue_labels for key in LANES},
-        logs={name: len(getattr(port, name)) for name in LOGS},
+        members={key: standing(port, key) for key in LANES},
+        logs={name: _reading(port, name) for name in LOGS},
+        held=frozenset(lease.holder for lease in port.leases.values()),
     )
 
 
 def gained_labels(port, then):
-    """The labels each member gained since *then*, whatever their names."""
-    return {key: port.issues[key].issue_labels - then.labels[key] for key in LANES}
+    """What changed on each member since *then*, whatever its name.
+
+    Labels, queue state and workflow state, gained or lost: a side's own
+    markers are the only entries a case expects here.
+    """
+    return {key: standing(port, key) ^ then.members[key] for key in LANES}
 
 
 def gained(port, then, name):
-    """The entries log *name* gained since *then*."""
-    return getattr(port, name)[then.logs[name] :]
+    """The entries journal *name* gained since *then*.
 
-
-def assert_wrote_only(port, then, written):
-    """The side gained exactly the markers in *written*, and no comment at all.
-
-    *written* maps each member to the markers that side wrote on it; the
-    labels the board gained and the classification writes it took are both
-    held to exactly that, and the comment log to nothing.
+    A journal kept as a list answers its new entries; any other answers its
+    whole rendering once it differs from what it was.
     """
+    journal = getattr(port, name)
+    if isinstance(journal, list):
+        return journal[then.logs[name] :]
+    now = tracker_state(port)[name]
+    return [] if now == then.logs[name] else [now]
+
+
+def assert_wrote_only(port, then, written, closed=()):
+    """The side gained exactly the markers in *written* and its own lease.
+
+    *written* maps each member to the markers that side wrote on it. What
+    each member changed and the classification writes the board took are
+    both held to exactly that; the native stamps move only when a marker
+    was written; every lease the side took it released, and it released no
+    lease but its own or one standing when it began. *closed* names the
+    lanes whose criterion child a run's evaluation closed: the only issue
+    writes are evidence rows on those children, and the only state moves
+    are their completions. Every other journal the board keeps gained
+    nothing at all.
+    """
+    markers = sorted(
+        (key, marker) for key, carried in written.items() for marker in carried
+    )
     assert gained_labels(port, then) == {
         key: frozenset(written.get(key, ())) for key in LANES
     }
-    assert sorted(gained(port, then, "classification_writes")) == sorted(
-        (key, marker) for key, markers in written.items() for marker in markers
-    )
-    assert gained(port, then, "comment_writes") == []
+    assert sorted(gained(port, then, "classification_writes")) == markers
+    assert bool(gained(port, then, "self_writes")) == bool(markers)
+    taken = {lease.holder for lease in gained(port, then, "lease_writes")}
+    released = {holder for _, holder in gained(port, then, "lease_releases")}
+    assert taken <= released <= taken | then.held
+    assert gained(port, then, "workflow_writes") == [
+        (criterion(key), LifecycleStage.DONE) for key in closed
+    ]
+    assert {key for key, _, _ in gained(port, then, "issue_writes")} <= {
+        criterion(key) for key in closed
+    }
+    assert {name: gained(port, then, name) for name in LOGS if name not in OWN} == {
+        name: [] for name in LOGS if name not in OWN
+    }
 
 
 async def test_an_unapproved_scope_is_groomed_and_admits_no_run(monkeypatch):
@@ -151,10 +235,13 @@ async def test_an_unapproved_scope_is_groomed_and_admits_no_run(monkeypatch):
     spent = len(harness.executor.organize_calls)
 
     refused_at = before(port)
+    untouched = handed_over(port)
     organizers = len(builds)
     workspaces = len(harness.workspace.calls)
     with pytest.raises(ScopeNotApprovedError) as refused:
         await bounded_walk(harness, job="unapproved-run")
+    # The whole board, every attribute of the double, as it was handed over.
+    assert untouched()
     assert refused.value.ref == SCOPE
     # Refused before it reads: the entry builds no stage organizer, so none
     # runs, and no workspace is prepared for one.
@@ -267,7 +354,9 @@ async def test_approval_during_a_grooming_session_refuses_its_write_and_frees_th
     run = before(port)
     events = await bounded_walk(harness, job="approved-run")
     assert errors(events) == []
-    assert_wrote_only(port, run, dict.fromkeys(LANES, (TICKET_MARKER, STAGED)))
+    assert_wrote_only(
+        port, run, dict.fromkeys(LANES, (TICKET_MARKER, STAGED)), closed=LANES
+    )
     assert markers(port) == {
         key: frozenset({TICKET_MARKER, STAGED})
         | (frozenset({GROOM_MARKER}) if key in groomed else frozenset())
@@ -299,7 +388,9 @@ async def test_an_approved_scope_runs_its_stages_and_the_grooming_tick_takes_no_
     # Three ticks: the first two fire A and then B, and the third observes
     # both dispatched with nothing left to offer.
     assert len(ticks_of(events)) == 3
-    assert_wrote_only(port, run, dict.fromkeys(LANES, (TICKET_MARKER, STAGED)))
+    assert_wrote_only(
+        port, run, dict.fromkeys(LANES, (TICKET_MARKER, STAGED)), closed=LANES
+    )
     spent = len(harness.executor.organize_calls)
 
     tick = before(port)
@@ -366,5 +457,7 @@ async def test_a_run_admitted_while_grooming_holds_its_set_is_refused_at_its_sta
     run = before(port)
     events = await bounded_walk(harness, job="after-the-tick")
     assert errors(events) == []
-    assert_wrote_only(port, run, dict.fromkeys(LANES, (TICKET_MARKER, STAGED)))
+    assert_wrote_only(
+        port, run, dict.fromkeys(LANES, (TICKET_MARKER, STAGED)), closed=LANES
+    )
     assert port.leases == {}
