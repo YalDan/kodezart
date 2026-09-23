@@ -76,7 +76,7 @@ class SpecFinding(CamelCaseModel):
 
 class _AdmissionFields(CamelCaseModel):
     verdict: AdmissionVerdict = Field(
-        description="Buildability of the current issue under the configured mandate."
+        description="Whether the current issue satisfies the supplied mandate rubric."
     )
     model_config = ConfigDict(frozen=True)
 
@@ -89,7 +89,8 @@ class _AdmissionFields(CamelCaseModel):
         min_length=1,
         pattern=r"\S",
         description=(
-            "Concrete current source evidence supporting this buildability judgment."
+            "Concrete current source evidence supporting this judgment against "
+            "the supplied mandate rubric."
         ),
     )
     findings: tuple[SpecFinding, ...] = Field(
@@ -106,8 +107,8 @@ class BuildableAdmission(_AdmissionFields):
 
     verdict: Literal[AdmissionVerdict.BUILDABLE] = Field(
         description=(
-            "The current issue can be built without inventing a decision or "
-            "missing evidence."
+            "The current issue satisfies the supplied mandate rubric without "
+            "inventing a decision or missing evidence."
         )
     )
 
@@ -138,7 +139,10 @@ class UnverifiableAdmission(_AdmissionFields):
     """Unavailable evidence retains its named dependency without inventing it."""
 
     verdict: Literal[AdmissionVerdict.UNVERIFIABLE] = Field(
-        description="A named unavailable artifact prevents a buildability judgment."
+        description=(
+            "A named unavailable artifact prevents judging the current issue "
+            "against the supplied mandate rubric."
+        )
     )
     missing_artifact: str = Field(
         min_length=1,
