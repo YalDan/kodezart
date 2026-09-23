@@ -849,9 +849,11 @@ class OrganizeOwner:
                     )
                 await self._may_write(request.issue_key, phase=phase, scope=scope)
                 # The run that holds the lease is the write's holder: the
-                # adapter checks the grant before it writes and on every retry,
-                # so the marker carries the job's provenance and a lapsed
-                # lease refuses instead of writing without one.
+                # port checks the grant before it writes and on every retry,
+                # so the marker is written only under this job's own lease on
+                # the member's label surface, and the port refuses the write
+                # for any other holder or for a lapsed lease. The holder is an
+                # authorization checked at write time; the label records none.
                 await settle(
                     self._tracker.set_issue_classification(
                         issue_key=request.issue_key,
