@@ -24,7 +24,12 @@ from kodezart.services import organize_owner
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, ScopeLabel
-from kodezart.types.domain.organize import AdmissionVerdict, MandateKind, SpecFinding
+from kodezart.types.domain.organize import (
+    AdmissionVerdict,
+    MandateKind,
+    SpecFinding,
+    split_label_key,
+)
 from kodezart.types.domain.organize_owner import StageHaltCause
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import ToolPreset
@@ -157,6 +162,7 @@ def factory(
     criteria=("Check prepared bytes",),
     phases=None,
     board=None,
+    groom_gate_key=None,
 ):
     # *board* builds another owner over a board a previous owner already
     # worked: a case about a second entry into a stage needs the labels and
@@ -172,6 +178,13 @@ def factory(
         if mandate["kind"] == "ticket":
             mandate["gate_label_key"] = "scope_labels.approved"
     operation_fields["marker_prefixes"]["escalation"] = "organize-question"
+    # *groom_gate_key* repoints the pre-approval row's gate at another
+    # configured member, so a case can tell the configured member from the
+    # one the shipped table happens to name.
+    if groom_gate_key is not None:
+        for mandate in operation_fields["organize_mandates"]:
+            if mandate["kind"] == "groom":
+                mandate["gate_label_key"] = groom_gate_key
     for mandate in operation_fields["organize_mandates"]:
         mandate["rubric_prompt_key"] = "organize_assess"
         mandate["admission_prompt_key"] = "organize_assess"
@@ -684,6 +697,53 @@ async def test_the_triage_member_dispatches_and_the_approved_member_alone_does_n
     assert report.halt is None
     if grooms:
         assert [phase.value for phase in report.completed_phases] == ["groom"]
+        assert "graph complete" in parent.labels
+        assert executor.calls
+        return
+    assert report.completed_phases == ()
+    assert executor.calls == []
+    assert "graph complete" not in parent.labels
+    assert not [(name, args) for name, args in board.calls if name.startswith("save_")]
+
+
+#: A pre-approval gate on a configured member other than the shipped one.
+PROPOSED_GATE = "scope_labels.proposed"
+
+
+@pytest.mark.parametrize(
+    ("members", "grooms"),
+    [(("proposed",), True), (("triage",), False)],
+    ids=["configured-member", "triage-alone"],
+)
+async def test_a_groom_row_gated_on_another_member_opens_on_that_member_alone(
+    monkeypatch, members, grooms
+):
+    """The member the gate asks for is the row's, read off its configured key.
+
+    With the pre-approval row repointed at the proposed member, a scope that
+    carries it is groomed, and a scope that carries triage alone is not: the
+    shipped member is not what opens the gate, the configured one is. Every
+    resolution asks for the member the row's key names.
+    """
+    labels = declared_operation().scope_labels
+    owner, board, executor = factory(groom_gate_key=PROPOSED_GATE)
+    parent = board.server.issues[CLAIMED_ISSUE]
+    parent.labels = [labels[member] for member in members]
+    original = organize_owner.scope_carries
+    seen = []
+
+    async def recording(*, ref, member, tracker):
+        seen.append(member)
+        return await original(ref=ref, member=member, tracker=tracker)
+
+    monkeypatch.setattr(organize_owner, "scope_carries", recording)
+    report = await run_owner(owner)
+
+    assert report.halt is None
+    assert seen
+    assert set(seen) == {ScopeLabel(split_label_key(PROPOSED_GATE)[1])}
+    if grooms:
+        assert report.completed_phases == (MandateKind.GROOM,)
         assert "graph complete" in parent.labels
         assert executor.calls
         return
