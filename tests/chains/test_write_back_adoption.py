@@ -874,6 +874,42 @@ def test_a_writer_with_one_undriven_caller_is_not_delegated(bypass):
         assert site in found.driven
 
 
+LOCAL_MARKER = """
+from kodezart.core.protocols import TrackerPort
+
+
+def derived_writes(*methods):
+    def declared(function):
+        return function
+
+    return declared
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    @derived_writes("post_comment")
+    async def publish(self) -> None:
+        await self._tracker.post_comment(issue_key="K", body="b")
+"""
+
+
+def test_a_local_decorator_named_like_the_declaration_shelters_nothing():
+    """The declaration is the one the package defines, resolved, not a name.
+
+    The planted module defines its own identity decorator under the
+    declaration's name and writes under it.  It resolves to that local
+    function rather than to the package's declaration, so it declares
+    nothing and the write is refused.
+    """
+    module = "planted/local_marker.py"
+    found = census((module, LOCAL_MARKER))
+    site = CallSite(module=module, function="Writer.publish", method="post_comment")
+    assert site in found.unadopted
+    assert site not in found.held_out
+
+
 IMPOSTOR = '''
 from kodezart.core.protocols import TrackerPort
 
