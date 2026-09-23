@@ -13,8 +13,11 @@ through.
   packages its import nodes name, then every such module THEIR import nodes
   name, followed until no new module appears. So the entry decision the walker
   reaches through its entry reader is scanned although the walker never names
-  it. A module of another package is not followed, and nothing it imports is
-  scanned. The chain modules the walker imports are deliberately OUT of the
+  it. A submodule imported through its package
+  (``from kodezart.domain import lane_entry``) is followed too. A module of
+  another package is not followed, and nothing it imports is scanned. A
+  relative import (``from . import x``) is not followed either; ``src`` holds
+  none. The chain modules the walker imports are deliberately OUT of the
   set — the fire and lane graphs legitimately take a checkpointer, and the
   scope path's is settled by composition, which
   ``tests/integration/test_scope_runtime.py::
@@ -75,12 +78,24 @@ WALKER = SRC / "kodezart" / "services" / "scope_runtime.py"
 def imported_modules(
     tree: ast.AST, prefixes: tuple[str, ...] = SCANNED_PACKAGES
 ) -> set[str]:
-    """Every module the source imports from *prefixes*."""
+    """Every module the source imports from *prefixes*.
+
+    ``from kodezart.domain import lane_entry`` imports a submodule through its
+    package, so a from-import of the package itself adds each name that is a
+    submodule's file. A name that is not is a package attribute, and is
+    skipped.
+    """
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module is not None:
             if node.module.startswith(prefixes):
                 found.add(node.module)
+            elif f"{node.module}." in prefixes:
+                found.update(
+                    submodule
+                    for alias in node.names
+                    if path_of(submodule := f"{node.module}.{alias.name}").exists()
+                )
         elif isinstance(node, ast.Import):
             found.update(
                 alias.name for alias in node.names if alias.name.startswith(prefixes)
