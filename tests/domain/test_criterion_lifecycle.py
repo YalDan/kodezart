@@ -1555,21 +1555,17 @@ def test_the_graded_sha_partition_carries_no_boolean_verdict():
     assert boolean_verdicts(records) == ()
 
 
-def test_every_verdict_the_graded_sha_partition_carries_is_a_state_enum():
-    records = domain_records()
-    fields = verdict_enum_fields(records)
-    assert fields == (
-        ("audit_evidence.AuditEvidenceObservation.verdict", AuditVerdict),
-        ("audit_evidence.AuditRestampTrace.verdict", AuditVerdict),
-        ("audit_forge.AuditForgeObservation.verdict", AuditVerdict),
-        (
-            "criterion_lifecycle.CriterionCrossOff.rederivation_class",
-            RederivationClass,
-        ),
-        ("criterion_lifecycle.CriterionCrossOff.state", CrossOffState),
-    )
-    names = frozenset(site.rsplit(".", 1)[1] for site, _ in fields)
-    assert widened_verdict_fields(records, names) == ()
+#: The enum-annotated fields of the graded-sha partition, written down: the
+#: assertion the tree is read against, and the source of the verdict names
+#: the controls below are parametrized over.
+VERDICT_ENUM_TABLE: tuple[tuple[str, object], ...] = (
+    ("audit_evidence.AuditEvidenceObservation.verdict", AuditVerdict),
+    ("audit_evidence.AuditRestampTrace.verdict", AuditVerdict),
+    ("audit_forge.AuditForgeObservation.verdict", AuditVerdict),
+    ("criterion_lifecycle.CriterionCrossOff.rederivation_class", RederivationClass),
+    ("criterion_lifecycle.CriterionCrossOff.state", CrossOffState),
+)
+TABLE_VERDICT_NAMES = sorted({site.rsplit(".", 1)[1] for site, _ in VERDICT_ENUM_TABLE})
 
 
 def verdict_names() -> frozenset[str]:
@@ -1579,7 +1575,15 @@ def verdict_names() -> frozenset[str]:
     )
 
 
-@pytest.mark.parametrize("field", sorted(verdict_names()))
+def test_every_verdict_the_graded_sha_partition_carries_is_a_state_enum():
+    records = domain_records()
+    assert verdict_enum_fields(records) == VERDICT_ENUM_TABLE
+    names = verdict_names()
+    assert names == frozenset(TABLE_VERDICT_NAMES)
+    assert widened_verdict_fields(records, names) == ()
+
+
+@pytest.mark.parametrize("field", TABLE_VERDICT_NAMES)
 @pytest.mark.parametrize(
     "annotation",
     [
@@ -1624,9 +1628,10 @@ def test_a_widened_verdict_under_a_name_no_table_row_carries_is_reported(field):
 
 def test_an_enum_verdict_on_a_record_without_a_graded_sha_is_outside_the_partition():
     probe = create_model("Probe", __base__=CamelCaseModel, verdict=(AuditVerdict, ...))
-    records = {"probe.Probe": probe}
+    plain = create_model("Plain", __base__=CamelCaseModel, verdict=(str, ...))
+    records = {"probe.Probe": probe, "probe.Plain": plain}
     assert verdict_enum_fields(records) == ()
-    assert widened_verdict_fields(records, frozenset({"verdict"})) == ()
+    assert widened_verdict_fields(records, verdict_names()) == ()
 
 
 def test_a_plain_field_that_is_not_a_verdict_is_not_reported():
