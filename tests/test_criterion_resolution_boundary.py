@@ -14,8 +14,15 @@ than on the roster": a module that never names the role and resolves a key off
 the roster itself holds nothing and so the dependency rule never looks at it.
 Such a module is policed by the SITE COUNT instead — it is a second resolution
 site, and there is only ever one.  The count reaches a site that reads the
-family and one handed it as a collection of rows; the shipped lookups handed
-the rows that resolve nothing are a register asserted both ways.
+family; one handed the rows — a parameter annotated with a collection of rows
+however the row type is written, a ``*`` parameter of rows, or an unannotated
+parameter beside the role's criterion parameter; and each method of a class
+whose constructor is handed them.  Annotations are resolved by identity over
+one index of the tree, so an import alias, a module-level or ``type`` alias, a
+union with ``None`` and a forward reference inside a subscript are each the
+row type they denote.  The shipped lookups handed the rows that resolve
+nothing are a register of whole definitions — module, dotted name and exact
+parameters — asserted both ways as a list.
 
 Every name the walk keys on is read off the shipped objects — the role, its one
 method, that method's identity parameters AND the types they carry, and the two
@@ -48,26 +55,34 @@ stated below.  The return is therefore read as no part of the shape.
 Declaring that identity is read two ways, either sufficing, because a name and a
 type each see what the other is blind to: a parameter set spelling the role's
 own identity names, whatever it annotates them; or a parameter set that is in
-type exactly the role's identity and nothing besides, whatever it spells them.
-The second closes renaming, and it has to be exact rather than at least, because
+type exactly the role's identity and nothing besides, whatever it spells them,
+a criterion identity type read as the text it is a type of.  The second closes
+renaming, and it has to be exact rather than at least, because
 a function handed MORE than an identity has more to go on than an identity —
 which is what keeps an honest creation, given a criterion's own content as well,
 off a report it does not belong on.
 
-What this cannot see: the walk is textual and executes nothing, so a resolution
-assembled at runtime or reached through a wrapper whose own signature declares
-no identity is outside it.  So is one that pads its signature past the role's
+What this cannot see, the one stated limit: a value handed across a function
+boundary, where the other function is not resolved at this site (returned from
+a helper, stored on an object and read elsewhere, or passed through a container
+built elsewhere); a name built at run time; a binding made only when a function
+runs (``setattr`` or ``globals()`` inside a function body).  A committed case
+holds each of those shapes as unseen.  Two signature shapes are unseen as
+well, and a case holds the second: one that pads its signature past the role's
 identity while spelling none of its names, and one handed the rows with a
-single key under a name other than the role's criterion parameter: that
-signature is every single-key helper over rows the tree already writes — the
-lane walk's put-back, the plateau's key reading — and no signature tells them
-from a resolution.  It is a boundary check over declared
-surfaces, not a decision procedure over behaviour; the behaviour that a native
-key cannot be redirected by identical text or parent prose is pinned by the
-resolution suite, not here.
+single key under a name other than the role's criterion parameter — that
+signature is every single-key helper over rows the tree already writes, the
+lane walk's put-back and the plateau's key reading, and no signature tells
+them from a resolution.  The checkbox clause reads literals and never code, so
+a scan composed by code from half-box pieces, such as a character-index test,
+is outside it too.  It is a boundary check over declared surfaces, not a
+decision procedure over behaviour; the behaviour that a native key cannot be
+redirected by identical text or parent prose is pinned by the resolution
+suite, not here.
 """
 
 import ast
+import functools
 import inspect
 import re
 import re._compiler as sre_compile
@@ -76,16 +91,32 @@ import re._parser as sre_parse
 import sys
 import warnings
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.core.protocols import CriterionResolver, TrackerCriteriaReader
 from kodezart.domain.criterion_creation import existing_criterion
 from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.tally_supervisor import TallySupervisor
+from kodezart.types.domain.criteria import CriterionId
+from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.tracker import TrackerIssue
+from tests.name_resolution import (
+    IdentityIndex,
+    Key,
+    annotation_keys,
+    definitions,
+    denoted,
+    identity_index,
+    object_key,
+    parsed,
+    source_tree,
+)
 
 SOURCE = Path(__file__).resolve().parents[1] / "src" / "kodezart"
 ROLE = CriterionResolver.__name__
@@ -180,57 +211,203 @@ def _names(tree: ast.AST, wanted: frozenset[str]) -> bool:
 
 
 def _reads_the_family(node: ast.AST) -> bool:
-    """Whether this body reaches the family read at all, however it is held."""
-    return _names(node, frozenset({FAMILY_READ}))
+    """Whether this body reaches the family read at all, however it is held.
+
+    By the read's word as a name, an attribute or an import, or as a string
+    constant, which is how ``getattr`` or ``methodcaller`` spell it.
+    """
+    return _names(node, frozenset({FAMILY_READ})) or any(
+        isinstance(inner, ast.Constant) and inner.value == FAMILY_READ
+        for inner in ast.walk(node)
+    )
 
 
-def _declares_an_identity(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+#: The row type and the criterion identity types, each read off the shipped
+#: object, so an annotation is read by what it denotes rather than its word.
+ROW_KEY = object_key(TrackerIssue)
+IDENTITY_KEYS = frozenset({object_key(CriterionRef), object_key(CriterionId)})
+
+
+def _union_parts(annotation: ast.expr) -> list[ast.expr]:
+    """The arms of an ``A | B`` union, or the annotation alone."""
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        return [*_union_parts(annotation.left), *_union_parts(annotation.right)]
+    return [annotation]
+
+
+def _written(annotation: ast.expr) -> ast.expr:
+    """A string annotation read as the expression it spells."""
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        try:
+            return ast.parse(annotation.value, mode="eval").body
+        except SyntaxError:
+            return annotation
+    return annotation
+
+
+@dataclass(frozen=True)
+class Reading:
+    """One index of the tree and the row types resolved over it."""
+
+    index: IdentityIndex
+    #: The row type and every module-level alias of it alone.
+    rows: frozenset[Key]
+    #: Every module-level alias whose value names a row: ``Rows =
+    #: Sequence[TrackerIssue]``, ``type Rows = ...``.
+    families: frozenset[Key]
+
+    def _denotes(self, module: str, node: ast.expr, keys: frozenset[Key]) -> bool:
+        return isinstance(node, ast.Name | ast.Attribute) and not denoted(
+            self.index, module, node
+        )[0].isdisjoint(keys)
+
+    def is_row(self, module: str, annotation: ast.expr) -> bool:
+        """Whether an annotation is one row: the type, an alias, or either or None."""
+        parts = [
+            part
+            for part in _union_parts(_written(annotation))
+            if not (isinstance(part, ast.Constant) and part.value is None)
+        ]
+        return bool(parts) and all(
+            self._denotes(module, _written(part), self.rows) for part in parts
+        )
+
+    def names_a_row(self, module: str, annotation: ast.expr) -> bool:
+        """Whether an annotation names a row or a family alias anywhere in it."""
+        return not annotation_keys(self.index, module, annotation).isdisjoint(
+            self.rows | self.families
+        )
+
+    def is_family(self, module: str, argument: ast.arg, *, spread: bool) -> bool:
+        """Whether a parameter is handed a collection of rows.
+
+        Annotated as one — a container of rows, an alias of one, a union with
+        one, a string or forward reference inside one — or a ``*`` parameter
+        annotated with the row itself.
+        """
+        annotation = argument.annotation
+        if annotation is None or not self.names_a_row(module, annotation):
+            return False
+        return spread or not self.is_row(module, annotation)
+
+    def kind(self, module: str, annotation: ast.expr) -> str:
+        """An annotation as the role's identity types are spelled.
+
+        A criterion identity type counts as the plain text it is a type of,
+        so a site typing its key more precisely than the role does is the
+        same site.
+        """
+        if self._denotes(module, _written(annotation), IDENTITY_KEYS):
+            return _annotation_name(CriterionRef.__supertype__)
+        return ast.unparse(annotation)
+
+
+def reading(sources: Mapping[str, str]) -> Reading:
+    """Index *sources* and resolve the row aliases, to a fixed point."""
+    index = identity_index(parsed(sources))
+    values = {
+        key: node.value
+        for key, node in index.units.items()
+        if isinstance(node, ast.Assign | ast.AnnAssign | ast.TypeAlias)
+        and "." not in key[1]
+        and node.value is not None
+    }
+    found = Reading(index=index, rows=frozenset({ROW_KEY}), families=frozenset())
+    for _ in range(len(values) + 1):
+        rows = found.rows | {
+            key for key, value in values.items() if found.is_row(key[0], value)
+        }
+        families = found.families | {
+            key
+            for key, value in values.items()
+            if key not in rows and found.names_a_row(key[0], value)
+        }
+        grown = Reading(index=index, rows=rows, families=families)
+        if grown == found:
+            break
+        found = grown
+    return found
+
+
+def _identity_parameters(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.arg]:
+    """The parameters an identity can be declared by: named ones, less ``self``."""
+    args = node.args
+    return [
+        argument
+        for argument in (*args.posonlyargs, *args.args, *args.kwonlyargs)
+        if argument.arg != "self"
+    ]
+
+
+def _declares_an_identity(
+    found: Reading, module: str, parameters: list[ast.arg], *, names: frozenset[str]
+) -> bool:
     """Whether the parameters carry the identities the role addresses by.
 
     Two readings, and either one declares it, because a name and a type each
     see what the other is blind to.
 
-    By NAME: a parameter set spelling the role's own identity names declares
-    that identity however it is annotated, which is how a site that annotates
-    nothing at all is still seen.
+    By NAME: a parameter set spelling *names* — the role's own identity names,
+    or for a site already handed the rows the criterion parameter alone —
+    declares that identity however it is annotated, which is how a site that
+    annotates nothing at all is still seen.
 
     By TYPE: a parameter set that is, in type, exactly what the role declares
     and nothing besides — the identity and no other information — declares it
-    under any spelling whatever.  This is the reading that closes renaming.
-    Exactly, not at least: a function handed MORE than an identity has more to
-    go on than an identity, which is what makes an honest creation taking a
-    criterion's own content a different act from resolving a key, and the only
-    thing that tells the two apart once spelling is no longer the test.
+    under any spelling whatever, a criterion identity type read as the text
+    it is a type of.  This is the reading that closes renaming.  Exactly, not
+    at least: a function handed MORE than an identity has more to go on than
+    an identity, which is what makes an honest creation taking a criterion's
+    own content a different act from resolving a key, and the only thing
+    that tells the two apart once spelling is no longer the test.
     """
-    args = node.args
-    parameters = [
-        argument
-        for argument in (*args.posonlyargs, *args.args, *args.kwonlyargs)
-        if argument.arg != "self"
-    ]
-    if IDENTITY_PARAMETERS <= {argument.arg for argument in parameters}:
+    if names <= {argument.arg for argument in parameters}:
         return True
     annotated = Counter(
-        ast.unparse(argument.annotation)
+        found.kind(module, argument.annotation)
         for argument in parameters
         if argument.annotation is not None
     )
     return annotated == IDENTITY_ANNOTATIONS
 
 
-def _resolution_sites(tree: ast.AST) -> list[str]:
-    """Each function in this module that resolves a criterion identity to a row.
+#: A resolution site: its module, its dotted name, and its parameters in
+#: order, so a register entry names one definition rather than a word.
+Site = tuple[str, str, tuple[str, ...]]
+
+
+def _site(module: str, name: str, node: ast.FunctionDef | ast.AsyncFunctionDef) -> Site:
+    """A function as a site, its parameters in the order a signature lists them."""
+    args = node.args
+    ordered = (
+        *args.posonlyargs,
+        *args.args,
+        *((args.vararg,) if args.vararg else ()),
+        *args.kwonlyargs,
+        *((args.kwarg,) if args.kwarg else ()),
+    )
+    return module, name, tuple(argument.arg for argument in ordered)
+
+
+def _resolution_sites(found: Reading, module: str) -> list[Site]:
+    """Each function in *module* that reads the family and declares an identity.
 
     Two conjuncts, and the declared return is not one of them: see the module
     docstring — a site handed the family and one identity has resolved it
     whatever it hands back.
     """
+    tree = found.index.trees[module]
+    where = definitions(tree)
     return sorted(
-        f"{node.name}:{node.lineno}"
+        _site(module, where[id(node)], node)
         for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and _reads_the_family(node)
-        and _declares_an_identity(node)
+        and _declares_an_identity(
+            found, module, _identity_parameters(node), names=IDENTITY_PARAMETERS
+        )
     )
 
 
@@ -243,102 +420,143 @@ def _resolution_sites(tree: ast.AST) -> list[str]:
 )
 
 
-def _is_the_family(annotation: ast.expr | None) -> bool:
-    """Whether a parameter is annotated as a collection of the row type.
-
-    That is the family handed in rather than read: ``Sequence[TrackerIssue]``,
-    a tuple, a list or a mapping of rows, bare or written as a string.
-    """
-    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
-        try:
-            annotation = ast.parse(annotation.value, mode="eval").body
-        except SyntaxError:
-            return False
-    return isinstance(annotation, ast.Subscript) and _names(
-        annotation.slice, frozenset({ROW})
-    )
-
-
-def _handed_resolution_sites(tree: ast.AST) -> list[str]:
+def _handed_resolution_sites(found: Reading, module: str) -> list[Site]:
     """Each function handed the family that resolves a criterion identity in it.
 
-    Handed the rows rather than reading them, and declaring the identity by
-    one of two readings over the parameters other than the rows: the role's
-    criterion parameter, with or without the owner beside it, since rows
-    already handed need no owner to be read by; or, in type, exactly the
-    role's identity and nothing besides.
+    Handed the rows rather than reading them — as a parameter annotated with a
+    collection of rows (see ``Reading.is_family``), as a ``*`` parameter of
+    rows, or as an unannotated parameter beside the role's criterion
+    parameter, which the name alone declares — or held on ``self`` by a
+    class whose constructor is handed them, where each other method of that
+    class is a site of its own.  Each declares the identity by one of two
+    readings over its parameters other than the rows: the role's criterion
+    parameter, with or without the owner beside it, since rows already handed
+    need no owner to be read by; or, in type, exactly the role's identity and
+    nothing besides.
     """
-    found = []
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        args = node.args
-        parameters = [
-            argument
-            for argument in (*args.posonlyargs, *args.args, *args.kwonlyargs)
-            if argument.arg != "self"
-        ]
-        rest = [a for a in parameters if not _is_the_family(a.annotation)]
-        if len(rest) == len(parameters):
-            continue
-        names = {argument.arg for argument in rest}
-        annotated = Counter(
-            ast.unparse(argument.annotation)
-            for argument in rest
-            if argument.annotation is not None
+    tree = found.index.trees[module]
+    where = definitions(tree)
+    sites: list[Site] = []
+
+    def handed(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        spread = node.args.vararg
+        return (
+            spread is not None and found.is_family(module, spread, spread=True)
+        ) or any(
+            found.is_family(module, argument, spread=False)
+            for argument in _identity_parameters(node)
         )
-        if CRITERION_PARAMETER in names or annotated == IDENTITY_ANNOTATIONS:
-            found.append(f"{node.name}:{node.lineno}")
-    return sorted(found)
+
+    def declares(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        rest = [
+            argument
+            for argument in _identity_parameters(node)
+            if not found.is_family(module, argument, spread=False)
+        ]
+        return _declares_an_identity(
+            found, module, rest, names=frozenset({CRITERION_PARAMETER})
+        )
+
+    held: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        methods = [
+            member
+            for member in node.body
+            if isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+        if any(member.name == "__init__" and handed(member) for member in methods):
+            held |= {id(member) for member in methods if member.name != "__init__"}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        parameters = _identity_parameters(node)
+        unannotated = any(argument.annotation is None for argument in parameters)
+        if ((handed(node) or id(node) in held) and declares(node)) or (
+            unannotated
+            and CRITERION_PARAMETER in {argument.arg for argument in parameters}
+        ):
+            sites.append(_site(module, where[id(node)], node))
+    return sorted(sites)
 
 
 #: The shipped functions handed the family that the reading above reports and
-#: that resolve no identity, each with why.  The creation's own lookup is
+#: that resolve no identity, each by its module, its dotted name and its exact
+#: parameters as read off the object, with why.  The creation's own lookup is
 #: handed a parent key and a Check text, two strings exactly as a renamed
 #: resolution would be, and answers whether the criterion about to be
 #: created is already there: it addresses no identity, because there is none
 #: yet.  The lane's tally observation is handed the lane's roster, gap and
 #: criteria and keyed by its scope and lane, two strings again: it counts
 #: rows toward the lane's alarm record and addresses no criterion.  Asserted
-#: both ways below, so the register cannot go stale.
-HANDED_LOOKUPS = {
-    (_module_of(existing_criterion), existing_criterion.__name__): (
-        "the create-if-absent lookup by Check text under a parent"
-    ),
-    (_module_of(TallySupervisor), TallySupervisor.observe.__name__): (
-        "the lane's tally observation keyed by scope and lane"
-    ),
+#: both ways below as a list, so the register cannot go stale and a second
+#: definition under either name, or either one handed another parameter, is
+#: a site.
+HANDED_LOOKUPS: dict[Site, str] = {
+    (
+        _module_of(existing_criterion),
+        existing_criterion.__qualname__,
+        tuple(inspect.signature(existing_criterion).parameters),
+    ): "the create-if-absent lookup by Check text under a parent",
+    (
+        _module_of(TallySupervisor),
+        TallySupervisor.observe.__qualname__,
+        tuple(inspect.signature(TallySupervisor.observe).parameters),
+    ): "the lane's tally observation keyed by scope and lane",
 }
 
 
-def _handed_in(root: Path) -> dict[str, list[str]]:
-    found = {}
-    for path in sorted(root.rglob("*.py")):
-        sites = _handed_resolution_sites(ast.parse(path.read_text(encoding="utf-8")))
-        if sites:
-            found[path.relative_to(root).as_posix()] = sites
-    return found
+@functools.cache
+def _shipped() -> Mapping[str, str]:
+    """Every shipped module's text by its tree-relative path, read once."""
+    return MappingProxyType(source_tree())
 
 
-def _sites_in(root: Path) -> dict[str, list[str]]:
-    """Every resolution site under *root*: read or handed the family.
+@functools.cache
+def _shipped_reading() -> Reading:
+    """The shipped tree, indexed once; no walk here changes it."""
+    return reading(_shipped())
 
-    A handed site in the register is set aside; one that also reads the
-    family is counted by the first reading whatever the register says.
+
+#: The module a planted second site lands in: one the tree does not have.
+SECOND = "services/second_pick.py"
+
+
+def _planted(text: str, module: str = SECOND) -> dict[str, str]:
+    """The shipped tree with *module* extended by *text*, or created as it."""
+    return {**_shipped(), module: _shipped().get(module, "") + "\n" + text}
+
+
+def _handed_in(found: Reading) -> list[Site]:
+    """Every handed site in the tree that no read site already counts."""
+    return sorted(
+        site
+        for module in sorted(found.index.trees)
+        for site in _handed_resolution_sites(found, module)
+        if site not in _resolution_sites(found, module)
+    )
+
+
+def _sites_in(sources: Mapping[str, str]) -> dict[str, list[Site]]:
+    """Every resolution site in *sources*: read or handed the family.
+
+    A handed site in the register is set aside by its whole definition; one
+    that also reads the family is counted by the first reading whatever the
+    register says.
     """
-    found = {}
-    for path in sorted(root.rglob("*.py")):
-        relative = path.relative_to(root).as_posix()
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        read = _resolution_sites(tree)
+    found = reading(sources)
+    sites: dict[str, list[Site]] = {}
+    for module in sorted(found.index.trees):
+        read = _resolution_sites(found, module)
         handed = [
             site
-            for site in _handed_resolution_sites(tree)
-            if site not in read and (relative, site.split(":")[0]) not in HANDED_LOOKUPS
+            for site in _handed_resolution_sites(found, module)
+            if site not in read and site not in HANDED_LOOKUPS
         ]
         if read or handed:
-            found[relative] = sorted(read + handed)
-    return found
+            sites[module] = sorted(read + handed)
+    return sites
 
 
 def _family_dependents(root: Path) -> dict[str, list[str]]:
@@ -534,15 +752,65 @@ def checkbox_shapes(text: str) -> list[str]:
     return literal + _pattern_boxes(text, 0) + _pattern_boxes(text, re.VERBOSE)
 
 
+def _text_of(node: ast.AST) -> str | None:
+    """The text a literal expression is, whole, or ``None``.
+
+    A string constant; a bytes constant, read as Latin-1 so every byte is one
+    character; a ``+`` of literal pieces; and an f-string whose every part
+    is literal, a replacement field over a constant included.  Anything that
+    takes a value at run time is no text here.
+    """
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, str):
+            return node.value
+        if isinstance(node.value, bytes):
+            return node.value.decode("latin-1")
+        return None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _text_of(node.left), _text_of(node.right)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            if isinstance(value, ast.FormattedValue):
+                if value.conversion != -1 or value.format_spec is not None:
+                    return None
+                value = value.value
+            text = (
+                str(value.value)
+                if isinstance(value, ast.Constant) and value.value is not None
+                else None
+            )
+            if text is None:
+                return None
+            parts.append(text)
+        return "".join(parts)
+    return None
+
+
 def _checkbox_constants(tree: ast.AST) -> list[tuple[int, list[str]]]:
-    """Each string constant in this module that carries a complete checkbox shape."""
+    """Each literal in this module that carries a complete checkbox shape.
+
+    Every literal expression is read whole (see ``_text_of``), so a pattern
+    joined from literal pieces is read as the pattern it joins to.
+    """
     return [
-        (node.lineno, shapes)
+        (getattr(node, "lineno", 0), shapes)
         for node in ast.walk(tree)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-        for shapes in [checkbox_shapes(node.value)]
+        for text in [_text_of(node)]
+        if text is not None
+        for shapes in [checkbox_shapes(text)]
         if shapes
     ]
+
+
+def _literals_read(root: Path) -> int:
+    """How many literal texts the scan reads under *root*."""
+    return sum(
+        _text_of(node) is not None
+        for path in sorted(root.rglob("*.py"))
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+    )
 
 
 def _checkbox_scans(root: Path) -> dict[str, list[tuple[int, list[str]]]]:
@@ -558,18 +826,14 @@ def test_one_site_turns_a_criterion_identity_into_its_sub_issue() -> None:
     """Counted as SITES, so two resolutions in one allowed module still fail.
 
     A site handed the rows counts as one read from the family (KOD-651). The
-    register of handed lookups that resolve nothing is live: each entry is
-    still reported by the handed reading, and nothing else is.
+    register of handed lookups that resolve nothing is live and exact: the
+    handed reading reports each entry's whole definition once, and nothing
+    else, compared as a list.
     """
-    sites = _sites_in(SOURCE)
+    sites = _sites_in(_shipped())
     assert sum(len(group) for group in sites.values()) == 1, sites
     assert list(sites) == [_module_of(NativeCriterionResolver)], sites
-    handed = {
-        (module, site.split(":")[0])
-        for module, group in _handed_in(SOURCE).items()
-        for site in group
-    }
-    assert handed == set(HANDED_LOOKUPS)
+    assert _handed_in(_shipped_reading()) == sorted(HANDED_LOOKUPS)
 
 
 def test_no_consumer_of_the_resolver_also_takes_the_criterion_family() -> None:
@@ -591,8 +855,10 @@ def test_holding_the_role_includes_holding_a_class_that_implements_it() -> None:
 def test_no_module_scans_for_checkbox_syntax() -> None:
     """No shipped module carries a checkbox shape it could address a target by.
 
-    String constants only, and nothing is executed: a pattern assembled at
-    runtime or read from configuration is not seen. The
+    Literals only — a string or bytes constant, literal pieces joined by
+    ``+`` and an f-string of literals, each read whole — and nothing is
+    executed: a pattern assembled at runtime or read from configuration is
+    not seen, nor a scan code composes from half-box pieces. The
     walk does not tell a scan from a write either, which is what makes it cheap
     and total over literals — the sources carry no complete checkbox literal at
     all, because the one checkbox they write for a human composes its mark. So
@@ -604,6 +870,8 @@ def test_no_module_scans_for_checkbox_syntax() -> None:
     see ``checkbox_shapes`` for both readings (KOD-651).
     """
     assert _checkbox_scans(SOURCE) == {}
+    # Non-vacuous: the scan read the shipped tree's literals.
+    assert _literals_read(SOURCE) > 0
 
 
 @pytest.mark.parametrize(
@@ -652,7 +920,7 @@ def test_the_refused_lookup_shapes_are_reported(returns: str, lookup: str) -> No
         "    rows = await tracker.read_criteria(issue_key=issue_key)\n"
         f"{lookup}"
     )
-    assert _resolution_sites(ast.parse(source))
+    assert _resolution_sites(reading(_planted(source)), SECOND)
 
 
 def test_a_second_resolution_in_one_module_counts_as_two_sites() -> None:
@@ -667,7 +935,7 @@ def test_a_second_resolution_in_one_module_counts_as_two_sites() -> None:
         "    rows = await tracker.read_criteria(issue_key=issue_key)\n"
         "    return [row for row in rows if row.issue_key == criterion_key][0]\n"
     )
-    assert len(_resolution_sites(ast.parse(source))) == 2
+    assert len(_resolution_sites(reading(_planted(source)), SECOND)) == 2
 
 
 def test_a_resolution_that_renames_its_identities_is_reported() -> None:
@@ -682,7 +950,7 @@ def test_a_resolution_that_renames_its_identities_is_reported() -> None:
         "    rows = tuple(await self.tracker.read_criteria(issue_key=parent))\n"
         "    return {row.issue_key: row for row in rows}[key]\n"
     )
-    assert _resolution_sites(ast.parse(source))
+    assert _resolution_sites(reading(_planted(source)), SECOND)
 
 
 def test_a_family_read_without_a_criterion_identity_is_not_a_resolution() -> None:
@@ -696,9 +964,7 @@ def test_a_family_read_without_a_criterion_identity_is_not_a_resolution() -> Non
     strings would not carry that, and reading the identity by type rather than
     by name is exactly what makes the difference load-bearing.
     """
-    module = SOURCE / "adapters" / "linear" / "tracker.py"
-    tree = ast.parse(module.read_text(encoding="utf-8"))
-    assert _resolution_sites(tree) == []
+    assert _resolution_sites(_shipped_reading(), _module_of(LinearMcpTracker)) == []
 
 
 def test_a_protocol_declaration_is_not_an_implementation() -> None:
@@ -710,7 +976,7 @@ def test_a_protocol_declaration_is_not_an_implementation() -> None:
         '        """The one current sub-issue with that key."""\n'
         "        ...\n"
     )
-    assert _resolution_sites(ast.parse(source)) == []
+    assert _resolution_sites(reading(_planted(source)), SECOND) == []
 
 
 @pytest.mark.parametrize(
@@ -764,6 +1030,10 @@ def test_a_protocol_declaration_is_not_an_implementation() -> None:
         'def ticked(line):\n    return "- [x] " in line\n',
         'def ticked(line):\n    return line.startswith("- [ ]")\n',
         'ROW = "- [X] {key}: {check}"\n',
+        # Literal pieces joined whole, and a bytes pattern (KOD-651).
+        'LINE = re.compile(r"^\\s*[-*]\\s*\\[" "" + r"[ xX]" + r"\\]\\s*(?P<l>.+)$")\n',
+        'LINE = re.compile(rb"^\\s*[-*]\\s*\\[[ xX]\\]\\s*")\n',
+        "ROW = f\"- {'['}x] {'{key}'}\"\n",
     ],
 )
 def test_each_spelling_of_a_checkbox_scan_is_reported(spelling: str) -> None:
@@ -789,39 +1059,197 @@ def test_a_bracketed_pattern_that_accepts_no_mark_is_not_a_box(spelling: str) ->
     assert _checkbox_constants(ast.parse(spelling)) == []
 
 
+#: The imports a planted site's annotations resolve through, each written
+#: from the shipped object.
+_ROWS = (
+    "from collections.abc import Sequence\n"
+    f"from {TrackerIssue.__module__} import {ROW}\n"
+    f"from {CriterionRef.__module__} import {CriterionRef.__name__}\n"
+)
+
 #: Each way a second site could be handed the rows instead of reading them:
-#: the role's identity names, the criterion parameter alone, and the role's
-#: identity types under other names (KOD-651).
+#: the role's identity names, the criterion parameter alone, the role's
+#: identity types under other names, and every way of annotating the rows
+#: or holding them (KOD-651).
 HANDED_SITES = {
     "the role's identity names": (
-        f"def pick_criterion(*, rows: Sequence[{ROW}], issue_key: str,"
+        f"{_ROWS}def pick_criterion(*, rows: Sequence[{ROW}], issue_key: str,"
         f" {CRITERION_PARAMETER}: str) -> {ROW}:\n"
         "    del issue_key\n"
         f"    return {{row.issue_key: row for row in rows}}[{CRITERION_PARAMETER}]\n"
     ),
     "the criterion parameter alone": (
-        f"def pick(rows: tuple[{ROW}, ...], {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        f"{_ROWS}def pick(rows: tuple[{ROW}, ...], {CRITERION_PARAMETER}: str)"
+        f" -> {ROW}:\n"
         f"    return [r for r in rows if r.issue_key == {CRITERION_PARAMETER}][0]\n"
     ),
     "the identity types under other names": (
-        f"def pick(rows: 'list[{ROW}]', parent: str, key: str) -> {ROW}:\n"
+        f"{_ROWS}def pick(rows: 'list[{ROW}]', parent: str, key: str) -> {ROW}:\n"
+        "    return {row.issue_key: row for row in rows}[key]\n"
+    ),
+    "the identity typed as the criterion identity under other names": (
+        f"{_ROWS}def pick(rows: Sequence[{ROW}], parent: str,"
+        f" key: {CriterionRef.__name__}) -> {ROW}:\n"
+        "    return {row.issue_key: row for row in rows}[key]\n"
+    ),
+    "an optional collection of rows": (
+        f"{_ROWS}def pick(rows: Sequence[{ROW}] | None, {CRITERION_PARAMETER}: str)"
+        f" -> {ROW}:\n"
+        f"    return {{r.issue_key: r for r in rows or ()}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "a module alias of a collection of rows": (
+        f"{_ROWS}Rows = Sequence[{ROW}]\n"
+        f"def pick(rows: Rows, {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "a type statement over a collection of rows": (
+        f"{_ROWS}type Rows = Sequence[{ROW}]\n"
+        f"def pick(rows: Rows, {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "a forward reference inside the collection": (
+        f"{_ROWS}def pick(rows: Sequence['{ROW}'], {CRITERION_PARAMETER}: str)"
+        f" -> {ROW}:\n"
+        f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "the row type imported under another word": (
+        f"from collections.abc import Sequence\n"
+        f"from {TrackerIssue.__module__} import {ROW} as Row\n"
+        f"def pick(rows: Sequence[Row], {CRITERION_PARAMETER}: str) -> Row:\n"
+        f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "an alias of the row type inside the collection": (
+        f"{_ROWS}Row = {ROW}\n"
+        f"def pick(rows: Sequence[Row], {CRITERION_PARAMETER}: str) -> Row:\n"
+        f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "the rows handed as a star parameter": (
+        f"{_ROWS}def pick({CRITERION_PARAMETER}: str, *rows: {ROW}) -> {ROW}:\n"
+        f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "the rows handed unannotated beside the criterion parameter": (
+        f"{_ROWS}def pick(rows, {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "the rows held on self by the constructor": (
+        f"{_ROWS}class Picker:\n"
+        f"    def __init__(self, rows: Sequence[{ROW}]) -> None:\n"
+        "        self._rows = {row.issue_key: row for row in rows}\n"
+        f"    def pick(self, {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        f"        return self._rows[{CRITERION_PARAMETER}]\n"
+    ),
+    "an index class resolving by the role's identity": (
+        f"{_ROWS}class Index:\n"
+        f"    def __init__(self, rows: Sequence[{ROW}]) -> None:\n"
+        "        self._by_key = {row.issue_key: row for row in rows}\n"
+        f"    def resolve(self, *, issue_key: str, {CRITERION_PARAMETER}: str)"
+        f" -> {ROW}:\n"
+        f"        return self._by_key[{CRITERION_PARAMETER}]\n"
+    ),
+}
+
+#: Each way a second site that reads the family could declare the identity
+#: past the spellings the cases above use (KOD-651).
+READ_SITES = {
+    "the key typed as the criterion identity and renamed": (
+        f"{_ROWS}class Picker:\n"
+        "    def __init__(self, tracker) -> None:\n"
+        "        self._tracker = tracker\n"
+        "    async def locate(self, *, parent: str,"
+        f" key: {CriterionRef.__name__}) -> {ROW}:\n"
+        f"        rows = await self._tracker.{FAMILY_READ}(issue_key=parent)\n"
+        "        return {row.issue_key: row for row in rows}[key]\n"
+    ),
+    "the family read fetched by getattr with its literal name": (
+        "async def locate(*, tracker: object, issue_key: str, criterion_key: str):\n"
+        f"    rows = await getattr(tracker, {FAMILY_READ!r})(issue_key=issue_key)\n"
+        "    return {row.issue_key: row for row in rows}[criterion_key]\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(READ_SITES))
+def test_a_second_site_reading_the_family_is_counted(form: str) -> None:
+    """A read site is one however its key is typed or its read is fetched."""
+    sources = _planted(READ_SITES[form])
+    assert _resolution_sites(reading(sources), SECOND)
+    assert SECOND in _sites_in(sources)
+
+
+#: A definition beside a registered lookup that the register must not cover:
+#: a second function under the lookup's own word in its module, and the
+#: lookup itself handed the criterion parameter as well.
+REGISTER_CONTROLS = {
+    "a same-named function beside the registered observation": (
+        _module_of(TallySupervisor),
+        f"{_ROWS}def {TallySupervisor.observe.__name__}(rows: Sequence[{ROW}],"
+        f" {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n",
+    ),
+    "the registered lookup redefined with the criterion parameter": (
+        _module_of(existing_criterion),
+        f"{_ROWS}def {existing_criterion.__name__}(rows: Sequence[{ROW}],"
+        f" {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        f"    return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n",
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(REGISTER_CONTROLS))
+def test_the_register_sets_aside_one_definition_not_a_word(form: str) -> None:
+    """A register entry is a definition and its parameters, not its name (KOD-651)."""
+    module, text = REGISTER_CONTROLS[form]
+    sources = _planted(text, module)
+    assert module in _sites_in(sources)
+    assert _handed_in(reading(sources)) != sorted(HANDED_LOOKUPS)
+
+
+#: The one stated limit, a case per shape: each is a second resolution the
+#: count does not see, held here so the limit is a fact the tests hold.
+UNSEEN_SITES = {
+    "a value handed across a function boundary": (
+        f"{_ROWS}class Picker:\n"
+        f"    def pick(self, {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        "        rows = self._load()\n"
+        f"        return {{r.issue_key: r for r in rows}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "a name built at run time": (
+        "async def locate(*, tracker: object, issue_key: str, criterion_key: str):\n"
+        "    read = getattr(tracker, '_'.join(('read', 'criteria')))\n"
+        "    rows = await read(issue_key=issue_key)\n"
+        "    return {row.issue_key: row for row in rows}[criterion_key]\n"
+    ),
+    "a binding made only when a function runs": (
+        f"{_ROWS}class Picker:\n"
+        f"    def pick(self, {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        f"        return self._by_key[{CRITERION_PARAMETER}]\n"
+        f"def load(picker: Picker, rows: Sequence[{ROW}]) -> None:\n"
+        "    setattr(picker, '_by_key', {row.issue_key: row for row in rows})\n"
+    ),
+    "a single key handed with the rows under another name": (
+        f"{_ROWS}def pick(rows: Sequence[{ROW}], key: str) -> {ROW}:\n"
         "    return {row.issue_key: row for row in rows}[key]\n"
     ),
 }
 
 
+@pytest.mark.parametrize("shape", sorted(UNSEEN_SITES))
+def test_each_shape_of_the_stated_limit_stays_unseen(shape: str) -> None:
+    """The limit the module states is exactly what the count does not see."""
+    assert SECOND not in _sites_in(_planted(UNSEEN_SITES[shape]))
+
+
 @pytest.mark.parametrize("form", sorted(HANDED_SITES))
-def test_a_site_handed_the_rows_is_a_resolution_site(form: str, tmp_path: Path) -> None:
+def test_a_site_handed_the_rows_is_a_resolution_site(form: str) -> None:
     """A second resolution site need not read the family itself (KOD-651).
 
     And the site count takes it as one, wherever it lands.
     """
-    tree = ast.parse(HANDED_SITES[form])
-    assert _resolution_sites(tree) == []
-    assert _handed_resolution_sites(tree)
-
-    (tmp_path / "second_pick.py").write_text(HANDED_SITES[form], encoding="utf-8")
-    assert list(_sites_in(tmp_path)) == ["second_pick.py"]
+    sources = _planted(HANDED_SITES[form])
+    found = reading(sources)
+    assert _resolution_sites(found, SECOND) == []
+    assert _handed_resolution_sites(found, SECOND)
+    assert SECOND in _sites_in(sources)
 
 
 def test_a_criterion_text_comparison_on_a_key_addressed_target_is_not_reported() -> (
@@ -836,6 +1264,6 @@ def test_a_criterion_text_comparison_on_a_key_addressed_target_is_not_reported()
     """
     module = SOURCE / "domain" / "criterion_cross_off.py"
     tree = ast.parse(module.read_text(encoding="utf-8"))
-    assert _resolution_sites(tree) == []
+    assert _resolution_sites(_shipped_reading(), "domain/criterion_cross_off.py") == []
     assert _checkbox_constants(tree) == []
     assert not _names(tree, frozenset({ROLE}))

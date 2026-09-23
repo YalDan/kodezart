@@ -1911,8 +1911,15 @@ def reaching(
     return reached
 
 
-def _annotated(index: IdentityIndex, module: str, annotation: ast.expr) -> set[Key]:
-    """Every definition an annotation names, a string annotation read too."""
+def annotation_keys(
+    index: IdentityIndex, module: str, annotation: ast.expr
+) -> set[Key]:
+    """Every definition an annotation in *module* names, anywhere inside it.
+
+    Each name and attribute resolved by :func:`denoted`, and a string
+    constant — a forward reference, whole or inside a subscript — read as
+    the expression it spells.
+    """
     found: set[Key] = set()
     for inner in ast.walk(annotation):
         if isinstance(inner, ast.Name | ast.Attribute):
@@ -1922,7 +1929,7 @@ def _annotated(index: IdentityIndex, module: str, annotation: ast.expr) -> set[K
                 written = ast.parse(text, mode="eval").body
             except SyntaxError:
                 continue
-            found |= _annotated(index, module, written)
+            found |= annotation_keys(index, module, written)
     return found
 
 
@@ -1944,16 +1951,16 @@ def declaring(index: IdentityIndex, types: Collection[Key]) -> frozenset[Key]:
             found: set[Key] = set()
             for statement in node.body:
                 if isinstance(statement, ast.AnnAssign):
-                    found |= _annotated(index, module, statement.annotation)
+                    found |= annotation_keys(index, module, statement.annotation)
             for base in node.bases:
-                found |= _annotated(index, module, base)
+                found |= annotation_keys(index, module, base)
             named[key] = found
         elif (
             isinstance(node, ast.Assign | ast.AnnAssign | ast.TypeAlias)
             and "." not in key[1]
             and node.value is not None
         ):
-            named[key] = _annotated(index, module, node.value)
+            named[key] = annotation_keys(index, module, node.value)
     wanted = frozenset(types)
     found_: frozenset[Key] = frozenset()
     for _ in range(len(named) + 1):
@@ -1986,7 +1993,7 @@ def _declared(
                 statement.target, ast.Name
             ):
                 declared.setdefault(statement.target.id, set()).update(
-                    _annotated(index, module, statement.annotation)
+                    annotation_keys(index, module, statement.annotation)
                 )
         for inner in ast.walk(node):
             if (
@@ -1995,18 +2002,18 @@ def _declared(
                 and _spelling(inner.target.value) == receiver
             ):
                 declared.setdefault(inner.target.attr, set()).update(
-                    _annotated(index, module, inner.annotation)
+                    annotation_keys(index, module, inner.annotation)
                 )
     elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
         for argument in parameters_of(node):
             if argument.annotation is not None:
                 declared.setdefault(argument.arg, set()).update(
-                    _annotated(index, module, argument.annotation)
+                    annotation_keys(index, module, argument.annotation)
                 )
         for inner in ast.walk(node):
             if isinstance(inner, ast.AnnAssign) and isinstance(inner.target, ast.Name):
                 declared.setdefault(inner.target.id, set()).update(
-                    _annotated(index, module, inner.annotation)
+                    annotation_keys(index, module, inner.annotation)
                 )
     return {word: frozenset(keys) for word, keys in declared.items()}
 
