@@ -6,7 +6,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 
-from kodezart.chains.audit_sweep import AuditReadObservation, AuditReadSweep
+from kodezart.chains.audit_sweep import (
+    MANDATED_ARMS,
+    AuditReadObservation,
+    AuditReadSweep,
+)
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
 from kodezart.domain.audit_claims import (
@@ -173,40 +177,24 @@ def _unmandated_refutations(observation: AuditReadObservation) -> tuple[str, ...
 
     A lapse still traces its restamp, reads its forge checks at the graded
     commit and runs its over-claim and detector-removal readings, and each
-    REFUTED reading there is hunted.  One whose hunt
-    failed carries the raw refutation beside the reason and no report, and
-    that is a refutation emitted without its mandate verdict, not a grading
-    behind the head.  A reason with no refutation beside it is not one.
+    REFUTED reading there is hunted.  One whose hunt failed carries the raw
+    refutation beside the reason and no report, and that is a refutation
+    emitted without its mandate verdict, not a grading behind the head.  A
+    reason with no refutation beside it is not one.  The arms are the
+    completeness rule's own (``MANDATED_ARMS``), so an arm added there is
+    read here too.
     """
     reasons: list[str] = []
-    if (
-        observation.restamp is not None
-        and observation.restamp.verdict is AuditVerdict.REFUTED
-        and observation.restamp_report is None
-        and observation.unavailable_reason is not None
-    ):
-        reasons.append(observation.unavailable_reason)
-    if (
-        observation.forge is not None
-        and observation.forge.verdict is AuditVerdict.REFUTED
-        and observation.forge_report is None
-        and observation.forge_unavailable_reason is not None
-    ):
-        reasons.append(observation.forge_unavailable_reason)
-    if (
-        observation.overclaim_reading is not None
-        and observation.overclaim_reading.verdict is AuditVerdict.REFUTED
-        and observation.overclaims is None
-        and observation.overclaim_unavailable_reason is not None
-    ):
-        reasons.append(observation.overclaim_unavailable_reason)
-    if (
-        observation.removal_reading is not None
-        and observation.removal_reading.verdict is AuditVerdict.REFUTED
-        and observation.detector_removal is None
-        and observation.removal_unavailable_reason is not None
-    ):
-        reasons.append(observation.removal_unavailable_reason)
+    for arm, completed, reason in MANDATED_ARMS:
+        value = getattr(observation, arm)
+        why = getattr(observation, reason)
+        if (
+            value is not None
+            and value.verdict is AuditVerdict.REFUTED
+            and getattr(observation, completed) is None
+            and why is not None
+        ):
+            reasons.append(why)
     return tuple(reasons)
 
 

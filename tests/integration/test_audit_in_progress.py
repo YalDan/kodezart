@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from kodezart.domain.errors import AgentSDKError
+from kodezart.chains.audit_forge import AuditForgeVerifier
+from kodezart.domain.errors import AgentSDKError, AuditEvidenceReadError
 from kodezart.services.audit_runtime import AuditRunIncompleteError
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, DETECTOR_REMOVAL_SCHEMA
 from kodezart.types.domain.audit_evidence import AuditEvidenceObservation
@@ -126,26 +127,48 @@ async def test_a_tick_over_a_scope_in_progress_completes_and_names_what_it_defer
     assert not workspace._workspaces
 
 
-async def test_a_lapsed_criterion_whose_side_arm_fails_is_still_deferred(in_progress):
+@pytest.mark.parametrize("arm", ["removal", "forge"])
+async def test_a_lapsed_criterion_whose_side_arm_fails_is_still_deferred(
+    in_progress, monkeypatch, arm
+):
     """A grading behind the head is decided before the side arms are read.
 
-    The lapsed criterion's detector-removal reading suffers a declared outage,
-    so that arm has an unavailable reason to report. The lapse is still a
-    deferral and the tick still completes: were the reasons read first, the
-    scope would be refused over a reading it discards anyway.
+    The lapsed criterion's detector-removal reading, or its forge read,
+    suffers a declared outage, so that arm has an unavailable reason to
+    report and no reading beside it. The lapse is still a deferral and the
+    tick still completes: were the reasons read first, the scope would be
+    refused over a reading it discards anyway.
     """
     audit, executor, server, _tracker, _git, _workspace, _repository = in_progress
+    failed = []
+    if arm == "removal":
 
-    async def during(kwargs):
-        if (
-            kwargs["output_format"]["schema"] == DETECTOR_REMOVAL_SCHEMA
-            and LAPSED_CHECK in kwargs["prompt"]
-        ):
-            raise AgentSDKError("provider unavailable", error_kind="fixture-provider")
+        async def during(kwargs):
+            if (
+                kwargs["output_format"]["schema"] == DETECTOR_REMOVAL_SCHEMA
+                and LAPSED_CHECK in kwargs["prompt"]
+            ):
+                failed.append(kwargs["output_format"]["schema"])
+                raise AgentSDKError(
+                    "provider unavailable", error_kind="fixture-provider"
+                )
 
-    executor.during = during
+        executor.during = during
+    else:
+        observe = AuditForgeVerifier.observe
+
+        async def unavailable(self, request):
+            if request.criterion_key == LAPSED:
+                failed.append(request.criterion_key)
+                raise AuditEvidenceReadError(
+                    criterion_key=request.criterion_key, reason="forge unavailable"
+                )
+            return await observe(self, request)
+
+        monkeypatch.setattr(AuditForgeVerifier, "observe", unavailable)
 
     assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    assert len(failed) == 1
     scope = audit.last_report.scopes[0]
     assert scope.status == "complete", scope.model_dump_json()
     assert (LAPSED, "graded_behind_head") in {

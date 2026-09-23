@@ -106,16 +106,21 @@ async def test_a_refuted_restamp_carries_a_mandate_verdict(
     assert tracker_writes() == before
 
 
-async def test_a_restamp_report_must_answer_the_trace_beside_it(setup, tracker, server):
+async def test_a_restamp_report_must_answer_the_trace_beside_it(
+    setup, tracker, server, tracker_writes
+):
     """A report completes the trace it was hunted for and no other.
 
     The observation's refuted trace is swapped for another refuted trace
     while its report stays, so the mandate verdict beside it answers a
-    refutation the observation no longer carries: refused.
+    refutation the observation no longer carries: refused.  The sweep that
+    produced the observation wrote nothing.
     """
     build, *_ = setup
     await refuted_restamp(tracker, server, "current")
+    before = tracker_writes()
     observation = (await build().run()).observations[0]
+    assert tracker_writes() == before
     other = observation.restamp.model_copy(
         update={"reason": f"{observation.restamp.reason} (another trace)"}
     )
