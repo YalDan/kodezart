@@ -1897,6 +1897,8 @@ PLANTED_READS = {
     "    return list(map(format_ticket_as_task, [one.ticket for one in specs]))\n",
     "payload_rendered_inside_a_tuple": ARM_IMPORT
     + "def f(spec: AuthoredSpec):\n    return str((spec.ticket, 1))\n",
+    "payload_rendered_inside_a_dict_display": ARM_IMPORT
+    + "def f(spec: AuthoredSpec):\n    return str({'k': spec.ticket})\n",
     "payload_copied_then_rendered": ARM_IMPORT
     + "def f(spec: AuthoredSpec):\n    return str(spec.ticket.model_copy())\n",
     # A collection filled by a container method, a store or an operator.
@@ -1933,6 +1935,24 @@ PLANTED_READS = {
     "text_field_named_in_a_template_placeholder": ARM_IMPORT + "import string\n\n"
     "def f(spec: TrackerSpec):\n"
     "    return string.Template('$body').substitute(spec.model_dump())\n",
+    "text_field_named_by_a_module_constant_to_a_reflector": ARM_IMPORT
+    + "import inspect\n\n_REFLECTED_FIELD_NAME = 'body'\n\n"
+    "def f(spec: TrackerSpec):\n"
+    "    return inspect.getattr_static(spec, _REFLECTED_FIELD_NAME)\n",
+    "text_field_named_in_an_include_set_and_listed": ARM_IMPORT
+    + "def f(spec: TrackerSpec):\n"
+    "    return list(spec.model_dump(include={'body'}).values())\n",
+    "text_field_named_in_a_template_handed_to_a_helper": ARM_IMPORT
+    + "def fill_template(template: str, values: object) -> object:\n"
+    "    return values\n\n"
+    "def f(spec: TrackerSpec):\n"
+    "    return fill_template('{body}', spec.model_dump())\n",
+    "text_field_named_to_a_partial_over_getattr": ARM_IMPORT + "import functools\n\n"
+    "def f(spec: TrackerSpec):\n"
+    "    return functools.partial(getattr, spec)('body')\n",
+    "methodcaller_mapped": ARM_IMPORT + "import operator\n\n"
+    "def f(specs: tuple[TrackerSpec, ...]):\n"
+    "    return list(map(operator.methodcaller('__getattribute__', 'body'), specs))\n",
     "methodcaller_applied": ARM_IMPORT + "import operator\n\n"
     "def f(spec: TrackerSpec):\n"
     "    return operator.methodcaller('__getattribute__', 'body')(spec)\n",
