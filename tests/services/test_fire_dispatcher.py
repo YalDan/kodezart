@@ -414,8 +414,12 @@ class TestClauseDrivenExclusion:
         report = await fire.run_pass()
         assert report.outcome is DispatchOutcome.fire_enqueued
         assert report.claimed_issue_key == "K-1"
-        assert len(queue.submissions) == 1
-        assert queue.submissions[0][0] == LANE
+        # A per-issue fire is submitted with no scope, so the router sends it
+        # to its origin's arm and never to the scope walk (KOD-846).
+        ((lane, submission),) = queue.submissions
+        assert lane == LANE
+        assert submission.scope is None
+        assert submission.issue_key == "K-1"
 
     async def test_clause_two_excludes_an_issue_not_carrying_the_state(self) -> None:
         """The paired negative, over a backend that ignored the scan filter.

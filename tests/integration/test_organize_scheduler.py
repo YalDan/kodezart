@@ -27,9 +27,9 @@ from tests.fakes import (
 )
 from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
-from tests.services.test_prompt_passes import HEARTBEAT_PASS, _config
+from tests.services.test_prompt_passes import HEARTBEAT_PASS, ORGANIZE_PASS, _config
 from tests.services.test_run_surface_lease import _Board
-from tests.tracker.conftest import CLAIMED_ISSUE
+from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 
@@ -110,13 +110,11 @@ async def test_scheduled_owner_prepares_native_children_and_reentry_is_idempoten
         recorder=RunRecorder(records={}, sinks={}),
         log=get_logger(__name__),
     )
-    grooming = [
-        entry
-        for entry in runtime.scheduler.passes
-        if entry.name == PromptKey.GROOMING_PASS.value
+    organize = [
+        entry for entry in runtime.scheduler.passes if entry.name == ORGANIZE_PASS
     ]
-    assert len(grooming) == 1
-    scheduled = grooming[0]
+    assert len(organize) == 1
+    scheduled = organize[0]
     assert scheduled.interval_seconds == config.grooming_pass_interval_seconds
     assert scheduled.timeout_seconds == config.grooming_pass_timeout_seconds
     assert scheduled.report is not None
@@ -228,12 +226,10 @@ async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatc
     async with app.router.lifespan_context(app):
         scheduler = app.state.pass_scheduler
         assert scheduler.running
-        grooming = next(
-            entry
-            for entry in scheduler.passes
-            if entry.name == PromptKey.GROOMING_PASS.value
+        organize = next(
+            entry for entry in scheduler.passes if entry.name == ORGANIZE_PASS
         )
-        await scheduler._tick(grooming)
+        await scheduler._tick(organize)
         assert "graph complete" in board.server.issues[CLAIMED_ISSUE].labels
         assert any(
             call["output_format"]["schema"]["title"] == "WriteBackFinding"
@@ -245,10 +241,28 @@ async def test_actual_lifespan_registers_and_runs_the_owner(tmp_path, monkeypatc
 
 
 # ---------------------------------------------------------------------------
-# An operation that declares organize scopes is worked scope by scope: the
-# per-issue dispatcher and the two legacy prompt passes scan whole boards and
-# are withheld (KOD-832).
+# A team a scope walks is worked scope by scope: the per-issue dispatcher and
+# the two legacy prompt passes scan whole boards and are withheld from it
+# (KOD-832), while a team no scope walks keeps all three (KOD-846).
 # ---------------------------------------------------------------------------
+
+
+def scope_only(operation):
+    """*operation* with a second scope row on its second repository.
+
+    The fixture's agent team is bound to a repository its one row does not
+    name, so it is a per-issue team; naming that repository too leaves no team
+    for the per-issue flow, which is the deployment these tests are about.
+    """
+    fields = operation.model_dump()
+    fields["organize_scopes"] = [
+        *fields["organize_scopes"],
+        {
+            "scope": {"kind": "issue", "key": APPROVED_ISSUE},
+            "repo_url": fields["repos"][1]["url"],
+        },
+    ]
+    return OperationConfig.model_validate(fields)
 
 
 async def _runtime_over(config, operation, board, tracker, prompts, ledger, *, forge):
@@ -309,11 +323,17 @@ async def test_a_scope_deployment_schedules_the_organize_tick_and_no_per_issue_p
     """
     config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
     runtime, logs = await _runtime_over(
-        config, operation, board, tracker, prompts, ledger, forge=FakeDeliveryProbe()
+        config,
+        scope_only(operation),
+        board,
+        tracker,
+        prompts,
+        ledger,
+        forge=FakeDeliveryProbe(),
     )
     assert [entry.name for entry in runtime.scheduler.passes] == [
         "supervisor",
-        PromptKey.GROOMING_PASS.value,
+        ORGANIZE_PASS,
         HEARTBEAT_PASS,
     ]
     assert runtime.lifecycle is None
@@ -406,7 +426,7 @@ async def test_preflight_asks_nothing_of_a_pass_a_scope_deployment_withholds(tmp
     )
     await verify_pass_preflight(
         config=config,
-        operation=operation,
+        operation=scope_only(operation),
         tracker=_RefusingScanner(),
         github_api=FakeDeliveryProbe(),
         prompts=_RefusingPrompts(),

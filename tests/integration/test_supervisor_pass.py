@@ -239,12 +239,21 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
     # Every other pass is as it was: the arm adds one registration and edits no
     # other. The two sets are named, because a declared roster and an undeclared
     # one no longer schedule the same passes: the roster withholds the per-issue
-    # machine and puts the organize tick and the heartbeat there instead, and
-    # both of those are registered before the observation arm runs.
+    # machine from the teams it walks and puts the organize tick and the
+    # heartbeat there instead, and both of those are registered before the
+    # observation arm runs. Without the dispatch probe the deployment keeps its
+    # second repository, whose team no row names, so that team keeps both
+    # session passes beside the scope passes (KOD-846); narrowed to the one
+    # repository the row names, every team is walked.
     per_issue = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
     if dispatching:
         per_issue |= {f"dispatch:{REPO}"}
-    scope_passes = {PromptKey.GROOMING_PASS.value, HEARTBEAT_PASS}
+    scope_passes = {"organize", HEARTBEAT_PASS}
+    if not dispatching:
+        scope_passes |= {
+            PromptKey.FIRE_PREP_PASS.value,
+            PromptKey.GROOMING_PASS.value,
+        }
     expected = scope_passes if raw_scopes else per_issue
     assert {entry.name for entry in registered} - {"supervisor"} == expected
 

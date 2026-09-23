@@ -27,7 +27,6 @@ from kodezart.services.tracker_boot import owned_mappings
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.organize import split_label_key
-from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -395,7 +394,7 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         }
         assert [entry.name for entry in app.state.pass_scheduler.passes] == [
             "supervisor",
-            PromptKey.GROOMING_PASS.value,
+            "organize",
             HEARTBEAT_PASS,
         ]
         # The observation tick records each lane's alarm under a configured

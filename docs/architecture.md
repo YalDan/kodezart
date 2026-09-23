@@ -29,10 +29,16 @@ All cross-layer dependencies point inward through protocols defined in
 (`main.py` `lifespan()`).
 Dialling the tracker consults no run-event table; a declared one is checked when
 the operation file loads. An operation that declares `[[organize_scopes]]`
-schedules the passes that read that one table — the organize tick, the scope
-heartbeat, the observation tick where a tracker is dialled and the audit where
-one is configured — and withholds the per-issue machine: the dispatch pass, the
-two remaining prompt passes and the lifecycle watcher are not built.
+schedules the passes that read that one table — the organize tick (registered
+as `organize`), the scope heartbeat, the observation tick where a tracker is
+dialled and the audit where one is configured. A team bound to a repository a
+scope row names is walked scope by scope and gets no per-issue pass over its
+board. Every other team of the same deployment keeps the per-issue machine
+exactly as before: the dispatch pass for its repository, both session passes
+(`fire_prep_pass` and `grooming_pass`) over its board, and the lifecycle
+watcher. Only when every team is walked is none of those built. The heartbeat
+submits on a lane of its own, so a per-issue fire never queues behind a scope
+run (KOD-846).
 The lifespan registers each acquired resource with an `AsyncExitStack`.
 Shutdown stops the scheduler and queue, drains lifecycle watchers and finishes
 their records, then closes their transports; the checkpointer retains its
@@ -594,8 +600,8 @@ do.
 
 Setting the approval label is what starts a scope run. The `scope_heartbeat`
 pass reads each `[[organize_scopes]]` row on the dispatch cadence and submits a
-scope run for every row that is approved and has no live job, onto the
-configured dispatch lane. It opens no session, takes no surface lease and makes
+scope run for every row that is approved and has no live job, onto a lane of
+its own: the configured dispatch lane followed by `:scope`. It opens no session, takes no surface lease and makes
 no tracker write: applying the label is somebody else's act and this pass only
 observes it. Liveness is the record store's answer for the scope on every lane,
 so a run submitted over HTTP is live to the pass and no second walk of that

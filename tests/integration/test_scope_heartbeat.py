@@ -17,6 +17,7 @@ import asyncio
 import structlog.testing
 
 from kodezart.composition.jobs import build_job_queue
+from kodezart.composition.organize import scope_lane
 from kodezart.config.job_queue import JobQueueSettings
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.handlers.agent_handler import AgentHandler
@@ -318,7 +319,7 @@ async def test_a_posted_run_is_live_to_the_heartbeat_across_lanes(monkeypatch):
     )
     await queue.start()
     try:
-        assert DEFAULT_LANE != HEARTBEAT_CONFIG.dispatch_lane
+        assert DEFAULT_LANE != scope_lane(HEARTBEAT_CONFIG)
         beat = standing_heartbeat(port, queue, operation)
         approve(port)
         posted = await posting(harness, queue)
@@ -343,7 +344,7 @@ async def test_a_posted_run_is_live_to_the_heartbeat_across_lanes(monkeypatch):
         assert submitted.outcome is HeartbeatOutcome.SUBMITTED
         assert {record.lane for record in queue.registry.records.values()} == {
             DEFAULT_LANE,
-            HEARTBEAT_CONFIG.dispatch_lane,
+            scope_lane(HEARTBEAT_CONFIG),
         }
         await drain(queue, submitted.job_id)
     finally:
@@ -401,7 +402,7 @@ async def test_a_post_beside_a_live_heartbeat_run_is_refused_at_its_entry(monkey
         (failure,) = errors(refused)
         assert failure.error_kind == "ScopeRunLiveError"
         assert submitted.job_id in failure.error
-        assert HEARTBEAT_CONFIG.dispatch_lane in failure.error
+        assert scope_lane(HEARTBEAT_CONFIG) in failure.error
         record = await queue.get(job_id=posted.job_id)
         assert record.outcome is WorkflowOutcome.engine_error
         # Nothing about the scope was read for the refused job, and it never

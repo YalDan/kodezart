@@ -843,8 +843,8 @@ it could not resolve. Nothing runs until you fix it.
 | `tracker_mappings_reconciled`, then `pass_scheduler_started` | A | Nothing. Go to step 8. |
 | `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER__TOKEN` (step 1). |
 | `tracker_not_configured` with `operation_config_present: false` | B | Set `KODEZART_OPERATION_CONFIG` (step 5). |
-| `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. With `organize_scopes_declared: true` this is not a gap at all: that deployment works scope by scope and withholds both passes on purpose. |
-| `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`, `organize_scopes_declared`. Supply whichever of the first three reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. With `organize_scopes_declared: true` the pass is withheld on purpose. |
+| `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. With `organize_scopes_declared: true` this is not a gap at all: every team of that deployment is walked scope by scope, and both passes are withheld on purpose. A deployment that also declares teams no scope walks does not log this line. |
+| `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`, `organize_scopes_declared`. Supply whichever of the first three reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. With `organize_scopes_declared: true` the pass is withheld on purpose, because every team is walked scope by scope. |
 | `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
 | `TrackerEnsureConflictError` | C | A value the operation *owns* exists with a conflicting definition, or two declared entries claim one backend value. Reconcile the workspace or the config by hand; boot will not alter either for you. |
@@ -895,8 +895,9 @@ judgment passes are a different shape: on their interval
 `KODEZART_GROOMING_PASS_INTERVAL_SECONDS`) the rendered prompt goes to an
 **agent session**, and the session does the work — so the session itself must
 be able to reach the tracker. Both passes register whenever the operation
-config declares at least one team and one repository and declares no
-`organize_scopes` (an empty roster, or a declared scope, logs
+config declares at least one team and one repository and some team no
+`organize_scopes` row walks, and they work those teams' boards only (an empty
+roster, or a deployment whose every team is walked, logs
 `prompt_passes_not_wired` naming which it was). What this process attaches to
 a session is the knowledge server it was granted
 (`KODEZART_KNOWLEDGE__SESSION_GRANTS`) and nothing else: it registers no tracker

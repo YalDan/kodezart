@@ -206,8 +206,13 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     # and read by dispatch (KOD-169).  ``scope`` is the house pair: the
     # declared narrowing joined for prose, or the absent marker for the
     # whole-board default — which renders nothing new, so an unscoped
-    # config's roster is byte-identical to before the field existed.
+    # config's roster is byte-identical to before the field existed.  Only
+    # the teams the per-issue flow works are listed: the two session passes
+    # that read this roster are that flow's, and a team a scope walks is not
+    # theirs to scan (KOD-846).  With no scope row that is every team, in
+    # declaration order, so the render is exactly what it was.
     several_repos = len(config.repos) > 1
+    per_issue = [config.teams[key] for key in config.per_issue_teams()]
     _bind_absentable(
         bindings,
         "teams",
@@ -225,9 +230,9 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                 "scope": ", ".join(entry.scope) if entry.scope else None,
                 "scope_absent": None if entry.scope else True,
             }
-            for entry in config.teams.values()
+            for entry in per_issue
         ],
-        absent=not config.teams,
+        absent=not per_issue,
     )
     # Present exactly when some pass must RECORD routes: an unbound team
     # beside a real repository choice.  The fire-prep template renders its
@@ -239,8 +244,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         "recorded_routing",
         True,
         absent=not (
-            several_repos
-            and any(entry.repository is None for entry in config.teams.values())
+            several_repos and any(entry.repository is None for entry in per_issue)
         ),
     )
     # An id alone renders as an opaque token no reader can resolve, so

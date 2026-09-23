@@ -886,6 +886,29 @@ class OperationConfig(OperationModel):
             if entry.repository == repo_url or (entry.repository is None and implicit)
         )
 
+    def scope_walked_teams(self) -> tuple[str, ...]:
+        """Every team a scope walk works, in declaration order.
+
+        A team bound — by :meth:`teams_bound_to`, the one binding rule — to a
+        repository some ``organize_scopes`` row names.  Read off the declared
+        rows and the existing binding alone, with no member of its own: the
+        rows already say which repositories are walked, and a team fires
+        into the repository it is bound to (KOD-768).
+        """
+        walked_repos = {row.repo_url for row in self.organize_scopes}
+        walked = {key for url in walked_repos for key in self.teams_bound_to(url)}
+        return tuple(key for key in self.teams if key in walked)
+
+    def per_issue_teams(self) -> tuple[str, ...]:
+        """Every team the per-issue flow works, in declaration order.
+
+        Every declared team :meth:`scope_walked_teams` does not name, so the
+        two flows never work the same board (KOD-846).  With no scope row
+        that is every team, exactly as before.
+        """
+        walked = set(self.scope_walked_teams())
+        return tuple(key for key in self.teams if key not in walked)
+
     def teams_scanned_by(self, repo_url: str) -> tuple[str, ...]:
         """Every team key whose issues *repo_url*'s dispatch pass may claim.
 
@@ -896,15 +919,17 @@ class OperationConfig(OperationModel):
         and the recorded-repository clause keeps the claims disjoint
         (KOD-169).  With one repository there is no unbound team to add:
         the single binding is implicit and total, and
-        :meth:`teams_bound_to` already answers with every team.
+        :meth:`teams_bound_to` already answers with every team.  A team a
+        scope walk works is never scanned (KOD-846).
         """
+        per_issue = set(self.per_issue_teams())
         if len(self.repos) <= 1:
-            return self.teams_bound_to(repo_url)
+            return tuple(k for k in self.teams_bound_to(repo_url) if k in per_issue)
         bound = set(self.teams_bound_to(repo_url))
         return tuple(
             key
             for key, entry in self.teams.items()
-            if key in bound or entry.repository is None
+            if key in per_issue and (key in bound or entry.repository is None)
         )
 
     def team_keys_for_repo(self, repo_url: str) -> tuple[str, ...]:

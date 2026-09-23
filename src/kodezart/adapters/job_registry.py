@@ -38,7 +38,7 @@ class InMemoryJobRegistry:
         """Every job addressed at *scope* that is not TERMINAL, oldest first.
 
         Whichever lane each was submitted on: a run posted over HTTP onto the
-        default lane and a run the heartbeat submitted onto the dispatch lane
+        default lane and a run the heartbeat submitted onto its scope lane
         are two walks over one scope, and a read narrowed to one lane would
         see neither of them from the other.
         """

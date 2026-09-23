@@ -8,7 +8,7 @@ submission. Nothing here opens a session, and the assertions say so.
 
 import pytest
 
-from kodezart.composition.organize import build_scope_heartbeat
+from kodezart.composition.organize import build_scope_heartbeat, scope_lane
 from kodezart.config.app import AppConfig
 from kodezart.config.organize import OrganizeSettings
 from kodezart.config.write_back import WriteBackSettings
@@ -829,7 +829,7 @@ async def test_the_built_heartbeat_submits_every_declared_standing_scope() -> No
         (FIRST, HeartbeatOutcome.SUBMITTED),
         (SECOND, HeartbeatOutcome.SUBMITTED),
     ]
-    assert [lane for lane, _ in queue.submissions] == [config.dispatch_lane] * 2
+    assert [lane for lane, _ in queue.submissions] == [scope_lane(config)] * 2
     requests = [request for _, request in queue.submissions]
     assert [request.scope for request in requests] == [FIRST, SECOND]
     assert [request.repo_url for request in requests] == [repo.url] * 2

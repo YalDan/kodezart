@@ -23,12 +23,20 @@ concerns.
   `ScopedExecutionUnavailableError` names the absence of a scoped arm or of a
   delivery reader for the origin. The README's stale paragraph about claim
   acquisition being refused is deleted; claim acquisition is implemented.
-- An operation that declares `[[organize_scopes]]` schedules the organize tick
-  and the audit pass only. The periodic dispatch pass, the fire-prep and
-  grooming prompt passes and the lifecycle watcher are withheld, and the
-  existing `scheduled_passes_not_wired` and `prompt_passes_not_wired` events
-  each carry a new `organize_scopes_declared` boolean saying so. Boot probes no
-  gate signal and renders no template for a withheld pass.
+- `[[organize_scopes]]` withholds the per-issue machine per team (KOD-846). A
+  team bound to a repository a row names is walked scope by scope and gets no
+  periodic dispatch pass, fire-prep or grooming prompt pass over its board.
+  Every other team of the same deployment keeps all three and the lifecycle
+  watcher, exactly as without a row. When every team is walked, the existing
+  `scheduled_passes_not_wired` and `prompt_passes_not_wired` events each carry
+  a new `organize_scopes_declared` boolean saying so, and boot probes no gate
+  signal and renders no template for a withheld pass.
+  `dispatch_pass_unbound_repository` carries `scope_walked_teams`.
+- The organize tick is registered with the pass scheduler as `organize`, so
+  `grooming_pass` stays the per-issue grooming session's name; its runs keep the
+  grooming record identity. The `scope_heartbeat` pass submits on
+  `KODEZART_DISPATCH_LANE` followed by `:scope`, so a per-issue fire never
+  queues behind a scope run.
 - `[run_event_states]` is optional in an operation file, and dialling the
   tracker no longer requires it. A declared table is still total at load time.
   Nothing on the scope path reads the table: a run event's comment is rendered

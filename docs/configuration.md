@@ -233,7 +233,7 @@ which was missing in the boot log.
 | `KODEZART_CONTENT_SCAN_TIMEOUT_SECONDS` | `float` | `120.0` | >= 1.0 | Wall-clock bound on one judgment content-scan session. Exceeding it is TIMEOUT, which BLOCKS. |
 | `KODEZART_CONTENT_AUDIT_WORKING_DIR` | `str` | `/tmp/kodezart-content-audit` |  | Working directory the audit session runs in. Deliberately not the cloned target repository: an auditor whose working directory is attacker-writable is not an auditor. |
 | `KODEZART_DISPATCH_HOLDER` | `str` | `kodezart` | min length 1 | Identity this deployment holds atomic claims under. Names the PROCESS, not the tracker account: two deployments sharing one workspace must carry different values or they cannot race. Fire claims only: no write lease is held under it or composed from it. |
-| `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane tracker-originated dispatches are enqueued on. |
+| `KODEZART_DISPATCH_LANE` | `str` | `tracker` |  | Fire-queue lane per-issue dispatches are enqueued on. The scope heartbeat submits on this value followed by `:scope`. |
 | `KODEZART_DISPATCH_RATE_LIMIT_COOLDOWN_SECONDS` | `float` | `1800.0` | >= 60.0, <= 86400.0 | Seconds the dispatch lane fires nothing after a run dies on a provider rate-limit rejection. The limit belongs to the account, not to the issue, so the next-ranked candidate would meet it unchanged: measured 2026-09-01, a run that died at 17:57 on a rejection was re-fired whole four minutes later. Lifted by the clock alone — nothing on the board clears a rate limit — and the lower bound keeps a cooldown longer than the tick that would otherwise re-fire. |
 | `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` | `float` | `300.0` | >= 10.0, <= 3600.0 | Seconds between approved-fire dispatch passes. Dispatch is single-winner-per-pass, so throughput IS the interval: the upper bound is what stops a loaded queue sitting idle for a working day. |
 | `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` | `float` | `240.0` | >= 10.0, <= 3600.0 | Seconds one dispatch tick may take before it is abandoned. The tick is deterministic and model-free — a paged tracker scan, a claim, and the git plumbing that builds a base — so it belongs inside its own cadence, and the default leaves room for retries while still naming a hang before the next tick is due. On expiry the tick is cancelled and reported as timed out; the loop keeps its cadence and the next tick runs. The upper bound is the dispatch interval's own, so a budget can never outlast the slowest cadence that interval admits. |
@@ -789,14 +789,26 @@ scope's verified audit summary is reported on. It is optional because a
 deployment that configures no audit has nowhere to report; a configured audit
 refuses naming `organize_scopes.report_issue_key` on a row that omits it.
 
-Declaring `[[organize_scopes]]` also withholds the per-issue machine. Such a
-deployment is worked scope by scope, and the periodic dispatch pass and the two
-remaining prompt passes scan whole boards, so none of the three is scheduled and
-no lifecycle watcher is built; `scheduled_passes_not_wired` and
-`prompt_passes_not_wired` each carry `organize_scopes_declared: true` so the
-reason is in the log rather than inferred from an empty schedule. Boot also asks
-nothing of those passes: no gate signal they configure is probed and no template
-they would send is rendered.
+Declaring `[[organize_scopes]]` also withholds the per-issue machine from the
+teams it walks, per team. A team bound to a repository a row names is worked
+scope by scope; the periodic dispatch pass and the two remaining prompt passes
+scan whole boards, so none of the three works that team's board. Every other
+team keeps all three, in the same deployment, exactly as without a row: its
+repository's dispatch pass, `fire_prep_pass` and `grooming_pass` over its board
+alone, and the lifecycle watcher. The rule reads the rows and the existing team
+binding and nothing else, which has limits. A per-issue team cannot share a
+repository with a scope. With one declared repository every team is bound to
+it, so every team is walked. An unbound team beside several repositories stays
+per-issue. A repository whose bound teams are all walked gets no dispatch pass,
+and `dispatch_pass_unbound_repository` names them in `scope_walked_teams`.
+
+When every team is walked, no per-issue pass is scheduled and no lifecycle
+watcher is built; `scheduled_passes_not_wired` and `prompt_passes_not_wired`
+each carry `organize_scopes_declared: true` so the reason is in the log rather
+than inferred from an empty schedule. Boot then asks nothing of those passes:
+no gate signal they configure is probed and no template they would send is
+rendered. A deployment that also declares per-issue teams logs neither line,
+probes their signals and renders their templates.
 
 `[[organize_scopes]]` rows are the standing scopes: each one is groomed before
 approval by the organize tick on the grooming cadence, and submitted as a scope
@@ -804,7 +816,10 @@ run by the `scope_heartbeat` pass once it carries `scope_labels.approved`. That
 pass takes the place of the withheld dispatch scan and reuses its knobs —
 `KODEZART_DISPATCH_PASS_INTERVAL_SECONDS` and
 `KODEZART_DISPATCH_PASS_TIMEOUT_SECONDS` — and submits onto
-`KODEZART_DISPATCH_LANE`. It adds no configuration field of its own, opens no
+`KODEZART_DISPATCH_LANE` followed by `:scope`, a lane of its own, so a per-issue
+fire never waits behind a scope run. The organize tick is registered as
+`organize`, leaving `grooming_pass` to the per-issue grooming session. The
+heartbeat adds no configuration field of its own, opens no
 session and writes nothing to the tracker. A row that is not approved is
 reported as unapproved and never submitted; a row whose run is live on any lane
 is not submitted again; a row whose last run in this process ended with every

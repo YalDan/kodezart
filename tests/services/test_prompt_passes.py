@@ -17,6 +17,7 @@ import pytest
 import structlog.testing
 
 from kodezart.adapters.toml_operation_config import load_operation_config
+from kodezart.composition.organize import scope_lane
 from kodezart.composition.passes import (
     DispatchRuntime,
     build_dispatch_runtime,
@@ -189,7 +190,6 @@ async def _registrations(
     runner = FakeAgentRunner(events=[])
     return (
         await build_prompt_passes(
-            organize=None,
             recorder=RunRecorder(records={}, sinks={}),
             config=_config(tmp_path, **overrides),
             operation=declared,
@@ -210,6 +210,11 @@ DIAGNOSIS = "auth_insufficient_scope: this credential cannot read those"
 #: than imported: the name is what an operator reads in a log and what a
 #: later pass-set assertion enumerates, so a rename must redden this too.
 HEARTBEAT_PASS = "scope_heartbeat"
+
+#: What the organize tick is registered under, spelled here for the same
+#: reason: ``grooming_pass`` stays the per-issue grooming session's name in a
+#: deployment that runs both flows, so the tick carries a name of its own.
+ORGANIZE_PASS = "organize"
 
 #: The deployment half of a standing-scope operation: the owner bounds both
 #: passes require, and no gate on either prompt pass, so what the schedule
@@ -524,6 +529,8 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
     assert heartbeat.timeout_seconds == config.dispatch_pass_timeout_seconds
     assert heartbeat.report is None
     assert registered.count(HEARTBEAT_PASS) == 1
+    assert registered.count(ORGANIZE_PASS) == 1
+    # The per-issue grooming session of the team no scope walks, once.
     assert registered.count(PromptKey.GROOMING_PASS.value) == 1
 
     # The REGISTERED callable, ticked: what the scheduler would reach is the
@@ -535,7 +542,7 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
     (row,) = operation.organize_scopes
     assert await heartbeat.run(FIXTURE_EPOCH) is PassRun.RAN
     ((lane, request),) = queue.submissions
-    assert lane == config.dispatch_lane
+    assert lane == scope_lane(config)
     assert request.scope == row.scope == STANDING_SCOPE
     assert request.repo_url == row.repo_url
     # And the pass is the same instance across ticks: its own memory of the

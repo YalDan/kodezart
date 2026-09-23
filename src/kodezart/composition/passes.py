@@ -51,7 +51,6 @@ from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
-from kodezart.services.organize_tick import OrganizeTick
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
@@ -78,6 +77,12 @@ _DISPATCH_NAME = "dispatch"
 #: are not a per-repository roster and a pass per repository would ask the
 #: same approval question once per binding that repository happens to hold.
 _HEARTBEAT_NAME = "scope_heartbeat"
+
+#: What the organize tick is registered as.  Its own name rather than the
+#: grooming row's: ``grooming_pass`` stays the per-issue grooming session's
+#: name in a deployment that runs both flows, and two passes under one name
+#: would be one line in the log for two different things.
+_ORGANIZE_NAME = "organize"
 
 
 @dataclass(frozen=True)
@@ -256,12 +261,9 @@ def absent_roster(operation: OperationConfig) -> tuple[str, ...]:
 def runs_scope_flow(operation: OperationConfig) -> bool:
     """Whether this operation declares scopes the organize owner walks.
 
-    Such an operation is worked scope by scope: a scope is approved, the
-    organize step maps its workflow, and the walker runs the lanes. The
-    per-issue dispatcher and the two remaining prompt passes scan whole boards
-    and are no part of that flow — declaring the one team and the one
-    repository a scope run needs would otherwise schedule all three over that
-    team's entire board.
+    What it decides is the scope flow's own machinery: the observation tick,
+    the organize tick and the heartbeat.  A scope is approved, the organize
+    step maps its workflow, and the walker runs the lanes.
 
     Read off the existing roster rather than a switch of its own: a lane cannot
     fire without the criteria mandate's terminal marker, which only an organize
@@ -270,15 +272,30 @@ def runs_scope_flow(operation: OperationConfig) -> bool:
     return bool(operation.organize_scopes)
 
 
+def runs_per_issue_flow(operation: OperationConfig) -> bool:
+    """Whether some team of this operation is worked issue by issue.
+
+    Every team when no scope row is declared — whatever the teams, so an
+    operation without scopes takes exactly the per-issue path it always did —
+    and otherwise every team no scope walks (see
+    :meth:`OperationConfig.per_issue_teams`).  The dispatch pass, its gate
+    probe and the two session passes all read this one answer, so a team a
+    scope walks gets none of them while every other team keeps all three in
+    the same deployment (KOD-846).
+    """
+    return not runs_scope_flow(operation) or bool(operation.per_issue_teams())
+
+
 def session_passes_wire(operation: OperationConfig) -> bool:
     """Whether the two legacy prompt passes run as agent sessions here.
 
     Both conditions, named once: a roster a template could not render over, and
-    a deployment that works scope by scope. Three sites ask the same question —
-    the wiring, the gate probe and the render preflight — and a second copy of
-    it is a second opinion about which passes this deployment schedules.
+    no team left for the per-issue flow to work. Three sites ask the same
+    question — the wiring, the gate probe and the render preflight — and a
+    second copy of it is a second opinion about which passes this deployment
+    schedules.
     """
-    return not runs_scope_flow(operation) and not absent_roster(operation)
+    return runs_per_issue_flow(operation) and not absent_roster(operation)
 
 
 def _record_kind_for(key: PromptKey) -> RunKind:
@@ -307,37 +324,19 @@ async def build_prompt_passes(
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
-    organize: OrganizeTick | None,
 ) -> list[ScheduledPass]:
-    """Bind the configured Organize owner and remaining legacy prompt passes.
+    """Bind the per-issue flow's two prompt passes.
 
-    Organize uses the existing grooming cadence and report identity, with its
-    own fresh scope reads and explicit repository bindings, and is scheduled
-    FIRST so a deployment that keeps nothing else keeps it.
-
-    The remaining prompt rows belong to the per-issue flow: they scan whole
-    boards from the legacy team/repository roster and use their configured
+    Both rows belong to the per-issue flow: they scan the boards of the teams
+    no scope walks, from the team/repository roster, and use their configured
     signal gates. They wire only where :func:`session_passes_wire` holds — an
-    operation that declares ``organize_scopes`` gets the organize tick and
-    neither of them. Preflight validates exactly those active rows.
+    operation whose every team a scope walks gets neither of them. Preflight
+    validates exactly those active rows.
     """
     log: BoundLogger = get_logger(__name__)
     schedule = prompt_pass_schedule(config)
-    scheduled: list[ScheduledPass] = []
-    if organize is not None:
-        key = PromptKey.GROOMING_PASS
-        row = schedule.pop(key)
-        scheduled.append(
-            ScheduledPass(
-                name=key.value,
-                interval_seconds=row.interval_seconds,
-                timeout_seconds=row.timeout_seconds,
-                run=organize.run,
-                report=run_report(recorder, _record_kind_for(key), key.value),
-            )
-        )
     absent = absent_roster(operation)
-    withheld = runs_scope_flow(operation)
+    withheld = not runs_per_issue_flow(operation)
     if absent or withheld:
         # Two reasons, one event, one field each: a roster a template could not
         # render over, and a deployment whose work is a scope walk. An operator
@@ -346,18 +345,18 @@ async def build_prompt_passes(
             "prompt_passes_not_wired",
             operation_config_present=True,
             absent=list(absent),
-            organize_scopes_declared=withheld,
+            organize_scopes_declared=runs_scope_flow(operation),
         )
-        return scheduled
+        return []
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
     # Read only where a gate will actually be built: naming the operation's
     # teams REFUSES when it declares none, and a deployment whose passes are
     # all ungated has no scan for that refusal to be about.
     gated = dialled is not None and any(row.signals for row in schedule.values())
-    team_keys = operation.team_keys() if gated else ()
+    team_keys = operation.per_issue_teams() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
-    return scheduled + [
+    return [
         ScheduledPass(
             name=key.value,
             interval_seconds=row.interval_seconds,
@@ -485,7 +484,18 @@ async def build_dispatch_passes(
     dispatchers: list[tuple[RepoEntry, FireDispatcher]] = []
     for repo in operation.repos:
         if not operation.teams_scanned_by(repo.url):
-            await log.ainfo("dispatch_pass_unbound_repository", repo_url=repo.url)
+            # A repository whose bound teams a scope walks is not unbound, and
+            # the event says so rather than leave an operator to read it as a
+            # binding typo.
+            await log.ainfo(
+                "dispatch_pass_unbound_repository",
+                repo_url=repo.url,
+                scope_walked_teams=[
+                    key
+                    for key in operation.scope_walked_teams()
+                    if key in operation.teams_bound_to(repo.url)
+                ],
+            )
             continue
         dispatchers.append(
             (
@@ -577,9 +587,10 @@ async def _verify_wired_gates(
     Exactly the gates about to be wired, on the same predicates the
     builders themselves use: a signal configured for a pass this deployment
     does not schedule is not a capability it needs, and refusing boot over
-    one would hold a deployment hostage to a knob nothing reads. A deployment
-    that declares ``organize_scopes`` schedules neither session pass and no
-    per-issue dispatch pass, so it needs none of their signals.
+    one would hold a deployment hostage to a knob nothing reads. A team a
+    scope walks gets neither session pass and no per-issue dispatch pass, so
+    a deployment whose every team is walked needs none of their signals,
+    while one that also declares per-issue teams needs them for those.
 
     Every refused signal is named at once, with the passes it gates and the
     backend's own diagnosis, because an operator fixing one scope at a time
@@ -594,7 +605,7 @@ async def _verify_wired_gates(
     )
     if (
         github_api is not None
-        and not runs_scope_flow(operation)
+        and runs_per_issue_flow(operation)
         and any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
     ):
         wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
@@ -739,10 +750,11 @@ async def verify_pass_preflight(
     in hand, the gate probe is a round trip, and the renders are local.
 
     The render half applies to exactly the passes that will WIRE.  An
-    operation with no roster, and one that declares ``organize_scopes``,
+    operation with no roster, and one whose every team a scope walks,
     schedules none of them (see :func:`build_prompt_passes`), and rendering a
     template it will never send would refuse a boot over a hole nothing
-    reaches.
+    reaches.  An operation that also declares per-issue teams renders both,
+    over those teams.
     """
     # Called for its refusals, which are the point: a partial Organize
     # configuration must not reach a scheduler. Its answer is read nowhere
@@ -803,15 +815,16 @@ async def build_dispatch_runtime(
     """
     # Cadence is scheduler configuration and nothing else. Four
     # states, none silent: no tracker, no operation config, no delivery probe
-    # to answer "is this issue already delivered?", or an operation that works
-    # scope by scope and has no use for a pass that scans a whole board — and
-    # the passes do not run, named, never inferred from an empty schedule.
+    # to answer "is this issue already delivered?", or an operation whose
+    # every team a scope walks and has no use for a pass that scans a whole
+    # board — and the passes do not run, named, never inferred from an empty
+    # schedule.
     built: DispatchPasses | None = None
     if (
         dialled is not None
         and operation is not None
         and github_api is not None
-        and not runs_scope_flow(operation)
+        and runs_per_issue_flow(operation)
     ):
         built = await build_dispatch_passes(
             config=config,
@@ -923,6 +936,34 @@ async def build_dispatch_runtime(
                     signal.value for signal in config.grooming_pass_gate_signals
                 ],
             )
+        # The organize tick on the grooming cadence and budget and under the
+        # grooming report identity, registered under a name of its own so the
+        # per-issue grooming session below keeps ``grooming_pass``.
+        organize = build_organize_tick(
+            config=config,
+            operation=operation,
+            tracker=None if dialled is None else dialled.tracker,
+            runner=runner,
+            workspace=workspace,
+            git=git,
+            prompts=prompts,
+            skills=skills,
+            gate=gate,
+        )
+        if organize is not None:
+            scheduled.append(
+                ScheduledPass(
+                    name=_ORGANIZE_NAME,
+                    interval_seconds=config.grooming_pass_interval_seconds,
+                    timeout_seconds=config.grooming_pass_timeout_seconds,
+                    run=organize.run,
+                    report=run_report(
+                        recorder,
+                        _record_kind_for(PromptKey.GROOMING_PASS),
+                        PromptKey.GROOMING_PASS.value,
+                    ),
+                )
+            )
         scheduled.extend(
             await build_prompt_passes(
                 config=config,
@@ -932,17 +973,6 @@ async def build_dispatch_runtime(
                 runner=runner,
                 skills=skills,
                 recorder=recorder,
-                organize=build_organize_tick(
-                    config=config,
-                    operation=operation,
-                    tracker=None if dialled is None else dialled.tracker,
-                    runner=runner,
-                    workspace=workspace,
-                    git=git,
-                    prompts=prompts,
-                    skills=skills,
-                    gate=gate,
-                ),
             ),
         )
         # The standing scopes' own pass, beside the tick that grooms them:

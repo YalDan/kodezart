@@ -14,7 +14,6 @@ from kodezart.composition import organize as organize_composition
 from kodezart.composition import supervisor as supervisor_composition
 from kodezart.core.errors import OperationConfigError
 from kodezart.types.domain.operation import OperationConfig, OrganizeScopeBinding
-from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.integration.test_audit_scheduler import dependencies, schedule_over
 from tests.prompts.test_operation_config import raw_example, write_toml
@@ -31,11 +30,7 @@ STRAY = ScopeRef(kind=ScopeKind.PROJECT, key="stray-project")
 #: the call site rather than at the definition, because the question is what
 #: THIS composition hands over.
 COMPOSED = {
-    "organize": (
-        organize_composition,
-        "OrganizeTarget",
-        PromptKey.GROOMING_PASS.value,
-    ),
+    "organize": (organize_composition, "OrganizeTarget", "organize"),
     "audit": (audit_composition, "AuditTarget", "audit"),
     "supervisor": (supervisor_composition, "SupervisorPass", "supervisor"),
 }

@@ -58,10 +58,14 @@ without the member it stands over. This page prints no config block of its own,
 because a copy here is a copy that goes stale.
 
 Two things about that file are worth saying twice. Declaring
-`[[organize_scopes]]` is what makes a deployment a scope deployment: the
-per-issue dispatch pass and the two remaining prompt passes scan whole boards
-and are not scheduled at all. And declaring `[[organize_mandates]]` without an
-`[[organize_scopes]]` row is a partial organize configuration, refused at boot.
+`[[organize_scopes]]` is what makes a team a scope team: a team bound to a
+repository a row names is walked, and the per-issue dispatch pass and the two
+remaining prompt passes, which scan whole boards, are not scheduled over its
+board. That file binds its one team to its one repository, so nothing per-issue
+is scheduled at all. A deployment that also declares teams on repositories no
+row names keeps every per-issue pass for those teams, exactly as before. And
+declaring `[[organize_mandates]]` without an `[[organize_scopes]]` row is a
+partial organize configuration, refused at boot.
 
 ## The environment
 
@@ -95,12 +99,14 @@ current name; every retired spelling is refused rather than ignored.
   and grooming session passes are withheld, for the same reason.
 - `pass_scheduler_started` — the scheduler is running, naming each pass it
   carries and that pass's interval. On a scope deployment that is the organize
-  tick, the standing scopes' heartbeat, the observation tick that watches each
-  lane's run shape, and the audit pass where one is configured.
+  tick (`organize`), the standing scopes' heartbeat, the observation tick that
+  watches each lane's run shape, and the audit pass where one is configured.
 
-Both "not wired" lines are expected here, and a boot that does NOT carry them on
-a scope deployment is a boot that just scheduled the per-issue machine over your
-team's whole board.
+Both "not wired" lines are expected when every team is walked, as with the
+shipped file, and a boot that does NOT carry them there is a boot that just
+scheduled the per-issue machine over your team's whole board. A deployment that
+also declares other teams logs neither line and schedules their per-issue
+passes beside the scope passes.
 
 ## Starting a run
 
