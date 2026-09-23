@@ -10,10 +10,13 @@ Read off the shipped operation file and rendered through the registry the way
 the owner renders it, so a row repointed at another role reddens here.
 """
 
+import json
+
 import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.domain.organize import stage_rows
+from kodezart.types.domain.agent import ORGANIZE_ADMISSION_SCHEMA
 from kodezart.types.domain.organize import MandateKind
 from kodezart.types.domain.prompts import PromptKey
 from tests.integration.test_scope_deployment import SCOPE_EXAMPLE
@@ -132,3 +135,17 @@ def test_the_run_stage_rubric_states_the_implementation_test(set_name: str) -> N
         rendered = rendered_around(set_name, wrapper, rubric)
         for claim in IMPLEMENTATION_TEST:
             assert claim in rendered, (wrapper.value, claim)
+
+
+def test_the_admission_schema_defines_acceptance_by_the_supplied_rubric() -> None:
+    """The schema every row's session receives states no accept condition.
+
+    Acceptance arrives in the rubric: the pre-approval row's rubric excludes
+    buildability, so the schema's accepting verdict may not define it. This
+    is a scan of the schema alone, apart from the rendered wrappers, which
+    legitimately say "can be built" inside the rubric's own exclusion.
+    """
+    schema = json.dumps(ORGANIZE_ADMISSION_SCHEMA)
+    for claim in (*IMPLEMENTATION_TEST, "can be built"):
+        assert claim not in schema, claim
+    assert "the supplied mandate rubric" in schema
