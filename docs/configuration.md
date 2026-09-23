@@ -165,7 +165,12 @@ anchor would, never earlier. A counter must exceed its configured limit.
 
 The supervisor tick observes two things: each declared scope's ready lanes
 and finished members, and for each the lane tally arm of `TALLY_UNMOVED`; and
-for each ready lane the age of every open lapse question it holds. Per lane
+for each ready lane, and each lane held on its own open question, the age of
+every open lapse question it holds. It reads each scope without the walker's
+stage barriers, so a scope whose walk is held on an open decision is still
+observed: a lane its lapse question classified for decision has its questions
+aged over its whole criterion subtree, and its tally is not observed, because
+it is waiting on a person. Per lane
 it reads the run-state record and the one alarm record at each address,
 composes what the address should hold, and writes only when the two differ. It moves no state and opens no session. It
 is registered only when the operation declares `[[organize_scopes]]` rows and

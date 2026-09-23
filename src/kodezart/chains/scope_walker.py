@@ -12,20 +12,36 @@ from kodezart.domain.issue_tree import (
     index_issue_tree,
 )
 from kodezart.domain.topology import plan_topology
-from kodezart.services.scope_planning import read_scope_plan
-from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.scope_ready import ScopeReadyLane, ScopeReadySet
+from kodezart.services.scope_planning import read_scope_facts, read_scope_plan
+from kodezart.types.domain.scope import ScopeKind, ScopePlanSnapshot, ScopeRef
+from kodezart.types.domain.scope_ready import (
+    ScopeHeldMember,
+    ScopeReadyLane,
+    ScopeReadySet,
+)
 from kodezart.types.domain.tracker import TrackerIssue
 
 
+async def _read_plan(
+    *, ref: ScopeRef, tracker: TrackerPort, stage_barriers: bool
+) -> ScopePlanSnapshot:
+    """The scope's plan, with or without the walker's named stage barriers."""
+    if stage_barriers:
+        return await read_scope_plan(ref=ref, tracker=tracker)
+    return await read_scope_facts(ref=ref, tracker=tracker)
+
+
 async def _read_tree(
-    *, root: str, tracker: TrackerPort, ref: ScopeRef
+    *, root: str, tracker: TrackerPort, ref: ScopeRef, stage_barriers: bool
 ) -> dict[str, TrackerIssue]:
-    # A consulted descendant tree is an issue scope in its own right. Apply
-    # the same named stage barriers there: an outside-filter open decision
-    # is not completed merely because record issues carry zero criteria.
-    tree = await read_scope_plan(
-        ref=ScopeRef(kind=ScopeKind.ISSUE, key=root), tracker=tracker
+    # A consulted descendant tree is an issue scope in its own right. Where
+    # the read applies the named stage barriers it applies them there too:
+    # an outside-filter open decision is not completed merely because record
+    # issues carry zero criteria.
+    tree = await _read_plan(
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=root),
+        tracker=tracker,
+        stage_barriers=stage_barriers,
     )
     return index_issue_tree(
         root=root,
@@ -34,7 +50,9 @@ async def _read_tree(
     )
 
 
-async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReadySet:
+async def read_scope_ready(
+    *, ref: ScopeRef, tracker: TrackerPort, stage_barriers: bool = True
+) -> ScopeReadySet:
     """Recompute one ready set without dispatch, writes or merge observations.
 
     Candidate identity stays native scope membership. The complete
@@ -43,9 +61,17 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
     therefore never reports itself at rest while a criterion under one of its
     members is open, including one a container filter cannot reach.
     Repeated reads detect movement; they do not claim a transactional lease.
+
+    With *stage_barriers* on, as the walker reads, the scope, each consulted
+    descendant tree and the final re-read all go through the named stage
+    barriers, so a scope holding an open decision refuses. With them off, as
+    the supervisor reads, the same three reads take membership and
+    dependencies alone, and the members classified for decision are carried
+    in ``held`` with the criteria beneath them; the rest of the arithmetic is
+    the same.
     """
     tracker.require_issue_classification_reads()
-    plan = await read_scope_plan(ref=ref, tracker=tracker)
+    plan = await _read_plan(ref=ref, tracker=tracker, stage_barriers=stage_barriers)
     members = {issue.issue_key: issue for issue in plan.scope.issues}
     facts = dict(members)
     trees: dict[str, dict[str, TrackerIssue]] = {}
@@ -53,7 +79,9 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
     for key, issue in members.items():
         if issue.parent_key in members:
             continue
-        tree = await _read_tree(root=key, tracker=tracker, ref=ref)
+        tree = await _read_tree(
+            root=key, tracker=tracker, ref=ref, stage_barriers=stage_barriers
+        )
         for child_key, child in tree.items():
             if child_key in facts and facts[child_key] != child:
                 raise ScopeReadError("overlapping subtree facts changed", ref=ref)
@@ -66,8 +94,26 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
     approved: dict[str, bool] = {}
     gaps: dict[str, tuple[TrackerIssue, ...]] = {}
     closed: dict[str, TrackerIssue] = {}
+    held: list[ScopeHeldMember] = []
     for key, issue in members.items():
-        if "criterion" in issue.issue_labels or issue.issue_labels & RECORD_KINDS:
+        if "criterion" in issue.issue_labels:
+            continue
+        if issue.issue_labels & RECORD_KINDS:
+            if not stage_barriers and "decision" in issue.issue_labels:
+                # A member its own question classified for decision is a
+                # record to the walker, which walks nothing under it. Its
+                # criteria are read by the same closure, from its children,
+                # because the closure refuses a record issue with children.
+                held.append(
+                    ScopeHeldMember(
+                        issue=issue,
+                        criteria=tuple(
+                            row
+                            for child in closure.children.get(key, ())
+                            for row in closure.roster(child.issue_key)
+                        ),
+                    )
+                )
             continue
         approved[key] = await tracker.execution_approved(issue_key=key)
         if approved[key]:
@@ -94,9 +140,17 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
         blocking_issue_keys=blocking,
     )
     for key, tree in trees.items():
-        if await _read_tree(root=key, tracker=tracker, ref=ref) != tree:
+        if (
+            await _read_tree(
+                root=key, tracker=tracker, ref=ref, stage_barriers=stage_barriers
+            )
+            != tree
+        ):
             raise ScopeReadError("subtree family changed during readiness", ref=ref)
-    if await read_scope_plan(ref=ref, tracker=tracker) != plan:
+    if (
+        await _read_plan(ref=ref, tracker=tracker, stage_barriers=stage_barriers)
+        != plan
+    ):
         raise ScopeReadError("scope plan changed during readiness", ref=ref)
     for key, was_approved in approved.items():
         if await tracker.execution_approved(issue_key=key) != was_approved:
@@ -122,6 +176,7 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
         # A reporter asking a criterion's state kind again would be a second
         # reading of the same question, answerable differently.
         unresolved=closure.open_criterion_keys(),
+        held=tuple(held),
     )
 
 

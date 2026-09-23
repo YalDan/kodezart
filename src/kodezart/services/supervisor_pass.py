@@ -22,7 +22,7 @@ from kodezart.services.escalation_ageing_supervisor import EscalationAgeingSuper
 from kodezart.services.tally_supervisor import TallySupervisor
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.scope import ScopeRef
-from kodezart.types.domain.scope_ready import ScopeReadySet
+from kodezart.types.domain.scope_ready import ScopeHeldMember, ScopeReadySet
 from kodezart.types.domain.tracker import TrackerIssue
 
 #: The name this tick is registered under on the existing scheduler.
@@ -53,7 +53,7 @@ class SupervisorIncompleteError(Exception):
 
 
 class SupervisorPass:
-    """Every declared scope's ready lanes and finished members, once per tick."""
+    """Every declared scope's ready, finished and held members, once per tick."""
 
     def __init__(
         self,
@@ -84,6 +84,14 @@ class SupervisorPass:
         records nothing and there is no clock to measure. The stated
         consequence is that a lane raised and then blocked by hand stays
         raised until it is ready again.
+
+        A scope whose walk is held on an open decision is observed all the
+        same: the scope is read without the walker's stage barriers. A member
+        its own lapse question classified for decision is held: its open
+        questions are aged over its whole criterion subtree, and its tally is
+        not observed, because a held lane is waiting on a person and the
+        ageing alarm is the alarm for that. A tally raise standing on it stays
+        as it stood until the lane is ready again, as a blocked lane's does.
         """
         failed: list[str] = []
         for ref in self._scopes:
@@ -122,6 +130,14 @@ class SupervisorPass:
                     position=position,
                     failed=failed,
                 )
+            if position is not None:
+                for member in ready.held:
+                    await self._age_held(
+                        ready=ready,
+                        member=member,
+                        position=position,
+                        failed=failed,
+                    )
         if failed:
             raise SupervisorIncompleteError(failed=tuple(failed))
         return PassRun.RAN
@@ -156,6 +172,33 @@ class SupervisorPass:
                     criteria=roster,
                     position=position,
                 )
+        except Exception:
+            await self._log.aexception(
+                "supervisor_lane_failed", scope=ready.scope.ref.key, lane=lane_key
+            )
+            failed.append(lane_key)
+
+    async def _age_held(
+        self,
+        *,
+        ready: ScopeReadySet,
+        member: ScopeHeldMember,
+        position: ScopePosition,
+        failed: list[str],
+    ) -> None:
+        """A held member's open questions, whose failure is that member's alone.
+
+        Only the ageing arm observes it: the tally is not asked about a lane
+        waiting on a person.
+        """
+        lane_key = member.issue.issue_key
+        try:
+            await self._ageing.observe(
+                scope_key=ready.scope.ref.key,
+                lane_key=lane_key,
+                criteria=member.criteria,
+                position=position,
+            )
         except Exception:
             await self._log.aexception(
                 "supervisor_lane_failed", scope=ready.scope.ref.key, lane=lane_key

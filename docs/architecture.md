@@ -930,6 +930,18 @@ not observed: they are never fired, so they record nothing and there is no
 clock to measure. The accepted consequence is that a lane raised and then
 blocked by hand stays raised until it is ready again.
 
+The tick reads each scope through `chains.scope_walker.read_scope_ready` with
+`stage_barriers=False`: the scope, each consulted descendant tree and the final
+re-read take membership and dependencies through
+`services.scope_planning.read_scope_facts` rather than `read_scope_plan`, and
+the rest of the arithmetic is the walker's. A scope whose walk is held on an
+open decision is therefore still observed rather than failed; the walker's own
+read keeps the barriers and still refuses it. A member its own lapse question
+classified for decision is carried in `ScopeReadySet.held` with every criterion
+of its subtree. Its questions are aged, and its tally is not observed: a held
+lane is waiting on a person, and the ageing alarm is the alarm for that. A tally
+raise standing on it stays as it stood until the lane is ready again.
+
 One lane's failure is that lane's. Each scope read and each lane observation
 is contained, logged as `supervisor_scope_failed` or `supervisor_lane_failed`,
 and the tick then raises `SupervisorIncompleteError` naming what it could not
@@ -969,11 +981,11 @@ string is the pass's own identity, the operation name with the tick name on it
 
 `services.escalation_ageing_supervisor.EscalationAgeingSupervisor` is the
 second observer (KOD-892). Once per scope it reads every member's run-state
-record the ready read names — ready, blocked, unapproved and closed — as the
-scope's position; a damaged record leaves that scope's questions unobserved
+record the ready read names — ready, blocked, unapproved, closed and held — as
+the scope's position; a damaged record leaves that scope's questions unobserved
 for the tick, logged as `supervisor_escalations_unobserved`, while its
-tallies are still observed. Per ready lane it asks, for each criterion of the
-lane's roster, whether the lapse question a lapsed observation raises
+tallies are still observed. Per ready lane and per held lane it asks, for each
+criterion of the lane's roster, whether the lapse question a lapsed observation raises
 (KOD-699) is on the lane's issue, through `EscalationRecordReader.find`. For
 each one there it reads the question's record at
 `(EscalationSubject, ESCALATION_AGEING)`, feeds the recorded question, the

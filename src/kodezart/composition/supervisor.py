@@ -64,8 +64,11 @@ def build_supervisor_pass(
         config=config,
     )
 
+    # The supervisor reads without the walker's stage barriers: a scope whose
+    # walk is held on an open decision is still observed, and what holds it
+    # is the question the ageing arm is there to age.
     def read_ready(ref: ScopeRef) -> Awaitable[ScopeReadySet]:
-        return read_scope_ready(ref=ref, tracker=tracker)
+        return read_scope_ready(ref=ref, tracker=tracker, stage_barriers=False)
 
     # The declared rows projected to their bare scope refs: the tick reads
     # tracker state only, so the repository and report destination beside each
