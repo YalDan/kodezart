@@ -57,10 +57,12 @@ from tests.integration.test_scope_union import (
     stated,
 )
 
-#: Both lanes owe two criteria, so a leaked key list has more than one key in
-#: it and the scan below can tell a list from a single key an ordinary record
-#: names on purpose.
-TWO_EACH = {"A": ("check", "second"), "B": ("check", "second")}
+#: Each lane owes two criteria or more, so a leaked key list has more than one
+#: key in it and the scan below can tell a list from a single key an ordinary
+#: record names on purpose. Lane A owes a third, still open after its first
+#: fire, so the Evidence written on that fire has two OTHER owed keys a leak
+#: could list beside it.
+OWED = {"A": ("check", "second", "third"), "B": ("check", "second")}
 
 #: The gradings one lane's fire asks for at a budget of one iteration,
 #: observed and not assumed: the echoes the next fire is answered with begin
@@ -70,11 +72,11 @@ LANE_GRADINGS = 2
 
 #: What each tick of the walk measures, one literal per tick. A's first fire
 #: closes A/check alone, so A is offered again with a gap that is no longer
-#: its roster; its second fire closes A/second. B's fire closes nothing, so
-#: B plateaus on the tick after it, is put back and rests.
+#: its roster; its second fire closes A/second and A/third. B's fire closes
+#: nothing, so B plateaus on the tick after it, is put back and rests.
 GAPS_PER_TICK = [
-    [("A", ("A/check", "A/second")), ("B", ("B/check", "B/second"))],
-    [("A", ("A/second",)), ("B", ("B/check", "B/second"))],
+    [("A", ("A/check", "A/second", "A/third")), ("B", ("B/check", "B/second"))],
+    [("A", ("A/second", "A/third")), ("B", ("B/check", "B/second"))],
     [("B", ("B/check", "B/second"))],
     [("B", ("B/check", "B/second"))],
 ]
@@ -140,6 +142,22 @@ def criterion_key_lists(port, status, *, keys) -> list[str]:
     ]
 
 
+def foreign_keys_on_criterion_writes(port, *, keys) -> list[tuple[str, str]]:
+    """Every body the run wrote onto criterion X that names a key other than X.
+
+    The rule is the write's own target: a criterion's own body (its Check,
+    its Evidence) is about that criterion alone, so even ONE other key on it
+    is a gap reading written down, which the two-key rule above cannot see.
+    """
+    return [
+        (written, body)
+        for written, _, body in port.issue_writes
+        if written in keys and body is not None
+        for key in keys
+        if key != written and re.search(rf"(?<![\w/-]){key}(?![\w/-])", body)
+    ]
+
+
 def planted(port, name: str, payload: str) -> None:
     """*payload* written into the journal *name* the way that journal grows.
 
@@ -167,8 +185,8 @@ DROPPED = ("A/dropped", "B/dropped")
 async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_write():
     """The measurement is on every tick report and on nothing the run wrote.
 
-    Lane A's first fire closes one of its criteria and its second fire the
-    other, so A's gap shrinks between two ticks that both offer it; lane B's
+    Lane A's first fire closes one of its three criteria and its second fire
+    the other two, so A's gap shrinks between two ticks that both offer it; lane B's
     fire closes neither, so B plateaus, is put back and rests, and the walk
     ends with both of B's criteria open. What each tick's report names is
     compared with a ready read taken at that tick's report AND with a literal
@@ -179,7 +197,7 @@ async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_
     writes: no walk path writes either, and a scan over every declared write
     journal would catch one if it did.
     """
-    port = board(lanes=("A", "B"), checks=TWO_EACH)
+    port = board(lanes=("A", "B"), checks=OWED)
     for key in DROPPED:
         port.issues[key] = make_tracker_issue(
             key,
@@ -198,11 +216,15 @@ async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_
         lanes=("A", "B"),
         evaluations=[
             *(
-                criteria_echo(keys=("A/check", "A/second"), passed={"A/check"})
+                criteria_echo(
+                    keys=("A/check", "A/second", "A/third"), passed={"A/check"}
+                )
                 for _ in range(LANE_GRADINGS)
             ),
             *(
-                criteria_echo(keys=("A/second",), passed={"A/second"})
+                criteria_echo(
+                    keys=("A/second", "A/third"), passed={"A/second", "A/third"}
+                )
                 for _ in range(LANE_GRADINGS)
             ),
             *(
@@ -216,6 +238,7 @@ async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_
         "A/check",
         "A/dropped",
         "A/second",
+        "A/third",
         "B/check",
         "B/dropped",
         "B/second",
@@ -270,7 +293,7 @@ async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_
     assert len(harness.status.posts) == 1
     assert ticks[-1].unresolved_criteria == ("B/check", "B/second")
     assert ticks[-1].excluded_criteria == DROPPED
-    for key in ("A/check", "A/second"):
+    for key in ("A/check", "A/second", "A/third"):
         assert port.issues[key].state_kind is WorkflowStateKind.COMPLETED
         assert "**Evidence:**" in port.issues[key].body
         assert "**Evidence:** —" not in port.issues[key].body
@@ -281,6 +304,17 @@ async def test_a_walk_names_each_lanes_gap_on_its_tick_report_and_in_no_durable_
         ]
 
     assert criterion_key_lists(port, harness.status, keys=keys) == []
+    assert foreign_keys_on_criterion_writes(port, keys=keys) == []
+
+    # The per-target rule's own controls: one other key on a criterion's
+    # body is reported, and the criterion's own key on it is not.
+    port.issue_writes.append(("A/check", None, "**Evidence:** see A/second"))
+    assert foreign_keys_on_criterion_writes(port, keys=keys) == [
+        ("A/check", "**Evidence:** see A/second")
+    ]
+    port.issue_writes[-1] = ("A/check", None, "**Evidence:** A/check at a sha")
+    assert foreign_keys_on_criterion_writes(port, keys=keys) == []
+    port.issue_writes.pop()
 
     # The matcher's own controls: a payload of exactly the shape this scan is
     # about is reported from each surface it scans, one surface at a time.
