@@ -1255,6 +1255,47 @@ def test_a_second_recovery_of_the_same_run_is_recorded_beside_the_first():
     assert {RECOVERY_REF, SECOND_RECOVERY_REF} <= associated_branches(record=second)
 
 
+def test_a_recovery_ref_survives_a_later_runs_commit():
+    """A recorded recovery ref stays associated after another run commits.
+
+    A remediation or re-entry run composes its record from the one an earlier
+    run left, and that earlier run's backup ref is still one of the lane's
+    associations, under the run that recorded it, whether or not the ref is
+    still on the remote.
+    """
+    lane = binding()
+    recovered = recovered_commit(prior=None, recovery_ref=RECOVERY_REF)
+    remediation = LaneBinding(
+        lane_key=lane.lane_key,
+        body_digest=lane.body_digest,
+        loop_branch="second-loop",
+        deliverable_branch=lane.deliverable_branch,
+        base_ref=lane.base_ref,
+        repo_url=lane.repo_url,
+        repo_path=lane.repo_path,
+        run_id="run-later",
+        visibility=lane.visibility,
+    )
+    later = next_lane_record(
+        prior=recovered,
+        lane=remediation,
+        branch_url="https://forge.example/branch/second-loop",
+        head_sha="c" * 40,
+        pushed_head_sha="c" * 40,
+        changeset=changeset(commits=2, files=1),
+        subject="Remediation change",
+        recovery_ref=None,
+    )
+    recovery = (RECOVERY_REF, BranchRole.RECOVERY, "ordinary-name", "run-current")
+    assert recovery in association_chains(recovered)
+    assert recovery in association_chains(later)
+    assert RECOVERY_REF in associated_branches(record=later)
+    assert role_counts(later, run_id="run-later") == {
+        BranchRole.DELIVERABLE: 1,
+        BranchRole.LOOP: 1,
+    }
+
+
 def test_a_commit_that_recovered_nothing_records_no_recovery_association():
     record = recovered_commit(prior=None, recovery_ref=None)
     assert BranchRole.RECOVERY not in {item.role for item in record.associations}
