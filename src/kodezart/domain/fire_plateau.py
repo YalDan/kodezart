@@ -17,6 +17,9 @@ Closure is read as presence among the subtree's closed criteria, never as
 absence from the open ones.  A criterion that left the subtree between the
 two readings was not closed by this tick, and a criterion created closed
 inside it was not previously open, so neither can stand in for progress.
+The open reading is the subtree's gap, so a criterion that leaves the gap
+on an excluded state (canceled or marked duplicate) while it stays in the
+subtree reads as closed here, exactly as a completed one does.
 """
 
 from collections.abc import Sequence
@@ -32,7 +35,10 @@ class SubtreeTick:
     ``previously_open`` is what the subtree owed when the tick began;
     ``currently_closed`` is what the subtree carries as closed now.  Two
     readings rather than one delta, because the identities that merely
-    stopped being open are not the identities that closed.
+    stopped being open are not the identities that closed.  The one
+    exception is a criterion still in the subtree that left the gap on an
+    excluded state: ``currently_closed`` carries it, as it carries a
+    completed one.
     """
 
     previously_open: frozenset[str]
