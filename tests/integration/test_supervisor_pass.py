@@ -14,7 +14,7 @@ from kodezart.domain.errors import LaneRecordReadError
 from kodezart.domain.lane_alarms import stored_alarm
 from kodezart.domain.run_alarm_record import MARKER_PURPOSE, run_alarm_marker
 from kodezart.domain.run_alarm_table import alarm_raised
-from kodezart.domain.run_shape import TICKET_MARKER_SOURCE
+from kodezart.domain.run_shape import GROOM_MARKER_SOURCE, TICKET_MARKER_SOURCE
 from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
     supervisor_holder,
@@ -651,6 +651,48 @@ async def test_the_composed_tick_observes_a_scope_stalled_at_a_stage_barrier():
         )
         assert stored is not None
         assert alarm_raised(stored)
+
+
+async def test_the_composed_tick_observes_a_scope_stalled_at_the_groom_barrier():
+    """The first rung is observed too: graph complete, then body complete.
+
+    One member carries the groom marker and has entered the body stage; the
+    other carries neither. So the barrier between grooming and the body stage
+    is open, and the warning names the groom marker's address. No member has
+    entered the criteria stage, so the next barrier is quiet.
+    """
+    operation = declared(scopes=(SCOPE,))
+    port = await board(
+        lanes=LANES,
+        scope=SCOPE,
+        holder=supervisor_holder(operation_name=operation.operation_name),
+    )
+    entered, behind = LANES
+    issue = port.issues[entered]
+    port.issues[entered] = issue.model_copy(
+        update={"issue_labels": issue.issue_labels | {"groomed", "body"}}
+    )
+    assert not {"groomed", "body"} & port.issues[behind].issue_labels
+    scheduled = build_supervisor_pass(
+        config=AppConfig(
+            _env_file=None,
+            run_alarm_max_commits_without_closure=BOUND,
+            supervisor_pass_interval_seconds=INTERVAL,
+            supervisor_pass_timeout_seconds=TIMEOUT,
+        ),
+        operation=operation,
+        tracker=port,
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        async with asyncio.timeout(TICK_BOUND_SECONDS):
+            assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+
+    assert [
+        (entry["log_level"], entry["scope"], entry["marker"])
+        for entry in logs
+        if entry["event"] == "supervisor_scope_alarm_raised"
+    ] == [("warning", SCOPE.key, GROOM_MARKER_SOURCE)]
 
 
 def _enter_criteria_stage(port, lane, *, entered):
