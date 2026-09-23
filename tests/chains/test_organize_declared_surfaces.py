@@ -616,6 +616,9 @@ async def test_an_answer_that_writes_nothing_is_not_weighed_against_the_set(
 
 
 STUCK = "FIX-STUCK"
+#: A halting member whose key sorts before ``SIBLING``, so a round works it
+#: first.
+EARLY = "FIX-EARLY"
 GROOM_MARKER = "graph complete"
 INTERIM = "Preparation stops; no completion marker or execution is authorized."
 
@@ -742,7 +745,14 @@ async def test_every_open_finding_is_written_to_its_own_item_before_the_halt_ret
 
 
 @pytest.mark.parametrize(
-    "cause", ["human_decision", "admission_exhausted", "residual", "author_decision"]
+    "cause",
+    [
+        "human_decision",
+        "admission_exhausted",
+        "residual",
+        "author_decision",
+        "repaired_then_halt",
+    ],
 )
 async def test_a_halt_inside_a_round_carries_the_findings_left_open(monkeypatch, cause):
     """A halt inside a round writes what earlier rounds and this one left open."""
@@ -812,12 +822,16 @@ async def test_a_halt_inside_a_round_carries_the_findings_left_open(monkeypatch,
         return
     # Round one: the dry round forms a finding on the marked sibling, and
     # the working member is clean at admission but refused by the dry round.
-    # Round two works both again: the sibling is clean now, and the working
-    # member halts while the sibling's finding is still the round's open one.
+    # Round two works both again, in key order, and the sibling is clean
+    # from its second judgement on. The halting member sorts before the
+    # sibling, so it halts while the sibling's finding is still open; in
+    # ``repaired_then_halt`` it sorts after, so the round has already
+    # verified the sibling's repair when it halts.
+    stuck = STUCK if cause == "repaired_then_halt" else EARLY
     member(board, SIBLING, labels=[GROOM_MARKER])
-    member(board, STUCK)
-    kind = "human_decision" if cause == "human_decision" else "spec_gap"
-    judging(
+    member(board, stuck)
+    kind = "spec_gap" if cause == "admission_exhausted" else "human_decision"
+    seen = judging(
         board,
         executor,
         monkeypatch,
@@ -827,10 +841,22 @@ async def test_a_halt_inside_a_round_carries_the_findings_left_open(monkeypatch,
                 if n == 1
                 else buildable(SIBLING)
             ),
-            STUCK: lambda n: buildable(STUCK) if n == 1 else refusal(STUCK, kind),
+            stuck: lambda n: buildable(stuck) if n == 1 else refusal(stuck, kind),
         },
     )
     report = await run_owner(owner)
+    if cause == "repaired_then_halt":
+        assert report.halt.cause == "human_decision"
+        # Judged in round one's dry round, then assessed and verified clean
+        # in round two before the halt.
+        assert seen[SIBLING] == 3
+        assert SIBLING not in {
+            finding.issue_id for finding in report.halt.surviving_findings
+        }
+        assert escalations(board, SIBLING) == []
+        assert "needs decision" not in board.server.issues[SIBLING].labels
+        return
+    assert seen[SIBLING] == 1
     assert report.halt.cause == cause
     assert (SIBLING, "missing_source") in {
         (finding.issue_id, finding.defect_class)
