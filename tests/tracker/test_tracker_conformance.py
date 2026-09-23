@@ -3701,9 +3701,10 @@ class PeerChange:
 
 #: Every kind of graph change whose affected peers go beyond the child: a
 #: relation added, a relation removed (of either kind, and alongside an
-#: addition in one change), and a parent change, where the old parent and
-#: the new one are both peers and each is left unheld in turn, and where
-#: clearing the parent still writes the parent the child leaves.
+#: addition in one change), a list naming two peers with only the second
+#: unheld, whether added or removed, and a parent change, where the old
+#: parent and the new one are both peers and each is left unheld in turn,
+#: and where clearing the parent still writes the parent the child leaves.
 GRAPH_PEER_CHANGES: Mapping[str, PeerChange] = {
     "related_to_add": PeerChange(
         change={"kind": "related_to", "add": [GRAPH_PEER]},
@@ -3717,6 +3718,16 @@ GRAPH_PEER_CHANGES: Mapping[str, PeerChange] = {
     ),
     "related_to_add_and_remove": PeerChange(
         change={"kind": "related_to", "add": [GRAPH_PEER], "remove": [GRAPH_RELATED]},
+        held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
+        peer=RELATED_GRAPH,
+    ),
+    "related_to_add_two": PeerChange(
+        change={"kind": "related_to", "add": [GRAPH_PEER, CLAIMED_ISSUE]},
+        held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
+        peer=CLAIMED_GRAPH,
+    ),
+    "related_to_remove_two": PeerChange(
+        change={"kind": "related_to", "remove": [GRAPH_PEER, GRAPH_RELATED]},
         held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
         peer=RELATED_GRAPH,
     ),
@@ -3965,8 +3976,9 @@ class TestSuppliedHolderWrites:
         The writer holds live every affected address but one peer's, which
         is unheld, lapsed or a rival's: the peer a relation is added to,
         the peer a relation or a prerequisite edge is removed from (alone,
-        or in the change that also adds one), and the new parent or the
-        old one of a parent change, including a parent cleared.  The
+        or in the change that also adds one), the second of two peers one
+        list adds or removes, and the new parent or the old one of a
+        parent change, including a parent cleared.  The
         change is refused naming that PEER's address and its holder, with
         nothing written and no member's graph moved: holding the issue a
         change starts from is not holding the ones it reaches.
