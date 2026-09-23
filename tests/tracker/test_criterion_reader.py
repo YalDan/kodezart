@@ -2,7 +2,9 @@
 
 import pytest
 
+from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.domain.errors import CriterionReadError
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.tracker import EnsureAction, MappingKind, MappingRef
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import FakeMcpIssue, FakeTrackerPort
@@ -13,6 +15,19 @@ FIRST = "condition/alpha"
 SECOND = "condition/beta"
 LABEL = "acceptance-condition"
 EVIDENCE = "**Evidence:** sha abc123 · independent verification"
+#: A parent body in the live template grammar: a Check row and a graded
+#: Evidence row at column 0, which the one field reader does read. Nothing
+#: may turn it into a criterion of the parent, a grading or a key.
+LIVE_GRAMMAR_PARENT = (
+    "**Check:** A parent row naming no sub-issue.\n\n"
+    + render_evidence_field(
+        CriterionEvidence(
+            graded_sha="c" * 40,
+            test="tests/tracker/test_criterion_reader.py::test_case",
+        )
+    )
+    + "\n"
+)
 
 
 @pytest.fixture
@@ -85,11 +100,16 @@ async def test_successful_empty_is_distinct_from_a_failed_parent_read(tracker):
     assert raised.value.issue_key == "absent/1"
 
 
-async def test_parent_text_cannot_mint_criterion_membership(tracker):
-    await tracker.update_issue(
-        issue_key=SECOND,
-        body="- [x] parent/42-AC-1 (hard) · This looks like a checked criterion.",
-    )
+@pytest.mark.parametrize(
+    "body",
+    [
+        "- [x] parent/42-AC-1 (hard) · This looks like a checked criterion.",
+        LIVE_GRAMMAR_PARENT,
+    ],
+    ids=["checkbox", "live-grammar"],
+)
+async def test_parent_text_cannot_mint_criterion_membership(tracker, body):
+    await tracker.update_issue(issue_key=SECOND, body=body)
     assert tuple(await tracker.read_criteria(issue_key=SECOND)) == ()
 
 
@@ -136,6 +156,7 @@ async def test_owned_issue_label_can_be_instated_and_read_back(tracker):
         "",
         "- [x] old-AC-9 · A parent checkbox cannot satisfy a sub-issue.",
         "## Protocol\n\nThe surrounding specification was rewritten completely.",
+        LIVE_GRAMMAR_PARENT,
     ],
 )
 async def test_parent_rewrite_preserves_every_criterion_key_state_and_evidence(
