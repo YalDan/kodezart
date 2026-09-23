@@ -1,6 +1,6 @@
 """Native membership and closure of a complete addressed issue subtree."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 
 from kodezart.domain.errors import (
     EmptyFireCriteriaError,
@@ -74,11 +74,24 @@ class SubtreeClosure:
     ``is_closed`` is the emptiness of ``gap``, so a candidate's brief and a
     blocker's discharge cannot part, and no call site can answer one of the
     two questions with the other.
+
+    ``held`` names the lanes whose walk is held on an open decision. Their
+    own question classified them for decision, so they carry a record label,
+    but to this arithmetic they are lanes: their gap is their criterion
+    subtree, a lane they block is blocked while it owes, and a parent's gap
+    walks through them. Every other record-labelled issue stays a record.
     """
 
-    def __init__(self, *, facts: Mapping[str, TrackerIssue], ref: ScopeRef) -> None:
+    def __init__(
+        self,
+        *,
+        facts: Mapping[str, TrackerIssue],
+        ref: ScopeRef,
+        held: Collection[str] = frozenset(),
+    ) -> None:
         self.facts = facts
         self.ref = ref
+        self.held = held
         self.children: dict[str, list[TrackerIssue]] = {}
         self.gaps: dict[str, tuple[TrackerIssue, ...]] = {}
         self.rosters: dict[str, tuple[TrackerIssue, ...]] = {}
@@ -130,7 +143,7 @@ class SubtreeClosure:
                     raise ScopeReadError("criterion has child issues", ref=self.ref)
                 self.rosters[current] = (issue,)
                 self.gaps[current] = open_criteria((issue,), ref=self.ref)
-            elif issue.issue_labels & RECORD_KINDS:
+            elif issue.issue_labels & RECORD_KINDS and current not in self.held:
                 if children:
                     raise ScopeReadError("record issue has child issues", ref=self.ref)
                 self.rosters[current] = ()

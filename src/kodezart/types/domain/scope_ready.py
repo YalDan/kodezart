@@ -52,8 +52,9 @@ class ScopeReadySet:
     reading of what a criterion's workflow state means would be a second
     arithmetic free to disagree with the one the lanes were selected by.
 
-    ``held`` carries the members classified for decision, with their
-    criteria, when the read was taken without the walker's stage barriers.
+    ``held`` carries the members classified for decision that have
+    criterion children, with their criteria, when the read was taken without
+    the walker's stage barriers.
     The walker's own read refuses such a scope, so for it ``held`` is empty.
     """
 

@@ -66,9 +66,11 @@ async def read_scope_ready(
     descendant tree and the final re-read all go through the named stage
     barriers, so a scope holding an open decision refuses. With them off, as
     the supervisor reads, the same three reads take membership and
-    dependencies alone, and the members classified for decision are carried
-    in ``held`` with the criteria beneath them; the rest of the arithmetic is
-    the same.
+    dependencies alone, and the members classified for decision that have
+    criterion children are carried in ``held`` with the criteria beneath
+    them. To the closure they are lanes, so a lane they block is blocked
+    while they owe and a parent's gap includes theirs; the rest of the
+    arithmetic is the same.
     """
     tracker.require_issue_classification_reads()
     plan = await _read_plan(ref=ref, tracker=tracker, stage_barriers=stage_barriers)
@@ -90,7 +92,24 @@ async def read_scope_ready(
         covered.update(tree)
     if members.keys() - covered:
         raise ScopeReadError("scope parentage is not rooted", ref=ref)
-    closure = SubtreeClosure(facts=facts, ref=ref)
+    held_keys: frozenset[str] = frozenset()
+    if not stage_barriers:
+        # A lane its own question classified for decision carries a record
+        # label, and its criterion children say it is still a lane. The
+        # closure is told so, because a lane it blocks and a parent whose gap
+        # walks through it ask the closure about it. A decision issue with no
+        # criterion children is an ordinary decision record and stays one.
+        criterion_parents = {
+            row.parent_key for row in facts.values() if "criterion" in row.issue_labels
+        }
+        held_keys = frozenset(
+            key
+            for key, issue in members.items()
+            if "decision" in issue.issue_labels
+            and "criterion" not in issue.issue_labels
+            and key in criterion_parents
+        )
+    closure = SubtreeClosure(facts=facts, ref=ref, held=held_keys)
     approved: dict[str, bool] = {}
     gaps: dict[str, tuple[TrackerIssue, ...]] = {}
     closed: dict[str, TrackerIssue] = {}
@@ -99,21 +118,10 @@ async def read_scope_ready(
         if "criterion" in issue.issue_labels:
             continue
         if issue.issue_labels & RECORD_KINDS:
-            if not stage_barriers and "decision" in issue.issue_labels:
-                # A member its own question classified for decision is a
-                # record to the walker, which walks nothing under it. Its
-                # criteria are read by the same closure, from its children,
-                # because the closure refuses a record issue with children.
-                held.append(
-                    ScopeHeldMember(
-                        issue=issue,
-                        criteria=tuple(
-                            row
-                            for child in closure.children.get(key, ())
-                            for row in closure.roster(child.issue_key)
-                        ),
-                    )
-                )
+            if key in held_keys:
+                # A held lane is a record to the walker, which walks nothing
+                # under it; its criteria are its roster in the same closure.
+                held.append(ScopeHeldMember(issue=issue, criteria=closure.roster(key)))
             continue
         approved[key] = await tracker.execution_approved(issue_key=key)
         if approved[key]:
