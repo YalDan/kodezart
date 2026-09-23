@@ -3,7 +3,7 @@
 import re
 from collections.abc import Mapping, Sequence
 from hashlib import sha256
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from kodezart.domain.errors import (
     EmptyFireCriteriaError,
@@ -62,18 +62,40 @@ def _without_comments(line: str, *, comment: bool) -> tuple[str, bool]:
     return "".join(parts), comment
 
 
-def criterion_field_bodies(body: str, *, field: CriterionField) -> tuple[str, ...]:
-    """Read one template field, excluding quoted row labels and HTML comments."""
-    checks: list[str] = []
+class _CriterionRow(NamedTuple):
+    """One visible template row: its label, the span it holds, and its text."""
+
+    label: str
+    begin: int
+    end: int
+    text: str
+
+
+def _criterion_rows(body: str) -> tuple[_CriterionRow, ...]:
+    """Every visible template row in *body*: its label, its span and its text.
+
+    The one walk of a criterion body and the one user of the row grammar;
+    the field reader, the duplicate check and the amendment edit all read
+    rows through it. The fence and comment rules decide what is visible, so
+    a row label inside a fenced block or behind an HTML comment is no row.
+    A row's span runs from where its label's line begins to where the next
+    row's begins, or to the end of the body. Its text is the rest of the
+    label's line and every line after it up to the next row, fenced lines as
+    written and other lines with their comments taken out, joined and
+    stripped.
+    """
+    rows: list[_CriterionRow] = []
+    label: str | None = None
+    begin = 0
     lines: list[str] = []
-    active = False
     fence: tuple[str, int] | None = None
     comment = False
-    for line in body.splitlines():
+    offset = 0
+    for original in body.splitlines(keepends=True):
+        line = original.splitlines()[0]
         delimiter = _FENCE.match(line)
         if fence is not None:
-            if active:
-                lines.append(line)
+            lines.append(line)
             if (
                 delimiter is not None
                 and delimiter[1][0] == fence[0]
@@ -81,25 +103,29 @@ def criterion_field_bodies(body: str, *, field: CriterionField) -> tuple[str, ..
                 and not delimiter[2].strip()
             ):
                 fence = None
-            continue
-        line, comment = _without_comments(line, comment=comment)
-        delimiter = _FENCE.match(line)
-        if delimiter is not None:
-            fence = delimiter[1][0], len(delimiter[1])
-            if active:
+        else:
+            line, comment = _without_comments(line, comment=comment)
+            delimiter = _FENCE.match(line)
+            row = None if delimiter is not None else _CRITERION_ROW.match(line)
+            if delimiter is not None:
+                fence = delimiter[1][0], len(delimiter[1])
+            if row is None:
                 lines.append(line)
-            continue
-        row = _CRITERION_ROW.match(line)
-        if row is not None:
-            if active:
-                checks.append("\n".join(lines).strip())
-            active = row[1] == field
-            lines = [row[2]] if active else []
-        elif active:
-            lines.append(line)
-    if active:
-        checks.append("\n".join(lines).strip())
-    return tuple(checks)
+            else:
+                if label is not None:
+                    rows.append(
+                        _CriterionRow(label, begin, offset, "\n".join(lines).strip())
+                    )
+                label, begin, lines = row[1], offset, [row[2]]
+        offset += len(original)
+    if label is not None:
+        rows.append(_CriterionRow(label, begin, len(body), "\n".join(lines).strip()))
+    return tuple(rows)
+
+
+def criterion_field_bodies(body: str, *, field: CriterionField) -> tuple[str, ...]:
+    """Read one template field, excluding quoted row labels and HTML comments."""
+    return tuple(row.text for row in _criterion_rows(body) if row.label == field)
 
 
 def deliverables_section(body: str) -> tuple[str, ...]:
@@ -152,40 +178,6 @@ def deliverables_section(body: str) -> tuple[str, ...]:
     return tuple(items)
 
 
-def _criterion_rows(body: str) -> tuple[tuple[str, int], ...]:
-    """Every visible template row in *body*, as its label and where it begins.
-
-    The reader's own fence and comment rules decide what is visible, so a
-    row label inside a fenced block or behind an HTML comment is no row.
-    """
-    rows: list[tuple[str, int]] = []
-    fence: tuple[str, int] | None = None
-    comment = False
-    offset = 0
-    for original in body.splitlines(keepends=True):
-        line = original.rstrip("\r\n")
-        delimiter = _FENCE.match(line)
-        if fence is not None:
-            if (
-                delimiter is not None
-                and delimiter[1][0] == fence[0]
-                and len(delimiter[1]) >= fence[1]
-                and not delimiter[2].strip()
-            ):
-                fence = None
-        else:
-            line, comment = _without_comments(line, comment=comment)
-            delimiter = _FENCE.match(line)
-            if delimiter is not None:
-                fence = delimiter[1][0], len(delimiter[1])
-            else:
-                row = _CRITERION_ROW.match(line)
-                if row is not None:
-                    rows.append((row[1], offset))
-        offset += len(original)
-    return tuple(rows)
-
-
 def _duplicated(names: Sequence[str]) -> tuple[str, ...]:
     """The labels *names* holds more than once, over rows already read."""
     return tuple(sorted({name for name in names if names.count(name) > 1}))
@@ -201,7 +193,7 @@ def duplicated_row_labels(body: str) -> tuple[str, ...]:
     would record has already been done. The edit itself has the rows in
     hand and asks the inner form, so one body is never scanned twice.
     """
-    return _duplicated([name for name, _ in _criterion_rows(body)])
+    return _duplicated([row.label for row in _criterion_rows(body)])
 
 
 def replace_criterion_fields(
@@ -214,17 +206,17 @@ def replace_criterion_fields(
     before retiring evidence, and no authored criterion artifact uses this edit.
     """
     rows = _criterion_rows(body)
-    names = [name for name, _ in rows]
+    names = [row.label for row in rows]
     if _duplicated(names):
         raise ValueError("criterion amendment requires unambiguous template rows")
     result = body
-    for index in range(len(rows) - 1, -1, -1):
-        name, begin = rows[index]
-        end = rows[index + 1][1] if index + 1 < len(rows) else len(body)
+    for row in reversed(rows):
         for field, replacement in replacements.items():
-            if field == name:
+            if field == row.label:
                 result = (
-                    result[:begin] + f"**{field}:** {replacement}\n\n" + result[end:]
+                    result[: row.begin]
+                    + f"**{field}:** {replacement}\n\n"
+                    + result[row.end :]
                 )
     for field, replacement in replacements.items():
         if field not in names:
