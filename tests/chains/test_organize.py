@@ -1768,7 +1768,47 @@ CALL_SITE_ROUTES = {
     "def plan(criteria, since, board):\n"
     "    at_rest = pkgutil.resolve_name('kodezart.domain.organize.organize_at_rest')\n"
     "    return [c for c in criteria if at_rest(**board){READ}]\n",
+    "local_bound_from_resolve_name": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    arithmetic = pkgutil.resolve_name('kodezart.domain:gap')\n"
+    "    return [\n"
+    "        c for c in arithmetic.compute_gap(criteria, supersession_refs={}){READ}\n"
+    "    ]\n",
+    "local_bound_from_import_module": "import importlib\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    arithmetic = importlib.import_module('kodezart.domain.gap')\n"
+    "    return [\n"
+    "        c for c in arithmetic.compute_gap(criteria, supersession_refs={}){READ}\n"
+    "    ]\n",
+    "getattr_on_the_home_module": "def plan(criteria, since):\n"
+    "    from kodezart.domain import gap\n"
+    "\n"
+    "    window = getattr(gap, 'compute_gap')\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "attrgetter_applied_to_the_home_module": "import operator\n"
+    "\n"
+    "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = operator.attrgetter('compute_gap')(gap)\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "vars_of_the_home_module": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = vars(gap)['compute_gap']\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "dict_of_the_home_module": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since):\n"
+    "    window = gap.__dict__['compute_gap']\n"
+    "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
 }
+#: The module every call-site route is planted into: inside the gap's reach
+#: already and not on the stamp register, so the route alone is what makes
+#: the planted definition a site, never a new import edge.
+CALL_SITE_HOST = "services/run_shape.py"
 
 
 @pytest.mark.parametrize("reads", [True, False])
@@ -1776,21 +1816,29 @@ CALL_SITE_ROUTES = {
 def test_a_call_site_of_the_arithmetic_is_found_by_object_and_scanned(route, reads):
     """A definition referring to the arithmetic by any route is a scanned site.
 
-    One row per route, each with and without the read.  The read-free rows
-    redden the moment resolution stops following that route, because the
-    planted definition drops out of the sites; the reading rows redden the
-    scan.  An import at the top of a module binds its name in the module's
-    globals, which the module-level rebinding row reads; the rows importing
-    inside the function are what reads an import the globals never hold,
-    relative, aliased or dotted.  The partial and static-method rows are what
-    unwraps a stand-in, and the two string rows what resolves a named object.
+    One row per route, each with and without the read, appended to a module
+    already in the reach.  The read-free rows redden the moment resolution
+    stops following that route, because the planted definition drops out of
+    the sites; the reading rows redden the scan.  An import at the top of a
+    module binds its name in the module's globals, which the module-level
+    rebinding row reads; the rows importing inside the function are what
+    reads an import the globals never hold, relative, aliased or dotted.  The
+    partial and static-method rows are what unwraps a stand-in, the string
+    rows what resolves a named object, the two local rows what follows a
+    local assigned from a resolving call, and the four literal-name rows
+    what reads ``getattr``, ``attrgetter``, ``vars`` and ``__dict__`` off
+    the home module.
     """
+    assert CALL_SITE_HOST in GAP_COMPUTATION_MODULES
+    assert CALL_SITE_HOST not in CHANGE_STAMP_READERS
     planted = CALL_SITE_ROUTES[route].replace(
         "{READ}", " if c.updated_at > since" if reads else ""
     )
-    sites = arithmetic_call_sites({**source_tree(), "services/planted.py": planted})
+    sources = source_tree()
+    sources[CALL_SITE_HOST] += "\n\n" + planted
+    sites = arithmetic_call_sites(sources)
 
-    assert sites[("services/planted.py", "plan")] == (
+    assert sites[(CALL_SITE_HOST, "plan")] == (
         frozenset({"updated_at"}) if reads else frozenset()
     )
 

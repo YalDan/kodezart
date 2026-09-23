@@ -1035,6 +1035,9 @@ def test_the_walker_is_the_one_definition_referring_to_the_grammar():
     assert grammar_referrers(source_tree()) == [(RULE_MODULE, _criterion_rows.__name__)]
 
 
+#: The owner's dotted package and its own name, read off the field reader, so
+#: a planted text names the owner the way the tree does.
+OWNER_PACKAGE, _, OWNER_NAME = criterion_field_bodies.__module__.rpartition(".")
 #: Each way the grammar object could be reused outside the walker, as the
 #: module text it would arrive as, with the definition it adds.
 GRAMMAR_REUSES = {
@@ -1056,6 +1059,67 @@ GRAMMAR_REUSES = {
         "\n"
         "def evidence(body):\n"
         "    return [ROW.match(line) for line in body.splitlines()]\n",
+        "evidence",
+    ),
+    "taken off the owner module by getattr": (
+        "services/evidence_reader.py",
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def evidence(body):\n"
+        f"    row = getattr({OWNER_NAME}, '_CRITERION_ROW')\n"
+        "    return [\n"
+        "        found[2]\n"
+        "        for found in map(row.match, body.splitlines())\n"
+        "        if found and found[1] == 'Evidence'\n"
+        "    ]\n",
+        "evidence",
+    ),
+    "taken off the owner module by attrgetter": (
+        "services/evidence_reader.py",
+        "import operator\n"
+        "\n"
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def evidence(body):\n"
+        f"    row = operator.attrgetter('_CRITERION_ROW')({OWNER_NAME})\n"
+        "    return [row.match(line) for line in body.splitlines()]\n",
+        "evidence",
+    ),
+    "taken out of vars of the owner module": (
+        "services/evidence_reader.py",
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def evidence(body):\n"
+        f"    row = vars({OWNER_NAME})['_CRITERION_ROW']\n"
+        "    return [row.match(line) for line in body.splitlines()]\n",
+        "evidence",
+    ),
+    "taken out of the owner module's __dict__": (
+        "services/evidence_reader.py",
+        f"from {OWNER_PACKAGE} import {OWNER_NAME}\n"
+        "\n"
+        "def evidence(body):\n"
+        f"    row = {OWNER_NAME}.__dict__['_CRITERION_ROW']\n"
+        "    return [row.match(line) for line in body.splitlines()]\n",
+        "evidence",
+    ),
+    "read off a local bound from resolve_name": (
+        "services/evidence_reader.py",
+        "import pkgutil\n"
+        "\n"
+        "def evidence(body):\n"
+        f"    owner = pkgutil.resolve_name('{OWNER_PACKAGE}:{OWNER_NAME}')\n"
+        "    return [owner._CRITERION_ROW.match(line) for line in body.splitlines()]\n",
+        "evidence",
+    ),
+    "read off a local bound from import_module": (
+        "services/evidence_reader.py",
+        "import importlib\n"
+        "\n"
+        "def evidence(body):\n"
+        f"    owner = importlib.import_module('{OWNER_PACKAGE}.{OWNER_NAME}')\n"
+        "    row = owner._CRITERION_ROW\n"
+        "    return [row.match(line) for line in body.splitlines()]\n",
         "evidence",
     ),
 }

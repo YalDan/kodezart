@@ -34,22 +34,26 @@ module receiver — ``from . import b``, then ``b._own_text(spec)`` — spells n
 module of the tree and takes the every-method rule; no module under the
 package writes either form.
 
-``named_object``, ``module_namespace`` and ``referencing_definitions`` resolve
-by the object instead of by the word, a string constant naming one included,
-and each states its own reach.
+``named_object``, ``module_namespace``, ``denoted``, ``loaded_values`` and
+``referencing_definitions`` resolve by the object instead of by the word: a
+string constant naming one, a literal name read as an attribute
+(``getattr``, ``operator.attrgetter``, ``vars`` and ``__dict__``) and a local
+assigned inside the definition included, and each states its own reach.
 """
 
 import ast
+import builtins
 import functools
 import importlib
 import importlib.abc
 import importlib.machinery
 import importlib.util
 import inspect
+import operator
 import pkgutil
 import re
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import kodezart
@@ -804,42 +808,199 @@ def _import_bindings(relative: str, tree: ast.Module) -> dict[str, list[object]]
 _ABSENT = object()
 #: A definition a reference can sit inside.
 _Scope = ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+#: A definition whose assignments bind locals.
+_Function = ast.FunctionDef | ast.AsyncFunctionDef
 
 
-def _denoted(
-    node: ast.expr,
+def _assigned(node: ast.AST) -> dict[str, list[ast.expr]]:
+    """Local name -> every expression an assignment under *node* binds it to.
+
+    An assignment, an annotated assignment and a walrus, anywhere under
+    *node*, a nested definition included, so a closure's locals are read
+    with its enclosing function's.  A tuple-unpacking target binds nothing
+    here.
+    """
+    assigned: dict[str, list[ast.expr]] = {}
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Assign):
+            targets = [
+                target for target in inner.targets if isinstance(target, ast.Name)
+            ]
+            value = inner.value
+        elif isinstance(inner, ast.AnnAssign | ast.NamedExpr):
+            if inner.value is None or not isinstance(inner.target, ast.Name):
+                continue
+            targets = [inner.target]
+            value = inner.value
+        else:
+            continue
+        for target in targets:
+            assigned.setdefault(target.id, []).append(value)
+    return assigned
+
+
+@dataclass(frozen=True)
+class Bindings:
+    """What one module's names are bound to, for reading an expression by object.
+
+    ``namespace`` is the module's globals after import; ``imported`` maps a
+    local name to the objects an import anywhere in the module binds it to;
+    ``assigned`` maps a local name to the expressions the assignments inside
+    the definition being read bind it to.
+    """
+
+    namespace: Mapping[str, object]
+    imported: Mapping[str, list[object]]
+    assigned: Mapping[str, list[ast.expr]] = field(default_factory=dict)
+
+
+def bindings(
+    relative: str,
+    tree: ast.Module,
     namespace: Mapping[str, object],
-    bound: Mapping[str, list[object]],
-) -> tuple[object, ...]:
-    """Every object an expression can denote here, each with what it stands in for.
+    *,
+    within: ast.AST | None = None,
+) -> Bindings:
+    """The bindings of module *relative*, with the locals assigned under *within*."""
+    return Bindings(
+        namespace=namespace,
+        imported=_import_bindings(relative, tree),
+        assigned=_assigned(within) if within is not None else {},
+    )
 
-    A loaded name through the module's globals and through every import that
-    binds it, an attribute through each object its receiver denotes, a
-    string constant through ``named_object``, and a call handed a string
-    constant naming an object as that object, the way
-    ``pkgutil.resolve_name("kodezart.domain:gap")`` returns it, so an
-    attribute taken off such a call is read off the named object.
+
+def _attribute_path(receiver: object, dotted: str) -> tuple[object, ...]:
+    """The object a dotted attribute path reaches from *receiver*, statically."""
+    current = receiver
+    for part in dotted.split("."):
+        current = inspect.getattr_static(current, part, _ABSENT)
+        if current is _ABSENT:
+            return ()
+    return (current,)
+
+
+def _literal_names(call: ast.Call) -> tuple[str, ...]:
+    """The string constants *call* is handed by position, in order."""
+    return tuple(
+        argument.value
+        for argument in call.args
+        if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+    )
+
+
+def _one_of(values: Collection[object], target: object) -> bool:
+    """Whether *target* itself is among *values*."""
+    return any(value is target for value in values)
+
+
+def _named(name: str, bound: Bindings, following: frozenset[str]) -> list[object]:
+    """What a loaded name denotes: its global, its imports, its locals, its builtin."""
+    found: list[object] = []
+    if name in bound.namespace:
+        found.append(bound.namespace[name])
+    found.extend(bound.imported.get(name, ()))
+    if name not in following:
+        for value in bound.assigned.get(name, ()):
+            found.extend(denoted(value, bound, following | {name}))
+    if not (
+        name in bound.namespace or name in bound.imported or name in bound.assigned
+    ):
+        builtin = getattr(builtins, name, _ABSENT)
+        if builtin is not _ABSENT:
+            found.append(builtin)
+    return found
+
+
+def _looked_up(
+    node: ast.Subscript, bound: Bindings, following: frozenset[str]
+) -> list[object]:
+    """What ``vars(x)["name"]`` or ``x.__dict__["name"]`` denotes: x's attribute."""
+    if not (isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str)):
+        return []
+    holder = node.value
+    if isinstance(holder, ast.Attribute) and holder.attr == "__dict__":
+        receivers = denoted(holder.value, bound, following)
+    elif (
+        isinstance(holder, ast.Call)
+        and len(holder.args) == 1
+        and _one_of(denoted(holder.func, bound, following), builtins.vars)
+    ):
+        receivers = denoted(holder.args[0], bound, following)
+    else:
+        return []
+    return [
+        found
+        for receiver in receivers
+        for found in _attribute_path(receiver, node.slice.value)
+    ]
+
+
+def _called(call: ast.Call, bound: Bindings, following: frozenset[str]) -> list[object]:
+    """What a call denotes: a named object it is handed, or a literal name it reads."""
+    found: list[object] = []
+    for argument in (*call.args, *(keyword.value for keyword in call.keywords)):
+        if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+            named = named_object(argument.value)
+            if named is not None:
+                found.append(named)
+    if (
+        _one_of(denoted(call.func, bound, following), builtins.getattr)
+        and len(call.args) >= 2
+        and isinstance(call.args[1], ast.Constant)
+        and isinstance(call.args[1].value, str)
+    ):
+        for receiver in denoted(call.args[0], bound, following):
+            found.extend(_attribute_path(receiver, call.args[1].value))
+    if isinstance(call.func, ast.Call) and _one_of(
+        denoted(call.func.func, bound, following), operator.attrgetter
+    ):
+        for argument in call.args:
+            for receiver in denoted(argument, bound, following):
+                for path in _literal_names(call.func):
+                    found.extend(_attribute_path(receiver, path))
+    return found
+
+
+def denoted(
+    node: ast.expr, bound: Bindings, following: frozenset[str] = frozenset()
+) -> tuple[object, ...]:
+    """Every object an expression can denote under *bound*, and their stand-ins.
+
+    Syntax, resolved by object after import.  A loaded name through the
+    module's globals, through every import that binds it, and through every
+    expression an assignment inside the definition read binds it to, so a
+    local bound from any expression read here is followed; an attribute
+    through each object its receiver denotes; a string constant through
+    ``named_object``; a call handed a string constant naming an object as
+    that object, the way ``pkgutil.resolve_name("kodezart.domain:gap")`` or
+    ``importlib.import_module("kodezart.domain.gap")`` returns it, so an
+    attribute taken off such a call, or off a local bound to it, is read off
+    the named object.  Literal names count wherever they appear:
+    ``getattr(x, "name")``, ``operator.attrgetter("a.name")(x)``,
+    ``vars(x)["name"]`` and ``x.__dict__["name"]`` are that attribute of
+    each object ``x`` denotes, through ``inspect.getattr_static``.  A name
+    bound nowhere in the module is the builtin of that word, which is how
+    ``getattr`` and ``vars`` are read as themselves.  A ``functools.partial``
+    and a static method stand in for their function.
+
+    Bounded: *following* holds the locals on the chain being followed, so a
+    local is followed once along any one chain and a name assigned from
+    itself ends the walk.
     """
     candidates: list[object] = []
     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-        if node.id in namespace:
-            candidates.append(namespace[node.id])
-        candidates.extend(bound.get(node.id, ()))
+        candidates.extend(_named(node.id, bound, following))
     elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
-        for receiver in _denoted(node.value, namespace, bound):
-            value = inspect.getattr_static(receiver, node.attr, _ABSENT)
-            if value is not _ABSENT:
-                candidates.append(value)
+        for receiver in denoted(node.value, bound, following):
+            candidates.extend(_attribute_path(receiver, node.attr))
     elif isinstance(node, ast.Constant) and isinstance(node.value, str):
         named = named_object(node.value)
         if named is not None:
             candidates.append(named)
+    elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
+        candidates.extend(_looked_up(node, bound, following))
     elif isinstance(node, ast.Call):
-        for argument in (*node.args, *(keyword.value for keyword in node.keywords)):
-            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
-                named = named_object(argument.value)
-                if named is not None:
-                    candidates.append(named)
+        candidates.extend(_called(node, bound, following))
     return tuple(found for value in candidates for found in _unwrapped(value))
 
 
@@ -851,20 +1012,25 @@ def loaded_values(
 ) -> tuple[object, ...]:
     """Every object a loaded name or attribute inside *within* can denote.
 
-    Read the way ``referencing_definitions`` reads a reference: a name
-    through the module's globals and through every import anywhere in
-    *tree* that binds it, an attribute through each object its receiver
-    denotes.  So a constant a name is bound to — in this module, or in the
-    module an import names — is read by its value, not by its word.  Not
-    seen: a value handed in at run time, and a name bound by assignment
-    inside a function.
+    Read the way ``referencing_definitions`` reads a reference
+    (``denoted``): a name through the module's globals, through every import
+    anywhere in *tree* that binds it and through every assignment inside
+    *within* that binds it, an attribute through each object its receiver
+    denotes.  So a constant a name is bound to — in this module, in the
+    module an import names, or by a local assigned from either — is read by
+    its value, not by its word.  Outside the reach: a value handed across a
+    function boundary, where the other function is not resolved at this site
+    (returned from a helper, stored on an object and read elsewhere, or
+    passed through a container built elsewhere); a name built at run time;
+    and a binding made only when a function runs (``setattr`` or
+    ``globals()`` inside a function body).
     """
-    bound = _import_bindings(relative, tree)
+    bound = bindings(relative, tree, namespace, within=within)
     return tuple(
         value
         for node in ast.walk(within)
         if isinstance(node, ast.Name | ast.Attribute) and isinstance(node.ctx, ast.Load)
-        for value in _denoted(node, namespace, bound)
+        for value in denoted(node, bound)
     )
 
 
@@ -878,25 +1044,32 @@ def referencing_definitions(
     """Every definition of *tree* whose text refers to one of *wanted*, by identity.
 
     ``(dotted definition, its node)``.  A reference is any expression that
-    denotes the object itself, called or not: a name the module's globals or
-    an import anywhere in it binds to the object (an aliased import, an
-    import inside a function, a module-level rebinding, a re-export), an
-    attribute of a module or class that is the object, a string constant
-    naming it as ``module:attr`` or ``module.attr``, an attribute taken off a
-    call handed such a string, and a ``functools.partial`` or static method
-    of it.
+    denotes the object itself (``denoted``), called or not: a name the
+    module's globals or an import anywhere in it binds to the object (an
+    aliased import, an import inside a function, a module-level rebinding, a
+    re-export), a local assigned inside the definition from any such
+    expression, an attribute of a module or class that is the object, a
+    string constant naming it as ``module:attr`` or ``module.attr``, an
+    attribute taken off a call handed such a string or off a local bound to
+    one, a literal name read as an attribute of an object that is resolved
+    here (``getattr``, ``operator.attrgetter``, ``vars`` and ``__dict__``),
+    and a ``functools.partial`` or static method of it.
 
     Each function holding a reference is a definition here, and so is every
-    function enclosing that one, so a closure's caller is read with it.  A
-    reference outside every function is recorded against the class body it
-    sits in, or ``<module>`` with the whole module as its node.
+    function enclosing that one, so a closure's caller is read with it, and
+    the locals a closure can read are the outermost enclosing function's
+    together with its own.  A reference outside every function is recorded
+    against the class body it sits in, or ``<module>`` with the whole module
+    as its node.
 
-    Not seen: an object reached through a value handed in at run time — an
-    argument, an attribute of an instance, a mapping — and a name built at
-    run time.
+    Outside the reach: a value handed across a function boundary, where the
+    other function is not resolved at this site (returned from a helper,
+    stored on an object and read elsewhere, or passed through a container
+    built elsewhere); a name built at run time; and a binding made only when
+    a function runs (``setattr`` or ``globals()`` inside a function body).
     """
     targets = {id(value) for value in wanted}
-    bound = _import_bindings(relative, tree)
+    bound = bindings(relative, tree, namespace)
     found: dict[int, tuple[str, ast.AST]] = {}
 
     def record(scopes: tuple[_Scope, ...]) -> None:
@@ -914,16 +1087,20 @@ def referencing_definitions(
         else:
             found[id(tree)] = ("<module>", tree)
 
-    def walk(node: ast.AST, scopes: tuple[_Scope, ...]) -> None:
+    def walk(node: ast.AST, scopes: tuple[_Scope, ...], bound: Bindings) -> None:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.expr) and any(
-                id(value) in targets for value in _denoted(child, namespace, bound)
+                id(value) in targets for value in denoted(child, bound)
             ):
                 record(scopes)
-            inner = scopes
+            inner, within = scopes, bound
             if isinstance(child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
                 inner = (*scopes, child)
-            walk(child, inner)
+                if isinstance(child, _Function) and not any(
+                    isinstance(scope, _Function) for scope in scopes
+                ):
+                    within = replace(bound, assigned=_assigned(child))
+            walk(child, inner, within)
 
-    walk(tree, ())
+    walk(tree, (), bound)
     return tuple(sorted(found.values(), key=lambda pair: pair[0]))

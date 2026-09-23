@@ -604,7 +604,7 @@ def test_an_attribute_off_a_call_handed_a_named_module_is_the_attribute():
 
 
 def test_a_loaded_name_is_read_by_the_value_it_is_bound_to():
-    """A name bound in the module or by an import is read as its value."""
+    """A name bound in the module, by an import or by a local is read as its value."""
     source = (
         "import kodezart.domain.fire_spec as spec\n"
         "\n"
@@ -613,12 +613,17 @@ def test_a_loaded_name_is_read_by_the_value_it_is_bound_to():
         "def plan(rows):\n"
         "    from kodezart.domain.fire_spec import DELIVERABLES_SECTION\n"
         "\n"
-        "    return (LOCAL, DELIVERABLES_SECTION, spec.DELIVERABLES_SECTION, rows)\n"
+        "    section = DELIVERABLES_SECTION\n"
+        "    return (LOCAL, DELIVERABLES_SECTION, spec.DELIVERABLES_SECTION, rows,"
+        " section)\n"
     )
     tree_of = ast.parse(source)
     namespace = module_namespace("services/planted.py", source)
     returned = next(node for node in ast.walk(tree_of) if isinstance(node, ast.Tuple))
-    local, imported, attribute, parameter = returned.elts
+    local, imported, attribute, parameter, assigned = returned.elts
+    definition = next(
+        node for node in ast.walk(tree_of) if isinstance(node, ast.FunctionDef)
+    )
 
     def values(node):
         return set(loaded_values("services/planted.py", tree_of, namespace, node))
@@ -627,3 +632,207 @@ def test_a_loaded_name_is_read_by_the_value_it_is_bound_to():
     assert values(imported) == {"Deliverables"}
     assert "Deliverables" in values(attribute)
     assert values(parameter) == set()
+    assert values(definition) >= {"bound here", "Deliverables"}
+    # The local is followed only with the definition it is assigned in: read
+    # on its own, the name is bound by nothing the module states.
+    assert values(assigned) == set()
+
+
+def referrers(source, *, wanted=(compute_gap,), relative="services/planted.py"):
+    """The definitions of a planted module text that refer to *wanted*."""
+    return [
+        name
+        for name, _node in referencing_definitions(
+            relative,
+            ast.parse(source),
+            module_namespace(relative, source),
+            wanted=wanted,
+        )
+    ]
+
+
+#: Each way a literal name reads an attribute off an object, as the text that
+#: binds ``window`` inside the planted function; every one is ``compute_gap``
+#: read off the gap module, or off the package the module hangs from.
+LITERAL_NAME_ROUTES = {
+    "getattr": "getattr(gap, 'compute_gap')",
+    "getattr with a default": "getattr(gap, 'compute_gap', None)",
+    "getattr off a dotted route": "getattr(kodezart.domain.gap, 'compute_gap')",
+    "attrgetter applied": "operator.attrgetter('compute_gap')(gap)",
+    "attrgetter over a dotted path": "operator.attrgetter('gap.compute_gap')(domain)",
+    "attrgetter imported by name": "attrgetter('compute_gap')(gap)",
+    "vars": "vars(gap)['compute_gap']",
+    "__dict__": "gap.__dict__['compute_gap']",
+}
+
+
+@pytest.mark.parametrize("route", sorted(LITERAL_NAME_ROUTES))
+def test_a_literal_name_is_the_attribute_of_what_its_receiver_denotes(route):
+    """``getattr(x, "name")`` and its kin are read as that attribute of ``x``.
+
+    The receiver is resolved by object and the literal is read off it
+    statically; the same text with a literal naming nothing refers to
+    nothing, and so does the same literal read off a value handed in.
+    """
+    header = (
+        "import kodezart.domain.gap\n"
+        "import operator\n"
+        "from operator import attrgetter\n"
+        "from kodezart import domain\n"
+        "from kodezart.domain import gap\n"
+        "\n"
+    )
+    source = (
+        f"{header}def plan(rows):\n"
+        f"    window = {LITERAL_NAME_ROUTES[route]}\n"
+        "    return window(rows, supersession_refs={})\n"
+    )
+    handed = source.replace("(gap)", "(rows)").replace("(gap,", "(rows,")
+    handed = handed.replace("(domain)", "(rows)").replace(
+        "gap.__dict__", "rows.__dict__"
+    )
+    handed = handed.replace("kodezart.domain.gap, ", "rows, ")
+    assert "def plan" in handed and handed != source
+
+    assert referrers(source) == ["plan"]
+    assert referrers(source.replace("compute_gap", "absent")) == []
+    assert referrers(handed) == []
+
+
+#: Each expression a local can be assigned from inside a definition and then
+#: read ``compute_gap`` off, as the text that binds ``arithmetic``.
+LOCAL_BINDINGS = {
+    "resolve_name of the module": "pkgutil.resolve_name('kodezart.domain:gap')",
+    "import_module of the module": "importlib.import_module('kodezart.domain.gap')",
+    "the imported module": "gap",
+    "vars of the package": "vars(domain)['gap']",
+    "getattr off the package": "getattr(domain, 'gap')",
+}
+
+
+@pytest.mark.parametrize("binding", sorted(LOCAL_BINDINGS))
+def test_a_local_assigned_inside_the_definition_is_followed(binding):
+    """A local bound from an expression read here is read as what it denotes.
+
+    Assigned plainly, annotated, by walrus, or through a second local; the
+    attribute read off it is resolved off the object.  A local bound from a
+    value handed in denotes nothing.
+    """
+    header = (
+        "import importlib\n"
+        "import pkgutil\n"
+        "from kodezart import domain\n"
+        "from kodezart.domain import gap\n"
+        "\n"
+    )
+    value = LOCAL_BINDINGS[binding]
+    forms = {
+        "assigned": f"    arithmetic = {value}\n",
+        "annotated": f"    arithmetic: object = {value}\n",
+        "walrus": f"    if (arithmetic := {value}):\n        pass\n",
+        "through a second local": f"    first = {value}\n    arithmetic = first\n",
+    }
+    for form in forms.values():
+        source = (
+            f"{header}def plan(rows):\n{form}"
+            "    return arithmetic.compute_gap(rows, supersession_refs={})\n"
+        )
+        assert referrers(source) == ["plan"], form
+    handed = (
+        f"{header}def plan(rows, held):\n"
+        "    arithmetic = held\n"
+        "    return arithmetic.compute_gap(rows, supersession_refs={})\n"
+    )
+    assert referrers(handed) == []
+
+
+def test_a_closure_reads_the_locals_of_the_function_enclosing_it():
+    source = (
+        "import pkgutil\n"
+        "\n"
+        "def outer(rows):\n"
+        "    arithmetic = pkgutil.resolve_name('kodezart.domain:gap')\n"
+        "\n"
+        "    def inner():\n"
+        "        return arithmetic.compute_gap(rows, supersession_refs={})\n"
+        "\n"
+        "    return inner\n"
+    )
+    assert referrers(source) == ["outer", "outer.inner"]
+
+
+def test_a_local_assigned_from_itself_ends_the_walk():
+    source = (
+        "from kodezart.domain import gap\n"
+        "\n"
+        "def plan(rows):\n"
+        "    arithmetic = arithmetic.compute_gap\n"
+        "    window = gap\n"
+        "    gap = window\n"
+        "    return arithmetic(rows), window\n"
+    )
+    assert referrers(source, wanted=(gap_module,)) == ["plan"]
+    assert referrers(source) == []
+
+
+#: Each shape outside the reach, as a planted module text: a value handed
+#: across a function boundary, a name built at run time, and a binding made
+#: only when a function runs.  None refers to the arithmetic in ``plan``.
+UNSEEN_SHAPES = {
+    "an argument": "def plan(rows, window):\n"
+    "    return window(rows, supersession_refs={})\n",
+    "returned from a helper": "from kodezart.domain import gap\n"
+    "\n"
+    "def arithmetic():\n"
+    "    return gap.compute_gap\n"
+    "\n"
+    "def plan(rows):\n"
+    "    return arithmetic()(rows, supersession_refs={})\n",
+    "stored on an object and read elsewhere": "from kodezart.domain import gap\n"
+    "\n"
+    "class Holder:\n"
+    "    def __init__(self):\n"
+    "        self.window = gap.compute_gap\n"
+    "\n"
+    "def plan(rows, holder):\n"
+    "    return holder.window(rows, supersession_refs={})\n",
+    "passed through a container built elsewhere": "from kodezart.domain import gap\n"
+    "\n"
+    "def table():\n"
+    "    return {'window': gap.compute_gap}\n"
+    "\n"
+    "def plan(rows):\n"
+    "    return table()['window'](rows, supersession_refs={})\n",
+    "a name built at run time": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(rows):\n"
+    "    window = getattr(gap, 'compute_' + 'gap')\n"
+    "    return window(rows, supersession_refs={})\n",
+    "globals() bound inside a function": "from kodezart.domain import gap\n"
+    "\n"
+    "def bind():\n"
+    "    globals()['window'] = gap.compute_gap\n"
+    "\n"
+    "def plan(rows):\n"
+    "    return window(rows, supersession_refs={})\n",
+    "setattr inside a function": "import sys\n"
+    "\n"
+    "from kodezart.domain import gap\n"
+    "\n"
+    "def bind():\n"
+    "    setattr(sys.modules[__name__], 'window', gap.compute_gap)\n"
+    "\n"
+    "def plan(rows):\n"
+    "    return window(rows, supersession_refs={})\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(UNSEEN_SHAPES))
+def test_a_shape_outside_the_reach_is_not_a_reference(shape):
+    """The stated limit, held: ``plan`` refers to nothing in each shape.
+
+    Where the module binds the arithmetic elsewhere — in the helper, the
+    holder or the binder — that definition is the reference, and ``plan``,
+    which reaches the value only across the boundary, is not.
+    """
+    assert "plan" not in referrers(UNSEEN_SHAPES[shape])
