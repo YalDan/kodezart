@@ -78,6 +78,39 @@ def test_another_in_scope_blocker_cannot_substitute_for_the_named_blocker():
     )
 
 
+@pytest.mark.parametrize("other_in_scope", [False, True])
+@pytest.mark.parametrize("named_in_scope", [False, True])
+@pytest.mark.parametrize("named_position", [0, 1])
+def test_with_two_blocked_by_edges_only_the_named_blockers_scope_decides(
+    named_position, named_in_scope, other_in_scope
+):
+    other = "OTHER/7"
+    edges = [
+        IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=other),
+    ]
+    edges.insert(
+        named_position,
+        IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=BLOCKER),
+    )
+    issue = make_tracker_issue(ISSUE).model_copy(update={"relations": tuple(edges)})
+    scope = frozenset(
+        {ISSUE}
+        | ({BLOCKER} if named_in_scope else set())
+        | ({other} if other_in_scope else set())
+    )
+    expected = (
+        AdmissionRoute.MARK_COMPLETE if named_in_scope else AdmissionRoute.REAUTHOR
+    )
+
+    assert [relation.issue_key for relation in issue.relations].index(
+        BLOCKER
+    ) == named_position
+    assert (
+        admission_route(unverifiable_result(), issue=issue, scope_issue_keys=scope)
+        is expected
+    )
+
+
 @pytest.mark.parametrize(
     "evidence", ["CLEARLY READY TO PROCEED", "Needs human approval"]
 )
