@@ -9,10 +9,16 @@ which was read off the adapter before it was split into one class per role.
 The split moves code and changes no call, so the same script sends the same
 log after it; a flow that raised is recorded by the error it raised, so a
 refusal that moves is a difference too. Each flow is held to the role it is
-labelled with by the members it reaches for on the adapter, so a label is
-never coverage a flow does not give.
+labelled with by the members it calls on the adapter, a member only read not
+counting, so a label is never coverage a flow does not give.
+
+Where a step calls a member of its role that no conformance module names,
+the per-case golden never sees what it sends, so the values are held here:
+the digest of that step's calls with their values, only the nonce erased,
+read off the adapter before the split like the log.
 """
 
+import ast
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import timedelta
 
@@ -30,6 +36,12 @@ from kodezart.types.domain.tracker import (
     MappingRef,
     ReviewQuery,
 )
+from tests.tracker.conformance_call_log import (
+    CONFORMANCE_PATHS,
+    REPOSITORY,
+    call_log_digest,
+    logged_call,
+)
 from tests.tracker.conftest import (
     APPROVED_ISSUE,
     ASSET_ISSUE,
@@ -39,7 +51,7 @@ from tests.tracker.conftest import (
     linear_over_fake_mcp,
 )
 from tests.tracker.lease_fixtures import leased_comment
-from tests.tracker.role_register import declared_by_role
+from tests.tracker.role_register import declared_by_role, port_members
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 from tests.tracker.test_organize_graph_writes import (
     address,
@@ -360,16 +372,27 @@ type Entry = tuple[str, str, tuple[str, ...]]
 
 
 class Entered:
-    """The adapter, recording every public member a step reaches for on it."""
+    """The adapter, recording every public member a step calls on it.
+
+    A member read and never called is not entered: the view hands back a
+    wrapper that records the name only when it is called.
+    """
 
     def __init__(self, tracker: object) -> None:
         self._tracker = tracker
         self._reached: set[str] = set()
 
     def __getattr__(self, name: str) -> object:
-        if not name.startswith("_"):
-            self._reached.add(name)
-        return getattr(self._tracker, name)
+        value = getattr(self._tracker, name)
+        if name.startswith("_") or not callable(value):
+            return value
+        reached = self._reached
+
+        def entered(*args: object, **kwargs: object) -> object:
+            reached.add(name)
+            return value(*args, **kwargs)
+
+        return entered
 
 
 async def run(
@@ -377,11 +400,13 @@ async def run(
     tracker: object,
     calls: list[tuple[str, Mapping[str, object]]],
     entered: list[tuple[str, frozenset[str]]] | None = None,
+    sent: list[tuple[str, ...]] | None = None,
 ) -> list[Entry]:
     """Every tool call *steps* make, then how each step ended, in order.
 
     Each step runs over its own ``Entered`` view of the adapter; the members
-    it reached for are appended to *entered* beside its label.
+    it called are appended to *entered* beside its label, and the calls it
+    made, with their values and only the nonce erased, to *sent*.
     """
     log: list[Entry] = []
     for role, step in steps:
@@ -399,11 +424,16 @@ async def run(
         log.append(ending)
         if entered is not None:
             entered.append((role, frozenset(view._reached)))
+        if sent is not None:
+            sent.append(
+                tuple(logged_call(tool, arguments) for tool, arguments in calls[start:])
+            )
     return log
 
 
 async def call_log(
     entered: list[tuple[str, frozenset[str]]] | None = None,
+    sent: list[tuple[str, ...]] | None = None,
 ) -> tuple[Entry, ...]:
     """Run the script and return every tool call as (step, tool, argument keys)."""
     board, _ = fixture()
@@ -416,8 +446,10 @@ async def call_log(
     )
     scope = ScopeMcpServer()
     return (
-        *await run(STEPS, tracker, board.calls, entered),
-        *await run(SCOPE_STEPS, linear_over_fake_mcp(scope), scope.calls, entered),
+        *await run(STEPS, tracker, board.calls, entered, sent),
+        *await run(
+            SCOPE_STEPS, linear_over_fake_mcp(scope), scope.calls, entered, sent
+        ),
     )
 
 
@@ -441,6 +473,45 @@ async def test_each_flow_enters_a_member_of_the_role_it_is_labelled_with():
 
 async def test_the_adapter_sends_the_recorded_call_log():
     assert await call_log() == RECORDED_CALL_LOG
+
+
+def conformance_members() -> frozenset[str]:
+    """Every port member a conformance module names, read off its parsed text."""
+    members = port_members()
+    return frozenset(
+        node.attr
+        for path in CONFORMANCE_PATHS
+        for node in ast.walk(ast.parse((REPOSITORY / path).read_text()))
+        if isinstance(node, ast.Attribute) and node.attr in members
+    )
+
+
+async def sent_where_no_conformance_case_looks() -> dict[int, str]:
+    """Each step calling a member of its role no conformance case names, by index.
+
+    Held as the digest of the calls the step made, with their values and
+    only the nonce erased.
+    """
+    entered: list[tuple[str, frozenset[str]]] = []
+    sent: list[tuple[str, ...]] = []
+    await call_log(entered, sent)
+    roles = declared_by_role()
+    looked = conformance_members()
+    return {
+        index: call_log_digest(calls)
+        for index, ((role, reached), calls) in enumerate(
+            zip(entered, sent, strict=True)
+        )
+        if reached & roles[role] - looked
+    }
+
+
+async def test_the_adapter_sends_the_recorded_values_where_no_conformance_case_looks():
+    """The values of every call the per-case golden never sees are held here."""
+    sent = await sent_where_no_conformance_case_looks()
+
+    assert sent
+    assert sent == RECORDED_VALUES
 
 
 #: Read off the adapter before the split, by running ``call_log`` once.
@@ -732,3 +803,27 @@ RECORDED_CALL_LOG: tuple[Entry, ...] = (
     ("FireDispatchTracker", "get_project", ("query",)),
     ("FireDispatchTracker", "returned", ()),
 )
+
+
+#: Read off the adapter before the split, by running
+#: ``sent_where_no_conformance_case_looks`` once: step index to the digest of
+#: the calls that step made, values kept and only the nonce erased.
+RECORDED_VALUES: dict[int, str] = {
+    0: "c2bdbf8b3339946af1877092a67ee00829b9cc72628e6a12df4c16959fa64266",
+    1: "1b53787f66f88f7b702b61180518ac5062d87f63163da3578099dc96cea757a0",
+    4: "c373a4efa64a68c921e6f83bdf09adfb6b98d4a335014aeb8521bd58b7bf3b5d",
+    9: "0e1b12ce640e6fde4996850687b89d4dc0025581b6630d888dd0dbce23c3f14e",
+    13: "0e1b12ce640e6fde4996850687b89d4dc0025581b6630d888dd0dbce23c3f14e",
+    14: "81ad9c7fb9e38233a335e8173a9145adbc64a31824a8eb79c078fb1eedebcabe",
+    15: "81ad9c7fb9e38233a335e8173a9145adbc64a31824a8eb79c078fb1eedebcabe",
+    19: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    26: "6517e5d69853e73898119b1f967b0d84e811aac289072253d54ed60e7b6db3fb",
+    30: "fd78c0e08e9cdc52eb45461c1d2dcf881eba023ec635f356a2b91b98ca5553bc",
+    35: "0e1b12ce640e6fde4996850687b89d4dc0025581b6630d888dd0dbce23c3f14e",
+    40: "97fae04e8892539e9a2c1193b4ca16d2fbf093b3c8971b32134b394e70e3efbb",
+    42: "2edf077cca2996aa93c16223006fb01f87a85b64143bc14bc2d0fda787c915d8",
+    43: "97fae04e8892539e9a2c1193b4ca16d2fbf093b3c8971b32134b394e70e3efbb",
+    44: "084b7d293a1426ff11ba8098f1be0ec7848853341b63e0ec7859795d9ac2f2d3",
+    51: "22124195923ca9ec43e5c1718cc24e9a8d8d31d25cd0148e41148558060cb2b1",
+    52: "a37b28ca3a08be52cdedf1178ad905c730119c3d7c78e759ab3df119030edd28",
+}

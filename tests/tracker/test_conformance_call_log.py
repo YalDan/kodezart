@@ -3,16 +3,16 @@
 The golden in ``conformance_call_log.json`` is compared case by case by an
 autouse fixture of the tracker ``conftest``, so a golden that lost a case,
 or carried one the suite no longer has, would compare less than it says.
-This holds its keys to the conformance cases collected on the adapter arm,
-and holds the digest to what it is meant to see: the values a call sends,
-with only what varies between runs erased.
+This holds its keys to the cases every conformance module collects on the
+adapter arm, and holds the digest to what it is meant to see: the values a
+call sends, a timestamp among them, with only the nonce erased.
 """
 
 import subprocess
 import sys
 
 from tests.tracker.conformance_call_log import (
-    CONFORMANCE_MODULE,
+    CONFORMANCE_PATHS,
     REPOSITORY,
     call_log_digest,
     logged_call,
@@ -23,7 +23,7 @@ from tests.tracker.conftest import TRACKER_ADAPTERS
 
 
 def collected_conformance_cases() -> frozenset[str]:
-    """Every node id the conformance module collects, read off a collection run."""
+    """Every node id the conformance modules collect, read off a collection run."""
     listing = subprocess.run(
         [
             sys.executable,
@@ -35,7 +35,7 @@ def collected_conformance_cases() -> frozenset[str]:
             "no:randomly",
             "-p",
             "no:cacheprovider",
-            CONFORMANCE_MODULE,
+            *CONFORMANCE_PATHS,
         ],
         cwd=REPOSITORY,
         capture_output=True,
@@ -53,6 +53,9 @@ def test_the_golden_names_exactly_the_conformance_cases_on_the_adapter_arm():
 
     assert on_the_arm
     assert on_the_arm < collected
+    assert {nodeid.partition("::")[0] for nodeid in on_the_arm} == set(
+        CONFORMANCE_PATHS
+    )
     assert set(recorded_digests()) == on_the_arm
 
 
@@ -69,5 +72,5 @@ def test_the_digest_sees_a_value_and_not_what_varies_between_runs():
 
     assert call_log_digest([sent]) == call_log_digest([again])
     assert call_log_digest([sent]) != call_log_digest([other])
-    assert call_log_digest([stamped]) == call_log_digest([restamped])
+    assert call_log_digest([stamped]) != call_log_digest([restamped])
     assert call_log_digest([sent, other]) != call_log_digest([other, sent])
