@@ -802,9 +802,9 @@ async def test_a_criterion_the_spec_names_that_the_subtree_lost_refuses() -> Non
 async def test_a_criterion_the_fire_does_not_owe_is_not_revalidated() -> None:
     """A finished criterion is outside the obligation, so its body is too.
 
-    The entry validates the Check of every criterion the subtree holds,
-    whole, as it validated the direct family's whole: a malformed Check
-    refuses there wherever under the subject it sits.  What a barrier does
+    The entry validates the Check of every criterion the subtree holds that
+    counts, as it validated the direct family's: a malformed Check refuses
+    there wherever under the subject it sits.  What a barrier does
     not re-read is a FINISHED criterion's Check — there the state is what
     decides, so a Done criterion under a deliverable child is not re-read
     for a Check it no longer owes.
@@ -829,11 +829,12 @@ async def test_a_finished_nested_criterion_with_no_legible_check_refuses():
     """A finished criterion is still parsed, because the entry reads the roster.
 
     What the entry captures is the subtree's roster entire and not the part of
-    it the fire owes, so every criterion under the subject has its Check read
-    there — one already Done under a deliverable child included. A board whose
-    finished nested criterion carries no template row therefore refuses at the
-    entry, where the same subject with a malformed OWED criterion already
-    refused, and the refusal names the criterion rather than the subject alone.
+    it the fire owes, so every criterion under the subject that counts has its
+    Check read there — one already Done under a deliverable child included.
+    A board whose finished nested criterion carries no template row therefore
+    refuses at the entry, where the same subject with a malformed OWED
+    criterion already refused, and the refusal names the criterion rather
+    than the subject alone.
 
     The case above makes the opposite reading, at a barrier, where state is
     what decides: this one is about the entry, which has no roster to go on yet.
