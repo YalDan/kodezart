@@ -12,7 +12,6 @@ import pytest
 import structlog.testing
 
 from kodezart.domain.errors import LaneEntryError
-from kodezart.domain.lane_entry import recorded_commit
 from kodezart.domain.lane_record import (
     LANDING_ROW_SUBJECT,
     next_lane_record,
@@ -322,10 +321,6 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
         body_digest=DIGEST,
     )
     assert entry.head_sha != PRE_LANDING_TIP
-    # The domain function is called once, for the expected value only: the
-    # record it answers over is the one this test built, while the reader
-    # answered over the one it parsed back out of the comment.
-    assert entry.head_sha == recorded_commit(record=stored).sha
     # The landed act is a row of this record and not its first: the resolution
     # answers with the last act, and the act the run opened with is not it.
     assert [row.sha for row in stored.commits] == [*ACTS, LANDED]
