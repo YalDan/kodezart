@@ -99,7 +99,7 @@
   "tests/chains/test_remediation.py": 19,
   "tests/chains/test_retry_floor_wiring.py": 11,
   "tests/chains/test_rule_open_questions.py": 97,
-  "tests/chains/test_scope_gap_membership.py": 29,
+  "tests/chains/test_scope_gap_membership.py": 32,
   "tests/chains/test_scope_gap_selection.py": 9,
   "tests/chains/test_scope_observations.py": 14,
   "tests/chains/test_scope_ready.py": 54,
@@ -189,7 +189,7 @@
   "tests/domain/test_fire_spec_arm_reads.py": 23,
   "tests/domain/test_fire_spec_formatter.py": 2,
   "tests/domain/test_fire_spec_purity.py": 10,
-  "tests/domain/test_gap.py": 50,
+  "tests/domain/test_gap.py": 52,
   "tests/domain/test_git_url.py": 16,
   "tests/domain/test_issue_label_config.py": 6,
   "tests/domain/test_lane_alarms.py": 21,
@@ -2026,7 +2026,8 @@
    "test_a_criterion_never_graded_is_owed_with_no_graded_sha_and_not_refuted",
    "test_the_two_ungraded_readings_are_told_apart_by_the_sha_alone",
    "test_the_walk_reads_each_criterion_as_its_sub_issue_and_no_parent_body",
-   "test_supersession_prose_on_an_owed_criterion_keeps_it_on_every_gap"
+   "test_supersession_prose_on_an_owed_criterion_keeps_it_on_every_gap",
+   "test_labels_named_like_an_exclusion_leave_an_owed_criterion_on_every_gap"
   ],
   "tests/chains/test_scope_gap_selection.py": [
    "test_gap_alone_selects_original_ungraded_criterion_without_parent_state_reads",
@@ -3083,7 +3084,8 @@
    "test_a_criterion_never_graded_is_owed_and_carries_no_grading",
    "test_the_lapse_and_the_never_graded_are_one_membership_told_apart_by_the_sha",
    "test_a_lapse_and_a_reopened_grading_are_owed_and_told_apart_by_the_lapse_pointer",
-   "test_the_shape_guard_rejects_a_default_arm_however_it_is_spelled"
+   "test_the_shape_guard_rejects_a_default_arm_however_it_is_spelled",
+   "test_membership_is_on_state_alone_whatever_labels_the_criterion_carries"
   ],
   "tests/domain/test_git_url.py": [
    "test_parse_repo_url_https_without_dot_git",

@@ -26,7 +26,7 @@ from kodezart.domain.errors import ScopePlanRefusalError
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
-from tests.chains.test_scope_ready import PROJECT, row
+from tests.chains.test_scope_ready import LABELS, PROJECT, row
 from tests.chains.test_scope_ready import ready_fixture as ready_fixture
 
 LANE = "lane"
@@ -142,6 +142,32 @@ async def test_supersession_prose_on_an_owed_criterion_keeps_it_on_every_gap(
     assert owed == {LANE: [DEEP_CHECK], NESTED: [DEEP_CHECK]}
     assert selection.excluded == ()
     assert DEEP_CHECK in selection.unresolved
+    fixture.assert_read_only()
+
+
+#: Labels named like the two excluding states and a supersession, configured
+#: on the adapter so the read carries them onto the criterion record.
+EXTRA_LABELS = {name: f"tag/{name}" for name in ("superseded", "canceled", "duplicate")}
+
+
+async def test_labels_named_like_an_exclusion_leave_an_owed_criterion_on_every_gap(
+    ready_fixture,
+) -> None:
+    """Membership is on state alone: an unstarted criterion's labels exclude nothing."""
+    rows = subtree(kind="unstarted", body=UNGRADED_BODY)
+    rows[-1].labels = [*rows[-1].labels, *EXTRA_LABELS.values()]
+    fixture = await ready_fixture(rows, labels={**LABELS, **EXTRA_LABELS})
+
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+
+    owed = {
+        lane.issue.issue_key: [item.issue_key for item in lane.gap]
+        for lane in selection.ready
+    }
+    assert owed == {LANE: [DEEP_CHECK], NESTED: [DEEP_CHECK]}
+    assert selection.excluded == ()
+    (deep,) = (item for item in selection.criteria if item.issue_key == DEEP_CHECK)
+    assert deep.issue_labels == frozenset({"criterion", *EXTRA_LABELS})
     fixture.assert_read_only()
 
 

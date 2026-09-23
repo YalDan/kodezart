@@ -133,11 +133,11 @@ class ReadyFixture:
 
 @pytest.fixture(params=["linear", "fake"])
 def ready_fixture(request):
-    async def build(rows, *, approved=True):
+    async def build(rows, *, approved=True, labels=LABELS):
         server = ScopeMcpServer()
         server.issues = {item.id: item for item in rows}
         server.state_types.update(READY_STATES)
-        native = native_tracker(server)
+        native = native_tracker(server, labels)
         fake = FakeTrackerPort(
             issues=[await native.read_issue(issue_key=item.id) for item in rows],
             scope_containers=[
