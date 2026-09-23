@@ -624,6 +624,127 @@ async def test_a_canceled_child_with_no_check_refuses_no_creation_under_its_pare
     ]
 
 
+def proposes_in_turn(monkeypatch, board, executor, *sessions):
+    """Script the n-th criteria-author session to propose ``sessions[n]``.
+
+    Each entry is the indices into ``CHECKLIST_ITEMS`` that session proposes,
+    title and Check alike; a session past the last entry repeats it.  Returns
+    whether the parent carried the criteria marker as each session opened.
+    """
+    marked = []
+    answered = executor.stream
+
+    async def in_turn(**kwargs):
+        if AUTHOR_OPENING in kwargs["prompt"]:
+            chosen = sessions[min(authors(executor), len(sessions) - 1)]
+            executor.criteria = tuple(CHECKLIST_TITLES[i] for i in chosen)
+            executor.checks = tuple(CHECKLIST_ITEMS[i] for i in chosen)
+            marked.append(
+                "criteria complete" in board.server.issues[CLAIMED_ISSUE].labels
+            )
+        async for event in answered(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", in_turn)
+    return marked
+
+
+async def test_an_item_the_author_leaves_out_is_minted_by_a_later_session(
+    monkeypatch,
+):
+    """The stop after a session asks the same question as the entry before it.
+
+    The first session proposes the first two items only.  The third is still
+    stated by no child, so the stage is still owed: the parent is not marked,
+    a second session opens, and the item it proposes is minted there.
+    """
+    owner, board, executor = checklist_owner()
+    parent = board.server.issues[CLAIMED_ISSUE]
+    marked = proposes_in_turn(monkeypatch, board, executor, (0, 1), (0, 1, 2))
+
+    report = await run_owner(owner)
+
+    assert report.halt is None
+    assert authors(executor) == 2
+    assert marked == [False, False]
+    assert minted_checks(board, besides=set()) == [
+        (item,) for item in sorted(CHECKLIST_ITEMS)
+    ]
+    assert len(minted_under_parent(board)) == 3
+    assert "criteria complete" in parent.labels
+    assert parent.description == CHECKLIST_BODY
+
+
+async def test_an_item_no_session_proposes_halts_the_stage_unmarked(monkeypatch):
+    """An item every session leaves out is reported, never passed over.
+
+    Both admission rounds open a session and both propose the first two
+    items only, so the third is never minted: the stage halts on its bound
+    and escalates the parent instead of marking its criteria complete.
+    """
+    owner, board, executor = checklist_owner()
+    parent = board.server.issues[CLAIMED_ISSUE]
+    marked = proposes_in_turn(monkeypatch, board, executor, (0, 1))
+
+    report = await run_owner(owner)
+
+    assert report.halt.cause == "admission_exhausted"
+    assert report.halt.bound.setting == "organize.max_admission_rounds"
+    assert report.halt.bound.value == report.halt.bound.rounds_used == 2
+    assert authors(executor) == 2
+    assert marked == [False, False]
+    assert "criteria complete" not in parent.labels
+    assert "needs decision" in parent.labels
+    assert minted_checks(board, besides=set()) == [
+        (item,) for item in sorted(CHECKLIST_ITEMS[:2])
+    ]
+    assert parent.description == CHECKLIST_BODY
+
+
+async def test_a_parent_whose_only_child_is_a_duplicate_is_owed_after_the_session_too():
+    """The entry and the stop give a Duplicate-only parent the same answer.
+
+    The stage is owed before the session, because no child counts.  The
+    session proposes the Check the Duplicate child already states, so nothing
+    is minted and the children the stop reads are the ones the entry read:
+    the stop is owed too, each round opens a session, and the stage halts on
+    its bound without marking the parent.
+    """
+    from tests.fakes import FakeMcpIssue
+
+    body = "The export is specified by its source."
+    owner, board, executor = factory(
+        under_approval=True, body=body, phases=criteria_row_only
+    )
+    parent = board.server.issues[CLAIMED_ISSUE]
+    parent.labels.append("body complete")
+    duplicate = "claimed-duplicate-only"
+    closed_body = criterion_body(
+        parent_key=CLAIMED_ISSUE,
+        check="Check prepared bytes match the declared source.",
+        do="Read the export.",
+    )
+    board.server.issues[duplicate] = FakeMcpIssue(
+        id=duplicate,
+        parent_id=CLAIMED_ISSUE,
+        labels=["check"],
+        description=closed_body,
+        status="Duplicate",
+        status_type=STATE_TYPES["Duplicate"],
+    )
+
+    report = await run_owner(owner)
+
+    assert report.halt.cause == "admission_exhausted"
+    assert report.halt.bound.value == report.halt.bound.rounds_used == 2
+    assert authors(executor) == 2
+    assert "criteria complete" not in parent.labels
+    assert minted_under_parent(board) == []
+    assert set(criterion_children(board)) == {duplicate}
+    assert board.server.issues[duplicate].description == closed_body
+    assert board.server.issues[duplicate].status == "Duplicate"
+
+
 async def test_the_criteria_author_cannot_write_the_parent_body(monkeypatch):
     """A body proposal from the criteria author is refused, and nothing is written.
 

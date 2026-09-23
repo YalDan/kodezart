@@ -112,7 +112,6 @@ from kodezart.types.domain.surface import (
 from kodezart.types.domain.tracker import (
     TrackerIssue,
     TrackerIssueRevision,
-    WorkflowStateKind,
 )
 
 
@@ -1268,19 +1267,20 @@ class OrganizeOwner:
                         route = await self._route(
                             result, issue=issue, scope_issue_keys=frozenset(members)
                         )
+                        # The stop after the session asks the question the
+                        # entry above asked, of the children the session left:
+                        # an item the session left out keeps the stage owed.
                         children = await self._tracker.read_criteria(
                             issue_key=issue.issue_key
+                        )
+                        needs_criteria = (
+                            key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                            and criteria_owed(body=issue.body, children=children)
                         )
                         if (
                             route is AdmissionRoute.MARK_COMPLETE
                             and not result.findings
-                            and (
-                                key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
-                                or any(
-                                    c.state_kind is not WorkflowStateKind.CANCELED
-                                    for c in children
-                                )
-                            )
+                            and not needs_criteria
                         ):
                             break
                     else:

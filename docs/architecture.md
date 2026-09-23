@@ -257,9 +257,9 @@ closed at the readiness read, while a fire entered on such a subject is refused
 as empty at the spec read. The readers that ask the one predicate,
 `is_non_counting`, are the spec read, the native writer's authority read,
 `existing_criterion` and the criteria stage's `needs_criteria`; the gap and
-readiness read asks `is_open`, which closes the same kinds. The organize readers
-in `domain/organize.py` and `services/organize_owner.py` that still name
-Canceled themselves are the known exception. A static scan holds the Duplicate
+readiness read asks `is_open`, which closes the same kinds. The organize reader
+in `domain/organize.py` that still names Canceled itself is the known
+exception. A static scan holds the Duplicate
 kind to the enum's own module in the shapes it sees: the `DUPLICATE` attribute,
 or a subscript by the member's name, on the enum spelled by its own name, by a
 from-import alias or as a module attribute, and a string constant equal to the
@@ -1182,8 +1182,11 @@ adopted by the criteria author, one criterion per item with the item's text
 quoted verbatim as its Check; the body is left as it is. The stage is owed while
 no child counts or while a checklist item has no criterion: an item is covered
 by any child whose Check states it, whatever that child's state, so a criterion
-a person canceled is not minted again. The task-list items are read by
-`checklist_items`, beside the row grammar in `domain/fire_spec.py`. A re-run
+a person canceled is not minted again. The stage asks `criteria_owed` before
+each author session and again after it, so an item the session left out keeps
+the stage owed and no parent is marked while one is uncovered. The task-list
+items are read by `checklist_items`, beside the row grammar in
+`domain/fire_spec.py`. A re-run
 mints nothing because check-before-create compares the Check text with outer
 whitespace stripped. A native
 identity is the sub-issue key and nothing else: removing one criterion and

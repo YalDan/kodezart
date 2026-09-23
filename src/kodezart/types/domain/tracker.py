@@ -113,9 +113,8 @@ def is_non_counting(kind: WorkflowStateKind) -> bool:
     Asked by the spec read, the native writer's authority read,
     ``existing_criterion`` and the criteria stage's ``needs_criteria``; the
     gap and readiness read asks ``is_open``, which closes the same kinds.
-    The organize readers in ``domain/organize.py`` and
-    ``services/organize_owner.py`` that still name Canceled themselves are
-    the known exception.
+    The organize reader in ``domain/organize.py`` that still names Canceled
+    itself is the known exception.
     """
     return kind in _NON_COUNTING_STATE_KINDS
 
