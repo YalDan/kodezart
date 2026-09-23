@@ -20,6 +20,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from mypy.errors import Errors
+from mypy.options import Options
+from mypy.parse import parse
+from mypy.semanal_pass1 import SemanticAnalyzerPreAnalysis
+
 from tests.conftest import GATED_MARKERS
 
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
@@ -104,19 +109,6 @@ TYPE_CHECK_FORMS: Final[frozenset[str]] = frozenset(
     {"typing.no_type_check", "typing_extensions.no_type_check"}
 )
 
-#: The names the type checker takes as always true, whatever they are bound
-#: to: it matches the last segment of a name or an attribute, not the object
-#: (``mypy.reachability.infer_condition_value``).  A block whose test the
-#: checker folds to false through their negation is one it treats as never
-#: running, and so never reads.
-TYPE_CHECKING_NAMES: Final[frozenset[str]] = frozenset({"TYPE_CHECKING", "MYPY"})
-
-#: The flag's origins, read through the module's bindings as well, so an
-#: alias of the flag under a name of its own is read as the flag.
-TYPE_CHECKING_FLAGS: Final[frozenset[str]] = frozenset(
-    {"typing.TYPE_CHECKING", "typing_extensions.TYPE_CHECKING"}
-)
-
 #: The modules the form rosters name members of.  A chain resolves to a form
 #: only through a binding whose origin is one of these or a module under
 #: one, so the roster and the resolver cannot drift: a form added under a
@@ -124,7 +116,7 @@ TYPE_CHECKING_FLAGS: Final[frozenset[str]] = frozenset(
 #: Binding a root binds its every imported name, but only a rostered name is
 #: ever reported, so a module importing ``Final`` from the standard
 #: library's typing module reports nothing.  ``typing_extensions`` is a root
-#: because it re-exports the checker's decorator and flag.
+#: because it re-exports the checker's decorator.
 FORM_ROOTS: Final[tuple[str, ...]] = (
     "pytest",
     "unittest",
@@ -366,86 +358,104 @@ def sites(module: Source, forms: frozenset[str]) -> tuple[str, ...]:
     return tuple(name for _, _, name in sorted(found))
 
 
-#: The three answers the checker's fold gives a test, as far as the flag
-#: decides it: true for the checker only, false for the checker only, or
-#: not decided by the flag.
-_CHECKER_TRUE: Final = "checker-true"
-_CHECKER_FALSE: Final = "checker-false"
-_UNDECIDED: Final = "undecided"
-_NEGATED: Final[Mapping[str, str]] = {
-    _CHECKER_TRUE: _CHECKER_FALSE,
-    _CHECKER_FALSE: _CHECKER_TRUE,
-    _UNDECIDED: _UNDECIDED,
-}
+@functools.cache
+def checker_options() -> Options:
+    """The type checker's options, as far as its reachability pass reads them.
 
-
-def _flag_value(test: ast.expr, bindings: Mapping[str, str]) -> str:
-    """What the type checker takes *test* to be, as far as the flag decides it.
-
-    The checker's own fold (``mypy.reachability.infer_condition_value``):
-    ``not`` inverts; a name or an attribute whose last segment is one of
-    ``TYPE_CHECKING_NAMES``, or a chain the module bound to the flag, is
-    true for the checker; ``and`` is false for the checker when either
-    side is and true when both are; ``or`` is true when either side is and
-    false when both are.  A chain of three or more operands folds left to
-    right, as the checker parses it.  Recursion is bounded by the test's
-    own depth.
+    Built from the project's own ``[tool.mypy]`` table: the version and the
+    platform a ``sys.version_info`` or ``sys.platform`` test is decided
+    against, the platform the checker's default when the table names none.
     """
-    if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
-        return _NEGATED[_flag_value(test.operand, bindings)]
-    if isinstance(test, ast.BoolOp):
-        folded = _flag_value(test.values[0], bindings)
-        for operand in test.values[1:]:
-            sides = {folded, _flag_value(operand, bindings)}
-            if isinstance(test.op, ast.And):
-                folded = (
-                    _CHECKER_FALSE
-                    if _CHECKER_FALSE in sides
-                    else _CHECKER_TRUE
-                    if sides == {_CHECKER_TRUE}
-                    else _UNDECIDED
-                )
-            else:
-                folded = (
-                    _CHECKER_TRUE
-                    if _CHECKER_TRUE in sides
-                    else _CHECKER_FALSE
-                    if sides == {_CHECKER_FALSE}
-                    else _UNDECIDED
-                )
-        return folded
-    if isinstance(test, ast.Name) and test.id in TYPE_CHECKING_NAMES:
-        return _CHECKER_TRUE
-    if isinstance(test, ast.Attribute) and test.attr in TYPE_CHECKING_NAMES:
-        return _CHECKER_TRUE
-    if _through(dotted(test), bindings) in TYPE_CHECKING_FLAGS:
-        return _CHECKER_TRUE
-    return _UNDECIDED
+    with (REPO_ROOT / "pyproject.toml").open("rb") as handle:
+        table = tomllib.load(handle)["tool"]["mypy"]
+    options = Options()
+    major, minor = (int(part) for part in str(table["python_version"]).split("."))
+    options.python_version = (major, minor)
+    options.platform = str(table.get("platform", options.platform))
+    return options
+
+
+@functools.cache
+def _skipped_lines(path: str, text: bytes) -> frozenset[int]:
+    options = checker_options()
+    tree = parse(text, path, None, Errors(options), options)
+    SemanticAnalyzerPreAnalysis().visit_file(tree, path, path, options)
+    return frozenset(tree.skipped_lines)
+
+
+def checker_skipped_lines(module: Source) -> frozenset[int]:
+    """The lines the type checker never reads in one module, in its own words.
+
+    The checker's own parse of the file, then its own reachability pass
+    (``mypy.semanal_pass1``, which applies
+    ``mypy.reachability.infer_condition_value``) under the project's
+    options: every line of every block that pass marks unreachable, and of
+    every statement after a module-level assertion it takes as always
+    failing.
+    """
+    return _skipped_lines(module.path, module.text)
 
 
 def unchecked_blocks(module: Source) -> tuple[str, ...]:
-    """Every ``if`` or ``elif`` block the type checker takes as never running.
+    """Every block the type checker takes as never running, in file order.
 
-    The checker's own rule: a test it folds to false through a negated
-    ``TYPE_CHECKING`` or ``MYPY`` -- matched by name whatever the name is
-    bound to, locally or imported from ``typing`` or ``typing_extensions``
-    -- marks the block unreachable, so it is never read.  ``and`` and
-    ``or`` are folded the way the checker folds them (``_flag_value``), so
-    ``not TYPE_CHECKING and x`` is such a block and ``not TYPE_CHECKING or
-    x`` is not.  An alias of the flag bound from either module under a
-    name of its own is read through the module's bindings as well.  An
-    ``elif`` is an ``if`` nested in the arm above it, so it is read the
-    same way.  Each block is reported as its test, as written, in file
-    order.
+    A block is unchecked exactly when the checker's reachability pass skips
+    every line of it (``checker_skipped_lines``): an ``if`` or ``elif`` arm
+    whose test it takes as false, an ``else`` below a test it takes as
+    true, a ``case`` it takes as never matching, and the statements after
+    an assertion it takes as always failing.  Nothing here decides a test:
+    ``TYPE_CHECKING``, ``MYPY``, ``PY2`` and ``PY3`` by name, ``and`` and
+    ``or``, and ``sys.version_info`` and ``sys.platform`` comparisons are
+    all the checker's own reading.  Each block is reported by what heads
+    it -- the test as written, ``else of`` the test, the case, or ``after
+    assert`` the assertion -- and a block inside a reported one is not
+    reported again.  Bounded by the syntax tree's depth.
     """
-    bindings = form_bindings(module.tree)
+    skipped = checker_skipped_lines(module)
     found: list[tuple[int, int, str]] = []
-    for node in ast.walk(module.tree):
-        if isinstance(node, ast.If) and (
-            _flag_value(node.test, bindings) == _CHECKER_FALSE
-        ):
-            found.append((node.lineno, node.col_offset, ast.unparse(node.test)))
-    return tuple(test for _, _, test in sorted(found))
+
+    def unread(body: Sequence[ast.stmt]) -> bool:
+        if not body:
+            return False
+        last = body[-1].end_lineno or body[-1].lineno
+        return set(range(body[0].lineno, last + 1)) <= skipped
+
+    def headed(node: ast.AST, field: str) -> str | None:
+        if isinstance(node, ast.If):
+            test = ast.unparse(node.test)
+            return test if field == "body" else f"else of {test}"
+        if isinstance(node, ast.match_case):
+            case = f"case {ast.unparse(node.pattern)}"
+            return (
+                case if node.guard is None else f"{case} if {ast.unparse(node.guard)}"
+            )
+        return None
+
+    def visit(node: ast.AST) -> None:
+        for field, value in ast.iter_fields(node):
+            if isinstance(value, ast.AST):
+                visit(value)
+                continue
+            if not isinstance(value, list):
+                continue
+            statements = [item for item in value if isinstance(item, ast.stmt)]
+            head = headed(node, field)
+            if head is not None and unread(statements):
+                first = statements[0]
+                found.append((first.lineno, first.col_offset, head))
+                continue
+            for index, item in enumerate(value):
+                if not isinstance(item, ast.AST):
+                    continue
+                if isinstance(item, ast.Assert) and unread(statements[index + 1 :]):
+                    test = ast.unparse(item.test)
+                    found.append((item.lineno, item.col_offset, f"after assert {test}"))
+                    break
+                visit(item)
+
+    if skipped:
+        visit(module.tree)
+    return tuple(head for _, _, head in sorted(found))
 
 
 def test_declarations(module: Source) -> tuple[str, ...]:
