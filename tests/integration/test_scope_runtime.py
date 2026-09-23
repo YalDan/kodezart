@@ -4774,6 +4774,43 @@ async def test_a_second_iteration_declaring_another_class_fails_before_any_cross
     assert "A" in ticks_of(events)[-1].rested_lanes
 
 
+async def test_a_failing_re_derivation_declaring_another_class_fails_its_lane():
+    """A re-derivation that fails again is compared all the same.
+
+    The first grading fails ``A/check`` declaring it expensive; the second
+    fails it again declaring nothing, which reads cheap. The class a failed
+    grading declares is still the criterion's declaration, so the change is
+    the typed error the composed loop raises, and the second iteration writes
+    nothing on the board.
+    """
+    harness = runtime(
+        max_iterations=2,
+        evaluations=[
+            criteria_echo(
+                keys=("A/check",),
+                passed=(),
+                declared={"A/check": EXPENSIVE_OVER_SOURCE},
+            ),
+            criteria_echo(keys=("A/check",), passed=()),
+        ],
+    )
+    unwritten = harness.port.issues["A/check"].body
+
+    events = await walk_reporting(
+        harness,
+        kind="StickyClassError",
+        match="A/check holds the expensive re-derivation class and cannot be "
+        "declared cheap",
+    )
+
+    assert len(ticks_of(events)) == 2
+    assert len(harness.executor.evaluation_prompts) == 2
+    assert harness.port.issues["A/check"].body == unwritten
+    assert harness.port.issues["A/check"].state_kind is WorkflowStateKind.UNSTARTED
+    assert harness.port.workflow_writes == []
+    assert "A" in ticks_of(events)[-1].rested_lanes
+
+
 async def test_a_second_iteration_keeping_its_class_is_crossed_off():
     """The same lane, the class kept: the re-derivation is crossed off as usual.
 
