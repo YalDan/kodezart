@@ -10,6 +10,7 @@ import structlog.testing
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.core.protocols import LaneStateWriter
+from kodezart.domain.agent import best_iteration_ref
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.criterion_cross_off import (
     CARRIED_REASON,
@@ -1847,46 +1848,51 @@ async def stalled_twice(*, merger=None, ref_publisher=None):
     return repo, record
 
 
-async def test_a_landing_that_does_not_integrate_records_no_act():
-    """A best iteration the deliverable could not take is no act of this lane.
+async def test_a_landing_not_integrated_records_the_best_iteration_as_the_next_act():
+    """A best iteration the deliverable could not take is still the lane's best act.
 
     The landing publishes the best iteration under a ref of its own and the
     consolidation reports it divergent, so the deliverable branch did not
-    move and nothing was landed on a branch this record names. The record's
-    rows stay the loop's own commits, its last act is the loop's last commit,
-    and no landing row follows — so re-entry is the stall case: it continues
-    the loop at its last act (KOD-705, KOD-875).
+    move. The best commit is one of the loop branch's own commits, so it is
+    recorded as the lane's next act: re-entry resolves it, and not the loop
+    tip the run slipped back to (KOD-705, KOD-875). The sha the consolidation
+    reports the deliverable standing at is no act of this lane.
     """
     publisher = FakeRefPublisher()
-    repo, record = await stalled_twice(
-        merger=FakeBranchMerger(
-            consolidation_outcomes=[
-                ConsolidationOutcome(
-                    status=ConsolidationStatus.DIVERGENT, feature_tip_sha=UNMOVED_TIP
-                )
-            ]
-        ),
-        ref_publisher=publisher,
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.DIVERGENT, feature_tip_sha=UNMOVED_TIP
+            )
+        ]
     )
+    repo, record = await stalled_twice(merger=merger, ref_publisher=publisher)
 
+    # The consolidation was reached, once, for the published best ref, and it
+    # answered divergent: the premise of this arm, observed.
     assert len(publisher.calls) == 1
+    assert len(merger.calls) == 1
+    consolidated = merger.calls[0]
+    assert consolidated["status"] is ConsolidationStatus.DIVERGENT
+    assert (
+        consolidated["source_branch"]
+        == publisher.calls[0]["ref"]
+        == best_iteration_ref(str(consolidated["feature_branch"]))
+    )
     published = publisher.calls[0]["commit_sha"]
     assert len(repo.shas) == 2
-    assert [row.sha for row in record.commits] == repo.shas
-    assert published == repo.shas[0] != record.commits[-1].sha
-    assert recorded_commit(record=record).sha == repo.shas[-1]
-    assert [row for row in record.commits if row.subject == LANDING_ROW_SUBJECT] == []
+    assert record.commits[-1].sha == published == repo.shas[0] != repo.shas[-1]
+    assert record.commits[-1].subject == LANDING_ROW_SUBJECT
     assert UNMOVED_TIP not in {row.sha for row in record.commits}
 
 
-async def test_a_forge_less_stall_lands_nothing_and_records_no_act():
+async def test_a_forge_less_stall_records_the_best_iteration_as_the_next_act():
     """With the publisher withheld, as the forge-less composition does, nothing lands.
 
-    Nothing is published and nothing consolidated, so the record names no
-    best iteration: its rows are the loop's own commits and its last act is
-    the loop's last commit, which is where re-entry continues the loop. That
-    this arm re-enters at its last act and not at its best iteration is
-    stated here, not built (KOD-875).
+    Nothing is published and nothing consolidated, but the run still has a
+    best iteration, and it is one of the loop branch's own commits: it is
+    recorded as the lane's next act, so re-entry resolves it and not the loop
+    tip the run slipped back to (KOD-705, KOD-875).
     """
     merger = FakeBranchMerger()
     repo, record = await stalled_twice(merger=merger)
@@ -1895,6 +1901,5 @@ async def test_a_forge_less_stall_lands_nothing_and_records_no_act():
     # publish was never asked: the landing returned before either.
     assert merger.calls == []
     assert len(repo.shas) == 2
-    assert [row.sha for row in record.commits] == repo.shas
-    assert recorded_commit(record=record).sha == repo.shas[-1]
-    assert [row for row in record.commits if row.subject == LANDING_ROW_SUBJECT] == []
+    assert record.commits[-1].sha == repo.shas[0] != repo.shas[-1]
+    assert [row.sha for row in record.commits] == [*repo.shas, repo.shas[0]]
