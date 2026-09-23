@@ -1079,6 +1079,67 @@ def test_an_unresolved_reference_to_a_driven_writer_fails_closed():
     assert moved.isdisjoint(found.driven)
 
 
+UNTYPED_HELPER_STEP = '''
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+
+
+class Step:
+    """A step the verifier drives, reaching a helper nothing types."""
+
+    def __init__(self, *, helper) -> None:
+        self._helper = helper
+
+    @property
+    def surface(self):
+        return None
+
+    async def write(self, *, finding) -> None:
+        await self._helper.impostor_only_name()
+
+
+class Writer:
+    def __init__(self, *, helper, verifier: WriteBackVerifier) -> None:
+        self._helper, self._verifier = helper, verifier
+
+    async def publish(self) -> None:
+        await self._verifier.write_back(step=Step(helper=self._helper), ref="r")
+'''
+ONLY_NAMED_WRITER = '''
+from kodezart.core.protocols import TrackerPort
+
+
+class Helper:
+    """The one function in the tree carrying the name the step calls."""
+
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def impostor_only_name(self) -> None:
+        await self._tracker.post_comment(issue_key="K", body="b")
+'''
+
+
+def test_an_untyped_call_reaches_no_function_by_its_name_alone():
+    """A driven step calling through nothing typed delegates to nothing.
+
+    The step's helper is an attribute no annotation or constructor types,
+    and the method it calls is the only function of that name anywhere in
+    the tree.  A reader that fell back to that one name would drive the
+    helper's write; the call resolves to nothing, so the write is refused.
+    """
+    found = census(
+        ("planted/untyped_step.py", UNTYPED_HELPER_STEP),
+        ("planted/only_named.py", ONLY_NAMED_WRITER),
+    )
+    site = CallSite(
+        module="planted/only_named.py",
+        function="Helper.impostor_only_name",
+        method="post_comment",
+    )
+    assert site in found.sites
+    assert site in found.unadopted
+
+
 UNGROUNDED_STEP = '''
 from kodezart.core.protocols import TrackerPort
 
