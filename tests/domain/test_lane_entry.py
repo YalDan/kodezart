@@ -744,11 +744,23 @@ def test_the_entry_reads_the_recorded_dispatch_base_against_the_implied_one(
     assert entry.base_stale is stale
 
 
-def test_the_entry_reading_is_is_base_stales_answer(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("implied_of", "says"),
+    [
+        (lambda: DISPATCHED.model_copy(deep=True), True),
+        (lambda: ADVANCED, False),
+    ],
+    ids=["equal-bases-read-stale", "advanced-base-reads-live"],
+)
+def test_the_entry_reading_is_is_base_stales_answer(
+    monkeypatch, implied_of, says
+) -> None:
     """The entry asks the landed comparison once and carries what it says.
 
     The recorder answers the opposite of the real comparison, so an entry that
-    compared the two bases itself would read live here.
+    compared the two bases itself would read live on the equal pair and stale
+    on the advanced one.  Both directions, so a second comparison ORed or
+    ANDed beside the landed one is wrong on one of them.
     """
     calls: list[tuple[BaseSpec, BaseSpec]] = []
 
@@ -758,7 +770,7 @@ def test_the_entry_reading_is_is_base_stales_answer(monkeypatch) -> None:
 
     monkeypatch.setattr(lane_entry_module, "is_base_stale", recorder)
     source = record(base=DISPATCHED.base_branch, dispatch_base=DISPATCHED)
-    implied = DISPATCHED.model_copy(deep=True)
+    implied = implied_of()
 
     entry = decide(
         recorded=recorded(source),
@@ -768,7 +780,7 @@ def test_the_entry_reading_is_is_base_stales_answer(monkeypatch) -> None:
     )
 
     assert isinstance(entry, ResumedLane)
-    assert entry.base_stale is True
+    assert entry.base_stale is says
     assert len(calls) == 1
     assert calls[0][0] is source.dispatch_base
     assert calls[0][1] is implied
