@@ -6,12 +6,19 @@ validation machinery and their ``extra`` setting; the terminal the
 tracker-native graph's completion node emits for every outcome; and the
 coordinator's public surface, pinned beside the lane's delivery tests.
 
-Outside the reach: transport after serialisation, meaning the SSE framing,
-the queue's buffering and ASGI middleware.  None of these is the hand-off;
-they carry whatever bytes they are given.  The route table, the stream
-column and the egress path are pinned below as they stand, and each of
-those pins states what it holds; none claims to cover every route to the
-wire.
+Between the node and the wire, the terminal passes through the engine
+relays (the origin-routed engine's run and the fire engine's run), the job
+queue's buffer — which holds event objects, not bytes, until the handler
+renders them — the handler's rendering and the SSE framing.  All of those
+are inside the observed and pinned egress path below.
+
+Outside the reach: transport after the handler's rendering, meaning the
+bytes the SSE frame becomes, the ASGI messages that carry them and any
+middleware over them.  None of these is the hand-off; they carry whatever
+bytes they are given, and that limit is held by a negative control below.
+The route table, the stream column and the egress path are pinned below
+as they stand, and each of those pins states what it holds; none claims
+to cover every route to the wire.
 """
 
 import ast
@@ -42,7 +49,9 @@ from kodezart.adapters import asyncio_job_queue
 from kodezart.api.v1.endpoints import agent as agent_routes
 from kodezart.api.v1.endpoints import jobs as job_routes
 from kodezart.chains import ralph_workflow
+from kodezart.chains.fire_consolidation import FireConsolidation
 from kodezart.chains.ralph_workflow import FireGraph, RalphWorkflowEngine
+from kodezart.composition.engine import OriginRoutedWorkflowEngine
 from kodezart.composition.jobs import build_job_service
 from kodezart.core.protocols import FireCriteriaSource
 from kodezart.domain.accept_gate import gate_cleared
@@ -1734,13 +1743,15 @@ async def exchange(
     return status, headers, frames
 
 
-class HeldFire:
-    """A workflow engine whose one run sends its first event and holds the rest.
+class HeldComposition:
+    """A compiled fire's stand-in: it sends its first event and holds the rest.
 
-    Stands in for the fire behind the shipped queue.  After the first event
+    Stands in for the compiled graph behind the fire engine's own ``run``,
+    which streams it the way it streams the graph.  After the first event
     it waits on ``released``, so a client can attach while the run is still
     going: what it sent is then in the job's buffer, and what it holds goes
-    out live.
+    out live.  The node the graph would run is driven and pinned above;
+    what this drive observes is everything from the engine's run outward.
     """
 
     def __init__(self, events: list[AgentEvent]) -> None:
@@ -1748,13 +1759,38 @@ class HeldFire:
         self.led = asyncio.Event()
         self.released = asyncio.Event()
 
-    async def run(self, **_: object) -> AsyncIterator[AgentEvent]:
+    async def astream(
+        self, initial_state: WorkflowState, *, config: RunnableConfig, stream_mode: str
+    ) -> AsyncIterator[AgentEvent]:
+        assert stream_mode == "custom"
+        assert set(initial_state) == set(WorkflowState.__required_keys__)
         first, *held = self._events
         yield first
         self.led.set()
         await asyncio.wait_for(self.released.wait(), timeout=ATTACH_BOUND)
         for event in held:
             yield event
+
+
+def held_relays(
+    events: list[AgentEvent],
+) -> tuple[OriginRoutedWorkflowEngine, HeldComposition]:
+    """The shipped relays between the node and the queue, over a held composition.
+
+    The origin-routed engine with the fire engine on both of its arms, the
+    way composition wires a run's engine, and the fire engine built by the
+    same factory the other fire tests use with its compiled graph replaced
+    by :class:`HeldComposition` holding *events*.  So a terminal the queue
+    receives has passed through ``OriginRoutedWorkflowEngine.run`` and
+    ``RalphWorkflowEngine.run`` — and, for a merged hand-off, the
+    consolidation's backup cleanup — exactly as a served run's does.
+    """
+    composition = HeldComposition(events)
+    engine = fire()
+    engine.graph = composition
+    assert engine._composition(None) is composition
+    routed = OriginRoutedWorkflowEngine(forge_arm=engine, forge_less_arm=engine)
+    return routed, composition
 
 
 #: What a client posts to start a run or a query; the held engine and the
@@ -1776,8 +1812,9 @@ async def emitted(events: list[AgentEvent]) -> dict[tuple[str, str], Answer]:
     carries :data:`BODY`.  Returns each one's status, headers and decoded
     frames, the workflow's leading handle taken off.  The query stream's
     events are what the agent run yields; the workflow's run and every
-    other run the routes queue are the held engine's; a later attach to
-    the workflow's finished job replays its buffer.  Every job the drive
+    other run the routes queue are the held composition's, relayed by the
+    shipped engines (:func:`held_relays`); a later attach to the
+    workflow's finished job replays its buffer.  Every job the drive
     queued has finished before the queue is stopped.
 
     The workflow run is held after its first event until that event reaches
@@ -1795,22 +1832,22 @@ async def emitted(events: list[AgentEvent]) -> dict[tuple[str, str], Answer]:
         workspace=FakeWorkspaceProvider(),
         persister=None,
     )
-    fire = HeldFire(events)
+    relays, held = held_relays(events)
     job: list[str] = []
     open_at_release: list[bool] = []
     async with attached_job_queue(
-        app, fire, event_buffer_capacity=len(events)
+        app, relays, event_buffer_capacity=len(events)
     ) as queue:
         app.state.job_service = build_job_service(registry=queue, checkpointer=None)
 
         async def attached(frame: dict[str, object]) -> None:
             if frame["type"] == "job_accepted":
                 job.append(str(frame["jobId"]))
-                await fire.led.wait()
-            elif not fire.released.is_set():
+                await held.led.wait()
+            elif not held.released.is_set():
                 state = queue.registry.records[job[0]].state
                 open_at_release.append(state is not JobState.TERMINAL)
-                fire.released.set()
+                held.released.set()
 
         status, headers, (handle, *run) = await exchange(
             app, *WORKFLOW, body=BODY, on_frame=attached
@@ -1947,13 +1984,27 @@ PACKAGE_ROOT = Path(inspect.getfile(kodezart)).parent
 #: moment, each with the sha256 of its source text.  Pinned whole: a change
 #: to any of them — or a function joining or leaving the observed set — has
 #: to update this table deliberately, which is the review this pin exists to
-#: force.  Held equal to the set as the drive observes it.  What it pins is
-#: these functions' text as they stand.  It does not claim that no other
-#: code can put a key on the wire: a function that holds the terminal only
-#: in a local between its call and its return is not observed, and
-#: transport after serialisation — the SSE framing, the queue's buffering,
-#: ASGI middleware — is outside this module's reach.
+#: force.  Held equal to the set as the drive observes it.  The path runs
+#: from the engine relays — the origin-routed engine's run and the fire
+#: engine's run, which stream the terminal from the graph to the queue, and
+#: the consolidation's backup cleanup, which is handed it after — through
+#: the queue's worker, its publish and its buffer's stream, the handler's
+#: rendering, the routes and the SSE framing.  What it pins is these
+#: functions' text as they stand.  It does not claim that no other code
+#: can put a key on the wire: a function that holds the terminal only in a
+#: local between its call and its return is not observed, and transport
+#: after the handler's rendering — the frame's bytes, the ASGI messages
+#: that carry them, middleware over them — is outside this module's reach.
 EGRESS_PATH: dict[Callable[..., object], str] = {
+    OriginRoutedWorkflowEngine.run: (
+        "08b5380d0ce22388550179f653ba254701899542a01fcf65580f348cddba07d0"
+    ),
+    RalphWorkflowEngine.run: (
+        "324b17ce17550d1bd0859cbc70f8958dffcd8d7694b244a3f6fa7d0a5cf88e08"
+    ),
+    FireConsolidation.cleanup_backups: (
+        "353aed993557d1dd1e9095121da74b4416e6bf5ae87b7f7fdd97b811ab5087ee"
+    ),
     asyncio_job_queue.AsyncioJobQueue._worker: (
         "55544aa6ca52e76b284c27b3d9de15540a8f597454659d529fdd9bfaa78a9cf6"
     ),
@@ -2008,8 +2059,10 @@ def carries_terminal(value: object) -> bool:
 
     The event itself, the mapping the handler renders it to, or the SSE
     frame text that mapping is formatted into.  Bytes, and an ASGI message
-    carrying them, are not recognised: transport after serialisation is
-    outside this module's reach.
+    carrying them, are not recognised: transport after the handler's
+    rendering is outside this module's reach, and
+    :func:`test_transport_after_the_rendering_is_outside_the_reach` holds
+    that limit.
     """
     if isinstance(value, WorkflowCompleteEvent):
         return True
@@ -2018,6 +2071,28 @@ def carries_terminal(value: object) -> bool:
     if isinstance(value, str):
         return '"type": "workflow_complete"' in value
     return False
+
+
+def test_transport_after_the_rendering_is_outside_the_reach() -> None:
+    """The one stated limit, held: what follows the rendering is not observed.
+
+    The terminal, the mapping the handler renders it to and the frame text
+    that mapping is formatted into are each recognised — the three forms
+    the observed path is derived from.  The frame's bytes, and the ASGI
+    body message that carries them, are not: a function that works on
+    either is outside the observed set by construction, which is the fact
+    the module docstring states.
+    """
+    terminal = template()
+    payload = agent_handler._streamed_event_payload(terminal)
+    frame = format_sse(payload)
+    assert carries_terminal(terminal)
+    assert carries_terminal(payload)
+    assert carries_terminal(frame)
+    assert not carries_terminal(frame.encode())
+    assert not carries_terminal(
+        {"type": "http.response.body", "body": frame.encode(), "more_body": True}
+    )
 
 
 def function_of(code: CodeType) -> Callable[..., object]:
