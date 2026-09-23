@@ -53,6 +53,10 @@ def test_one_membership_arm_per_tracker_state(state, expected):
     """A state the enum gains has no arm here until somebody writes one."""
     assert set(ROWS) == set(WorkflowStateKind)
     assert gap.gap_membership(criterion(state=state)) is expected
+    # The kind-level askings read the same arm: a consumer holding only the
+    # kind a reading carried gets the answer a criterion in it gets.
+    assert gap.state_membership(state) is expected
+    assert gap.open_state_kind(state) is (expected is GapMembership.OWED)
 
 
 def test_canceled_and_duplicate_are_excluded_on_state_alone_and_named_beside_the_gap():
@@ -86,6 +90,8 @@ def test_canceled_and_duplicate_are_excluded_on_state_alone_and_named_beside_the
 
     assert set(inspect.signature(gap.gap_membership).parameters) == {"criterion"}
     assert set(inspect.signature(gap.compute_gap).parameters) == {"criteria"}
+    assert set(inspect.signature(gap.state_membership).parameters) == {"state_kind"}
+    assert set(inspect.signature(gap.open_state_kind).parameters) == {"state_kind"}
 
 
 def test_membership_is_on_state_alone_whatever_labels_the_criterion_carries():
@@ -266,15 +272,29 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
             pytest.fail("unaccounted dynamic call in pure gap module")
     matches = [node for node in ast.walk(tree) if isinstance(node, ast.Match)]
     assert len(matches) == 1
-    (membership,) = (
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == gap.gap_membership.__name__
-    )
-    # The match is the function's last statement: nothing after it can
+
+    def definition(function) -> ast.FunctionDef:
+        (found,) = (
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == function.__name__
+        )
+        return found
+
+    def without_docstring(node: ast.FunctionDef) -> list[ast.stmt]:
+        statements = node.body
+        if isinstance(statements[0], ast.Expr) and isinstance(
+            statements[0].value, ast.Constant
+        ):
+            return statements[1:]
+        return statements
+
+    kind_reading = definition(gap.state_membership)
+    membership = definition(gap.gap_membership)
+    open_kind = definition(gap.open_state_kind)
+    # The match is the kind reading's last statement: nothing after it can
     # answer for a state the arms do not name.
-    assert membership.body[-1] is matches[0]
+    assert kind_reading.body[-1] is matches[0]
     arms = [case for match in matches for case in match.cases]
     assert all(case.guard is None for case in arms)
     assert all(isinstance(case.pattern, ast.MatchValue) for case in arms)
@@ -284,23 +304,54 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
         if isinstance(case.pattern, ast.MatchValue)
     ) == sorted(WorkflowStateKind.__members__)
     # Nothing before the match can answer for a state either: after the
-    # docstring, the body is the label refusal and then the match, whose
-    # subject is the one parameter's own state.
-    statements = membership.body
-    if isinstance(statements[0], ast.Expr) and isinstance(
-        statements[0].value, ast.Constant
-    ):
-        statements = statements[1:]
-    assert [type(statement) for statement in statements] == [ast.If, ast.Match]
-    refusal, match = statements
+    # docstring, the kind reading is the match alone, whose subject is its
+    # one parameter.
+    assert without_docstring(kind_reading) == [matches[0]]
+    match = matches[0]
+    (kind,) = kind_reading.args.args
+    assert ast.dump(match.subject) == ast.dump(ast.Name(id=kind.arg, ctx=ast.Load()))
+    # The criterion's membership is the one label refusal and then the kind
+    # reading of the parameter's own state, and nothing else.
+    statements = without_docstring(membership)
+    assert [type(statement) for statement in statements] == [ast.If, ast.Return]
+    refusal, answer = statements
     assert [type(statement) for statement in refusal.body] == [ast.Raise]
     assert refusal.orelse == []
     (parameter,) = membership.args.args
-    assert ast.dump(match.subject) == ast.dump(
-        ast.Attribute(
-            value=ast.Name(id=parameter.arg, ctx=ast.Load()),
-            attr="state_kind",
-            ctx=ast.Load(),
+    assert ast.dump(answer.value) == ast.dump(
+        ast.Call(
+            func=ast.Name(id=kind_reading.name, ctx=ast.Load()),
+            args=[
+                ast.Attribute(
+                    value=ast.Name(id=parameter.arg, ctx=ast.Load()),
+                    attr="state_kind",
+                    ctx=ast.Load(),
+                )
+            ],
+            keywords=[],
+        )
+    )
+    # The kind-level asking is that same reading, open exactly when owed.
+    asking = without_docstring(open_kind)
+    assert [type(statement) for statement in asking] == [ast.Return]
+    (asked,) = asking
+    (open_parameter,) = open_kind.args.args
+    assert isinstance(asked, ast.Return)
+    assert ast.dump(asked.value) == ast.dump(
+        ast.Compare(
+            left=ast.Call(
+                func=ast.Name(id=kind_reading.name, ctx=ast.Load()),
+                args=[ast.Name(id=open_parameter.arg, ctx=ast.Load())],
+                keywords=[],
+            ),
+            ops=[ast.Is()],
+            comparators=[
+                ast.Attribute(
+                    value=ast.Name(id="GapMembership", ctx=ast.Load()),
+                    attr=GapMembership.OWED.name,
+                    ctx=ast.Load(),
+                )
+            ],
         )
     )
     # And no function of the module names a state outside a match pattern:
@@ -308,6 +359,16 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
     # string equal to a state's value names that state too.
     in_patterns = {id(node) for case in arms for node in ast.walk(case.pattern)}
     assert in_patterns
+    # A parameter annotated with the enum itself names the type a kind
+    # reading takes, not a state; only that bare annotation is set aside.
+    annotations = {
+        id(argument.annotation)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        for argument in node.args.args
+        if isinstance(argument.annotation, ast.Name)
+        and vars(gap).get(argument.annotation.id) is WorkflowStateKind
+    }
     namespace = vars(gap)
     state_values = {member.value for member in WorkflowStateKind}
 
@@ -320,7 +381,7 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
     assert [
         ast.unparse(node)
         for node in ast.walk(tree)
-        if id(node) not in in_patterns and names_a_state(node)
+        if id(node) not in in_patterns | annotations and names_a_state(node)
     ] == []
 
 
@@ -335,7 +396,9 @@ def test_purity_guard_rejects_builtin_io_without_executing_it(monkeypatch, call)
         test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm()
 
 
-_MATCH = "    match criterion.state_kind:\n"
+_MATCH = "    match state_kind:\n"
+_MEMBERSHIP = "    return state_membership(criterion.state_kind)\n"
+_ASKING = "    return state_membership(state_kind) is GapMembership.OWED\n"
 _MEMBERSHIPS = (
     "    memberships = [(criterion, gap_membership(criterion))"
     " for criterion in criteria]\n"
@@ -360,19 +423,20 @@ def _defaulted(closed: str) -> str:
 
 #: One default arm per spelling the shape guard reads: before the match, in
 #: the match's subject, in compute_gap through the enum, through an alias the
-#: module binds to it and through a state's string value, and a label check
-#: that excludes before the state is read.
+#: module binds to it and through a state's string value, a label check
+#: that excludes before the state is read, a default around the kind reading
+#: in the criterion's membership, and one in the kind-level asking.
 DEFAULT_ARMS: dict[str, tuple[str, str]] = {
     "before-the-match": (
         _MATCH,
-        "    if criterion.state_kind not in (WorkflowStateKind.COMPLETED,):\n"
+        "    if state_kind not in (WorkflowStateKind.COMPLETED,):\n"
         "        return GapMembership.OWED\n" + _MATCH,
     ),
     "in-the-subject": (
         _MATCH,
         "    match (\n"
-        "        criterion.state_kind\n"
-        "        if criterion.state_kind in (WorkflowStateKind.COMPLETED,)\n"
+        "        state_kind\n"
+        "        if state_kind in (WorkflowStateKind.COMPLETED,)\n"
         "        else WorkflowStateKind.STARTED\n"
         "    ):\n",
     ),
@@ -383,9 +447,22 @@ DEFAULT_ARMS: dict[str, tuple[str, str]] = {
     "through-an-alias": (_MEMBERSHIPS, _defaulted(_CLOSED)),
     "by-value": (_MEMBERSHIPS, _defaulted('("completed", "canceled", "duplicate")')),
     "by-label": (
-        _MATCH,
+        _MEMBERSHIP,
         '    if "superseded" in criterion.issue_labels:\n'
-        "        return GapMembership.EXCLUDED\n" + _MATCH,
+        "        return GapMembership.EXCLUDED\n" + _MEMBERSHIP,
+    ),
+    "around-the-kind-reading": (
+        _MEMBERSHIP,
+        "    return (\n"
+        "        state_membership(criterion.state_kind)\n"
+        "        if criterion.state_kind in (WorkflowStateKind.COMPLETED,)\n"
+        "        else GapMembership.OWED\n"
+        "    )\n",
+    ),
+    "in-the-kind-asking": (
+        _ASKING,
+        "    if state_kind is WorkflowStateKind.CANCELED:\n"
+        "        return True\n" + _ASKING,
     ),
 }
 
