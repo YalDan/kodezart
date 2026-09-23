@@ -235,6 +235,37 @@ async def test_every_scopes_barrier_is_observed_and_each_raise_is_logged():
     ] == [REF.key, OTHER.key]
 
 
+async def test_a_failed_ready_read_does_not_hide_the_scopes_barrier():
+    """The barrier is observed before the ready read, so its failure hides nothing.
+
+    The scope's ready read fails and its barrier is stalled: the stall is
+    still logged for the scope, and the scope is reported once, for the read.
+    """
+    port = await board(lanes=LANES)
+    stalled = tally_unmoved(
+        subject=SCOPE_STALL,
+        readings=scope_inputs(),
+        raised_at_sha="supervisor",
+        raised_by=HOLDER,
+    )
+    assert stalled is not None
+
+    with structlog.testing.capture_logs() as logs:
+        with pytest.raises(SupervisorIncompleteError) as caught:
+            await pass_over(
+                port,
+                readings={REF: RuntimeError("the ready read failed")},
+                scope_arm={REF: (stalled,)},
+            ).run(FIXTURE_EPOCH)
+
+    assert caught.value.failed == (REF.key,)
+    assert [
+        (entry["scope"], entry["marker"])
+        for entry in logs
+        if entry["event"] == "supervisor_scope_alarm_raised"
+    ] == [(REF.key, TICKET_MARKER_SOURCE)]
+
+
 async def test_a_whole_tick_over_observable_lanes_reports_that_it_ran():
     port = await board(lanes=LANES)
 
