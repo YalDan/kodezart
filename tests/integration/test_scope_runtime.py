@@ -4720,3 +4720,91 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
         assert lane.fire.implementation._quality_gate._checkpointer is None
     finally:
         await forge.close()
+
+
+# ---------------------------------------------------------------------------
+# A criterion identity keeps its re-derivation class for the rest of the fire
+# (KOD-694, KOD-890).
+# ---------------------------------------------------------------------------
+
+#: What the first grading of the sticky-class lane says re-deriving ``A/check``
+#: costs: expensive, over a prefix that makes the declaration hold.
+EXPENSIVE_OVER_SOURCE = {"rederivationClass": "expensive", "exercisedPaths": ["src/"]}
+
+
+async def test_a_second_iteration_declaring_another_class_fails_before_any_cross_off():
+    """A re-derivation that declares a different class is refused in the run.
+
+    The first grading fails ``A/check`` and declares it expensive; a failed
+    grading is re-derived, so the second iteration asks about it again, and
+    that grading passes it declaring nothing, which reads cheap. One
+    criterion identity holding two classes in one fire is the typed error the
+    composed loop raises, before anything of the second iteration is written:
+    the pass is never crossed off, so the criterion keeps its empty Evidence
+    field and its state. The walk contains the error at the lane's boundary.
+    """
+    harness = runtime(
+        max_iterations=2,
+        evaluations=[
+            criteria_echo(
+                keys=("A/check",),
+                passed=(),
+                declared={"A/check": EXPENSIVE_OVER_SOURCE},
+            ),
+            criteria_echo(keys=("A/check",), passed={"A/check"}),
+        ],
+    )
+    unwritten = harness.port.issues["A/check"].body
+
+    events = await walk_reporting(
+        harness,
+        kind="StickyClassError",
+        match="A/check holds the expensive re-derivation class and cannot be "
+        "declared cheap",
+    )
+
+    # Two ticks: the fire that failed, and the tick that reads A rested.
+    assert len(ticks_of(events)) == 2
+    assert len(harness.executor.evaluation_prompts) == 2
+    # Nothing of the second iteration reached the board: its pass wrote no
+    # Evidence row and moved no state.
+    assert harness.port.issues["A/check"].body == unwritten
+    assert harness.port.issues["A/check"].state_kind is WorkflowStateKind.UNSTARTED
+    assert harness.port.workflow_writes == []
+    assert "A" in ticks_of(events)[-1].rested_lanes
+
+
+async def test_a_second_iteration_keeping_its_class_is_crossed_off():
+    """The same lane, the class kept: the re-derivation is crossed off as usual.
+
+    The third answer is the grading a fire takes once its loop has cleared,
+    the second of the two ``one_check_echoes`` scripts for a one-iteration
+    fire.
+    """
+    harness = runtime(
+        max_iterations=2,
+        evaluations=[
+            criteria_echo(
+                keys=("A/check",),
+                passed=(),
+                declared={"A/check": EXPENSIVE_OVER_SOURCE},
+            ),
+            *(
+                criteria_echo(
+                    keys=("A/check",),
+                    passed={"A/check"},
+                    declared={"A/check": EXPENSIVE_OVER_SOURCE},
+                )
+                for _ in range(2)
+            ),
+        ],
+    )
+
+    events = await bounded_walk(harness)
+
+    assert len(ticks_of(events)) == 2
+    assert len(harness.executor.evaluation_prompts) == 3
+    assert lane_failures(events) == ()
+    assert harness.port.issues["A/check"].state_kind is WorkflowStateKind.COMPLETED
+    evidence = parse_criterion_evidence(harness.port.issues["A/check"].body)
+    assert evidence.test.endswith(", iteration 2")

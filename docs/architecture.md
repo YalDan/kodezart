@@ -408,7 +408,12 @@ is withheld from the session and written nowhere; an expensive one that has
 stopped standing goes back to the session, because the loop can re-derive it; one
 resting on a performed observation is not re-derived at all, because the loop
 cannot perform the observation, and is taken back instead — and asked about,
-once. What reaches the gate is still the whole roster: a withheld criterion
+once. The class a grading declares is held by its criterion for the rest of the
+fire: a later iteration that re-derives the criterion and declares another class
+— a row that states none declares `cheap` — raises `StickyClassError` before
+anything of that iteration is written, and the walk records the lane failed. The
+fire keeps no memory of classes across fires, for the same reason it keeps none
+of its standing. What reaches the gate is still the whole roster: a withheld criterion
 carries the row its standing grading earns, with the harness's own reason in
 place of a verdict nobody asked for, so the denominator does not move between
 iterations and the gate cannot clear over an outstanding lapse. Nothing persists

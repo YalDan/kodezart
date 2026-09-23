@@ -88,6 +88,7 @@ from kodezart.types.domain.criterion_lifecycle import (
     CriterionCrossOff,
     CrossOffState,
     UndemonstratedReason,
+    held_rederivation_classes,
 )
 from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.fire_spec import TrackerSpec
@@ -1086,6 +1087,10 @@ class RalphLoop:
             standing=standing,
             reading=reading,
         )
+        # A criterion identity keeps the class its first grading in this fire
+        # declared; a re-derivation declaring another raises before anything
+        # of this iteration is written (KOD-694, KOD-890).
+        held_rederivation_classes((*standing, *cross_offs))
         decided = tuple(
             pair
             for pair in zip(roster.criteria, cross_offs, strict=True)
