@@ -618,10 +618,12 @@ recorded where every refusal is, as the amendment marker comment on the
 criterion's own sub-issue, naming the capability, and it escalates once under the
 same refusal occurrence that keys that record, on that same sub-issue, which is
 then classified `decision`. A cost never reaches this reason: a departure resting
-on a cost claim is settled by its own measurement and returns a measured reason of
-its own. The machine moves no state, so the subtree still reads and the lane goes
-on owing that criterion until a person revives it or cancels it with a
-supersession; and
+on a cost claim with a base measurement on record returns
+`cost_measured_affordable` or `cost_measured_uneconomic`, one with no base
+measurement on record returns `ground_not_reproduced`, and none of them reaches
+`environment_lacks_capability`. The machine moves no state, so the subtree still
+reads and the lane goes on owing that criterion until a person revives it or
+cancels it with a supersession; and
 `CrossOffState.undemonstrated` above keeps its own workspace-hygiene meaning and
 is not used for this. Because the plan read refuses while any open issue in a
 member's subtree carries `decision`, the scope tick after such an escalation for
