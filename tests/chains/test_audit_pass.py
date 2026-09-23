@@ -26,7 +26,7 @@ from kodezart.types.domain.audit_terminal import (
     AuditTerminalRequest,
     TerminalDiscrepancy,
 )
-from kodezart.types.domain.branch import BranchRole
+from kodezart.types.domain.branch import BranchAssociation, BranchRole
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import UndemonstratedReason
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
@@ -328,6 +328,50 @@ async def test_a_deliverable_of_another_run_never_stands_for_the_loop_branch(
     result = await reader.observe(REQUEST)
     assert result.verdict is AuditVerdict.REFUTED
     assert result.discrepancies == (TerminalDiscrepancy.NO_BRANCH,)
+
+
+def association(branch, role, run_id, derived_from=None):
+    return BranchAssociation(
+        branch=branch, role=role, run_id=run_id, derived_from=derived_from
+    )
+
+
+#: The loop branch's own run records no deliverable. Another run, whose LOOP
+#: association names another branch, records one that holds the record head.
+#: In the second shape that other run also names the recorded branch, under
+#: a role that is not LOOP.
+OTHER_RUN = {
+    "another-loop": [],
+    "recorded-branch-in-another-role": [
+        association(BRANCH, BranchRole.RECOVERY, "run-earlier", "earlier-loop")
+    ],
+}
+
+
+@pytest.mark.parametrize("shape", OTHER_RUN)
+async def test_only_the_recorded_loop_branch_run_names_the_deliverable(
+    setup, tracker, forge, shape
+):
+    reader, git, record, comment = setup
+    associations = [
+        association(BRANCH, BranchRole.LOOP, "run-current", DELIVERABLE),
+        association(
+            "earlier-loop", BranchRole.LOOP, "run-earlier", "earlier-deliverable"
+        ),
+        *OTHER_RUN[shape],
+        association("earlier-deliverable", BranchRole.DELIVERABLE, "run-earlier"),
+    ]
+    await rewrite(
+        tracker, comment, record.model_copy(update={"associations": associations})
+    )
+    delivered(git, forge, record, branch="earlier-deliverable")
+    result = await reader.observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    assert result.discrepancies == (TerminalDiscrepancy.NO_BRANCH,)
+    assert result.verification_head is None
+    # The other run's deliverable is read only as the pull request's head,
+    # never tested for the record head.
+    assert not {"has_object", "is_ancestor"} & {call[0] for call in git.calls}
 
 
 async def test_a_loop_branch_of_two_runs_with_two_deliverables_is_unreadable(
