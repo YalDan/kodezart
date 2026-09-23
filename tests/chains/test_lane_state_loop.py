@@ -2250,8 +2250,55 @@ async def test_an_expensive_grading_whose_paths_moved_is_dispatched_again():
     }
     assert set(rows) == set(OWED_KEYS)
     assert rows[CARRIED].reasoning != CARRIED_REASON
-    # The class holds across the re-derivation.
+    # The re-derivation declares the class it holds.
     assert rows[CARRIED].rederivation_class is RederivationClass.expensive
+
+
+#: A criterion that is not the first in the roster, so a comparison that read
+#: only the head of either sequence would never see it.
+MOVED = OWED_KEYS[1]
+
+
+async def test_an_expensive_grading_whose_paths_moved_re_derived_as_cheap_raises():
+    """A standing grading re-derived under another class is refused.
+
+    The first grading passes a criterion that is not first in the roster and
+    declares it expensive over a prefix the lane's next commit touches. At the
+    second iteration its paths have moved, so the loop sends it back to the
+    session; that grading passes it again and declares nothing, which reads
+    cheap. The criterion held the expensive class, so the loop refuses before
+    the second iteration's verdict reaches the writer: the Evidence row is
+    still the one taken at the first graded sha (KOD-694, KOD-890).
+    """
+    lane = Lane(
+        evaluations=[
+            criteria_echo(
+                keys=OWED_KEYS,
+                passed={MOVED},
+                declared={
+                    MOVED: {
+                        "rederivationClass": "expensive",
+                        "exercisedPaths": [TOUCHED_PREFIX],
+                    }
+                },
+            ),
+            criteria_echo(keys=OWED_KEYS, passed={MOVED}),
+        ],
+        max_iterations=2,
+    )
+    verdicts = recording(lane)
+
+    with pytest.raises(
+        StickyClassError,
+        match=f"{MOVED} holds the expensive re-derivation class and cannot be "
+        "declared cheap",
+    ):
+        await lane.run()
+
+    assert len(lane.executor.evaluation_prompts) == 2
+    assert check_of(MOVED) in lane.executor.evaluation_prompts[1]
+    assert len(verdicts) == 1
+    assert evidence_of(lane, MOVED).graded_sha == lane.repo.shas[0]
 
 
 async def test_a_prefixless_path_bound_declaration_holds_as_cheap_across_iterations():
