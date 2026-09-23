@@ -34,12 +34,23 @@ that case is below as well, with its journal shown empty.
 import ast
 import importlib
 import inspect
+import sys
 import textwrap
-from collections.abc import Awaitable, Callable, Mapping, Sequence, Sized
+from collections.abc import (
+    Awaitable,
+    Callable,
+    Iterable,
+    Iterator,
+    Mapping,
+    Sequence,
+    Sized,
+)
 from dataclasses import dataclass
 from datetime import timedelta
+from operator import attrgetter
 from pathlib import Path
-from typing import get_type_hints
+from types import CodeType, FrameType
+from typing import cast, get_type_hints
 
 import pytest
 from pydantic import BaseModel
@@ -2069,6 +2080,440 @@ def test_the_log_pass_classifies_each_planted_use() -> None:
     assert logs_read_in(_LogUses.decided_through_a_nested_function, logs) == set()
     assert logs_read_in(_LogUses.decided_through_a_run_time_name, logs) == set()
     assert logs_read_in(_LogUses.decided_through_a_loop_target, logs) == set()
+
+
+#: One read of a trapped log at run time: the operation's name and the code
+#: of every frame on the stack when it ran, innermost first.
+Read = tuple[str, tuple[CodeType, ...]]
+
+
+def stack_here() -> tuple[CodeType, ...]:
+    """The code of every frame on the stack at the call, innermost first.
+
+    Bounded by the stack's depth.
+    """
+    codes: list[CodeType] = []
+    frame: FrameType | None = sys._getframe(1)
+    while frame is not None:
+        codes.append(frame.f_code)
+        frame = frame.f_back
+    return tuple(codes)
+
+
+class TrappedLog(list[object]):
+    """A read log that records every read of itself, with the stack that made it.
+
+    A list that stands in for a double's read log.  Iteration, ``len``,
+    ``bool``, indexing, ``in``, comparison, reversal, ``index``, ``count``,
+    ``copy``, concatenation, repetition and ``repr`` each record the
+    operation and the stack it ran under — whatever spelling fetched the
+    object, because the attribute, ``vars(self)[...]``,
+    ``self.__dict__[...]``, ``attrgetter`` and ``cast`` all hand back this
+    same object.  Appending and extending are the recorders and are not
+    reads.  The one limit: a call on the base type that skips the
+    override, ``list.__len__(log)``, is not seen, and
+    :func:`test_the_trap_catches_every_spelling_and_holds_its_limit`
+    holds it.
+    """
+
+    reads: list[Read]
+
+    def __init__(self, held: Iterable[object] = ()) -> None:
+        super().__init__(held)
+        self.reads = []
+
+    def _read(self, operation: str) -> None:
+        self.reads.append((operation, stack_here()))
+
+    def __iter__(self) -> Iterator[object]:
+        self._read("iteration")
+        return super().__iter__()
+
+    def __len__(self) -> int:
+        self._read("len")
+        return super().__len__()
+
+    def __bool__(self) -> bool:
+        self._read("bool")
+        return super().__len__() > 0
+
+    def __getitem__(self, index: object) -> object:
+        self._read("indexing")
+        return super().__getitem__(index)
+
+    def __contains__(self, item: object) -> bool:
+        self._read("in")
+        return super().__contains__(item)
+
+    def __eq__(self, other: object) -> bool:
+        self._read("comparison")
+        return super().__eq__(other)
+
+    def __ne__(self, other: object) -> bool:
+        self._read("comparison")
+        return super().__ne__(other)
+
+    def __lt__(self, other: list[object]) -> bool:
+        self._read("comparison")
+        return super().__lt__(other)
+
+    def __le__(self, other: list[object]) -> bool:
+        self._read("comparison")
+        return super().__le__(other)
+
+    def __gt__(self, other: list[object]) -> bool:
+        self._read("comparison")
+        return super().__gt__(other)
+
+    def __ge__(self, other: list[object]) -> bool:
+        self._read("comparison")
+        return super().__ge__(other)
+
+    def __reversed__(self) -> Iterator[object]:
+        self._read("reversal")
+        return super().__reversed__()
+
+    def index(self, value: object, *bounds: int) -> int:
+        self._read("index")
+        return super().index(value, *bounds)
+
+    def count(self, value: object) -> int:
+        self._read("count")
+        return super().count(value)
+
+    def copy(self) -> list[object]:
+        self._read("copy")
+        return super().copy()
+
+    def __add__(self, other: list[object]) -> list[object]:
+        self._read("concatenation")
+        return super().__add__(other)
+
+    def __mul__(self, times: int) -> list[object]:
+        self._read("repetition")
+        return super().__mul__(times)
+
+    def __rmul__(self, times: int) -> list[object]:
+        self._read("repetition")
+        return super().__rmul__(times)
+
+    def __repr__(self) -> str:
+        self._read("repr")
+        return super().__repr__()
+
+
+class TrappedCount(int):
+    """A read counter that records every read of itself, and stays trapped when stepped.
+
+    An integer that stands in for a double's read counter.  ``bool``,
+    comparison, ``int``, ``hash``, ``repr`` and formatting each record the
+    operation and the stack.  The counter's own step, ``+= 1``, is the
+    recorder: it answers a new count sharing this one's record and records
+    nothing itself.  Indexing with a counter goes to the base type directly
+    (the interpreter never asks an integer subclass for ``__index__``), which
+    is the base-type limit the control below holds.
+    """
+
+    reads: list[Read]
+
+    def __new__(cls, value: int = 0, reads: list[Read] | None = None) -> "TrappedCount":
+        count = super().__new__(cls, value)
+        count.reads = [] if reads is None else reads
+        return count
+
+    def _read(self, operation: str) -> None:
+        self.reads.append((operation, stack_here()))
+
+    def __bool__(self) -> bool:
+        self._read("bool")
+        return super().__index__() != 0
+
+    def __eq__(self, other: object) -> bool:
+        self._read("comparison")
+        return super().__eq__(other)
+
+    def __ne__(self, other: object) -> bool:
+        self._read("comparison")
+        return super().__ne__(other)
+
+    def __lt__(self, other: int) -> bool:
+        self._read("comparison")
+        return super().__lt__(other)
+
+    def __le__(self, other: int) -> bool:
+        self._read("comparison")
+        return super().__le__(other)
+
+    def __gt__(self, other: int) -> bool:
+        self._read("comparison")
+        return super().__gt__(other)
+
+    def __ge__(self, other: int) -> bool:
+        self._read("comparison")
+        return super().__ge__(other)
+
+    def __int__(self) -> int:
+        self._read("int")
+        return super().__index__()
+
+    def __hash__(self) -> int:
+        self._read("hash")
+        return super().__hash__()
+
+    def __repr__(self) -> str:
+        self._read("repr")
+        return super().__repr__()
+
+    def __format__(self, spec: str) -> str:
+        self._read("format")
+        return super().__format__(spec)
+
+    def __add__(self, other: int) -> "TrappedCount":
+        return TrappedCount(super().__index__() + other, self.reads)
+
+    def __radd__(self, other: int) -> "TrappedCount":
+        return TrappedCount(other + super().__index__(), self.reads)
+
+    def __sub__(self, other: int) -> "TrappedCount":
+        return TrappedCount(super().__index__() - other, self.reads)
+
+
+Trap = TrappedLog | TrappedCount
+
+
+def trapped(port: FakeTrackerPort) -> dict[str, Trap]:
+    """Every read log of *port* replaced by its trap, holding what it held.
+
+    A list log becomes a :class:`TrappedLog`, a counter a
+    :class:`TrappedCount`; any other shape of log reds here.  Keyed by the
+    log's name; the trap is what the double's attribute now is, so every
+    spelling that fetches the attribute fetches the trap.
+    """
+    traps: dict[str, Trap] = {}
+    for name in sorted(type(port).READ_LOGS):
+        held = getattr(port, name)
+        trap: Trap
+        if isinstance(held, list):
+            trap = TrappedLog(held)
+        else:
+            assert isinstance(held, int) and not isinstance(held, bool), (name, held)
+            trap = TrappedCount(held)
+        setattr(port, name, trap)
+        traps[name] = trap
+    return traps
+
+
+def read_inside(reads: Sequence[Read], line: frozenset[CodeType]) -> list[str]:
+    """Each read of *reads* made with a function of the class *line* on its stack.
+
+    Named by the operation and the innermost such function, so a read made
+    through a lambda, a nested function or a helper the method called is
+    still the method's.  Bounded by the reads and each one's stack.
+    """
+    return [
+        f"{operation} in {next(code.co_qualname for code in stack if code in line)}"
+        for operation, stack in reads
+        if any(code in line for code in stack)
+    ]
+
+
+def class_line_codes(double: type[FakeTrackerPort]) -> frozenset[CodeType]:
+    """The code of every function on *double*'s class line."""
+    return frozenset(
+        function.__code__ for _, function, _ in class_line_functions(double)
+    )
+
+
+@pytest.mark.parametrize("double", census_doubles(), ids=lambda double: double.__name__)
+@pytest.mark.parametrize("case", sorted(CASES))
+async def test_no_read_log_is_read_inside_the_double_at_run_time(
+    case: str, double: type[FakeTrackerPort]
+) -> None:
+    """Run: no method of the double reads a read log, under any spelling.
+
+    The static pass above reads the source, and every round has found one
+    more spelling it did not follow.  This is the pin no spelling gets
+    round: on the board each census case runs on, its setup done, every
+    read log the double declares is replaced by a trap that records each
+    read of itself with the stack that made it, and the case is run.  No
+    recorded read may have a function of the double's class line on its
+    stack — a read through ``vars(self)[...]``, ``self.__dict__[...]``,
+    ``attrgetter``, ``cast``, a conditional expression, nested unpacking,
+    a lambda default, a helper or a nested function all fetch the trap and
+    all run under the method's frame.  The recorders — append, extend and
+    a counter's step — are not reads.  The one limit is a call on the
+    base type that skips the override, held by the control below.
+    """
+    row = CASES[case]
+    port = await case_board(case, double)
+    traps = trapped(port)
+    assert set(traps) == double.READ_LOGS
+    line = class_line_codes(double)
+
+    await row.call(port)
+
+    assert {
+        log: found
+        for log, trap in traps.items()
+        if (found := read_inside(trap.reads, line))
+    } == {}
+
+
+class _TrappedUses:
+    """An instance holding one trapped log, read through every spelling."""
+
+    def __init__(self) -> None:
+        self.issue_reads = TrappedLog(["KOD-1"])
+
+    def recorded(self) -> None:
+        self.issue_reads.append("KOD-2")
+        self.issue_reads.extend(["KOD-3"])
+
+    def through_the_attribute(self) -> int:
+        return len(self.issue_reads)
+
+    def through_vars(self) -> object:
+        return vars(self)["issue_reads"][:-1]
+
+    def through_the_dict(self) -> object:
+        return self.__dict__["issue_reads"][:-1]
+
+    def through_attrgetter(self) -> object:
+        return attrgetter("issue_reads")(self)[:-1]
+
+    def through_cast(self) -> int:
+        return len(cast("_TrappedUses", self).issue_reads)
+
+    def through_a_conditional(self, signals: tuple[str, ...] = ()) -> bool:
+        port = self if signals == () else _TrappedUses()
+        return bool(port.issue_reads)
+
+    def through_nested_unpacking(self) -> bool:
+        (port, _), _ = (self, None), None
+        return "KOD-1" in port.issue_reads
+
+    def through_a_lambda_default(self) -> object:
+        return (lambda port=self: port.issue_reads[:-1])()
+
+    def through_a_helper(self) -> int:
+        return _trapped_reads_of(self)
+
+    def through_a_nested_function(self) -> int:
+        def count(port: _TrappedUses) -> int:
+            return len(port.issue_reads)
+
+        return count(self)
+
+    def through_a_run_time_name(self) -> int:
+        return len(getattr(self, "issue_" + "reads"))
+
+    def through_a_walrus(self) -> int:
+        if log := self.issue_reads:
+            return len(log)
+        return 0
+
+    def through_the_base_type(self) -> int:
+        return list.__len__(self.issue_reads)
+
+
+def _trapped_reads_of(port: _TrappedUses) -> int:
+    """A module function handed the instance: the trap catches it all the same."""
+    return len(port.issue_reads)
+
+
+#: An empty list, as a name, for the concatenation use below.
+NOTHING: list[object] = []
+
+#: Every operation the list trap records, each as a use of a log.
+LOG_OPERATIONS: dict[str, Callable[[TrappedLog], object]] = {
+    "iteration": lambda log: list(iter(log)),
+    "len": len,
+    "bool": bool,
+    "indexing": lambda log: log[0],
+    "in": lambda log: "KOD-1" in log,
+    "comparison": lambda log: log == ["KOD-1"],
+    "reversal": reversed,
+    "index": lambda log: log.index("KOD-1"),
+    "count": lambda log: log.count("KOD-1"),
+    "copy": lambda log: log.copy(),
+    "concatenation": lambda log: log + NOTHING,
+    "repetition": lambda log: log * 2,
+    "repr": repr,
+}
+
+#: Every operation the counter trap records, each as a use of a counter.
+COUNT_OPERATIONS: dict[str, Callable[[TrappedCount], object]] = {
+    "bool": bool,
+    "comparison": lambda count: count > 0,
+    "int": int,
+    "hash": hash,
+    "repr": repr,
+    "format": lambda count: f"{count:d}",
+}
+
+
+def test_the_trap_catches_every_spelling_and_holds_its_limit() -> None:
+    """The control for the trap: each spelling is caught, and the one limit is not.
+
+    Every spelling fetches the trapped object itself — the attribute,
+    ``vars``, ``__dict__``, ``attrgetter`` and ``cast`` answer one and the
+    same object — so each is caught when it reads.  Each read operation
+    of a log and of a counter records exactly its own name, the recorders
+    record nothing, and a stepped counter is still the trap.  A method
+    reading through each planted spelling — the seven shapes the static
+    pass does not follow among them — has its own code on the stack of a
+    recorded read; the recorder does not; and the stated limit, a call on
+    the base type that skips the override, does not either.
+    """
+    uses = _TrappedUses()
+    log = uses.issue_reads
+    assert vars(uses)["issue_reads"] is log
+    assert uses.__dict__["issue_reads"] is log
+    assert attrgetter("issue_reads")(uses) is log
+    assert cast("_TrappedUses", uses).issue_reads is log
+
+    for operation, use in LOG_OPERATIONS.items():
+        fresh = TrappedLog(["KOD-1"])
+        use(fresh)
+        assert [name for name, _ in fresh.reads] == [operation], operation
+    recorder = TrappedLog(["KOD-1"])
+    recorder.append("KOD-2")
+    recorder.extend(["KOD-3"])
+    assert recorder.reads == []
+    assert list.__len__(recorder) == 3
+
+    for operation, count_use in COUNT_OPERATIONS.items():
+        fresh_count = TrappedCount(1)
+        count_use(fresh_count)
+        assert [name for name, _ in fresh_count.reads] == [operation], operation
+    stepped = TrappedCount(1)
+    stepped += 1
+    assert isinstance(stepped, TrappedCount)
+    assert int.__index__(stepped) == 2
+    assert stepped.reads == []
+
+    methods = {
+        name: member
+        for name, member in vars(_TrappedUses).items()
+        if inspect.isfunction(member) and name != "__init__"
+    }
+    unseen = {"recorded", "through_the_base_type"}
+    assert unseen < set(methods)
+    assert {
+        "through_vars",
+        "through_the_dict",
+        "through_attrgetter",
+        "through_cast",
+        "through_a_conditional",
+        "through_nested_unpacking",
+        "through_a_lambda_default",
+    } < set(methods)
+    caught = {}
+    for name, method in methods.items():
+        uses = _TrappedUses()
+        method(uses)
+        caught[name] = read_inside(uses.issue_reads.reads, frozenset({method.__code__}))
+    assert {name for name, found in caught.items() if found} == set(methods) - unseen
 
 
 async def test_an_ensure_that_adopts_a_defined_value_writes_nothing() -> None:
