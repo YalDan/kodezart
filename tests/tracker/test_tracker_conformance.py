@@ -3350,8 +3350,8 @@ def single_writer_writes() -> frozenset[str]:
 #: the parent's own creation surfaces.
 GRAPH_CHILD = "FIX-9"
 GRAPH_PEER = "FIX-10"
-#: A third child, related to the first on both sides from the start, so a
-#: relation removal has an edge to take off.
+#: A third child, related to the first and blocking it, each edge on both
+#: sides from the start, so a removal of either kind has an edge to take off.
 GRAPH_RELATED = "FIX-11"
 #: The two addresses for creating membership under one issue, which grant no
 #: edit of any child that already exists there.
@@ -3465,15 +3465,16 @@ async def _change_a_graph(tracker: TrackerPort, holder: str | None) -> object:
             "changes": [{"kind": "priority", "priority": IssuePriority.HIGH.value}],
         }
     )
-    # The child's own ancestry is part of the snapshot the seam verifies,
-    # so the parent is read with it; only the child is affected, so only
-    # the child's graph address is a grant this write needs.
+    # The child's own ancestry and the issue it is blocked by are part of
+    # the dependency graph the seam verifies, so both are read with it;
+    # only the child is affected, so only the child's graph address is a
+    # grant this write needs.
     return await tracker.update_issue_graph(
         issue_key=GRAPH_CHILD,
         expected=tuple(
             [
                 graph_snapshot(await tracker.read_issue(issue_key=key))
-                for key in (CLAIMED_ISSUE, GRAPH_CHILD)
+                for key in (CLAIMED_ISSUE, GRAPH_CHILD, GRAPH_RELATED)
             ]
         ),
         changes=proposed.changes,
@@ -3608,8 +3609,10 @@ class PeerChange:
 
 
 #: Every kind of graph change whose affected peers go beyond the child: a
-#: relation added, a relation removed, and a parent change, where the old
-#: parent and the new one are both peers and each is left unheld in turn.
+#: relation added, a relation removed (of either kind, and alongside an
+#: addition in one change), and a parent change, where the old parent and
+#: the new one are both peers and each is left unheld in turn, and where
+#: clearing the parent still writes the parent the child leaves.
 GRAPH_PEER_CHANGES: Mapping[str, PeerChange] = {
     "related_to_add": PeerChange(
         change={"kind": "related_to", "add": [GRAPH_PEER]},
@@ -3621,6 +3624,16 @@ GRAPH_PEER_CHANGES: Mapping[str, PeerChange] = {
         held=frozenset({CHILD_GRAPH}),
         peer=RELATED_GRAPH,
     ),
+    "related_to_add_and_remove": PeerChange(
+        change={"kind": "related_to", "add": [GRAPH_PEER], "remove": [GRAPH_RELATED]},
+        held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
+        peer=RELATED_GRAPH,
+    ),
+    "blocked_by_remove": PeerChange(
+        change={"kind": "blocked_by", "remove": [GRAPH_RELATED]},
+        held=frozenset({CHILD_GRAPH}),
+        peer=RELATED_GRAPH,
+    ),
     "parent_new": PeerChange(
         change={"kind": "parent", "parent_id": GRAPH_PEER},
         held=frozenset({CHILD_GRAPH, CLAIMED_GRAPH}),
@@ -3629,6 +3642,11 @@ GRAPH_PEER_CHANGES: Mapping[str, PeerChange] = {
     "parent_old": PeerChange(
         change={"kind": "parent", "parent_id": GRAPH_PEER},
         held=frozenset({CHILD_GRAPH, PEER_GRAPH}),
+        peer=CLAIMED_GRAPH,
+    ),
+    "parent_clear": PeerChange(
+        change={"kind": "parent", "parent_id": None},
+        held=frozenset({CHILD_GRAPH}),
         peer=CLAIMED_GRAPH,
     ),
 }
@@ -3656,8 +3674,9 @@ class TestSuppliedHolderWrites:
 
         A finished criterion for the move back, and three children of the
         claimable issue for the graph and peer cases, the first and the
-        third related on both sides. Seeded here, so no module built on
-        the shared workspace sees them.
+        third related on both sides, and the third blocking the first on
+        both sides. Seeded here, so no module built on the shared
+        workspace sees them.
         """
         value = fixture_server(clock=clock)
         value.issues[OWED_CRITERION] = criterion_sub_issue(
@@ -3677,8 +3696,14 @@ class TestSuppliedHolderWrites:
                 created_at=FIXTURE_NOW - timedelta(days=2),
                 updated_at=FIXTURE_NOW,
             )
-        value.issues[GRAPH_CHILD].relations = [("relatedTo", GRAPH_RELATED)]
-        value.issues[GRAPH_RELATED].relations = [("relatedTo", GRAPH_CHILD)]
+        value.issues[GRAPH_CHILD].relations = [
+            ("relatedTo", GRAPH_RELATED),
+            ("blockedBy", GRAPH_RELATED),
+        ]
+        value.issues[GRAPH_RELATED].relations = [
+            ("relatedTo", GRAPH_CHILD),
+            ("blocks", GRAPH_CHILD),
+        ]
         return value
 
     def test_the_table_is_the_derived_holder_taking_write_surface(self) -> None:
@@ -3770,11 +3795,12 @@ class TestSuppliedHolderWrites:
 
         The writer holds live every affected address but one peer's, which
         is unheld, lapsed or a rival's: the peer a relation is added to,
-        the peer a relation is removed from, and the new parent or the old
-        one of a parent change.  The change is refused naming that PEER's
-        address and its holder, with nothing written and no member's graph
-        moved: holding the issue a change starts from is not holding the
-        ones it reaches.
+        the peer a relation or a prerequisite edge is removed from (alone,
+        or in the change that also adds one), and the new parent or the
+        old one of a parent change, including a parent cleared.  The
+        change is refused naming that PEER's address and its holder, with
+        nothing written and no member's graph moved: holding the issue a
+        change starts from is not holding the ones it reaches.
         """
         row = GRAPH_PEER_CHANGES[change]
         if standing == "expired":
