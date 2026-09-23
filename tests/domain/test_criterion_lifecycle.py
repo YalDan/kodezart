@@ -1581,6 +1581,20 @@ def test_a_second_iteration_declaring_a_different_class_raises_the_sticky_error(
     assert "criterion/alpha" in str(raised.value)
 
 
+def test_a_cheap_class_declared_expensive_later_raises_the_sticky_error():
+    iterations = [
+        cross_off(rederivation_class=RederivationClass.cheap),
+        cross_off(
+            rederivation_class=RederivationClass.expensive, exercised_paths=("src/",)
+        ),
+    ]
+    with pytest.raises(StickyClassError) as raised:
+        held_rederivation_classes(iterations)
+    assert raised.value.criterion == "criterion/alpha"
+    assert raised.value.held is RederivationClass.cheap
+    assert raised.value.declared is RederivationClass.expensive
+
+
 def test_each_identity_holds_its_own_class_across_interleaved_iterations():
     held = held_rederivation_classes(
         [
