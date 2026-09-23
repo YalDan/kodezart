@@ -134,21 +134,14 @@ EXEMPT = {
         "selection over dispatch candidates, which are not criterion sub-issues"
     ),
     "chains/criteria.py::TrackerCriteria._finished": (
-        "a finishedness reading over a criterion family that is not the rollup: "
-        "it answers whether a lane already standing has anything left to fire "
-        "for, read at fire entry through the openness predicate.  It differs "
-        "from the rule on exactly one input class, a criterion the board "
-        "canceled with no supersession established: the predicate counts that "
-        "finished, the rule counts it owed and the rollup's arm refuses it.  "
-        "The two never meet today because the readiness read raises before such "
-        "a lane can be selected, which is luck and not design, so making this "
-        "body consult the rule is a behaviour change on the live fire entry "
-        "path and is owed under KOD-443 rather than taken here"
+        "consults the one arithmetic once KOD-453's gap (Canceled and Duplicate "
+        "excluded on state alone, KOD-794) is on the union; KOD-443, decided "
+        "2026-09-23 09:15 UTC"
     ),
     "domain/mandate_graph.py::structural_write_uncrosses_milestone": (
-        "a finishedness reading over a criterion family that is not the rollup: "
-        "whether a structural write would uncross a milestone, over a family "
-        "the caller supplies, under the same obligation as the reading above"
+        "consults the one arithmetic once KOD-453's gap (Canceled and Duplicate "
+        "excluded on state alone, KOD-794) is on the union; KOD-443, decided "
+        "2026-09-23 09:15 UTC"
     ),
 }
 
