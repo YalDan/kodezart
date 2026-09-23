@@ -275,6 +275,14 @@ def _criterion_alarms(
     exactly "not ready on this tick": a ready lane the current walk
     invocation has rested counts as re-derived, because the next invocation
     offers it again, and a ready lane no walk runs at all is not told apart.
+
+    Two limits follow from reading one lane's stream under one scope's
+    reading, and both are stated rather than built. Nested member lanes: a
+    member whose parent is also a member reads its account from the lane whose
+    stream announced it, so a criterion under two member lanes is observed
+    through the announcing lane only, each lane by its own last word. Presence
+    is read per scope: a lane blocked in one scope and ready in another is
+    observed as each scope reads it.
     """
     known = {issue.issue_key: issue for issue in criteria}
     projections = tuple(
