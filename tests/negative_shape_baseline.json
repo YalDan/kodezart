@@ -386,6 +386,7 @@
   "tests/test_mandate_dispatch_sites.py": 9,
   "tests/test_name_resolution.py": 40,
   "tests/test_organize_portability.py": 14,
+  "tests/test_production_mocks.py": 5,
   "tests/test_release.py": 4,
   "tests/test_suppression_baseline.py": 42,
   "tests/tools/test_scratch_scope.py": 60,
@@ -5468,6 +5469,10 @@
    "test_function_and_class_headers_cannot_hide_literal_labels",
    "test_real_source_gate_rejects_an_injected_offending_tree",
    "test_fstring_folding_handles_formatted_prefix_and_suffix"
+  ],
+  "tests/test_production_mocks.py": [
+   "test_no_production_module_imports_a_mock_package",
+   "test_the_scan_reports_every_planted_mock_import_and_nothing_else"
   ],
   "tests/test_release.py": [
    "test_the_installed_metadata_matches_the_declaration",
