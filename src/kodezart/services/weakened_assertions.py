@@ -2,8 +2,8 @@
 
 The whole memory of this refusal is the criterion it leaves on the lane, so
 a killed run that commits the same loss again finds that criterion rather
-than minting a second one: the text is rendered from the claim's address and
-the lost conditions alone, and the mint's own identity — exact parent plus
+than minting a second one: the text is rendered from the pinned record's own
+identifiers alone, and the mint's own identity — exact parent plus
 current Check — answers a replay with the child that already stands.
 
 What the mark is made of is arithmetic over two pinned Git objects and a

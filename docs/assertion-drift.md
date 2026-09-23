@@ -72,7 +72,8 @@ carries is a loss; an added, reordered or reformatted assertion is not. Each
 loss mints one `criterion` sub-issue on the lane, gated exactly as derived
 content under that lane's criterion child-set lease, so the lane's rollup
 carries the obligation and cannot converge while it stands, and publication is
-refused. A comparison that cannot be made refuses with no mark: an unreadable
+refused. The mark names the test and the record that designates it, and no
+assertion text leaves the repository. A comparison that cannot be made refuses with no mark: an unreadable
 designation is not evidence that the assertions survived.
 
 `RecordedAssertionDriftDetector`, which addresses a designation by its comment

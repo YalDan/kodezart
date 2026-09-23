@@ -174,25 +174,28 @@ def test_a_reformatted_assertion_loses_nothing():
     assert lost_assertions(before=before, after=after) == ()
 
 
-def test_the_mark_names_the_test_the_record_and_each_lost_assertion_and_no_sha():
+def test_the_mark_names_the_test_and_the_record_and_no_assertion_text_or_sha():
     before = assertions(
         "def test_behavior():\n    assert calls == 1\n    assert seen == 'x'\n"
     )
-    after = assertions("def test_behavior():\n    pass\n")
+    after = assertions("def test_behavior():\n    assert replaced is not None\n")
     lost = lost_assertions(before=before, after=after)
     first = claim(before=before, after=after)
     second = claim(before=before, after=after, graded="e" * 40, head="f" * 40)
 
     mark = weakening_mark(claim=first, lost=lost)
+    text = mark.title + mark.check + mark.do
 
+    assert lost == before
     assert mark == weakening_mark(claim=second, lost=lost)
     assert "tests/protected.py::test_behavior" in mark.check
     assert "owning-record/native-id" in mark.check
-    assert "`calls == 1`" in mark.check
-    assert "`seen == 'x'`" in mark.check
-    assert "a" * 40 not in mark.check + mark.do + mark.title
-    assert "b" * 40 not in mark.check + mark.do + mark.title
-    assert "pass" not in mark.check
+    # No assertion source leaves the repository: neither the conditions that
+    # went nor the one that replaced them.
+    for row in (*before, *after):
+        assert row.expression not in text
+    assert "a" * 40 not in text
+    assert "b" * 40 not in text
 
 
 def test_a_claim_that_lost_nothing_renders_no_mark():
