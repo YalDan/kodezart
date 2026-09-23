@@ -3,7 +3,9 @@
 # Full owner through its actual factory; the executor chooses outputs from the
 # current native board and the requested wire type, not a canned verdict order.
 import dataclasses
+import inspect
 import json
+import linecache
 import re
 from collections import Counter
 from itertools import groupby
@@ -867,30 +869,47 @@ async def test_the_scope_gate_is_resolved_once_per_reading_by_the_one_resolver(
     readings = []
 
     async def counted(self, scope, phase):
-        readings.append(scope)
+        # The reading is named by where it is made: the owner method that
+        # asks, and the name the answer is bound to there.
+        caller = inspect.currentframe().f_back
+        line = linecache.getline(caller.f_code.co_filename, caller.f_lineno)
+        readings.append((caller.f_code.co_name, line.strip().split(" = ")[0]))
         return await reading(self, scope, phase)
 
     monkeypatch.setattr(organize_owner, "scope_carries", recording)
     monkeypatch.setattr(organize_owner.OrganizeOwner, "_carried_members", counted)
     report = await run_owner(owner)
     assert [phase.value for phase in report.completed_phases] == ["groom"]
+    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+    # The board is the size this arm says: the scope's own issue and each
+    # child, read through the same port the owner reads.
+    assert len(await board.built_tracker.scope_issues(ref=scope)) == children + 1
     members = {
         issue.id for issue in board.server.issues.values() if issue.id != CLAIMED_ISSUE
     }
-    assert len(members) >= children
-    scope = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
     assert {ref for ref, _ in seen} == {scope}
     assert {member for _, member in seen} == {ScopeLabel.TRIAGE}
     # One resolution per reading, whatever the number of members.
     assert readings
     assert len(seen) == len(readings)
+    # The round's own gate reading, the marker sweep's and the barrier's are
+    # one each on every board: adding a member adds none of them. Only the
+    # pre-write re-checks scale, one per write the owner sends.
+    by_site = Counter(readings)
+    rechecks = by_site.pop(("_may_write", "gate_members"))
+    assert by_site == {
+        ("_converge", "gate_members"): 1,
+        ("_converge", "current_members"): 1,
+        ("run", "settled_members"): 1,
+    }, by_site
     if not children:
-        # Observed, then written: two readings inside the convergence rounds
-        # (the round's own gate reading and the marker sweep's), one at the
-        # barrier, and seven pre-write re-checks across the author write and
-        # the marker write, each of which re-asks the gate before it touches
-        # the board.
+        # Observed, then written: seven pre-write re-checks across the author
+        # write and the marker write, each of which re-asks the gate before
+        # it touches the board, besides the three readings above.
+        assert rechecks == 7
         assert len(seen) == 10
+    else:
+        assert rechecks > 7
     assert not {ref.key for ref, _ in seen} & members
 
 
