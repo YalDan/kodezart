@@ -3054,6 +3054,16 @@ def callers_of(*functions):
     held in a parameter, or in a local it was built into; a mapping;
     ``functools.partial``; and a name assembled at run time.
 
+    The reach, stated once for the resolver and the drive: the static
+    resolver, ``callers_of``, follows the forms its docstring states, each
+    held by a control over ``RESOLVER_PROBE``; the behavioural drive,
+    ``test_every_input_of_a_gated_node_meets_the_set_at_every_await``,
+    covers every path the enumerated inputs reach, whatever a guard or a
+    call is spelled as; and the one general limit is an input no fake
+    enumerates -- a port raising an exception the fakes do not raise, or a
+    value outside the enum a node branches on -- so a node branch on such
+    an input is not driven, which the drive's derived product shows.
+
     Each caller is recorded as ``(module, qualified name of the outermost
     function)``, so two modules or two classes never merge into one name,
     and a call made in a closure is the node that holds it.  A call outside

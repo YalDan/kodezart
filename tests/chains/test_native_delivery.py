@@ -1,11 +1,13 @@
 """The production native constructor runs the actual fire/delivery graph."""
 
+import ast
 import enum
 import functools
 import importlib
 import inspect
 import itertools
 import json
+import textwrap
 import types
 import typing
 from typing import ClassVar
@@ -1168,11 +1170,15 @@ class DrivePort:
     """A port of the drive, holding one of the outcomes it can give a node.
 
     ``outcomes`` maps each outcome the fake can give to the error the node
-    refuses it with, or ``None`` where the node goes on.  Every async
-    method is one await the drive counts, and one the set may arrive at.
+    refuses it with, or ``None`` where the node goes on; ``raises`` maps
+    the outcomes the fake gives by raising to what it raises, so what the
+    product holds of a node's ``except`` clauses is read off the fakes.
+    Every async method is one await the drive counts, and one the set may
+    arrive at.
     """
 
     outcomes: ClassVar[dict[str, type[BaseException] | None]] = {}
+    raises: ClassVar[dict[str, type[BaseException]]] = {}
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -1274,6 +1280,7 @@ class DrivePullRequests(DrivePort):
     """The pull request writer: it posts, or the forge refuses the comment."""
 
     outcomes: ClassVar = {"posts": None, "the forge refuses the comment": None}
+    raises: ClassVar = {"the forge refuses the comment": ForgeAPIError}
 
     def __init__(self, at, outcome):
         super().__init__(at, outcome)
@@ -1735,6 +1742,47 @@ def test_every_derived_gated_node_has_a_drive_and_every_drive_a_node():
     assert set(GATED_DRIVES) == set(SNAPSHOT_GATED_ROUTES)
 
 
+def handled_by(function):
+    """The exception classes the ``except`` clauses of *function* name.
+
+    Read off the function's own source and resolved in its module's
+    namespace after import, by object; a clause naming a tuple names each
+    member.
+    """
+    namespace = vars(importlib.import_module(function.__module__))
+    found = set()
+    for node in ast.walk(ast.parse(textwrap.dedent(inspect.getsource(function)))):
+        if isinstance(node, ast.ExceptHandler) and node.type is not None:
+            named = node.type.elts if isinstance(node.type, ast.Tuple) else [node.type]
+            found |= {
+                namespace[name.id]
+                for name in named
+                if isinstance(name, ast.Name)
+                and isinstance(namespace.get(name.id), type)
+            }
+    return found
+
+
+def test_a_branch_on_an_exception_no_fake_raises_is_not_driven():
+    """The drive's one general limit, held as a fact: an input no fake enumerates.
+
+    The delivery coordinator catches two forge errors around the comment it
+    posts, and the pull request fake raises one of them.  The other,
+    TransientAPIError, is an input no fake gives, so the branch that catches
+    it is a path the drive does not reach.  The product shows it: every
+    outcome a fake gives by raising is in its outcome table, and none of
+    them raises that error (KOD-652).
+    """
+    for fake in DRIVE_FAKES:
+        assert set(fake.raises) <= set(fake.outcomes), fake.__name__
+    raised = {error for fake in DRIVE_FAKES for error in fake.raises.values()}
+    handled = set().union(*(handled_by(function_at(node)) for node in GATED_DRIVES))
+
+    assert raised == {ForgeAPIError}
+    assert handled == {ForgeAPIError, TransientAPIError}
+    assert handled - raised == {TransientAPIError}
+
+
 @pytest.mark.parametrize("node", sorted(GATED_DRIVES), ids=":".join)
 async def test_every_input_of_a_gated_node_meets_the_set_at_every_await(
     node, monkeypatch
@@ -1773,11 +1821,17 @@ async def test_every_input_of_a_gated_node_meets_the_set_at_every_await(
     A covered write after the arrival is the design's own shape, not a
     refusal missed: the barrier reads the set once, before it asks the
     reader, and a set arriving during the verification that follows is
-    met at the next barrier.  The reach: the static resolver in
-    ``callers_of`` follows the stated forms, each with its control; this
-    drive covers every path the enumerated inputs reach, whatever a guard
-    is spelled as; the one general limit is an input no fake enumerates
-    (KOD-652).
+    met at the next barrier (KOD-652).
+
+    The reach, stated once for the resolver and the drive: the static
+    resolver, ``callers_of``, follows the forms its docstring states, each
+    held by a control over ``RESOLVER_PROBE``; the behavioural drive,
+    ``test_every_input_of_a_gated_node_meets_the_set_at_every_await``,
+    covers every path the enumerated inputs reach, whatever a guard or a
+    call is spelled as; and the one general limit is an input no fake
+    enumerates -- a port raising an exception the fakes do not raise, or a
+    value outside the enum a node branches on -- so a node branch on such
+    an input is not driven, which the drive's derived product shows.
     """
     lane, state, config, _, forge, executor, tracker, _ = composed(rounds=1)
     try:
