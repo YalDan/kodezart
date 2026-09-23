@@ -245,18 +245,23 @@
     ]
   },
   "services/lane_state_writer.py::TrackerLaneStateWriter._write_one": {
-    "reason": "the graded commit recorded on the pass event a finished criterion posts, and that event posted unless the criterion's Evidence row history already ends at it",
+    "reason": "the graded commit recorded on the pass event a finished criterion posts, and that event posted unless the criterion's Evidence row history already ends at it; and recorded on the crossing-off event the lane posts once the criterion is moved to its finished state, that event posted unless the act's one reading of the stream already holds it",
     "uses": [
+      "await settle(self._tracker.post_run_event(issue_key=lane.lane_key, event=crossed_off))",
       "await settle(self._tracker.post_run_event(issue_key=lane.lane_key, event=event))",
+      "crossed = crossed_off in events",
+      "crossed_off = LaneRunEvent(kind=RunEventKind.ISSUE_CROSSED_OFF, lane_key=lane.lane_key, subject_key=criterion.id, graded_sha=cross_off.evidence.graded_sha)",
       "event = LaneRunEvent(kind=RunEventKind.CRITERION_PASSED, lane_key=lane.lane_key, subject_key=criterion.id, graded_sha=cross_off.evidence.graded_sha)",
+      "if not crossed:\n    ...",
       "if not posted:\n    ...",
       "posted = _ends_row_history(event=event, events=events)"
     ]
   },
   "services/lane_state_writer.py::TrackerLaneStateWriter.write_cross_offs": {
-    "reason": "the graded commit logged beside a criterion not crossed off, and recorded on the refutation event a take-back posts",
+    "reason": "the graded commit logged beside a criterion not crossed off, and recorded on the refutation event a take-back posts, and on the lapse event a lapse take-back posts",
     "uses": [
       "await self._log.ainfo('criterion_not_crossed_off', lane=lane.lane_key, criterion=cross_off.criterion, state=cross_off.state.value, reason=None if reason is None else reason.value, graded_sha=cross_off.evidence.graded_sha)",
+      "await self._take_back(lane=lane, criterion=criterion, cross_off=cross_off, event=LaneRunEvent(kind=RunEventKind.CRITERION_LAPSED, lane_key=lane.lane_key, subject_key=criterion.id, graded_sha=cross_off.evidence.graded_sha), events=events)",
       "await self._take_back(lane=lane, criterion=criterion, cross_off=cross_off, event=LaneRunEvent(kind=RunEventKind.CRITERION_REFUTED, lane_key=lane.lane_key, subject_key=criterion.id, graded_sha=cross_off.evidence.graded_sha), events=events)"
     ]
   },
