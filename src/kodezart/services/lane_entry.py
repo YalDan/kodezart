@@ -6,6 +6,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService
 from kodezart.domain.lane_entry import decide_lane_entry, recorded_lane
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.lane_entry import LaneEntry
 
 
@@ -32,7 +33,7 @@ class LaneEntryReader:
         issue_key: str,
         open_criteria: Sequence[str],
         repo_path: str,
-        resolved_base: str,
+        implied_base: BaseSpec,
     ) -> LaneEntry | None:
         """The lane's entry, or ``None`` when this walk has nothing to do for it.
 
@@ -102,5 +103,5 @@ class LaneEntryReader:
             remote_loop_head=remote_head,
             remote_deliverable_head=deliverable_head,
             open_criteria=open_criteria,
-            resolved_base=resolved_base,
+            implied_base=implied_base,
         )

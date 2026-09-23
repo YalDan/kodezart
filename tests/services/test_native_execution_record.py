@@ -9,6 +9,7 @@ from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.lane_state_writer import TrackerLaneStateWriter
 from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import ResultEvent
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
@@ -45,7 +46,7 @@ def lane() -> LaneBinding:
         body_digest="a" * 64,
         loop_branch=BRANCH,
         deliverable_branch="feature/native-test",
-        base_ref="main",
+        base=trunk_base("main"),
         repo_url=REPO_URL,
         repo_path=None,
         run_id="actual-parent-job",
@@ -100,7 +101,7 @@ class Arm:
         ).for_writer(
             spec=spec,
             criteria=await self.criteria.read_current(spec=spec),
-            base_ref=lane().base_ref,
+            base_ref=lane().base.base_branch,
             repo_url=REPO_URL,
             holder=lane().run_id,
             visibility=RepoVisibility.PUBLIC,
@@ -112,7 +113,7 @@ class Arm:
         async for event in self.service.stream_workflow(
             prompt="Implement the current Checks.",
             repo_url=REPO_URL,
-            base_branch=lane().base_ref,
+            base_branch=lane().base.base_branch,
             branch_name=lane().deliverable_branch,
             ralph_branch=BRANCH,
             create_branch=True,
@@ -157,7 +158,7 @@ async def test_a_native_commit_path_without_the_record_write_refuses():
         async for _ in arm.service.stream_workflow(
             prompt="Implement the current Checks.",
             repo_url=REPO_URL,
-            base_branch=lane().base_ref,
+            base_branch=lane().base.base_branch,
             branch_name=lane().deliverable_branch,
             ralph_branch=BRANCH,
             permission_mode=PermissionMode.UNATTENDED,

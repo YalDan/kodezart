@@ -2475,6 +2475,7 @@ def entry_of(
             head_sha=head_sha,
             deliverable_head_sha=RECORDED_DELIVERABLE_HEAD,
             body_digest=None,
+            base_stale=False,
         )
     return DeliverOnlyLane(
         deliverable_branch=RECORDED_DELIVERABLE,
@@ -2482,6 +2483,7 @@ def entry_of(
         head_sha=head_sha,
         deliverable_head_sha=RECORDED_DELIVERABLE_HEAD,
         body_digest=None,
+        base_stale=False,
     )
 
 

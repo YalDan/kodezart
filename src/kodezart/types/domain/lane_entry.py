@@ -42,6 +42,10 @@ class ResumedLane(CamelCaseModel):
     levels are two facts, so each carries a sha of its own and neither stands
     in for the other; ``None`` is the remote holding no such branch at all,
     which is a different reading from any sha and is not a refusal.
+
+    ``base_stale`` is ``is_base_stale``'s answer for the record's dispatch base
+    against the base resolved at this entry, and ``False`` when the record
+    carries none.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -52,6 +56,7 @@ class ResumedLane(CamelCaseModel):
     head_sha: str = Field(min_length=1)
     deliverable_head_sha: Annotated[str, Field(min_length=1)] | None
     body_digest: str | None
+    base_stale: bool
 
 
 class DeliverOnlyLane(CamelCaseModel):
@@ -66,6 +71,10 @@ class DeliverOnlyLane(CamelCaseModel):
     ``deliverable_head_sha`` is read and carried exactly as a resumed lane
     carries it: the entry this one becomes is decided by the gap alone, so the
     facts both entries stand on are the same facts.
+
+    ``base_stale`` is ``is_base_stale``'s answer for the record's dispatch base
+    against the base resolved at this entry, and ``False`` when the record
+    carries none.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -76,6 +85,7 @@ class DeliverOnlyLane(CamelCaseModel):
     head_sha: str = Field(min_length=1)
     deliverable_head_sha: Annotated[str, Field(min_length=1)] | None
     body_digest: str | None
+    base_stale: bool
 
 
 type LaneEntry = Annotated[

@@ -13,6 +13,7 @@ from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.adapters.claude.sdk_mapping import map_message
 from kodezart.core.node_sessions import NodeSessionObserver
 from kodezart.types.domain.agent import NodeSessionStartedEvent
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.node_session import (
     NodeInvocation,
@@ -289,7 +290,7 @@ LANE = LaneBinding(
     body_digest="0" * 64,
     loop_branch="ralph/loop",
     deliverable_branch="feature/deliverable",
-    base_ref="main",
+    base=trunk_base("main"),
     repo_url="https://github.com/acme/repo",
     repo_path=None,
     run_id="job-1",

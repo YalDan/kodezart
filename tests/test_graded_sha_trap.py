@@ -349,6 +349,7 @@ def test_the_lane_reading_weighs_the_pair_in_the_rule_alone():
         prior=prior,
         head_sha=trap.head(),
         changesets={GRADED: digest(f"{EXERCISED}lapse.py")},
+        base_stale=False,
     )
     assert [str(cross_off.criterion) for cross_off in partition.lapsed] == ["alpha"]
     assert trap.weighed_in_the_rule()

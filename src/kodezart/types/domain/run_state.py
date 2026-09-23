@@ -6,7 +6,7 @@ from typing import Annotated, Self
 from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
-from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.branch import BaseSpec, BranchAssociation, BranchRole
 from kodezart.types.domain.gating import RepoVisibility
 
 
@@ -21,7 +21,9 @@ class LaneBinding:
     lane_key: str
     loop_branch: str
     deliverable_branch: str
-    base_ref: str
+    #: The whole base this run was fired on: its branch and every input it
+    #: was computed from, so the record can pin what the lane stood on.
+    base: BaseSpec
     #: The digest of the subject text this run entered on, pinned by the
     #: record's first write and compared at every later entry.
     body_digest: str
@@ -90,6 +92,10 @@ class LaneRunState(CamelCaseModel):
     #: is the digest's own, so a record carrying a value from some other
     #: algorithm refuses at the read rather than comparing unequal forever.
     body_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    #: The base this lane's first recorded commit was dispatched on; ``None``
+    #: only on a record written before the field existed. Never re-pinned: a
+    #: later entry compares the base resolving then against this one.
+    dispatch_base: BaseSpec | None = None
     associations: list[BranchAssociation]
 
     @model_validator(mode="after")

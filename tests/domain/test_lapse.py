@@ -270,6 +270,7 @@ def test_every_prior_grading_lands_in_exactly_one_of_the_first_three_fields():
         ),
     ]
     partition = held_standing(
+        base_stale=False,
         prior=prior,
         head_sha=HEAD,
         changesets={GRADED: digest(f"{EXERCISED}lapse.py")},
@@ -286,6 +287,7 @@ def test_every_prior_grading_lands_in_exactly_one_of_the_first_three_fields():
 
 def test_a_grading_whose_paths_did_not_move_is_carried_and_not_re_derived():
     partition = held_standing(
+        base_stale=False,
         prior=[
             standing(
                 "alpha",
@@ -307,6 +309,7 @@ def test_a_grading_whose_paths_did_not_move_is_carried_and_not_re_derived():
 def test_an_expensive_grading_whose_paths_moved_is_re_derived_not_lapsed():
     """The loop can grade it again, so it goes back to the session."""
     partition = held_standing(
+        base_stale=False,
         prior=[
             standing(
                 "alpha",
@@ -328,6 +331,7 @@ def test_an_expensive_grading_whose_paths_moved_is_re_derived_not_lapsed():
 def test_an_observed_grading_whose_paths_moved_lapses_and_is_newly_lapsed():
     """The loop cannot re-derive a performed observation, so it is not offered one."""
     partition = held_standing(
+        base_stale=False,
         prior=[
             standing(
                 "alpha",
@@ -346,9 +350,58 @@ def test_an_observed_grading_whose_paths_moved_lapses_and_is_newly_lapsed():
     }
 
 
+@pytest.mark.parametrize("base_stale", [False, True])
+def test_held_standing_hands_the_base_reading_to_the_rule(base_stale):
+    """The partition carries the caller's base reading to the rule unchanged.
+
+    Graded at the head it is read at, a passing path-bound grading stands on
+    every other arm, so only the base reading can move it: carried on a live
+    base, re-derived (expensive) or lapsed (observed) on a stale one.
+    """
+    # Required and keyword-only, so no caller can drop the reading silently.
+    parameter = inspect.signature(held_standing).parameters["base_stale"]
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameter.default is inspect.Parameter.empty
+    partition = held_standing(
+        prior=[
+            standing(
+                "expensive",
+                rederivation_class=RederivationClass.expensive,
+                exercised_paths=(EXERCISED,),
+                graded_sha=HEAD,
+            ),
+            standing(
+                "observed",
+                rederivation_class=RederivationClass.observed,
+                exercised_paths=(EXERCISED,),
+                graded_sha=HEAD,
+            ),
+        ],
+        head_sha=HEAD,
+        changesets={},
+        base_stale=base_stale,
+    )
+    assert keys_of(partition) == (
+        {
+            "carried": (),
+            "rederive": ("expensive",),
+            "lapsed": ("observed",),
+            "newly_lapsed": ("observed",),
+        }
+        if base_stale
+        else {
+            "carried": ("expensive", "observed"),
+            "rederive": (),
+            "lapsed": (),
+            "newly_lapsed": (),
+        }
+    )
+
+
 def test_a_grading_that_already_lapsed_stays_lapsed_and_is_not_newly_lapsed():
     """A grading that has lapsed does not un-lapse, and asks nothing twice."""
     partition = held_standing(
+        base_stale=False,
         prior=[
             standing(
                 "alpha",
@@ -398,6 +451,7 @@ def test_the_partition_asks_the_rule_once_per_standing_path_bound_grading():
         standing("failed-one", state=CrossOffState.failed),
     ]
     held_standing(
+        base_stale=False,
         prior=prior,
         head_sha=HEAD,
         changesets=Counting({GRADED: digest("docs/architecture.md")}),
@@ -408,6 +462,7 @@ def test_the_partition_asks_the_rule_once_per_standing_path_bound_grading():
 def test_a_grading_with_no_digest_for_its_own_sha_lapses():
     """An absent reading is not a reading that nothing moved, here too."""
     partition = held_standing(
+        base_stale=False,
         prior=[
             standing(
                 "alpha",

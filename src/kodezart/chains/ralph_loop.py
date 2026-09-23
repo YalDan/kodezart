@@ -192,6 +192,7 @@ class RalphLoop:
         base_spec: BaseSpec,
         work_base_ref: str,
         resumed_head_sha: str | None = None,
+        base_stale: bool = False,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
         acceptance_criteria: list[ExecutionCriterion],
@@ -220,6 +221,7 @@ class RalphLoop:
             ralph_branch=ralph_branch,
             work_base_ref=work_base_ref,
             resumed_head_sha=resumed_head_sha,
+            base_stale=base_stale,
             acceptance_criteria=acceptance_criteria,
             tracker_spec=tracker_spec,
             repo_visibility=repo_visibility,
@@ -548,7 +550,7 @@ class RalphLoop:
             body_digest=body_digest(ctx.tracker_spec.body),
             loop_branch=ctx.ralph_branch,
             deliverable_branch=ctx.feature_branch,
-            base_ref=ctx.base_branch,
+            base=ctx.base_spec,
             repo_url=ctx.repo_url,
             repo_path=ctx.repo_path,
             run_id=ctx.surface_holder,
@@ -622,6 +624,7 @@ class RalphLoop:
             standing = held_standing(
                 prior=prior,
                 head_sha=native_ref,
+                base_stale=ctx.base_stale,
                 changesets=await self._moved_since(
                     cwd=cwd, prior=prior, head_sha=native_ref
                 ),

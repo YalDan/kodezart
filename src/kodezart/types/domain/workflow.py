@@ -189,6 +189,9 @@ class RalphLoopContext(ExecutionContext):
     #: against.  A lane cut from this head is cut from it and compares
     #: nothing.
     resumed_head_sha: str | None = None
+    #: Whether the lane's recorded dispatch base differs from the base this
+    #: entry resolved, as the entry read it; ``False`` for a lane with none.
+    base_stale: bool = False
     acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
     tracker_spec: TrackerSpec | None = None
     repo_visibility: RepoVisibility

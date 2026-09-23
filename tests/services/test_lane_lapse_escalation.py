@@ -15,6 +15,7 @@ from kodezart.services.lane_lapse_escalation import (
     LaneLapseEscalations,
     lapse_question,
 )
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.criterion_lifecycle import (
     CriterionCrossOff,
@@ -113,7 +114,7 @@ class Raiser:
             body_digest="the subject text this run entered on",
             loop_branch=BRANCH,
             deliverable_branch="feature/fire-subject",
-            base_ref="main",
+            base=trunk_base("main"),
             repo_url=REPO_URL,
             repo_path=None,
             run_id=HOLDER,

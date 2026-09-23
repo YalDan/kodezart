@@ -90,6 +90,7 @@ class FireImplementation:
         base_spec: BaseSpec,
         work_base_ref: str,
         resumed_head_sha: str | None = None,
+        base_stale: bool = False,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
         acceptance_criteria: list[ExecutionCriterion],
@@ -112,6 +113,7 @@ class FireImplementation:
             base_spec=base_spec,
             work_base_ref=work_base_ref,
             resumed_head_sha=resumed_head_sha,
+            base_stale=base_stale,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
@@ -171,6 +173,7 @@ class FireImplementation:
             PromptKey.IMPLEMENTATION,
         ).render({"task_md": task_md})
 
+        entered = recorded_entry(state["lane_entry"])
         last_iteration_event = await self.run_quality_gate(
             prompt=implementation_prompt,
             repo_path=ctx.repo_path,
@@ -181,12 +184,10 @@ class FireImplementation:
             work_base_ref=state["work_base_ref"],
             # A lane that entered on a record resumes at the head its record
             # names: a continued branch must stand there before the loop
-            # opens a session, and a cut branch is cut from it.
-            resumed_head_sha=(
-                entered.head_sha
-                if (entered := recorded_entry(state["lane_entry"])) is not None
-                else None
-            ),
+            # opens a session, and a cut branch is cut from it. The same entry
+            # read the record's dispatch base against the base resolving now.
+            resumed_head_sha=entered.head_sha if entered is not None else None,
+            base_stale=entered.base_stale if entered is not None else False,
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
             acceptance_criteria=criteria,

@@ -137,6 +137,7 @@ def held_standing(
     prior: Sequence[CriterionCrossOff],
     head_sha: str,
     changesets: Mapping[str, ChangesetDigest],
+    base_stale: bool,
 ) -> HeldStanding:
     """Partition *prior* by what each grading is still worth at *head_sha*.
 
@@ -155,7 +156,9 @@ def held_standing(
 
     This function compares nothing itself. It asks the rule once per standing
     path-bound grading and reads the answer, which is what keeps one
-    expression the only place the two revisions are weighed.
+    expression the only place the two revisions are weighed. *base_stale* is
+    ``is_base_stale``'s answer for the lane's recorded dispatch base, handed
+    in by the caller and passed to the rule as it is.
     """
     carried: list[CriterionCrossOff] = []
     rederive: list[CriterionCrossOff] = []
@@ -177,6 +180,7 @@ def held_standing(
             rederivation_class=cross_off.rederivation_class,
             exercised_paths=cross_off.exercised_paths,
             changeset=changesets.get(cross_off.evidence.graded_sha),
+            base_stale=base_stale,
         )
         if state is GradedState.counted:
             carried.append(cross_off)

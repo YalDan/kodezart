@@ -2240,6 +2240,9 @@ class QualityGate(Protocol):
     ``resumed_head_sha`` is the third: the head the lane's record names,
     which a CONTINUED branch must stand at before the loop works in it; a
     branch cut from that head needs no comparison.
+    ``base_stale`` is what the entry read of the lane's recorded dispatch
+    base against the base resolving now: when it is true, every grading the
+    loop would carry from one iteration to the next lapses.
     """
 
     def run(
@@ -2253,6 +2256,7 @@ class QualityGate(Protocol):
         base_spec: BaseSpec,
         work_base_ref: str,
         resumed_head_sha: str | None = None,
+        base_stale: bool = False,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
         acceptance_criteria: list[ExecutionCriterion],

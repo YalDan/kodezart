@@ -21,7 +21,7 @@ from kodezart.domain.lane_record import (
 )
 from kodezart.services.lane_entry import LaneEntryReader
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.types.domain.branch import BranchAssociation, BranchRole
+from kodezart.types.domain.branch import BranchAssociation, BranchRole, trunk_base
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.lane_entry import ResumedLane
@@ -133,7 +133,7 @@ def composed(*acts: str, landed: str | None = None) -> LaneRunState:
         lane_key=LANE,
         loop_branch=LOOP,
         deliverable_branch=DELIVERABLE,
-        base_ref=BASE,
+        base=trunk_base(BASE),
         body_digest=DIGEST,
         repo_url=None,
         repo_path=None,
@@ -212,7 +212,10 @@ async def test_a_loop_branch_past_the_record_is_not_resumed_from_and_is_said_out
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert entry == ResumedLane(
@@ -221,6 +224,7 @@ async def test_a_loop_branch_past_the_record_is_not_resumed_from_and_is_said_out
         head_sha=RECORDED_HEAD,
         deliverable_head_sha=BASE_TIP,
         body_digest=DIGEST,
+        base_stale=False,
     )
     differs = [entry for entry in logs if entry["event"] == "lane_record_head_differs"]
     assert len(differs) == 1
@@ -239,7 +243,10 @@ async def test_a_record_level_with_the_remote_says_nothing():
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert isinstance(entry, ResumedLane)
@@ -275,7 +282,10 @@ async def test_a_remote_head_at_the_last_row_says_nothing_whatever_the_head_fiel
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert [item for item in logs if item["event"] == "lane_record_head_differs"] == []
@@ -316,7 +326,10 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     # One read per branch the record's roles resolve, in that order: the loop
@@ -330,6 +343,7 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
         head_sha=LANDED,
         deliverable_head_sha=LANDED,
         body_digest=DIGEST,
+        base_stale=False,
     )
     assert entry.head_sha != PRE_LANDING_TIP
     # The landed act is a row of this record and not its first: the resolution
@@ -369,7 +383,10 @@ async def test_a_stall_whose_deliverable_is_at_base_tip_resumes_at_its_best_iter
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert git.calls == reads(LOOP, DELIVERABLE, BASE)
@@ -379,6 +396,7 @@ async def test_a_stall_whose_deliverable_is_at_base_tip_resumes_at_its_best_iter
         head_sha=ACTS[1],
         deliverable_head_sha=BASE_TIP,
         body_digest=DIGEST,
+        base_stale=False,
     )
     assert entry.head_sha != ACTS[-1]
     differs = [item for item in logs if item["event"] == "lane_record_head_differs"]
@@ -409,7 +427,10 @@ async def test_a_deliverable_branch_at_its_base_tip_is_reported_by_sha():
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert git.calls == reads(LOOP, DELIVERABLE, BASE)
@@ -437,7 +458,10 @@ async def test_a_deliverable_branch_off_its_base_tip_is_reported_and_said_out_lo
 
     with structlog.testing.capture_logs() as logs:
         entry = await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert isinstance(entry, ResumedLane)
@@ -488,7 +512,10 @@ async def test_associations_that_settle_nothing_refuse_before_the_remote_read(
 
     with pytest.raises(LaneEntryError, match=reason):
         await reader(port, git).read(
-            issue_key=LANE, open_criteria=OPEN, repo_path="/clone", resolved_base=BASE
+            issue_key=LANE,
+            open_criteria=OPEN,
+            repo_path="/clone",
+            implied_base=trunk_base(BASE),
         )
 
     assert git.calls == []

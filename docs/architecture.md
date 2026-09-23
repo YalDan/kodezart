@@ -403,9 +403,17 @@ that lane.
 The subject text is read once, at the fire's entry, and compared with the
 digest the record pinned: a difference raises `SubjectAmendedError` before any
 session, and a record with no digest is not compared and is pinned by its next
-write. Nothing here is remembered in process: every fact is read again before
-every fire, so a killed process changes nothing about the next decision
-(KOD-684, KOD-433, KOD-840).
+write. The record also pins the base its first commit was dispatched on
+(`dispatchBase`). At every entry that base and the base resolving now are
+compared by `is_base_stale`. A stale base is not a refusal: the fire runs, and
+every grading its loop would carry from one iteration to the next lapses through
+`graded_state`'s base arm. A record with no pinned base is not compared and is
+pinned by its next write. The reading is reachable on one arm only: a base whose
+inputs or arm changed is renamed, and the recorded-base check above refuses it;
+a base that keeps its name, which is one blocker whose delivery advanced, reads
+stale and lapses what the loop carries (KOD-888). Nothing here is remembered in
+process: every fact is read again before every fire, so a killed process changes
+nothing about the next decision (KOD-684, KOD-433, KOD-840).
 
 `TrackerLaneStateWriter` is the write side of that same record, and of the
 criterion cross-off beside it. Its calls follow. `record_commit` runs inside the
