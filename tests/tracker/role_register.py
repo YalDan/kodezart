@@ -9,7 +9,7 @@ rather than scanned surfaces.
 
 import ast
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -87,8 +87,10 @@ def production_modules(sources: Mapping[str, str]) -> dict[str, str]:
 def zero_callers(sources: Mapping[str, str], members: frozenset[str]) -> frozenset[str]:
     """Every one of *members* that no production module calls.
 
-    A caller is a member call in a module's parsed tree, so a member spelled
-    only in a comment, a docstring or a string calls nothing.
+    A caller is a member call in a module's parsed tree on a tracker role the
+    module holds, so a member spelled only in a comment, a docstring or a
+    string calls nothing, and neither does a same-named method called on
+    something that is not a tracker role.
     """
     called = frozenset().union(
         *(called_members(text) for text in production_modules(sources).values())
@@ -475,11 +477,17 @@ def annotation_names(text: str) -> dict[str, frozenset[str]]:
 
 @cache
 def called_members(text: str) -> frozenset[str]:
-    """Every member name *text* calls on something."""
-    return frozenset(
-        node.func.attr
-        for node in nodes(text)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    """Every member name *text* calls on a tracker role it holds.
+
+    A call counts only when its receiver is a role binding: a parameter or
+    field annotated with a role or the aggregate, or a name or attribute
+    that binding is kept as. A same-named method called on anything else
+    calls no tracker member.
+    """
+    known = roles(port_module_text()) | {AGGREGATE}
+    return frozenset().union(
+        *(members_called_on(binding, text) for binding in bindings(text, known)),
+        frozenset(),
     )
 
 
@@ -661,6 +669,39 @@ def bindings(text: str, known: frozenset[str]) -> list[Binding]:
     return found
 
 
+def holds(binding: Binding) -> Callable[[ast.expr], bool]:
+    """Whether an expression is *binding*: the value it is held under.
+
+    Its name inside the function that takes it, its attribute on ``self``
+    inside the class that keeps it, or the same attribute read off another
+    receiver anywhere in the module.
+    """
+    inside = {id(node) for node in ast.walk(binding.name_scope)}
+    owned = {id(node) for node in ast.walk(binding.attribute_scope)}
+
+    def held(value: ast.expr) -> bool:
+        if isinstance(value, ast.Name):
+            return id(value) in inside and value.id in binding.names
+        if isinstance(value, ast.Attribute) and value.attr in binding.attributes:
+            on_self = isinstance(value.value, ast.Name) and value.value.id == "self"
+            return id(value) in owned or not on_self
+        return False
+
+    return held
+
+
+def members_called_on(binding: Binding, text: str) -> frozenset[str]:
+    """Every member *text* calls with *binding* as the call's receiver."""
+    held = holds(binding)
+    return frozenset(
+        node.func.attr
+        for node in nodes(text)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and held(node.func.value)
+    )
+
+
 def credited(
     binding: Binding,
     text: str,
@@ -680,24 +721,14 @@ def credited(
     argument by index; one that does not resolve credits nothing.
     """
     own = own_declarations(register)
-    inside = {id(node) for node in ast.walk(binding.name_scope)}
-    owned = {id(node) for node in ast.walk(binding.attribute_scope)}
-
-    def held(value: ast.expr) -> bool:
-        if isinstance(value, ast.Name):
-            return id(value) in inside and value.id in binding.names
-        if isinstance(value, ast.Attribute) and value.attr in binding.attributes:
-            on_self = isinstance(value.value, ast.Name) and value.value.id == "self"
-            return id(value) in owned or not on_self
-        return False
-
-    calls = [node for node in nodes(text) if isinstance(node, ast.Call)]
-    found: set[str] = set()
-    for call in calls:
-        if isinstance(call.func, ast.Attribute) and held(call.func.value):
-            found.update(
-                role for role, members in own.items() if call.func.attr in members
-            )
+    held = holds(binding)
+    found: set[str] = {
+        role
+        for member in members_called_on(binding, text)
+        for role, members in own.items()
+        if member in members
+    }
+    for call in (node for node in nodes(text) if isinstance(node, ast.Call)):
         handed = [(index, None, value) for index, value in enumerate(call.args)] + [
             (None, keyword.arg, keyword.value) for keyword in call.keywords
         ]

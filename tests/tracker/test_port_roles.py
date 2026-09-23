@@ -9,10 +9,11 @@ between roles moves the guard with it and a member declared twice is named.
 The second half is the caller question. A member no production module calls
 is a capability nothing uses, carried on every implementation for no
 consumer. The list of such members is derived: every member of the whole
-port, found as a member call in the parsed modules of the shipped tree
-outside the port module, the vendor adapters and the test tree, so a member
-spelled only in a comment, a docstring or a string has no caller, and a call
-moved into one of those three places is no caller either. A caller in a
+port, found as a member call on a role binding in the parsed modules of the
+shipped tree outside the port module, the vendor adapters and the test tree,
+so a member spelled only in a comment, a docstring or a string has no caller,
+nor has a same-named method called on an object that is no tracker role, and
+a call moved into one of those three places is no caller either. A caller in a
 module the run does not reach still counts, as the criterion words it, and
 the reachability of its role is pinned separately. It holds nothing but two
 named exemptions — the four run-record members KOD-798 decides, and the
@@ -232,11 +233,16 @@ def test_a_caller_outside_the_production_modules_does_not_count(place):
     assert name in zero_callers(sources, port_members())
 
 
-#: The ways a module can spell a member without calling it.
+#: The ways a module can spell a member without calling it on a tracker role.
 PLANTED_MENTIONS = {
     "a comment": "# was: await tracker.{name}(issue_key=key)\nVALUE = 1\n",
     "a docstring": '"""Calls ``tracker.{name}(issue_key=key)`` once."""\n',
     "a string": 'NOTE = "await tracker.{name}(issue_key=key)"\n',
+    "a same-named method on another object": (
+        "class Notes:\n    def {name}(self, *, issue_key):\n"
+        "        return issue_key\n\n\n"
+        "def note(tracker, key):\n    return Notes().{name}(issue_key=key)\n"
+    ),
 }
 
 
@@ -255,7 +261,7 @@ def test_a_caller_of_the_exempted_read_empties_its_exemption():
     sources = source_tree()
     (name,) = EXEMPT_UNTIL_KOD_390
     sources["services/authorship_reader.py"] = (
-        f"async def authorship(tracker, surface):\n"
+        f"async def authorship(*, tracker: {kod_390_role()}, surface):\n"
         f"    return await tracker.{name}(surface=surface)\n"
     )
 
