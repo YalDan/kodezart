@@ -57,25 +57,27 @@ package the rule is packaged in.  The register lives beside this file in
 The static assertion's reach, as the Check states it: it covers every scope
 that reads the graded sha directly (the evidence field or its alias, and any
 value bound from them inside that same scope) and pins every statement there
-that touches the value, whatever the other operand is called.  Outside it,
-and only these:
+that touches the value, whatever the other operand is called.
 
-* a whole-record read through a value whose type the module does not
-  declare -- ``model_dump()``, ``dict(...)``, ``vars(...)`` or iteration on
-  an un-annotated ``evidence`` -- which would need type inference this
-  guard does not do;
-* a value handed across functions (returned, stored on an object or a
-  module global, or passed as an argument);
-* a name built at run time, including one handed to ``eval``/``exec``.
+The guard reads every module's syntax and resolves names in the module's own
+namespace after import. Outside it: a value handed across a function
+boundary (returned, passed, or stored on an object), a name built at run
+time, and a binding made only when a function runs.
 
-Each is read as code.  In ``test_the_stated_limit_is_evasion_and_it_is_not_seen``
-a global set in one function and compared in another, and a value one
-function returns (``Ledger.recorded()``) compared in its caller: the
-function that reads the field directly is reported and the function that
-compares what it was handed is not.  In
-``test_a_record_read_whole_without_a_declared_type_is_not_seen`` the
-un-annotated record read whole is unseen, and the same read with the
-record's annotation is seen.
+A record read whole through a value whose type the module does not declare
+-- ``model_dump()``, ``dict(...)``, ``vars(...)`` or iteration on an
+un-annotated ``evidence`` -- is the first of these: the value was passed in
+across a function boundary, and nothing in the module says what it is.
+
+Each is held as a fact by a test: ``test_a_value_returned_from_a_helper_is_not_seen``,
+``test_a_name_built_at_run_time_is_not_seen``,
+``test_a_binding_made_only_when_a_function_runs_is_not_seen`` and
+``test_a_record_read_whole_without_a_declared_type_is_not_seen``.  In each,
+the function that reads the field directly, or the same spelling made where
+the guard reads, is seen, and what lies past the boundary is not.
+``test_the_stated_limit_is_evasion_and_it_is_not_seen`` reads the rest of the
+boundary as code: a global set in one function and compared in another, a
+value stored on an object, and a value passed as an argument.
 """
 
 import ast
@@ -1777,10 +1779,12 @@ def test_the_stated_limit_is_evasion_and_it_is_not_seen():
 
 
 def test_a_record_read_whole_without_a_declared_type_is_not_seen():
-    """The first stated limit, held as a fact rather than claimed.
+    """A value passed in whose type the module does not declare, held as a fact.
 
     Read whole through a value the module never declares as the record, the
-    graded sha is unseen; the same read with the record's annotation is seen.
+    graded sha is unseen: it crossed a function boundary as a parameter, and
+    nothing names its type.  The same read with the record's annotation is
+    seen.
     """
     uses = (
         "head_sha in dict(evidence).values()",
@@ -1798,6 +1802,69 @@ def test_a_record_read_whole_without_a_declared_type_is_not_seen():
     assert alone(seen) == {
         "reader.py::lapsed": Counter({"return head_sha in dict(evidence).values()": 1})
     }
+
+
+def test_a_value_returned_from_a_helper_is_not_seen():
+    """A value handed back across a function boundary is out of reach.
+
+    The helper that reads the field is seen; the caller comparing what the
+    helper returned is not.
+    """
+    source = (
+        "def recorded(evidence):\n"
+        "    return evidence.graded_sha\n"
+        "def lapsed(evidence, head_sha):\n"
+        "    return recorded(evidence) != head_sha\n"
+    )
+    assert alone(source) == {
+        "reader.py::recorded": Counter({"return evidence.graded_sha": 1})
+    }
+
+
+def test_a_name_built_at_run_time_is_not_seen():
+    """A name built at run time and handed to ``eval`` is out of reach.
+
+    The same path written as a literal is a read.
+    """
+    built = (
+        "def evaluated(evidence, head_sha):\n"
+        "    field = 'graded' + '_sha'\n"
+        "    return eval(f'evidence.{field}') != head_sha\n"
+    )
+    assert alone(built) == {}
+    literal = (
+        "def evaluated(evidence, head_sha):\n"
+        "    return eval('evidence.graded_sha') != head_sha\n"
+    )
+    assert frozenset(alone(literal)) == {"reader.py::evaluated"}
+
+
+def test_a_binding_made_only_when_a_function_runs_is_not_seen():
+    """A ``setattr`` on the module made inside a function is out of reach.
+
+    Nothing is called, so a binding the module makes only when one of its
+    functions runs is not in its namespace after import: neither a second
+    rule bound under the rule's name nor a record alias bound for an
+    annotation is seen.  The same bindings made at module level are.
+    """
+    module = "chains/audit_evidence.py"
+    call = f"{RULE}({GRADED}=evidence.{GRADED}, head_sha=head)"
+    install = (
+        f"def _install():\n    setattr(sys.modules[__name__], '{RULE}', _shadow)\n"
+    )
+    assert _misdirected(module, SHIPPED[module] + f"\n\n{SHADOW}{install}") == []
+    at_import = f"\n\n{SHADOW}globals()['{RULE}'] = _shadow\n"
+    assert _misdirected(module, SHIPPED[module] + at_import) == [call]
+    alias = (
+        f"from {CriterionEvidence.__module__} import {RECORD}\n"
+        "def _install():\n"
+        f"    setattr(sys.modules[__name__], '_Recorded', {RECORD})\n"
+        "def lapsed(evidence: '_Recorded', head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n"
+    )
+    assert alone(alias) == {}
+    bound = alias + f"_Recorded = {RECORD}\n"
+    assert frozenset(alone(bound)) == {"reader.py::lapsed"}
 
 
 def _is_rule_call(node: ast.AST) -> bool:
