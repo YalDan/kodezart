@@ -1,9 +1,11 @@
 """The vocabulary and its table form one complete boot contract.
 
 The table and every surface that consumes it carry the stage and effect
-vocabularies only: a tracker's own state string is resolved at the port
-boundary, through the configured ``workflow_states`` mapping the adapter is
-built with, and nowhere else (KOD-795).
+vocabularies only: a tracker's own state string is resolved through the
+configured ``workflow_states`` mapping (KOD-795).  The scan reads the
+table's own rows, the prompt block that renders it, the binding that hands
+it to the prompt, and every function that reads it, its load validator
+among them.  The rest of a prompt's prose is outside that scan.
 
 The mapping is also read outside the adapter, at registered reading sites
 only, each with the reason it reads it.  A read is an attribute naming a
