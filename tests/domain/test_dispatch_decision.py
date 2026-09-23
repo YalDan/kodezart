@@ -17,18 +17,27 @@ count field is among them. Every other field of ``TrackerIssue`` is varied,
 so a field added to the row is varied as soon as it exists, and a field whose
 range this module does not know fails loudly. Beyond the row, what the port
 answers about an issue's subtree is varied too: its sub-issues, its
-criterion sub-issues and its comments. Each varied input is set to its
-extremes — nothing, and a great deal — on alternate issues of the board, one
-input at a time, then all of them together, and the decision must equal the
-base decision every time.
+criterion sub-issues and its comments. So are the edge kinds no eligibility
+clause reads: the blocker clause reads blocked-by edges alone, so the
+issue's other edges (blocks, related, duplicate) are a count like any other.
+Each varied input is set to its extremes — nothing, and a great deal — one
+input at a time, then all of them together, over several heavy sets: the
+issues at each parity of the board, the older member of each equal-priority
+pair and then the younger one, and each issue alone. The board's
+equal-priority pair sits at opposite parities, and a plain test checks that
+every such pair is split both ways, so a size that reaches the rank only
+below the priority — as a tie-break, or folded into the age — moves the
+decision here. The decision must equal the base decision every time.
 
 Reach: the decision as the composition root composes it is invariant under
 every non-rank, non-eligibility input the board holds, at the extremes
 above. So a size read off the board anywhere between the scan and the
 enqueue — a rebinding at boot, a subclass built at the root, a validator on
 the row, an eligibility clause, a table consulted after the selection, a
-hook in the rank value — fails here whatever it is spelled, as soon as it
-moves the decision for a board holding those extremes.
+hook in the rank value, a tie-break among equal priorities, an age shifted
+by a size, a count over the edges no clause reads — fails here whatever it
+is spelled, as soon as it moves the decision for a board holding those
+extremes.
 
 Limit: a size taken from outside the board (for example, from the
 repository) is not varied here. It would have to be read in one of the path
@@ -59,6 +68,8 @@ from kodezart.types.domain.operation import QueueState
 from kodezart.types.domain.tracker import (
     IssuePriority,
     IssueQuery,
+    IssueRelation,
+    IssueRelationKind,
     TrackerComment,
     TrackerIssue,
 )
@@ -92,7 +103,8 @@ ELIGIBILITY_REASONS: dict[str, str] = {
     "project_id": "the scope clause matches the project id and its initiatives",
     "queue_states": "the approval clause, and the scan's approved query",
     "state_kind": "the open clause, over the issue and over each blocker",
-    "relations": "the blocker clause reads the issue's edges",
+    "relations": "the blocker clause reads the issue's blocked-by edges; the "
+    "other kinds are varied (UNREAD_EDGE_KINDS)",
     "updated_at": "the memory clause re-admits an issue that moved",
 }
 ELIGIBILITY_INPUTS = frozenset(ELIGIBILITY_REASONS)
@@ -102,6 +114,17 @@ VARIED = frozenset(TrackerIssue.model_fields) - RANK_INPUTS - ELIGIBILITY_INPUTS
 
 #: What the port answers about an issue's subtree, beyond the row.
 SUBTREE = ("sub_issues", "criteria", "comments")
+
+#: Exact. The edge kinds an eligibility clause reads, one reason each.
+READ_EDGE_KINDS: dict[IssueRelationKind, str] = {
+    IssueRelationKind.BLOCKED_BY: "blocker_keys keeps these edges alone",
+}
+
+#: Every other edge kind, derived from the enum: a count over them is a
+#: size, so heavy issues carry many of each.
+UNREAD_EDGE_KINDS = tuple(
+    kind for kind in IssueRelationKind if kind not in READ_EDGE_KINDS
+)
 
 #: "A great deal": a text of thousands of lines, and a collection of hundreds.
 LONG_TEXT = "\n".join(f"line {number} of a very long text" for number in range(5000))
@@ -113,6 +136,7 @@ HOUR = timedelta(hours=1)
 
 #: The board: distinct ages, priorities that differ except for one pair,
 #: so the age decides that pair, and neither order agrees with the board's.
+#: The pair, K-4 and K-6, sits at indexes 3 and 4, opposite parities.
 BOARD: tuple[TrackerIssue, ...] = (
     make_tracker_issue(
         "K-1", priority=IssuePriority.LOW, created_at=FIXTURE_EPOCH + HOUR
@@ -125,12 +149,31 @@ BOARD: tuple[TrackerIssue, ...] = (
         "K-4", priority=IssuePriority.HIGH, created_at=FIXTURE_EPOCH + 5 * HOUR
     ),
     make_tracker_issue(
-        "K-5", priority=IssuePriority.MEDIUM, created_at=FIXTURE_EPOCH + 3 * HOUR
-    ),
-    make_tracker_issue(
         "K-6", priority=IssuePriority.HIGH, created_at=FIXTURE_EPOCH + 2 * HOUR
     ),
+    make_tracker_issue(
+        "K-5", priority=IssuePriority.MEDIUM, created_at=FIXTURE_EPOCH + 3 * HOUR
+    ),
 )
+
+#: Every pair of board issues of equal priority, older member first.
+EQUAL_PRIORITY_PAIRS: tuple[tuple[str, str], ...] = tuple(
+    (older.issue_key, younger.issue_key)
+    for older in BOARD
+    for younger in BOARD
+    if older.priority is younger.priority and older.created_at < younger.created_at
+)
+
+#: The heavy sets: which issues take the great-deal end of a variation.
+#: Each parity of the board, the older member of every equal-priority pair
+#: and then the younger one, and each issue alone.
+HEAVY_SETS: dict[str, frozenset[str]] = {
+    "first": frozenset(issue.issue_key for issue in BOARD[0::2]),
+    "second": frozenset(issue.issue_key for issue in BOARD[1::2]),
+    "older": frozenset(older for older, _ in EQUAL_PRIORITY_PAIRS),
+    "younger": frozenset(younger for _, younger in EQUAL_PRIORITY_PAIRS),
+    **{f"alone-{issue.issue_key}": frozenset({issue.issue_key}) for issue in BOARD},
+}
 
 #: Exact. The decision over the base board: every issue claimed and enqueued
 #: once, in rank order.
@@ -156,6 +199,22 @@ def extremes(name: str) -> tuple[object, object]:
     pytest.fail(f"no extremes are known for {name}: {annotation}")
 
 
+def unread_edges(issue: TrackerIssue) -> tuple[IssueRelation, ...]:
+    """*issue*'s own edges, and many of every kind no clause reads.
+
+    Each points at a key off the board, so nothing the dispatcher could
+    look up behind it is on the board either.
+    """
+    return (
+        *issue.relations,
+        *(
+            IssueRelation(kind=kind, issue_key=f"{issue.issue_key}-{kind}-{number}")
+            for kind in UNREAD_EDGE_KINDS
+            for number in range(MANY)
+        ),
+    )
+
+
 def rebuilt(issue: TrackerIssue, **update: object) -> TrackerIssue:
     """*issue* with *update*, validated the way an adapter's row is."""
     return TrackerIssue.model_validate({**issue.model_dump(), **update})
@@ -165,27 +224,33 @@ def rebuilt(issue: TrackerIssue, **update: object) -> TrackerIssue:
 class Variation:
     """One varied board: row fields per issue, and a subtree per issue."""
 
-    #: The row fields varied: each takes its great-deal end on the issues at
-    #: the chosen parity and its nothing end on the others.
+    #: The row fields varied: each takes its great-deal end on the heavy
+    #: issues and its nothing end on the others.
     fields: tuple[str, ...]
-    #: The subtree parts given many entries under the issues at that parity.
+    #: The subtree parts given many entries under the heavy issues.
     subtree: tuple[str, ...]
-    #: Whether that parity starts at the first issue or the second.
-    first: bool
+    #: Whether the heavy issues carry many edges of the unread kinds.
+    edges: bool
+    #: The issues that take the great-deal end.
+    heavy: frozenset[str]
 
     def board(self) -> tuple[TrackerIssue, ...]:
         rows = []
-        for index, issue in enumerate(BOARD):
-            heavy = (index % 2 == 0) == self.first
-            update = {name: extremes(name)[1 if heavy else 0] for name in self.fields}
+        for issue in BOARD:
+            heavy = issue.issue_key in self.heavy
+            update: dict[str, object] = {
+                name: extremes(name)[1 if heavy else 0] for name in self.fields
+            }
+            if self.edges and heavy:
+                update["relations"] = [
+                    edge.model_dump() for edge in unread_edges(issue)
+                ]
             rows.append(rebuilt(issue, **update))
         return tuple(rows)
 
     def heavy_keys(self) -> tuple[str, ...]:
         return tuple(
-            issue.issue_key
-            for index, issue in enumerate(BOARD)
-            if (index % 2 == 0) == self.first
+            issue.issue_key for issue in BOARD if issue.issue_key in self.heavy
         )
 
 
@@ -312,15 +377,17 @@ async def decision(
 
 
 def variations() -> dict[str, Variation]:
-    """Each varied input alone at both parities, then all of them together."""
+    """Each varied input alone, then all of them together, per heavy set."""
     cases: dict[str, Variation] = {}
-    for first in (True, False):
-        side = "first" if first else "second"
+    for side, heavy in HEAVY_SETS.items():
         for name in sorted(VARIED):
-            cases[f"{name}-{side}"] = Variation((name,), (), first)
+            cases[f"{name}-{side}"] = Variation((name,), (), False, heavy)
         for part in SUBTREE:
-            cases[f"{part}-{side}"] = Variation((), (part,), first)
-        cases[f"everything-{side}"] = Variation(tuple(sorted(VARIED)), SUBTREE, first)
+            cases[f"{part}-{side}"] = Variation((), (part,), False, heavy)
+        cases[f"unread_edges-{side}"] = Variation((), (), True, heavy)
+        cases[f"everything-{side}"] = Variation(
+            tuple(sorted(VARIED)), SUBTREE, True, heavy
+        )
     return cases
 
 
@@ -344,6 +411,28 @@ def test_the_row_is_partitioned_into_rank_eligibility_and_varied_fields() -> Non
     for name in VARIED:
         low, high = extremes(name)
         assert low != high, name
+    assert set(READ_EDGE_KINDS) | set(UNREAD_EDGE_KINDS) == set(IssueRelationKind)
+    assert not set(READ_EDGE_KINDS) & set(UNREAD_EDGE_KINDS)
+    assert UNREAD_EDGE_KINDS
+    assert all(reason.strip() for reason in READ_EDGE_KINDS.values())
+
+
+def test_every_equal_priority_pair_is_split_both_ways() -> None:
+    """A size used below the priority can move the decision on this board.
+
+    The age, and any tie-break, decides only between issues of equal
+    priority. So for every such pair on the board there is a variation in
+    which its older member is heavy and its younger light, and one the
+    other way round; a size folded into the age or used as a tie-break then
+    moves the order of that pair in one of them.
+    """
+    assert EQUAL_PRIORITY_PAIRS
+    for older, younger in EQUAL_PRIORITY_PAIRS:
+        splits = {
+            (older in variation.heavy, younger in variation.heavy)
+            for variation in VARIATIONS.values()
+        }
+        assert {(True, False), (False, True)} <= splits, (older, younger)
 
 
 async def test_the_composed_dispatcher_drains_the_board_in_rank_order() -> None:
