@@ -1361,25 +1361,37 @@ class TrackerScopeApprovalReader(
 class WorkRefReader(Protocol):
     """The one read base resolution makes to find a blocker's branch.
 
-    A role narrowed out of the port rather than a widening of it:
-    ``TrackerPort`` satisfies it structurally and remains the answer on the
-    per-issue pass, while the scope path serves the same question from the
-    lane's own run-state record (KOD-842).  Either way the caller asks
-    *which refs deliver issue X, in which roles, at which shas* and derives
-    nothing from a branch name.
+    Named for the base resolver (``services/base_resolver.py``) and the
+    delivery coordinator's refs, which take it alone; ``WorkRefRecorder``
+    composes it beside the record, and the aggregate composes it. On the
+    per-issue pass the tracker answers it, while the scope path serves the
+    same question from the lane's own run-state record (KOD-842).  Either
+    way the caller asks *which refs deliver issue X, in which roles, at
+    which shas* and derives nothing from a branch name.
     """
 
-    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]: ...
+    async def work_refs(self, *, issue_key: str) -> Sequence[WorkRef]:
+        """Every ref recorded against the issue, oldest first.
+
+        This is the read D2 requires: *which refs deliver issue X, in which
+        roles, at which shas* is answerable through the port, so no code
+        anywhere derives an issue identity, a role or a parent from a
+        branch name. Recorded landing remains LANDED, NOT_LANDED or UNKNOWN;
+        an older record without that fact reads UNKNOWN, never NOT_LANDED.
+        """
+        ...
 
 
 @runtime_checkable
 class SurfaceLeaseTracker(Protocol):
     """Exactly the lease calls one writing job's own lifetime makes.
 
-    A role narrowed out of the port rather than a widening of it: the lease
-    arbitrates and this names the three calls that ask it to, so a writer
-    holding this role can take a lease and can do nothing else with it.
-    ``TrackerPort`` satisfies it structurally.
+    Named for the run's and the model's surface leases
+    (``services/run_surface_lease.py``, ``services/model_surface_lease.py``):
+    the lease arbitrates and this names the three calls that ask it to, so a
+    writer holding this role can take a lease and can do nothing else with
+    it. The roles of the writers that also lease compose it, and so does the
+    aggregate.
     """
 
     async def acquire_surfaces(
@@ -1389,7 +1401,22 @@ class SurfaceLeaseTracker(Protocol):
         holder: str,
         lease_seconds: float,
     ) -> SurfaceLease:
-        """Take the whole set for *holder*, or raise ``SurfaceContendedError``."""
+        """Take the WHOLE set exclusively for *holder*, or take nothing.
+
+        Acquisition never blocks and never retries: on intersection with
+        another holder's live lease, or with another holder's bid in a race
+        the backend has not settled, it raises ``SurfaceContendedError``
+        naming that surface and its settled holder (``None`` for an
+        unsettled race), releases whatever it took, and holds nothing
+        afterwards. A surface *holder* itself holds live is
+        not contention — re-acquisition succeeds and re-times the whole
+        set — and an expired lease is free to anyone.
+
+        *holder* names the writer whose lifetime the lease follows: a run's
+        job id (``JobRecord.job_id``), or a scheduled pass's own identity for
+        a writer that is not a run. It is never the claim's process identity
+        (``dispatch_holder``) and never composed from it.
+        """
         ...
 
     async def renew_surfaces(
@@ -1398,40 +1425,83 @@ class SurfaceLeaseTracker(Protocol):
         surfaces: frozenset[WritableSurface],
         holder: str,
         lease_seconds: float,
-    ) -> SurfaceLease | None: ...
+    ) -> SurfaceLease | None:
+        """Extend a lease *holder* holds live on EVERY surface of the set.
+
+        Returns the lease as it now stands, expiring no earlier than
+        *lease_seconds* from now. Returns ``None``, extending nothing, when
+        *holder* does not hold every one of them live: renewal EXTENDS and
+        never acquires, so a lapsed lease stays lapsed and its surfaces stay
+        free. A standing hold of *holder*'s on only part of the set is no
+        hold, and the refusing renewal withdraws it, so *holder* is left
+        holding nothing of that set.
+        """
+        ...
 
     async def release_surfaces(
-        self, *, surfaces: frozenset[WritableSurface], holder: str
-    ) -> None: ...
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        """Release the surfaces *holder* holds.
+
+        A surface it does not hold is a no-op, live or expired.
+        """
+        ...
 
 
 @runtime_checkable
 class LaneEventHistory(Protocol):
     """The one read a grading's provenance needs, and no write beside it.
 
-    A role narrowed out of the port rather than a widening of it. What it
-    leaves out is the point: no append, so a holder of this role cannot add
-    the grading whose absence it is reading for.
+    Named for the audit's evidence reading (``chains/audit_evidence.py``),
+    and composed by the run alarm's role and by the aggregate. What it leaves
+    out is the point: no append, so a holder of this role cannot add the
+    grading whose absence it is reading for.
     """
 
     async def lane_run_events(
         self, *, issue_key: str, lane_key: str
-    ) -> Sequence[LaneRunEvent]: ...
+    ) -> Sequence[LaneRunEvent]:
+        """*lane_key*'s events on *issue_key*, in write order.
+
+        Exactly the events posted for that lane on that issue, ordered by
+        when the backend recorded each write.  A record edited in place
+        under its own marker is not one of them, and neither is a threaded
+        reply — a decision record among them — whatever it carries.
+
+        A successful read with nothing posted returns an empty sequence.
+        An unreadable or damaged entry raises: a stream answering with a
+        hole would report a history that never happened.
+        """
+        ...
 
 
 @runtime_checkable
 class CriterionReopener(Protocol):
     """The one state move the audit makes.
 
-    A role narrowed out of the port rather than a widening of it:
-    ``TrackerPort`` satisfies it structurally.  The audit is not the lane,
-    so it does not take ``LaneStateTracker``, which is bound to the lane
-    state writer's calls.
+    Named for the audit's reopening (``services/audit_reopen.py``); the lane
+    state writer's role composes it too, and so does the aggregate.  The
+    audit is not the lane, so it does not take ``LaneStateTracker``, which is
+    bound to the lane state writer's calls.
     """
 
     async def reset_criterion_pending(
         self, *, expected: TrackerIssue, holder: str | None = None
-    ) -> TrackerIssue: ...
+    ) -> TrackerIssue:
+        """Reset only this expected native criterion under CRITERION_SUB_ISSUE.
+
+        Resolve the team's unique actual unstarted state. Re-read expected
+        identity/body/state and the current holder on each unsent retry;
+        a matching already-unstarted replay writes nothing. Read back the
+        state separately from the write attempt. No body or evidence is edited.
+        A supplied ``holder`` must hold the criterion surface live, else
+        ``SurfaceLeaseError``. ``holder=None`` is the single-writer write: no
+        lease is consulted, and every other refusal on this call still applies.
+        """
+        ...
 
 
 @runtime_checkable
