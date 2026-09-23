@@ -28,7 +28,14 @@ from kodezart.composition.write_adoption import (
 )
 from kodezart.domain.errors import UnverifiedWritePathError
 from kodezart.main import create_app, lifespan
-from tests.chains.test_write_back_adoption import DIRECT, DRIVEN, PLANTED
+from tests.chains.test_write_back_adoption import (
+    DIRECT,
+    DRIVEN,
+    PLANTED,
+    census,
+    declaring_holders,
+    without_declaration,
+)
 from tests.integration.test_scope_deployment import (
     guide_environment,
     scratch_project,
@@ -123,6 +130,34 @@ async def test_a_deployment_with_an_unadopted_write_path_refuses_to_boot_naming_
     assert server.calls[calls:] == []
     assert server.lifecycle == lifecycle
     assert logged(capsys.readouterr().out, "tracker_mappings_reconciled") == []
+
+
+async def test_the_boot_gate_re_censuses_a_changed_module_under_the_same_path(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The same module paths with different content are a different tree.
+
+    After a clean boot, one declaring function's declaration is removed from
+    its module and nothing else changes: every path the gate reads is the
+    one it read before.  The gate refuses, naming exactly the writes that
+    declaration held out, so what it keeps between boots is keyed on what
+    the source says and not on where it lives.
+    """
+    server = deployment(monkeypatch)
+    await boots(server, capsys)
+
+    holder = declaring_holders()[0]
+    installed_with(monkeypatch, dict([without_declaration(holder)]))
+    with pytest.raises(UnverifiedWritePathError) as refused:
+        async with lifespan(create_app()):
+            pass
+
+    held = tuple(
+        sorted(str(site) for site in census().held_out if site.holder == holder)
+    )
+    assert held
+    assert refused.value.paths == held
 
 
 async def test_a_boot_refusal_names_every_unadopted_write_path(
