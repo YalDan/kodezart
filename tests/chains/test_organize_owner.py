@@ -680,7 +680,11 @@ async def test_the_owner_renders_the_rows_own_rubric_into_both_judging_prompts()
     each carry every part of the organizational predicate, none of the
     implementation test, and the member's own body.
     """
-    from tests.prompts.test_organize_rubrics import FOUR_PARTS, IMPLEMENTATION_TEST
+    from tests.prompts.test_organize_rubrics import (
+        FOUR_PARTS,
+        IMPLEMENTATION_TEST,
+        normalised,
+    )
 
     owner, _, executor = factory(
         body=PREPARED_BODY, groom_rubric_key="organize_groom_rubric"
@@ -698,7 +702,7 @@ async def test_the_owner_renders_the_rows_own_rubric_into_both_judging_prompts()
     assert assessed
     for prompt in judged:
         for part in FOUR_PARTS:
-            assert part in prompt, part
+            assert part in normalised(prompt), part
         for claim in IMPLEMENTATION_TEST:
             assert claim not in prompt, claim
         assert PREPARED_BODY in prompt
