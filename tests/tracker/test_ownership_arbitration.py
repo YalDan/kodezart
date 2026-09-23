@@ -861,24 +861,31 @@ async def test_a_refused_acquisition_takes_its_own_markers_back_off() -> None:
     assert [comment.id for comment in server.comments] == standing
 
 
-class _HidesTheContainersConfirmation:
-    """Answer the container's comment listings without any HELD marker.
+#: The comment-parent argument of each target a spanning set is written on:
+#: the container's log is addressed by project, the issue's by issue.
+CONFIRMATION_PARENTS = ("projectId", "issueId")
+
+
+class _HidesOneTargetsConfirmation:
+    """Answer one target's comment listings without any HELD marker.
 
     The hidden-confirmation race, measured on the real board: a holder's
     confirmation edit landed, and the log it then read did not show it.
-    Veiling only the container leaves the issue's confirmation readable,
-    so the read-back finds the set confirmed on one of its two targets.
+    Veiling only the target addressed by *parent* leaves the other
+    target's confirmation readable, so the read-back finds the set
+    confirmed on one of its two targets, whichever one that is.
     """
 
-    def __init__(self, server: FakeLinearMcpServer) -> None:
+    def __init__(self, server: FakeLinearMcpServer, *, parent: str) -> None:
         self._server = server
+        self._parent = parent
         self.veiled = True
 
     async def call_tool(
         self, *, name: str, arguments: Mapping[str, object]
     ) -> McpToolResult:
         result = await self._server.call_tool(name=name, arguments=arguments)
-        if not self.veiled or name != "list_comments" or "projectId" not in arguments:
+        if not self.veiled or name != "list_comments" or self._parent not in arguments:
             return result
         assert isinstance(result, Mapping)
         comments = result["comments"]
@@ -893,17 +900,21 @@ class _HidesTheContainersConfirmation:
         }
 
 
-async def test_a_confirmation_read_back_on_part_of_the_set_holds_nothing() -> None:
+@pytest.mark.parametrize("parent", CONFIRMATION_PARENTS)
+async def test_a_confirmation_read_back_on_part_of_the_set_holds_nothing(
+    parent: str,
+) -> None:
     """A set confirmed on only some of its targets is not granted.
 
     The grant is the whole set or nothing, so the read-back after the
     confirmation edits must find every target confirmed.  One target's
-    confirmation hidden from it is a refusal naming no holder, with every
-    marker of the requester's taken back, and the set free for the next
-    holder once the log shows it whole again.
+    confirmation hidden from it, the container's or the issue's, is a
+    refusal naming no holder, with every marker of the requester's taken
+    back, and the set free for the next holder once the log shows it
+    whole again.
     """
     board = _Board()
-    veil = _HidesTheContainersConfirmation(board.server)
+    veil = _HidesOneTargetsConfirmation(board.server, parent=parent)
     spanning = frozenset({CONTAINER, ISSUE_DESCRIPTION})
 
     with pytest.raises(SurfaceLeaseError) as refused:
@@ -914,6 +925,68 @@ async def test_a_confirmation_read_back_on_part_of_the_set_holds_nothing() -> No
     assert refused.value.current_holder is None
     assert _standing(board.server) == []
     veil.veiled = False
+    rival = await board.holder().acquire_surfaces(
+        surfaces=spanning, holder="job-two", lease_seconds=LEASE_SECONDS
+    )
+    assert (rival.holder, rival.surfaces) == ("job-two", spanning)
+
+
+class _DropsOneTargetsConfirmation:
+    """Answer one target's confirmation edit as saved, and save nothing.
+
+    The backend acknowledged the edit that turns the target's bid into a
+    hold, and the log still carries the bid: the confirmation did not
+    land.  The acknowledgement is the stored comment as it stands, so the
+    caller is told of success and the second read-back finds a BID where
+    it looks for a HELD marker.
+    """
+
+    def __init__(self, server: FakeLinearMcpServer, *, parent: str) -> None:
+        self._server = server
+        self._parent = parent
+        self._created: set[str] = set()
+        self.dropped: list[str] = []
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        if name == "save_comment" and str(arguments.get("id")) in self._created:
+            body = str(arguments["body"])
+            if "state: held" in body.splitlines():
+                self.dropped.append(str(arguments["id"]))
+                return next(
+                    comment.wire()
+                    for comment in self._server.comments
+                    if comment.id == arguments["id"]
+                )
+        result = await self._server.call_tool(name=name, arguments=arguments)
+        if name == "save_comment" and self._parent in arguments:
+            assert isinstance(result, Mapping)
+            self._created.add(str(result["id"]))
+        return result
+
+
+@pytest.mark.parametrize("parent", CONFIRMATION_PARENTS)
+async def test_a_confirmation_that_did_not_land_holds_nothing(parent: str) -> None:
+    """A bid the backend acknowledged confirming, and never confirmed, is no hold.
+
+    Only a HELD marker read back on every target makes the set this
+    holder's.  One target left as a BID after its confirmation was
+    answered as saved is a refusal naming no holder, with every marker of
+    the requester's taken back, and the set free for the next holder.
+    """
+    board = _Board()
+    lost = _DropsOneTargetsConfirmation(board.server, parent=parent)
+    spanning = frozenset({CONTAINER, ISSUE_DESCRIPTION})
+
+    with pytest.raises(SurfaceLeaseError) as refused:
+        await board.holder(caller=lost).acquire_surfaces(
+            surfaces=spanning, holder="job-one", lease_seconds=LEASE_SECONDS
+        )
+
+    assert len(lost.dropped) == 1
+    assert refused.value.current_holder is None
+    assert _standing(board.server) == []
     rival = await board.holder().acquire_surfaces(
         surfaces=spanning, holder="job-two", lease_seconds=LEASE_SECONDS
     )
