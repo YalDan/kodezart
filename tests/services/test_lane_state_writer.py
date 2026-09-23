@@ -2841,18 +2841,39 @@ async def rollup_board(arm: str) -> tuple[FakeTrackerPort, SubtreeClosure]:
 
 
 @pytest.mark.parametrize(
-    ("arm", "gap", "graded_at", "refuted"),
+    ("arm", "gap", "graded_at", "refuted", "check_state"),
     [
-        pytest.param("refuted", (LANE_CHECK,), LATER_SHA, [LANE_CHECK], id="refuted"),
-        pytest.param("met", (), STANDING_SHA, [], id="met"),
-        pytest.param("lapsed", (LANE_CHECK,), STANDING_SHA, [], id="lapsed"),
         pytest.param(
-            "descendant", (CHILD_CRITERION,), STANDING_SHA, [], id="descendant"
+            "refuted",
+            (LANE_CHECK,),
+            LATER_SHA,
+            [LANE_CHECK],
+            WorkflowStateKind.UNSTARTED,
+            id="refuted",
+        ),
+        pytest.param(
+            "met", (), STANDING_SHA, [], WorkflowStateKind.COMPLETED, id="met"
+        ),
+        pytest.param(
+            "lapsed",
+            (LANE_CHECK,),
+            STANDING_SHA,
+            [],
+            WorkflowStateKind.UNSTARTED,
+            id="lapsed",
+        ),
+        pytest.param(
+            "descendant",
+            (CHILD_CRITERION,),
+            STANDING_SHA,
+            [],
+            WorkflowStateKind.COMPLETED,
+            id="descendant",
         ),
     ],
 )
 async def test_the_rollup_over_the_subtree_answers_one_lane_check_four_ways(
-    arm, gap, graded_at, refuted
+    arm, gap, graded_at, refuted, check_state
 ):
     """A fire's Done is the rollup over every criterion sub-issue beneath it.
 
@@ -2866,13 +2887,19 @@ async def test_the_rollup_over_the_subtree_answers_one_lane_check_four_ways(
     The gap attaches no verdict: each member is the board row itself.  On the
     descendant row the fire's own family is all finished, so a reading that
     stopped at the direct family would call the fire done (KOD-790).
+
+    The fire's state is asked first, of a closure nothing has read yet, so
+    it is computed and not read back from the gap below.  The lane check's
+    own state is read too: a failing grade and a lapse each leave it in the
+    unstarted state, a met grading leaves it completed.
     """
     port, closure = await rollup_board(arm)
 
+    assert closure.is_closed(LANE) is (gap == ())
     found = closure.gap(LANE)
     assert tuple(row.issue_key for row in found) == gap
     assert all(row is port.issues[row.issue_key] for row in found)
-    assert closure.is_closed(LANE) is (gap == ())
+    assert port.issues[LANE_CHECK].state_kind is check_state
     assert parse_criterion_evidence(port.issues[LANE_CHECK].body).graded_sha == (
         graded_at
     )
