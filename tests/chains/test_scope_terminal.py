@@ -97,11 +97,13 @@ from tests.integration.test_scope_runtime import (
     unapproved_members,
 )
 from tests.lane_fixture import ScopeForgeWire
-from tests.services.test_scope_runtime_static import (
-    dotted_module,
-    imported_modules,
-    path_of,
+from tests.name_resolution import (
+    absolute_module,
+    module_closure,
+    module_file,
+    package_of,
 )
+from tests.services.test_scope_runtime_static import path_of
 from tests.tracker.test_linear_tool_roster import SOURCE_ROOT
 
 #: "the caller said nothing about this" where ``None`` is itself an answer
@@ -784,57 +786,55 @@ MERGE_STATE_NAMES = frozenset(
 #: The act the terminal is, from which the rest of it is reached.
 TERMINAL_SEED = "kodezart.services.scope_terminal"
 
-#: The prefixes the scan follows, transitively, out of the seed. The
-#: ``kodezart.types.domain`` package is NOT followed: the vector's module
+#: The packages the merge-state scan follows, transitively, out of the seed.
+#: The ``kodezart.types.domain`` package is NOT followed: the vector's module
 #: imports the v0.2 fire event's module, whose own delivery field names a
 #: merge legitimately, and that is not a fact about this lane. The one typed
 #: module of the terminal is therefore named rather than reached.
 #:
 #: ``kodezart.chains`` and ``kodezart.composition`` ARE followed, because
 #: nothing forbids a service module from importing either and several
-#: already do: a chain module reached out of the terminal reads a remote ref
-#: as squarely as a service module would, and a bound that stopped at the
-#: service layer would have been a bound on the spelling of the hop rather
-#: than on what the terminal reaches (KOD-585). The remaining unfollowed
-#: packages are ``kodezart.types``, ``kodezart.adapters`` and
-#: ``kodezart.core``; the last two are covered instead by the detector's own
-#: arms, which see the port's name and an adapter import wherever they are
-#: written.
+#: already do: a chain module reached out of the terminal is reached as
+#: squarely as a service module would be. Every other package is not read by
+#: this scan at all, and the four are held by
+#: ``test_the_merge_state_reach_follows_its_four_packages_and_no_other``.
+#: The git-port scan below does not use this list: it follows every package.
 TERMINAL_PACKAGES = (
-    "kodezart.services.",
-    "kodezart.domain.",
-    "kodezart.chains.",
-    "kodezart.composition.",
+    "kodezart.services",
+    "kodezart.domain",
+    "kodezart.chains",
+    "kodezart.composition",
 )
 TERMINAL_VECTOR = "kodezart.types.domain.scope_terminal"
 
 
-def terminal_modules() -> set[str]:
-    """Every module the terminal reaches: the act, its readings, its vector.
+def terminal_modules(
+    *, within: tuple[str, ...] = TERMINAL_PACKAGES, root: Path = SOURCE_ROOT
+) -> set[str]:
+    """Every module the terminal reaches inside *within*, and its vector.
 
-    Derived out of the act's own import nodes rather than listed here, so a
-    module the terminal starts depending on is scanned without this test being
-    edited — and a scan that had lost its surface could not report the same
+    Derived out of the act's own source rather than listed here, so a module
+    the terminal starts depending on is scanned without this test being
+    edited -- and a scan that had lost its surface could not report the same
     empty result as a clean one.
 
-    Followed transitively, because what the guards below say is that no module
-    of the terminal REACHES a forbidden thing: a module the act imports through
-    another module is reached just as much as one it names itself. The walk is
-    bounded by the modules already taken, so an import cycle terminates.
+    Followed transitively by ``module_closure``, which keys on the file that
+    runs and not on how the import is spelled: a package's ``__init__`` on
+    the way, a relative import, a subpackage, a module named by a string
+    literal (``importlib.import_module``) and an attribute chain off an
+    imported package all reach the module they load. A module outside
+    *within* is not taken; the limits are ``modules_named``'s own.
     """
-    reached: set[str] = set()
-    pending = [TERMINAL_SEED]
-    while pending:
-        module = pending.pop()
-        if module in reached:
-            continue
-        reached.add(module)
-        tree = ast.parse(path_of(module).read_text(encoding="utf-8"))
-        # The module is handed over with its tree, because a relative import
-        # names its package as punctuation and can only be resolved against
-        # the module doing the importing (KOD-585).
-        pending.extend(imported_modules(tree, TERMINAL_PACKAGES, module=module))
-    return reached | {TERMINAL_VECTOR}
+    return set(module_closure(TERMINAL_SEED, within=within, root=root)) | {
+        TERMINAL_VECTOR
+    }
+
+
+def source_of(module: str, root: Path = SOURCE_ROOT) -> str:
+    """The text of the file importing *module* executes."""
+    path = module_file(module, root)
+    assert path is not None, f"{module} names no module under {root}"
+    return path.read_text(encoding="utf-8")
 
 
 def merge_state_sites(source: str, *, label: str) -> list[str]:
@@ -881,13 +881,39 @@ def test_no_module_of_the_terminal_names_a_merge_or_a_pull_request_lifecycle():
     offenders = {
         module: sites
         for module in sorted(modules)
-        if (
-            sites := merge_state_sites(
-                path_of(module).read_text(encoding="utf-8"), label=module
-            )
-        )
+        if (sites := merge_state_sites(source_of(module), label=module))
     }
     assert offenders == {}
+
+
+def test_the_merge_state_reach_follows_its_four_packages_and_no_other(tmp_path):
+    """Each followed package is followed, and the typed layer is not.
+
+    Planted on a package tree of this control's own, with the act importing
+    one module out of each layer: the reach must take the four the list
+    names, each with its package's ``__init__``, and must leave the typed and
+    core layers unread. Dropping a package from the list reds this, which is
+    what no assertion held before.
+    """
+    root = tmp_path / "kodezart"
+    layers = ("services", "domain", "chains", "composition", "types", "core")
+    for layer in layers:
+        (root / layer).mkdir(parents=True)
+        (root / layer / "__init__.py").write_text("")
+        (root / layer / "planted.py").write_text("")
+    (root / "__init__.py").write_text("")
+    (root / "services" / "scope_terminal.py").write_text(
+        "".join(f"from kodezart.{layer}.planted import x\n" for layer in layers)
+    )
+
+    assert terminal_modules(root=root) - {TERMINAL_VECTOR} == {
+        TERMINAL_SEED,
+        *(
+            reached
+            for layer in ("services", "domain", "chains", "composition")
+            for reached in (f"kodezart.{layer}", f"kodezart.{layer}.planted")
+        ),
+    }
 
 
 #: One control per shape the detector claims to see that the scanned surface
@@ -1002,6 +1028,13 @@ def test_the_pull_request_column_detector_sees_each_shape_it_claims_to(
 #: import and not for one way of writing it.
 GIT_PORT_ADAPTERS = "kodezart.adapters.git"
 
+#: What the git-port scan follows out of the act: the whole package, so no
+#: layer is left to be "covered instead" by anything. A read one hop into
+#: ``kodezart.core`` or ``kodezart.types``, or into the adapter package, is
+#: scanned where it is written. Measured over the shipped tree, the whole
+#: reach names no git-port site.
+GIT_PORT_REACH = (SOURCE_ROOT.name,)
+
 #: One name per noun the criterion names — a ref on the remote, a ref locally,
 #: a tree, a working directory — held against the derived set below, so a
 #: derivation that had gone empty cannot report the same clean result as a
@@ -1062,18 +1095,19 @@ def adapter_imports(node: ast.ImportFrom | ast.Import, *, module: str) -> list[s
     kodezart.adapters.git…``, and ``from kodezart.adapters import git``,
     where the package is the imported name beside its parent (KOD-585).
 
-    Each ``from`` spelling counts relatively too: ``dotted_module`` resolves
-    the node's level against *module*, the module this node is written in,
+    Each ``from`` spelling counts relatively too: ``absolute_module`` resolves
+    the node's level against the package of *module*, the module this node is
+    written in,
     so ``from ..adapters.git.service import SubprocessGitService`` reaches
     the adapter exactly as its absolute twin does.  Before that, the arm
     returned nothing for it and the act could import the concrete adapter
     with the whole module green — dead and alive separated by punctuation.
 
-    What this reads is import nodes of this module, and nothing else.  A
-    parent package imported here and then walked as a dotted attribute chain
-    (``import kodezart.adapters`` with ``kodezart.adapters.git.service.X``
-    below it) is NOT read: the chain resolves only once some other module
-    has imported the submodule, which is a reach no node here states.
+    What this reads is import nodes of this module, and nothing else.  Every
+    other way of loading the adapter -- a package ``__init__`` re-exporting
+    it, a string literal naming it, an attribute chain off its parent package
+    -- is reached by the walk instead, which then scans the adapter's own
+    module and reports its reads there.
     """
     if isinstance(node, ast.Import):
         return [
@@ -1081,7 +1115,7 @@ def adapter_imports(node: ast.ImportFrom | ast.Import, *, module: str) -> list[s
             for alias in node.names
             if alias.name.startswith(GIT_PORT_ADAPTERS)
         ]
-    dotted = dotted_module(node, module=module)
+    dotted = absolute_module(node, package=package_of(module))
     if dotted is None:
         return []
     if dotted.startswith(GIT_PORT_ADAPTERS):
@@ -1102,10 +1136,9 @@ def git_port_sites(source: str, *, label: str, module: str) -> list[str]:
     scanned only for the spellings that carry their package as a name.
 
     Blind spots, stated rather than hidden: a reach through ``getattr`` with a
-    computed name is not seen, a name spelled inside a larger string
+    computed name is not seen, and a name spelled inside a larger string
     annotation is not seen, because the literal arm is an equality and not a
-    substring, and the adapter reached as a dotted attribute chain off a
-    parent package is not seen either, as ``adapter_imports`` states.
+    substring.
     """
     names = git_port_names()
     sites: list[str] = []
@@ -1135,31 +1168,54 @@ def git_port_sites(source: str, *, label: str, module: str) -> list[str]:
     return sites
 
 
+def git_port_offenders(root: Path = SOURCE_ROOT) -> dict[str, list[str]]:
+    """Every git-port site in a module the act reaches, anywhere in *root*."""
+    modules = module_closure(TERMINAL_SEED, within=GIT_PORT_REACH, root=root)
+    return {
+        module: sites
+        for module in sorted(modules)
+        if (
+            sites := git_port_sites(
+                source_of(module, root), label=module, module=module
+            )
+        )
+    }
+
+
 def test_no_module_of_the_terminal_reaches_the_git_port():
     """What the report states is what it read, and it reads no ref at all.
 
     A report makes no claim about its own environment because it takes no
-    environment fact: no module of the act, its readings or its vector names
-    the git port, an adapter of it, or any operation it declares. The port's
-    remote-ref reader belongs to the delivery path, where a lane's run-state
-    record reads it — a record, not a report (KOD-585, KOD-118).
+    environment fact: no module the act loads, in any package, and not its
+    vector, names the git port, an adapter of it, or any operation it
+    declares. The port's remote-ref reader belongs to the delivery path,
+    where a lane's run-state record reads it -- a record, not a report
+    (KOD-585, KOD-118).
 
     Structural rather than behavioural: a read that RETURNED what the record
     already holds would be invisible to every assertion over a rendered body,
     so the absence is asserted over the syntax tree.
 
+    What is reached is keyed on the file that runs (``module_closure``), over
+    every package: a package ``__init__`` on the way, a relative import, a
+    subpackage, a module named by a string literal and an attribute chain
+    off an imported package are each followed, and each has a planted control
+    below. Not followed: a module name built at run time, and ``eval`` or
+    ``exec``.
+
     Non-vacuous in both directions. The name set is held against an anchor per
     noun and the anchor set against its own count, so neither a derivation gone
     empty nor an emptied floor can report a clean result; the scanned
-    surface is held against the five modules this claim is about, one of them
-    reached only through another, so neither a surface gone empty nor one that
-    had stopped following the imports out can either; and the modules that DO
-    read a ref are found from the tree by the two tests below, so a blind
-    detector cannot.
+    surface is held against the modules this claim is about, one of them
+    reached only through another, one only through ``kodezart.core`` and one
+    a package ``__init__``, so neither a surface gone empty nor one that had
+    stopped following a layer can either; and the modules that DO read a ref
+    are found from the tree by the two tests below, so a blind detector
+    cannot.
     """
     names = git_port_names()
     assert len(GIT_PORT_ANCHORS) >= 4 and GIT_PORT_ANCHORS <= names, sorted(names)
-    modules = terminal_modules()
+    modules = module_closure(TERMINAL_SEED, within=GIT_PORT_REACH)
     assert {
         TERMINAL_SEED,
         TERMINAL_VECTOR,
@@ -1167,21 +1223,155 @@ def test_no_module_of_the_terminal_reaches_the_git_port():
         "kodezart.services.lane_reports",
         # Reached through ``kodezart.services.lane_records`` and named nowhere
         # in the act, so this is what says the walk is transitive rather than
-        # one import deep — which is what "reaches" asks for.
+        # one import deep -- which is what "reaches" asks for.
         "kodezart.domain.lane_entry",
+        # Reached only through the core layer, which the merge-state reach
+        # does not follow: this is what says the git-port reach does.
+        "kodezart.core.outbound_write",
+        # A package's own ``__init__``, which runs whenever anything is
+        # imported out of the package.
+        "kodezart.services",
     } <= modules
-    offenders = {
-        module: sites
-        for module in sorted(modules)
-        if (
-            sites := git_port_sites(
-                path_of(module).read_text(encoding="utf-8"),
-                label=module,
-                module=module,
-            )
-        )
+    assert git_port_offenders() == {}
+
+
+#: One planted package tree per way a module of the act can load another
+#: module without an import node that names it: each tree puts a remote-ref
+#: read in a module and has the act reach it by the row's spelling. The walk
+#: used to follow none of them, so the act could load a ref read through any
+#: of these with the guard above green. The last rows hold the resolver's
+#: own reach: an attribute chain off a name the package was assigned to, a
+#: chain written before the lazy import that binds its head, and a string
+#: literal naming an attribute of the module, in both dotted and ``:`` form.
+REF_READ = (
+    "async def read_remote_head(git):\n"
+    "    return await git.remote_branch_sha('.', 'origin', 'main')\n"
+)
+PLANTED_REACHES = {
+    "init-re-export": (
+        {
+            "services/__init__.py": (
+                "from kodezart.services.reads import read_remote_head\n"
+            ),
+            "services/scope_terminal.py": (
+                "from kodezart.services import read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "relative-init-re-export": (
+        {
+            "services/__init__.py": "from .reads import read_remote_head\n",
+            "services/scope_terminal.py": "from . import read_remote_head\n",
+        },
+        "kodezart.services.reads",
+    ),
+    "subpackage": (
+        {
+            "services/gitreads/__init__.py": REF_READ,
+            "services/scope_terminal.py": "from . import gitreads\n",
+        },
+        "kodezart.services.gitreads",
+    ),
+    "importlib-literal": (
+        {
+            "services/scope_terminal.py": (
+                "import importlib\n\n"
+                "def reads():\n"
+                "    return importlib.import_module('kodezart.services.reads')\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "core-hop": (
+        {
+            "core/__init__.py": "",
+            "core/outbound_write.py": "from kodezart.services.reads import x\n",
+            "services/scope_terminal.py": (
+                "from kodezart.core.outbound_write import x\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services\n\n"
+                "READ = kodezart.services.reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-off-an-assigned-alias": (
+        {
+            "services/scope_terminal.py": (
+                "import kodezart.services\n\n"
+                "_PACKAGE = kodezart.services\n"
+                "READ = _PACKAGE.reads.read_remote_head\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-chain-written-before-its-import": (
+        {
+            "services/scope_terminal.py": (
+                "def reads():\n"
+                "    return kodezart.services.reads\n\n\n"
+                "def _load():\n"
+                "    global kodezart\n"
+                "    try:\n"
+                "        import kodezart.services\n"
+                "    except ImportError:\n"
+                "        pass\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "attribute-literal": (
+        {
+            "services/scope_terminal.py": (
+                "from unittest import mock\n\n"
+                "PATCH = mock.patch('kodezart.services.reads.read_remote_head')\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+    "colon-attribute-literal": (
+        {
+            "services/scope_terminal.py": (
+                "from pkgutil import resolve_name\n\n"
+                "READ = resolve_name('kodezart.services.reads:read_remote_head')\n"
+            ),
+        },
+        "kodezart.services.reads",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("files", "reader"), PLANTED_REACHES.values(), ids=list(PLANTED_REACHES)
+)
+def test_the_git_port_scan_follows_each_way_the_act_can_load_a_module(
+    files, reader, tmp_path
+):
+    """The ref read is reported wherever the act's loading of it leads.
+
+    Planted on a package tree of this control's own, named like the real one
+    so the seed is the act's own module name: the scan has to reach the
+    reading module by the row's spelling and report the read there.
+    """
+    root = tmp_path / "kodezart"
+    planted = {
+        "__init__.py": "",
+        "services/__init__.py": "",
+        "services/reads.py": REF_READ,
+        **files,
     }
-    assert offenders == {}
+    for relative, text in planted.items():
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(text)
+
+    assert reader in git_port_offenders(root)
 
 
 #: At least one control per arm the detector claims, and one per spelling the
