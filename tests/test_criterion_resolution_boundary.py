@@ -13,8 +13,9 @@ and that is narrower than "every other module depends on the resolver rather
 than on the roster": a module that never names the role and resolves a key off
 the roster itself holds nothing and so the dependency rule never looks at it.
 Such a module is policed by the SITE COUNT instead — it is a second resolution
-site, and there is only ever one — so the two assertions together are the
-Check's sentence, and neither is it alone.
+site, and there is only ever one.  The count reaches a site that reads the
+family and one handed it as a collection of rows; the shipped lookups handed
+the rows that resolve nothing are a register asserted both ways.
 
 Every name the walk keys on is read off the shipped objects — the role, its one
 method, that method's identity parameters AND the types they carry, and the two
@@ -56,7 +57,11 @@ off a report it does not belong on.
 What this cannot see: the walk is textual and executes nothing, so a resolution
 assembled at runtime or reached through a wrapper whose own signature declares
 no identity is outside it.  So is one that pads its signature past the role's
-identity while spelling none of its names.  It is a boundary check over declared
+identity while spelling none of its names, and one handed the rows with a
+single key under a name other than the role's criterion parameter: that
+signature is every single-key helper over rows the tree already writes — the
+lane walk's put-back, the plateau's key reading — and no signature tells them
+from a resolution.  It is a boundary check over declared
 surfaces, not a decision procedure over behaviour; the behaviour that a native
 key cannot be redirected by identical text or parent prose is pinned by the
 resolution suite, not here.
@@ -65,14 +70,21 @@ resolution suite, not here.
 import ast
 import inspect
 import re
+import re._compiler as sre_compile
+import re._constants as sre_constants
+import re._parser as sre_parse
 import sys
+import warnings
 from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from kodezart.core.protocols import CriterionResolver, TrackerCriteriaReader
+from kodezart.domain.criterion_creation import existing_criterion
 from kodezart.services.criterion_sources import NativeCriterionResolver
+from kodezart.services.tally_supervisor import TallySupervisor
 from kodezart.types.domain.tracker import TrackerIssue
 
 SOURCE = Path(__file__).resolve().parents[1] / "src" / "kodezart"
@@ -222,12 +234,110 @@ def _resolution_sites(tree: ast.AST) -> list[str]:
     )
 
 
-def _sites_in(root: Path) -> dict[str, list[str]]:
+#: The parameter the role names its criterion by, as distinct from the owner
+#: the family read itself is addressed by: the role's identity parameters less
+#: the family read's own.  Unpacked, so a second one reddens here.
+(CRITERION_PARAMETER,) = tuple(
+    IDENTITY_PARAMETERS
+    - set(inspect.signature(getattr(TrackerCriteriaReader, FAMILY_READ)).parameters)
+)
+
+
+def _is_the_family(annotation: ast.expr | None) -> bool:
+    """Whether a parameter is annotated as a collection of the row type.
+
+    That is the family handed in rather than read: ``Sequence[TrackerIssue]``,
+    a tuple, a list or a mapping of rows, bare or written as a string.
+    """
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        try:
+            annotation = ast.parse(annotation.value, mode="eval").body
+        except SyntaxError:
+            return False
+    return isinstance(annotation, ast.Subscript) and _names(
+        annotation.slice, frozenset({ROW})
+    )
+
+
+def _handed_resolution_sites(tree: ast.AST) -> list[str]:
+    """Each function handed the family that resolves a criterion identity in it.
+
+    Handed the rows rather than reading them, and declaring the identity by
+    one of two readings over the parameters other than the rows: the role's
+    criterion parameter, with or without the owner beside it, since rows
+    already handed need no owner to be read by; or, in type, exactly the
+    role's identity and nothing besides.
+    """
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        args = node.args
+        parameters = [
+            argument
+            for argument in (*args.posonlyargs, *args.args, *args.kwonlyargs)
+            if argument.arg != "self"
+        ]
+        rest = [a for a in parameters if not _is_the_family(a.annotation)]
+        if len(rest) == len(parameters):
+            continue
+        names = {argument.arg for argument in rest}
+        annotated = Counter(
+            ast.unparse(argument.annotation)
+            for argument in rest
+            if argument.annotation is not None
+        )
+        if CRITERION_PARAMETER in names or annotated == IDENTITY_ANNOTATIONS:
+            found.append(f"{node.name}:{node.lineno}")
+    return sorted(found)
+
+
+#: The shipped functions handed the family that the reading above reports and
+#: that resolve no identity, each with why.  The creation's own lookup is
+#: handed a parent key and a Check text, two strings exactly as a renamed
+#: resolution would be, and answers whether the criterion about to be
+#: created is already there: it addresses no identity, because there is none
+#: yet.  The lane's tally observation is handed the lane's roster, gap and
+#: criteria and keyed by its scope and lane, two strings again: it counts
+#: rows toward the lane's alarm record and addresses no criterion.  Asserted
+#: both ways below, so the register cannot go stale.
+HANDED_LOOKUPS = {
+    (_module_of(existing_criterion), existing_criterion.__name__): (
+        "the create-if-absent lookup by Check text under a parent"
+    ),
+    (_module_of(TallySupervisor), TallySupervisor.observe.__name__): (
+        "the lane's tally observation keyed by scope and lane"
+    ),
+}
+
+
+def _handed_in(root: Path) -> dict[str, list[str]]:
     found = {}
     for path in sorted(root.rglob("*.py")):
-        sites = _resolution_sites(ast.parse(path.read_text(encoding="utf-8")))
+        sites = _handed_resolution_sites(ast.parse(path.read_text(encoding="utf-8")))
         if sites:
             found[path.relative_to(root).as_posix()] = sites
+    return found
+
+
+def _sites_in(root: Path) -> dict[str, list[str]]:
+    """Every resolution site under *root*: read or handed the family.
+
+    A handed site in the register is set aside; one that also reads the
+    family is counted by the first reading whatever the register says.
+    """
+    found = {}
+    for path in sorted(root.rglob("*.py")):
+        relative = path.relative_to(root).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        read = _resolution_sites(tree)
+        handed = [
+            site
+            for site in _handed_resolution_sites(tree)
+            if site not in read and (relative, site.split(":")[0]) not in HANDED_LOOKUPS
+        ]
+        if read or handed:
+            found[relative] = sorted(read + handed)
     return found
 
 
@@ -258,39 +368,170 @@ def _family_dependents(root: Path) -> dict[str, list[str]]:
 
 #: The marks a checkbox is written with: the blank of an open box and either
 #: case of the tick.
-CHECKBOX_MARKS = frozenset(" xX")
-#: What a pattern can put around its marks without changing which marks it
-#: accepts: group and alternation punctuation, escapes, a nested class bracket,
-#: and whitespace other than the blank, which is itself a mark.
-MARK_PUNCTUATION = frozenset("()|?:\\[\t\n\r\f\v")
-#: Every short bracketed body, read from each opening bracket in turn so an
-#: earlier bracket cannot swallow a later box.
-BRACKETED = re.compile(r"\[(?=(?P<body>[^\]]{1,16})\])")
-#: A named group's prologue, whose name is a label rather than a mark.
-GROUP_NAME = re.compile(r"\?P<\w*>")
+CHECKBOX_MARKS = " xX"
+#: The two brackets a box is written between.
+OPEN, CLOSE = "[", "]"
+
+
+def _accepts(state: sre_parse.State, items: list, text: str) -> bool:
+    """Whether the pattern items, standing alone, match exactly *text*.
+
+    The items are compiled on their own under the pattern's own flags, so a
+    class, an escape, a group of any kind, an alternation, a repeat or an
+    inline flag answers by what it matches rather than by how it is spelled.
+    """
+    if len(items) == 1 and len(text) == 1 and not state.flags & re.IGNORECASE:
+        op, value = items[0]
+        if op is sre_constants.LITERAL:
+            return value == ord(text)
+    try:
+        compiled = sre_compile.compile(sre_parse.SubPattern(state, items), state.flags)
+    except (re.error, TypeError, ValueError, RecursionError):
+        return False
+    return compiled.fullmatch(text) is not None
+
+
+def _sequences(pattern: sre_parse.SubPattern) -> Iterator[sre_parse.SubPattern]:
+    """Every sequence of items in a parsed pattern: itself, and each nested one."""
+    yield pattern
+    for op, value in pattern.data:
+        if op is sre_constants.SUBPATTERN:
+            yield from _sequences(value[-1])
+        elif op is sre_constants.BRANCH:
+            for arm in value[1]:
+                yield from _sequences(arm)
+        elif op in (
+            sre_constants.MAX_REPEAT,
+            sre_constants.MIN_REPEAT,
+            sre_constants.POSSESSIVE_REPEAT,
+        ):
+            yield from _sequences(value[2])
+        elif op in (sre_constants.ASSERT, sre_constants.ASSERT_NOT):
+            yield from _sequences(value[1])
+        elif op is sre_constants.ATOMIC_GROUP:
+            yield from _sequences(value)
+        elif op is sre_constants.GROUPREF_EXISTS:
+            yield from _sequences(value[1])
+            if value[2] is not None:
+                yield from _sequences(value[2])
+
+
+#: How many readings of one sequence ``_spliced`` takes before it stops: a
+#: sequence with more is reported as ``UNREAD`` rather than read in part.
+SPLICE_LIMIT = 256
+#: What a pattern too branchy to read in full is reported as.
+UNREAD = f"{OPEN}?{CLOSE}"
+
+
+class _TooBranchyError(Exception):
+    """A sequence has more readings than ``SPLICE_LIMIT``."""
+
+
+def _spliced(items: list) -> list[list]:
+    """Each reading of a sequence with its groups opened and one arm per alternation.
+
+    ``re`` factors the prefix every arm shares out of an alternation, so
+    ``\\[x\\]|\\[ \\]`` parses as the opening bracket followed by an
+    alternation of ``x\\]`` and `` \\]``; and a group can hold a bracket
+    together with a mark, as ``(\\[x)\\]`` does.  Either way a box straddles
+    the items of the parsed sequence, so each group's items are spliced into
+    it and each alternation is replaced by one of its arms.  Bounded by
+    ``SPLICE_LIMIT``: past it, ``_TooBranchyError``.
+    """
+    readings: list[list] = [[]]
+    for op, value in items:
+        if op is sre_constants.SUBPATTERN:
+            options = _spliced(list(value[-1].data))
+        elif op is sre_constants.BRANCH:
+            options = [
+                option for arm in value[1] for option in _spliced(list(arm.data))
+            ]
+        else:
+            options = [[(op, value)]]
+        readings = [reading + option for reading in readings for option in options]
+        if len(readings) > SPLICE_LIMIT:
+            raise _TooBranchyError
+    return readings
+
+
+def _pattern_boxes(text: str, flags: int) -> list[str]:
+    """Each bracketed box the string accepts when it is read as a pattern.
+
+    A box is an item that accepts the opening bracket and no mark, then items
+    that together accept one mark, then an item that accepts the closing
+    bracket and no mark, in one sequence of the parsed pattern or in one of
+    its spliced readings.  Reported as the marks the position between the
+    brackets accepts, and as ``UNREAD`` when a sequence has too many readings
+    to take them all.
+    """
+    try:
+        # Any string is read as a pattern here, and ``re`` warns of a class
+        # whose meaning a later release may change, such as one opening with
+        # ``[``.  The reading is the one ``re`` makes today, warning or not.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            parsed = sre_parse.parse(text, flags)
+    except (re.error, OverflowError, RecursionError, ValueError):
+        return []
+    state = parsed.state
+
+    def bracket(item: tuple, which: str) -> bool:
+        return _accepts(state, [item], which) and not any(
+            _accepts(state, [item], mark) for mark in CHECKBOX_MARKS
+        )
+
+    found: set[str] = set()
+    for sequence in _sequences(parsed):
+        try:
+            readings = [list(sequence.data), *_spliced(list(sequence.data))]
+        except _TooBranchyError:
+            found.add(UNREAD)
+            continue
+        for items in readings:
+            for first, item in enumerate(items):
+                if not bracket(item, OPEN):
+                    continue
+                for last in range(first + 2, len(items)):
+                    if not bracket(items[last], CLOSE):
+                        continue
+                    inside = items[first + 1 : last]
+                    marks = [m for m in CHECKBOX_MARKS if _accepts(state, inside, m)]
+                    if marks:
+                        found.add(f"{OPEN}{''.join(marks)}{CLOSE}")
+                    break
+    return sorted(found)
 
 
 def checkbox_shapes(text: str) -> list[str]:
-    """Each complete checkbox shape in *text*, read by the marks it names.
+    """Each complete checkbox shape in *text*, read by the marks it accepts.
 
-    Group syntax is not enumerated (KOD-651): a bracketed body counts when,
-    with group punctuation and a named group's prologue set aside, every
-    character left is a mark, and those marks are a single one — `[x]`, `[ ]`,
-    `[X]` — or include the blank.  So a class `[ xX]`, a capturing or
-    non-capturing alternation `( |x)`, `(?: |x)`, a named group
-    `(?P<mark> |x)` and any number of arms `( |x|X)` are the same reading.  A
-    body carrying anything that could not be a mark is not a box: `[X]` alone
-    is also a one-letter subscript, which is why only literals are read.
+    Two readings, either sufficing (KOD-651).  As TEXT: a box written
+    verbatim — an opening bracket, one mark, a closing bracket — which is
+    what a substring test, a prefix test or a template carries.  As a
+    PATTERN: the string is parsed the way ``re`` parses it, plainly and as a
+    verbose pattern, and a box is an opening bracket, a position accepting a
+    mark, and a closing bracket, in sequence: in the parsed pattern at any
+    depth — a group, a repeat, a lookaround, an atomic or a conditional
+    group — and in each reading of a sequence with its groups opened and one
+    arm taken per alternation, since ``re`` factors the prefix an
+    alternation's arms share out of them.  A sequence with more than
+    ``SPLICE_LIMIT`` such readings is reported as ``UNREAD`` rather than read
+    in part.  The position is read by what
+    it matches, so a class, an alternation of any arity, a capturing,
+    non-capturing or named group whatever its name, an inline flag, an
+    escape such as ``\\x20`` or ``\\s``, a repeat and ``.`` are one
+    reading, and so is a bracket written as an escape or a class.  A pattern
+    whose bracketed position accepts a mark among other things — ``\\w+``,
+    ``.*`` — is reported as well: it scans boxes among what it scans.
     """
-    found = []
-    for bracket in BRACKETED.finditer(text):
-        body = GROUP_NAME.sub("", bracket.group("body"))
-        if not set(body) <= CHECKBOX_MARKS | MARK_PUNCTUATION:
-            continue
-        marks = [char for char in body if char in CHECKBOX_MARKS]
-        if len(marks) == 1 or " " in marks:
-            found.append(f"[{bracket.group('body')}]")
-    return found
+    literal = [
+        f"{OPEN}{mark}{CLOSE}"
+        for mark in CHECKBOX_MARKS
+        if f"{OPEN}{mark}{CLOSE}" in text
+    ]
+    if OPEN not in text and "\\" not in text:
+        return literal
+    return literal + _pattern_boxes(text, 0) + _pattern_boxes(text, re.VERBOSE)
 
 
 def _checkbox_constants(tree: ast.AST) -> list[tuple[int, list[str]]]:
@@ -314,10 +555,21 @@ def _checkbox_scans(root: Path) -> dict[str, list[tuple[int, list[str]]]]:
 
 
 def test_one_site_turns_a_criterion_identity_into_its_sub_issue() -> None:
-    """Counted as SITES, so two resolutions in one allowed module still fail."""
+    """Counted as SITES, so two resolutions in one allowed module still fail.
+
+    A site handed the rows counts as one read from the family (KOD-651). The
+    register of handed lookups that resolve nothing is live: each entry is
+    still reported by the handed reading, and nothing else is.
+    """
     sites = _sites_in(SOURCE)
     assert sum(len(group) for group in sites.values()) == 1, sites
     assert list(sites) == [_module_of(NativeCriterionResolver)], sites
+    handed = {
+        (module, site.split(":")[0])
+        for module, group in _handed_in(SOURCE).items()
+        for site in group
+    }
+    assert handed == set(HANDED_LOOKUPS)
 
 
 def test_no_consumer_of_the_resolver_also_takes_the_criterion_family() -> None:
@@ -340,7 +592,7 @@ def test_no_module_scans_for_checkbox_syntax() -> None:
     """No shipped module carries a checkbox shape it could address a target by.
 
     String constants only, and nothing is executed: a pattern assembled at
-    runtime, read from configuration, or spelled with escapes is not seen. The
+    runtime or read from configuration is not seen. The
     walk does not tell a scan from a write either, which is what makes it cheap
     and total over literals — the sources carry no complete checkbox literal at
     all, because the one checkbox they write for a human composes its mark. So
@@ -348,10 +600,8 @@ def test_no_module_scans_for_checkbox_syntax() -> None:
     rather than a decision procedure: `[X]` is also a one-letter subscript,
     which is why only literals are read and never code.
 
-    The marks a pattern accepts are read out of its bracketed body rather than
-    out of one group shape, so a class, an alternation of any arity, and a
-    capturing, non-capturing or named group are one reading.  A mark written
-    as an escape such as `\\x20` is not a mark to this walk.
+    A pattern is read by what it matches rather than by how it is spelled:
+    see ``checkbox_shapes`` for both readings (KOD-651).
     """
     assert _checkbox_scans(SOURCE) == {}
 
@@ -475,6 +725,42 @@ def test_a_protocol_declaration_is_not_an_implementation() -> None:
         'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[(?: |x)\\]\\s*(?P<label>.+)$")\n',
         'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[(?P<mark> |x)\\]\\s*")\n',
         'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[( |x|X)\\]\\s*(?P<label>.+)$")\n',
+        # Read by what the position matches, not by its spelling (KOD-651): a
+        # named group whatever its name's length, an inline flag, ticked boxes
+        # only, any one character, an escaped class, an escaped mark, brackets
+        # written as classes, repeats, and a verbose pattern's padding.
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[(?P<checked> |x)\\]\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[(?P<status> |x|X)\\]\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[(?i:x| )\\]\\s*(?P<label>.+)")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[(x|X)\\]\\s*(?P<label>.+)$")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[.\\]\\s*(?P<label>.+)$")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[[\\sxX]\\]\\s*(?P<label>.+)$")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[(\\x20|x)\\]\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*[\\[][ x][\\]]\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[\\s*x?\\s*\\]\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"\\[ (x      |      X) \\]", re.VERBOSE)\n',
+        # An open box whose blank a verbose reading would drop (KOD-651).
+        'OPEN_BOX = re.compile(r"^\\s*[-*]\\s*\\[ \\]")\n',
+        # A box ``re`` parses across its items: an alternation whose shared
+        # opening bracket it factors out, and a group holding a bracket with
+        # a mark.  Then a box nested in a capturing group, a repeat, a
+        # repeat inside a group or inside one arm of an alternation, a
+        # lookahead, an atomic group and either arm of a conditional group,
+        # a class ``re`` warns may later mean a nested set, and a pattern too
+        # branchy to read in full (KOD-651).
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*(?:\\[x\\]|\\[ \\])\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*(\\[x)\\]\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*(?P<box>\\[x\\])\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*](?:\\s*\\[x\\])+")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*](?P<boxes>(?:\\s*\\[x\\])+)")\n',
+        'CHECKBOX_LINE = re.compile(r"^(?:\\*+|-(?:\\s*\\[x\\])+)")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*(?=\\[x\\])")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*(?>\\[x\\])")\n',
+        'CHECKBOX_LINE = re.compile(r"^(-)?(?(1)\\s*\\[x\\]|\\*)")\n',
+        'CHECKBOX_LINE = re.compile(r"^(-)?(?(1)\\*|\\s*\\[x\\])")\n',
+        'CHECKBOX_LINE = re.compile(r"^\\s*[-*]\\s*\\[[[ x]\\]\\s*")\n',
+        'CHECKBOX_LINE = re.compile(r"(ab|cd)(ab|cd)(ab|cd)(ab|cd)(ab|cd)'
+        '(ab|cd)(ab|cd)(ab|cd)(ab|cd)\\[\\d\\]")\n',
         'def ticked(line):\n    return "- [x] " in line\n',
         'def ticked(line):\n    return line.startswith("- [ ]")\n',
         'ROW = "- [X] {key}: {check}"\n',
@@ -488,6 +774,54 @@ def test_each_spelling_of_a_checkbox_scan_is_reported(spelling: str) -> None:
     lines and are the same clause breach.
     """
     assert _checkbox_constants(ast.parse(spelling))
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        'KEY = re.compile(r"\\[(AC-\\d+)\\]")\n',
+        'LINK = re.compile(r"\\[\\d\\]")\n',
+        'LABEL = "[AC-1]"\n',
+    ],
+)
+def test_a_bracketed_pattern_that_accepts_no_mark_is_not_a_box(spelling: str) -> None:
+    """The pattern reading is keyed on the marks, not on the brackets alone."""
+    assert _checkbox_constants(ast.parse(spelling)) == []
+
+
+#: Each way a second site could be handed the rows instead of reading them:
+#: the role's identity names, the criterion parameter alone, and the role's
+#: identity types under other names (KOD-651).
+HANDED_SITES = {
+    "the role's identity names": (
+        f"def pick_criterion(*, rows: Sequence[{ROW}], issue_key: str,"
+        f" {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        "    del issue_key\n"
+        f"    return {{row.issue_key: row for row in rows}}[{CRITERION_PARAMETER}]\n"
+    ),
+    "the criterion parameter alone": (
+        f"def pick(rows: tuple[{ROW}, ...], {CRITERION_PARAMETER}: str) -> {ROW}:\n"
+        f"    return [r for r in rows if r.issue_key == {CRITERION_PARAMETER}][0]\n"
+    ),
+    "the identity types under other names": (
+        f"def pick(rows: 'list[{ROW}]', parent: str, key: str) -> {ROW}:\n"
+        "    return {row.issue_key: row for row in rows}[key]\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(HANDED_SITES))
+def test_a_site_handed_the_rows_is_a_resolution_site(form: str, tmp_path: Path) -> None:
+    """A second resolution site need not read the family itself (KOD-651).
+
+    And the site count takes it as one, wherever it lands.
+    """
+    tree = ast.parse(HANDED_SITES[form])
+    assert _resolution_sites(tree) == []
+    assert _handed_resolution_sites(tree)
+
+    (tmp_path / "second_pick.py").write_text(HANDED_SITES[form], encoding="utf-8")
+    assert list(_sites_in(tmp_path)) == ["second_pick.py"]
 
 
 def test_a_criterion_text_comparison_on_a_key_addressed_target_is_not_reported() -> (
