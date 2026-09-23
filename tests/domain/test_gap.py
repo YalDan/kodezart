@@ -64,6 +64,9 @@ def test_canceled_and_duplicate_are_excluded_on_state_alone_and_named_beside_the
     assert gap.compute_gap([owed, canceled, done, duplicate]) == CriterionGap(
         owed=(owed,), excluded=("canceled", "duplicate")
     )
+    assert gap.compute_gap([owed, duplicate, done, canceled]) == CriterionGap(
+        owed=(owed,), excluded=("duplicate", "canceled")
+    )
 
     with_prose = canceled.model_copy(update={"body": "Superseded by X-1"})
     assert gap.compute_gap([owed, with_prose, done, duplicate]) == CriterionGap(
@@ -103,7 +106,7 @@ def test_moved_back_from_done_reenters_without_parent_state_input():
     assert gap.compute_gap([original]).owed == ()
     lapsed = original.model_copy(update={"state_kind": WorkflowStateKind.UNSTARTED})
     assert gap.compute_gap([lapsed]).owed == (lapsed,)
-    assert lapsed.body == original.body
+    assert gap.compute_gap([lapsed]).owed[0].body == original.body
 
 
 def test_a_criterion_never_graded_is_owed_and_carries_no_grading():
@@ -132,7 +135,10 @@ def test_the_lapse_and_the_never_graded_are_one_membership_told_apart_by_the_sha
     assert gap.compute_gap([lapsed, never]) == CriterionGap(
         owed=(lapsed, never), excluded=()
     )
-    assert parse_criterion_evidence(lapsed.body).graded_sha == GRADED_SHA
+    assert (
+        parse_criterion_evidence(gap.compute_gap([lapsed]).owed[0].body).graded_sha
+        == GRADED_SHA
+    )
     with pytest.raises(ValueError, match="Evidence"):
         parse_criterion_evidence(never.body)
 
@@ -216,6 +222,15 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
             pytest.fail("unaccounted dynamic call in pure gap module")
     matches = [node for node in ast.walk(tree) if isinstance(node, ast.Match)]
     assert len(matches) == 1
+    (membership,) = (
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == gap.gap_membership.__name__
+    )
+    # The match is the function's last statement: nothing after it can
+    # answer for a state the arms do not name.
+    assert membership.body[-1] is matches[0]
     arms = [case for match in matches for case in match.cases]
     assert all(case.guard is None for case in arms)
     assert all(isinstance(case.pattern, ast.MatchValue) for case in arms)
