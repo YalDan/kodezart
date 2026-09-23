@@ -187,6 +187,18 @@ def roles(text: str) -> frozenset[str]:
     )
 
 
+def monoliths(text: str) -> frozenset[str]:
+    """Every role but the aggregate that answers the whole surface.
+
+    Read by what a role answers, not by its name, so a second composite of
+    every member under another name is a remaining monolithic port.
+    """
+    surface = port_members()
+    return frozenset(
+        name for name in roles(text) if members_declared(text, name) == surface
+    )
+
+
 @cache
 def declaring_roles(text: str) -> frozenset[str]:
     """The roles that declare a member of their own."""
@@ -671,7 +683,9 @@ def carried(credit: frozenset[str], register: str) -> frozenset[str]:
     )
 
 
-def uncredited_roles(sources: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
+def uncredited_roles(
+    sources: Mapping[str, str], register: str | None = None
+) -> dict[str, tuple[str, ...]]:
     """Every consumer holding a declaring role it neither calls nor hands on.
 
     Credit is per declaring role: a binding of role R owes a call or a
@@ -679,7 +693,7 @@ def uncredited_roles(sources: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
     role R composes, so a role wider than what the module uses is reported
     for the part it does not use.
     """
-    register = port_module_text()
+    register = port_module_text() if register is None else register
     known = roles(register)
     declaring = declaring_roles(register)
     callees = receivers(tuple(sorted(sources.items())))

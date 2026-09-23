@@ -65,6 +65,7 @@ from tests.tracker.role_register import (
     defaulted_role_parameters,
     first_party_closure,
     members_declared,
+    monoliths,
     own_declarations,
     port_members,
     port_module_text,
@@ -249,6 +250,49 @@ def test_every_declaring_role_is_composed_into_the_aggregate():
 
     assert roles_off_the_aggregate(text) == frozenset()
     assert declaring_roles(text) <= set(declared_bases(text)[AGGREGATE])
+
+
+def test_no_role_but_the_aggregate_answers_the_whole_surface():
+    assert monoliths(port_module_text()) == frozenset()
+
+
+def test_a_second_whole_surface_composite_is_reported():
+    text = port_module_text()
+    grown = text + (
+        f"\n\n@runtime_checkable\nclass TrackerSurface({AGGREGATE}, Protocol):\n"
+        '    """Every member again, under another name."""\n'
+    )
+
+    assert monoliths(grown) == frozenset({"TrackerSurface"})
+
+
+def test_a_composite_short_of_the_whole_is_reported_where_it_is_taken():
+    """Short of two roles it is no monolith by the surface, so its taker answers."""
+    sources = source_tree()
+    text = port_module_text()
+    bases = declared_bases(text)[AGGREGATE]
+    uppermost = [
+        base
+        for base in bases
+        if not any(base in composed(text, other) for other in bases)
+    ]
+    kept = [base for base in bases if base not in uppermost[:2]]
+    grown = text + (
+        "\n\n@runtime_checkable\nclass TrackerSurface(\n"
+        + "".join(f"    {base},\n" for base in kept)
+        + '    Protocol,\n):\n    """Most of the surface, under another name."""\n'
+    )
+    member = min(own_declarations(text)[kept[0]])
+    planted_path = "chains/wide_holder.py"
+    sources[planted_path] = (
+        f"async def hold(*, tracker: TrackerSurface) -> None:\n"
+        f"    await tracker.{member}()\n"
+    )
+
+    assert "TrackerSurface" in roles(grown)
+    assert monoliths(grown) == frozenset()
+    assert planted_path not in aggregate_annotations(sources)
+    assert planted_path in uncredited_roles(sources, register=grown)
 
 
 def test_a_role_dropped_from_the_aggregate_is_reported():
