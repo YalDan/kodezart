@@ -66,9 +66,13 @@ def test_scan_window_row_is_spent_and_the_files_own_rule_stands_alone():
     whole, read from the template.  With the base remainder pinned whole
     beside them, a window bound or a marker advance written anywhere in the
     base fails whatever its wording.  The base's own asserts on the same two
-    sentences stand beside the pins as the base had them.  No line of the
-    template states an upper bound, the adopted sections included, whether
-    or not a re-pointed row covers it.
+    sentences stand beside the pins as the base had them.  The phrase
+    "upper bound", casefolded, occurs nowhere in the template, the adopted
+    sections included, whether or not a re-pointed row covers it; this
+    reads that one spelling only.  Another spelling is caught by the whole
+    pins in ``test_supervision_block_adoption``: the base remainder's and
+    each by-effect section's sha256 and the byte identity of the verbatim
+    sections.
     """
     text = template()
     assert "upper bound" not in text.casefold()
