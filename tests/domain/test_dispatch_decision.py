@@ -25,9 +25,13 @@ one of what it owed and the tick after it reads that as progress and offers
 the lane again; its second fire, asked only about what is left, closes
 nothing, and that tick's reading rests the lane by the plateau rule and
 puts its issue back. Every lane is therefore fired twice and rested once,
-whatever its gap holds, and the walk ends when none is left. What is
-recorded is the whole sequence: the lanes fired in order, re-fires
-included, the lanes rested in order, every contained failure, and the
+whatever its gap holds, and the walk ends when none is left. Two more
+lanes owe nothing: every criterion under them is done and nothing records
+a branch or a pull request for them. The origin delivers, so they take the
+delivery-only turn first, in the order the scope lists them; each turn's
+entry finds nothing to deliver and the lane rests. What is recorded is the
+whole sequence: the lanes fired in order, re-fires included, the lanes
+rested in order, closed lanes included, every contained failure, and the
 number of ticks the walk took. The scope flow's own eligibility inputs are
 registered apart (``SCOPE_ELIGIBILITY_REASONS``), and its varied fields are
 derived from the row model the same way.
@@ -46,12 +50,14 @@ reads: the blocker clause reads blocked-by edges alone, so the issue's other
 edges (blocks, related, duplicate) are a count like any other.
 Each varied input is set to its extremes — nothing, and a great deal — one
 input at a time, then all of them together, over several heavy sets: the
-issues at each parity of the board, the older member of each equal-priority
-pair and then the younger one, and each issue alone. The board's
-equal-priority pair sits at opposite parities, and a plain test checks that
-every such pair is split both ways, so a size that reaches the rank only
-below the priority — as a tie-break, or folded into the age — moves the
-decision here. The decision must equal the base decision every time.
+lanes at each parity (the closed lanes take the parity of their place after
+the board, so each is heavy in one and light in the other), the older
+member of each equal-priority pair and then the younger one, and each
+issue alone. The board's equal-priority pair sits at opposite parities, and
+a plain test checks that every such pair is split both ways, so a size that
+reaches the rank only below the priority — as a tie-break, or folded into
+the age — moves the decision here. The decision must equal the base
+decision every time.
 
 Reach: in both flows, the decision as the composition root composes it is
 invariant under every non-rank, non-eligibility input the board holds, at
@@ -61,7 +67,8 @@ validator on the row, an eligibility clause, a table consulted after the
 selection, a hook in the rank value, a tie-break among equal priorities, an
 age shifted by a size, a count over the edges no clause reads, a lane
 skipped or chosen by its gap, a fired lane rested or re-offered by a size
-rather than by what its fire closed — fails here whatever it is spelled, as
+rather than by what its fire closed, a closed lane passed over or reordered
+by a size on the delivery-only turn — fails here whatever it is spelled, as
 soon as it moves the decision for a board holding those extremes.
 
 Limit: a size taken from outside the board (for example, from the
@@ -250,12 +257,23 @@ EQUAL_PRIORITY_PAIRS: tuple[tuple[str, str], ...] = tuple(
     if older.priority is younger.priority and older.created_at < younger.created_at
 )
 
+#: The scope board's closed lanes: members owing nothing, with no record
+#: and no pull request. On a delivering origin they take the delivery-only
+#: turn, in the order the scope lists them, and their entry finds nothing
+#: to deliver, so each rests after its one turn.
+SCOPE_CLOSED = ("K-7", "K-8")
+
+#: The scope board's lanes in the order the scope lists them: the board's
+#: issues, then the closed lanes.
+LANES: tuple[str, ...] = (*(issue.issue_key for issue in BOARD), *SCOPE_CLOSED)
+
 #: The heavy sets: which issues take the great-deal end of a variation.
-#: Each parity of the board, the older member of every equal-priority pair
-#: and then the younger one, and each issue alone.
+#: Each parity of the lanes (so each closed lane is heavy in one and light
+#: in the other), the older member of every equal-priority pair and then
+#: the younger one, and each board issue alone.
 HEAVY_SETS: dict[str, frozenset[str]] = {
-    "first": frozenset(issue.issue_key for issue in BOARD[0::2]),
-    "second": frozenset(issue.issue_key for issue in BOARD[1::2]),
+    "first": frozenset(LANES[0::2]),
+    "second": frozenset(LANES[1::2]),
     "older": frozenset(older for older, _ in EQUAL_PRIORITY_PAIRS),
     "younger": frozenset(younger for _, younger in EQUAL_PRIORITY_PAIRS),
     **{f"alone-{issue.issue_key}": frozenset({issue.issue_key}) for issue in BOARD},
@@ -290,15 +308,17 @@ CRITERION_LINE = re.compile(r"^(\S+/\S+) ", re.MULTILINE)
 #: the machine the suite runs on shares its cores with several test runs.
 SCOPE_WALK_BOUND_SECONDS = 300
 
-#: Exact. The scope flow's decision over the same lanes: every lane fired
-#: twice in rank order — its first fire closes one criterion and the lane is
-#: offered again, its second closes nothing and the lane rests — no lane
-#: failed, and one tick per fire plus the tick that finds nothing to offer.
+#: Exact. The scope flow's decision over the same lanes: every ready lane
+#: fired twice in rank order — its first fire closes one criterion and the
+#: lane is offered again, its second closes nothing and the lane rests —
+#: after the closed lanes took their delivery-only turn and rested, in the
+#: order the scope lists them; no lane failed; one tick per fire, one per
+#: closed lane, and the tick that finds nothing to offer.
 SCOPE_BASE_DECISION = (
     tuple(key for key in RANK_ORDER for _ in range(2)),
-    RANK_ORDER,
+    (*SCOPE_CLOSED, *RANK_ORDER),
     (),
-    2 * len(RANK_ORDER) + 1,
+    2 * len(RANK_ORDER) + len(SCOPE_CLOSED) + 1,
 )
 
 
@@ -572,21 +592,33 @@ class ClosingExecutor(ObservedNativeExecutor):
             yield event
 
 
+def done(issue: TrackerIssue) -> TrackerIssue:
+    """*issue* as a board holds it when somebody finished it elsewhere."""
+    return issue.model_copy(
+        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+    )
+
+
 def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
     """The scope board: one lane per board issue, varied by *variation*.
 
     Each lane carries its issue's priority and age, the stage markers the
-    scope board gives every lane, and its two criteria. Heavy lanes are
-    given the variation's subtree: ``SCOPE_MANY`` open criteria, as many
-    deliverable children each owing one criterion, and as many long
-    comments.
+    scope board gives every lane, and its two criteria. The closed lanes
+    follow, finished by hand: both criteria done and the lane's own issue
+    done, and nothing anywhere recording a branch or a pull request for
+    them. Heavy lanes are given the variation's subtree: ``SCOPE_MANY``
+    criteria, as many deliverable children each with a criterion of its
+    own, and as many long comments; under a ready lane those criteria are
+    open, under a closed lane they are done, so a closed lane stays closed.
     """
-    keys = tuple(issue.issue_key for issue in BOARD)
     port = scope_board(
-        lanes=keys,
+        lanes=LANES,
         priorities={issue.issue_key: issue.priority for issue in BOARD},
-        checks=dict.fromkeys(keys, SCOPE_CHECKS),
+        checks=dict.fromkeys(LANES, SCOPE_CHECKS),
     )
+    for key in SCOPE_CLOSED:
+        for issue_key in (key, *(f"{key}/{name}" for name in SCOPE_CHECKS)):
+            port.issues[issue_key] = done(port.issues[issue_key])
     aged = tuple(
         rebuilt(
             port.issues[issue.issue_key],
@@ -594,7 +626,7 @@ def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
             updated_at=issue.created_at,
         )
         for issue in BOARD
-    )
+    ) + tuple(port.issues[key] for key in SCOPE_CLOSED)
     lanes = aged if variation is None else variation.rows(aged)
     for lane in lanes:
         port.issues[lane.issue_key] = lane
@@ -602,6 +634,7 @@ def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
     for lane in lanes:
         if variation is None or lane.issue_key not in variation.heavy:
             continue
+        closed = lane.issue_key in SCOPE_CLOSED
         for number in range(SCOPE_MANY):
             owed = []
             if "criteria" in parts:
@@ -616,13 +649,14 @@ def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
                 port.issues[child.issue_key] = child
                 owed.append((f"{child.issue_key}/check", child.issue_key))
             for key, parent in owed:
-                port.issues[key] = make_tracker_issue(
+                criterion = make_tracker_issue(
                     key,
                     parent_key=parent,
                     queue_states=(),
                     issue_labels=frozenset({CRITERION_LABEL}),
                     body=f"**Check:** {key} holds\n**Evidence:** —",
                 )
+                port.issues[key] = done(criterion) if closed else criterion
             if "comments" in parts:
                 port.comments.append(
                     TrackerComment(
@@ -664,7 +698,7 @@ async def scope_walk(
         harness = resumable(
             port=port,
             repos=repos,
-            lanes=tuple(issue.issue_key for issue in BOARD),
+            lanes=LANES,
             origin=FORGE_ORIGIN,
             forge=forge,
             trunk="main",
@@ -836,16 +870,35 @@ async def test_the_composed_scope_flow_fires_its_lanes_in_rank_order() -> None:
         )
 
 
+def test_each_closed_lane_is_heavy_in_one_variation_and_light_in_another() -> None:
+    """The closed lanes' sizes are varied too, and against each other.
+
+    The delivery-only turn offers the closed lanes in the order the scope
+    lists them, so a size rule there is caught only if the two differ in
+    size: there is a variation in which the first is heavy and the second
+    light, and one the other way round.
+    """
+    first, second = SCOPE_CLOSED
+    splits = {
+        (first in variation.heavy, second in variation.heavy)
+        for variation in SCOPE_VARIATIONS.values()
+    }
+    assert {(True, False), (False, True)} <= splits
+
+
 async def test_the_ready_read_answers_the_varied_gap() -> None:
     """The control for the scope subtree: the lane selector is handed it.
 
     A lane given the whole subtree is read back through the ready read the
     walk selects from: its gap is its own two criteria, the ``SCOPE_MANY``
     criteria under it and one criterion under each of its ``SCOPE_MANY``
-    children, and a light lane's gap is its own two criteria alone.
+    children, and a light lane's gap is its own two criteria alone. The
+    closed lanes are read back as closed, whatever sits under them: a heavy
+    closed lane's subtree holds as many criteria, all done.
     """
     heavy = BOARD[0].issue_key
-    variation = Variation((), SUBTREE, False, frozenset({heavy}))
+    closed = SCOPE_CLOSED[0]
+    variation = Variation((), SUBTREE, False, frozenset({heavy, closed}))
     port = scope_lanes(variation)
     ready = await read_scope_ready(ref=SCOPE, tracker=port)
     gaps = {lane.issue.issue_key: len(lane.gap) for lane in ready.ready}
@@ -854,6 +907,16 @@ async def test_the_ready_read_answers_the_varied_gap() -> None:
         issue.issue_key: own + 2 * SCOPE_MANY if issue.issue_key == heavy else own
         for issue in BOARD
     }
+    assert tuple(issue.issue_key for issue in ready.closed) == SCOPE_CLOSED
+    under_closed = [
+        issue
+        for issue in port.issues.values()
+        if issue.issue_key.startswith(closed) and CRITERION_LABEL in issue.issue_labels
+    ]
+    assert len(under_closed) == own + 2 * SCOPE_MANY
+    assert all(
+        issue.state_kind is WorkflowStateKind.COMPLETED for issue in under_closed
+    )
     assert len(await port.list_comments(issue_key=heavy)) == SCOPE_MANY
 
 
