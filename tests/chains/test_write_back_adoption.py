@@ -1528,6 +1528,82 @@ def test_a_port_write_taken_as_a_value_is_a_call_site(case):
     assert found.paths == (str(site),)
 
 
+def through_base(*, base_caller: bool) -> str:
+    """An override the verifier drives through its own type, and maybe not.
+
+    The method's name is mentioned nowhere else in the tree, so no other
+    mention withholds it and the base-typed call is the only difference.
+    """
+    plain = (
+        """
+    async def shortcut(self) -> None:
+        await self._base.relay_note()
+"""
+        if base_caller
+        else ""
+    )
+    return f"""
+from dataclasses import dataclass
+
+from kodezart.chains.write_back_verifier import WriteBackVerifier
+from kodezart.core.protocols import TrackerPort
+
+
+class Base:
+    async def relay_note(self) -> None:
+        return None
+
+
+class Sub(Base):
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    async def relay_note(self) -> None:
+        await self._tracker.post_comment(issue_key="K", body="b")
+
+
+@dataclass(frozen=True)
+class Step:
+    surface: object
+    apply: object
+
+    async def write(self, *, finding):
+        await self.apply(finding)
+
+
+class Writer:
+    def __init__(self, *, sub: Sub, base: Base, verifier: WriteBackVerifier) -> None:
+        self._sub, self._base, self._verifier = sub, base, verifier
+
+    async def publish(self) -> None:
+        async def land(finding):
+            await self._sub.relay_note()
+
+        await self._verifier.write_back(step=Step(None, land), ref="r")
+{plain}"""
+
+
+@pytest.mark.parametrize(
+    "base_caller", [False, True], ids=["own-type-only", "through-the-base"]
+)
+def test_a_call_through_a_base_class_counts_against_every_override(base_caller):
+    """A call typed as the base may reach the override, so it is weighed.
+
+    The override is reached from an applier the verifier drives through its
+    own type.  Alone, that makes it driven.  An undriven call typed as the
+    base class resolves to the base's method, but at run time it may be the
+    override that answers, so that caller withholds the override's grant.
+    """
+    module = "planted/through_base.py"
+    found = census((module, through_base(base_caller=base_caller)))
+    site = CallSite(module=module, function="Sub.relay_note", method="post_comment")
+    if base_caller:
+        assert site in found.unadopted
+        assert site not in found.driven
+    else:
+        assert site in found.driven
+
+
 def test_the_boot_gate_and_the_guard_are_one_census():
     """What boot refuses is what this guard reads, over the same source.
 

@@ -27,6 +27,8 @@ import inspect
 from collections.abc import Mapping, Sequence
 
 from kodezart.domain.source_resolution import (
+    BASE_DEPTH,
+    FUNCTION_NODES,
     OWN_RECEIVERS,
     SourceIndex,
     paired,
@@ -550,7 +552,12 @@ def _delegations(index: SourceIndex) -> Mapping[Source, frozenset[Source]]:
     resolved callers stand, which is what makes a name usable only to
     withhold a grant.  A dunder is left out: it answers a protocol rather
     than being reached by name.
+
+    A call resolved to a method is also a call of every override of that
+    method: typed as the base, it may be the override that answers at run
+    time, so the override carries that caller too.
     """
+    overrides = _overrides(index)
     delegations: dict[Source, frozenset[Source]] = {}
     for holder, node in index.functions.items():
         if node.name.startswith("__"):
@@ -568,8 +575,51 @@ def _delegations(index: SourceIndex) -> Mapping[Source, frozenset[Source]]:
             if caller is None or target is None:
                 resolved = False
                 break
-            if target == holder:
+            if target == holder or holder in overrides.get(target, frozenset()):
                 callers.add(caller)
         if resolved and callers:
             delegations[holder] = frozenset(callers)
     return delegations
+
+
+def _overrides(index: SourceIndex) -> Mapping[Source, frozenset[Source]]:
+    """For each method, the methods of the same name its subclasses define.
+
+    A subclass is a class whose bases, resolved as annotations are and
+    followed to ``BASE_DEPTH``, reach the class defining the method.  Only
+    nominal subclassing is read: a class answering a protocol structurally
+    names no base to follow.
+    """
+    found: dict[Source, set[Source]] = {}
+    for owner, node in index.classes.items():
+        ancestors = _ancestors(index, owner)
+        for item in node.body:
+            if not isinstance(item, FUNCTION_NODES):
+                continue
+            own = Source(module=owner.module, function=f"{owner.function}.{item.name}")
+            for ancestor in ancestors:
+                overridden = Source(
+                    module=ancestor.module, function=f"{ancestor.function}.{item.name}"
+                )
+                if overridden in index.functions:
+                    found.setdefault(overridden, set()).add(own)
+    return {method: frozenset(below) for method, below in found.items()}
+
+
+def _ancestors(index: SourceIndex, owner: Source) -> frozenset[Source]:
+    """Every class *owner*'s resolved bases reach, to ``BASE_DEPTH``."""
+    reached: set[Source] = set()
+    frontier = [owner]
+    for _ in range(BASE_DEPTH):
+        following: list[Source] = []
+        for current in frontier:
+            for base in index.classes[current].bases:
+                resolved = index.annotated(current.module, base)
+                if resolved is not None and resolved not in reached:
+                    reached.add(resolved)
+                    following.append(resolved)
+        if not following:
+            break
+        frontier = following
+    reached.discard(owner)
+    return frozenset(reached)
