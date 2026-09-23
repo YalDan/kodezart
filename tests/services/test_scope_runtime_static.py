@@ -75,7 +75,10 @@ def imported_modules(
     A from-import names a module either as its source or, when the source is
     a package, as one of the names it takes from it:
     ``from kodezart.domain import union_facts`` imports the module
-    ``kodezart.domain.union_facts`` just as its dotted spelling does.
+    ``kodezart.domain.union_facts`` just as its dotted spelling does.  Every
+    module is read as an absolute name, which relies on the linter's ban on
+    relative imports (``ban-relative-imports = "all"``): a relative
+    from-import would name no module here.
     """
     found: set[str] = set()
     for node in ast.walk(tree):
@@ -90,7 +93,10 @@ def imported_modules(
 
 
 def submodules_named(node: ast.ImportFrom) -> list[str]:
-    """The modules under the source tree a from-import takes from its package."""
+    """The modules under the source tree a from-import takes from its package.
+
+    Read as absolute names, which relies on the ban on relative imports.
+    """
     return [
         f"{node.module}.{alias.name}"
         for alias in node.names
