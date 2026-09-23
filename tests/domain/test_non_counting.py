@@ -5,9 +5,9 @@ and refuses nothing (KOD-794).  Two readers that each decide that for
 themselves can part, so the criterion readers ask the one predicate: the
 spec read, the native writer's authority read, ``existing_criterion`` and
 the criteria stage's ``needs_criteria``, and the gap and readiness read
-through ``is_open``, which closes the same kinds.  The organize readers in
-``domain/organize.py`` and ``services/organize_owner.py`` that still name
-Canceled themselves are the known exception.
+through ``is_open``, which closes the same kinds.  The organize reader in
+``domain/organize.py`` that still names Canceled itself is the known
+exception.
 
 What the scan below pins to one module is the Duplicate kind, in the shapes
 it sees: the ``DUPLICATE`` attribute, or a subscript by the member's name,
