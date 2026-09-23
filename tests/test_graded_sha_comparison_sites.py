@@ -49,15 +49,25 @@ package the rule is packaged in.  The register lives beside this file in
 The static assertion's reach, as the Check states it: it covers every scope
 that reads the graded sha directly (the evidence field or its alias, and any
 value bound from them inside that same scope) and pins every statement there
-that touches the value, whatever the other operand is called.  A value
-carried across a function boundary (returned, stored on an object or a
-module global, or passed as an argument) is outside it, as is deliberate
-evasion (a name built at run time, ``eval``/``exec``).  Two examples of that
-limit, read as code in ``test_the_stated_limit_is_evasion_and_it_is_not_seen``:
+that touches the value, whatever the other operand is called.  Outside it,
+and only these:
+
+* a whole-record read through a value whose type the module does not
+  declare -- ``model_dump()``, ``dict(...)``, ``vars(...)`` or iteration on
+  an un-annotated ``evidence`` -- which would need type inference this
+  guard does not do;
+* a value handed across functions (returned, stored on an object or a
+  module global, or passed as an argument);
+* a name built at run time, including one handed to ``eval``/``exec``.
+
+Each is read as code.  In ``test_the_stated_limit_is_evasion_and_it_is_not_seen``
 a global set in one function and compared in another, and a value one
-function returns (``Ledger.recorded()``) compared in its caller.  In each,
-the function that reads the field directly is reported and the function
-that compares what it was handed is not.
+function returns (``Ledger.recorded()``) compared in its caller: the
+function that reads the field directly is reported and the function that
+compares what it was handed is not.  In
+``test_a_record_read_whole_without_a_declared_type_is_not_seen`` the
+un-annotated record read whole is unseen, and the same read with the
+record's annotation is seen.
 """
 
 import ast
@@ -1383,6 +1393,30 @@ def test_the_stated_limit_is_evasion_and_it_is_not_seen():
         "    return differs(evidence.graded_sha, head)\n"
     )
     assert frozenset(alone(through_an_argument)) == {"reader.py::asks"}
+
+
+def test_a_record_read_whole_without_a_declared_type_is_not_seen():
+    """The first stated limit, held as a fact rather than claimed.
+
+    Read whole through a value the module never declares as the record, the
+    graded sha is unseen; the same read with the record's annotation is seen.
+    """
+    uses = (
+        "head_sha in dict(evidence).values()",
+        "head_sha in evidence.model_dump().values()",
+        "head_sha in vars(evidence).values()",
+        "any(value == head_sha for _, value in evidence)",
+    )
+    for use in uses:
+        unseen = f"def lapsed(evidence, head_sha):\n    return {use}\n"
+        assert alone(unseen) == {}, use
+    seen = (
+        f"def lapsed(evidence: {RECORD}, head_sha):\n"
+        "    return head_sha in dict(evidence).values()\n"
+    )
+    assert alone(seen) == {
+        "reader.py::lapsed": Counter({"return head_sha in dict(evidence).values()": 1})
+    }
 
 
 def _is_rule_call(node: ast.AST) -> bool:
