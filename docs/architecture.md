@@ -754,7 +754,10 @@ round is not retried, and the next pass reads the board again. A roster with
 no work takes no lease, so an approved scope and a replay cost the
 pre-approval row no lease marker. A member the round mints is outside the set
 that round declared and is declared by the next round, which snapshots the
-board again.
+board again. A member whose own approval reading is on the other side of
+approval from the row — one approved in its own right inside a scope still in
+triage — is left out of the set, since a run may hold it and the row writes
+nothing on it.
 
 The round's lease is renewed only at its writes. Each member's marker carries
 the lines of the whole set, so one renewal edits one marker per member. The

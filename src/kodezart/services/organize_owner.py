@@ -1301,8 +1301,17 @@ class OrganizeOwner:
             # work: every write below renews it rather than taking its
             # own, and it is released before any halt is written. A later
             # round with no subject still spends its dry round, and may
-            # mark, so it holds the set too.
-            declared_keys = frozenset(by_key)
+            # mark, so it holds the set too. A member whose own approval
+            # reading is not this row's side of approval is left out: a
+            # run may hold it, and this row writes nothing on it.
+            declared_keys = frozenset(
+                [
+                    key
+                    for key in by_key
+                    if await self._tracker.execution_approved(issue_key=key)
+                    is phase.role.runs_under_approval
+                ]
+            )
             declared = phase_surfaces(member_keys=declared_keys, role=phase.role)
             residuals: list[SpecFinding] = []
             try:
@@ -1526,18 +1535,19 @@ class OrganizeOwner:
                     latest_members = {
                         r.issue.issue_key for r in await self._snapshot(scope)
                     }
-                    # A subject this round minted owes its marker to the
-                    # round that declares its label set, which is the next
-                    # one: this round holds no address on it. Only organize
-                    # subjects receive the marker below, so only a minted
-                    # subject counts: a criterion child the criteria stage
-                    # minted is never marked, and holding the round open
-                    # for it would cost a round and protect no label set.
+                    # A subject this round minted, outside its snapshot,
+                    # owes its marker to the round that declares its label
+                    # set, which is the next one: this round holds no
+                    # address on it. Only organize subjects receive the
+                    # marker below, so only a minted subject counts: a
+                    # criterion child the criteria stage minted is never
+                    # marked, and holding the round open for it would cost
+                    # a round and protect no label set.
                     minted = {
                         revision.issue.issue_key
                         for revision in current
                         if is_organize_subject(revision.issue)
-                    } - declared_keys
+                    } - set(by_key)
                     if (
                         latest_members == members
                         and not minted
