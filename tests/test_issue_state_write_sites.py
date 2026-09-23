@@ -24,9 +24,12 @@ of the port.
 """
 
 import ast
+import inspect
+import typing
 from collections.abc import Iterator, Mapping
 
 from kodezart.core.protocols import TrackerPort
+from kodezart.types.domain.operation import LifecycleStage
 from tests.chains.test_write_back_adoption import (
     FUNCTIONS,
     KOD_806_STATE_MOVES,
@@ -45,14 +48,39 @@ from tests.domain.test_run_event_table import ADAPTER_MAPPING, CONFIGURED
 
 SET_STATE = TrackerPort.set_workflow_state.__name__
 RESTORE_STATE = TrackerPort.restore_workflow_state.__name__
-STATE_MOVES = frozenset({SET_STATE, RESTORE_STATE})
+#: The port's state moves: every member that takes a lifecycle stage, and the
+#: restore that puts a board-read state name back.  Read off the port, so a
+#: member that grows a stage parameter joins the scan.
+STATE_MOVES = frozenset(
+    {
+        *(
+            name
+            for name, method in inspect.getmembers(TrackerPort, inspect.isfunction)
+            if any(
+                hint is LifecycleStage
+                for parameter, hint in typing.get_type_hints(method).items()
+                if parameter != "return"
+            )
+        ),
+        RESTORE_STATE,
+    }
+)
 PERMITTED = frozenset(
     site
     for site in KOD_806_STATE_MOVES | LANE_STATE_WRITES
     if site.method in STATE_MOVES
 )
-#: The keyword a restore hands the state name it puts back under.
-RESTORED_NAME = "state_name"
+#: The keyword a restore hands the state name it puts back under: its one
+#: parameter besides the issue it addresses, read off the port.
+(RESTORED_NAME,) = (
+    name
+    for name in inspect.signature(TrackerPort.restore_workflow_state).parameters
+    if name not in {"self", "issue_key"}
+)
+
+
+def test_the_state_moves_are_the_stage_taking_members_and_the_restore():
+    assert STATE_MOVES == {SET_STATE, RESTORE_STATE}
 
 
 def test_only_the_node_side_writers_name_an_issue_state():
@@ -104,6 +132,90 @@ class Backend:
 def test_a_module_that_only_states_the_method_is_not_a_move_site():
     sources = {"adapters/backend.py": STATES_THE_METHOD}
     assert Production(sources).call_sites(STATE_MOVES) == frozenset()
+
+
+def unseen_moves(sources: Mapping[str, str]) -> tuple[str, ...]:
+    """The state moves the production walk above cannot see.
+
+    That walk skips every call of a move inside a class that states the
+    move, and resolves a move only where it is called.  So two shapes are
+    reported here: inside a class that states a move, a call of that move on
+    anything but bare ``self``; and, anywhere, a move referenced without
+    being called, which is how a bound method is handed on and called under
+    another name.
+    """
+    found = []
+    for module, text in sorted(sources.items()):
+        tree = ast.parse(text)
+        called = {
+            id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)
+        }
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr in STATE_MOVES
+                and id(node) not in called
+            ):
+                found.append(f"{module}:{node.lineno}: {ast.unparse(node)} uncalled")
+            if not isinstance(node, ast.ClassDef):
+                continue
+            stated = STATE_MOVES & {
+                item.name for item in node.body if isinstance(item, FUNCTIONS)
+            }
+            for call in ast.walk(node):
+                if (
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr in stated
+                    and not (
+                        isinstance(call.func.value, ast.Name)
+                        and call.func.value.id == "self"
+                    )
+                ):
+                    found.append(
+                        f"{module}:{call.lineno}: {ast.unparse(call.func)} "
+                        f"inside {node.name}"
+                    )
+    return tuple(found)
+
+
+def test_no_state_move_escapes_the_walk_through_its_receiver_or_a_reference():
+    assert unseen_moves(production_sources()) == ()
+
+
+FORWARDING_WRITER = f"""
+class SessionMover:
+    async def {SET_STATE}(self, *, issue_key, stage):
+        await self._tracker.{SET_STATE}(issue_key=issue_key, stage=stage)
+
+    async def advance(self, key, stage):
+        await self.{SET_STATE}(issue_key=key, stage=stage)
+"""
+BOUND_MOVE = f"""
+async def advance(tracker, key, stage):
+    move = tracker.{SET_STATE}
+    await move(issue_key=key, stage=stage)
+"""
+
+
+def test_a_move_forwarded_through_a_class_that_states_it_is_reported():
+    sources = {"chains/session_mover.py": FORWARDING_WRITER}
+    assert Production(sources).call_sites(STATE_MOVES) == frozenset()
+    assert unseen_moves(sources) == (
+        f"chains/session_mover.py:4: self._tracker.{SET_STATE} inside SessionMover",
+    )
+
+
+def test_a_move_handed_on_as_a_bound_method_is_reported():
+    sources = {"chains/bound_move.py": BOUND_MOVE}
+    assert Production(sources).call_sites(STATE_MOVES) == frozenset()
+    assert unseen_moves(sources) == (
+        f"chains/bound_move.py:3: tracker.{SET_STATE} uncalled",
+    )
+
+
+def test_a_sibling_call_inside_the_class_that_states_the_move_is_not_unseen():
+    assert unseen_moves({"adapters/backend.py": STATES_THE_METHOD}) == ()
 
 
 def _functions(tree: ast.AST) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef]:
