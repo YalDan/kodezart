@@ -2450,15 +2450,32 @@ async def test_a_later_round_lists_the_roster_once_before_its_gap(monkeypatch):
 
 
 def unavailable_network_operation():
-    """The declared operation, with its first repository denying the network."""
+    """The declared operation, its first repository denying the network.
+
+    The same repository declares its history available; the second declares
+    no runner environment at all.
+    """
     operation = declared_operation()
     repo = operation.repos[0].model_copy(
-        update={"runner_environment": {CheckPrerequisite.NETWORK: False}}
+        update={
+            "runner_environment": {
+                CheckPrerequisite.NETWORK: False,
+                CheckPrerequisite.REPOSITORY_HISTORY: True,
+            }
+        }
     )
     return operation.model_copy(update={"repos": (repo, *operation.repos[1:])})
 
 
 GRADABILITY_SENTENCE = "Ask gradability as well as buildability"
+#: The operative phrases of the gradability paragraph, read over the prompt
+#: with its line breaks folded to spaces.
+GRADABILITY_PHRASES = (
+    "can demonstrate is not_buildable with a repairable spec_gap",
+    "name in the evidence the demonstration that cannot run",
+    "where it has to move to",
+    "never admit it for a later run to absorb",
+)
 
 
 @pytest.mark.parametrize("declared", ["declared", "no_checks", "no_repository"])
@@ -2496,18 +2513,55 @@ async def test_both_sets_put_the_declared_environments_in_front_of_the_admission
     )
     await getattr(boundary, method)(request())
     prompt = executor.calls[0]["prompt"]
+    folded = " ".join(prompt.split())
     assert GRADABILITY_SENTENCE in prompt
+    assert [phrase for phrase in GRADABILITY_PHRASES if phrase in folded] == list(
+        GRADABILITY_PHRASES
+    )
     assert "{{" not in prompt
+    history = f"{CheckPrerequisite.REPOSITORY_HISTORY.value}: available"
     if declared == "declared":
         step = unavailable_network_operation().repos[0].checks[0]
         assert f"check {step.name}: `{step.command}`" in prompt
         assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in prompt
+        assert history in prompt
+        # The second repository declares no runner environment fact.
+        assert "no runner environment fact is declared" in prompt
         return
     if declared == "no_checks":
         assert "no check chain is declared" in prompt
         assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in prompt
+        assert history in prompt
         return
     assert "declared_environments" not in prompt
+
+
+#: The operative phrases of the criteria author's Evidence naming paragraph,
+#: read over the prompt with its line breaks folded to spaces.
+EVIDENCE_NAMING_PHRASES = (
+    "Name what will fill each criterion's Evidence",
+    "the exact runnable test",
+    "the observation that will be recorded instead",
+    "refused before it is created",
+)
+
+
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+def test_both_sets_tell_the_criteria_author_to_name_what_fills_the_evidence(
+    set_name,
+):
+    """The criteria author is told what a criterion must name before it exists."""
+    from tests.prompts.test_organize_call_bindings import variables
+
+    rendered = (
+        load_registry(default_set=set_name)
+        .template_for(PromptKey.ORGANIZE_CRITERIA_AUTHOR)
+        .render({**variables(), "base_ref": "main", "issue_key": "external/42"})
+    )
+    folded = " ".join(rendered.split())
+    assert [phrase for phrase in EVIDENCE_NAMING_PHRASES if phrase in folded] == list(
+        EVIDENCE_NAMING_PHRASES
+    )
 
 
 UNDEMONSTRABLE_EVIDENCE = "No declared environment can run the demonstration."
