@@ -85,12 +85,21 @@ def test_no_pre_approval_accept_condition_names_the_dry_implementation(
     a sentence left in either of them would be an accept condition this
     mandate never agreed to.
     """
-    groom = row_of(MandateKind.GROOM)
+    rows = stage_rows(
+        load_operation_config(SCOPE_EXAMPLE).resolve_organize_mandates(),
+        under_approval=False,
+    )
+    assert len(rows) == 1
+    groom = rows[0]
     rubric = rendered_rubric(set_name, groom.spec.rubric_prompt_key)
     for wrapper in (groom.spec.admission_prompt_key, PromptKey.ORGANIZE_VERIFY):
         rendered = rendered_around(set_name, wrapper, rubric)
         for claim in IMPLEMENTATION_TEST:
             assert claim not in rendered, (wrapper.value, claim)
+        # The presence side: the rubric is inside the wrapper, whole.
+        assert rubric in rendered, wrapper.value
+        for part in FOUR_PARTS:
+            assert part in rendered, (wrapper.value, part)
 
 
 @pytest.mark.parametrize("set_name", SETS)
@@ -102,6 +111,7 @@ def test_the_run_stage_rubric_states_the_implementation_test(set_name: str) -> N
     """
     ticket = row_of(MandateKind.TICKET)
     rubric = rendered_rubric(set_name, ticket.spec.rubric_prompt_key)
-    rendered = rendered_around(set_name, ticket.spec.admission_prompt_key, rubric)
-    for claim in IMPLEMENTATION_TEST:
-        assert claim in rendered, claim
+    for wrapper in (ticket.spec.admission_prompt_key, PromptKey.ORGANIZE_VERIFY):
+        rendered = rendered_around(set_name, wrapper, rubric)
+        for claim in IMPLEMENTATION_TEST:
+            assert claim in rendered, (wrapper.value, claim)

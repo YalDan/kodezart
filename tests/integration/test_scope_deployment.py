@@ -136,6 +136,15 @@ def test_the_shipped_file_names_a_rubric_role_the_registry_resolves_for_every_ro
         "ticket": "organize_spec_rubric",
         "criteria": "organize_spec_rubric",
     }
+    # One admission role for every row: what differs between the rows is the
+    # rubric rendered into it, never the role that judges.
+    assert {
+        row.spec.kind.value: row.spec.admission_prompt_key.value for row in rows
+    } == {
+        "groom": "organize_assess",
+        "ticket": "organize_assess",
+        "criteria": "organize_assess",
+    }
     for set_name in shipped_sets():
         registry = load_registry(default_set=set_name)
         for row in rows:
