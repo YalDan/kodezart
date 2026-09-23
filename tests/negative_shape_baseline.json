@@ -157,7 +157,7 @@
   "tests/domain/test_agent.py": 3,
   "tests/domain/test_alarm_typed_evidence.py": 4,
   "tests/domain/test_amendment.py": 20,
-  "tests/domain/test_assertion_drift.py": 10,
+  "tests/domain/test_assertion_drift.py": 27,
   "tests/domain/test_audit_claims.py": 14,
   "tests/domain/test_audit_overclaim.py": 3,
   "tests/domain/test_audit_overclaim_report.py": 2,
@@ -210,7 +210,7 @@
   "tests/domain/test_record_superseded.py": 23,
   "tests/domain/test_recorded_landing.py": 22,
   "tests/domain/test_ruling_identity.py": 11,
-  "tests/domain/test_ruling_protected_tests.py": 16,
+  "tests/domain/test_ruling_protected_tests.py": 25,
   "tests/domain/test_rulings.py": 8,
   "tests/domain/test_run_alarm.py": 16,
   "tests/domain/test_run_alarm_payload.py": 4,
@@ -269,7 +269,7 @@
   "tests/integration/test_scope_entry.py": 75,
   "tests/integration/test_scope_heartbeat.py": 46,
   "tests/integration/test_scope_launch_freshness.py": 5,
-  "tests/integration/test_scope_runtime.py": 494,
+  "tests/integration/test_scope_runtime.py": 508,
   "tests/integration/test_scope_union.py": 48,
   "tests/integration/test_self_running_chain.py": 21,
   "tests/integration/test_session_resume.py": 6,
@@ -317,7 +317,7 @@
   "tests/services/lane_tally_fixtures.py": 10,
   "tests/services/test_agent_service.py": 5,
   "tests/services/test_amendment_interrupted_writes.py": 17,
-  "tests/services/test_applied_native_amendments.py": 141,
+  "tests/services/test_applied_native_amendments.py": 193,
   "tests/services/test_assertion_drift.py": 30,
   "tests/services/test_audit_coverage.py": 22,
   "tests/services/test_audit_reopen.py": 26,
@@ -365,7 +365,7 @@
   "tests/services/test_scope_resolution.py": 7,
   "tests/services/test_scope_runtime.py": 55,
   "tests/services/test_scope_runtime_static.py": 10,
-  "tests/services/test_scope_terminal.py": 80,
+  "tests/services/test_scope_terminal.py": 99,
   "tests/services/test_session_grant_threading.py": 13,
   "tests/services/test_structured_run_records.py": 55,
   "tests/services/test_supervisor_pass.py": 18,
@@ -376,7 +376,7 @@
   "tests/services/test_union_conflict_remediation.py": 23,
   "tests/services/test_union_replacement_identity.py": 23,
   "tests/services/test_union_tick.py": 75,
-  "tests/services/test_weakened_assertions.py": 19,
+  "tests/services/test_weakened_assertions.py": 20,
   "tests/spec/test_model_agreement.py": 73,
   "tests/test_audit_lane_placement.py": 13,
   "tests/test_composition_root.py": 35,
@@ -390,7 +390,7 @@
   "tests/test_name_resolution.py": 40,
   "tests/test_organize_portability.py": 14,
   "tests/test_release.py": 4,
-  "tests/test_suppression_baseline.py": 42,
+  "tests/test_suppression_baseline.py": 44,
   "tests/tools/test_scratch_scope.py": 60,
   "tests/tracker/test_alarm_independent.py": 4,
   "tests/tracker/test_artifact_native_fields.py": 9,
@@ -434,7 +434,7 @@
   "tests/tracker/test_criterion_identity_conformance.py": 8,
   "tests/tracker/test_criterion_label_independent.py": 10,
   "tests/tracker/test_criterion_label_surface.py": 9,
-  "tests/tracker/test_criterion_port_sites.py": 19,
+  "tests/tracker/test_criterion_port_sites.py": 20,
   "tests/tracker/test_criterion_read_ordering.py": 10,
   "tests/tracker/test_criterion_reader.py": 21,
   "tests/tracker/test_criterion_reader_boundary.py": 11,
@@ -2602,7 +2602,12 @@
    "test_missing_ambiguous_or_nonfunction_reference_refuses",
    "test_declared_python_encoding_is_read_without_utf8_guessing",
    "test_source_is_parsed_without_running_any_import_or_top_level_expression",
-   "test_protected_reference_requires_canonical_explicit_python_address"
+   "test_protected_reference_requires_canonical_explicit_python_address",
+   "test_a_removed_or_changed_assertion_is_lost_and_an_added_one_is_not",
+   "test_counted_so_a_reorder_loses_nothing_and_a_dropped_duplicate_loses_one",
+   "test_a_reformatted_assertion_loses_nothing",
+   "test_the_mark_names_the_test_and_the_record_and_no_assertion_text_or_sha",
+   "test_a_claim_that_lost_nothing_renders_no_mark"
   ],
   "tests/domain/test_audit_claims.py": [
    "test_the_table_covers_every_shipped_workflow_kind",
@@ -3392,7 +3397,9 @@
    "test_invalid_native_designation_refuses_instead_of_losing_protection",
    "test_repeated_designations_names_an_address_two_records_claim",
    "test_native_designation_has_a_typed_ruling_owner",
-   "test_mypy_preserves_reader_identity_and_refuses_a_plain_string_owner"
+   "test_mypy_preserves_reader_identity_and_refuses_a_plain_string_owner",
+   "test_designated_tests_skip_an_amended_record_and_an_undesignating_record",
+   "test_only_the_records_a_report_amended_are_exempt"
   ],
   "tests/domain/test_rulings.py": [
    "test_closed_model_and_pinned_text_round_trip_every_author_and_class",
@@ -3889,7 +3896,8 @@
    "test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_on",
    "test_a_put_back_that_cannot_be_written_rests_that_lane_and_the_walk_goes_on",
    "test_a_closed_lane_whose_record_cannot_be_read_is_not_offered_again",
-   "test_a_killed_scope_run_re_enters_from_the_tracker_alone"
+   "test_a_killed_scope_run_re_enters_from_the_tracker_alone",
+   "test_a_lane_that_progressed_and_then_closes_nothing_halts_on_the_bound"
   ],
   "tests/integration/test_scope_union.py": [
    "test_a_two_lane_scope_is_composed_once_for_the_whole_walk",
@@ -4393,7 +4401,16 @@
    "test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes",
    "test_amendment_refuses_external_authority_drift_across_fresh_sessions",
    "test_designated_protected_test_change_is_upheld_and_never_reaches_the_branch",
-   "test_a_held_marked_model_refuses_the_write_backs_own_acquisition"
+   "test_a_held_marked_model_refuses_the_write_backs_own_acquisition",
+   "test_a_weakened_designated_assertion_marks_the_lane_and_is_never_pushed",
+   "test_a_record_pinned_on_a_subtree_member_still_marks_the_lane_itself",
+   "test_the_mark_keeps_the_lane_out_of_convergence_until_it_is_done",
+   "test_a_second_weakening_of_the_same_assertion_finds_the_same_mark",
+   "test_an_added_assertion_in_a_designated_test_publishes_with_no_mark",
+   "test_an_amended_designation_lets_its_test_change_without_a_mark",
+   "test_a_weakening_beside_an_amended_criterion_is_still_marked",
+   "test_amending_one_record_leaves_another_records_designation_standing",
+   "test_a_mint_the_tracker_refuses_still_refuses_the_push"
   ],
   "tests/services/test_assertion_drift.py": [
    "test_both_revisions_are_green_but_expected_value_drift_emits_claim",
@@ -5168,7 +5185,9 @@
    "test_a_report_on_another_container_is_not_this_ones",
    "test_an_unreadable_status_surface_leaves_no_event",
    "test_the_heading_the_filter_reads_is_the_one_the_rendering_writes",
-   "test_a_body_that_quotes_the_heading_mid_sentence_is_not_a_report"
+   "test_a_body_that_quotes_the_heading_mid_sentence_is_not_a_report",
+   "test_the_terminal_reads_a_lanes_record_from_the_board_at_the_exit",
+   "test_the_terminal_is_handed_the_ready_read_and_nothing_else"
   ],
   "tests/services/test_session_grant_threading.py": [
    "test_stream_carries_the_session_type_to_the_executor",
@@ -5542,7 +5561,8 @@
    "test_the_gate_configuration_is_the_pinned_literal",
    "test_the_configuration_scan_sees_a_new_per_file_row",
    "test_the_project_file_is_the_only_tool_configuration",
-   "test_the_configuration_scan_reads_every_directory_the_walk_reaches"
+   "test_the_configuration_scan_reads_every_directory_the_walk_reaches",
+   "test_the_gate_skips_a_test_only_for_a_gated_mark_it_carries"
   ],
   "tests/tools/test_scratch_scope.py": [
    "test_build_writes_three_lanes_with_their_criteria_and_one_blocker_edge",
