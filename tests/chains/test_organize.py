@@ -2350,6 +2350,36 @@ async def test_a_refusal_with_no_finding_after_the_roster_empties_still_halts(
     assert report.completed_phases == ()
 
 
+async def test_a_groom_refusal_with_no_finding_after_the_roster_empties_still_halts(
+    monkeypatch,
+):
+    """On the pre-approval row, too, a refusal alone keeps the next round.
+
+    Round one grooms the only unlabelled member, whose proposal clears its
+    parent, so round two admits nobody who owes the marker. The dry round
+    before it refused the sibling's criterion child and named no finding, so
+    round two has neither a live finding nor anyone pending, yet that dry
+    round did not hold. Round two verifies again, the refusal stands, and the
+    pass halts at the convergence bound carrying it.
+    """
+    h = owner_harness()
+    owner, board, answered = leaving_member_scope(
+        monkeypatch, groom=True, answer=lambda _payload: REFUSED_CHECK
+    )
+    report = await h.run_owner(owner)
+    assert board.server.issues[LEAVING_MEMBER].parent_id is None
+    assert answered == [DONE_SIBLING_CHECK] * 2
+    halt = report.halt
+    assert halt is not None
+    assert halt.cause == "convergence_exhausted"
+    assert halt.bound.value == halt.bound.rounds_used == 2
+    assert halt.surviving_findings == ()
+    assert [(r.issue_id, r.verdict) for r in halt.admission_results] == [
+        (DONE_SIBLING_CHECK, AdmissionVerdict.NOT_BUILDABLE)
+    ]
+    assert report.completed_phases == ()
+
+
 def description_surface(key):
     return WritableSurface(
         kind=SurfaceKind.ISSUE_DESCRIPTION,
