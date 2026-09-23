@@ -471,7 +471,10 @@ class RalphWorkflowEngine:
         the act recorded is the best commit itself, which is one of the loop
         branch's own commits. A stall exit with no commit records nothing, and
         neither does a lane whose subject is not a tracker one, which has no
-        record at all.
+        record at all. A tracker lane with no record on its board yet — a
+        commit pushed whose record write then failed — is the writer's to
+        skip: it logs the skip and writes nothing, and the delivery after
+        this step still opens the pull request.
 
         The row is bound to the loop branch the best commit was pushed on,
         which is not the run's current loop branch when a later remediation

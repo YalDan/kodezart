@@ -391,7 +391,11 @@ draws a loop branch of its own and one that commits nothing is never pushed, so
 a row bound to the run's last loop branch could name a branch the remote does
 not hold. A stall exit with no commit records nothing, and neither does one
 whose best commit has no known branch. It writes nothing when the record's
-newest act is already that sha.
+newest act is already that sha. A lane with no record at all — a commit pushed
+whose record write then failed — has nothing to re-enter from, so the landing
+act is not written and no first record is composed from it: the writer logs
+`lane_landing_not_recorded` with the lane and the landed sha, and delivery
+proceeds, so the stalled lane's pull request still opens.
 
 `write_cross_offs` is another call. `RalphLoop._evaluate_node` makes it once
 per iteration, after the grade and before the iteration event is emitted, so a

@@ -191,7 +191,7 @@ class TrackerLaneStateWriter:
 
     async def record_landing(
         self, *, lane: LaneBinding, repo_path: str, landed_sha: str
-    ) -> LaneRunState:
+    ) -> LaneRunState | None:
         """Record the landed best iteration as this lane's next commit act.
 
         *landed_sha* is the stall exit's best iteration: where the deliverable
@@ -202,8 +202,14 @@ class TrackerLaneStateWriter:
         re-entry resolving the last act would otherwise resume from the work
         the landing was chosen over (KOD-705).
 
-        The lane's own record must already exist — a landing is no basis for
-        composing a first record, the way a delivery is not — and its head is
+        A landing is no basis for composing a first record, the way a delivery
+        is not. A lane with no record — a commit pushed whose record write
+        then failed reaches this — has nothing to re-enter from, so there is
+        no row for this act to be: nothing is written, the skip is logged as
+        ``lane_landing_not_recorded`` with the lane and *landed_sha*, and
+        ``None`` is returned so the delivery that follows still opens the
+        pull request instead of losing the work to a refusal. On a lane that
+        has its record, the record's head is
         the interval's start: the changeset is ``prior head..landed_sha``,
         read as two commits through the git port and never off a tree, because
         the step that lands has no workspace standing anywhere. The push this
@@ -222,10 +228,13 @@ class TrackerLaneStateWriter:
         except LaneRecordReadError as exc:
             raise self._unreadable(lane_key=lane.lane_key, exc=exc) from exc
         if located is None:
-            raise LaneRecordWriteError(
-                lane_key=lane.lane_key,
+            await self._log.awarning(
+                "lane_landing_not_recorded",
+                lane=lane.lane_key,
+                landed_sha=landed_sha,
                 reason="no record of this lane exists to carry a landing",
             )
+            return None
         prior_comment, prior = located
         if prior.commits and prior.commits[-1].sha == landed_sha:
             return prior
