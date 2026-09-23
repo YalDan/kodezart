@@ -31,6 +31,22 @@ async def terminal_ready(tracker, server, forge):
     )
 
 
+def recording_hunts(monkeypatch, sweep, calls):
+    """Record, per mandate hunt the sweep runs, the *calls* made inside it."""
+    hunted = []
+    hunt = sweep._mandates.observe
+
+    async def observe(request):
+        start = len(calls)
+        try:
+            return await hunt(request)
+        finally:
+            hunted.append((request, calls[start:]))
+
+    monkeypatch.setattr(sweep._mandates, "observe", observe)
+    return hunted
+
+
 @pytest.mark.parametrize("outcome", ["holds", "refuted", "unverifiable"])
 async def test_native_terminal_refutation_reuses_actual_mandate_hunt(
     setup, tracker, server, tracker_writes, monkeypatch, outcome
@@ -76,6 +92,7 @@ async def test_native_terminal_refutation_reuses_actual_mandate_hunt(
 
         monkeypatch.setattr(sweep._terminals, "observe", observe)
         monkeypatch.setattr(tracker, "read_issue", get)
+    hunted = recording_hunts(monkeypatch, sweep, workspace.calls)
     before = tracker_writes()
     result = await sweep.run()
     parent = result.observations[1]
@@ -97,6 +114,14 @@ async def test_native_terminal_refutation_reuses_actual_mandate_hunt(
         assert call["allowed_tools"] == ToolPreset.EVALUATION
         assert terminal.refutation_evidence() in call["prompt"]
         assert terminal.defect_class() in call["prompt"] and HEAD in call["prompt"]
+        # A terminal whose branch head was observed is judged at that head.
+        assert f"<head_sha>{terminal.branch_head}</head_sha>" in call["prompt"]
+        ((_, inside),) = [
+            hunt for hunt in hunted if hunt[0].defect_class == terminal.defect_class()
+        ]
+        assert [call[2] for call in inside if call[0] == "acquire"] == [
+            terminal.branch_head
+        ]
         assert '"criterion_key"' not in terminal.refutation_evidence()
         assert '"verdict"' not in terminal.refutation_evidence()
         assert workspace.calls[-1][0] == "release"
@@ -166,6 +191,7 @@ async def test_a_missing_branch_refutation_carries_a_mandate_verdict_in_each_sta
 
         monkeypatch.setattr(sweep._terminals, "observe", observe)
         monkeypatch.setattr(tracker, "read_issue", get)
+    hunted = recording_hunts(monkeypatch, sweep, git.calls)
     before = tracker_writes()
     parent = (await sweep.run()).observations[1]
 
@@ -195,6 +221,10 @@ async def test_a_missing_branch_refutation_carries_a_mandate_verdict_in_each_sta
         assert "<head_sha></head_sha>" in call["prompt"]
         assert terminal.refutation_evidence() in call["prompt"]
     assert not [call for call in workspace.calls if call[0] == "acquire"]
+    # The headless hunt reads no Git object at all, not only no workspace.
+    ((request, inside),) = hunted
+    assert request.head_sha is None
+    assert inside == []
     assert tracker_writes() == before
 
 
