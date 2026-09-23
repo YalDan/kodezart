@@ -516,7 +516,10 @@ async def test_a_graph_write_naming_a_member_that_joined_late_is_a_finding_on_it
         (finding.issue_id, finding.defect_class)
         for finding in report.halt.surviving_findings
     ] == [(LATE, "undeclared_surface")]
-    assert "issue_graph" in report.halt.surviving_findings[0].evidence
+    assert report.halt.surviving_findings[0].evidence == (
+        f"The groom phase needed issue_graph on {LATE}, which is outside the set "
+        "it declares (issue_description, issue_graph, issue_label_set)."
+    )
     assert edge_writes(board) == []
     assert renewals(board) == []
     assert "needs decision" in board.server.issues[LATE].labels
