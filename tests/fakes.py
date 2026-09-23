@@ -543,8 +543,11 @@ class FakeGitService:
         commit_tree_result: str = "c" * 40,
         push_error: Exception | None = None,
         merge_conflicts: dict[str, tuple[str, ...]] | None = None,
+        missing_objects: set[str] | None = None,
     ) -> None:
         self.calls: list[tuple[str, ...]] = []
+        #: Object names the repository does not hold; every other name is held.
+        self.missing_objects: set[str] = set(missing_objects or ())
         self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
         #: The commit each detached tree was checked out at, by its path.
         #:
@@ -719,6 +722,10 @@ class FakeGitService:
     ) -> bool:
         self.calls.append(("is_ancestor", cwd, ancestor_ref, descendant_ref))
         return (ancestor_ref, descendant_ref) in self._ancestor_pairs
+
+    async def has_object(self, cwd: str, object_sha: str) -> bool:
+        self.calls.append(("has_object", cwd, object_sha))
+        return object_sha not in self.missing_objects
 
     async def remote_branch_sha(
         self,

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import subprocess
 from datetime import timedelta
 from pathlib import Path
 
@@ -33,7 +34,10 @@ from kodezart.types.domain.audit_runtime import (
     AuditPublishedArtifact,
     AuditTerminalPublication,
 )
-from kodezart.types.domain.audit_terminal import AuditTerminalObservation
+from kodezart.types.domain.audit_terminal import (
+    AuditTerminalObservation,
+    TerminalDiscrepancy,
+)
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import OperationConfig
@@ -497,6 +501,61 @@ async def test_a_lane_delivered_through_its_deliverable_branch_is_verified_at_it
     assert len(terminal) == 1, published
     assert terminal[0].report.observation.verdict is AuditVerdict.HOLDS
     assert terminal[0].report.observation.verification_head == head
+
+
+async def test_a_recorded_head_no_remote_ref_holds_is_a_missing_branch(
+    repository, server, tmp_path
+):
+    """The loop branch is gone and its deliverable never received the lane.
+
+    The deliverable branch the record associates with the same run stands on
+    other work, and no remote ref reaches the recorded head, so a fresh audit
+    cache has never seen that commit. Not holding it is an answer: the lane's
+    branch is missing, not unreadable.
+    """
+    remote, author, _observer, prior, head = repository
+    deliverable = "has-ralph-in-its-name"
+    command(author, "checkout", "-q", "-b", deliverable, prior)
+    (author / "check.txt").write_text("current committed contents\n")
+    (author / "elsewhere.txt").write_text("other work\n")
+    command(author, "add", "--all")
+    command(author, "commit", "-qm", "other work")
+    other = command(author, "rev-parse", "HEAD")
+    command(author, "push", "-q", "configured-remote", deliverable)
+    command(author, "push", "-q", "configured-remote", f"{other}:refs/heads/main")
+    command(author, "push", "-q", "configured-remote", "--delete", "ordinary-name")
+    assert command(remote, "branch", "--contains", head) == ""
+    audit, *_ = await build_native_audit(
+        repository,
+        server,
+        tmp_path,
+        gate=PassThroughGate(),
+        pr_head=(deliverable, other),
+        trunk="main",
+    )
+    with pytest.raises(AuditRunIncompleteError) as incomplete:
+        await audit.run(FIXTURE_NOW)
+    scope = incomplete.value.report.scopes[0]
+    terminals = [
+        row
+        for row in scope.raw_observations
+        if isinstance(row, AuditTerminalObservation)
+    ]
+    reasons = [row.reason for row in scope.unavailable]
+    assert len(terminals) == 1, reasons
+    assert terminals[0].issue_key == ROOT
+    assert terminals[0].discrepancies == (TerminalDiscrepancy.NO_BRANCH,)
+    assert terminals[0].verdict is AuditVerdict.REFUTED
+    assert terminals[0].branch_head is None
+    assert terminals[0].verification_head is None
+    assert not any("GitOperationError" in reason for reason in reasons), reasons
+    cache = next((tmp_path / "actual-audit-cache").rglob("objects")).parent
+    assert (
+        subprocess.run(
+            ["git", "cat-file", "-e", head], cwd=cache, check=False
+        ).returncode
+        == 1
+    )
 
 
 @pytest.mark.parametrize("change", ["source", "wrong_identity", "cancel", "head"])

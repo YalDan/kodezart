@@ -285,6 +285,21 @@ async def test_a_deliverable_without_the_recorded_head_leaves_the_branch_missing
     assert result.verification_head is None
 
 
+async def test_a_recorded_head_the_cache_does_not_know_leaves_the_branch_missing(
+    setup, forge
+):
+    reader, git, record, _ = setup
+    delivered(git, forge, record)
+    git.missing_objects.add(record.head_sha)
+    result = await reader.observe(REQUEST)
+    assert result.verdict is AuditVerdict.REFUTED
+    assert result.discrepancies == (TerminalDiscrepancy.NO_BRANCH,)
+    assert result.verification_head is None
+    kinds = [call[0] for call in git.calls]
+    assert kinds.index("fetch") < kinds.index("has_object")
+    assert "is_ancestor" not in kinds
+
+
 async def test_an_absent_deliverable_leaves_the_branch_missing(setup, forge):
     reader, git, record, _ = setup
     delivered(git, forge, record)

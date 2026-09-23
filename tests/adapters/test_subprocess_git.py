@@ -317,6 +317,24 @@ async def test_is_ancestor_raises_on_unknown_ref(
         await git_service.is_ancestor(str(git_repo), "no-such-ref", "HEAD")
 
 
+async def test_has_object_answers_for_a_known_and_an_unknown_full_name(
+    git_service: SubprocessGitService, git_repo: Path
+) -> None:
+    """A held commit → exit 0 → True; a well-formed unknown name → exit 1 → False."""
+    head_sha = await git_service.current_sha(str(git_repo))
+    assert await git_service.has_object(str(git_repo), head_sha) is True
+    assert await git_service.has_object(str(git_repo), "0" * 40) is False
+
+
+@pytest.mark.parametrize("name", ["no-such-ref", "0123"])
+async def test_has_object_raises_when_git_cannot_answer(
+    git_service: SubprocessGitService, git_repo: Path, name: str
+) -> None:
+    """A malformed or abbreviated unknown name exits 128: a failure, not absence."""
+    with pytest.raises(GitOperationError):
+        await git_service.has_object(str(git_repo), name)
+
+
 async def test_remote_branch_sha_returns_sha_when_present(
     git_service: SubprocessGitService, git_repo: Path, tmp_path: Path
 ) -> None:
