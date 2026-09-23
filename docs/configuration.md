@@ -860,8 +860,9 @@ Set required positive `KODEZART_AUDIT__TIMEOUT_SECONDS` and the shared
 actual scheduled tick and periodic full coverage. The scheduler owns timing.
 
 Configured Audit also requires the actual tracker and forge reader, the
-`audit` and `escalation` marker prefixes, the `decision` issue classification,
-and the configured `in_review` workflow state. The audited team must have
+`audit` and `escalation` marker prefixes, the `ruling` marker prefix (protection
+records), the `decision` issue classification, and the configured `in_review`
+workflow state. The audited team must have
 exactly one unstarted workflow state, which is where a refuted criterion is
 reset to; the port refuses the reset otherwise. Partial configuration refuses
 preflight before queue startup. With the audit settings absent, the named
