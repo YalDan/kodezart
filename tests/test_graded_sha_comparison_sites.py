@@ -19,7 +19,10 @@ a class body, a function, a lambda, a comprehension):
   alias, a dotted name one of whose segments is either (the path
   ``attrgetter`` takes), a format field whose dotted or bracketed segments
   include either (``'{0.evidence.graded_sha}'.format(...)``,
-  ``'{gradedSha}'.format(**row)``), a ``match`` class pattern keyed on it, or a
+  ``'{gradedSha}'.format(**row)``), a printf mapping key or a ``Template``
+  placeholder equal to either (``'%(gradedSha)s' % row``,
+  ``Template('$gradedSha').substitute(row)``), a ``match`` class pattern
+  keyed on it, or a
   variable annotated as the Evidence record and used whole (iterated,
   dumped, handed on), which reads every field it has.  The annotation names
   the record by the record's own name or by object: each name in it is
@@ -94,7 +97,7 @@ from importlib.abc import SourceLoader
 from importlib.util import resolve_name
 from inspect import signature
 from pathlib import Path
-from string import Formatter
+from string import Formatter, Template
 from types import ModuleType
 from typing import (
     Annotated,
@@ -294,16 +297,26 @@ def _spells_the_field(text: object) -> bool:
     reads the field through ``getattr``, and ``"{gradedSha}".format(**row)``
     by its alias, so a field name whose dotted or bracketed segments include
     a spelling is a read.
+
+    The other two formatting mini-languages take a mapping's value by the
+    same key: ``"%(gradedSha)s" % row`` through its printf mapping key, and
+    ``Template("$gradedSha").substitute(row)`` through its placeholder,
+    braced or bare.  A key or a placeholder equal to a spelling is a read.
     """
     if not isinstance(text, str):
         return False
     segments = text.split(".")
     return (
-        all(segment.isidentifier() for segment in segments)
-        and not SPELLINGS.isdisjoint(segments)
-    ) or any(
-        not SPELLINGS.isdisjoint(re.split(r"[.\[\]]", field))
-        for field in _format_fields(text)
+        (
+            all(segment.isidentifier() for segment in segments)
+            and not SPELLINGS.isdisjoint(segments)
+        )
+        or any(
+            not SPELLINGS.isdisjoint(re.split(r"[.\[\]]", field))
+            for field in _format_fields(text)
+        )
+        or not SPELLINGS.isdisjoint(re.findall(r"%\((\w+)\)", text))
+        or not SPELLINGS.isdisjoint(Template(text).get_identifiers())
     )
 
 
@@ -1030,6 +1043,11 @@ PLANTS = {
         "_planted = '{0.evidence.graded_sha}'.format(cross_off) != head_sha\n"
     ),
     "a-format-key-by-alias": "_planted = '{gradedSha}'.format(**row) != head_sha\n",
+    "a-percent-key-by-alias": "_planted = '%(gradedSha)s' % row != head_sha\n",
+    "a-template-field-by-alias": (
+        "from string import Template\n"
+        "_planted = Template('$gradedSha').substitute(row) != head_sha\n"
+    ),
     "an-f-string-of-the-field": "_planted = f'{evidence.graded_sha}' != head_sha\n",
 }
 
@@ -1236,11 +1254,64 @@ def test_a_format_field_naming_the_field_is_a_read_alone_and_in_the_audit_observ
         ], block
 
 
+#: The same read of a passed-in row by its alias, written in each of the
+#: three formatting mini-languages, and the printf form of the field itself.
+MAPPING_READS = (
+    "def lapsed(row, head_sha):\n    return '%(gradedSha)s' % row != head_sha\n",
+    "def lapsed(evidence, head_sha):\n"
+    "    return '%(graded_sha)s' % vars(evidence) != head_sha\n",
+    "from string import Template\n"
+    "def lapsed(row, head_sha):\n"
+    "    return Template('$gradedSha').substitute(row) != head_sha\n",
+    "from string import Template\n"
+    "def lapsed(row, head_sha):\n"
+    "    return Template('${graded_sha}').substitute(row) != head_sha\n",
+)
+
+
+def test_a_percent_key_or_a_template_field_naming_the_alias_is_a_read():
+    """A printf key and a Template placeholder each take ``row['gradedSha']``.
+
+    Each is a read alone, and the printf key written into the lane reader
+    and the placeholder written into the audit observation are each a use
+    beyond the row that pins that scope.
+    """
+    for source in MAPPING_READS:
+        assert findings(alone(source), REGISTERED) == [
+            "reader.py::lapsed reads the graded sha and is not registered"
+        ], source
+    site = "domain/lapse.py::held_standing"
+    module = site.partition("::")[0]
+    anchor = "        state = graded_state(\n"
+    assert SHIPPED[module].count(anchor) == 1
+    percent = (
+        'if "%(gradedSha)s" % cross_off.evidence.model_dump(by_alias=True) '
+        "!= head_sha:\n"
+        "    rederive.append(cross_off)\n"
+        "    continue\n"
+    )
+    written = SHIPPED[module].replace(anchor, _indented(_indented(percent)) + anchor)
+    use = (
+        "if '%(gradedSha)s' % cross_off.evidence.model_dump(by_alias=True) "
+        "!= head_sha:\n    ..."
+    )
+    assert findings(readers({module: written}), REGISTERED) == [
+        f"{site} uses it at {[use]} beyond its row, and not at []"
+    ]
+    site = "chains/audit_evidence.py::AuditEvidenceVerifier._observe"
+    block = "_planted = Template('$gradedSha').substitute(row) != head_sha\n"
+    assert findings(
+        planted(site, block, module_lines="from string import Template\n"), REGISTERED
+    ) == [f"{site} uses it at {[block.strip()]} beyond its row, and not at []"]
+
+
 def test_a_format_string_with_no_field_naming_it_is_not_a_read():
     """A log format with no such field, and an f-string of other values, stay out.
 
     An f-string that prints the graded sha is a read already, by the
-    attribute it prints: none of its constant parts spells the field.
+    attribute it prints: none of its constant parts spells the field.  A
+    printf key or a Template placeholder naming the head, a longer name, or
+    another field, stays out with them.
     """
     sources = (
         "def logged(log, evidence, head_sha):\n"
@@ -1250,8 +1321,28 @@ def test_a_format_string_with_no_field_naming_it_is_not_a_read():
         "def said(head_sha):\n    return '{} is the head {head!r:>{width}}'\n",
         "def printed(evidence, head_sha):\n"
         "    return f'moved from {evidence.recorded_sha} to {head_sha}'\n",
+        "def keyed(row, head_sha):\n    return '%(head)s' % row != head_sha\n",
+        "def longer(row, head_sha):\n"
+        "    return '%(graded_sha_note)s' % row != head_sha\n",
+        "from string import Template\n"
+        "def placed(row, head_sha):\n"
+        "    return Template('$head').substitute(row) != head_sha\n",
+        "from string import Template\n"
+        "def other(row, head_sha):\n"
+        "    return Template('$recorded_sha').substitute(row) != head_sha\n",
+        "def priced(head_sha):\n    return f'$ {head_sha} % 3' + '$'\n",
     )
     assert [source for source in sources if alone(source)] == []
+    assert [
+        text
+        for text in ("%(gradedSha)s", "$graded_sha", "${gradedSha}")
+        if not _spells_the_field(text)
+    ] == []
+    assert [
+        text
+        for text in ("%(head)s", "$head", "%(graded_sha_note)s", "$", "%")
+        if _spells_the_field(text)
+    ] == []
     shown = "def shown(evidence):\n    return f'graded at {evidence.graded_sha}'\n"
     assert alone(shown) == {
         "reader.py::shown": Counter({"return f'graded at {evidence.graded_sha}'": 1})
