@@ -103,6 +103,28 @@ async def test_a_deployment_with_an_unadopted_write_path_refuses_to_boot_naming_
     assert logged(capsys.readouterr().out, "tracker_mappings_reconciled") == []
 
 
+async def test_a_boot_refusal_names_every_unadopted_write_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two unadopted writers are both named, in order, in the error and its paths.
+
+    A refusal that named only the first would leave the second to be found
+    on the next boot, so the whole set is the thing asserted.
+    """
+    deployment(monkeypatch)
+    other = "planted/other.py::Writer.publish::post_comment"
+    installed_with(
+        monkeypatch, {"planted/direct.py": DIRECT, "planted/other.py": DIRECT}
+    )
+    with pytest.raises(UnverifiedWritePathError) as refused:
+        async with lifespan(create_app()):
+            pass
+
+    assert refused.value.paths == (DIRECT_PATH, other)
+    for path in (DIRECT_PATH, other):
+        assert path in str(refused.value)
+
+
 async def test_a_write_path_declared_derived_boots(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
