@@ -44,8 +44,10 @@ class ScopeWalkObservation(CamelCaseModel):
     ready set beside entries here says which lanes stopped being offered and
     which of them were never offered at all.
 
-    ``unreachable_criteria`` names the open criteria the scope's own filter
-    cannot address; the walk still fires the lanes that owe them.
+    ``unreachable_criteria`` names the open criteria whose own issues the
+    scope's filter never carried, under any member, approved or not, blocked
+    or not; the walk fires only a lane that is ready (approved and unblocked)
+    for them.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

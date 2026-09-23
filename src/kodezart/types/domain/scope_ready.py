@@ -32,9 +32,11 @@ class UnreachableCriterion(CamelCaseModel):
     """One criterion a lane owes whose own issue the scope's filter misses.
 
     Unreachability is not ownership: the criterion sits inside the lane's
-    subtree, so it is the lane's work and the lane is fired for it.  What the
-    filter decides is only whether the scope can ADDRESS that issue in its own
-    right, which is what ``reason`` records.
+    subtree, so it is the lane's work.  It is named under any member, approved
+    or not, blocked or not, and only a lane that is ready (approved and
+    unblocked) is fired for it.  What the filter decides is only whether the
+    scope can ADDRESS that issue in its own right, which is what ``reason``
+    records.
 
     ``container`` is the project id or the milestone key the issue sits in
     instead, present exactly for the two ``OTHER_*`` reasons.  It defaults to
