@@ -39,6 +39,15 @@ from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src"
 PACKAGE = "kodezart"
 VENDOR_PACKAGE = f"{PACKAGE}.adapters"
+#: The packages a port may name a type from: the domain values, the domain
+#: arithmetic, and the core the ports themselves live in.  Named as what is
+#: admitted, so configuration, composition, the API and every other layer of
+#: this package outside the domain is refused as surely as an adapter.
+DOMAIN_VOCABULARY = (
+    f"{PACKAGE}.types.domain.",
+    f"{PACKAGE}.domain.",
+    f"{PACKAGE}.core.",
+)
 #: The layers that sit inside the ports: the domain values, the domain
 #: arithmetic, the chains that compose them, and the orchestration around
 #: them (the services, and the core the ports live in). Directories, not
@@ -55,12 +64,13 @@ def _admitted(module: str) -> bool:
 
     The domain's own vocabulary and the standard library, nothing else:
     stated as what is admitted rather than as one forbidden prefix, so a
-    vendor SDK imported straight into the port is refused as surely as an
+    vendor SDK imported straight into the port, or a connection setting
+    from this package's configuration, is refused as surely as an
     adapter's own type.
     """
     if module == "builtins" or module.partition(".")[0] in sys.stdlib_module_names:
         return True
-    return module.startswith(f"{PACKAGE}.") and not _names_vendor(module)
+    return module.startswith(DOMAIN_VOCABULARY)
 
 
 def _protocol_classes(module: ModuleType) -> list[type]:
@@ -179,7 +189,9 @@ def port_findings(module: ModuleType) -> PortFindings:
     Resolving a member and walking its leaves happen inside the one
     wrapper that names the member, so a name no reader can resolve —
     in a signature, in a type alias's value, or in text that does not
-    parse — is reported against that member, never skipped.
+    parse — is reported against that member, never skipped.  Only a
+    member that resolves to at least one annotation is recorded as
+    resolved, so a count of them counts annotated members.
     """
     classes = _protocol_classes(module)
     resolved: dict[tuple[str, str], set[object]] = {}
@@ -189,14 +201,18 @@ def port_findings(module: ModuleType) -> PortFindings:
         for name, resolve in _own_members(cls):
             member = f"{cls.__name__}.{name}"
             try:
+                annotations = [
+                    annotation for hints in resolve() for annotation in hints.values()
+                ]
                 leaves = [
                     leaf
-                    for hints in resolve()
-                    for annotation in hints.values()
+                    for annotation in annotations
                     for leaf in _leaves(annotation, set())
                 ]
             except (NameError, TypeError, AttributeError, SyntaxError) as error:
                 unresolvable.append(f"{member}: {error}")
+                continue
+            if not annotations:
                 continue
             types = resolved.setdefault((cls.__name__, name), set())
             for leaf, metadata in leaves:
@@ -219,8 +235,10 @@ def test_no_port_member_annotation_resolves_to_a_vendor_module() -> None:
     Every annotation is RESOLVED, not read as text, so an alias, a union
     member, a generic argument, ``Annotated`` metadata or a type alias's
     value is found wherever it sits, and every leaf must come from the
-    standard library or from this package outside its adapters: a vendor
-    SDK's type is refused as surely as an adapter's own. ``pydantic`` is
+    standard library or from this package's domain vocabulary (its domain
+    types, its domain arithmetic and its core): a vendor SDK's type, or a
+    type from any other layer of this package, is refused as surely as an
+    adapter's own. ``pydantic`` is
     admitted only as ``Annotated`` field metadata. A name that does not
     resolve is a failure naming the member, never a skipped member: an
     annotation nobody can resolve is one nobody can check.
@@ -245,6 +263,7 @@ import httpx
 
 from kodezart.adapters.linear.markers import LinearMarkers
 from kodezart.adapters.linear.wire import LinearIssueWire
+from kodezart.config.tracker import TrackerSettings
 from kodezart.types.domain.surface import SurfaceLease
 
 if TYPE_CHECKING:
@@ -259,6 +278,8 @@ class Planted(Protocol):
     def listed(self) -> Sequence[LinearIssueWire]: ...
 
     def fetched(self) -> httpx.Response: ...
+
+    def connection(self) -> TrackerSettings: ...
 
     def clean(self, *, lease: SurfaceLease) -> SurfaceLease | None: ...
 
@@ -278,8 +299,9 @@ def test_the_walk_reports_every_planted_shape_and_nothing_clean(
 
     A quoted name imported only for the type checker, an adapter type as
     a generic argument, a generic protocol's member, an annotated
-    attribute and a vendor SDK's type are each reported against their own
-    member; the one clean member is not.
+    attribute, a vendor SDK's type and a type from this package's
+    configuration are each reported against their own member; the one
+    clean member is not.
     """
     name = "planted_port_probe"
     path = tmp_path / f"{name}.py"
@@ -301,6 +323,7 @@ def test_the_walk_reports_every_planted_shape_and_nothing_clean(
         "Planted.wire",
         "Planted.listed",
         "Planted.fetched",
+        "Planted.connection",
         "GenericPlanted.read",
     }
     assert any("(httpx)" in entry for entry in found.foreign)
