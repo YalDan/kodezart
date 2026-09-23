@@ -11,12 +11,20 @@ clone or an origin, so the lane graph is inert and every other collaborator the
 walker could reach refuses: a subject that went further would fail loudly.
 """
 
+import ast
 import asyncio
+import inspect
+import sys
+from types import ModuleType
 from typing import NoReturn
 
 from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.composition.scope_runtime import build_scope_runtime
+from kodezart.config.app import AppConfig
+from kodezart.domain.fire_plateau import fire_plateaued
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.services.lane_entry import LaneEntryReader
+from kodezart.services.scope_runtime import PLATEAU_BOUND, ScopeWorkflowEngine
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import ExclusionClause
 from kodezart.types.domain.operation import RepoEntry, ScopeLabel
@@ -332,3 +340,55 @@ async def test_dispatch_target_resolution_reads_no_lane_body(monkeypatch) -> Non
         for failure in observations[-1].failed_lanes
         if failure.error.error_kind == FireNotUnderTestError.__name__
     ] == ["A"]
+
+
+def module_of(value: object) -> ModuleType:
+    """The module an object was defined in, located through the object itself."""
+    return sys.modules[value.__module__]
+
+
+def config_reads(module: ModuleType) -> tuple[set[str], set[str]]:
+    """What *module* imports from ``kodezart.config``, and the settings it names.
+
+    The second set is every attribute name the module spells that is a field
+    of ``AppConfig``, read from the parse.
+    """
+    tree = ast.parse(inspect.getsource(module))
+    imported = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and (node.module or "").split(".")[:2] == ["kodezart", "config"]
+    } | {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name.split(".")[:2] == ["kodezart", "config"]
+    }
+    named = {
+        node.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr in AppConfig.model_fields
+    }
+    return imported, named
+
+
+def test_the_walker_and_its_plateau_read_no_setting() -> None:
+    """How many barren fires rest a lane is a constant, never an operator's knob.
+
+    The walker module that holds the bound and the module that reads the
+    plateau import nothing from the configuration package and name no
+    application setting. The composition that builds the walker reads exactly
+    the settings it reads now; one more there is a setting reaching the walk,
+    and it has to arrive in this literal with the consumer that reads it.
+    """
+    engine = module_of(ScopeWorkflowEngine)
+    # The bound is the engine module's own constant, read where it is used.
+    assert engine.PLATEAU_BOUND == PLATEAU_BOUND
+    for module in (engine, module_of(fire_plateaued)):
+        assert config_reads(module) == (set(), set()), module.__name__
+    assert config_reads(module_of(build_scope_runtime))[1] == {
+        "git",
+        "union_check_step_timeout_seconds",
+    }
