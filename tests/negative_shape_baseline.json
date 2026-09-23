@@ -5992,6 +5992,7 @@
   "tests/tracker/test_fire_spec_reader.py": [
    "test_empty_spec_refuses_but_ordinary_criteria_read_stays_empty",
    "test_an_abandoned_criterion_without_a_check_neither_joins_nor_refuses",
+   "test_a_counting_criterion_without_a_check_refuses_at_the_spec_read",
    "test_a_subtree_of_abandoned_criteria_refuses_as_empty_and_writes_nothing",
    "test_failed_subject_lookup_is_not_a_successful_empty_spec",
    "test_spec_captures_opaque_child_keys_verbatim_body_and_subject_version",
