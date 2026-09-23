@@ -70,6 +70,16 @@ def test_canceled_and_duplicate_are_excluded_on_state_alone_and_named_beside_the
         owed=(owed,), excluded=("canceled", "duplicate")
     )
 
+    prose_owed = criterion("prose-owed", body="Superseded by X-1")
+    assert gap.gap_membership(prose_owed) is GapMembership.OWED
+    assert gap.compute_gap([prose_owed]) == CriterionGap(
+        owed=(prose_owed,), excluded=()
+    )
+    prose_done = criterion(
+        "prose-done", WorkflowStateKind.COMPLETED, body="Superseded by X-1"
+    )
+    assert gap.gap_membership(prose_done) is GapMembership.DISCHARGED
+
     assert set(inspect.signature(gap.gap_membership).parameters) == {"criterion"}
     assert set(inspect.signature(gap.compute_gap).parameters) == {"criteria"}
 
@@ -175,10 +185,6 @@ def test_gap_module_has_only_pure_dependencies_and_no_fallback_state_arm():
         "ValueError",
         "len",
         "tuple",
-        "list",
-        "dict",
-        "set",
-        "frozenset",
         "bool",
         "all",
         "any",
