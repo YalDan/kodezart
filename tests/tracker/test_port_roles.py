@@ -33,9 +33,10 @@ the roles it takes in its annotations and nothing wider: the whole port is
 named only by the entry point and the composition root, which hold one
 adapter and hand it to role-typed parameters; every role that declares a
 member, among those a module takes, is one it calls a member of on the
-binding it holds, or hands that binding to an in-tree callee whose own
-parameter takes it; no role-typed parameter
-has a default or a union beside it; no module outside the adapters and the
+binding it holds, or hands that binding to the one in-tree definition the
+call reaches, through the module's imports and its own definitions or the
+class's MRO, whose own parameter takes it; no role-typed parameter has a
+default or a union beside it; no module outside the adapters and the
 root imports a vendor adapter; and every role is taken, itself or composed
 into another, by a module the entry point reaches, but for the authorship
 read KOD-390 wires and the roles only an unwired consumer takes. Each
@@ -1145,6 +1146,75 @@ PLANTED_CREDITS = {
         "def held(*, tracker: {idle}) -> {idle}:\n    return tracker\n",
         "held(tracker): {idle}",
     ),
+    "an idle role under a name another function hands to its role": (
+        "def helper(*, tracker: {idle}) -> None:\n    tracker.{idle_member}()\n\n\n"
+        "def first(*, tracker: {idle}) -> None:\n    helper(tracker=tracker)\n\n\n"
+        "def held(*, tracker: {idle}) -> {idle}:\n    return tracker\n",
+        "held(tracker): {idle}",
+    ),
+    "a wider binding handed only to a narrower parameter": (
+        "def take(*, reader: {part_role}) -> None:\n    reader.{member}()\n\n\n"
+        "def hold(*, reader: {wider}) -> None:\n    take(reader=reader)\n",
+        "hold(reader): {idle}",
+    ),
+    "an idle role handed only to an unresolved callee": (
+        "def hold(*, reader: {idle}) -> None:\n    print(reader)\n",
+        "hold(reader): {idle}",
+    ),
+    "an idle role handed by keyword beside a parameter that takes it": (
+        "def take(*, other: {idle}, reader: {part_role}) -> None:\n"
+        "    other.{idle_member}()\n    reader.{member}()\n\n\n"
+        "def hold(*, reader: {idle}) -> None:\n"
+        "    take(other=None, reader=reader)\n",
+        "hold(reader): {idle}",
+    ),
+    "an idle role handed by position beside a parameter that takes it": (
+        "def take(reader: {part_role}, other: {idle}) -> None:\n"
+        "    reader.{member}()\n    other.{idle_member}()\n\n\n"
+        "def hold(*, reader: {idle}) -> None:\n    take(reader, None)\n",
+        "hold(reader): {idle}",
+    ),
+    "a class field never read": (
+        "@dataclass\nclass Holder:\n    reader: {idle}\n",
+        "Holder.reader: {idle}",
+    ),
+    "an attribute of the same name read in another class": (
+        "class Holder:\n"
+        "    def __init__(self, *, reader: {idle}) -> None:\n"
+        "        self._reader = reader\n\n\n"
+        "class Other:\n"
+        "    def __init__(self, *, reader: {idle}) -> None:\n"
+        "        self._reader = reader\n\n"
+        "    def use(self) -> None:\n        self._reader.{idle_member}()\n",
+        "Holder.__init__(reader): {idle}",
+    ),
+    "an idle role forwarded through super().__init__": (
+        "class Base:\n"
+        "    def __init__(self, *, tracker: object) -> None:\n"
+        "        self._held = tracker\n\n\n"
+        "class Forwarding(Base):\n"
+        "    def __init__(self, *, tracker: {idle}) -> None:\n"
+        "        super().__init__(tracker=tracker)\n\n\n"
+        "class Using:\n"
+        "    def __init__(self, *, tracker: {idle}) -> None:\n"
+        "        tracker.{idle_member}()\n\n"
+        "    def use(self, tracker: {idle}) -> None:\n"
+        "        tracker.{idle_member}()\n\n\n"
+        "class Passing(Using):\n"
+        "    def __init__(self, *, tracker: {idle}) -> None:\n"
+        "        super().__init__(tracker=tracker)\n\n"
+        "    def again(self, *, tracker: {idle}) -> None:\n"
+        "        self.use(tracker=tracker)\n\n"
+        "    def through(self, *, tracker: {idle}) -> None:\n"
+        "        Using.use(self, tracker)\n",
+        "Forwarding.__init__(tracker): {idle}",
+    ),
+    "an idle role handed to a name defined twice": (
+        "def take(*, tracker: {idle}) -> None:\n    tracker.{idle_member}()\n\n\n"
+        "def take(*, tracker: {idle}) -> None:\n    tracker.{idle_member}()\n\n\n"
+        "def hold(*, tracker: {idle}) -> None:\n    take(tracker=tracker)\n",
+        "hold(tracker): {idle}",
+    ),
 }
 
 
@@ -1175,12 +1245,11 @@ def test_a_role_the_module_does_not_use_is_reported_by_the_credit_clause(form):
         adapter_importers(sources),
     )
 
+    reported = uncredited_roles(sources)[planted_path]
+
     assert [planted_path in report for report in reports].count(True) == 1
-    assert expected.format(**fields) in uncredited_roles(sources)[planted_path]
-    assert not any(
-        entry.startswith(("helper(", "first(", "hold(other)"))
-        for entry in uncredited_roles(sources)[planted_path]
-    )
+    assert expected.format(**fields) in reported
+    assert {entry.split(":", 1)[0] for entry in reported} == {expected.split(":", 1)[0]}
 
 
 def test_a_role_nothing_in_the_run_takes_is_reported():

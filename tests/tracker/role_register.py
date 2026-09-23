@@ -835,6 +835,7 @@ def final_name(node: ast.expr) -> str | None:
     return None
 
 
+@cache
 def enclosing(text: str) -> dict[ast.AST, ast.AST]:
     """Each node of *text* mapped to the node whose body holds it."""
     return {
@@ -854,55 +855,272 @@ class Receiver:
     scope: Mapping[str, object] = dataclasses.field(default_factory=dict, compare=False)
 
 
-@cache
-def receivers(sources: tuple[tuple[str, str], ...]) -> dict[str, list[list[Receiver]]]:
-    """Every in-tree callee by the name it is called under, with what it takes.
+#: A function, method or class a call can reach, as a node of its module.
+Defined = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
 
-    A function or method is called by its own name; a class by its name,
-    taking its constructor's parameters or, for a class with none, its
-    annotated fields in order. A method's first parameter is its receiver
-    and is not one of them.
+
+@dataclass(frozen=True)
+class Definition:
+    """A callee's own definition: the module it is in and its node there."""
+
+    path: str
+    text: str
+    node: Defined
+
+
+def decorated(node: Defined, name: str) -> bool:
+    """Whether *node* carries the decorator *name*, bare or qualified."""
+    return any(final_name(item) == name for item in node.decorator_list)
+
+
+def plain_method(definition: Definition) -> bool:
+    """Whether *definition* is a method that takes its receiver first."""
+    node = definition.node
+    return (
+        isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and isinstance(enclosing(definition.text).get(node), ast.ClassDef)
+        and not decorated(node, "staticmethod")
+        and not decorated(node, "classmethod")
+    )
+
+
+def taken_by(definition: Definition) -> list[Receiver]:
+    """What *definition* takes when it is called.
+
+    A function takes its parameters; a method takes them without its
+    receiver, which a static method does not have; a class takes its own
+    constructor's parameters or, with none, its annotated fields in order.
     """
-    found: dict[str, list[list[Receiver]]] = {}
-    for path, text in sources:
-        parent = enclosing(text)
-        scope = namespace(path, text)
-        for node in nodes(text):
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                arguments = node.args
-                positional = [*arguments.posonlyargs, *arguments.args]
-                if isinstance(parent.get(node), ast.ClassDef) and positional:
-                    positional = positional[1:]
-                taken = [
-                    Receiver(argument.arg, index, argument.annotation, scope)
-                    for index, argument in enumerate(positional)
-                ] + [
-                    Receiver(argument.arg, None, argument.annotation, scope)
-                    for argument in arguments.kwonlyargs
-                ]
-                found.setdefault(node.name, []).append(taken)
-                if node.name == "__init__" and isinstance(
-                    owner := parent.get(node), ast.ClassDef
-                ):
-                    found.setdefault(owner.name, []).append(taken)
-            elif isinstance(node, ast.ClassDef) and not any(
-                isinstance(item, ast.FunctionDef) and item.name == "__init__"
+    scope = namespace(definition.path, definition.text)
+    node = definition.node
+    if isinstance(node, ast.ClassDef):
+        constructor = next(
+            (
+                item
                 for item in node.body
-            ):
-                fields = [
-                    item
-                    for item in node.body
-                    if isinstance(item, ast.AnnAssign)
-                    and isinstance(item.target, ast.Name)
+                if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+                and item.name == "__init__"
+            ),
+            None,
+        )
+        if constructor is None:
+            fields = [
+                item
+                for item in node.body
+                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+            ]
+            return [
+                Receiver(field.target.id, index, field.annotation, scope)
+                for index, field in enumerate(fields)
+                if isinstance(field.target, ast.Name)
+            ]
+        node = constructor
+    arguments = node.args
+    positional = [*arguments.posonlyargs, *arguments.args]
+    method = isinstance(enclosing(definition.text).get(node), ast.ClassDef)
+    if method and not decorated(node, "staticmethod") and positional:
+        positional = positional[1:]
+    return [
+        Receiver(argument.arg, index, argument.annotation, scope)
+        for index, argument in enumerate(positional)
+    ] + [
+        Receiver(argument.arg, None, argument.annotation, scope)
+        for argument in arguments.kwonlyargs
+    ]
+
+
+@cache
+def defined_as(text: str, name: str) -> tuple[Defined, ...]:
+    """Every function, method or class *text* defines under *name*, at any depth."""
+    return tuple(
+        node
+        for node in nodes(text)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+        and node.name == name
+    )
+
+
+def enclosing_class(text: str, node: ast.AST) -> ast.ClassDef | None:
+    """The class whose body holds *node*, at any depth, if one does."""
+    parent = enclosing(text)
+    while node in parent:
+        node = parent[node]
+        if isinstance(node, ast.ClassDef):
+            return node
+    return None
+
+
+class Callees:
+    """The one definition a call reaches in the tree, or none.
+
+    A bare name is a definition the module makes itself or an object its
+    namespace binds; ``self.<m>`` and ``super().<m>`` are looked up through
+    the enclosing class's MRO, and ``Base.<m>`` through ``Base``'s; a
+    module's attribute is the object it holds. A name with more than one
+    candidate definition reaches none, and so does anything else.
+    """
+
+    def __init__(self, sources: Mapping[str, str]) -> None:
+        self.sources = sources
+
+    def definition_of(self, value: object) -> Definition | None:
+        """The definition in the tree of a live function or class, if it has one."""
+        module = getattr(value, "__module__", None)
+        qualname = getattr(value, "__qualname__", None)
+        if not isinstance(module, str) or not isinstance(qualname, str):
+            return None
+        if not module.startswith(f"{PACKAGE}."):
+            return None
+        relative = module.split(".", 1)[1].replace(".", "/")
+        path = next(
+            (
+                candidate
+                for candidate in (f"{relative}.py", f"{relative}/__init__.py")
+                if candidate in self.sources
+            ),
+            None,
+        )
+        if path is None:
+            return None
+        text = self.sources[path]
+        body: list[ast.stmt] = ast.parse(text).body
+        found: Defined | None = None
+        for part in qualname.split("."):
+            if part == "<locals>":
+                continue
+            found = next(
+                (
+                    node
+                    for node in body
+                    if isinstance(node, Defined) and node.name == part
+                ),
+                None,
+            )
+            if found is None:
+                return None
+            body = found.body
+        return None if found is None else Definition(path, text, found)
+
+    def named(self, path: str, text: str, name: str) -> list[Definition | object]:
+        """What a bare *name* is in the module: its own definitions, or an object."""
+        local = defined_as(text, name)
+        if local:
+            return [Definition(path, text, node) for node in local]
+        value = namespace(path, text).get(name, UNBOUND)
+        if value is UNBOUND or isinstance(value, Alias):
+            return []
+        return [value]
+
+    def as_definitions(self, found: list[Definition | object]) -> list[Definition]:
+        """Each of *found* as a definition in the tree; an object outside it is none."""
+        out: list[Definition] = []
+        for item in found:
+            if isinstance(item, Definition):
+                out.append(item)
+            elif (definition := self.definition_of(item)) is not None:
+                out.append(definition)
+        return out
+
+    def chain(self, definition: Definition) -> list[Definition | type]:
+        """A class and the classes it inherits from, in method-resolution order.
+
+        A class the module imports is read off its live MRO; a class defined
+        in text only is followed through its own bases, depth first.
+        """
+        node = definition.node
+        live = namespace(definition.path, definition.text).get(node.name)
+        if isinstance(live, type) and self.definition_of(live) == definition:
+            return [self.definition_of(cls) or cls for cls in live.__mro__]
+        order: list[Definition | type] = [definition]
+        if not isinstance(node, ast.ClassDef):
+            return order
+        for base in node.bases:
+            found = self.resolved(base, definition.path, definition.text)
+            if len(found) != 1:
+                continue
+            (item,) = found
+            if isinstance(item, Definition) and isinstance(item.node, ast.ClassDef):
+                order.extend(self.chain(item))
+            elif isinstance(item, type):
+                order.extend(self.definition_of(cls) or cls for cls in item.__mro__)
+        return order
+
+    def resolved(
+        self, expression: ast.expr, path: str, text: str
+    ) -> list[Definition | object]:
+        """What a name or a dotted name is in the module, by definition or object."""
+        if isinstance(expression, ast.Name):
+            return self.named(path, text, expression.id)
+        if isinstance(expression, ast.Attribute):
+            owner = self.resolved(expression.value, path, text)
+            if len(owner) != 1:
+                return []
+            (item,) = owner
+            if isinstance(item, ModuleType):
+                value = getattr(item, expression.attr, UNBOUND)
+                return [] if value is UNBOUND else [value]
+        return []
+
+    def member(self, classes: list[Definition | type], name: str) -> Definition | None:
+        """The first definition of *name* along *classes*, if it is in the tree."""
+        for item in classes:
+            if isinstance(item, Definition):
+                if not isinstance(item.node, ast.ClassDef):
+                    continue
+                own = [
+                    node
+                    for node in item.node.body
+                    if isinstance(node, Defined) and node.name == name
                 ]
-                found.setdefault(node.name, []).append(
-                    [
-                        Receiver(field.target.id, index, field.annotation, scope)
-                        for index, field in enumerate(fields)
-                        if isinstance(field.target, ast.Name)
-                    ]
-                )
-    return found
+                if len(own) > 1:
+                    return None
+                if own:
+                    return Definition(item.path, item.text, own[0])
+            elif name in vars(item):
+                return None
+        return None
+
+    def reached(
+        self, call: ast.Call, path: str, text: str
+    ) -> tuple[Definition, int] | None:
+        """The one definition *call* reaches, and how many positionals it skips."""
+        func = call.func
+        if isinstance(func, ast.Name):
+            found = self.as_definitions(self.named(path, text, func.id))
+            return (found[0], 0) if len(found) == 1 else None
+        if not isinstance(func, ast.Attribute):
+            return None
+        receiver = func.value
+        owner = enclosing_class(text, call)
+        if (
+            isinstance(receiver, ast.Call)
+            and isinstance(receiver.func, ast.Name)
+            and receiver.func.id == "super"
+            and owner is not None
+        ):
+            classes = self.chain(Definition(path, text, owner))[1:]
+            found_member = self.member(classes, func.attr)
+            return None if found_member is None else (found_member, 0)
+        if isinstance(receiver, ast.Name) and receiver.id == "self" and owner:
+            classes = self.chain(Definition(path, text, owner))
+            found_member = self.member(classes, func.attr)
+            return None if found_member is None else (found_member, 0)
+        target = self.resolved(receiver, path, text)
+        if len(target) != 1:
+            return None
+        (item,) = target
+        if isinstance(item, ModuleType):
+            found = self.as_definitions([getattr(item, func.attr, UNBOUND)])
+            return (found[0], 0) if len(found) == 1 else None
+        classes_of: Definition | None = (
+            item if isinstance(item, Definition) else self.definition_of(item)
+        )
+        if classes_of is None or not isinstance(classes_of.node, ast.ClassDef):
+            return None
+        found_member = self.member(self.chain(classes_of), func.attr)
+        if found_member is None:
+            return None
+        return found_member, 1 if plain_method(found_member) else 0
 
 
 @dataclass(frozen=True)
@@ -1136,10 +1354,11 @@ def members_called_on(binding: Binding, text: str) -> frozenset[str]:
 
 def credited(
     binding: Binding,
+    path: str,
     text: str,
     register: str,
     known: frozenset[str],
-    callees: Mapping[str, list[list[Receiver]]],
+    callees: Callees,
 ) -> frozenset[str]:
     """The declaring roles *binding* is credited with, by a call or a hand-off.
 
@@ -1148,9 +1367,9 @@ def credited(
     its attribute on ``self`` inside the class that keeps it, or the same
     attribute read off another receiver anywhere in the module. A hand-off
     of the binding credits the role the receiving parameter is annotated
-    with and every role that role composes, when the callee resolves in the
-    tree by name, a keyword matched by parameter name and a positional
-    argument by index; one that does not resolve credits nothing.
+    with and every role that role composes, when the call reaches exactly
+    one definition in the tree, a keyword matched by parameter name and a
+    positional argument by index; one that reaches none credits nothing.
     """
     own = own_declarations(register)
     held = holds(binding)
@@ -1164,22 +1383,26 @@ def credited(
         handed = [(index, None, value) for index, value in enumerate(call.args)] + [
             (None, keyword.arg, keyword.value) for keyword in call.keywords
         ]
+        if not any(held(value) for _, _, value in handed):
+            continue
+        reached = callees.reached(call, path, text)
+        if reached is None:
+            continue
+        definition, skipped = reached
+        taken = taken_by(definition)
         for index, keyword, value in handed:
             if not held(value):
                 continue
-            for taken in callees.get(final_name(call.func) or "", ()):
-                for receiver in taken:
-                    matches = (
-                        receiver.name == keyword
-                        if keyword is not None
-                        else receiver.position == index
-                    )
-                    if not matches or receiver.annotation is None:
-                        continue
-                    for role in (
-                        resolved_names(receiver.annotation, receiver.scope) & known
-                    ):
-                        found.update({role, *composed(register, role)})
+            for receiver in taken:
+                matches = (
+                    receiver.name == keyword
+                    if keyword is not None
+                    else index is not None and receiver.position == index - skipped
+                )
+                if not matches or receiver.annotation is None:
+                    continue
+                for role in resolved_names(receiver.annotation, receiver.scope) & known:
+                    found.update({role, *composed(register, role)})
     return frozenset(found)
 
 
@@ -1209,7 +1432,7 @@ def uncredited_roles(
     register = port_module_text() if register is None else register
     known = roles(register)
     declaring = declaring_roles(register)
-    callees = receivers(tuple(sorted(sources.items())))
+    callees = Callees(sources)
     report: dict[str, tuple[str, ...]] = {}
     for path, text in sorted(sources.items()):
         if not consumer(path):
@@ -1220,7 +1443,7 @@ def uncredited_roles(
             for role in (
                 ({binding.role} | composed(register, binding.role)) & declaring
             )
-            - carried(credited(binding, text, register, known, callees), register)
+            - carried(credited(binding, path, text, register, known, callees), register)
         )
         if idle:
             report[path] = tuple(idle)
