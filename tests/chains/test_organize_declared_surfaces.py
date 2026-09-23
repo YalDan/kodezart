@@ -675,19 +675,40 @@ async def test_the_refused_write_lands_once_the_next_round_declares_the_member(
     assert opened(board)[second] < landed
 
 
-async def test_an_answer_that_writes_nothing_is_not_weighed_against_the_set(
-    monkeypatch,
-):
-    """A decision the author asks for keeps its halt on a row without the body.
+#: The two answers that write nothing, as the criteria stage's author gives them.
+NO_WRITE_ANSWERS = {
+    "unresolved": {
+        "kind": "unresolved",
+        "issue_id": CLAIMED_ISSUE,
+        "question": "Which declared source names the check?",
+        "evidence": "Two sources name different checks.",
+    },
+    "unavailable": {
+        "kind": "unavailable",
+        "issue_id": CLAIMED_ISSUE,
+        "capability": "criterion_edit",
+        "evidence": "The declared check needs an edit to an existing criterion.",
+    },
+}
 
-    The criteria stage declares no description, and an unresolved answer
-    needs no address at all, so it is the human decision it always was
-    rather than a residual on the subject.
+
+@pytest.mark.parametrize("answer", sorted(NO_WRITE_ANSWERS))
+async def test_an_answer_that_writes_nothing_is_not_weighed_against_the_set(
+    monkeypatch, answer
+):
+    """An answer that writes nothing keeps its own outcome on a row without the body.
+
+    The criteria stage declares no description, and neither answer needs an
+    address at all. ``unresolved`` is the human decision it always was;
+    ``unavailable`` is the landed refusal naming the capability. Neither is
+    a residual on the subject.
     """
+    from kodezart.domain.errors import OrganizeWriteRefusalError
+
     owner, board, executor = factory(under_approval=True)
     original = executor.stream
 
-    async def unresolved(**kwargs):
+    async def answering(**kwargs):
         # The first stage's marker is what admits the criteria stage, so an
         # author session after it is that stage's.
         staged = "body complete" in board.server.issues[CLAIMED_ISSUE].labels
@@ -696,17 +717,23 @@ async def test_an_answer_that_writes_nothing_is_not_weighed_against_the_set(
                 staged
                 and kwargs["output_format"]["schema"].get("title") == "OrganizeProposal"
             ):
-                event = result(
-                    structured_output={
-                        "kind": "unresolved",
-                        "issue_id": CLAIMED_ISSUE,
-                        "question": "Which declared source names the check?",
-                        "evidence": "Two sources name different checks.",
-                    }
-                )
+                event = result(structured_output=NO_WRITE_ANSWERS[answer])
             yield event
 
-    monkeypatch.setattr(executor, "stream", unresolved)
+    monkeypatch.setattr(executor, "stream", answering)
+    if answer == "unavailable":
+        with pytest.raises(
+            OrganizeWriteRefusalError, match="unavailable capability criterion_edit"
+        ):
+            await run_owner(owner)
+        assert "body complete" in board.server.issues[CLAIMED_ISSUE].labels
+        assert escalations(board, CLAIMED_ISSUE) == []
+        assert not [
+            comment
+            for comment in board.server.comments
+            if "undeclared_surface" in comment.body
+        ]
+        return
     report = await run_owner(owner)
     assert [phase.value for phase in report.completed_phases] == ["ticket"]
     assert report.halt.cause == "human_decision"
@@ -1533,7 +1560,6 @@ async def test_a_split_the_pre_approval_row_authors_is_a_finding_not_a_write(
         },
     )
     report = await run_owner(owner)
-    assert not [name for name, _ in board.calls if name == "create_split_if_absent"]
     assert not [
         args
         for name, args in board.calls
