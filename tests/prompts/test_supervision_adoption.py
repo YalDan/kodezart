@@ -14,8 +14,19 @@ scan window beside the base's own fails here instead of passing quietly.
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from tests.prompts.sets import OPUS_SET
+from tests.prompts.test_supervision_block_adoption import (
+    ADOPTED,
+    AUTHORITY_GITHUB_RULE,
+    BOUNDARY_LINE,
+    template_section,
+)
 
 GROOMING = default_sets_root() / OPUS_SET / "grooming_pass.md"
+
+#: What the spent Scan Window row would write: a window bound, a marker, a
+#: checkpoint advance.  The base window has none of the first two and its
+#: status update is the checkpoint, so added text states none of them.
+SPENT_ROW_TERMS: tuple[str, ...] = ("upper bound", "marker", "checkpoint")
 
 
 def template() -> str:
@@ -23,8 +34,20 @@ def template() -> str:
 
 
 def test_scan_window_row_is_spent_and_the_files_own_rule_stands_alone():
-    """Spent: the base already rules the window, so nothing is written for it."""
+    """Spent: the base already rules the window, so nothing is written for it.
+
+    The text this change adds, the nine adopted sections and the two amended
+    base lines, states no window bound and no marker or checkpoint advance,
+    and no line of the template states an upper bound.  Its limit: a bound
+    or an advance stated without any of those words is not seen.
+    """
     text = template()
+    added = [template_section(text, name) for name in ADOPTED]
+    added += [AUTHORITY_GITHUB_RULE, BOUNDARY_LINE]
+    assert "upper bound" not in text.casefold()
+    for section in added:
+        for term in SPENT_ROW_TERMS:
+            assert term not in section.casefold(), (term, section[:40])
     assert text.count("Scan window:") == 1
     assert (
         "Scan window: issues updated since the most recent status update posted by "

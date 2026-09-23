@@ -8,13 +8,16 @@ lines and the base sentences that concern GitHub, each pinned whole, and the
 three prohibitions the amended base rule no longer states.
 
 * Seven self-contained sections occur in the template byte for byte, heading
-  and body, exactly once each.
+  and body: each one's whole extent, up to the next heading or top-level
+  tag, is the block's section.  The block file itself is pinned by its
+  sha256 as the text of record.
 * Writer Discipline and Supervision Boundaries adopt by effect: every sentence
   of the block's version is carried over in order, and the only sentences that
   differ are the ones whose cross-references name a block section the base
-  file does not have.  Those are re-pointed at a base section by its tag, or
-  keep the referenced rule's own words inline where the base states it
-  nowhere.
+  file does not have.  Those are re-pointed at a rule the base states, by its
+  tag, or keep the referenced rule's own words inline where the base states
+  it nowhere; the spent Scan Window row carries nothing, since the base
+  window has no upper bound and its status update is the checkpoint.
 * Every adopted section sits between the base's top-level ``<tag>`` sections
   and never inside one, so adopting a section cannot edit a base section;
   the file is never replaced by the block.
@@ -32,6 +35,7 @@ three prohibitions the amended base rule no longer states.
   those words is not seen.
 """
 
+import hashlib
 import re
 
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
@@ -39,6 +43,9 @@ from tests.prompts.sets import OPUS_SET, operation_registry, render_case
 from tests.prompts.test_prompt_wiring import REPO_ROOT
 
 BLOCK = REPO_ROOT / "docs" / "supervision-block.md"
+
+#: sha256 of ``docs/supervision-block.md``, the text of record (KOD-872).
+BLOCK_SHA256 = "c1778d8d867e3967e8f9f988a7f7a0439b4b792de2836bad954fc398994a8352"
 TEMPLATE = default_sets_root() / OPUS_SET / "grooming_pass.md"
 
 #: KOD-566's own list of the sections adopted byte for byte.
@@ -64,13 +71,16 @@ ADOPTED: tuple[str, ...] = VERBATIM + BY_EFFECT
 #: block sentence -> adopted sentence, for exactly the sentences whose
 #: cross-references name a section of the block the base file does not have
 #: (Atomicity Guards, Reply Criteria, Build Verification, Queue State
-#: Transitions, Lifecycle States, Health Mapping, Scan Window).  Asserted
-#: equal to the set of sentences that differ, so it cannot grow unnoticed.
+#: Transitions, Lifecycle States, Health Mapping, Scan Window).  Each points
+#: only at a rule the base states: the base window has no upper bound and its
+#: status update is the checkpoint, so neither a bound nor a marker advance
+#: is carried.  Asserted equal to the set of sentences that differ, so it
+#: cannot grow unnoticed.
 REPOINTED: dict[str, str] = {
     "Re-read a surface immediately before writing it, per the Atomicity Guards "
     "above, and abandon the write if it moved after this pass's frozen upper "
     "bound.": "Re-read a surface immediately before writing it and abandon the "
-    "write if it moved after this pass's upper bound, frozen before reading.",
+    "write if the surface changed after this pass read it.",
     "Write each finding as it is formed to the item that owns the surface it "
     "concerns, as a comment under criterion (iii) of the Reply Criteria, "
     "carrying the evidence and the interim reading you will proceed under; the "
@@ -79,7 +89,8 @@ REPOINTED: dict[str, str] = {
     "surface it concerns, as a comment written because the finding changes what "
     "should be done and is not already on the item, carrying the evidence and "
     "the interim reading you will proceed under; the interim reading is a "
-    "per-finding reading and is never the per-pass health <health> defines.",
+    "per-finding reading and is never the health level <health> defines for "
+    "this pass.",
     "Keep no finding in a private surface only: a scratch workspace used for "
     "verification is permitted and its results are reported as scratch results "
     "under Build Verification, and the tracker and the knowledge surfaces this "
@@ -95,14 +106,12 @@ REPOINTED: dict[str, str] = {
     "Transitions and Lifecycle States already rule, on the evidence those "
     "sections require.": "On the strength of a finding you never halt a run, "
     "never block a cross-off and never move a workflow state: a finding is an "
-    "observation, and the only transitions this pass performs are the ones the "
-    "queue-state machine in <process> already rules, on the evidence it "
-    "requires.",
+    "observation, and the only transitions this pass performs are the ones "
+    "<authority> and <process> already rule, on the evidence they require.",
     "Every other write you make is one this prompt already defines — the "
     "replies the Reply Criteria allow, one status update per initiative, and "
     "the single marker advance.": "Every other write you make is one this "
-    "prompt already defines — the replies <process> allows, one status update "
-    "per initiative, and the single checkpoint advance <process> defines.",
+    "prompt already defines.",
 }
 
 #: The three prohibitions removed from the base GitHub rule, because
@@ -218,6 +227,7 @@ READING: tuple[str, ...] = (
 _HEADING = re.compile(r"^(?=## )", re.MULTILINE)
 _TOP_LEVEL_HEADING = re.compile(r"^## ", re.MULTILINE)
 _OPENING_LINE = re.compile(r"^<([a-z_]+)>$", re.MULTILINE)
+_SECTION_END = re.compile(r"^(?:## |</?[a-z_]+>$)", re.MULTILINE)
 _SENTENCE_END = re.compile(r"(?<=\.)\s+")
 _TAG_REFERENCE = re.compile(r"<([a-z_]+)>")
 _GITHUB_SUBJECT = re.compile(rf"\b(?:GitHub|{'|'.join(GITHUB_ACTS)})", re.IGNORECASE)
@@ -243,7 +253,9 @@ def block_sections() -> dict[str, str]:
 def section_bounds(text: str, name: str) -> tuple[int, int]:
     """Where the one ``## name`` section of *text* starts and ends.
 
-    A section runs from its heading line to the blank line that closes it.
+    A section runs from its heading line to the next ``## `` heading or
+    top-level tag line, or to the end of *text*, so a line added anywhere
+    before either is inside it.
     """
     heading = f"## {name}\n"
     starts = [
@@ -252,8 +264,8 @@ def section_bounds(text: str, name: str) -> tuple[int, int]:
     ]
     assert len(starts) == 1, f"{name!r} is headed {len(starts)} times"
     start = starts[0]
-    end = text.find("\n\n", start)
-    return start, len(text) if end == -1 else end + 1
+    end = _SECTION_END.search(text, start + len(heading))
+    return start, len(text) if end is None else end.start()
 
 
 def template_section(text: str, name: str) -> str:
@@ -286,12 +298,28 @@ def top_level_spans(text: str) -> list[tuple[str, int, int]]:
     return spans
 
 
-def test_the_seven_self_contained_sections_occur_byte_identically_once_each():
-    """KOD-566: heading and body, byte for byte, exactly once."""
+def test_the_seven_self_contained_sections_are_byte_identical_in_their_extent():
+    """KOD-566: each section's whole extent is the block's section, byte for byte.
+
+    The extent runs from the one heading to the next ``## `` heading or
+    top-level tag; it equals the block's heading and body followed by the one
+    blank line that separates it from what follows.
+    """
     sections = block_sections()
     text = template_text()
     for name in VERBATIM:
-        assert text.count(sections[name]) == 1, name
+        assert template_section(text, name) == sections[name] + "\n", name
+
+
+def test_the_block_file_is_the_text_of_record():
+    """KOD-872: the block file is pinned, not only compared with the template.
+
+    ``docs/supervision-block.md`` is the verbatim transcription of snapshot
+    comment 5db5205a.  It changes only by a new decision of record, so an edit
+    made to it and to the template alike still fails here.
+    """
+    digest = hashlib.sha256(BLOCK.read_bytes()).hexdigest()
+    assert digest == BLOCK_SHA256
 
 
 def test_the_by_effect_sections_carry_every_sentence_and_differ_only_where_repointed():
