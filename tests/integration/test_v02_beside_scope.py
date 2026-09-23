@@ -335,6 +335,49 @@ async def test_a_gated_session_pass_scans_only_the_per_issue_boards(tmp_path):
         ), key
 
 
+#: A third repository, bound to a team of its own that no scope row names.
+THIRD_REPO = "https://example.invalid/example-org/third-repo"
+
+
+async def test_the_unbound_repository_event_names_only_that_repositorys_walked_teams(
+    tmp_path,
+):
+    """Two walked repositories, each with its own team, beside a per-issue one."""
+    config, operation, _prompts = _mixed(tmp_path)
+    fields = scope_only(operation).model_dump()
+    fields["repos"].append({**fields["repos"][1], "url": THIRD_REPO})
+    fields["teams"]["third"] = {
+        **fields["teams"]["agent"],
+        "name": "third-team",
+        "key": "EXT",
+        "repository": THIRD_REPO,
+    }
+    three = OperationConfig.model_validate(fields)
+    first, second, third = (repo.url for repo in three.repos)
+    assert three.scope_walked_teams() == ("primary", "agent")
+    assert three.per_issue_teams() == ("third",)
+
+    runtime, logs = await _boot(
+        config,
+        three,
+        load_registry(default_set="claude-opus", bindings=operation_bindings(three)),
+        board=_board(),
+        runner=FakeAgentRunner(events=[]),
+        queue=FakeJobQueue(),
+    )
+
+    unbound = _logged(logs, "dispatch_pass_unbound_repository")
+    assert len(unbound) == 2
+    assert {entry["repo_url"]: entry["scope_walked_teams"] for entry in unbound} == {
+        first: ["primary"],
+        second: ["agent"],
+    }
+    names = [entry.name for entry in runtime.scheduler.passes]
+    assert f"dispatch:{third}" in names
+    assert f"dispatch:{first}" not in names
+    assert f"dispatch:{second}" not in names
+
+
 class _RecordingPrompts:
     """The boot registry, recording every template preflight asks for."""
 
