@@ -1069,6 +1069,62 @@ async def test_a_halt_inside_a_round_carries_the_findings_left_open(monkeypatch,
     assert record.interim_basis == spec_finding(SIBLING)["evidence"]
 
 
+async def test_a_residual_on_a_member_verified_clean_earlier_in_the_round_is_written(
+    monkeypatch,
+):
+    """Clearing by a clean verify never drops a residual.
+
+    On the ticket stage the subject's body is written and verified clean
+    first. The member after it then authors a dependency edge onto the
+    subject, which the stage declares no graph for, so a residual lands on
+    the subject; a member later still halts in the same round, and the
+    subject's residual is written although the subject was verified clean.
+    """
+    owner, board, executor = factory(
+        under_approval=True, bound=1, phases=lambda rows: rows[:1]
+    )
+    member(board, EARLY)
+    member(board, STUCK)
+    seen = judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            CLAIMED_ISSUE: lambda _: None,
+            EARLY: lambda _: refusal(EARLY, "spec_gap"),
+            STUCK: lambda _: refusal(STUCK, "human_decision"),
+        },
+    )
+    judged = executor.stream
+
+    async def stream(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        if title == "OrganizeProposal" and keys and keys[-1] == EARLY:
+            executor.calls.append(kwargs)
+            yield result(
+                structured_output={
+                    "kind": "graph",
+                    "issue_id": EARLY,
+                    "changes": [{"kind": "blocked_by", "add": [CLAIMED_ISSUE]}],
+                }
+            )
+            return
+        async for event in judged(**kwargs):
+            yield event
+
+    monkeypatch.setattr(executor, "stream", stream)
+    report = await run_owner(owner)
+    assert report.halt.cause == "human_decision"
+    # Assessed, written and verified clean before the residual named it.
+    assert seen[CLAIMED_ISSUE] == 2
+    assert board.server.issues[CLAIMED_ISSUE].description == PREPARED
+    assert edge_writes(board) == []
+    (record,) = escalations(board, CLAIMED_ISSUE, "undeclared_surface")
+    assert record.interim_basis == evidence("ticket", "issue_graph", TICKET_LINES)
+    assert escalations(board, EARLY, "undeclared_surface")
+
+
 async def test_an_admission_results_own_findings_are_written_at_its_halt(monkeypatch):
     """The refusal that halts carries findings on another item; they land there."""
     owner, board, executor = factory(convergence_bound=2, bound=1)
@@ -1113,9 +1169,12 @@ async def test_a_finding_the_next_round_repairs_never_reaches_the_board(
         assert "needs decision" not in board.server.issues[SIBLING].labels
         return
     # The sibling the finding names is a subject of the next round, and a
-    # finding that keeps recurring exhausts its admission rounds there.
+    # finding that keeps recurring exhausts its admission rounds there. It
+    # reaches the halt both as held and as the halting judgement's own, and
+    # is one record carrying its evidence once.
     assert report.halt.cause == "admission_exhausted"
-    assert escalations(board, SIBLING, "missing_source")
+    (record,) = escalations(board, SIBLING, "missing_source")
+    assert record.interim_basis == spec_finding(SIBLING)["evidence"]
 
 
 async def test_two_findings_of_different_classes_on_one_item_are_two_records(
@@ -1263,6 +1322,105 @@ async def test_a_halt_record_whose_admission_went_stale_is_named_unrecorded(
     (record,) = escalations(board, SIBLING, "missing_source")
     assert record.interim_basis == spec_finding(SIBLING)["evidence"]
     assert "needs decision" in board.server.issues[SIBLING].labels
+
+
+async def test_a_tracker_failure_after_a_refused_record_names_both_unrecorded(
+    monkeypatch,
+):
+    """The tracker arm names the records skipped before it as well as its own.
+
+    The first finding's owner carries its own approval, so its record is
+    refused and skipped; the tracker then fails on the next record's
+    escalation, and the halt names both, in record order.
+    """
+    from kodezart.core.errors import McpCallUnansweredError
+
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    judged, refused, failing = "FIX-A", "FIX-N", "FIX-B"
+    member(board, judged, labels=[GROOM_MARKER])
+    member(board, refused, labels=[GROOM_MARKER, "approved scope"])
+    member(board, failing, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            judged: lambda _: buildable(
+                judged,
+                spec_finding(refused, "ambiguous_scope"),
+                spec_finding(failing),
+            )
+        },
+    )
+    original = board.call_tool
+
+    async def failing_escalation(*, name, arguments):
+        if (
+            name == "save_comment"
+            and arguments.get("issueId") == failing
+            and str(arguments.get("body", "")).startswith("[organize-question:")
+        ):
+            raise McpCallUnansweredError(
+                "response lost after request", server_name="fixture", tool_name=name
+            )
+        return await original(name=name, arguments=arguments)
+
+    monkeypatch.setattr(board, "call_tool", failing_escalation)
+    report = await run_owner(owner)
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (refused, failing)
+    assert escalations(board, refused) == []
+    assert escalations(board, failing) == []
+
+
+async def test_a_tracker_failure_reading_a_records_revision_is_named_unrecorded(
+    monkeypatch,
+):
+    """A record's own revision read failing is the tracker arm, not an escape.
+
+    The first member's record lands, down to its decision label; the
+    tracker then fails on the next record's first read, of the second
+    member's issue, and the halt returns naming that item rather than
+    raising out of the pass.
+    """
+    from kodezart.core.errors import McpCallUnansweredError
+
+    owner, board, executor = factory(convergence_bound=1, bound=2)
+    first, second = "FIX-A", "FIX-B"
+    for key in (first, second):
+        member(board, key, labels=[GROOM_MARKER])
+    judging(
+        board,
+        executor,
+        monkeypatch,
+        {
+            key: (lambda _, key=key: buildable(key, spec_finding(key)))
+            for key in (first, second)
+        },
+    )
+    original = board.call_tool
+    failed = []
+
+    async def failing_read(*, name, arguments):
+        # The first member's record is complete once its decision label
+        # has landed; its own writes read every member of the scope before
+        # that, so the next read of the second member is its record's own.
+        landed = "needs decision" in board.server.issues[first].labels
+        if name == "get_issue" and arguments.get("id") == second and landed:
+            failed.append(arguments)
+            raise McpCallUnansweredError(
+                "response lost after request", server_name="fixture", tool_name=name
+            )
+        return await original(name=name, arguments=arguments)
+
+    monkeypatch.setattr(board, "call_tool", failing_read)
+    report = await run_owner(owner)
+    assert len(failed) == 1
+    assert report.halt.cause == "escalation_unrecorded"
+    assert report.halt.unrecorded_escalation_issue_ids == (second,)
+    (record,) = escalations(board, first, "missing_source")
+    assert record.interim_basis == spec_finding(first)["evidence"]
+    assert escalations(board, second) == []
 
 
 async def test_approval_landing_before_a_grooming_halts_first_record_writes_nothing(
