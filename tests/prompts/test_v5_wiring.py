@@ -57,9 +57,9 @@ ORGANIZE_INPUT_TAGS = (
     "defect_classes",
 )
 
-#: The two admission roles carry one artifact the authoring roles do not: the
-#: operation's declared environments, rendered between the base ref and the
-#: defect classes.
+#: The two admission roles and the criteria author carry one artifact the
+#: body author does not: the operation's declared environments, rendered
+#: between the base ref and the defect classes.
 ORGANIZE_ADMISSION_TAGS = (
     *ORGANIZE_INPUT_TAGS[:-1],
     "declared_environments",
@@ -79,7 +79,7 @@ ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
     "organize_assess": ORGANIZE_ADMISSION_TAGS,
     "organize_verify": ORGANIZE_ADMISSION_TAGS,
     "organize_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),
-    "organize_criteria_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),
+    "organize_criteria_author": (*ORGANIZE_ADMISSION_TAGS, "refusal_evidence"),
     # A rubric is the standard a judging role is handed; it carries no
     # injected artifact of its own and therefore no tag.
     "organize_groom_rubric": (),

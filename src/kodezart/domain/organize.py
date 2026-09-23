@@ -244,6 +244,12 @@ def evidence_is_fillable(
     The graded sha is not asked: no commit is graded at authoring. What
     authoring settles is whether anything will ever demonstrate the
     criterion. Presence, never prose: a blank string names nothing.
+
+    Presence is all this asks. Whether the named test runs through a check
+    the repository declares, or the named observation is one its declared
+    runner environment can make, is judged by the criteria author under its
+    prompt, which carries the declared environments, and by the verifier
+    under the verify prompt.
     """
     return any(
         part is not None and part.strip() for part in (runnable_test, named_observation)

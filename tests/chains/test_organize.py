@@ -2606,9 +2606,12 @@ GRADABILITY_SENTENCE = "Ask gradability as well as buildability"
 #: with its line breaks folded to spaces.
 GRADABILITY_PHRASES = (
     "can demonstrate is not_buildable with a repairable spec_gap",
+    "no declared environment can demonstrate is not_buildable with a repairable "
+    "spec_gap",
     "name in the evidence the demonstration that cannot run",
     "where it has to move to",
     "never admit it for a later run to absorb",
+    "Do not assume a command, service or credential the declarations do not state",
 )
 
 
@@ -2696,6 +2699,68 @@ def test_both_sets_tell_the_criteria_author_to_name_what_fills_the_evidence(
     assert [phrase for phrase in EVIDENCE_NAMING_PHRASES if phrase in folded] == list(
         EVIDENCE_NAMING_PHRASES
     )
+
+
+#: The criteria author's reading of the declared environments, read over the
+#: prompt with its line breaks folded to spaces.
+CRITERIA_ENVIRONMENT_PHRASES = (
+    "A named test is one runnable through a check the repository declares",
+    "a named observation is one its declared runner environment can make",
+    "Do not assume a command, service or credential the declarations do not state",
+)
+
+
+@pytest.mark.parametrize("declared", ["declared", "no_checks", "no_repository"])
+@pytest.mark.parametrize("set_name", [OPUS_SET, V5_SET])
+def test_both_sets_put_the_declared_environments_in_front_of_the_criteria_author(
+    set_name, declared
+):
+    """The criteria author reads the environments a named demonstration needs.
+
+    The same guarded block the admission roles carry: the check chain and
+    the runner environment as data, a repository declaring no check chain
+    rendered as its named absence, and an operation declaring no repository
+    rendering the prompt without the block. Whether a named test or
+    observation can run there is the author's judgement under this prompt;
+    the refusal before creation asks only that one is named.
+    """
+    from tests.prompts.test_organize_call_bindings import variables
+
+    operation = unavailable_network_operation()
+    if declared == "no_checks":
+        operation = operation.model_copy(
+            update={
+                "repos": tuple(
+                    repo.model_copy(update={"checks": ()}) for repo in operation.repos
+                )
+            }
+        )
+    if declared == "no_repository":
+        operation = operation.model_copy(update={"repos": ()})
+    rendered = (
+        load_registry(default_set=set_name, bindings=operation_bindings(operation))
+        .template_for(PromptKey.ORGANIZE_CRITERIA_AUTHOR)
+        .render({**variables(), "base_ref": "main", "issue_key": "external/42"})
+    )
+    folded = " ".join(rendered.split())
+    assert [
+        phrase for phrase in CRITERIA_ENVIRONMENT_PHRASES if phrase in folded
+    ] == list(CRITERIA_ENVIRONMENT_PHRASES)
+    assert "{{" not in rendered
+    history = f"{CheckPrerequisite.REPOSITORY_HISTORY.value}: available"
+    if declared == "declared":
+        step = unavailable_network_operation().repos[0].checks[0]
+        assert f"check {step.name}: `{step.command}`" in rendered
+        assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in rendered
+        assert history in rendered
+        assert "no runner environment fact is declared" in rendered
+        return
+    if declared == "no_checks":
+        assert "no check chain is declared" in rendered
+        assert f"{CheckPrerequisite.NETWORK.value}: unavailable" in rendered
+        assert history in rendered
+        return
+    assert "declared_environments" not in rendered
 
 
 UNDEMONSTRABLE_EVIDENCE = "No declared environment can run the demonstration."
@@ -2804,7 +2869,12 @@ def criterion_children(board):
     ]
 
 
-@pytest.mark.parametrize("named", ["none", "test", "observation"])
+MIXED_CRITERIA = ("Check first bytes", "Check second bytes")
+
+
+@pytest.mark.parametrize(
+    "named", ["none", "test", "observation", "first_unnamed", "second_unnamed"]
+)
 async def test_a_criterion_naming_no_demonstration_is_refused_before_it_is_created(
     monkeypatch, named
 ):
@@ -2814,15 +2884,32 @@ async def test_a_criterion_naming_no_demonstration_is_refused_before_it_is_creat
     names only the observation that will be recorded instead, or names
     nothing; naming nothing is refused before the child exists. Either name
     alone is enough, and the created child's Evidence row is still empty.
+
+    Fillability is asked of every criterion the step would create: in the
+    mixed rows one of two new criteria names its runnable test and the other,
+    first or second, names nothing, and the whole step is refused before
+    either child exists.
     """
     h = owner_harness()
-    owner, board, executor = h.factory(under_approval=True, body=h.PREPARED_BODY)
+    mixed = named in ("first_unnamed", "second_unnamed")
+    owner, board, executor = h.factory(
+        under_approval=True,
+        body=h.PREPARED_BODY,
+        **({"criteria": MIXED_CRITERIA} if mixed else {}),
+    )
     if named == "none":
         rename_criteria(monkeypatch, executor, naming_nothing)
     elif named == "observation":
         rename_criteria(monkeypatch, executor, naming_an_observation)
+    elif mixed:
+        unnamed = MIXED_CRITERIA[0 if named == "first_unnamed" else 1]
+        rename_criteria(
+            monkeypatch,
+            executor,
+            lambda item: naming_nothing(item) if item["title"] == unnamed else item,
+        )
 
-    if named == "none":
+    if named == "none" or mixed:
         with pytest.raises(OrganizeWriteRefusalError, match="names no demonstration"):
             await h.run_owner(owner)
         assert criterion_children(board) == []
