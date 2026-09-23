@@ -209,7 +209,7 @@
   "tests/domain/test_record_superseded.py": 23,
   "tests/domain/test_recorded_landing.py": 22,
   "tests/domain/test_ruling_identity.py": 11,
-  "tests/domain/test_ruling_protected_tests.py": 25,
+  "tests/domain/test_ruling_protected_tests.py": 27,
   "tests/domain/test_rulings.py": 8,
   "tests/domain/test_run_alarm.py": 16,
   "tests/domain/test_run_alarm_payload.py": 4,
@@ -316,7 +316,7 @@
   "tests/services/lane_tally_fixtures.py": 10,
   "tests/services/test_agent_service.py": 5,
   "tests/services/test_amendment_interrupted_writes.py": 17,
-  "tests/services/test_applied_native_amendments.py": 204,
+  "tests/services/test_applied_native_amendments.py": 216,
   "tests/services/test_assertion_drift.py": 30,
   "tests/services/test_audit_coverage.py": 22,
   "tests/services/test_audit_reopen.py": 26,
@@ -373,7 +373,7 @@
   "tests/services/test_union_conflict_remediation.py": 23,
   "tests/services/test_union_replacement_identity.py": 23,
   "tests/services/test_union_tick.py": 75,
-  "tests/services/test_weakened_assertions.py": 20,
+  "tests/services/test_weakened_assertions.py": 24,
   "tests/spec/test_model_agreement.py": 73,
   "tests/test_audit_lane_placement.py": 13,
   "tests/test_composition_root.py": 35,
@@ -3390,7 +3390,8 @@
    "test_native_designation_has_a_typed_ruling_owner",
    "test_mypy_preserves_reader_identity_and_refuses_a_plain_string_owner",
    "test_designated_tests_skip_an_amended_record_and_an_undesignating_record",
-   "test_only_the_records_a_report_amended_are_exempt"
+   "test_only_the_records_a_report_amended_are_exempt",
+   "test_every_designation_of_one_record_is_designated"
   ],
   "tests/domain/test_rulings.py": [
    "test_closed_model_and_pinned_text_round_trip_every_author_and_class",
@@ -4389,7 +4390,9 @@
    "test_a_weakening_beside_an_amended_criterion_is_still_marked",
    "test_amending_one_record_leaves_another_records_designation_standing",
    "test_a_mint_the_tracker_refuses_still_refuses_the_push",
-   "test_a_weakening_after_the_mark_was_crossed_off_is_marked_again"
+   "test_a_weakening_after_the_mark_was_crossed_off_is_marked_again",
+   "test_a_designated_test_left_with_no_assertion_is_marked",
+   "test_a_loss_in_a_records_second_designation_is_marked"
   ],
   "tests/services/test_assertion_drift.py": [
    "test_both_revisions_are_green_but_expected_value_drift_emits_claim",
@@ -5297,7 +5300,8 @@
    "test_a_gate_that_alters_the_mark_refuses_before_any_mint",
    "test_an_uncomparable_designation_refuses_without_a_mark",
    "test_nothing_designated_reads_no_git_object_and_mints_nothing",
-   "test_two_tests_that_each_lost_an_assertion_mint_two_marks_under_one_lease"
+   "test_two_tests_that_each_lost_an_assertion_mint_two_marks_under_one_lease",
+   "test_a_test_left_with_no_assertion_is_marked"
   ],
   "tests/spec/test_model_agreement.py": [
    "test_committed_fixture_runs_actual_query_and_pointer_resolution",
