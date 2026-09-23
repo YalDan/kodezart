@@ -61,6 +61,7 @@ import ast
 import re
 import sys
 import warnings
+from collections.abc import Mapping
 from functools import cache
 from pathlib import Path
 from typing import get_args
@@ -69,7 +70,11 @@ import pytest
 
 from kodezart.domain import fire_spec
 from kodezart.domain.criterion_creation import criterion_body
-from kodezart.domain.criterion_evidence import apply_evidence, evidence_field_value
+from kodezart.domain.criterion_evidence import (
+    apply_evidence,
+    evidence_field_value,
+    render_evidence_field,
+)
 from kodezart.domain.fire_spec import (
     _CRITERION_ROW,
     CriterionField,
@@ -82,7 +87,13 @@ from kodezart.domain.fire_spec import (
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from tests.domain.test_criterion_cross_off import callers_of, source_tree
 from tests.identity_guards import _constructor_names
-from tests.name_resolution import module_namespace, referencing_definitions
+from tests.name_resolution import (
+    Bindings,
+    bindings,
+    denoted,
+    module_namespace,
+    referencing_definitions,
+)
 
 SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
 #: Where the criterion template grammar is written, and so the one module
@@ -134,11 +145,15 @@ TEXT_MATCHERS = frozenset(
 def _literal_text(node: ast.expr) -> str | None:
     """The text this expression spells, as far as it spells one literally.
 
-    A plain string, the constant parts of a formatted string, or a sum of
-    either folded: a row label assembled around a field name is the row
-    shape it assembles, not an unrelated pair of fragments.
+    A plain string, a bytes literal decoded as latin-1 (the rendered texts
+    are ASCII, so a bytes pattern matches them at the same offsets), the
+    constant parts of a formatted string, or a sum of any of these folded: a
+    row label assembled around a field name is the row shape it assembles,
+    not an unrelated pair of fragments.
     """
     if isinstance(node, ast.Constant):
+        if isinstance(node.value, bytes):
+            return node.value.decode("latin-1")
         return node.value if isinstance(node.value, str) else None
     if isinstance(node, ast.JoinedStr):
         return "".join(
@@ -378,9 +393,10 @@ def rendered_bodies() -> tuple[str, ...]:
     Rendered by the tree's own writers, never spelled here: the creation
     writer over each kind of body that is not empty (it refuses an empty
     Check or Do), the field edit setting each field of the grammar to each
-    kind over a created body, and the Evidence codec applied to all of them.
-    Each row is then placed alone as well, cut out of its body along the span
-    the owner's walker reads it at.
+    kind over a created body, the Evidence codec applied to all of them, and
+    the Evidence row the codec renders on its own, whose label meets its
+    fence with no space between.  Each row is then placed alone as well, cut
+    out of its body along the span the owner's walker reads it at.
     """
     created = [
         criterion_body(parent_key="KZ-1", check=text, do=text)
@@ -395,24 +411,36 @@ def rendered_bodies() -> tuple[str, ...]:
     ]
     bodies = [*created, *edited]
     bodies += [apply_evidence(body=body, evidence=RECORDED_EVIDENCE) for body in bodies]
+    bodies.append(render_evidence_field(RECORDED_EVIDENCE))
     rows = [
         body[row.begin : row.end] for body in bodies for row in _criterion_rows(body)
     ]
     return tuple(dict.fromkeys([*bodies, *rows]))
 
 
+def _on_a_fence_line(text: str, at: int) -> bool:
+    """Whether the line of *text* holding offset *at* is a fence line of the owner's."""
+    start = text.rfind("\n", 0, at) + 1
+    end = text.find("\n", at)
+    line = text[start : end if end >= 0 else len(text)]
+    return fire_spec._FENCE.match(line) is not None
+
+
 @cache
 def _label_spots(text: str) -> tuple[tuple[int, int], ...]:
     """Where each rendered label ``**{field}:**`` begins in *text*, with its name.
 
-    Every occurrence, in a row or in prose that shows one.
+    Every occurrence, in a row or in prose that shows one, that lies outside
+    a fence line: a label spelled as a fence's info string is no row to the
+    owner's walker, so a match that takes it in recognises no row by it.
     """
     spots: list[tuple[int, int]] = []
     for field in ROW_FIELDS:
         label = f"**{field}:**"
         at = text.find(label)
         while at >= 0:
-            spots.append((at, len(field)))
+            if not _on_a_fence_line(text, at):
+                spots.append((at, len(field)))
             at = text.find(label, at + 1)
     return tuple(spots)
 
@@ -432,10 +460,21 @@ def covers_a_label(text: str, start: int, end: int) -> bool:
     return False
 
 
-#: The flags a pattern is also tried under, each added alone to its own: the
-#: ones that change what a row pattern matches in a body, its case and how
-#: its anchors and dots meet the lines.
-TRIED_FLAGS = (re.NOFLAG, re.IGNORECASE, re.MULTILINE, re.DOTALL)
+#: The flags a pattern is also tried under, added to its own: the ones that
+#: change what a row pattern matches in a body — its case and how its anchors
+#: and dots meet the lines — each alone, and the case flag with each of the
+#: two line flags, so a lowercase pattern anchored by line or running across
+#: lines is tried as its call would run it.  MULTILINE with DOTALL is not
+#: tried: under both together a pattern that opens on a fence line and runs
+#: to the end of the body takes in every label after it, and reads no row.
+TRIED_FLAGS = (
+    re.NOFLAG,
+    re.IGNORECASE,
+    re.MULTILINE,
+    re.DOTALL,
+    re.IGNORECASE | re.MULTILINE,
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def matches_a_rendered_row(pattern: re.Pattern[str] | re.Pattern[bytes]) -> bool:
@@ -466,14 +505,19 @@ def matches_a_rendered_row(pattern: re.Pattern[str] | re.Pattern[bytes]) -> bool
 
 @cache
 def is_row_grammar(text: str, flags: int = 0) -> bool:
-    """Whether a literal is a row grammar: over the rendered bodies, it takes a label.
+    """Whether a literal is a row grammar: it holds a label, or takes one in a body.
 
-    Read two ways.  As plain text, the way a ``startswith``, ``split`` or
-    ``==`` parser holds it: some occurrence of it in a rendered body covers a
-    label.  As a pattern, compiled with the flags spelled beside it at its
-    call: ``matches_a_rendered_row``.  A text ``re`` warns about still
-    compiles, and is read as the pattern it compiles to.
+    Read three ways.  As a text containing a rendered label ``**{field}:**``
+    for any field of the grammar, the way a ``partition`` or a slice compare
+    holds it whatever else it carries.  As plain text, the way a
+    ``startswith``, ``split`` or ``==`` parser holds it: some occurrence of
+    it in a rendered body covers a label.  As a pattern, compiled with the
+    flags spelled beside it at its call: ``matches_a_rendered_row``.  A text
+    ``re`` warns about still compiles, and is read as the pattern it compiles
+    to.
     """
+    if any(f"**{field}:**" in text for field in ROW_FIELDS):
+        return True
     for body in rendered_bodies():
         at = body.find(text) if text else -1
         while at >= 0:
@@ -504,28 +548,49 @@ FLAG_POSITIONS = {
 }
 
 
-def _flag_value(node: ast.expr) -> int:
-    """The ``re`` flags an expression spells: a flag by name, or several or-ed."""
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-        return _flag_value(node.left) | _flag_value(node.right)
-    word = (
-        node.attr
-        if isinstance(node, ast.Attribute)
-        else node.id
-        if isinstance(node, ast.Name)
-        else None
-    )
-    value = getattr(re, word, None) if word is not None else None
-    return int(value) if isinstance(value, re.RegexFlag) else 0
+def _flag_value(
+    node: ast.expr, bound: Bindings, following: frozenset[str] = frozenset()
+) -> int:
+    """The ``re`` flags an expression is worth, by value.
+
+    An int constant is itself; ``|`` and ``+`` are folded over what their
+    sides are worth; a name or an attribute is read through ``denoted`` —
+    the module's globals, its import bindings and its locals — to the flag
+    value it is bound to, so ``re.I``, a module-level ``_FLAGS`` and a local
+    bound to a flag are each their value; and a name bound to a combination
+    is folded through its assignments.  Bounded by *following*: a name bound
+    from itself ends the walk.  Anything else is worth nothing.
+    """
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr | ast.Add):
+        left = _flag_value(node.left, bound, following)
+        right = _flag_value(node.right, bound, following)
+        return left | right if isinstance(node.op, ast.BitOr) else left + right
+    if isinstance(node, ast.Constant):
+        value = node.value
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+    values = [
+        int(value)
+        for value in denoted(node, bound)
+        if isinstance(value, int) and not isinstance(value, bool)
+    ]
+    if values:
+        return values[0]
+    if isinstance(node, ast.Name) and node.id not in following:
+        folded = (
+            _flag_value(expression, bound, following | {node.id})
+            for expression in bound.assigned.get(node.id, ())
+        )
+        return next((value for value in folded if value), 0)
+    return 0
 
 
-def call_flags(tree: ast.Module) -> dict[int, int]:
-    """The flags spelled beside each pattern argument of an ``re`` call in *tree*.
+def call_flags(tree: ast.Module, bound: Bindings) -> dict[int, int]:
+    """The flags handed beside each pattern argument of an ``re`` call in *tree*.
 
     Keyed by the pattern argument's node: the first positional argument or
     ``pattern=``, of a call to one of ``FLAG_POSITIONS`` by attribute or by
-    name, with its ``flags=`` keyword or its flags by position.  Only flags
-    spelled by name are read; a flag value bound to a name first is not.
+    name, with its ``flags=`` keyword or its flags by position, read by value
+    (``_flag_value``) under the module's bindings.
     """
     found: dict[int, int] = {}
     for node in ast.walk(tree):
@@ -552,22 +617,25 @@ def call_flags(tree: ast.Module) -> dict[int, int]:
             else None
         )
         if pattern is not None and flags is not None:
-            found[id(pattern)] = _flag_value(flags)
+            found[id(pattern)] = _flag_value(flags, bound)
     return found
 
 
-def row_literals(tree: ast.Module) -> list[tuple[str, str]]:
+def row_literals(
+    relative: str, tree: ast.Module, namespace: Mapping[str, object]
+) -> list[tuple[str, str]]:
     """Every literal that is a row grammar, by the scope holding it.
 
     Whatever it is handed to — a compile call by position or by keyword, a
     name bound earlier, a matcher, a string built for writing — a literal is
-    read where it is written, and as a pattern under the flags spelled beside
-    it at its ``re`` call.  Folded the way ``_literal_text`` folds, and
-    counted once at the widest expression that is one; a literal that is none
-    is read part by part.
+    read where it is written, bytes included, and as a pattern under the
+    flags handed beside it at its ``re`` call, read by value through the
+    module's bindings.  Folded the way ``_literal_text`` folds, and counted
+    once at the widest expression that is one; a literal that is none is
+    read part by part.
     """
     found: list[tuple[str, str]] = []
-    flags = call_flags(tree)
+    flags = call_flags(tree, bindings(relative, tree, namespace, within=tree))
 
     def walk(node: ast.AST, label: str) -> None:
         for child in ast.iter_child_nodes(node):
@@ -585,17 +653,23 @@ def row_literals(tree: ast.Module) -> list[tuple[str, str]]:
 
 
 @cache
-def _row_literals_of(source: str) -> tuple[tuple[str, str], ...]:
-    """One module's row-grammar literals, read once per text."""
-    return tuple(row_literals(ast.parse(source)))
+def _row_literals_of(module: str, source: str) -> tuple[tuple[str, str], ...]:
+    """One module's row-grammar literals, read once per text.
+
+    The module's bindings are the ones it runs with (``module_namespace``),
+    so a flag bound to a name is read as the value the module binds.
+    """
+    return tuple(
+        row_literals(module, ast.parse(source), module_namespace(module, source))
+    )
 
 
 def row_grammar_literals(sources: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
     """Every module of *sources* holding a row-grammar literal, with each one."""
     return {
-        module: list(_row_literals_of(source))
+        module: list(_row_literals_of(module, source))
         for module, source in sorted(sources.items())
-        if _row_literals_of(source)
+        if _row_literals_of(module, source)
     }
 
 
@@ -667,7 +741,7 @@ def owner_grammar_readings(
     tree = ast.parse(source)
     return (
         row_patterns({RULE_MODULE: source}).get(RULE_MODULE, []),
-        row_literals(tree),
+        row_literals(RULE_MODULE, tree, module_namespace(RULE_MODULE, source)),
         grammar_uses(tree, GRAMMAR_NAMES),
     )
 
@@ -711,6 +785,9 @@ def test_a_row_grammar_is_what_matches_a_rendered_row():
         (r"Evidence:\*\*", True),
         ("**Evidence:**", True),
         ("**Check:** ", True),
+        ("**Evidence:** accepted at `", True),
+        ("**Check:** \n\n**Do:** \n\n**Evidence:**\n", True),
+        ("**Evidence:**\n```json\n", True),
         ("**Evidence:", True),
         ("Evidence:**", True),
         ("**Evidence", True),
@@ -734,40 +811,153 @@ def test_a_literal_is_a_row_grammar_by_what_it_matches(text, grammar):
     assert is_row_grammar(text) is grammar
 
 
-#: A pattern that parses rows only under two flags at once, case and lines,
-#: which no single tried flag gives it.
-TWO_FLAG_ROW = r"\n^\*\*evidence:\*\*"
-#: Each way flags are handed to an ``re`` call beside the pattern.
+def test_a_label_on_a_fence_line_is_no_label():
+    """A fence whose info string spells a label opens no row.
+
+    So a match that takes such a label in covers nothing, while the same
+    label on a line of its own is covered; the fence rule is the owner's.
+    """
+    fenced = "```**Evidence:**\n{}\n```\n"
+    assert fire_spec._FENCE.match(fenced.splitlines()[0])
+    assert not covers_a_label(fenced, 0, len("```**Evidence:**"))
+    assert covers_a_label("**Evidence:**\n", 0, len("**Evidence:**"))
+    assert not _criterion_rows(fenced)
+
+
+#: A pattern that parses the fenced Evidence row only under three flags at
+#: once — its case, a line anchor after a newline, and a dot that crosses the
+#: line to the fence — which no tried flag or pair of them gives it.
+THREE_FLAG_ROW = r"\n^\*\*evidence:\*\*.*?```json"
+#: The flags it needs, spelled the three ways a call spells them.
+THREE_FLAGS = re.IGNORECASE | re.MULTILINE | re.DOTALL
+#: Each way flags are handed to an ``re`` call beside the pattern: what the
+#: module binds before the function, what the function binds before the
+#: call, and the call.
 FLAG_SPELLINGS = {
-    "compile by position": "re.compile(P, re.I | re.M)",
-    "compile by keyword": "re.compile(P, flags=re.IGNORECASE | re.MULTILINE)",
-    "pattern and flags by keyword": "re.compile(pattern=P, flags=re.I | re.M)",
-    "match by position": "re.match(P, body, re.I | re.M)",
-    "search by keyword": "re.search(P, body, flags=re.I | re.M)",
-    "findall by position": "re.findall(P, body, re.I | re.M)",
-    "finditer by position": "re.finditer(P, body, re.I | re.M)",
-    "split by position": "re.split(P, body, 0, re.I | re.M)",
-    "sub by position": "re.sub(P, '', body, 0, re.I | re.M)",
-    "matcher imported by name": "findall(P, body, re.I | re.M)",
+    "compile by position": ("", "", "re.compile(P, re.I | re.M | re.S)"),
+    "compile by keyword": (
+        "",
+        "",
+        "re.compile(P, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)",
+    ),
+    "pattern and flags by keyword": (
+        "",
+        "",
+        "re.compile(pattern=P, flags=re.I | re.M | re.S)",
+    ),
+    "match by position": ("", "", "re.match(P, body, re.I | re.M | re.S)"),
+    "search by keyword": ("", "", "re.search(P, body, flags=re.I | re.M | re.S)"),
+    "findall by position": ("", "", "re.findall(P, body, re.I | re.M | re.S)"),
+    "finditer by position": ("", "", "re.finditer(P, body, re.I | re.M | re.S)"),
+    "split by position": ("", "", "re.split(P, body, 0, re.I | re.M | re.S)"),
+    "sub by position": ("", "", "re.sub(P, '', body, 0, re.I | re.M | re.S)"),
+    "matcher imported by name": ("", "", "findall(P, body, re.I | re.M | re.S)"),
+    "flags added rather than or-ed": (
+        "",
+        "",
+        "re.findall(P, body, re.I + re.M + re.S)",
+    ),
+    "flags as an int": ("", "", f"re.findall(P, body, {int(THREE_FLAGS)})"),
+    "flags bound to a module-level name": (
+        "_FLAGS = re.IGNORECASE | re.MULTILINE | re.DOTALL\n",
+        "",
+        "re.findall(P, body, _FLAGS)",
+    ),
+    "flags bound to a local": (
+        "",
+        "    flags = re.I | re.M | re.S\n",
+        "re.findall(P, body, flags)",
+    ),
+    "flags added onto a module-level name": (
+        "_CASE = re.IGNORECASE\n",
+        "",
+        "re.findall(P, body, _CASE + re.M + re.S)",
+    ),
 }
 
 
-def test_a_pattern_that_needs_two_flags_is_no_grammar_without_them():
-    assert not is_row_grammar(TWO_FLAG_ROW)
-    assert is_row_grammar(TWO_FLAG_ROW, re.IGNORECASE | re.MULTILINE)
+def test_a_pattern_that_needs_three_flags_is_no_grammar_without_them():
+    """No tried flag, alone or paired, gives the probe all three; its call can.
+
+    Each tried flag is added onto the call's own, so the case flag at the
+    call still leaves one line flag short.
+    """
+    assert not is_row_grammar(THREE_FLAG_ROW)
+    assert not is_row_grammar(THREE_FLAG_ROW, re.IGNORECASE)
+    assert is_row_grammar(THREE_FLAG_ROW, THREE_FLAGS)
 
 
 @pytest.mark.parametrize("spelling", sorted(FLAG_SPELLINGS))
-def test_the_flags_spelled_at_a_call_decide_its_pattern(spelling):
-    call = FLAG_SPELLINGS[spelling].replace("P", f"r'{TWO_FLAG_ROW}'", 1)
-    source = f"import re\nfrom re import findall\ndef rows(body):\n    return {call}\n"
-    flagless = source.replace("re.I | re.M", "0").replace(
-        "re.IGNORECASE | re.MULTILINE", "0"
-    )
-    assert "re.I" not in flagless
+def test_the_flags_handed_at_a_call_decide_its_pattern(spelling):
+    """The flags a call hands its pattern are read by value, however spelled.
 
-    assert row_literals(ast.parse(source)) == [("rows", TWO_FLAG_ROW)]
-    assert row_literals(ast.parse(flagless)) == []
+    Or-ed or added, as an int, bound to a module-level name or to a local:
+    each is the value the call runs under.  The same text with every flag
+    spelling replaced by ``0`` holds no grammar, so the flags and not the
+    pattern's text are what decide it.
+    """
+    module_prelude, local_prelude, call = FLAG_SPELLINGS[spelling]
+    call = call.replace("P", f"r'{THREE_FLAG_ROW}'", 1)
+    source = (
+        f"import re\nfrom re import findall\n{module_prelude}"
+        f"def rows(body):\n{local_prelude}    return {call}\n"
+    )
+    flagless = source
+    for spelled in (
+        "re.I | re.M | re.S",
+        "re.I + re.M + re.S",
+        "re.IGNORECASE | re.MULTILINE | re.DOTALL",
+        "_CASE + re.M + re.S",
+        str(int(THREE_FLAGS)),
+        "re.IGNORECASE",
+    ):
+        flagless = flagless.replace(spelled, "0")
+    assert "re.I" not in flagless and "re.M" not in flagless
+
+    def literals(text):
+        return row_literals(
+            "services/planted.py",
+            ast.parse(text),
+            module_namespace("services/planted.py", text),
+        )
+
+    assert literals(source) == [("rows", THREE_FLAG_ROW)]
+    assert literals(flagless) == []
+
+
+@pytest.mark.parametrize(
+    ("spelling", "value"),
+    [
+        ("re.I | re.M", re.I | re.M),
+        ("re.I + re.M", re.I | re.M),
+        ("re.IGNORECASE + re.MULTILINE", re.I | re.M),
+        ("_FLAGS", re.I | re.M),
+        ("_FLAGS | re.S", re.I | re.M | re.S),
+        ("local", re.I | re.M),
+        ("0", 0),
+        ("body", 0),
+        ("re.compile", 0),
+    ],
+)
+def test_the_flags_at_a_call_are_read_by_value(spelling, value):
+    """Each spelling of a flags argument is worth the flags the call runs under."""
+    source = (
+        "import re\n"
+        "_FLAGS = re.IGNORECASE | re.MULTILINE\n"
+        "def rows(body):\n"
+        "    local = re.I | re.M\n"
+        f"    return re.findall(r'x', body, {spelling})\n"
+    )
+    tree = ast.parse(source)
+    bound = bindings(
+        "services/planted.py",
+        tree,
+        module_namespace("services/planted.py", source),
+        within=tree,
+    )
+    call = next(node for node in ast.walk(tree) if isinstance(node, ast.Call))
+
+    assert _flag_value(call.args[2], bound) == value
 
 
 #: Why the creation writer may hold row labels: each of its three is one.
@@ -777,18 +967,14 @@ _CREATION_WRITER = (
 )
 #: The literals outside the owner that are a row grammar because they write
 #: rows, each with why it may be: every one renders rows for a writer, and
-#: none reads one.  The creation writer's template is read part by part,
-#: because no rendered body leaves both its Check and its Do empty.
+#: none reads one.  The creation writer's template is one literal, folded
+#: around its two field values.
 ROW_WRITERS = {
-    ("domain/criterion_creation.py", "criterion_body", "**Check:** "): (
-        _CREATION_WRITER
-    ),
-    ("domain/criterion_creation.py", "criterion_body", "\n\n**Do:** "): (
-        _CREATION_WRITER
-    ),
-    ("domain/criterion_creation.py", "criterion_body", "\n\n**Evidence:**\n"): (
-        _CREATION_WRITER
-    ),
+    (
+        "domain/criterion_creation.py",
+        "criterion_body",
+        "**Check:** \n\n**Do:** \n\n**Evidence:**\n",
+    ): _CREATION_WRITER,
     (
         "domain/criterion_evidence.py",
         "render_evidence_field",
@@ -814,13 +1000,14 @@ FENCED_BLOCK_PATTERNS = {
 def test_no_literal_outside_the_owner_is_a_row_grammar():
     """A Check or Evidence row parser outside the owner has no literal to hold.
 
-    Every literal of the tree is read, and one that is a row grammar — a
-    pattern text that matches a rendered row, or a text holding a rendered
-    label — is allowed only as the owner's own grammar, once, as a writer's
-    row registered with its reason, or as a fenced-block pattern registered
-    with why it reads no row.  A second grammar compiled anywhere,
-    handed on by name, imported into the owner's reader or matched with a
-    string method adds a literal, and reds.
+    Every literal of the tree is read, a bytes literal decoded, and one that
+    is a row grammar — a pattern text that matches a rendered row under the
+    flags handed at its call, a text that occurs in a rendered body across a
+    label, or a text holding a rendered label — is allowed only as the
+    owner's own grammar, once, as a writer's row registered with its reason,
+    or as a fenced-block pattern registered with why it reads no row.  A
+    second grammar compiled anywhere, handed on by name, imported into the
+    owner's reader or matched with a string method adds a literal, and reds.
 
     Not seen: a grammar assembled at call time from pieces none of which is
     a row grammar alone, such as a label built around a field name.
@@ -853,6 +1040,13 @@ LOWERCASE_EVIDENCE_TEXT = r"^\*\*evidence:\*\*[ \t]*(.*)$"
 GRADED_SHA_TEXT = r"^\*\*[Ee]vidence:\*\*\s*`?([0-9a-f]{7,40})"
 #: The Evidence label alone on its line, the way both writers render it.
 LABEL_ONLY_TEXT = r"^\*\*Evidence:\*\*$"
+#: An Evidence row parser written as a bytes pattern over the encoded body.
+BYTES_EVIDENCE_TEXT = r"^\*\*Evidence:\*\*[ \t]*(.*)$"
+#: A lowercase parser of the fenced JSON record, which parses rows only under
+#: the case flag and a dot that crosses lines, both handed at its call.
+JSON_EVIDENCE_TEXT = r"\*\*evidence:\*\*\s*```json\s*(\{.*?\})\s*```"
+#: The Evidence label meeting its fence, the way the codec renders it alone.
+OPENING_TEXT = "**Evidence:**\n```json\n"
 #: Each way a second Check or Evidence row parser could arrive outside the
 #: owner, as the module texts it would arrive as, with what it must add to
 #: the literals and to the compiled patterns read above.
@@ -932,6 +1126,64 @@ PLANTED_ROW_GRAMMARS = {
         },
         [("services/evidence_label.py", "<module>", LABEL_ONLY_TEXT)],
         {"services/evidence_label.py": ["EVIDENCE_LABEL"]},
+    ),
+    "bytes pattern matched inside a function in a service": (
+        {
+            "services/bytes_probe.py": "import re\n"
+            "def evidence(body: str) -> list[bytes]:\n"
+            f"    return re.findall(rb'{BYTES_EVIDENCE_TEXT}', body.encode(),"
+            " re.MULTILINE)\n",
+        },
+        [("services/bytes_probe.py", "evidence", BYTES_EVIDENCE_TEXT)],
+        {},
+    ),
+    "lowercase JSON parser with flags added at the call": (
+        {
+            "services/json_probe.py": "import json\n"
+            "import re\n"
+            "def graded(body: str) -> str:\n"
+            f"    found = re.search(r'{JSON_EVIDENCE_TEXT}', body, re.I + re.S)\n"
+            "    return json.loads(found[1])['gradedSha']\n",
+        },
+        [("services/json_probe.py", "graded", JSON_EVIDENCE_TEXT)],
+        {},
+    ),
+    "lowercase JSON parser with flags bound to a module-level name": (
+        {
+            "services/json_probe.py": "import json\n"
+            "import re\n"
+            "_FLAGS = re.IGNORECASE | re.DOTALL\n"
+            "def graded(body: str) -> str:\n"
+            f"    found = re.search(r'{JSON_EVIDENCE_TEXT}', body, _FLAGS)\n"
+            "    return json.loads(found[1])['gradedSha']\n",
+        },
+        [("services/json_probe.py", "graded", JSON_EVIDENCE_TEXT)],
+        {},
+    ),
+    "label and fence bound to a module-level name and partitioned on": (
+        {
+            "services/opening_probe.py": "import json\n"
+            f"_OPENING = {OPENING_TEXT!r}\n"
+            "def graded(body: str) -> str:\n"
+            "    _, found, rest = body.partition(_OPENING)\n"
+            "    return json.loads(rest.split('\\n```', 1)[0])['gradedSha']"
+            " if found else ''\n",
+        },
+        [("services/opening_probe.py", "<module>", OPENING_TEXT)],
+        {},
+    ),
+    "label prefix compared against a slice in a service": (
+        {
+            "services/evidence_sha.py": "_LABEL = '**Evidence:** accepted at `'\n"
+            "def accepted_sha(body: str) -> list[str]:\n"
+            "    return [\n"
+            "        line[len(_LABEL) : len(_LABEL) + 8]\n"
+            "        for line in body.splitlines()\n"
+            "        if line[: len(_LABEL)] == _LABEL\n"
+            "    ]\n",
+        },
+        [("services/evidence_sha.py", "<module>", "**Evidence:** accepted at `")],
+        {},
     ),
 }
 
@@ -1199,6 +1451,18 @@ SECOND_GRAMMARS = {
         "        for found in map(row.match, body.splitlines())\n"
         "        if found and found.group(1) == 'Evidence'\n"
         "    ]\n",
+    ),
+    "bytes pattern matched inside a function": (
+        None,
+        "def evidence_rows(body: str) -> list[bytes]:\n"
+        f"    return re.findall(rb'{BYTES_EVIDENCE_TEXT}', body.encode(),"
+        " re.MULTILINE)\n",
+    ),
+    "lowercase JSON parser with flags added at the call": (
+        None,
+        "def graded(body: str) -> str | None:\n"
+        f"    found = re.search(r'{JSON_EVIDENCE_TEXT}', body, re.I + re.S)\n"
+        "    return found[1] if found else None\n",
     ),
 }
 
