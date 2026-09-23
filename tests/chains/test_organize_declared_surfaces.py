@@ -941,6 +941,11 @@ async def test_two_findings_of_different_classes_on_one_item_are_two_records(
         for record in escalations(board, SIBLING)
         if record.question in {"missing_source", "ambiguous_scope"}
     ) == ["ambiguous_scope", "missing_source"]
+    # The class raised twice is one record, and it carries both evidences.
+    (folded,) = escalations(board, SIBLING, "missing_source")
+    assert folded.interim_basis == (
+        "The first source is absent.\n\nThe second source is absent."
+    )
 
 
 @pytest.mark.parametrize("order", ["admitted_first", "unadmitted_first"])

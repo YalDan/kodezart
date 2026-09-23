@@ -544,7 +544,8 @@ residuals of the round that halted, and those the halting judgement carries —
 is written before the halt report returns, after the round's lease is
 released, as its own record on the item it names: one escalation per item and
 question, carrying the finding's evidence and the pass's interim reading, so
-two classes on one item are two records and one class raised twice is one.
+two classes on one item are two records and one class raised twice is one
+record carrying each evidence.
 A record the phase may no longer write — on an item it is not admitted on, one
 that left the scope, or one whose judgement went stale — is not written and is
 named in the unrecorded halt instead, while the halt's other records still

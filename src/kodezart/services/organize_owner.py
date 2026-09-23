@@ -861,33 +861,40 @@ class OrganizeOwner:
     ) -> StageHaltReport:
         """Write one record per item and question, after the round's lease is gone."""
         # Keyed by (item, question): two open questions on one item are two
-        # records, and the same question raised twice is one. Later sources
-        # replace earlier ones on an equal key.
-        records: dict[tuple[str, str], str] = {
-            (r.issue_id, r.invented_decision or r.missing_artifact or r.evidence): (
-                r.evidence
-            )
-            for r in results
-        }
-        records.update(
-            {
-                (f.issue_id, f.mandate_text or f.defect_class): f.evidence
-                for f in (
-                    *(f for r in results for f in r.findings),
-                    *findings,
-                )
-            }
-        )
-        records.update({(q.issue_id, q.question): q.evidence for q in questions})
-        records.update(
-            {
+        # records, and the same question raised twice is one record carrying
+        # each evidence once, in source order, a blank line apart.
+        evidences: dict[tuple[str, str], list[str]] = {}
+        for key, evidence in (
+            *(
                 (
-                    result.artifact.surface.ref.key,
-                    "The written artifact remains independently unverified.",
-                ): result.model_dump_json()
+                    (
+                        r.issue_id,
+                        r.invented_decision or r.missing_artifact or r.evidence,
+                    ),
+                    r.evidence,
+                )
+                for r in results
+            ),
+            *(
+                ((f.issue_id, f.mandate_text or f.defect_class), f.evidence)
+                for f in (*(f for r in results for f in r.findings), *findings)
+            ),
+            *(((q.issue_id, q.question), q.evidence) for q in questions),
+            *(
+                (
+                    (
+                        result.artifact.surface.ref.key,
+                        "The written artifact remains independently unverified.",
+                    ),
+                    result.model_dump_json(),
+                )
                 for result in write_back_results
-            }
-        )
+            ),
+        ):
+            held = evidences.setdefault(key, [])
+            if evidence not in held:
+                held.append(evidence)
+        records = {key: "\n\n".join(held) for key, held in evidences.items()}
         # The admission evidence is read once, before the first record: each
         # record's decision label changes the scope context the judgement was
         # bound to, so a second record read after it would find the halt's own
