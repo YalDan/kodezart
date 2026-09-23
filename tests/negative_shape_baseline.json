@@ -4666,6 +4666,7 @@
    "test_keys_an_answer_names_only_in_its_prose_are_prose_and_are_not_resolved",
    "test_a_reference_lost_between_the_session_and_the_write_is_refused",
    "test_an_answer_to_a_nested_criterion_is_recorded_on_that_criterion",
+   "test_an_answer_to_a_canceled_nested_criterion_is_recorded_on_that_criterion",
    "test_a_nested_criterion_unlabelled_while_the_pass_ran_no_longer_resolves",
    "test_a_criterion_the_answer_does_not_address_leaving_still_records",
    "test_an_identity_a_successor_absorbed_is_still_addressable_at_the_write",
