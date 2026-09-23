@@ -327,6 +327,9 @@ async def test_a_canceled_or_duplicate_criterion_is_excluded_and_named_beside_th
     assert [issue.issue_key for issue in selection.closed] == ["blocker"]
     assert keys(selection) == ["lane"]
     assert selection.blocked == ()
+    # What stays unresolved is named, so the absence above is read off a
+    # list that still carries the scope's one counting open criterion.
+    assert selection.unresolved == ("lane-check",)
     fixture.assert_read_only()
 
 
