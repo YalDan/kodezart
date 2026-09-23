@@ -1168,3 +1168,45 @@ def test_a_step_wired_straight_at_the_port_fails_the_static_check():
     assert CallSite(
         module="driven.py", function="Writer.publish.put", method="post_comment"
     ) in production.call_sites(artifact_writes())
+
+
+#: The tracker's two structural writes: a graph change and a workflow-state
+#: move.  Graph change is the pre-approval organize row's alone (KOD-561),
+#: and the state moves are the lifecycle writer's and the lane state
+#: writer's (KOD-806); no organize stage and no step of a scope walk makes
+#: either.
+STRUCTURAL_WRITES = frozenset({"set_workflow_state", "update_issue_graph"})
+#: Every production call of those writes, compared exactly: a new call site
+#: of either, inside a write-back step or not, fails here as loudly as a
+#: stale entry does.
+STRUCTURAL_CALL_SITES = frozenset(
+    {
+        CallSite(
+            module="services/organize_owner.py",
+            function="OrganizeOwner._author_write.apply",
+            method="update_issue_graph",
+        ),
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_dequeue",
+            method="set_workflow_state",
+        ),
+        CallSite(
+            module=LIFECYCLE,
+            function="TrackerLifecycleWriter.on_pull_request",
+            method="set_workflow_state",
+        ),
+        CallSite(
+            module=LANE_STATE,
+            function="TrackerLaneStateWriter._write_one",
+            method="set_workflow_state",
+        ),
+    }
+)
+
+
+def test_the_structural_writes_are_called_only_where_the_register_says():
+    """Graph change and state moves, read off the tree and held to the register."""
+    assert STRUCTURAL_WRITES <= write_methods(TRACKER_SURFACE)
+    production = Production(production_sources())
+    assert production.call_sites(STRUCTURAL_WRITES) == STRUCTURAL_CALL_SITES
