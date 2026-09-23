@@ -204,15 +204,39 @@ def test_every_forbidden_name_has_a_control() -> None:
 
 
 def _scope_members_named(tree: ast.Module, *, label: str) -> list[str]:
-    """Every ``ScopeLabel.<MEMBER>`` attribute access in *tree*."""
-    return [
-        f"{label}:{node.lineno}: {node.attr}"
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute)
-        and isinstance(node.value, ast.Name)
-        and node.value.id == ScopeLabel.__name__
-        and node.attr in {member.name for member in ScopeLabel}
-    ]
+    """Every site in *tree* that names a scope member in the source itself.
+
+    Four shapes: ``ScopeLabel.<MEMBER>`` attribute access, a ``ScopeLabel[...]``
+    subscript on a member's name, a string constant equal to a member's value,
+    and so a ``ScopeLabel(...)`` call on one — the call is seen through the
+    constant it is given. Each site is reported by the member's name,
+    whichever shape named it.
+    """
+    by_value = {member.value: member.name for member in ScopeLabel}
+    by_name = {member.name for member in ScopeLabel}
+    sites = []
+    for node in ast.walk(tree):
+        named = None
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == ScopeLabel.__name__
+            and node.attr in by_name
+        ):
+            named = node.attr
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            named = by_value.get(node.value)
+        elif (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == ScopeLabel.__name__
+            and isinstance(node.slice, ast.Constant)
+            and node.slice.value in by_name
+        ):
+            named = str(node.slice.value)
+        if named is not None:
+            sites.append(f"{label}:{node.lineno}: {named}")
+    return sites
 
 
 def test_the_dispatch_path_names_no_scope_member_but_the_approval_cascade() -> None:
@@ -233,8 +257,21 @@ def test_the_dispatch_path_names_no_scope_member_but_the_approval_cascade() -> N
     }, named
 
 
-def test_the_detector_sees_a_planted_member() -> None:
-    planted = "gate = ScopeLabel.TRIAGE in members\n"
-    assert _scope_members_named(ast.parse(planted), label="control") == [
+#: One control per shape a member could be named by in the source.
+MEMBER_CONTROLS = (
+    ("attribute", "gate = ScopeLabel.TRIAGE in members\n"),
+    ("call", 'gate = ScopeLabel("triage") in members\n'),
+    ("subscript", 'gate = ScopeLabel["TRIAGE"] in members\n'),
+    ("string", 'gate = key != "triage"\n'),
+)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [source for _, source in MEMBER_CONTROLS],
+    ids=[shape for shape, _ in MEMBER_CONTROLS],
+)
+def test_the_detector_sees_a_planted_member(source: str) -> None:
+    assert _scope_members_named(ast.parse(source), label="control") == [
         f"control:1: {ScopeLabel.TRIAGE.name}"
     ]
