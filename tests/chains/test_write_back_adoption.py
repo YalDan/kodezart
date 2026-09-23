@@ -675,8 +675,8 @@ class Writer:
     def __init__(self, *, tracker: TrackerPort, verifier: WriteBackVerifier) -> None:
         self._tracker, self._verifier = tracker, verifier
 
-    @derived_writes("post_comment")
     async def publish(self) -> None:
+        @derived_writes("post_comment")
         async def put(finding):
             await self._tracker.post_comment(issue_key="K", body="b")
 
@@ -727,13 +727,14 @@ def test_a_declaration_is_exact_in_both_directions(bucket):
         assert declared in found.stale
         assert found.unadopted == frozenset()
     elif bucket == "declared-but-driven":
-        assert site not in found.sites
         driven = CallSite(
             module=module, function="Writer.publish.put", method="post_comment"
         )
+        assert driven in found.sites
         assert driven in found.driven
         assert driven not in found.held_out
-        assert declared in found.stale
+        assert driven not in found.unadopted
+        assert driven in found.stale
     else:
         assert site in found.held_out
         assert site in found.authored
