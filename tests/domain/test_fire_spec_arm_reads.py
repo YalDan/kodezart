@@ -375,15 +375,17 @@ def _report(sources: Mapping[str, str]) -> dict[str, dict[str, tuple[str, ...]]]
 PACKAGE = source_tree()
 PARSED = parsed(PACKAGE)
 
-#: The two positions where an arm's text leaves the formatter's reach without
-#: being rendered: a lane's record pins the subject it entered on, and the
-#: entry compares that pin with the subject it just read.  A digest of the
-#: bytes renders nothing, so it is counted apart from a read.  A third digest
+#: The three positions where an arm's text leaves the formatter's reach without
+#: being rendered: a lane's record pins the subject it entered on, the stall
+#: exit's landing row pins the same subject on the same record (KOD-705), and
+#: the entry compares that pin with the subject it just read.  A digest of the
+#: bytes renders nothing, so it is counted apart from a read.  A fourth digest
 #: position is a decision recorded here, not a convenience, and nothing is
 #: re-routed through the formatter because that would change a record
 #: digest's bytes.
 DIGEST_POSITIONS = {
     "chains/ralph_loop.py": ("RalphLoop._lane_binding",),
+    "chains/ralph_workflow.py": ("RalphWorkflowEngine._record_landing",),
     "domain/lane_entry.py": ("require_unamended_subject",),
 }
 
