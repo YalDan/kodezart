@@ -376,16 +376,33 @@ def test_every_reading_a_record_carries_is_sorted_whatever_order_it_was_read_in(
     assert desired.readings[2].value.value == MANY[:-1]
 
 
+#: The lane's own address, for the walk that assembles its subtree readings.
+LANE_REF = ScopeRef(kind=ScopeKind.ISSUE, key=LANE.lane_key)
+
+
 def test_a_closure_under_a_deliverable_child_is_movement():
-    """The lane owes its whole subtree, so a closure anywhere in it moved."""
-    nested = criterion("c-nested", parent="LANE-1/deliverable")
-    roster = (criterion(FIRST), nested)
+    """The lane owes its whole subtree, so a closure anywhere in it moved.
+
+    The readings come off the same subtree walk the ticker reads a lane's gap
+    with, so the nested criterion reaches the roster only by the walk's
+    descent through the deliverable child that holds it.
+    """
+    rows = (
+        make_tracker_issue(LANE.lane_key),
+        criterion(FIRST),
+        make_tracker_issue("LANE-1/deliverable", parent_key=LANE.lane_key),
+        criterion("c-nested", closed=True, parent="LANE-1/deliverable"),
+    )
+    closure = SubtreeClosure(facts={row.issue_key: row for row in rows}, ref=LANE_REF)
+    roster = closure.roster(LANE.lane_key)
+
+    assert "c-nested" in {row.issue_key for row in roster}
 
     desired = next_tally_record(
         subject=LANE,
         stored=None,
         roster=roster,
-        gap=(criterion(FIRST),),
+        gap=closure.gap(LANE.lane_key),
         criteria=roster,
         record=lane_record(commits=("sha-one", "sha-two", "sha-three")),
         max_commits_without_closure=BOUND,
@@ -395,10 +412,6 @@ def test_a_closure_under_a_deliverable_child_is_movement():
     assert desired is not None
     assert not alarm_raised(desired)
     assert desired.readings[2].value.value == ("c-nested",)
-
-
-#: The lane's own address, for the walk that assembles its subtree readings.
-LANE_REF = ScopeRef(kind=ScopeKind.ISSUE, key=LANE.lane_key)
 
 
 def test_a_criterion_moved_to_in_review_closes_nothing_so_the_stall_raises():
