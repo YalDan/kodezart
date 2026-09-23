@@ -230,6 +230,31 @@ async def test_session_cannot_invent_or_redirect_mandate(setup, damage):
     assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
 
 
+async def test_a_quote_found_only_in_another_covered_surface_is_refused(
+    setup, server, tracker_writes
+):
+    """The quote must be text of the surface the judgment names, no other.
+
+    The session names the source surface but quotes a sentence only the
+    other covered surface carries.  Both were read, so the sentence is
+    real text of the covered set; it is not text of the named source, so
+    the hunt refuses the judgment.
+    """
+    build, runner, _, workspace = setup
+    elsewhere = server.issues[OTHER].description
+    assert elsewhere not in server.issues[ISSUE].description
+    data = output()
+    data["finding"]["mandate_text"] = elsewhere
+    runner._events[0] = result_event(subtype="success", structured_output=data)
+    before = tracker_writes()
+    with pytest.raises(
+        AuditClaimReadError, match="mandate quotation is not exact source text"
+    ):
+        await build().complete(REQUEST)
+    assert tracker_writes() == before
+    assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+
+
 @pytest.mark.parametrize("damage", ["source", "head", "dirty"])
 async def test_inflight_changes_refuse_complete_report(
     setup, tracker, monkeypatch, damage
