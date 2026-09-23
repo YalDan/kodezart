@@ -189,7 +189,7 @@
   "tests/domain/test_fire_spec_arm_reads.py": 23,
   "tests/domain/test_fire_spec_formatter.py": 2,
   "tests/domain/test_fire_spec_purity.py": 10,
-  "tests/domain/test_gap.py": 32,
+  "tests/domain/test_gap.py": 34,
   "tests/domain/test_git_url.py": 16,
   "tests/domain/test_issue_label_config.py": 6,
   "tests/domain/test_lane_alarms.py": 21,
