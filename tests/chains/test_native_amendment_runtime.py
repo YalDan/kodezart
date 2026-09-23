@@ -946,3 +946,86 @@ async def test_a_finished_criterion_refused_as_undemonstrable_stays_finished(
         assert port.issues[DIRECT_OWED].state_kind is WorkflowStateKind.COMPLETED
     finally:
         await cleanup(workspace)
+
+
+async def test_a_finished_criterion_refused_on_the_last_round_stays_finished(
+    repository,
+):
+    """A refusal on the ceiling round does not take a finished criterion back.
+
+    Round one's writer claims nothing and its grading passes only the refused
+    criterion, which the loop crosses off. Round two is the ceiling: its writer
+    claims a departure on that same criterion resting on a capability the
+    declared runner environment lacks, so the round is refused as
+    undemonstrable and the loop ends refused, with no graded round after it.
+
+    A refusal is not a lapse, on the last round as on any other: the criterion
+    is COMPLETED when round two's writer starts and after the loop ends, and
+    from round two's writer on the board takes no workflow-state write or
+    put-back on it.
+    """
+    port = None
+    writes = 0
+    dispatched: list[list[str]] = []
+    marks: dict[str, int] = {}
+    states_at_writer: list[WorkflowStateKind] = []
+
+    async def answers(title, payload, kwargs):
+        nonlocal writes
+        if title == "NativeWriterOutput":
+            writes += 1
+            states_at_writer.append(port.issues[DIRECT_OWED].state_kind)
+            if writes == 2:
+                marks["workflow"] = len(port.workflow_writes)
+                marks["restored"] = len(port.restored_states)
+            else:
+                payload["claims"] = []
+        elif title == "AcceptanceCriteriaOutput":
+            keys = dispatched_keys(kwargs["prompt"], port)
+            dispatched.append(keys)
+            payload.clear()
+            payload.update(criteria_echo(keys=keys, passed={DIRECT_OWED}))
+
+    executor = Executor(
+        reproduced=True,
+        claimed_capability="network",
+        finding=UNVERIFIABLE_HERE,
+        mutate=answers,
+    )
+    fire, spec, current, _, workspace, port = await make_runtime(
+        repository,
+        executor,
+        max_iterations=2,
+        runner_environment={CheckPrerequisite.NETWORK: False},
+    )
+    reports = []
+    try:
+        async with asyncio.timeout(300):
+            with pytest.raises(NativeAmendmentRefusalError) as caught:
+                async for value in consumer_graph(
+                    fire, repository, spec, current
+                ).astream({}, stream_mode="custom"):
+                    if isinstance(value, NativeAmendmentEvent):
+                        reports.append(value)
+        assert writes == 2
+        assert [bool(event.report.upheld) for event in reports] == [False, True]
+        refusal = caught.value.report.upheld[0]
+        assert refusal.subject.id == DIRECT_OWED
+        assert refusal.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+        assert len(dispatched) == 1
+        assert DIRECT_OWED in dispatched[0]
+        # Round one finished it, and round two's writer found it finished.
+        assert states_at_writer[1] is WorkflowStateKind.COMPLETED
+        assert (DIRECT_OWED, LifecycleStage.DONE) in port.workflow_writes[
+            : marks["workflow"]
+        ]
+        # The refusal on the last round moved nothing on it.
+        assert [key for key, _ in port.workflow_writes[marks["workflow"] :]].count(
+            DIRECT_OWED
+        ) == 0
+        assert [key for key, _ in port.restored_states[marks["restored"] :]].count(
+            DIRECT_OWED
+        ) == 0
+        assert port.issues[DIRECT_OWED].state_kind is WorkflowStateKind.COMPLETED
+    finally:
+        await cleanup(workspace)
