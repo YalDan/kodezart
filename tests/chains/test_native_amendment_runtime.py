@@ -787,3 +787,100 @@ async def test_an_undemonstrable_refusal_grades_nothing_and_ordinary_stops_end_t
         assert port.issues[DIRECT_OWED].state_kind is settled
     finally:
         await cleanup(workspace)
+
+
+async def test_a_finished_criterion_refused_as_undemonstrable_stays_finished(
+    repository,
+):
+    """Refusing a finished criterion as undemonstrable does not take it back.
+
+    Round one's writer claims nothing and its grading passes only the refused
+    criterion, which the loop crosses off. Round two's writer claims a departure
+    on that same criterion resting on a capability the declared runner
+    environment lacks, so the round is refused as undemonstrable and grades
+    nothing. Round three claims nothing and passes everything.
+
+    A refusal is not a lapse: the criterion is still COMPLETED when round three's
+    writer starts and at the end, and from round two's writer on the board takes
+    no workflow-state write or put-back on it.
+    """
+    port = None
+    writes = 0
+    dispatched: list[list[str]] = []
+    marks: dict[str, int] = {}
+    states_at_writer: list[WorkflowStateKind] = []
+
+    async def answers(title, payload, kwargs):
+        nonlocal writes
+        if title == "NativeWriterOutput":
+            writes += 1
+            states_at_writer.append(port.issues[DIRECT_OWED].state_kind)
+            if writes == 2:
+                marks["workflow"] = len(port.workflow_writes)
+                marks["restored"] = len(port.restored_states)
+            else:
+                payload["claims"] = []
+        elif title == "AcceptanceCriteriaOutput":
+            keys = dispatched_keys(kwargs["prompt"], port)
+            dispatched.append(keys)
+            passed = {DIRECT_OWED} if len(dispatched) == 1 else set(keys)
+            payload.clear()
+            payload.update(criteria_echo(keys=keys, passed=passed))
+
+    executor = Executor(
+        reproduced=True,
+        claimed_capability="network",
+        finding=UNVERIFIABLE_HERE,
+        mutate=answers,
+    )
+    fire, spec, current, _, workspace, port = await make_runtime(
+        repository,
+        executor,
+        max_iterations=4,
+        runner_environment={CheckPrerequisite.NETWORK: False},
+    )
+    reports = []
+    last = None
+    try:
+        async with asyncio.timeout(300):
+            async for mode, value in consumer_graph(
+                fire, repository, spec, current
+            ).astream({}, stream_mode=["custom", "values"]):
+                if mode == "values":
+                    last = value
+                elif isinstance(value, NativeAmendmentEvent):
+                    reports.append(value)
+        assert writes == 3
+        assert [bool(event.report.upheld) for event in reports] == [
+            False,
+            True,
+            False,
+        ]
+        refusal = reports[1].report.upheld[0]
+        assert refusal.subject.id == DIRECT_OWED
+        assert refusal.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+        assert len(dispatched) == 2
+        assert all(DIRECT_OWED in keys for keys in dispatched)
+        # Round one finished it; the refusal in round two left it finished for
+        # round three's writer; nothing after the refusal moved it.
+        assert states_at_writer[1:] == [
+            WorkflowStateKind.COMPLETED,
+            WorkflowStateKind.COMPLETED,
+        ]
+        assert (DIRECT_OWED, LifecycleStage.DONE) in port.workflow_writes[
+            : marks["workflow"]
+        ]
+        assert [key for key, _ in port.workflow_writes[marks["workflow"] :]].count(
+            DIRECT_OWED
+        ) == 0
+        assert [key for key, _ in port.restored_states[marks["restored"] :]].count(
+            DIRECT_OWED
+        ) == 0
+        assert last is not None
+        iteration = last["iteration"]
+        assert isinstance(iteration, WorkflowIterationEvent)
+        assert iteration.verdict is AcceptVerdict.accepted
+        assert iteration.iteration == 3
+        assert port.issues[DIRECT_OWED].state_kind is WorkflowStateKind.COMPLETED
+    finally:
+        await cleanup(workspace)
