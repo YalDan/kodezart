@@ -550,8 +550,12 @@ The model follows the declared list fields: field assignment is frozen, but
 the lists are not deeply immutable. Consumers must not mutate retained evidence;
 each read returns freshly decoded values rather than a shared cached collection.
 Counts remain independently recorded observations, so the consistency signal
-can still detect disagreement with commit rows. The re-entry text directs
-checkout or recovery of existing work and treats absent or reaped remote refs
+can still detect disagreement with commit rows. The re-entry text directs a
+resume at the record's last commit act, never at a remote tip the record does
+not name: the existing loop branch is checked out where the remote holds it at
+that sha, a fresh loop branch is cut from that sha beside the kept association
+where it stands anywhere else, and a branch the remote no longer holds is
+recovered rather than replaced. It treats absent or reaped remote refs
 explicitly. Satisfaction and Evidence remain on the criterion issues.
 
 The reader recognizes this declared format; old free-form manual comments need

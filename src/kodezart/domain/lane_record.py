@@ -27,14 +27,18 @@ LANDING_ROW_SUBJECT = "land: the best iteration this run reached"
 
 REENTRY_SECTION = """## Re-entry
 
-Resume the branch identified by the LOOP role and the record's branch field.
-When pushedHeadSha is present, that branch exists on the remote at the recorded
-head; check out the existing branch. When pushedHeadSha is null, no remote copy
-was recorded: recover the existing branch before continuing. Never mint a new
-branch in place of a recorded association. Follow the explicit roles and
-derivedFrom links to the deliverable, other loop and recovery branches; do not
-infer their roles from their names. Associations survive reaping, so verify
-current remote liveness before checkout.
+Resume at the record's last commit act, the sha of its final commits row, and
+never at a remote tip the record does not name. Find the loop branch by the
+LOOP role and the record's branch field. When the remote holds it at that sha,
+check it out and continue it. When it stands anywhere else, cut a fresh loop
+branch from that sha and keep the old association; the old branch stays where
+it stands. When the remote no longer holds it, recover it before continuing:
+never mint a new branch in place of a recorded association. pushedHeadSha is
+where the remote held the loop branch when a commit last observed it, not the
+head to resume at. Follow the explicit roles and derivedFrom links to the
+deliverable, other loop and recovery branches; do not infer their roles from
+their names. Associations survive reaping, so verify current remote liveness
+before checkout.
 
 Grade the existing commits against each criterion sub-issue's own Check and
 verification instructions, reading satisfaction and Evidence on that sub-issue.
