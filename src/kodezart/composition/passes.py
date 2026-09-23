@@ -61,7 +61,11 @@ from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
-from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.dispatch import (
+    DispatchWorkflow,
+    PassSignal,
+    SelfWriteLedger,
+)
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationConfig,
@@ -262,9 +266,10 @@ def runs_scope_flow(operation: OperationConfig) -> bool:
 
     Such an operation is worked scope by scope: a scope is approved, the
     organize step maps its workflow, and the walker runs the lanes. It decides
-    the passes that belong to that flow alone; the grooming and fire-prep
-    sessions are no part of the question and run on the declared roster
-    either way (:func:`session_passes_wire`).
+    the observation tick that watches those lanes. It decides nothing else:
+    the grooming and fire-prep sessions run on the declared roster either way
+    (:func:`session_passes_wire`), and which dispatcher runs is the
+    ``dispatch_workflow`` setting's answer, not the roster's.
 
     Read off the existing roster rather than a switch of its own: a lane cannot
     fire without the criteria mandate's terminal marker, which only an organize
@@ -582,9 +587,9 @@ async def _verify_wired_gates(
     builders themselves use: a signal configured for a pass this deployment
     does not schedule is not a capability it needs, and refusing boot over
     one would hold a deployment hostage to a knob nothing reads. A deployment
-    that declares ``organize_scopes`` schedules no per-issue dispatch pass, so
-    it needs none of that pass's signals; it schedules both session passes,
-    so it needs theirs.
+    whose ``dispatch_workflow`` is ``scope`` builds no dispatch pass, so it
+    needs none of that pass's signals; the session passes run under either
+    setting, so their signals are asked wherever the roster is declared.
 
     Every refused signal is named at once, with the passes it gates and the
     backend's own diagnosis, because an operator fixing one scope at a time
@@ -599,7 +604,7 @@ async def _verify_wired_gates(
     )
     if (
         github_api is not None
-        and not runs_scope_flow(operation)
+        and config.dispatch_workflow is DispatchWorkflow.FIRE
         and any(operation.teams_scanned_by(repo.url) for repo in operation.repos)
     ):
         wired[_DISPATCH_NAME] = config.dispatch_pass_gate_signals
@@ -809,17 +814,19 @@ async def build_dispatch_runtime(
     beside a live port skipped every dispatch pass and ran every prompt
     pass ungated, and the log said the tracker was present.
     """
-    # Cadence is scheduler configuration and nothing else. Four
-    # states, none silent: no tracker, no operation config, no delivery probe
-    # to answer "is this issue already delivered?", or an operation that works
-    # scope by scope and has no use for a pass that scans a whole board — and
-    # the passes do not run, named, never inferred from an empty schedule.
+    # Cadence is scheduler configuration and nothing else. Four states, none
+    # silent: a deployment that dispatches through the scope heartbeat instead,
+    # no tracker, no operation config, or no delivery probe to answer "is this
+    # issue already delivered?" — and the passes do not run, named, never
+    # inferred from an empty schedule. Past the setting, the conditions are
+    # v0.2's own: declared scopes do not withhold the pass.
+    fires = config.dispatch_workflow is DispatchWorkflow.FIRE
     built: DispatchPasses | None = None
     if (
-        dialled is not None
+        fires
+        and dialled is not None
         and operation is not None
         and github_api is not None
-        and not runs_scope_flow(operation)
     ):
         built = await build_dispatch_passes(
             config=config,
@@ -838,11 +845,10 @@ async def build_dispatch_runtime(
     else:
         await log.ainfo(
             "scheduled_passes_not_wired",
+            dispatch_workflow=config.dispatch_workflow.value,
             tracker_present=dialled is not None,
             operation_config_present=operation is not None,
             delivery_probe_present=github_api is not None,
-            organize_scopes_declared=operation is not None
-            and runs_scope_flow(operation),
         )
     # The prompt passes need no tracker port to RUN: the session reaches
     # the tracker itself. They need one only to be GATED. What they cannot
@@ -953,19 +959,24 @@ async def build_dispatch_runtime(
                 ),
             ),
         )
-        # The standing scopes' own pass, beside the tick that grooms them:
-        # one predicate decides both, so a deployment that declares the rows
-        # gets the pre-approval tick AND the submission of what approval
-        # admits, and a deployment that declares none gets neither.  On the
-        # dispatch cadence, because what it watches for is the same kind of
-        # change a dispatch scan watches for, and with no report: it opens no
-        # session, so a tick of it is not a run that could be recorded.
-        heartbeat = build_scope_heartbeat(
-            config=config,
-            operation=operation,
-            tracker=None if dialled is None else dialled.tracker,
-            queue=queue,
-            registry=registry,
+        # The standing scopes' own dispatcher, scheduled only where the
+        # deployment dispatches through it: the setting chooses between it
+        # and the dispatch pass above, so no deployment runs both. Past the
+        # setting it is built on the organize tick's predicate, so it submits
+        # only rows that tick grooms. On the dispatch cadence, because what it
+        # watches for is the same kind of change a dispatch scan watches for,
+        # and with no report: it opens no session, so a tick of it is not a
+        # run that could be recorded.
+        heartbeat = (
+            None
+            if fires
+            else build_scope_heartbeat(
+                config=config,
+                operation=operation,
+                tracker=None if dialled is None else dialled.tracker,
+                queue=queue,
+                registry=registry,
+            )
         )
         if heartbeat is not None:
             scheduled.append(
@@ -975,6 +986,12 @@ async def build_dispatch_runtime(
                     timeout_seconds=config.dispatch_pass_timeout_seconds,
                     run=heartbeat.run,
                 )
+            )
+        else:
+            await log.ainfo(
+                "scope_heartbeat_not_wired",
+                dispatch_workflow=config.dispatch_workflow.value,
+                organize_scopes_declared=bool(operation.organize_scopes),
             )
     else:
         # The other arm of the same event: no operation config at all, so

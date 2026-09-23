@@ -258,6 +258,7 @@
   "tests/integration/test_checkpointer_postgres.py": 9,
   "tests/integration/test_criteria_oracle.py": 21,
   "tests/integration/test_derived_lifecycle_admission.py": 4,
+  "tests/integration/test_dispatch_workflow.py": 31,
   "tests/integration/test_fixed_outbound_admission.py": 5,
   "tests/integration/test_issue_key_carriage.py": 20,
   "tests/integration/test_live_criteria_probes.py": 17,
@@ -3777,6 +3778,13 @@
   ],
   "tests/integration/test_derived_lifecycle_admission.py": [
    "test_existing_lifecycle_writers_keep_native_comments_without_a_text_session"
+  ],
+  "tests/integration/test_dispatch_workflow.py": [
+   "test_the_setting_defaults_to_the_fire_and_is_read_from_the_environment",
+   "test_the_fire_starts_the_dispatch_passes_and_no_heartbeat",
+   "test_the_scope_setting_builds_no_dispatch_pass",
+   "test_an_approved_idle_scope_gets_exactly_one_scope_run",
+   "test_the_fire_without_a_delivery_probe_names_the_setting_and_the_premise"
   ],
   "tests/integration/test_fixed_outbound_admission.py": [
    "test_unreadable_authored_body_never_reaches_the_actual_pr_writer",

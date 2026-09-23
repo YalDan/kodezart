@@ -355,3 +355,22 @@ class PassRun(StrEnum):
 
     RAN = "ran"
     SKIPPED = "skipped"
+
+
+class DispatchWorkflow(StrEnum):
+    """Which workflow the scheduled dispatcher submits runs to.
+
+    One deployment dispatches through one of the two, never both: the v0.2
+    fire, which claims one approved issue per tick and runs it with no scope,
+    or the scope walk, which submits each approved, idle declared scope as one
+    scope run. Grooming, fire prep and the organize tick are not part of the
+    choice; they run under either.
+    """
+
+    FIRE = "fire"
+    """The v0.2 dispatch pass per declared repository, with its lifecycle
+    watcher and claim heartbeat. The shipped default."""
+
+    SCOPE = "scope"
+    """The scope heartbeat over the declared ``[[organize_scopes]]`` rows. No
+    dispatch pass is built, so no scheduled run starts without a scope."""

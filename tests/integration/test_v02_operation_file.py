@@ -34,7 +34,11 @@ from kodezart.core.logging import get_logger
 from kodezart.core.prompt_namespaces import operation_bindings
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.branch import BaseSpec, WorkRefLanding, WorkRefRole
-from kodezart.types.domain.dispatch import ExclusionClause, SelfWriteLedger
+from kodezart.types.domain.dispatch import (
+    DispatchWorkflow,
+    ExclusionClause,
+    SelfWriteLedger,
+)
 from kodezart.types.domain.operation import (
     DocumentSystem,
     OperationMemberAbsentError,
@@ -129,8 +133,9 @@ async def test_the_v020_example_boots_unchanged_and_schedules_the_per_issue_pass
     assert operation.marker_prefixes == V02_WIRE_PREFIXES
 
     # As the composition root does it: one registry bound to the operation,
-    # preflight, then the wiring.
+    # preflight, then the wiring. The dispatch setting is left at its default.
     config = _config(tmp_path)
+    assert config.dispatch_workflow is DispatchWorkflow.FIRE
     prompts = load_registry(bindings=operation_bindings(operation))
     board = FakeTrackerPort()
     forge = FakeDeliveryProbe()

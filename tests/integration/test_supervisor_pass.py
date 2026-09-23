@@ -58,11 +58,7 @@ from tests.services.lane_tally_fixtures import (
     subject,
 )
 from tests.services.test_prompt_pass import example_config
-from tests.services.test_prompt_passes import (
-    HEARTBEAT_PASS,
-    STANDING_SCOPE_SETTINGS,
-    _runtime,
-)
+from tests.services.test_prompt_passes import STANDING_SCOPE_SETTINGS, _runtime
 
 #: Bounded because an integration tick that hangs is a failure, not a wait.
 TICK_BOUND_SECONDS = 60
@@ -238,14 +234,14 @@ async def test_the_pass_registers_only_with_declared_scopes_and_a_dialled_tracke
 
     # Every other pass is as it was: the arm adds one registration and edits no
     # other. The two sets are named, because a declared roster and an undeclared
-    # one do not schedule the same passes: the roster withholds the dispatch
-    # pass and adds the organize tick and the heartbeat, both registered before
-    # the observation arm runs, and the session passes run under either.
-    sessions = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
-    per_issue = set(sessions)
+    # one do not schedule the same passes: the roster adds the organize tick,
+    # registered before the observation arm runs. The dispatch pass and the
+    # session passes run under either, and the scope heartbeat runs under
+    # neither, because this deployment dispatches through the v0.2 fire.
+    per_issue = {PromptKey.FIRE_PREP_PASS.value, PromptKey.GROOMING_PASS.value}
     if dispatching:
         per_issue |= {f"dispatch:{REPO}"}
-    scope_passes = {"organize_pass", HEARTBEAT_PASS} | sessions
+    scope_passes = {"organize_pass"} | per_issue
     expected = scope_passes if raw_scopes else per_issue
     assert {entry.name for entry in registered} - {"supervisor"} == expected
 

@@ -503,6 +503,9 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
 ) -> None:
     """The standing scopes' own pass, beside the tick that grooms them.
 
+    Registered where the deployment dispatches through it, which is what
+    ``dispatch_workflow = "scope"`` says.
+
     One registration for the whole operation, on the cadence the dispatch
     scans already run on, and with no report: it opens no session, so a tick
     of it is not a run anything could record. The grooming pass is still
@@ -510,7 +513,7 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
     alternatives — and the cadence is read off the configuration rather than
     spelled here.
     """
-    config = _config(tmp_path, **STANDING_SCOPE_SETTINGS)
+    config = _config(tmp_path, **STANDING_SCOPE_SETTINGS, dispatch_workflow="scope")
     operation = standing_scope_operation()
     queue = FakeJobQueue()
     runtime = await _runtime(
@@ -520,6 +523,7 @@ async def test_declared_standing_scopes_register_the_heartbeat_on_the_dispatch_c
         operation=operation,
         queue=queue,
         **STANDING_SCOPE_SETTINGS,
+        dispatch_workflow="scope",
     )
 
     registered = [entry.name for entry in runtime.scheduler.passes]
@@ -556,9 +560,10 @@ async def test_an_operation_with_no_standing_scope_registers_no_heartbeat(
 ) -> None:
     """Non-vacuity for the registration above: the rows are what wire it.
 
-    The same deployment over the same owner bounds, with the standing rows
-    removed, schedules neither the organize tick nor the heartbeat — which
-    is why the exact pass-set assertions in this module stay as they are.
+    The same deployment over the same owner bounds and the same dispatch
+    setting, with the standing rows removed, schedules neither the organize
+    tick nor the heartbeat — which is why the exact pass-set assertions in
+    this module stay as they are.
     """
     runtime = await _runtime(
         tmp_path,
@@ -570,6 +575,7 @@ async def test_an_operation_with_no_standing_scope_registers_no_heartbeat(
             for key, value in STANDING_SCOPE_SETTINGS.items()
             if key != "organize"
         },
+        dispatch_workflow="scope",
     )
 
     assert {entry.name for entry in runtime.scheduler.passes} == {

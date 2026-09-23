@@ -410,9 +410,11 @@ async def test_a_scope_deployment_boots_from_the_shipped_files_and_fires_nothing
         # first observed lane.
         assert MARKER_PURPOSE in loaded.marker_prefixes
         assert app.state.checkpointer is None
+        # The page's environment dispatches through the scope heartbeat, so no
+        # dispatch pass is built and the event names the setting as the reason.
         withheld = logged(events, "scheduled_passes_not_wired")
         assert len(withheld) == 1
-        assert withheld[0]["organize_scopes_declared"] is True
+        assert withheld[0]["dispatch_workflow"] == "scope"
         # The session passes are not withheld by a scope row: nothing says
         # they are missing.
         assert logged(events, "prompt_passes_not_wired") == []

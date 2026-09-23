@@ -22,7 +22,7 @@ from kodezart.config.logging import LoggingSettings
 from kodezart.config.organize import OrganizeSettings
 from kodezart.config.tracker import TrackerSettings
 from kodezart.config.write_back import WriteBackSettings
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import DispatchWorkflow, PassSignal
 from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
     TicketReviewMode,
@@ -644,6 +644,18 @@ class AppConfig(BaseSettings):
     dispatch_lane: str = Field(
         default="tracker",
         description="Fire-queue lane tracker-originated dispatches are enqueued on.",
+    )
+    dispatch_workflow: DispatchWorkflow = Field(
+        default=DispatchWorkflow.FIRE,
+        description=(
+            "Which workflow the scheduled dispatcher submits runs to. `fire` "
+            "builds the v0.2 dispatch pass per declared repository, with its "
+            "lifecycle watcher and claim heartbeat, and no scope heartbeat. "
+            "`scope` builds no dispatch pass and schedules the scope heartbeat "
+            "over the declared [[organize_scopes]] rows, so no scheduled run "
+            "starts without a scope. Grooming, fire prep and the organize tick "
+            "run under either."
+        ),
     )
     dispatch_holder: str = Field(
         default="kodezart",

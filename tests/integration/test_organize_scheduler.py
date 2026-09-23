@@ -62,6 +62,7 @@ def dependencies(tmp_path):
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
         ticket_review_mode="reviewed",
+        dispatch_workflow="scope",
     )
     board = _Board()
     board.server.issues[CLAIMED_ISSUE].description = "Missing specification"
@@ -325,10 +326,11 @@ async def test_a_scope_deployment_schedules_the_session_passes_beside_the_scope_
     """A declared scope row withholds no session pass.
 
     A scope run needs one declared team and one declared repository; a tracker
-    is dialled and a delivery probe is configured. The deployment gets the
-    observation tick, the organize tick and the standing scopes' heartbeat, and
-    beside them fire prep and grooming over the declared roster with the same
-    schedule values the same operation without scope rows gives them.
+    is dialled, a delivery probe is configured, and the deployment dispatches
+    through the scope heartbeat. It gets the observation tick, the organize
+    tick and the heartbeat, no dispatch pass, and beside them fire prep and
+    grooming over the declared roster with the same schedule values the same
+    operation without scope rows gives them.
     """
     config, operation, board, tracker, prompts, ledger = dependencies(tmp_path)
     runtime, logs = await _runtime_over(
@@ -345,7 +347,7 @@ async def test_a_scope_deployment_schedules_the_session_passes_beside_the_scope_
     assert len(withheld) == 1
     assert withheld[0]["tracker_present"] is True
     assert withheld[0]["delivery_probe_present"] is True
-    assert withheld[0]["organize_scopes_declared"] is True
+    assert withheld[0]["dispatch_workflow"] == "scope"
     assert _logged(logs, "prompt_passes_not_wired") == []
 
     # The same operation declaring no scope row schedules both sessions with the
@@ -443,9 +445,10 @@ async def test_preflight_asks_a_scope_deployment_for_its_sessions_and_not_dispat
     """Preflight probes and renders exactly what the wiring will build.
 
     Grooming and fire prep run in a scope deployment, so their signals are
-    probed and their templates rendered. The dispatch pass is not built here,
-    so its signal is not probed: a refusal over it would hold a scope
-    deployment hostage to a knob nothing reads.
+    probed and their templates rendered. A deployment that dispatches through
+    the scope heartbeat builds no dispatch pass, so its signal is not probed: a
+    refusal over it would hold a scope deployment hostage to a knob nothing
+    reads.
     """
     _, operation, _board, _tracker, prompts, _ledger = dependencies(tmp_path)
     config = _config(
@@ -456,6 +459,7 @@ async def test_preflight_asks_a_scope_deployment_for_its_sessions_and_not_dispat
         grooming_pass_gate_signals=[],
         dispatch_pass_gate_signals=[PassSignal.approved_changed],
         ticket_review_mode="reviewed",
+        dispatch_workflow="scope",
     )
     scanner = FakeTrackerPort()
     recording = _RecordingPrompts(prompts)

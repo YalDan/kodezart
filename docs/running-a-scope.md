@@ -72,7 +72,14 @@ export KODEZART_OPERATION_CONFIG=/path/to/operation.scope.toml
 export KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS=2
 export KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS=2
 export KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS=3
+export KODEZART_DISPATCH_WORKFLOW=scope
 ```
+
+`KODEZART_DISPATCH_WORKFLOW=scope` is what makes the scheduled dispatcher the
+scope heartbeat: it submits each approved, idle declared scope as one scope run,
+and no dispatch pass is built, so no scheduled run starts without a scope. Left
+at its default, `fire`, the deployment dispatches approved issues one at a time
+through the v0.2 fire instead.
 
 Leave `KODEZART_CHECKPOINT_URL` unset. Setting it builds a checkpointer, and
 what that checkpointer reaches is the authored HTTP workflow, the ticket
