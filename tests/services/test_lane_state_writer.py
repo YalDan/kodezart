@@ -3071,10 +3071,13 @@ async def test_a_lapsed_and_a_refuted_lane_check_share_a_state_not_a_stream():
 # Every member of the state: what it leaves on the board, and at which sha.
 # ---------------------------------------------------------------------------
 
-#: The sha the criterion was first finished at is ``STANDING_SHA`` above; this
-#: is the sha of the attempt whose verdict is under test: forty hex digits,
-#: every one of them used, so a row that lost, reordered or recased a byte
-#: reads back as another commit.
+#: The sha the criterion was first finished at, and the sha of the attempt
+#: whose verdict is under test: forty hex digits each, every hex digit used,
+#: neither one a palindrome nor a rotation of itself, and the two distinct, so
+#: a row that lost, reordered, reversed or recased a byte of either reads back
+#: as another commit. The lapsed member is written at the first-finished sha.
+#: Its own name, because the rollup above keeps ``STANDING_SHA`` for its board.
+FIRST_FINISHED_SHA = "fedcba9876543210" * 2 + "fedcba98"
 ATTEMPT_SHA = "0123456789abcdef" * 2 + "01234567"
 
 
@@ -3082,7 +3085,7 @@ def standing_cross_offs(key: str) -> tuple[CriterionCrossOff, ...]:
     """The grading that finished *key* first, as the loop hands it back."""
     return cross_offs_for(
         results=graded([key]),
-        graded_sha=STANDING_SHA,
+        graded_sha=FIRST_FINISHED_SHA,
         observation=evaluation_observation(session_id="eval-session", iteration=1),
         reasons=NO_WITHDRAWALS,
     )
@@ -3165,7 +3168,7 @@ async def test_each_cross_off_state_leaves_its_graded_sha_or_writes_nothing(memb
     port = criteria_board()
     lane_state = writer(port, lane_repo())
     key = CRITERIA[0]
-    await tick(lane_state, sha=STANDING_SHA, keys=[key])
+    await tick(lane_state, sha=FIRST_FINISHED_SHA, keys=[key])
     before = port.issues[key]
     assert before.state_kind is WorkflowStateKind.COMPLETED
     cross_offs = effect.build(key)
