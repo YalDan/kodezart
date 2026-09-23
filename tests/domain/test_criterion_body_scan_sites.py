@@ -370,6 +370,24 @@ def test_only_the_grammar_owner_matches_criterion_shaped_text():
     # function rather than spelled. A second scope inside the owner is a
     # second statement of the grammar as much as one in another module is.
     assert found[RULE_MODULE] == [_criterion_rows.__name__]
+    # One scope of the owner matches, and it is the one row traversal: a
+    # second loop over the rows with its own match, however faithful a copy,
+    # is a second parser that can drift from the first.
+    (traversal,) = found[RULE_MODULE]
+    # The field reader and the edit both reach that traversal by call, so the
+    # one scope that matches is the one both of them read the rows through.
+    rule = ast.parse(sources[RULE_MODULE])
+    reaching = {traversal}
+    while True:
+        grown = reaching | {
+            caller for name in reaching for caller in callers_of(rule, name=name)
+        }
+        if grown == reaching:
+            break
+        reaching = grown
+    assert {criterion_field_bodies.__name__, replace_criterion_fields.__name__} <= (
+        reaching - {traversal}
+    )
     # A scope name is not enough to close the owner, because a second
     # statement of the grammar matched inside the walker adds no second
     # name.  The names this syntactic reading binds to a compiled
