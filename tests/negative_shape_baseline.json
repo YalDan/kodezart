@@ -376,7 +376,7 @@
   "tests/services/test_scope_runtime.py": 56,
   "tests/services/test_scope_runtime_static.py": 10,
   "tests/services/test_scope_terminal.py": 106,
-  "tests/services/test_scope_walk_invariants.py": 32,
+  "tests/services/test_scope_walk_invariants.py": 44,
   "tests/services/test_session_grant_threading.py": 13,
   "tests/services/test_structured_run_records.py": 55,
   "tests/services/test_supervisor_pass.py": 18,
@@ -5339,7 +5339,8 @@
    "test_every_tick_names_the_out_of_reach_criteria_of_every_ready_lane",
    "test_dispatch_target_resolution_reads_no_lane_body",
    "test_the_walker_and_its_plateau_read_no_setting",
-   "test_the_delivery_only_turn_is_chosen_without_reading_a_lane_body"
+   "test_the_delivery_only_turn_is_chosen_without_reading_a_lane_body",
+   "test_the_plateau_bound_is_the_constant_pinned_at_its_one_use"
   ],
   "tests/services/test_session_grant_threading.py": [
    "test_stream_carries_the_session_type_to_the_executor",

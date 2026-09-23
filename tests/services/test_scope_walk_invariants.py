@@ -468,3 +468,62 @@ def test_the_walker_and_its_plateau_read_no_setting() -> None:
         "git",
         "union_check_step_timeout_seconds",
     }
+    # The import half's positive control: over the composition, which does
+    # read the configuration, it finds exactly the module that is imported.
+    assert config_reads(module_of(build_scope_runtime))[0] == {AppConfig.__module__}
+
+
+def test_the_plateau_bound_is_the_constant_pinned_at_its_one_use() -> None:
+    """The bound the plateau reading is handed is the module constant, as is.
+
+    Read off the engine module's parse, with the callee resolved to the
+    plateau function through the module's own namespace: exactly one call,
+    whose ``plateau_bound=`` is the bare constant, and the constant is bound
+    once to a plain literal. A setting, an environment read, a field of a
+    repository entry or a ``max`` beside the constant would each have to
+    change one of those two expressions.
+    """
+    engine = module_of(ScopeWorkflowEngine)
+    tree = ast.parse(inspect.getsource(engine))
+    namespace = vars(engine)
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and namespace.get(node.func.id) is fire_plateaued
+    ]
+    # Every name in the module bound to the plateau function is one of the
+    # names the calls above are read through.
+    aliases = {name for name, value in namespace.items() if value is fire_plateaued}
+    assert aliases == {fire_plateaued.__name__}
+    assert len(calls) == 1
+    (call,) = calls
+    assert call.args == []
+    bounds = [keyword for keyword in call.keywords if keyword.arg == "plateau_bound"]
+    assert len(bounds) == 1
+    assert [keyword.arg for keyword in call.keywords if keyword.arg is None] == []
+    assert isinstance(bounds[0].value, ast.Name)
+    assert bounds[0].value.id == "PLATEAU_BOUND"
+    assert namespace["PLATEAU_BOUND"] == PLATEAU_BOUND
+
+    bindings = [
+        node
+        for node in tree.body
+        if (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "PLATEAU_BOUND"
+                for target in node.targets
+            )
+        )
+        or (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "PLATEAU_BOUND"
+        )
+    ]
+    assert len(bindings) == 1
+    (binding,) = bindings
+    assert isinstance(binding.value, ast.Constant)
+    assert binding.value.value == PLATEAU_BOUND
