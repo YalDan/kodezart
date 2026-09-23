@@ -589,9 +589,7 @@ async def read_planning_issue(port: FakeTrackerPort) -> None:
 
 
 async def read_alarm(port: FakeTrackerPort) -> None:
-    await port.read_run_alarm(
-        issue_key=ISSUE, subject=ALARM.subject, signal=ALARM.signal
-    )
+    await port.read_run_alarms(issue_key=ISSUE)
 
 
 async def read_scope_labels(port: FakeTrackerPort) -> None:
@@ -921,7 +919,7 @@ CASES: Mapping[str, Case] = {
         journals=frozenset(),
     ),
     "a run alarm read": Case(
-        method="read_run_alarm",
+        method="read_run_alarms",
         call=read_alarm,
         journals=frozenset(),
     ),
