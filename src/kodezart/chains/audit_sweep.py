@@ -111,6 +111,20 @@ class AuditReadObservation:
         ):
             raise ValueError("restamp report differs from the native trace")
         if (
+            self.forge is not None
+            and self.forge.verdict is AuditVerdict.REFUTED
+            and self.forge_report is not None
+            and self.forge_report.mandate is None
+        ):
+            raise ValueError("forge report differs from the native forge reading")
+        if (
+            self.claim is not None
+            and self.evidence is not None
+            and self.evidence.current_claim is not None
+            and self.claim.claim != self.evidence.current_claim
+        ):
+            raise ValueError("claim report differs from the evidence's current claim")
+        if (
             self.terminal is not None
             and self.terminal_report is None
             and self.unavailable_reason is None

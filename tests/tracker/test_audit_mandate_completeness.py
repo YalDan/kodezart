@@ -22,7 +22,7 @@ from kodezart.chains.audit_sweep import MANDATED_ARMS, AuditReadObservation
 from kodezart.domain.errors import AgentSDKError
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
-from kodezart.types.domain.audit import AuditVerdict
+from kodezart.types.domain.audit import AuditClaimReport, AuditVerdict
 from kodezart.types.domain.audit_evidence import restamp_defect_class
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -212,6 +212,57 @@ async def test_a_refutation_without_its_mandate_fails_the_completeness_assertion
         observation, **{completed: None, reason: "the mandate hunt could not run"}
     )
     assert getattr(control, arm) == getattr(observation, arm)
+
+
+@pytest.mark.parametrize("arm", ["forge", "evidence"])
+async def test_a_forge_or_evidence_refutation_is_completed_by_a_refuting_report(
+    setup, tracker, server, arm
+):
+    """The report beside a refutation must be that refutation's own report.
+
+    A REFUTED forge reading beside a report that holds, with no mandate
+    verdict, is a refutation with nothing completing it; a claim report
+    about another claim than the one the evidence stands on completes
+    nothing the observation carries.  Both are refused at construction.
+    """
+    observation = await refuted_arm(arm, setup, tracker, server)
+    if arm == "forge":
+        claim = observation.forge_report.claim
+        holding = AuditClaimReport.model_validate(
+            {
+                "claim": claim.model_copy(
+                    update={
+                        "judgment": claim.judgment.model_copy(
+                            update={"verdict": AuditVerdict.HOLDS}
+                        )
+                    }
+                ),
+                "mandate": None,
+            }
+        )
+        assert holding.mandate is None
+        with pytest.raises(
+            ValueError, match="forge report differs from the native forge reading"
+        ):
+            replace(observation, forge_report=holding)
+    else:
+        report = observation.claim
+        assert report.claim == observation.evidence.current_claim
+        other = report.model_copy(
+            update={
+                "root": report.root.model_copy(
+                    update={
+                        "claim": report.claim.model_copy(
+                            update={"check": f"{report.claim.check} (another)"}
+                        )
+                    }
+                )
+            }
+        )
+        with pytest.raises(
+            ValueError, match="claim report differs from the evidence's current claim"
+        ):
+            replace(observation, claim=other)
 
 
 def verdict_models(hint: object) -> Iterator[type[BaseModel]]:
