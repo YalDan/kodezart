@@ -15,7 +15,6 @@ from kodezart.domain.amendment import (
     AssertionWeakenedError,
     NativeWriteRefusalError,
 )
-from kodezart.domain.errors import GitSourceReadError
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.services.weakened_assertions import WeakenedAssertionMarks
 from kodezart.types.domain.agent import RulingProtectedTestRef
@@ -137,7 +136,7 @@ async def test_a_gate_that_alters_the_mark_refuses_before_any_mint(repository):
                 path="tests/test_absent.py",
                 qualified_name="test_absent",
             ),
-            GitSourceReadError,
+            NativeWriteRefusalError,
         ),
         (
             RulingProtectedTestRef(
