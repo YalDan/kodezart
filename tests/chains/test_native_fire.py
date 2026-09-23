@@ -2564,16 +2564,38 @@ def _paired(target, value):
     return [(target, value)]
 
 
-def _local_bindings(tree):
-    """Each ``(name, value)`` the tree binds a plain name to, form by form.
+#: The nodes that open a scope of their own inside a module.
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 
-    An assignment (plain, annotated, chained, or unpacking tuples of equal
-    length), an assignment expression, a ``for`` target -- a loop's or a
-    comprehension's -- over a literal tuple, list or set, and a parameter's
-    default value.
+
+def _own_nodes(scope):
+    """Every node *scope* holds itself, the scopes nested in it left out.
+
+    Each node of the tree is visited at most once, so the walk is bounded by
+    the scope's own source.
+    """
+    pending = list(scope.body) if isinstance(scope.body, list) else [scope.body]
+    while pending:
+        node = pending.pop()
+        yield node
+        pending += [
+            child
+            for child in ast.iter_child_nodes(node)
+            if not isinstance(child, _SCOPES)
+        ]
+
+
+def _local_bindings(scope):
+    """Each ``(name, value)`` *scope* binds a plain name to, form by form.
+
+    Read in the scope's own body -- a function's, a lambda's or the module's
+    -- and never in a scope nested inside it: an assignment (plain,
+    annotated, chained, or unpacking tuples of equal length), an assignment
+    expression, a ``for`` target -- a loop's or a comprehension's -- over a
+    literal tuple, list or set, and a parameter's default value.
     """
     pairs = []
-    for node in ast.walk(tree):
+    for node in _own_nodes(scope):
         if isinstance(node, ast.Assign):
             pairs += [
                 pair for target in node.targets for pair in _paired(target, node.value)
@@ -2591,22 +2613,21 @@ def _local_bindings(tree):
     bound = [
         (target.id, value) for target, value in pairs if isinstance(target, ast.Name)
     ]
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            arguments = node.args
-            positional = [*arguments.posonlyargs, *arguments.args]
-            defaulted = positional[len(positional) - len(arguments.defaults) :]
-            bound += [
-                (argument.arg, default)
-                for argument, default in zip(defaulted, arguments.defaults, strict=True)
-            ]
-            bound += [
-                (argument.arg, default)
-                for argument, default in zip(
-                    arguments.kwonlyargs, arguments.kw_defaults, strict=True
-                )
-                if default is not None
-            ]
+    if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+        arguments = scope.args
+        positional = [*arguments.posonlyargs, *arguments.args]
+        defaulted = positional[len(positional) - len(arguments.defaults) :]
+        bound += [
+            (argument.arg, default)
+            for argument, default in zip(defaulted, arguments.defaults, strict=True)
+        ]
+        bound += [
+            (argument.arg, default)
+            for argument, default in zip(
+                arguments.kwonlyargs, arguments.kw_defaults, strict=True
+            )
+            if default is not None
+        ]
     return bound
 
 
@@ -2708,32 +2729,6 @@ def _calls_in(module, tree, functions):
                 else:
                     top = alias.name.partition(".")[0]
                     modules[top] = importlib.import_module(top)
-    # A local binding exists only in the tree: every plain name bound to a
-    # value that already resolves to the function is the function too, to a
-    # fixed point.  Each pass adds a name or ends the loop, so it runs at
-    # most once per binding.
-    bindings = _local_bindings(tree)
-
-    def names_function(value):
-        if isinstance(value, ast.NamedExpr):
-            return names_function(value.value)
-        if isinstance(value, ast.Name):
-            return value.id in names
-        owner = (
-            _module_named_by(value.value, modules)
-            if isinstance(value, ast.Attribute)
-            else None
-        )
-        return owner is not None and _is_one_of(
-            getattr(owner, value.attr, None), functions
-        )
-
-    grown = True
-    while grown:
-        added = {name for name, value in bindings if names_function(value)} - names
-        names |= added
-        grown = bool(added)
-
     # A method is reached through its own instance: ``self.<method>`` in a
     # method of the class, or ``self.<attribute>.<method>`` where the class
     # declares what that attribute holds.  Either is resolved on the class,
@@ -2751,38 +2746,78 @@ def _calls_in(module, tree, functions):
             declared_by_class[id(klass)] = _attribute_classes(klass, namespace, modules)
         return receiver, owner, declared_by_class[id(klass)]
 
-    def classes_of(node, receiver):
-        if receiver is None:
-            return ()
-        name, owner, declared = receiver
-        if isinstance(node, ast.Name) and node.id == name:
-            return (owner,)
+    # A scope is ``(receiver, names, narrowed)``: the method's own instance,
+    # if any; the plain names whose value IS the function; and the local
+    # names that hold a declared ``self`` attribute, with its classes.
+    def classes_of(node, scope):
+        receiver, _, narrowed = scope
+        if isinstance(node, ast.Name):
+            if receiver is not None and node.id == receiver[0]:
+                return (receiver[1],)
+            return tuple(narrowed.get(node.id, ()))
         if (
-            isinstance(node, ast.Attribute)
+            receiver is not None
+            and isinstance(node, ast.Attribute)
             and isinstance(node.value, ast.Name)
-            and node.value.id == name
+            and node.value.id == receiver[0]
         ):
-            return tuple(declared.get(node.attr, ()))
+            return tuple(receiver[2].get(node.attr, ()))
         return ()
 
-    def is_function(callee, receiver):
-        if names_function(callee):
-            return True
-        if isinstance(callee, ast.Attribute):
-            return any(
-                _is_one_of(
-                    _unwrapped(inspect.getattr_static(klass, callee.attr, None)),
-                    functions,
-                )
-                for klass in classes_of(callee.value, receiver)
+    def is_function(value, scope):
+        if isinstance(value, ast.NamedExpr):
+            return is_function(value.value, scope)
+        if isinstance(value, ast.Name):
+            return value.id in scope[1]
+        if not isinstance(value, ast.Attribute):
+            return False
+        owner = _module_named_by(value.value, modules)
+        if owner is not None:
+            return _is_one_of(getattr(owner, value.attr, None), functions)
+        return any(
+            _is_one_of(
+                _unwrapped(inspect.getattr_static(klass, value.attr, None)),
+                functions,
             )
-        return False
+            for klass in classes_of(value.value, scope)
+        )
+
+    # A local binding exists only in the tree, and only in its own scope: a
+    # name the scope binds to a value that already resolves to the function
+    # is the function too, to a fixed point, and so is every name a nested
+    # scope sees from it.  A local bound to a declared ``self`` attribute --
+    # the narrowing ``x = self._x`` before ``if x is None`` -- holds what
+    # that attribute holds.  Each pass adds a name or ends the loop, so it
+    # runs at most once per binding.
+    def scope_of(node, receiver, outer):
+        bindings = _local_bindings(node)
+        narrowed = dict(outer[2])
+        for name, value in bindings:
+            if (
+                receiver is not None
+                and isinstance(value, ast.Attribute)
+                and isinstance(value.value, ast.Name)
+                and value.value.id == receiver[0]
+            ):
+                narrowed[name] = {
+                    *narrowed.get(name, ()),
+                    *receiver[2].get(value.attr, ()),
+                }
+        names = set(outer[1])
+        grown = True
+        while grown:
+            scope = (receiver, names, narrowed)
+            added = {name for name, value in bindings if is_function(value, scope)}
+            added -= names
+            names |= added
+            grown = bool(added)
+        return receiver, frozenset(names), narrowed
 
     found = []
 
-    def walk(parent, prefix, outer, receiver):
+    def walk(parent, prefix, outer, scope):
         for child in ast.iter_child_nodes(parent):
-            here, path, held = outer, prefix, receiver
+            here, path, inner = outer, prefix, scope
             if outer is None and isinstance(child, ast.ClassDef):
                 path = (*prefix, child.name)
             if outer is None and isinstance(
@@ -2790,12 +2825,14 @@ def _calls_in(module, tree, functions):
             ):
                 here = ".".join((*prefix, child.name))
                 if isinstance(parent, ast.ClassDef):
-                    held = receiver_of(prefix, parent, child)
-            if isinstance(child, ast.Call) and is_function(child.func, held):
+                    inner = (receiver_of(prefix, parent, child), *scope[1:])
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                inner = scope_of(child, inner[0], inner)
+            if isinstance(child, ast.Call) and is_function(child.func, inner):
                 found.append((module.__name__, here or f"module line {child.lineno}"))
-            walk(child, path, here, held)
+            walk(child, path, here, inner)
 
-    walk(tree, (), None, None)
+    walk(tree, (), None, scope_of(tree, None, (None, frozenset(names), {})))
     return found
 
 
@@ -2817,14 +2854,17 @@ def callers_of(*functions):
     A call counts when its callee resolves to the function object itself:
     a name whose module-level value IS the function (so an aliased import or
     a module-level rebinding counts); an attribute of a module alias that
-    resolves to it; a name bound anywhere in the module to one of those --
-    by assignment, tuple unpacking, an assignment expression, a ``for``
-    target over a literal tuple, list or set, or a parameter default --
-    followed to a fixed point; or a method reached through its own instance,
+    resolves to it; a method reached through its own instance,
     ``self.<method>`` inside the class, or ``self.<attribute>.<method>``
     where the class declares the attribute's class (a class-body annotation,
     or an assignment from an annotated parameter) and that class's attribute
-    IS the function.  Each caller is recorded as ``(module, qualified name
+    IS the function, or ``<local>.<method>`` where the local was bound to
+    such a ``self`` attribute; or a name the calling function (or one
+    enclosing it) binds to any of those -- by assignment, tuple unpacking,
+    an assignment expression, a ``for`` target over a literal tuple, list or
+    set, or a parameter default -- followed to a fixed point.  A binding
+    holds only in its own scope, so a same-named local of another function
+    is not the function.  Each caller is recorded as ``(module, qualified name
     of the outermost function)``, so two modules or two classes never merge
     into one name, and a call made in a closure is the node that holds it.
     A call outside any function -- a class body, a module-level lambda -- is
@@ -2837,8 +2877,9 @@ def callers_of(*functions):
     ``m`` to that module, and a plain ``import a.b.c`` binds ``a`` to the
     top-level package, from which ``a.b.c.recorded_native_roster`` reaches
     the function attribute by attribute.  Not seen: a function reached
-    through any other object (an instance held anywhere but in ``self`` or a
-    declared ``self`` attribute, a mapping, a ``functools.partial``).
+    through any other object (an instance held anywhere but in ``self``, a
+    declared ``self`` attribute or a local bound to one, a mapping, a
+    ``functools.partial``).
     """
     return tuple(sorted(set(calls_to(*functions))))
 
