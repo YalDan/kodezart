@@ -22,6 +22,7 @@ from tests.domain import test_record_superseded as superseded
 from tests.domain import test_scope_tally as scope_tally
 from tests.domain import test_stream_signals as streams
 from tests.domain import test_surface_contention as contention
+from tests.domain.test_run_alarm import DECLARED_SIGNALS
 from tests.domain.test_stream_signals import HEAD, HOLDER, REGRESSED_PAIR
 
 
@@ -126,25 +127,6 @@ def test_a_record_carrying_a_bound_its_readings_never_crossed_refuses():
 # Every folded signal is a member; every widening an arm of its member.
 # ---------------------------------------------------------------------------
 
-#: Each member's exact string value, written out: a value that drifted would
-#: be a second spelling of the signal on every record already addressed.
-MEMBER_VALUES = {
-    AlarmSignal.TALLY_UNMOVED: "tally_unmoved",
-    AlarmSignal.TALLY_REGRESSED: "tally_regressed",
-    AlarmSignal.LAPSE_UNDISCHARGED: "lapse_undischarged",
-    AlarmSignal.ESCALATION_AGEING: "escalation_ageing",
-    AlarmSignal.WRITE_BACK_MISSING: "write_back_missing",
-    AlarmSignal.SURFACE_CONTENDED: "surface_contended",
-    AlarmSignal.RECORD_SUPERSEDED: "record_superseded",
-    AlarmSignal.COMPOSITION_SUBSTITUTED: "composition_substituted",
-    AlarmSignal.BARREN_TICK_WITH_DIFF_GROWTH: "barren_tick_with_diff_growth",
-    AlarmSignal.COMMITS_AHEAD_OF_RECORD: "commits_ahead_of_record",
-    AlarmSignal.RULINGS_OUTPACE_CLOSURES: "rulings_outpace_closures",
-    AlarmSignal.STRUCTURAL_WRITE_UNCROSSES_MILESTONE: (
-        "structural_write_uncrosses_milestone"
-    ),
-}
-
 _SURFACE = contention.address()
 
 #: Per member: its subject, a reading that makes its fold return an alarm, and
@@ -213,7 +195,15 @@ def _fold(member, subject, readings):
 
 
 def test_every_member_carries_its_exact_string_value():
-    assert {member: member.value for member in AlarmSignal} == MEMBER_VALUES
+    """The member set is pinned once, where the vocabulary's own tests pin it."""
+    assert {member.name: member.value for member in AlarmSignal} == dict(
+        DECLARED_SIGNALS
+    )
+
+
+def test_every_member_brings_a_fold_pair():
+    """Whatever spelling the parametrization below has, a member with no pair."""
+    assert set(FOLD_PAIRS) == set(AlarmSignal)
 
 
 @pytest.mark.parametrize("member", list(AlarmSignal), ids=lambda member: member.value)
