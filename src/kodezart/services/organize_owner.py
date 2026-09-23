@@ -451,8 +451,9 @@ class OrganizeOwner:
                 member_keys=frozenset(initial.context.member_keys),
             )
         # The bound: every address this write needs, weighed against the set
-        # the round declared and holds. Before any renewal, backend call or
-        # verifier round, so an out-of-set proposal costs the board nothing.
+        # the round declared and holds. After the author's session and its
+        # tracker reads, and before any renewal, tracker write or verifier
+        # round, so an out-of-set proposal writes nothing on the board.
         # An answer that writes nothing needs no address: it keeps its own
         # refusal or decision in ``apply``.
         needed: frozenset[WritableSurface] = (
