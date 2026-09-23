@@ -17,7 +17,6 @@ import traceback
 from contextlib import suppress
 from functools import partial
 from pathlib import Path
-from typing import get_type_hints
 
 import pytest
 
@@ -43,6 +42,13 @@ from tests.chains.test_delivery_coordinator import (
     Scope,
     work_ref,
 )
+from tests.chains.union_holdings import (
+    UNION_MODULES,
+    allowed_as,
+    declared,
+    held_by,
+    ports_of,
+)
 from tests.name_resolution import definitions
 from tests.services import test_union_composition as pinned
 
@@ -56,43 +62,6 @@ COMPOSED_CHECK = pinned.entry().checks[0].command
 #: A declared chain whose one step exits non-zero, so the composed result is
 #: RED with its checks observed: the composed return carrying a failure.
 FAILING_CHECKS = (CheckStep(name="gate", command="false"),)
-
-#: The union step's own modules: where every exit of verifying is written.
-UNION_MODULES: tuple[str, ...] = (
-    "kodezart.chains.delivery_coordinator",
-    "kodezart.services.union_tick",
-    "kodezart.services.union_composition",
-    "kodezart.services.union_identity",
-)
-
-
-def is_port(value: object) -> bool:
-    """A protocol the ports module declares: what a collaborator is typed as."""
-    return (
-        isinstance(value, type)
-        and value.__module__ == protocols.__name__
-        and getattr(value, "_is_protocol", False)
-    )
-
-
-def declared(port: type) -> frozenset[str]:
-    """Every member *port* declares, inherited members and properties included.
-
-    Read off the protocol's own record of its members, not off ``callable``,
-    which a property on a port fails, and not off ``dir``, which cannot tell
-    a declared member from the machinery every class carries.
-    """
-    return frozenset(port.__protocol_attrs__)
-
-
-def ports_of(cls: type) -> dict[str, type]:
-    """Every constructor parameter of *cls* annotated with a port, by name."""
-    return {
-        name: hint
-        for name, hint in get_type_hints(cls.__init__).items()
-        if is_port(hint)
-    }
-
 
 #: Every port the step is constructed with, by parameter, read off its
 #: constructor's annotations.
@@ -260,6 +229,8 @@ class Fixture:
         self.observer = observer
         self.tracker = scope.tracker()
         self.handed: list[tuple[str, Asked]] = []
+        self.built: list[ScopeUnionCoordinator] = []
+        self.harness: list[object] = []
 
     def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:
         """The production step, each port it is handed wrapped in a recorder."""
@@ -275,7 +246,7 @@ class Fixture:
         assert set(ports) == set(PORT_PARAMETERS), sorted(ports)
         handed = {name: Asked(port) for name, port in ports.items()}
         self.handed.extend(handed.items())
-        return ScopeUnionCoordinator(
+        step = ScopeUnionCoordinator(
             scope_kind=PROJECT.kind,
             **handed,
             context=self.context,
@@ -283,6 +254,26 @@ class Fixture:
             committer_name="Union Fixture",
             committer_email="union@example.invalid",
         )
+        self.built.append(step)
+        return step
+
+    def refused_holdings(self) -> list[str]:
+        """The class of everything a step built here holds that it may not hold.
+
+        Walked when called, so after a drive it is what each step holds once
+        it has verified, whatever it attached to itself while verifying.  The
+        recorders the ports were handed in are this fixture's own, so each is
+        walked through and not judged: the port inside it is judged instead.
+        What a scenario put in the step's reach on purpose is named in
+        ``harness``, by identity, and is neither judged nor walked into.
+        """
+        proxies = {id(proxy) for _, proxy in self.handed}
+        return [
+            f"{type(value).__module__}.{type(value).__qualname__}"
+            for step in self.built
+            for value in held_by(step, besides=self.harness)
+            if id(value) not in proxies and allowed_as(value) is None
+        ]
 
     def asked(self, parameter: str) -> frozenset[str]:
         """Every member read off the port handed as *parameter*, on any step."""
@@ -693,12 +684,18 @@ async def drive_roster_change(fixture) -> BaseException:
     runner = MovingRosterRunner(
         timeout=AppConfig().union_check_step_timeout_seconds,
     )
+    # The runner reaches the fixture to move the roster: the harness, not a
+    # collaborator the step chose.
+    fixture.harness.append(fixture)
     with pytest.raises(UnionHeadReadError, match="roster changed") as caught:
         await fixture.coordinator(runner).verify()
     return caught.value
 
 
 async def drive_cancellation(fixture) -> BaseException:
+    # The two events are how this case parks and releases the port; they
+    # are the harness, not something the step chose to hold.
+    fixture.harness.extend((fixture.git.entered, fixture.git.release))
     task = asyncio.create_task(fixture.coordinator().verify())
     try:
         await asyncio.wait_for(fixture.git.entered.wait(), 10)
@@ -908,6 +905,9 @@ async def test_named_union_exit_preserves_real_refs_and_removes_scratch(
         path, lines = EXIT_SITES[site]
         assert {(path, line) for line in lines} & passed_through(raised), (name, site)
     assert fixture.undeclared_reads() == {}, name
+    assert fixture.built, name
+    assert allowed_as(fixture.git) == "port", name
+    assert fixture.refused_holdings() == [], name
     assert fixture.git.publications == [], name
     assert await fixture.refs() == before, name
     assert fixture.git.created == fixture.git.removed, name
