@@ -787,10 +787,14 @@ describes a re-parent in a body leaves the judgement that asked for it
 unanswered and halts unmarked. The run stages write text and children:
 `ticket` writes the body and split children, `criteria` the criterion
 children, and a graph change either of them authors is recorded as a finding
-on each item it would touch instead of reaching the tracker. That reservation
-is what lets the report-only discipline of a scope run and this row's
-structural authority both hold: the discipline binds an approved scope, and
-this row runs only before approval.
+on each item it would touch instead of reaching the tracker. The phase marker
+and the escalation label the run stages write are those rows' own
+bookkeeping, not structure. That reservation is what lets the report-only
+discipline of a scope run (the narrowing of KOD-368) and this row's structural
+authority both hold: the discipline binds an approved scope, and this row runs
+only before approval. Cancellation belongs to the structural change reserved
+to the pre-approval row and is not built: the organize path moves no workflow
+state (KOD-806, KOD-755).
 
 A finding the row forms is held while the phase converges, not written when
 it is formed: a finding the next round repairs never reaches the tracker.
