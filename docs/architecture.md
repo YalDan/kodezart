@@ -2161,7 +2161,9 @@ bookkeeping is an artifact write.
 A call site is every call of an artifact write through a receiver other than
 `self`, and every place such a write is taken as a value (bound to a name,
 handed to a partial, passed as a callback); one taken at module or class
-level is a site of the module. Driven is proven by declared types, never by a name or a shape: a
+level is a site of the module. A write taken as a value is never driven, even
+inside a driven function: the write it stands for is made wherever the value
+is later called. Driven is proven by declared types, never by a name or a shape: a
 call resolves only through the enclosing scopes, the module's own
 definitions, its `kodezart` imports, annotated parameters, locals typed by
 their own annotation or every assignment of which constructs one class, `self` attributes typed by their

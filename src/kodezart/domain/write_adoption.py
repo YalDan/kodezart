@@ -150,10 +150,10 @@ def take_census(
     from the real objects, so this states neither by hand.
     """
     index = SourceIndex(sources)
-    sites = _call_sites(index, writes)
+    sites, values = _call_sites(index, writes)
     driven_holders = _driven_functions(index, entry)
     declarations = _declarations(index, marker)
-    driven = frozenset(site for site in sites if site.holder in driven_holders)
+    driven = frozenset(site for site in sites - values if site.holder in driven_holders)
     held_out = frozenset(
         site
         for site in sites - driven
@@ -178,8 +178,10 @@ def take_census(
     )
 
 
-def _call_sites(index: SourceIndex, writes: frozenset[str]) -> frozenset[CallSite]:
-    """Every use of *writes* the tree makes through a receiver of its own.
+def _call_sites(
+    index: SourceIndex, writes: frozenset[str]
+) -> tuple[frozenset[CallSite], frozenset[CallSite]]:
+    """Every use of *writes* the tree makes, and which of them are values.
 
     ``self.<write>(…)`` is a role's own implementation of a write reaching
     a sibling of its own, which is the backend seam and not a consumer
@@ -189,16 +191,22 @@ def _call_sites(index: SourceIndex, writes: frozenset[str]) -> frozenset[CallSit
     A use is a call, or the write taken as a value: bound to a name, handed
     to a partial or passed along as a callback is a write made later
     through something the census cannot follow, so it is a site of the
-    function it is taken in.  One taken at module or class level stands in
-    no function and is a site of the module, under ``MODULE_LEVEL``.
+    function it is taken in, and never a driven one: the write it stands for
+    is made wherever the value is later called, not in the window of the
+    function that took it.  One taken at module or class level stands in no
+    function and is a site of the module, under ``MODULE_LEVEL``.  The
+    second set returned holds every site with such a use.
 
     A write named by a string is reached by reflection: the name handed to
     the builtin ``getattr`` or to ``operator.methodcaller`` is a site of the
     function the call stands in, whatever the receiver.  A derived-write
     declaration's own arguments name writes too, and are no site: they are
-    handed to the declaration, not to either of those.
+    handed to the declaration, not to either of those.  The name handed to
+    ``getattr`` is a call only where the ``getattr`` is itself called on the
+    spot; one handed to ``methodcaller`` is always a value.
     """
     sites: set[CallSite] = set()
+    values: set[CallSite] = set()
     for method in writes:
         for holder, reference in index.references(method):
             if (
@@ -211,32 +219,40 @@ def _call_sites(index: SourceIndex, writes: frozenset[str]) -> frozenset[CallSit
             ):
                 continue
             if holder is not None:
-                sites.add(
-                    CallSite(
-                        module=holder.module, function=holder.function, method=method
-                    )
+                site = CallSite(
+                    module=holder.module, function=holder.function, method=method
                 )
+                sites.add(site)
+                if index.call_of(reference) is None:
+                    values.add(site)
                 continue
             module = index.unheld_module(reference)
             if module is not None:
-                sites.add(CallSite(module=module, function=MODULE_LEVEL, method=method))
+                site = CallSite(module=module, function=MODULE_LEVEL, method=method)
+                sites.add(site)
+                values.add(site)
     for module, holder, call in index.every_call():
         reflected = _reflected(index, module, holder, call)
-        if reflected is not None and reflected in writes:
-            sites.add(
-                CallSite(
-                    module=module,
-                    function=MODULE_LEVEL if holder is None else holder.function,
-                    method=reflected,
-                )
-            )
-    return frozenset(sites)
+        if reflected is None or reflected[0] not in writes:
+            continue
+        site = CallSite(
+            module=module,
+            function=MODULE_LEVEL if holder is None else holder.function,
+            method=reflected[0],
+        )
+        sites.add(site)
+        if not reflected[1] or index.call_of(call) is None:
+            values.add(site)
+    return frozenset(sites), frozenset(values)
 
 
 def _reflected(
     index: SourceIndex, module: str, holder: Source | None, call: ast.Call
-) -> str | None:
+) -> tuple[str, bool] | None:
     """The method a reflective call names by a string, if it is one.
+
+    Beside the name, whether the call returns the write itself, as
+    ``getattr`` does, rather than a caller of it, as ``methodcaller`` does.
 
     ``getattr(receiver, "<name>", …)`` and ``operator.methodcaller("<name>",
     …)``, each resolved as the builtin or standard-library function rather
@@ -250,6 +266,7 @@ def _reflected(
         and index.unbound(module, holder, callee.id)
     ):
         named = call.args[1] if len(call.args) > 1 else None
+        returns_write = True
     elif (
         isinstance(callee, ast.Name)
         and callee.id == "methodcaller"
@@ -262,10 +279,11 @@ def _reflected(
         and index.unbound(module, holder, callee.value.id)
     ):
         named = call.args[0] if call.args else None
+        returns_write = False
     else:
         return None
     if isinstance(named, ast.Constant) and isinstance(named.value, str):
-        return named.value
+        return named.value, returns_write
     return None
 
 

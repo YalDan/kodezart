@@ -1896,9 +1896,56 @@ def test_a_step_run_outside_its_window_loses_its_grant_however_it_is_typed(
 
 
 #: A port write taken as a value rather than called on the spot: bound to
-#: a local and called through it, bound into a partial, or taken at module
-#: level where no function holds it.
+#: a local and called through it, bound into a partial, taken at module
+#: level where no function holds it, or taken inside an applier the verifier
+#: drives: kept on the writer and called later from a method it does not,
+#: by attribute or by ``getattr``, or wrapped in a ``methodcaller``.
 TAKEN_AS_VALUE = {
+    "getattr-kept-by-a-driven-applier": (
+        DRIVEN.replace(
+            '            await self._tracker.post_comment(issue_key="K", body="b")\n',
+            '            self._later = getattr(self._tracker, "post_comment")\n',
+        )
+        + """
+    async def shortcut(self):
+        await self._later(issue_key="K", body="b")
+""",
+        CallSite(
+            module="planted/taken_as_value.py",
+            function="Writer.publish.put",
+            method="post_comment",
+        ),
+    ),
+    "methodcaller-in-a-driven-applier": (
+        DRIVEN.replace(
+            "from dataclasses import dataclass\n",
+            "import operator\nfrom dataclasses import dataclass\n",
+        ).replace(
+            '            await self._tracker.post_comment(issue_key="K", body="b")\n',
+            '            post = operator.methodcaller("post_comment", issue_key="K")\n'
+            "            await post(self._tracker)\n",
+        ),
+        CallSite(
+            module="planted/taken_as_value.py",
+            function="Writer.publish.put",
+            method="post_comment",
+        ),
+    ),
+    "kept-by-a-driven-applier": (
+        DRIVEN.replace(
+            '            await self._tracker.post_comment(issue_key="K", body="b")\n',
+            "            self._later = self._tracker.post_comment\n",
+        )
+        + """
+    async def shortcut(self):
+        await self._later(issue_key="K", body="b")
+""",
+        CallSite(
+            module="planted/taken_as_value.py",
+            function="Writer.publish.put",
+            method="post_comment",
+        ),
+    ),
     "module-level": (
         """
 from kodezart.core.protocols import TrackerPort
@@ -1961,9 +2008,15 @@ def test_a_port_write_taken_as_a_value_is_a_call_site(case):
     Nothing drives the planted method and nothing declares it, so the
     write it takes as a value and later calls is refused, exactly as the
     same write called on the spot would be.  Taken where no function holds
-    it, the write is a site of the module and is named under it.
+    it, the write is a site of the module and is named under it.  Taken
+    inside an applier the verifier drives, it is still never driven: the
+    call it stands for is made later, through something the census cannot
+    follow and outside that window.
     """
     text, site = TAKEN_AS_VALUE[case]
+    if "driven-applier" in case:
+        assert text != DRIVEN
+        assert 'await self._tracker.post_comment(issue_key="K"' not in text
     found = census(("planted/taken_as_value.py", text))
     assert found.unadopted == frozenset({site})
     assert found.paths == (str(site),)
