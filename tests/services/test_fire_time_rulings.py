@@ -1524,6 +1524,41 @@ async def test_an_answer_to_a_nested_criterion_is_recorded_on_that_criterion(
     assert list(await cold_records(port, SUBJECT)) == []
 
 
+async def test_an_answer_to_a_canceled_nested_criterion_is_recorded_on_that_criterion(
+    repository,
+) -> None:
+    """A criterion the board canceled is still a name a record may be addressed to.
+
+    Every criterion sub-issue of the subtree is addressable at the write,
+    counting or not.  The board cancels a nested criterion before the fire
+    enters, so the specification the pass is shown leaves it out, while the
+    subtree the write resolves against still holds it; an answer addressed
+    to it is pinned on it and on nothing else.
+    """
+    answer = one_answer(issueRef=NESTED_OWED)
+    port = tracker()
+    port.issues[NESTED_OWED] = port.issues[NESTED_OWED].model_copy(
+        update={"state_name": "Canceled", "state_kind": WorkflowStateKind.CANCELED}
+    )
+    executor = Executor([[answer]])
+    step, spec, current, _, port, _, repo_path, base = await build(
+        repository, executor, port=port
+    )
+    # Non-vacuous: canceled, so out of what the pass is shown, and still a
+    # criterion sub-issue of the subtree the write reads.
+    assert NESTED_OWED not in set(spec.criteria)
+    assert NESTED_OWED in await read_subtree_criteria(tracker=port, subject=SUBJECT)
+    assert port.issues[NESTED_OWED].state_kind is WorkflowStateKind.CANCELED
+    before = board_state(port)
+
+    assert await run(step, spec, current, repo_path, base) is None
+
+    record = await pinned_record(port, answer, before=before)
+    assert record.issue_ref == NESTED_OWED
+    assert [record for _, record in await cold_records(port, NESTED_OWED)] == [record]
+    assert list(await cold_records(port, SUBJECT)) == []
+
+
 async def test_a_nested_criterion_unlabelled_while_the_pass_ran_no_longer_resolves(
     repository,
 ) -> None:
