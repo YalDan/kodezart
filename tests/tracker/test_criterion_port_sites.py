@@ -46,15 +46,23 @@ member in one module and a subclass calling it in another is a site in the
 first.  The listing descent and the family read are still counted as calls,
 by the per-module alias walk in the cross-off module.
 
-What it does not see: a member reached by ``getattr`` or ``__dict__`` under a
-name built at run time, or by ``eval``; a selection of criterion rows out of
-issues some container read already returned, which is not a listing and
+A creation payload is read wherever it is written out: a mapping display,
+a ``**`` of one, a ``dict(...)`` call with keywords or a written-out
+mapping, and a mapping one definition builds up on one receiver by
+assignment, subscript, ``update``, ``|=`` or ``setdefault``.
+
+Outside the reach of every report here, the one stated limit: a value
+handed across a function boundary, where the other function is not
+resolved at this site (returned from a helper, stored on an object and read
+elsewhere, or passed through a container built elsewhere); a name built at
+run time; a binding made only when a function runs (``setattr`` or
+``globals()`` inside a function body).  A committed case holds each of
+those shapes as unseen.  Also not read: a selection of criterion rows out
+of issues some container read already returned, which is not a listing and
 which an AST cannot tell from one — that rows come from the port's read is
-what the conformance cases over the parametrized tracker fixture establish;
-a mint that neither takes the surface nor spells the creation payload,
-which would be building its request by subscript and would also be outside
-the lease discipline the creation conformance case pins; and the doubles,
-because the scanned tree is the shipped package.
+what the conformance cases over the parametrized tracker fixture
+establish; and the doubles, because the scanned tree is the shipped
+package.
 """
 
 import ast
@@ -136,13 +144,107 @@ def definitions_of(tree: ast.Module, *, name: str) -> list[str]:
     )
 
 
-def _constant_keys(node: ast.Dict) -> set[str]:
-    """The string keys this mapping display spells literally."""
-    return {
-        key.value
-        for key in node.keys
-        if isinstance(key, ast.Constant) and isinstance(key.value, str)
-    }
+def _literal(node: ast.AST | None) -> str | None:
+    """The text of a string constant, or ``None``."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _is_dict_call(node: ast.AST) -> bool:
+    """Whether *node* calls the builtin mapping type, by its own name."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == dict.__name__
+    )
+
+
+def mapping_keys(node: ast.AST | None) -> set[str]:
+    """The string keys a mapping written out in the code spells literally.
+
+    A mapping display, its ``**`` of another written out included, and a
+    call of ``dict`` with keywords, a ``**`` of a written-out mapping or a
+    written-out mapping as its argument.  Anything else spells no key here.
+    """
+    if isinstance(node, ast.Dict):
+        found: set[str] = set()
+        for key, value in zip(node.keys, node.values, strict=True):
+            if key is None:
+                found |= mapping_keys(value)
+            elif (text := _literal(key)) is not None:
+                found.add(text)
+        return found
+    if isinstance(node, ast.Call) and _is_dict_call(node):
+        found = set()
+        for keyword in node.keywords:
+            found |= (
+                {keyword.arg}
+                if keyword.arg is not None
+                else mapping_keys(keyword.value)
+            )
+        for argument in node.args:
+            found |= mapping_keys(argument)
+        return found
+    return set()
+
+
+def _written(node: ast.AST) -> tuple[str, set[str]] | None:
+    """A receiver and the keys one statement or call writes onto it.
+
+    ``name = <mapping>`` (plain or annotated), ``name[<literal>] = ...``,
+    ``name |= <mapping>``, ``name.update(<mapping> or keywords)`` and
+    ``name.setdefault(<literal>, ...)``, the receiver by its dotted spelling.
+    """
+    if isinstance(node, ast.Assign | ast.AnnAssign):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for target in targets:
+            if (
+                isinstance(target, ast.Subscript)
+                and (key := _literal(target.slice)) is not None
+            ):
+                spelled = ast.unparse(target.value)
+                return spelled, {key}
+            keys = mapping_keys(node.value)
+            if keys and isinstance(target, ast.Name | ast.Attribute):
+                return ast.unparse(target), keys
+    if isinstance(node, ast.AugAssign) and isinstance(node.op, ast.BitOr):
+        keys = mapping_keys(node.value)
+        if keys:
+            return ast.unparse(node.target), keys
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        receiver = ast.unparse(node.func.value)
+        if node.func.attr == dict.update.__name__:
+            keys = {keyword.arg for keyword in node.keywords if keyword.arg}
+            for argument in node.args:
+                keys |= mapping_keys(argument)
+            return (receiver, keys) if keys else None
+        if node.func.attr == dict.setdefault.__name__ and node.args:
+            key = _literal(node.args[0])
+            return (receiver, {key}) if key is not None else None
+    return None
+
+
+def mappings_keyed(tree: ast.Module, *, keys: frozenset[str]) -> list[str]:
+    """Every definition in *tree* that writes out a mapping keyed with *keys*.
+
+    One mapping written out whole (see :func:`mapping_keys`), or one
+    receiver the definition builds up key by key (see :func:`_written`):
+    the keys written onto the same spelling inside the same definition are
+    pooled.
+    """
+    where = qualified_names(tree)
+    found: set[str] = set()
+    pooled: dict[tuple[str, str], set[str]] = {}
+    for node in ast.walk(tree):
+        if keys <= mapping_keys(node):
+            found.add(where[id(node)])
+        written = _written(node)
+        if written is not None:
+            receiver, spelled = written
+            pooled.setdefault((where[id(node)], receiver), set()).update(spelled)
+    found |= {scope for (scope, _), spelled in pooled.items() if keys <= spelled}
+    return sorted(found)
 
 
 def tool_names(tree: ast.Module, *, value: str) -> set[str]:
@@ -163,11 +265,12 @@ def tool_names(tree: ast.Module, *, value: str) -> set[str]:
 def child_listing_definitions(tree: ast.Module, *, tools: set[str]) -> list[str]:
     """Every definition in *tree* that lists children by parent on the wire.
 
-    Both halves are required: a mapping display addressed by the parent
-    field, and a call passing one of the listing tool's own names or the
-    tool's literal, positionally or by keyword.  A definition holding a
-    nested one holds what it holds, which is how the page loop a listing is
-    written as is attributed to the method that addresses the parent.
+    Both halves are required: a mapping written out (see
+    :func:`mapping_keys`) addressed by the parent field, and a call passing
+    one of the listing tool's own names or the tool's literal, positionally
+    or by keyword.  A definition holding a nested one holds what it holds,
+    which is how the page loop a listing is written as is attributed to the
+    method that addresses the parent.
     """
     where = qualified_names(tree)
     found: set[str] = set()
@@ -175,10 +278,7 @@ def child_listing_definitions(tree: ast.Module, *, tools: set[str]) -> list[str]
         if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             continue
         inside = list(ast.walk(node))
-        addressed = any(
-            isinstance(child, ast.Dict) and PARENT_FIELD in _constant_keys(child)
-            for child in inside
-        )
+        addressed = any(PARENT_FIELD in mapping_keys(child) for child in inside)
         listed = any(
             isinstance(child, ast.Call)
             and any(
@@ -234,15 +334,8 @@ def scopes_naming(tree: ast.Module, *, attribute: str) -> list[str]:
 
 
 def labelled_child_creations(tree: ast.Module) -> list[str]:
-    """Every definition holding a mapping display keyed with both wire fields."""
-    where = qualified_names(tree)
-    return sorted(
-        {
-            where[id(node)]
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Dict) and CREATION_KEYS <= _constant_keys(node)
-        }
-    )
+    """Every definition that writes out a mapping keyed with both wire fields."""
+    return mappings_keyed(tree, keys=CREATION_KEYS)
 
 
 def by_module(
@@ -381,6 +474,14 @@ PLANTED_LISTINGS = {
         "    async def children(self, key):\n"
         f'        return await self._call("{LISTING_TOOL}",'
         f' {{"{PARENT_FIELD}": key}})\n',
+        "wire listings",
+    ),
+    "a wire listing addressed by dict keywords": (
+        f"{ADAPTERS}/other/reader.py",
+        f'_TOOL = "{LISTING_TOOL}"\n'
+        "class Second:\n"
+        "    async def children(self, key):\n"
+        f"        return await self._call(_TOOL, dict({PARENT_FIELD}=key))\n",
         "wire listings",
     ),
     "a wire listing by keyword tool name": (
@@ -694,6 +795,148 @@ PLANTED_MINTS = {
         f"        )\n",
         "creations",
     ),
+    "a second creation by dict keywords": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        "        return await self._send(\n"
+        '            "save",\n'
+        f"            dict(title='t', {PARENT_FIELD}=parent, {LABEL_FIELD}=[label]),\n"
+        "        )\n",
+        "creations",
+    ),
+    "a second creation by dict of a spread display": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        "        return await self._send(\n"
+        '            "save",\n'
+        f'            dict(**{{"{PARENT_FIELD}": parent}}, {LABEL_FIELD}=[label]),\n'
+        "        )\n",
+        "creations",
+    ),
+    "a second creation by dict of a display": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        "        return await self._send(\n"
+        '            "save",\n'
+        f'            dict({{"{PARENT_FIELD}": parent}}, {LABEL_FIELD}=[label]),\n'
+        "        )\n",
+        "creations",
+    ),
+    "a second creation by a display spread into a display": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        "        return await self._send(\n"
+        '            "save",\n'
+        f'            {{**{{"{PARENT_FIELD}": parent}}, "{LABEL_FIELD}": [label]}},\n'
+        "        )\n",
+        "creations",
+    ),
+    "a second creation built up by subscript": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        "        payload = {'title': 't'}\n"
+        f"        payload[{PARENT_FIELD!r}] = parent\n"
+        f"        payload[{LABEL_FIELD!r}] = [label]\n"
+        '        return await self._send("save", payload)\n',
+        "creations",
+    ),
+    "a second creation built up from an annotated display": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        f"        payload: dict[str, object] = {{{PARENT_FIELD!r}: parent}}\n"
+        f"        payload[{LABEL_FIELD!r}] = [label]\n"
+        '        return await self._send("save", payload)\n',
+        "creations",
+    ),
+    "a second creation built up by update keywords": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        "        payload = {}\n"
+        f"        payload.update({PARENT_FIELD}=parent, {LABEL_FIELD}=[label])\n"
+        '        return await self._send("save", payload)\n',
+        "creations",
+    ),
+    "a second creation built up by update of a display": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        "        payload = {}\n"
+        f"        payload.update({{{PARENT_FIELD!r}: parent}})\n"
+        f"        payload.update({{{LABEL_FIELD!r}: [label]}})\n"
+        '        return await self._send("save", payload)\n',
+        "creations",
+    ),
+    "a second creation built up by an in-place union": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        f"        payload = {{{PARENT_FIELD!r}: parent}}\n"
+        f"        payload |= {{{LABEL_FIELD!r}: [label]}}\n"
+        '        return await self._send("save", payload)\n',
+        "creations",
+    ),
+    "a second creation built up on an attribute": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        f"        self._payload = {{{PARENT_FIELD!r}: parent}}\n"
+        f"        self._payload[{LABEL_FIELD!r}] = [label]\n"
+        '        return await self._send("save", self._payload)\n',
+        "creations",
+    ),
+    "a second creation built up by setdefault": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        "        payload = {}\n"
+        f"        payload.setdefault({PARENT_FIELD!r}, parent)\n"
+        f"        payload.setdefault({LABEL_FIELD!r}, [label])\n"
+        '        return await self._send("save", payload)\n',
+        "creations",
+    ),
+}
+
+
+#: The one stated limit, a case per shape the reports can meet: each is a
+#: second minting site the reports do not see, held here so the limit is a
+#: fact the tests hold rather than a claim.
+UNSEEN_MINTS = {
+    "a value handed across a function boundary": (
+        f"{ADAPTERS}/other/creation.py",
+        "def _addressed(parent):\n"
+        f"    return {{{PARENT_FIELD!r}: parent}}\n"
+        "class Other:\n"
+        "    async def mint(self, parent, label):\n"
+        "        payload = _addressed(parent)\n"
+        f"        payload[{LABEL_FIELD!r}] = [label]\n"
+        '        return await self._send("save", payload)\n',
+        "creations",
+    ),
+    "a name built at run time": (
+        "services/second_stage.py",
+        "async def stage(tracker):\n"
+        f"    word = '_'.join({tuple(MINT.split('_'))!r})\n"
+        "    return await getattr(tracker, word)(\n"
+        "        parent_key='p', title='t', check='c', do='d', holder='h'\n"
+        "    )\n",
+        "callers",
+    ),
+    "a binding made only when a function runs": (
+        f"{ADAPTERS}/other/creation.py",
+        "class Other:\n"
+        "    async def mint(self, request, parent, label):\n"
+        f"        setattr(request, {PARENT_FIELD!r}, parent)\n"
+        f"        setattr(request, {LABEL_FIELD!r}, [label])\n"
+        '        return await self._send("save", vars(request))\n',
+        "creations",
+    ),
 }
 
 
@@ -730,3 +973,14 @@ def test_a_second_mint_caller_and_a_second_minting_method_are_each_reported(form
     sources.update(ALSO_PLANTED.get(form, {}))
 
     assert module in MINT_REPORTS[report](sources)
+
+
+@pytest.mark.parametrize("shape", sorted(UNSEEN_MINTS))
+def test_each_shape_of_the_stated_limit_stays_unseen(shape):
+    """The limit the module states is exactly what the reports do not see."""
+    sources = source_tree()
+    module, text, report = UNSEEN_MINTS[shape]
+
+    sources[module] = text
+
+    assert module not in MINT_REPORTS[report](sources)
