@@ -37,6 +37,14 @@ concerns.
   grooming record identity. The `scope_heartbeat` pass submits on
   `KODEZART_DISPATCH_LANE` followed by `:scope`, so a per-issue fire never
   queues behind a scope run.
+- A v0.2 operation file boots as it is (KOD-903), as the one exception to the
+  no-fallback rule: `[[initiatives]]` is accepted and ignored, a file with no
+  `[marker_prefixes]` table gets the markers v0.2 wrote for the per-issue path,
+  and a `records.fire` log with neither `columns` nor `outcome_mapping` gets
+  v0.2's title-line row and no record clause. Boot logs
+  `operation_file_v02_accepted` once when it applies. A v0.2 claim already on
+  an issue is honoured until it lapses and is never written again.
+  `docs/migration-v0.2-to-v0.3.md` says what an old file gets.
 - `[run_event_states]` is optional in an operation file, and dialling the
   tracker no longer requires it. A declared table is still total at load time.
   Nothing on the scope path reads the table: a run event's comment is rendered

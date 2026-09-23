@@ -775,6 +775,7 @@ async def test_actual_lifespan_agent_settings_reach_native_session(
 async def test_actual_lifespan_tracker_section_reaches_native_boot_and_recorder(
     resources, monkeypatch, tmp_path, custom
 ):
+    from kodezart.adapters.toml_operation_config import OperationFile
     from kodezart.composition.tracker import boot_tracker
     from tests.core.test_tracker_settings import TOKEN, VALUES, NativeEndpoint
     from tests.tracker.conftest import CLAIMED_ISSUE
@@ -789,7 +790,11 @@ async def test_actual_lifespan_tracker_section_reaches_native_boot_and_recorder(
     )
     resources.app.state.config = config
     monkeypatch.setattr(main, "boot_tracker", boot_tracker)
-    monkeypatch.setattr(main, "load_operation_config", lambda _path: operation_config())
+    monkeypatch.setattr(
+        main,
+        "read_operation_file",
+        lambda _path: OperationFile(operation_config(), (), ()),
+    )
     recorders = []
     old_recorder = main.build_run_recorder
 
