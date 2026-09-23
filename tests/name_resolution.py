@@ -41,6 +41,7 @@ package writes either form.
 import ast
 import functools
 import importlib
+import importlib.util
 import inspect
 import re
 import typing
@@ -985,3 +986,97 @@ def bound_names(
         if grown == set(names):
             return names
         names = frozenset(grown)
+
+
+def pattern_classes(pattern: ast.pattern) -> tuple[ast.expr, ...]:
+    """The classes a case pattern tests its subject against, capture or not.
+
+    ``case TrackerSpec():`` binds no name, yet inside the case the subject is
+    known to be that class exactly as under ``isinstance``; a pattern under
+    ``as`` and each alternative of ``|`` test it the same way.
+    """
+    return _asserted_classes(pattern)
+
+
+#: The spellings of a text return in a stub: ``str``, and the literal-string
+#: overloads the stubs give ``str``'s own methods.
+_TEXT_RETURNS = frozenset({str.__name__, typing.LiteralString.__name__})
+
+
+@functools.cache
+def _stub(module: str) -> ast.Module | None:
+    """The typeshed stub the type checker reads for a standard module."""
+    found = importlib.util.find_spec("mypy")
+    if found is None or found.origin is None:
+        return None
+    root = Path(found.origin).parent / "typeshed" / "stdlib"
+    parts = module.split(".")
+    for candidate in (
+        root.joinpath(*parts[:-1], f"{parts[-1]}.pyi"),
+        root.joinpath(*parts, "__init__.pyi"),
+    ):
+        if candidate.is_file():
+            return ast.parse(candidate.read_text(encoding="utf-8"))
+    return None
+
+
+def _stub_returns_text(module: str, qualname: str) -> bool:
+    """Whether every stub definition of *qualname* in *module* returns text."""
+    tree = _stub(module)
+    if tree is None:
+        return False
+    *owners, name = qualname.split(".")
+    body: list[ast.stmt] = tree.body
+    for owner in owners:
+        body = [
+            statement
+            for node in body
+            if isinstance(node, ast.ClassDef) and node.name == owner
+            for statement in node.body
+        ]
+    returns = [
+        node.returns
+        for node in body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name == name
+    ]
+    return bool(returns) and all(
+        _spelling(one) in _TEXT_RETURNS for one in returns if one is not None
+    )
+
+
+@functools.cache
+def returns_text(dotted: str) -> bool:
+    """Whether the callable at *dotted* hands back text, by its stated return.
+
+    *dotted* is a module path followed by the callable's qualified name
+    (``json.dumps``, ``string.Template.substitute``, ``builtins.str.join``).
+    The object is found by importing the longest module prefix; a class
+    hands back text when it is ``str`` or a subclass, and a function when
+    its own return annotation says ``str``.  A callable that states nothing
+    at run time — the standard library's C and pure functions — is read in
+    the stub the type checker reads for it, every overload of it alike.
+    """
+    parts = dotted.split(".")
+    for split in range(len(parts) - 1, 0, -1):
+        module = ".".join(parts[:split])
+        try:
+            value: object = importlib.import_module(module)
+        except ImportError:
+            continue
+        qualname = parts[split:]
+        for part in qualname:
+            value = getattr(value, part, None)
+            if value is None:
+                return False
+        if inspect.isclass(value):
+            return issubclass(value, str)
+        stated = (
+            inspect.get_annotations(value).get("return")
+            if callable(value) and not inspect.isbuiltin(value)
+            else None
+        )
+        if stated is not None:
+            return stated in (str, str.__name__)
+        return _stub_returns_text(module, ".".join(qualname))
+    return False

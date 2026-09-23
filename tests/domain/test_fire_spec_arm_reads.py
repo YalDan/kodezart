@@ -13,38 +13,56 @@ The walk follows the value, not the spelling.  A spec is held by an annotated
 parameter (the arm under any alias an import or an assignment gives it,
 inside a function or not, or through a module alias), by a parameter a call or
 a ``functools.partial`` hands it to, by a lambda it is handed to, by an
-attribute or a literal key it is stored under, by a type test or a cast that
-restates it, and by every name bound from any of those: an assignment, a
-walrus, a loop, a comprehension, a ``with``, an unpacking target (by its slot
-where a tuple is written out or a reader's ``tuple[...]`` annotation states
-it, else by the whole value), and a ``match`` capture anywhere in its pattern.
-A capture is read off where it stands, not off which pattern spelled it: a
-class pattern that names an arm makes its position an arm, under an arm the
-text field is text and the payload field payload, a spec-typed field is a
-spec, and a sequence item, a mapping value or a positional sub-pattern holds
-what its position held.  A collection of specs is a spec to the walk, as the
-loop over it already was, so an index, a slice, a key (bracketed or through
+attribute or a literal key it is stored under, by a type test, a class
+pattern (captured or not) or a cast that restates it, and by every name bound
+from any of those: an assignment, a walrus, a loop, a comprehension, a
+``with``, an unpacking target (by its slot where a tuple is written out or a
+reader's ``tuple[...]`` annotation states it, else by the whole value), and a
+``match`` capture anywhere in its pattern.  A capture is read off where it
+stands, not off which pattern spelled it: a class pattern that names an arm
+makes its position an arm, under an arm the text field is text and the
+payload field payload, a spec-typed field is a spec, and a sequence item, a
+mapping value or a positional sub-pattern holds what its position held.  A
+collection of specs is a spec to the walk, as the loop over it already was:
+a display holding one (a tuple, list, set or dict, a ``**`` entry included),
+a word a container method or a store put one into (``held.append(spec)``,
+``held.update(k=spec)``, ``held[key] = spec``), a binary operation over one
+(``[spec] + rest``), and an index, a slice, a key (bracketed or through
 ``.get``), a comprehension over it, a method of it (``.values()``,
 ``.model_dump()``, ``.model_copy()``), a method of an arm's class
-(``TrackerSpec.model_validate(raw)``), and a builtin or a function imported
-from outside the package handed it (``next(iter(...))``, ``enumerate``,
-``zip``, ``copy.deepcopy``) are specs too.  The payload is followed the same
-way through a comprehension, a tuple and a method of it.  The call edge is
-re-walked over the grown scopes to a fixed point, so a spec handed on through
-a chain of helpers is followed to the helper that finally reads it.
+(``TrackerSpec.model_validate(raw)``), a reader reached as an attribute (a
+property annotated with an arm), and a builtin or a function imported from
+outside the package handed it (``next(iter(...))``, ``enumerate``, ``zip``,
+``copy.deepcopy``, ``RootModel[TrackerSpec](spec)``) are specs too.  A
+function from outside the package handed an arm's class builds what
+validates into an arm (``TypeAdapter(TrackerSpec)``, bound at module level or
+not), so what its methods hand back is a spec.  The payload is followed the
+same way through a comprehension, a display and a method of it.  The call edge
+is re-walked over the grown scopes to a fixed point, so a spec handed on
+through a chain of helpers is followed to the helper that finally reads it.
 
 A read is the text field loaded off a spec by its own name — an attribute, a
-literal key, ``getattr`` with a literal, an ``operator`` getter built over it,
-or any call handed a spec and the field's name as a literal
-(``spec.__getattribute__("body")``, ``inspect.getattr_static(spec, "body")``)
-— or a word a pattern captured the text into.  A render is a whole spec or
-its payload handed to the neighbouring renderer, to ``str``, ``repr``,
-``format`` or ``ascii`` (called, or handed as a value to the call that applies
-it, as ``map(str, specs)``), to an f-string, a ``%``, a ``str.format`` or a
-``str.format_map``, or a spec turned into text by the model's own render
-method.  The planted controls below pin each of these one row at a time, and
-the rows beside them pin that a field that is not the text, an element of an
-unpacking that is not the spec, and a value that never was a spec stay silent.
+literal key, ``getattr`` with a literal, an ``operator`` getter or
+``methodcaller`` built over it, or any call handed a spec and a literal naming
+the field anywhere in its arguments or its receiver chain
+(``spec.__getattribute__("body")``, ``inspect.getattr_static(spec, "body")``,
+``spec.model_dump(include={"body"})``, ``"{0.body}".format(spec)``,
+``Template("$body").substitute(spec.model_dump())``) — or a word a pattern
+captured the text into.  A literal is a string constant, an identifier inside
+one, a word bound to one anywhere in the module (``_FIELD = "body"``), or a
+display written out of those.  A render is a whole spec or its payload handed
+to the neighbouring renderer, to ``str``, ``repr``, ``format`` or ``ascii``
+(called, or handed as a value to the call that applies it, as
+``map(str, specs)``), to an f-string, a ``%``, a ``str.format`` or a
+``str.format_map``, a spec turned into text by the model's own render method,
+or a whole spec handed to any other call whose stated return is text: a
+package function annotated ``-> str`` other than the formatter
+(``template.render({"task_md": spec})``), or a callable from outside the
+package whose own annotation or typeshed stub says ``str``
+(``json.dumps(spec.model_dump())``, ``"".join(...)``).  The planted controls
+below pin each of these one row at a time, and the rows beside them pin that
+a field that is not the text, an element of an unpacking that is not the
+spec, and a value that never was a spec stay silent.
 
 The one thing a module may do with an arm's text besides hand it to the
 formatter is hand it to the one digest function, which hashes the bytes and
@@ -56,38 +74,47 @@ the subject stated.  It renders nothing and reaches no prompt, so it is a read
 of the text and not a second formatter, and it is listed so that a second one
 cannot arrive unnoticed.
 
-Stated limits.  Scopes are module-wide, so a word bound to a spec anywhere in
-a module is a spec wherever that module reads it, and a call through a
-receiver that spells no module is resolved to every method of that name; both
-over-include on the red side.  A package function is a reader by its return
-annotation, which the strict type check requires: a spec returned under a
-wider annotation (``object``, a base model) is found again where a type test
-or a cast restates it, but not where it is read reflectively with no such
-restatement.  A field of the payload (``spec.ticket.title``) is not a render:
-the payload renders only whole, and the package reads the draft's title for a
-pull-request title in two places, which this walk leaves to its own decision.
-Neither is the payload's own serialisation (``ticket.model_dump_json()``): the
-package persists the authored ticket as JSON beside the formatter, which is a
-record of the payload rather than a text of the fire, and a planted row pins
-that it stays silent.  A whole spec serialised by a function outside the model
-and the four text builtins — ``json.dumps(spec.model_dump())`` — is a spec to
-the walk, not a render.  A field chosen by comparing names at run time, as in
-a loop over a spec's own ``(name, value)`` pairs, is out of reach like a
-computed name.  The shared resolver's own limits apply to the call edge: a
-starred argument lands on no parameter, an unbound method called with an
-explicit instance lands its arguments one place late, and a relative import is
-no route to a definition; a helper reached that way must still annotate its
-parameter under the strict type check, and an annotation naming an arm is a
-root of its own.  Out of reach by design: a field or module name built at run time
-(``getattr``, ``vars`` or ``importlib`` with a computed name) and
-``eval``/``exec``.
+What is not a render, by decision.  A field of the payload
+(``spec.ticket.title``): the payload renders only whole, and the package reads
+the draft's title for a pull-request title in two places, which this walk
+leaves to its own decision.  The payload's own serialisation
+(``ticket.model_dump_json()``), handed on or not: the package persists the
+authored ticket as JSON beside the formatter, which is a record of the payload
+rather than a text of the fire, and a planted row pins that it stays silent.
+
+Over-inclusion.  Scopes are module-wide, so a word bound to a spec anywhere in
+a module is a spec wherever that module reads it; a call through a receiver
+that spells no module is resolved to every method of that name; and a literal
+naming the text field beside a spec makes the call a read whatever the literal
+does there.  Each errs on the red side.
+
+Stated limit.  Outside this guard's reach: a value handed across a function
+boundary, where the other function is not resolved at this site (returned from
+a helper, stored on an object and read elsewhere, or passed through a container
+built elsewhere); a name built at run time; a binding made only when a
+function runs (``setattr`` or ``globals()`` inside a function body).  The
+shapes this walk meets of the first kind: a spec returned under a wider
+annotation than an arm (``-> object``) and read with no type test, cast or
+class pattern restating it; a starred argument, which lands on no parameter;
+an unbound method called with an explicit instance, which lands its
+arguments one place late; and a relative import, which is no route to a
+definition.  A helper reached those ways must still annotate its parameter
+under the strict type check, and an annotation naming an arm is a root of its
+own.  Of the second kind: ``getattr``, ``vars`` or ``importlib`` with a
+computed name, a field chosen by comparing names at run time, and
+``eval``/``exec``.  ``STATED_LIMIT_SHAPES`` holds one row of each kind unseen.
+There is no behavioural pin beside this guard: the formatter renders a tracker
+arm as its body unchanged, so a module reading the body itself produces the
+same text, and where the text is read is the whole of the Check.
 """
 
 import ast
 import builtins
+import collections
 import functools
 import inspect
 import operator
+import re
 import typing
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -112,7 +139,9 @@ from tests.name_resolution import (
     parameters_receiving,
     parsed,
     pattern_captures,
+    pattern_classes,
     resolve,
+    returns_text,
     source_tree,
     through_partials,
     unpacking_bindings,
@@ -125,6 +154,7 @@ SPEC_TYPES = frozenset(
     set(ARMS) | {name for name, value in vars(partition).items() if value is FireSpec},
 )
 DIGEST = body_digest.__name__
+FORMATTER_NAME = format_fire_spec.__name__
 DIGEST_HOME = body_digest.__module__
 
 
@@ -236,11 +266,31 @@ TEMPLATE_FILLS = frozenset({str.format.__name__, str.format_map.__name__})
 CASTS = frozenset({typing.cast.__name__})
 
 #: The ``operator`` getters: ``attrgetter("body")`` reads the text of the
-#: spec it is later applied to.
-GETTERS = frozenset({operator.attrgetter.__name__, operator.itemgetter.__name__})
+#: spec it is later applied to, and ``methodcaller`` calls the lookup it names.
+GETTERS = frozenset(
+    {
+        operator.attrgetter.__name__,
+        operator.itemgetter.__name__,
+        operator.methodcaller.__name__,
+    }
+)
+
+#: The methods of the builtin containers, read off the containers: a spec
+#: handed to one on a word (``held.append(spec)``, ``held.update(k=spec)``)
+#: puts the spec in what that word holds, so the word holds a spec.
+CONTAINER_METHODS = frozenset(
+    name
+    for kind in (list, set, dict, collections.deque)
+    for name in vars(kind)
+    if not name.startswith("_")
+)
 
 #: Every word a module's spellings are resolved for, in one pass.
-RESOLVED = SPEC_TYPES | RENDERERS | REFLECTORS | TEXT_BUILTINS | GETTERS
+RESOLVED = (
+    SPEC_TYPES | RENDERERS | REFLECTORS | TEXT_BUILTINS | GETTERS | {FORMATTER_NAME}
+)
+
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 class _Module:
@@ -304,21 +354,42 @@ class _Module:
                 self.words.add(node.value)
             elif isinstance(node, ast.MatchClass):
                 self.words.update(node.kwd_attrs)
-        #: The local words an import from outside the package binds: a
-        #: function reached through one is no definition the walk can read.
-        self.foreign: set[str] = set()
+        #: The local words an import from outside the package binds, with
+        #: the dotted path each one names: a function reached through one is
+        #: no definition the walk can read, but its stated return can be.
+        self.origins: dict[str, str] = {}
         for node in self.expressions:
             if isinstance(node, ast.ImportFrom) and node.level == 0:
                 if (node.module or "").partition(".")[0] != SOURCE_ROOT.name:
-                    self.foreign.update(
-                        alias.asname or alias.name for alias in node.names
+                    self.origins.update(
+                        (alias.asname or alias.name, f"{node.module}.{alias.name}")
+                        for alias in node.names
                     )
             elif isinstance(node, ast.Import):
-                self.foreign.update(
-                    alias.asname or alias.name.partition(".")[0]
+                self.origins.update(
+                    (
+                        alias.asname or alias.name.partition(".")[0],
+                        alias.name if alias.asname else alias.name.partition(".")[0],
+                    )
                     for alias in node.names
                     if alias.name.partition(".")[0] != SOURCE_ROOT.name
                 )
+        self.foreign = set(self.origins)
+        #: The string constants each word is bound to, anywhere in the
+        #: module: ``_FIELD = "body"`` names the field wherever ``_FIELD``
+        #: is read.
+        self.constants: dict[str, set[str]] = {}
+        for node in self.expressions:
+            if isinstance(node, ast.Assign):
+                targets, value = node.targets, node.value
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                targets, value = [node.target], node.value
+            else:
+                continue
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        self.constants.setdefault(target.id, set()).add(value.value)
         self.unpacked = unpacking_bindings(tree)
         self.where = definitions(tree)
         self.calls = [node for node in self.expressions if isinstance(node, ast.Call)]
@@ -354,6 +425,16 @@ class _Package:
                         function.returns
                     )
         self.readers = set(self.reader_returns)
+        #: Every package function whose own annotation says it returns
+        #: text, the formatter aside: a whole spec handed to one is turned
+        #: into text there, whatever that function does with it inside.
+        self.text_returners = {
+            function.name
+            for module in self.modules.values()
+            for function in module.functions
+            if _spells(function.returns) == str.__name__
+            if function.returns is not None
+        } - {FORMATTER_NAME}
         self.fields = {
             field
             for module in self.modules.values()
@@ -459,7 +540,12 @@ class _Scope:
         while True:
             before = set(self.specs), set(self.payloads), set(self.texts)
             captured = self._captures()
-            self.specs |= captured[SPEC] | self._lambda_parameters() | self._narrowed()
+            self.specs |= (
+                captured[SPEC]
+                | self._lambda_parameters()
+                | self._narrowed()
+                | self._filled()
+            )
             self.payloads |= captured[PAYLOAD]
             self.texts |= captured[TEXT]
             self.specs |= bound_names(
@@ -623,7 +709,84 @@ class _Scope:
                 )
             ):
                 found.add(node.left.args[0].id)
+            elif isinstance(node, ast.Match) and isinstance(node.subject, ast.Name):
+                # ``case TrackerSpec():`` tests the subject as ``isinstance``
+                # does, and binds no word: the subject itself is the arm.
+                if any(
+                    self.module.denotes(self.module.names, cls, SPEC_TYPES)
+                    for case in node.cases
+                    for cls in pattern_classes(case.pattern)
+                ):
+                    found.add(node.subject.id)
         return found
+
+    def _filled(self) -> set[str]:
+        """The words a spec is put into, by a container method or a store.
+
+        ``held.append(spec)``, ``held.extend(specs)``, ``held.update(k=spec)``
+        and ``held[key] = spec`` each leave a spec in what ``held`` holds, so
+        ``held`` is a collection of specs from then on, as a display written
+        out with the spec in it already is.
+        """
+        found: set[str] = set()
+        for node in self.module.expressions:
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.attr in CONTAINER_METHODS
+                and any(
+                    self.is_spec(one)
+                    for one in (*node.args, *(k.value for k in node.keywords))
+                )
+            ):
+                found.add(node.func.value.id)
+            elif isinstance(node, ast.Assign) and self.is_spec(node.value):
+                found.update(
+                    target.value.id
+                    for target in node.targets
+                    if isinstance(target, ast.Subscript)
+                    and isinstance(target.value, ast.Name)
+                )
+        return found
+
+    def _literal_words(self, node: ast.AST) -> set[str]:
+        """Every name a literal spells: its identifiers, however it is held.
+
+        A string constant, an f-string's text, a word bound to a string
+        constant anywhere in the module, and the items or keys of a display
+        written out of those: ``"body"``, ``"{0.body}"``, ``"$body"``,
+        ``_FIELD`` after ``_FIELD = "body"``, and ``{"body"}`` alike.
+        """
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return {node.value, *_IDENTIFIER.findall(node.value)}
+        if isinstance(node, ast.JoinedStr):
+            return {word for one in node.values for word in self._literal_words(one)}
+        if isinstance(node, ast.Name):
+            return {
+                word
+                for value in self.module.constants.get(node.id, ())
+                for word in (value, *_IDENTIFIER.findall(value))
+            }
+        if isinstance(node, ast.Tuple | ast.List | ast.Set):
+            return {word for one in node.elts for word in self._literal_words(one)}
+        if isinstance(node, ast.Dict):
+            return {
+                word
+                for one in node.keys
+                if one is not None
+                for word in self._literal_words(one)
+            }
+        return set()
+
+    def _literal(self, node: ast.expr) -> str | None:
+        """The one name a literal key or attribute name spells, if one."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Name):
+            values = self.module.constants.get(node.id, set())
+            return next(iter(values)) if len(values) == 1 else None
+        return None
 
     def _lambda_parameters(self) -> set[str]:
         """The parameters of a lambda a spec is handed to.
@@ -658,21 +821,17 @@ class _Scope:
             return keyed[0], keyed[1]
         if isinstance(node, ast.Call) and node.args:
             reflector = self.module.names.denotes(node.func) or _spells(node.func)
-            if (
-                reflector == getattr.__name__
-                and len(node.args) >= 2
-                and isinstance(node.args[1], ast.Constant)
-                and isinstance(node.args[1].value, str)
-            ):
-                return node.args[0], node.args[1].value
+            if reflector == getattr.__name__ and len(node.args) >= 2:
+                name = self._literal(node.args[1])
+                if name is not None:
+                    return node.args[0], name
         return None
 
-    @staticmethod
-    def _keyed(node: ast.AST) -> tuple[ast.expr, str | None] | None:
+    def _keyed(self, node: ast.AST) -> tuple[ast.expr, str | None] | None:
         """The receiver and the literal key of a lookup: ``x[k]`` or ``x.get(k)``.
 
-        The key is ``None`` when it is no string literal: an index, a slice,
-        or a key computed at run time.
+        The key is ``None`` when it is no string literal or word bound to
+        one: an index, a slice, or a key computed at run time.
         """
         if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
             receiver, key = node.value, node.slice
@@ -685,9 +844,7 @@ class _Scope:
             receiver, key = node.func.value, node.args[0]
         else:
             return None
-        if isinstance(key, ast.Constant) and isinstance(key.value, str):
-            return receiver, key.value
-        return receiver, None
+        return receiver, self._literal(key)
 
     def is_spec(self, node: ast.expr) -> bool:
         """Whether the expression yields one of the partition's arms."""
@@ -701,6 +858,13 @@ class _Scope:
             return any(self.is_spec(one) for one in node.values)
         if isinstance(node, ast.Tuple | ast.List | ast.Set):
             return any(self.is_spec(one) for one in node.elts)
+        if isinstance(node, ast.Dict):
+            # A ``**`` entry's value stands under the key ``None``.
+            return any(self.is_spec(one) for one in node.values)
+        if isinstance(node, ast.BinOp) and not isinstance(node.op, ast.Mod):
+            # ``[spec] + rest``, ``held | {"k": spec}``: the operands'
+            # items end up in what the operation builds.
+            return self.is_spec(node.left) or self.is_spec(node.right)
         if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
             return self.is_spec(node.elt)
         if isinstance(node, ast.DictComp):
@@ -717,9 +881,13 @@ class _Scope:
             return key not in ARM_MODEL_FIELDS and self.is_spec(receiver)
         field = self._field(node)
         if field is not None:
+            # A reader reached by attribute — a property annotated to return
+            # a spec — hands back a spec as a field annotated with one does.
             receiver, name = field
-            return name in self.package.fields or (
-                name == "__dict__" and self.is_spec(receiver)
+            return (
+                name in self.package.fields
+                or (isinstance(node, ast.Attribute) and name in self.package.readers)
+                or (name == "__dict__" and self.is_spec(receiver))
             )
         if isinstance(node, ast.Call):
             return self._call_yields_spec(node)
@@ -737,7 +905,10 @@ class _Scope:
         returns in its own annotation, which the strict type check requires,
         so a reader is found by its annotation.  A method of an arm's class —
         ``TrackerSpec.model_validate(raw)`` — builds an arm as the class call
-        does.
+        does.  A function from outside the package handed an arm's class
+        rather than an arm — ``TypeAdapter(TrackerSpec)`` — builds what
+        validates into an arm, so it is a spec source, and its methods
+        (``.validate_python(raw)``) hand back an arm as a spec's own do.
         """
         func = node.func
         if _spells(func) in self.package.readers or self.module.denotes(
@@ -756,13 +927,31 @@ class _Scope:
         if not self._outside_the_package(func):
             return False
         given = [*node.args, *(keyword.value for keyword in node.keywords)]
-        return any(self.is_spec(one) for one in given)
+        if any(self.is_spec(one) for one in given):
+            return True
+        root = self._root(func)
+        return (
+            isinstance(root, ast.Name)
+            and root.id in self.module.foreign
+            and any(_mentions_spec(one, self.module.spec_words) for one in given)
+        )
+
+    @staticmethod
+    def _root(func: ast.expr) -> ast.expr:
+        """The word a callee's receiver chain starts from.
+
+        Down attributes, the callee of a call and the value of a subscript:
+        ``TypeAdapter(TrackerSpec).dump_python``, ``RootModel[FireSpec]`` and
+        ``Template("$body").substitute`` all start from the foreign word.
+        """
+        root = func
+        while isinstance(root, ast.Attribute | ast.Call | ast.Subscript):
+            root = root.func if isinstance(root, ast.Call) else root.value
+        return root
 
     def _outside_the_package(self, func: ast.expr) -> bool:
         """Whether *func* is a builtin or reached through a foreign import."""
-        root = func
-        while isinstance(root, ast.Attribute):
-            root = root.value
+        root = self._root(func)
         if not isinstance(root, ast.Name):
             return False
         if root.id in self.module.foreign:
@@ -783,6 +972,8 @@ class _Scope:
             return self.is_payload(node.body) or self.is_payload(node.orelse)
         if isinstance(node, ast.Tuple | ast.List | ast.Set):
             return any(self.is_payload(one) for one in node.elts)
+        if isinstance(node, ast.Dict):
+            return any(self.is_payload(one) for one in node.values)
         if isinstance(node, ast.ListComp | ast.SetComp | ast.GeneratorExp):
             return self.is_payload(node.elt)
         field = self._field(node)
@@ -802,10 +993,14 @@ class _Scope:
         """Whether this site loads an arm's own text.
 
         Off a spec, by the field's own name — as an attribute, a literal key,
-        ``getattr`` with a literal, or any call handed a spec and the field's
-        name as a literal (``spec.__getattribute__("body")``,
-        ``inspect.getattr_static(spec, "body")``) — or off a word a pattern
-        captured the text into, which holds the same text.
+        ``getattr`` with a literal, or any call handed a spec and a literal
+        naming the field anywhere in its arguments or its receiver chain
+        (``spec.__getattribute__("body")``,
+        ``inspect.getattr_static(spec, "body")``,
+        ``spec.model_dump(include={"body"})``, ``"{0.body}".format(spec)``,
+        ``Template("$body").substitute(spec.model_dump())``) — or off a word
+        a pattern captured the text into, which holds the same text.  A
+        literal is a string constant or a word bound to one.
         """
         if isinstance(node, ast.Name):
             return node.id in self.texts and isinstance(node.ctx, ast.Load)
@@ -815,11 +1010,21 @@ class _Scope:
         if not isinstance(node, ast.Call):
             return False
         given = [*node.args, *(keyword.value for keyword in node.keywords)]
-        if isinstance(node.func, ast.Attribute):
-            given.append(node.func.value)
-        return any(
-            isinstance(one, ast.Constant) and one.value in TEXT_FIELDS for one in given
-        ) and any(self.is_spec(one) for one in given)
+        chain = node.func
+        while isinstance(chain, ast.Attribute | ast.Call | ast.Subscript):
+            if isinstance(chain, ast.Call):
+                if self.reads_text(chain):
+                    # The read is the call further in; this one takes what
+                    # it read, and one read is one site.
+                    return False
+                given.extend(chain.args)
+                given.extend(keyword.value for keyword in chain.keywords)
+                chain = chain.func
+            else:
+                given.append(chain.value)
+                chain = chain.value
+        named = {word for one in given for word in self._literal_words(one)}
+        return bool(named & TEXT_FIELDS) and any(self.is_spec(one) for one in given)
 
     def _renders_whole(self, node: ast.expr) -> bool:
         return self.is_payload(node) or self.is_spec(node)
@@ -877,7 +1082,61 @@ class _Scope:
             # it — ``map(attrgetter("body"), specs)`` — is counted at the
             # call that hands it a spec, below.
             return False
-        return self._applies_a_text_getter(node, given)
+        return self._applies_a_text_getter(node, given) or self._turned_into_text(
+            node, given
+        )
+
+    def _turned_into_text(self, node: ast.Call, given: list[ast.expr]) -> bool:
+        """A whole spec handed to a call whose stated return is text.
+
+        A package function annotated ``-> str`` (the formatter aside), or a
+        callable from outside the package — a builtin, a foreign import, a
+        method of a string literal or of what a foreign class builds — whose
+        own annotation or typeshed stub says ``str``:
+        ``json.dumps(spec.model_dump())``, ``"".join(...)``,
+        ``template.render({"task_md": spec})``.  Only the innermost such call
+        is the site, so a text read already inside what it is handed is not
+        counted twice.  The payload's own serialisation handed on is the
+        record of the payload the stated limits leave silent, so only a whole
+        spec counts here.
+        """
+        if not any(self.is_spec(one) for one in given):
+            return False
+        if not (
+            _spells(node.func) in self.package.text_returners
+            and not self.module.denotes(
+                self.module.names, node.func, frozenset({FORMATTER_NAME})
+            )
+        ):
+            dotted = self._callee_path(node.func)
+            if dotted is None or not returns_text(dotted):
+                return False
+        return not any(
+            self.renders(inner)
+            for one in given
+            for inner in ast.walk(one)
+            if isinstance(inner, ast.expr)
+        )
+
+    def _callee_path(self, func: ast.expr) -> str | None:
+        """The dotted path of a callable from outside the package, if one."""
+        if isinstance(func, ast.Name):
+            if func.id in self.module.origins:
+                return self.module.origins[func.id]
+            if func.id not in self.module.bound and hasattr(builtins, func.id):
+                return f"{builtins.__name__}.{func.id}"
+            return None
+        if not isinstance(func, ast.Attribute):
+            return None
+        receiver = func.value
+        if isinstance(receiver, ast.JoinedStr) or (
+            isinstance(receiver, ast.Constant) and isinstance(receiver.value, str)
+        ):
+            return f"{builtins.__name__}.{str.__name__}.{func.attr}"
+        owner = self._callee_path(
+            receiver.func if isinstance(receiver, ast.Call) else receiver
+        )
+        return None if owner is None else f"{owner}.{func.attr}"
 
     def _applies_a_text_getter(self, node: ast.Call, given: list[ast.expr]) -> bool:
         getters = [
@@ -1252,6 +1511,33 @@ def test_the_scan_catches_a_spec_handed_to_an_unannotated_parameter_in_the_tree(
     assert report["digested"] == DIGEST_POSITIONS
 
 
+PROMPT_ANCHOR = ').render({"task_md": task_md})'
+
+
+def test_the_whole_arm_handed_to_the_implementation_prompt_is_a_render():
+    """The package's own prompt idiom, handed the arm instead of its text.
+
+    The arm stands under a key of a dict display, and the template's
+    ``render`` states that it returns text, so the arm is turned into the
+    prompt's text there without the formatter.  The walk follows the arm
+    into ``render`` too, where the merged bindings are handed to
+    ``render_template``, which states the same: two sites, one per call.
+    """
+    sources = dict(PACKAGE)
+    assert sources[IMPLEMENTATION].count(PROMPT_ANCHOR) == 1
+    sources[IMPLEMENTATION] = sources[IMPLEMENTATION].replace(
+        PROMPT_ANCHOR, ').render({"task_md": spec})'
+    )
+
+    report = _report(sources)
+
+    assert report["read"] == {
+        **TEXT_READS,
+        IMPLEMENTATION: ("FireImplementation.run_ralph_loop",),
+        "core/prompt_rendering.py": ("PromptTemplate.render",),
+    }
+
+
 CONTROL_IMPORT = "from kodezart.control import _own_text"
 
 
@@ -1613,6 +1899,74 @@ PLANTED_READS = {
     + "def f(spec: AuthoredSpec):\n    return str((spec.ticket, 1))\n",
     "payload_copied_then_rendered": ARM_IMPORT
     + "def f(spec: AuthoredSpec):\n    return str(spec.ticket.model_copy())\n",
+    # A collection filled by a container method, a store or an operator.
+    "spec_appended_to_a_list": ARM_IMPORT
+    + "def f(spec: TrackerSpec):\n    held_list = []\n    held_list.append(spec)\n"
+    "    return held_list[0].body\n",
+    "specs_extended_into_a_list": ARM_IMPORT
+    + "def f(specs: tuple[TrackerSpec, ...]):\n    held_ext = []\n"
+    "    held_ext.extend(specs)\n    return held_ext[0].body\n",
+    "spec_updated_into_a_mapping": ARM_IMPORT
+    + "def f(spec: TrackerSpec):\n    held_map = {}\n    held_map.update(k=spec)\n"
+    "    return held_map['k'].body\n",
+    "spec_stored_under_a_computed_key": ARM_IMPORT
+    + "def f(spec: TrackerSpec, key):\n    held_store = {}\n"
+    "    held_store[key] = spec\n    return held_store[key].body\n",
+    "specs_concatenated": ARM_IMPORT
+    + "def f(spec: TrackerSpec):\n    return ([spec] + [])[0].body\n",
+    "spec_added_to_a_tuple_by_concatenation": ARM_IMPORT
+    + "def f(spec: TrackerSpec, rest):\n    return (rest + (spec,))[-1].body\n",
+    "spec_under_a_key_of_a_dict_display": ARM_IMPORT
+    + "def f(spec: TrackerSpec):\n    return {'k': spec}['k'].body\n",
+    "specs_merged_by_a_double_star_entry": ARM_IMPORT
+    + "def f(specs: dict[str, TrackerSpec]):\n    return {**specs}['k'].body\n",
+    # The text field named by a literal held elsewhere than at the read.
+    "text_field_named_by_a_module_constant": ARM_IMPORT
+    + "_TEXT_FIELD_NAME = 'body'\n\n"
+    "def f(spec: TrackerSpec):\n    return getattr(spec, _TEXT_FIELD_NAME)\n",
+    "text_key_named_by_a_module_constant": ARM_IMPORT + "_TEXT_KEY_NAME = 'body'\n\n"
+    "def f(spec: TrackerSpec):\n    return spec.model_dump()[_TEXT_KEY_NAME]\n",
+    "text_field_named_in_an_include_set": ARM_IMPORT + "def f(spec: TrackerSpec):\n"
+    "    return ''.join(spec.model_dump(include={'body'}).values())\n",
+    "text_field_named_in_a_format_field": ARM_IMPORT
+    + "def f(spec: TrackerSpec):\n    return '{0.body}'.format(spec)\n",
+    "text_field_named_in_a_template_placeholder": ARM_IMPORT + "import string\n\n"
+    "def f(spec: TrackerSpec):\n"
+    "    return string.Template('$body').substitute(spec.model_dump())\n",
+    "methodcaller_applied": ARM_IMPORT + "import operator\n\n"
+    "def f(spec: TrackerSpec):\n"
+    "    return operator.methodcaller('__getattribute__', 'body')(spec)\n",
+    # A receiver chain rooted at a call or a subscript of a foreign word.
+    "spec_dumped_by_an_adapter_over_its_class": ARM_IMPORT
+    + "from pydantic import TypeAdapter\n\n"
+    "def f(spec: TrackerSpec):\n"
+    "    return TypeAdapter(TrackerSpec).dump_python(spec)['body']\n",
+    "spec_wrapped_by_a_subscripted_foreign_model": ARM_IMPORT
+    + "from pydantic import RootModel\n\n"
+    "def f(spec: TrackerSpec):\n"
+    "    return RootModel[TrackerSpec](spec).model_dump()['body']\n",
+    # An arm stated by a class pattern with no capture, or by an adapter.
+    "arm_tested_by_a_class_pattern_with_no_capture": ARM_IMPORT
+    + "def f(raw: object):\n    match raw:\n        case TrackerSpec():\n"
+    "            return raw.body\n",
+    "arm_validated_by_an_adapter_over_its_class": ARM_IMPORT
+    + "from pydantic import TypeAdapter\n\n"
+    "def f(raw):\n    return TypeAdapter(TrackerSpec).validate_python(raw).body\n",
+    "arm_validated_by_a_module_level_adapter": ARM_IMPORT
+    + "from pydantic import TypeAdapter\n\n"
+    "_ARM_ADAPTER = TypeAdapter(TrackerSpec)\n\n"
+    "def f(raw):\n    return _ARM_ADAPTER.validate_python(raw).body\n",
+    "arm_returned_by_a_property": ARM_IMPORT + "class PropertyHolder:\n"
+    "    def __init__(self, raw):\n        self.raw_held = raw\n\n"
+    "    @property\n"
+    "    def arm_by_property(self) -> TrackerSpec:\n        return self.raw_held\n\n"
+    "    def text(self):\n        return self.arm_by_property.body\n",
+    # A whole spec handed to a call whose stated return is text.
+    "whole_spec_serialised_by_a_foreign_text_function": ARM_IMPORT + "import json\n\n"
+    "def f(spec: TrackerSpec):\n    return json.dumps(spec.model_dump())\n",
+    "whole_spec_handed_to_a_package_function_returning_text": ARM_IMPORT
+    + "def as_prompt_text(values) -> str:\n    return ''\n\n"
+    "def f(spec: TrackerSpec):\n    return as_prompt_text({'task_md': spec})\n",
 }
 
 #: The same spellings where the value is not the arm's text: each must stay
@@ -1641,6 +1995,42 @@ PLANTED_NON_READS = {
     "    raise NotImplementedError\n\n"
     "async def f():\n    spec, issues = await read_pair()\n"
     "    return issues['k'].body\n",
+    "a_field_that_is_not_the_text_appended": ARM_IMPORT
+    + "def f(spec: TrackerSpec):\n    held_other = []\n"
+    "    held_other.append(spec.subject)\n    return held_other[0].body\n",
+    "a_concatenation_holding_no_spec": ARM_IMPORT + "def f(spec: TrackerSpec, rest):\n"
+    "    return (rest + [spec.subject])[0].body\n",
+    "a_dict_display_holding_no_spec": ARM_IMPORT
+    + "def f(spec: TrackerSpec):\n    return {'k': spec.subject}['k'].body\n",
+    "a_module_constant_naming_another_field": ARM_IMPORT
+    + "_OTHER_FIELD_NAME = 'subject'\n\n"
+    "def f(spec: TrackerSpec):\n    return getattr(spec, _OTHER_FIELD_NAME)\n",
+    "an_adapter_over_no_arm": "from pydantic import TypeAdapter\n\n"
+    "_OTHER_ADAPTER = TypeAdapter(dict)\n\n"
+    "def f(raw):\n    return _OTHER_ADAPTER.validate_python(raw).body\n",
+    "a_class_pattern_over_no_arm": "def f(raw: object):\n    match raw:\n"
+    "        case dict():\n            return raw.body\n",
+    "the_formatter_itself_returning_text": ARM_IMPORT
+    + "from kodezart.domain.ticket import format_fire_spec\n\n"
+    "def f(spec: TrackerSpec):\n    return format_fire_spec(spec)\n",
+    "a_foreign_function_whose_return_is_no_text": ARM_IMPORT + "import copy\n\n"
+    "def f(spec: TrackerSpec):\n    return copy.deepcopy(spec)\n",
+}
+
+#: One row per shape the stated limit puts out of reach, each held unseen:
+#: a value handed across a function boundary where the other function is not
+#: resolved at this site, a name built at run time, and a binding made only
+#: when a function runs.  A row going red means the walk grew past its
+#: stated limit, and the module docstring has to say so.
+STATED_LIMIT_SHAPES = {
+    "a_spec_returned_from_a_helper_under_a_wider_annotation": ARM_IMPORT
+    + "def widened_by_helper(spec: TrackerSpec) -> object:\n    return spec\n\n"
+    "def f(spec: TrackerSpec):\n    return widened_by_helper(spec).body\n",
+    "a_field_name_built_at_run_time": ARM_IMPORT
+    + "def f(spec: TrackerSpec):\n    return getattr(spec, 'bo' + 'dy')\n",
+    "a_binding_made_only_when_a_function_runs": ARM_IMPORT
+    + "def bind_late(spec: TrackerSpec):\n    globals()['late_bound_arm'] = spec\n\n"
+    "def f():\n    return late_bound_arm.body\n",
 }
 
 
@@ -1648,16 +2038,34 @@ def _planted_path(name: str) -> str:
     return f"planted_{name}.py"
 
 
+def _planted_source(name: str, source: str) -> str:
+    """The row's source with its function named after the row.
+
+    A function a row defines can become a root (a payload reader, a reader),
+    and a root is a word the whole walk shares; naming each row's function
+    after its row keeps one row's root from reaching another row's calls.
+    """
+    return source.replace("def f(", f"def planted_{name}(")
+
+
 @functools.cache
 def _planted_report() -> dict[str, dict[str, tuple[str, ...]]]:
     """One walk over the package with every planted module beside it.
 
-    The planted modules share no word a root is grown from, so each reads
-    as it would alone, and one walk answers for every row.
+    Each planted module names its function after its row, and every other
+    word a root grows from (a stored field, a reader, a module constant) is
+    spelled in one row only, so each row reads as it would alone and one
+    walk answers for every row.
     """
-    planted = {**PLANTED_READS, **PLANTED_NON_READS}
+    planted = {**PLANTED_READS, **PLANTED_NON_READS, **STATED_LIMIT_SHAPES}
     return _report(
-        {**PACKAGE, **{_planted_path(name): source for name, source in planted.items()}}
+        {
+            **PACKAGE,
+            **{
+                _planted_path(name): _planted_source(name, source)
+                for name, source in planted.items()
+            },
+        }
     )
 
 
@@ -1679,6 +2087,12 @@ def test_every_ordinary_spelling_of_a_read_is_a_read(name):
 @pytest.mark.parametrize("name", sorted(PLANTED_NON_READS))
 def test_a_value_that_is_not_the_arm_text_is_no_read(name):
     """The widenings report the arm's text, not every value near a spec."""
+    assert _planted(name) == (0, 0)
+
+
+@pytest.mark.parametrize("name", sorted(STATED_LIMIT_SHAPES))
+def test_each_shape_the_stated_limit_names_is_unseen(name):
+    """The limit is a fact the rows hold, not a sentence alone."""
     assert _planted(name) == (0, 0)
 
 
@@ -1709,3 +2123,8 @@ def test_every_derived_vocabulary_is_populated():
     assert MODEL_RENDERS
     assert PLANTED_READS
     assert PLANTED_NON_READS
+    assert STATED_LIMIT_SHAPES
+    assert CONTAINER_METHODS >= {"append", "extend", "update", "setdefault"}
+    assert returns_text("json.dumps")
+    assert returns_text("string.Template.substitute")
+    assert not returns_text("copy.deepcopy")
