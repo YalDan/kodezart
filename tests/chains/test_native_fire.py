@@ -849,6 +849,48 @@ async def test_a_finished_nested_criterion_with_no_legible_check_refuses():
     assert caught.value.criterion_key == NESTED_DONE
 
 
+@pytest.mark.parametrize(
+    ("kind", "name"),
+    [
+        (WorkflowStateKind.CANCELED, "Canceled"),
+        (WorkflowStateKind.DUPLICATE, "Duplicate"),
+    ],
+    ids=["canceled", "duplicate"],
+)
+async def test_an_abandoned_criterion_without_a_check_refuses_nothing_at_the_writer(
+    kind: WorkflowStateKind, name: str
+) -> None:
+    """The native writer's authority read validates only what counts.
+
+    A criterion the board Canceled or closed as a Duplicate refuses no read
+    it is present in (KOD-794).  The writer reads the subtree's membership
+    again when its session opens, and a Check it validates there is one the
+    spec read would have validated first, so an abandoned criterion with no
+    Check at all is carried in that membership and is not parsed: the fire
+    passes the spec read, opens its execution session and is graded.
+    """
+    port = tracker(bodies={DIRECT_OWED_TOO: "**Do:** no check"})
+    port.issues[DIRECT_OWED_TOO] = port.issues[DIRECT_OWED_TOO].model_copy(
+        update={"state_kind": kind, "state_name": name}
+    )
+    counted = {key: check_of(key) for key in (DIRECT_OWED, NESTED_OWED)}
+    executor = NativeExecutor(
+        [native_evaluation(checks=counted), native_evaluation(checks=counted)]
+    )
+    fire = engine(
+        criteria=TrackerCriteria(tracker=port), executor=executor, real_loop=True
+    )
+
+    events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+
+    assert executor.execution_prompts != []
+    iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
+    assert {
+        result.criterion_id for result in iteration.evaluation.criteria_results
+    } == set(counted)
+    assert any(isinstance(e, WorkflowCompleteEvent) for e in events)
+
+
 def nested_only_board(*, nested: bool = True) -> FakeTrackerPort:
     """The subject with no criterion of its own and one deliverable child.
 
