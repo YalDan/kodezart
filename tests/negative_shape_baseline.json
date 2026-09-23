@@ -156,6 +156,7 @@
   "tests/core/test_write_back_settings.py": 8,
   "tests/docs/test_api_event_reference.py": 5,
   "tests/docs/test_documented_surface.py": 27,
+  "tests/docs/test_migration_guide.py": 6,
   "tests/docs/test_parity_checklist.py": 15,
   "tests/docs/test_scope_guide.py": 25,
   "tests/docs/test_setup_guide.py": 41,
@@ -293,6 +294,7 @@
   "tests/integration/test_session_resume.py": 6,
   "tests/integration/test_stacked_scope.py": 29,
   "tests/integration/test_supervisor_pass.py": 63,
+  "tests/integration/test_v02_operation_file.py": 52,
   "tests/integration/test_workflow_e2e.py": 62,
   "tests/integration/test_write_path_boot.py": 24,
   "tests/model_members.py": 5,
@@ -2740,6 +2742,10 @@
    "test_default_guard_rejects_a_valid_nested_nondefault",
    "test_example_guard_rejects_invalid_nested_transport"
   ],
+  "tests/docs/test_migration_guide.py": [
+   "test_the_guide_names_every_v02_default_and_the_ignored_table",
+   "test_the_guide_says_a_fire_log_with_no_structure_gets_the_v02_row"
+  ],
   "tests/docs/test_parity_checklist.py": [
    "test_the_checklist_has_rows_at_all",
    "test_every_dimension_the_cutover_map_traces_is_on_the_checklist",
@@ -4311,6 +4317,18 @@
    "test_the_composed_tick_leases_under_its_pass_identity_not_dispatch_holder",
    "test_no_alarm_on_a_healthy_walk_and_one_keyed_alarm_on_a_stalled_lane"
   ],
+  "tests/integration/test_v02_operation_file.py": [
+   "test_the_v020_example_boots_unchanged_and_schedules_the_per_issue_passes",
+   "test_a_v020_file_claims_dispatches_and_records_its_outcome",
+   "test_a_declared_marker_table_is_taken_as_written",
+   "test_markers_v02_wrote_are_still_read",
+   "test_a_v02_claim_whose_expiry_cannot_be_read_is_refused",
+   "test_a_v02_claim_expiring_at_the_reading_instant_has_lapsed",
+   "test_a_fenced_tie_beside_a_live_v02_claim_reads_unclaimed",
+   "test_the_v02_claim_prefix_is_matched_as_written",
+   "test_a_fire_log_given_the_v02_shape_is_reported_at_load",
+   "test_a_fire_log_with_no_structure_writes_the_v02_row_and_adds_no_clause"
+  ],
   "tests/integration/test_workflow_e2e.py": [
    "test_workflow_e2e_creates_branch_and_pushes",
    "test_workflow_e2e_exhausts_iterations",
@@ -4453,7 +4471,7 @@
    "test_the_readme_points_a_new_operator_at_the_floor"
   ],
   "tests/prompts/test_native_initiative_configuration.py": [
-   "test_retired_initiative_roster_refuses_at_the_real_toml_loader",
+   "test_a_v02_initiative_roster_is_accepted_and_changes_nothing",
    "test_composed_grooming_renders_without_copied_initiative_ids_or_dates"
   ],
   "tests/prompts/test_operation_config.py": [
