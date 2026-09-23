@@ -392,7 +392,7 @@
   "tests/test_capability_checked_at_boot.py": 9,
   "tests/test_composition_root.py": 35,
   "tests/test_criterion_resolution_boundary.py": 14,
-  "tests/test_default_run_isolation.py": 3,
+  "tests/test_default_run_isolation.py": 16,
   "tests/test_fakes_state.py": 8,
   "tests/test_forge_origin_selection.py": 46,
   "tests/test_graded_sha_comparison_sites.py": 22,
@@ -5570,7 +5570,14 @@
   ],
   "tests/test_default_run_isolation.py": [
    "test_a_default_run_item_cannot_reach_a_non_loopback_address",
-   "test_a_default_run_item_still_reaches_loopback"
+   "test_a_default_run_item_still_reaches_loopback",
+   "test_localhost_by_name_is_this_machine",
+   "test_the_ipv6_loopback_is_this_machine",
+   "test_a_unix_socket_is_this_machine",
+   "test_an_http_client_request_off_the_machine_is_refused",
+   "test_a_wide_scope_fixture_setup_is_refused",
+   "test_an_item_with_a_gated_mark_runs_unguarded",
+   "test_an_unmarked_item_runs_guarded"
   ],
   "tests/test_fakes_state.py": [
    "test_every_journal_the_check_reaches_is_written_to_here",

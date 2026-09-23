@@ -4,7 +4,7 @@ import ipaddress
 import logging
 import os
 import socket
-from collections.abc import AsyncGenerator, Callable, Iterator
+from collections.abc import AsyncGenerator, Callable, Generator, Iterator
 
 import pytest
 import structlog
@@ -32,6 +32,12 @@ from tests.fakes import (
 for _ambient in [name for name in os.environ if name.startswith("KODEZART_")]:
     del os.environ[_ambient]
 AppConfig.model_config["env_file"] = None
+# An HTTP client honours a proxy named in the environment, and a proxy on a
+# loopback port would relay an in-process request off this machine past the
+# socket guard below, which sees only the loopback connect to the proxy.
+for _proxy in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+    os.environ.pop(_proxy, None)
+    os.environ.pop(_proxy.lower(), None)
 
 
 @pytest.fixture(autouse=True)
@@ -101,6 +107,17 @@ def _loopback(address: object) -> bool:
         return False
 
 
+#: Every refusal the guard made since the current item began, in order. A
+#: refusal the code under test caught and carried on from is still a test
+#: that tried to leave this machine, so it fails that item at teardown; a
+#: test that means to be refused takes its own record with take_refusals().
+_REFUSALS: list[LiveReachError] = []
+
+#: The two socket methods the guard wraps, as the socket module ships them.
+_GUARDED_METHODS = ("connect", "connect_ex")
+_UNGUARDED: dict[str, Callable[[socket.socket, object], object]] = {}
+
+
 def _guarded[R](
     original: Callable[[socket.socket, object], R],
 ) -> Callable[[socket.socket, object], R]:
@@ -108,29 +125,97 @@ def _guarded[R](
 
     def connect(self: socket.socket, address: object) -> R:
         if self.family != socket.AF_UNIX and not _loopback(address):
-            raise LiveReachError(address)
+            refused = LiveReachError(address)
+            _REFUSALS.append(refused)
+            raise refused
         return original(self, address)
 
     return connect
 
 
-@pytest.fixture(autouse=True)
-def _no_live_reach(request: pytest.FixtureRequest) -> Iterator[None]:
-    """Keep every default-run test on this machine: the fakes, never a workspace.
+def _guard(*, on: bool) -> None:
+    """Put the guard on the socket class, or put the shipped methods back."""
+    for name, original in _UNGUARDED.items():
+        setattr(socket.socket, name, _guarded(original) if on else original)
 
-    A test carrying one of the gated marks is the one kind allowed to leave
-    it, and that set is ``GATED_MARKERS`` itself, read here rather than
-    listed again. Everything else may reach a Unix socket or a loopback
-    address; a connect anywhere else raises ``LiveReachError`` before the
-    call is made (KOD-469).
+
+def guarded() -> bool:
+    """Whether both socket methods are wrapped by the guard right now."""
+    return all(
+        getattr(socket.socket, name) is not original
+        for name, original in _UNGUARDED.items()
+    )
+
+
+def take_refusals() -> list[LiveReachError]:
+    """The refusals made since the current item began, taken so none fails it."""
+    taken = list(_REFUSALS)
+    _REFUSALS.clear()
+    return taken
+
+
+def leaves_the_machine(item: pytest.Item) -> bool:
+    """Whether *item* may reach off this machine: it carries a gated mark.
+
+    That set is ``GATED_MARKERS`` itself, read here rather than listed again.
     """
-    if any(request.node.get_closest_marker(name) for name in GATED_MARKERS):
-        yield
-        return
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(socket.socket, "connect", _guarded(socket.socket.connect))
-        patch.setattr(socket.socket, "connect_ex", _guarded(socket.socket.connect_ex))
-        yield
+    return any(item.get_closest_marker(name) for name in GATED_MARKERS)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Guard the whole session, collection and wide-scope fixtures included.
+
+    Every default-run test stays on this machine: the fakes, never a
+    workspace. A Unix socket or a loopback address is reached as before; a
+    connect anywhere else raises ``LiveReachError`` before the call is made
+    (KOD-469). Installed once, before collection, so module import, and the
+    setup of a session-, package- or module-scoped fixture, run under it as
+    a test body does.
+
+    What it does not reach, in code terms: a child process, because the
+    patch is on this interpreter's socket class; name resolution, which
+    connects nothing through it; and ``sendto`` on a datagram socket, which
+    sends without a connect.
+    """
+    _ = config
+    _UNGUARDED.update({name: getattr(socket.socket, name) for name in _GUARDED_METHODS})
+    _guard(on=True)
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Put the socket class back as the session found it."""
+    _ = config
+    _guard(on=False)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_protocol(
+    item: pytest.Item, nextitem: pytest.Item | None
+) -> Generator[None, object, object]:
+    """Lift the guard for exactly the item a gated mark lets leave the machine.
+
+    Setup, call and teardown of that item run unguarded, and the guard is
+    back before the next item begins. Every item starts with no refusal on
+    record, so what the teardown check reads is that item's own.
+    """
+    _ = nextitem
+    _REFUSALS.clear()
+    if not leaves_the_machine(item):
+        return (yield)
+    _guard(on=False)
+    try:
+        return (yield)
+    finally:
+        _guard(on=True)
+
+
+@pytest.fixture(autouse=True)
+def _no_swallowed_refusal() -> Iterator[None]:
+    """Fail an item whose code under test caught a refusal and carried on."""
+    yield
+    swallowed = take_refusals()
+    if swallowed:
+        pytest.fail(f"a refused off-machine connect was swallowed: {swallowed}")
 
 
 def pytest_collection_modifyitems(
