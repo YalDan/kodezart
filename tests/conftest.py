@@ -86,7 +86,10 @@ def pytest_collection_modifyitems(
             continue
         skip = pytest.mark.skip(reason=reason)
         for item in items:
-            if marker in item.keywords:
+            # The mark itself, not the keyword: a parametrize id or a function
+            # attribute spelled like the marker is a keyword too, and would
+            # skip a test that carries no gated mark at all.
+            if any(item.iter_markers(name=marker)):
                 item.add_marker(skip)
 
 

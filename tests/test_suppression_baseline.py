@@ -54,7 +54,7 @@ from pathlib import Path
 import pytest
 
 from tests import negative_shape
-from tests.conftest import GATED_MARKERS
+from tests.conftest import GATED_MARKERS, pytest_collection_modifyitems
 from tests.negative_shape import REPO_ROOT, SKIP_FORMS, Source
 
 #: Every suppression the tree is allowed to carry, by repository-relative
@@ -472,6 +472,49 @@ def test_the_gate_deselects_exactly_the_markers_the_project_declares() -> None:
     declared = negative_shape.declared_markers(REPO_ROOT / "pyproject.toml")
 
     assert frozenset(GATED_MARKERS) == declared
+
+
+class _UnfilteredConfig:
+    """A run configuration with no marker expression, as the default run has."""
+
+    def getoption(self, name: str, default: object = None) -> object:
+        return ""
+
+
+class _CollectedItem:
+    """A collected item reduced to what the gate reads and writes."""
+
+    def __init__(self, *, keywords: set[str], marks: tuple[pytest.Mark, ...] = ()):
+        self.keywords = dict.fromkeys(keywords, True)
+        self.own_marks = marks
+        self.added: list[pytest.MarkDecorator] = []
+
+    def iter_markers(self, name: str | None = None) -> list[pytest.Mark]:
+        return [mark for mark in self.own_marks if name is None or mark.name == name]
+
+    def add_marker(self, marker: pytest.MarkDecorator) -> None:
+        self.added.append(marker)
+
+
+def test_the_gate_skips_a_test_only_for_a_gated_mark_it_carries() -> None:
+    """A keyword spelled like a gated marker is not the marker.
+
+    A parametrize id or a function attribute lands in an item's keywords
+    under its own spelling, so a gate reading keywords would skip a test that
+    carries no gated mark, and the gated-mark roster could not see it. Each
+    gated marker is checked both ways: the keyword alone gains nothing, and
+    the mark itself gains the gate's skip.
+    """
+    for marker in GATED_MARKERS:
+        keyworded = _CollectedItem(keywords={marker})
+        marked = _CollectedItem(
+            keywords={marker}, marks=(getattr(pytest.mark, marker).mark,)
+        )
+
+        pytest_collection_modifyitems(_UnfilteredConfig(), [keyworded, marked])
+
+        assert keyworded.added == []
+        assert [decorator.mark.name for decorator in marked.added] == ["skip"]
 
 
 def test_a_mark_inside_a_docstring_is_not_a_site() -> None:
