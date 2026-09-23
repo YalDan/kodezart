@@ -37,7 +37,9 @@ def test_one_structured_field_retains_exact_grading_facts_and_check():
         value.test = "substitute"
 
 
-@pytest.mark.parametrize("sha", ["main", "abcd", "a" * 39, "A" * 40, "g" * 40])
+@pytest.mark.parametrize(
+    "sha", ["main", "abcd", "a" * 39, "A" * 40, "g" * 40, "", None]
+)
 def test_a_recorded_sha_is_a_complete_object_identity_not_a_moving_ref(sha):
     with pytest.raises(ValidationError):
         CriterionEvidence(graded_sha=sha, test="test_path")
