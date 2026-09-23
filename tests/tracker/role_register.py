@@ -723,8 +723,21 @@ def aggregate_annotations(sources: Mapping[str, str]) -> tuple[str, ...]:
     )
 
 
+def unions_none(annotation: ast.expr) -> bool:
+    """Whether *annotation* is a ``|`` union with ``None`` among its arms."""
+    return isinstance(annotation, ast.BinOp) and any(
+        isinstance(part, ast.Constant) and part.value is None
+        for part in ast.walk(annotation)
+    )
+
+
 def defaulted_role_parameters(sources: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
-    """Every consumer parameter that takes a role with a default or a union."""
+    """Every consumer dependency on a role that has a default or a union.
+
+    A dependency is a function parameter or a field declared in a class
+    body, the constructor a dataclass is built from; a field is loose when
+    it carries a value or its annotation admits ``None``.
+    """
     known = roles(port_module_text()) | {AGGREGATE}
     report: dict[str, tuple[str, ...]] = {}
     for path, text in sorted(sources.items()):
@@ -754,6 +767,17 @@ def defaulted_role_parameters(sources: Mapping[str, str]) -> dict[str, tuple[str
                     argument.annotation, ast.BinOp
                 ):
                     loose.add(f"{function.name}({argument.arg})")
+        for node in nodes(text):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for field in node.body:
+                if (
+                    isinstance(field, ast.AnnAssign)
+                    and isinstance(field.target, ast.Name)
+                    and names_in(field.annotation) & known
+                    and (field.value is not None or unions_none(field.annotation))
+                ):
+                    loose.add(f"{node.name}.{field.target.id}")
         if loose:
             report[path] = tuple(sorted(loose))
     return report

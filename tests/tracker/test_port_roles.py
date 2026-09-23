@@ -471,14 +471,45 @@ def test_every_unwired_role_is_a_role_a_module_outside_the_run_takes():
     assert "services/scope_runtime.py" in first_party_closure(sources)
 
 
-#: One planted consumer per clause, each naming a role the way a module would.
+#: One planted consumer per clause, each naming a role the way a module
+#: would and using it, and the one report that must name it.
 PLANTED_CONSUMERS = {
-    "the whole port": "def hold(port: {aggregate}) -> None:\n    print(port)\n",
-    "a role it never uses": "def hold(reader: {role}) -> None:\n    return None\n",
-    "a defaulted role": (
-        "def hold(reader: {role} | None = None) -> None:\n    reader.{member}()\n"
+    "the whole port": (
+        "def hold(port: {aggregate}) -> None:\n    port.{member}()\n",
+        "aggregate",
     ),
-    "a vendor adapter import": "from {adapter} import {adapter_class}\n",
+    "a role it never uses": (
+        "def hold(reader: {role}) -> None:\n    return None\n",
+        "credit",
+    ),
+    "a positional default": (
+        "def hold(reader: {role} = cast({role}, None)) -> None:\n"
+        "    reader.{member}()\n",
+        "default",
+    ),
+    "a keyword-only default": (
+        "def hold(*, reader: {role} = cast({role}, None)) -> None:\n"
+        "    reader.{member}()\n",
+        "default",
+    ),
+    "a union with no default": (
+        "def hold(*, reader: {role} | None) -> None:\n    reader.{member}()\n",
+        "default",
+    ),
+    "a defaulted field": (
+        "@dataclass\nclass Holder:\n    reader: {role} = cast({role}, None)\n\n"
+        "    def use(self) -> None:\n        self.reader.{member}()\n",
+        "default",
+    ),
+    "a field that admits None": (
+        "@dataclass\nclass Holder:\n    reader: {role} | None\n\n"
+        "    def use(self) -> None:\n        self.reader.{member}()\n",
+        "default",
+    ),
+    "a vendor adapter import": (
+        "from {adapter} import {adapter_class}\n",
+        "adapter",
+    ),
 }
 
 
@@ -487,9 +518,9 @@ def test_a_consumer_that_takes_more_than_it_calls_is_reported(form):
     sources = source_tree()
     text = port_module_text()
     role = min(declaring_roles(text))
-    assert not members_declared(text, role) & {"print"}
+    planted, expected = PLANTED_CONSUMERS[form]
     planted_path = "services/overreaching.py"
-    sources[planted_path] = PLANTED_CONSUMERS[form].format(
+    sources[planted_path] = planted.format(
         aggregate=AGGREGATE,
         role=role,
         member=min(own_declarations(text)[role]),
@@ -497,14 +528,16 @@ def test_a_consumer_that_takes_more_than_it_calls_is_reported(form):
         adapter_class=LinearMcpTracker.__name__,
     )
 
-    reports = (
-        aggregate_annotations(sources),
-        tuple(uncredited_roles(sources)),
-        tuple(defaulted_role_parameters(sources)),
-        adapter_importers(sources),
-    )
+    reports = {
+        "aggregate": aggregate_annotations(sources),
+        "credit": tuple(uncredited_roles(sources)),
+        "default": tuple(defaulted_role_parameters(sources)),
+        "adapter": adapter_importers(sources),
+    }
 
-    assert [planted_path in report for report in reports].count(True) == 1
+    assert [name for name, report in reports.items() if planted_path in report] == [
+        expected
+    ]
 
 
 def wider_role(text: str) -> tuple[str, str, str]:
