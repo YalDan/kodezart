@@ -32,23 +32,32 @@ delivery-only turn first, in the order the scope lists them; each turn's
 entry finds nothing to deliver and the lane rests. What is recorded is the
 whole sequence: the lanes fired in order, re-fires included, the lanes
 rested in order, closed lanes included, every contained failure, and the
-number of ticks the walk took. The scope flow's own eligibility inputs are
-registered apart (``SCOPE_ELIGIBILITY_REASONS``), and its varied fields are
-derived from the row model the same way.
+number of ticks the walk took.
 
 The row is partitioned three ways, off the row model itself. ``RANK_INPUTS``
 are the two fields a rank is made from. ``ELIGIBILITY_INPUTS`` are the fields
-the eligibility clauses read at head, each with its reason; no size, body or
-count field is among them. Every other field of ``TrackerIssue`` is varied,
-so a field added to the row is varied as soon as it exists, and a field whose
-range this module does not know fails loudly. Beyond the row, what the port
-answers about an issue's subtree is varied too: its sub-issues, its
-criterion sub-issues and its comments. In the scope flow these are the
-lane's gap: many open criteria under it, and many deliverable children, each
-owing a criterion of its own. So is the work already done: many criteria
-under a heavy issue in a completed state, beside its open ones, so its gap
-and its eligibility stay what they were while the fraction of its work
-still open moves. So are the edge kinds no eligibility clause
+the dispatch pass's eligibility clauses read at head, each with its reason;
+no size, body or count field is among them. The scope flow's eligibility
+inputs are read off its code instead: every package function its selection
+reaches — the ready read, the lane selector, the approval reading the
+tracker's approval question runs and the entry requirement its fire-subject
+read runs — found by what their reads resolve to, and every row field those
+functions read as an attribute or by a literal name, less the rank inputs
+(``SCOPE_ELIGIBILITY_INPUTS``). Among them is the row's labels, which the
+flow reads by membership alone: the criterion label and the record kinds,
+read off the same functions, and the stage markers the operation names
+(``SCOPE_READ_LABELS``). Every other label is a count, and in the scope
+flow the count of labels beside those is varied, up to ``MANY``, as the
+whole field is in the dispatch pass. Every other field of ``TrackerIssue``
+is varied, so a field added to the row is varied as soon as it exists, and
+a field whose range this module does not know fails loudly. Beyond the row,
+what the port answers about an issue's subtree is varied too: its
+sub-issues, its criterion sub-issues and its comments. In the scope flow
+these are the lane's gap: many open criteria under it, and many deliverable
+children, each owing a criterion of its own. So is the work already done:
+many criteria under a heavy issue in a completed state, beside its open
+ones, so its gap and its eligibility stay what they were while the fraction
+of its work still open moves. So are the edge kinds no eligibility clause
 reads: the blocker clause reads blocked-by edges alone, so the issue's other
 edges (blocks, related, duplicate) are a count like any other.
 Each varied input is set to its extremes — nothing, and a great deal — one
@@ -68,15 +77,23 @@ the extremes above. So a size read off the board anywhere between the read
 and the fire — a rebinding at boot, a subclass built at the root, a
 validator on the row, an eligibility clause, a table consulted after the
 selection, a hook in the rank value, a tie-break among equal priorities, an
-age shifted by a size, a count over the edges no clause reads, a lane
-skipped or chosen by its gap or by the fraction of its work still open (a
-count over an eligibility input, the criteria's state), a fired lane rested
-or re-offered by a size
-rather than by what its fire closed, a closed lane passed over or reordered
-by a size on the delivery-only turn — fails here whatever it is spelled, as
-soon as it moves the decision for a board holding those extremes.
+age shifted by a size, a count over the edges no clause reads, a count over
+the labels no clause reads, a lane skipped or chosen by its gap or by the
+fraction of its work still open (a count over an eligibility input, the
+criteria's state), a fired lane rested or re-offered by a size rather than
+by what its fire closed, a closed lane passed over or reordered by a size
+on the delivery-only turn — fails here whatever it is spelled, as soon as
+it moves the decision for a board holding those extremes.
 
-Limit: a size taken from outside the board (for example, from the
+Limit: the scope register is read off the functions its selection reaches
+by object, so a field read under a name built at run time, or in a function
+that walk does not reach — behind a port method, or a callable handed in —
+is not registered; it is then varied, and a read of it that moves the
+decision fails here for that reason rather than passing. The labels the
+flow reads are registered by literal, by the set a name resolves to, and
+from operation config for the marker the entry requirement takes as a
+parameter; a label tested under a name built at run time is a count like
+the rest. A size taken from outside the board (for example, from the
 repository) is not varied here, so it would have to be read in a path body
 the static guard pins to be seen; the scope flow's lane selector
 (``ScopeWorkflowEngine._select``), its re-fire reading (``_settle``) and the
@@ -95,10 +112,12 @@ own reading of the board is outside this test; the gate decides whether a
 pass runs, not which issue it claims.
 """
 
+import ast
 import asyncio
+import builtins
 import re
 import types
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -107,14 +126,21 @@ from typing import Union, get_args, get_origin
 import pytest
 import structlog.testing
 
+from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.passes import build_dispatch_runtime
-from kodezart.composition.tracker import DialledTracker
+from kodezart.composition.tracker import DialledTracker, criteria_stage_label_key
 from kodezart.config.app import AppConfig
 from kodezart.core.logging import get_logger
+from kodezart.domain.fire_spec import require_fire_entry
+from kodezart.domain.issue_tree import RECORD_KINDS
+from kodezart.domain.organize import stage_rows
+from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.services.run_recorder import RunRecorder
+from kodezart.services.scope_runtime import ScopeWorkflowEngine
 from kodezart.types.domain.agent import AgentEvent
-from kodezart.types.domain.operation import QueueState
+from kodezart.types.domain.operation import OperationConfig, QueueState
+from kodezart.types.domain.organize import split_label_key
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.tracker import (
@@ -127,6 +153,7 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
 )
 from tests.adapters.test_github_api import _make_client
+from tests.chains.test_native_fire import native_operation
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
@@ -146,6 +173,7 @@ from tests.fakes import (
 from tests.integration.test_scope_runtime import (
     FORGE_ORIGIN,
     SCOPE,
+    STAGED,
     ObservedNativeExecutor,
     WalkRepos,
     drive,
@@ -153,6 +181,14 @@ from tests.integration.test_scope_runtime import (
 )
 from tests.integration.test_scope_runtime import board as scope_board
 from tests.lane_fixture import ScopeForgeWire, criteria_echo
+from tests.name_resolution import (
+    compiled_def,
+    home,
+    in_package,
+    references,
+    unwrapped,
+    written_methods,
+)
 from tests.services.test_dispatch_pass import APPROVER, operation_config
 
 #: The row fields a rank is made from: ``rank_key`` reads these two.
@@ -176,29 +212,161 @@ ELIGIBILITY_INPUTS = frozenset(ELIGIBILITY_REASONS)
 #: Every other field of the row, derived from the model.
 VARIED = frozenset(TrackerIssue.model_fields) - RANK_INPUTS - ELIGIBILITY_INPUTS
 
-#: Exact. The row fields the scope flow reads to decide which lanes it may
-#: fire, one reason each: the ready read, the scope's entry and approval.
-#: No size, body or count field belongs here.
-SCOPE_ELIGIBILITY_REASONS: dict[str, str] = {
-    "issue_key": "the scope's membership and every per-lane read are keyed by it",
-    "issue_labels": "the ready read sets criteria and record issues apart by "
-    "label, and the entry requires every member's organize stage markers",
-    "state_kind": "the subtree closure reads which criteria are open, and a lane "
-    "owing none is closed",
-    "relations": "the topology reads the lane's blocked-by edges; the other kinds "
-    "are varied (UNREAD_EDGE_KINDS)",
-    "parent_key": "the ready read roots each lane's subtree by parentage, and "
-    "approval is inherited up it",
-    "project": "approval refuses a project member with no canonical project key",
-    "project_id": "approval is inherited from the lane's project",
-    "milestone_key": "approval refuses a milestone member with no owning project",
-}
-SCOPE_ELIGIBILITY_INPUTS = frozenset(SCOPE_ELIGIBILITY_REASONS)
+#: Where the scope flow decides what it may fire, as live objects: the ready
+#: read the walk selects from, the lane selector, the approval reading the
+#: port's approval question runs, and the entry requirement a fire's subject
+#: is read under. What each of these reads, and what every package function
+#: they reach reads, is the scope flow's eligibility register.
+SCOPE_SELECTION: tuple[types.FunctionType, ...] = (
+    read_scope_ready,
+    ScopeWorkflowEngine._select,
+    resolve_execution_approval,
+    require_fire_entry,
+)
+
+
+def reached(starts: Iterable[types.FunctionType]) -> tuple[types.FunctionType, ...]:
+    """Every package function *starts* reach, by what their reads resolve to.
+
+    A function joins when a definition already on the path references it —
+    through a global, a module attribute, an import inside the definition,
+    a ``functools.partial`` or a bound method — and so does every method
+    written in a package class a definition references. Bounded by the
+    package's finite functions: the walk stops at its fixed point.
+    """
+    path = {id(function): function for function in starts}
+    while True:
+        before = len(path)
+        for function in tuple(path.values()):
+            for value in map(unwrapped, references(function).values()):
+                if isinstance(value, types.FunctionType) and in_package(value):
+                    path.setdefault(id(value), value)
+                elif isinstance(value, type) and in_package(value):
+                    for method in written_methods(value):
+                        path.setdefault(id(method), method)
+        if len(path) == before:
+            return tuple(path.values())
+
+
+def _literal(node: ast.AST) -> str | None:
+    """The string *node* spells, when it is a string constant."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def field_reads(
+    functions: Iterable[types.FunctionType], fields: Iterable[str]
+) -> dict[str, frozenset[str]]:
+    """Each of *fields* read in *functions*, and the homes of the reads.
+
+    A read is an attribute of that name on any receiver, or ``getattr`` of
+    a receiver with the name as a string literal. A name built at run time
+    is not a read here, and neither is one made in a function the walk does
+    not reach — behind a port method, or a callable handed in.
+    """
+    known = frozenset(fields)
+    homes: dict[str, set[str]] = {}
+    for function in functions:
+        resolved = references(function)
+        for node in ast.walk(compiled_def(function)):
+            name = None
+            if isinstance(node, ast.Attribute):
+                name = node.attr
+            elif (
+                isinstance(node, ast.Call)
+                and resolved.get(ast.unparse(node.func)) is builtins.getattr
+                and len(node.args) >= 2
+            ):
+                name = _literal(node.args[1])
+            if name in known:
+                homes.setdefault(name, set()).add(home(function))
+    return {name: frozenset(found) for name, found in sorted(homes.items())}
+
+
+def label_reads(
+    functions: Iterable[types.FunctionType], field: str
+) -> dict[str, frozenset[str]]:
+    """Each label *functions* test *field* for, and the homes of the reads.
+
+    A read is a membership test of a string literal in the field, or the
+    intersection of the field with a set of strings a name resolves to. A
+    label read from a parameter — the stage marker the entry requirement
+    takes from operation config — spells no literal and is registered from
+    that config instead (``SCOPE_STAGE_MARKERS``).
+    """
+
+    def reads_field(node: ast.AST) -> bool:
+        return isinstance(node, ast.Attribute) and node.attr == field
+
+    homes: dict[str, set[str]] = {}
+    for function in functions:
+        resolved = references(function)
+        for node in ast.walk(compiled_def(function)):
+            labels: set[str] = set()
+            if isinstance(node, ast.Compare) and any(
+                map(reads_field, node.comparators)
+            ):
+                literal = _literal(node.left)
+                if literal is not None:
+                    labels.add(literal)
+            elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitAnd):
+                sides = (node.left, node.right)
+                if any(map(reads_field, sides)):
+                    for side in sides:
+                        value = resolved.get(ast.unparse(side))
+                        if isinstance(value, frozenset | set) and all(
+                            isinstance(member, str) for member in value
+                        ):
+                            labels.update(value)
+            for label in labels:
+                homes.setdefault(label, set()).add(home(function))
+    return {name: frozenset(found) for name, found in sorted(homes.items())}
+
+
+def stage_markers(operation: OperationConfig) -> frozenset[str]:
+    """The stage-marker labels *operation* names, which every lane must carry.
+
+    The terminal marker of every organize stage that runs under approval,
+    or, where the operation declares no such table, the one criteria-stage
+    key the scope board carries and the port reads under (``STAGED``): the
+    same reading the scope board fixture makes of its operation.
+    """
+    markers = frozenset(
+        split_label_key(row.spec.terminal_marker_key)[1]
+        for row in stage_rows(
+            operation.resolve_organize_mandates(), under_approval=True
+        )
+    )
+    return markers or frozenset({criteria_stage_label_key(operation) or STAGED})
+
+
+#: Every package function the scope selection reaches.
+SCOPE_PATH = reached(SCOPE_SELECTION)
+
+#: Derived. Each row field the scope selection reads, and where.
+SCOPE_FIELD_READS = field_reads(SCOPE_PATH, TrackerIssue.model_fields)
+
+#: Derived. The row fields the scope flow reads to decide which lanes it may
+#: fire: every field read on the path that is not a rank input.
+SCOPE_ELIGIBILITY_INPUTS = frozenset(SCOPE_FIELD_READS) - RANK_INPUTS
 
 #: Every other field of a scope lane's row, derived from the model.
 SCOPE_VARIED = (
     frozenset(TrackerIssue.model_fields) - RANK_INPUTS - SCOPE_ELIGIBILITY_INPUTS
 )
+
+#: Derived. Each label the scope selection tests a row's labels for, and
+#: where: the criterion label and the record kinds.
+SCOPE_LABEL_READS = label_reads(SCOPE_PATH, "issue_labels")
+
+#: The stage markers the walk's operation names, which the entry
+#: requirement reads off the row by the key the operation gives it.
+SCOPE_STAGE_MARKERS = stage_markers(native_operation())
+
+#: The labels the scope flow reads, by membership. Any other label on a
+#: lane is a count like any other, and is varied beside these.
+SCOPE_READ_LABELS = frozenset(SCOPE_LABEL_READS) | SCOPE_STAGE_MARKERS
 
 #: The field the scope flow's everything case leaves alone: a lane's subject
 #: is its body, or its title where the body is empty, and a lane with
@@ -385,6 +553,8 @@ class Variation:
     subtree: tuple[str, ...]
     #: Whether the heavy issues carry many edges of the unread kinds.
     edges: bool
+    #: Whether the heavy issues carry many labels beside the ones they have.
+    labels: bool
     #: The issues that take the great-deal end.
     heavy: frozenset[str]
 
@@ -392,7 +562,7 @@ class Variation:
         return self.rows(BOARD)
 
     def rows(self, base: Sequence[TrackerIssue]) -> tuple[TrackerIssue, ...]:
-        """*base* with this variation's fields and edges set, issue by issue."""
+        """*base* with this variation's fields, edges and labels set, issue by issue."""
         rows = []
         for issue in base:
             heavy = issue.issue_key in self.heavy
@@ -403,6 +573,8 @@ class Variation:
                 update["relations"] = [
                     edge.model_dump() for edge in unread_edges(issue)
                 ]
+            if self.labels and heavy:
+                update["issue_labels"] = issue.issue_labels | MANY_LABELS
             rows.append(rebuilt(issue, **update))
         return tuple(rows)
 
@@ -545,24 +717,33 @@ async def decision(
 
 
 def variations(
-    varied: frozenset[str], together: frozenset[str]
+    varied: frozenset[str], together: frozenset[str], *, labels: bool
 ) -> dict[str, Variation]:
-    """Each varied input alone, then *together* at once, per heavy set."""
+    """Each varied input alone, then *together* at once, per heavy set.
+
+    With *labels*, the count of labels beside the ones a row has is an
+    input of its own: the flow reads some labels by membership, so the
+    field is not varied whole there, and what is varied is the rest.
+    """
     cases: dict[str, Variation] = {}
     for side, heavy in HEAVY_SETS.items():
         for name in sorted(varied):
-            cases[f"{name}-{side}"] = Variation((name,), (), False, heavy)
+            cases[f"{name}-{side}"] = Variation((name,), (), False, False, heavy)
         for part in SUBTREE:
-            cases[f"{part}-{side}"] = Variation((), (part,), False, heavy)
-        cases[f"unread_edges-{side}"] = Variation((), (), True, heavy)
+            cases[f"{part}-{side}"] = Variation((), (part,), False, False, heavy)
+        cases[f"unread_edges-{side}"] = Variation((), (), True, False, heavy)
+        if labels:
+            cases[f"labels-{side}"] = Variation((), (), False, True, heavy)
         cases[f"everything-{side}"] = Variation(
-            tuple(sorted(together)), SUBTREE, True, heavy
+            tuple(sorted(together)), SUBTREE, True, labels, heavy
         )
     return cases
 
 
-VARIATIONS = variations(VARIED, VARIED)
-SCOPE_VARIATIONS = variations(SCOPE_VARIED, SCOPE_VARIED - {SCOPE_SUBJECT_FALLBACK})
+VARIATIONS = variations(VARIED, VARIED, labels=False)
+SCOPE_VARIATIONS = variations(
+    SCOPE_VARIED, SCOPE_VARIED - {SCOPE_SUBJECT_FALLBACK}, labels=True
+)
 
 
 def own_criterion(lane: str) -> str:
@@ -780,14 +961,94 @@ def test_the_row_is_partitioned_into_rank_eligibility_and_varied_fields() -> Non
     assert not SCOPE_ELIGIBILITY_INPUTS & SCOPE_VARIED
     assert SCOPE_VARIED
     assert SCOPE_SUBJECT_FALLBACK in SCOPE_VARIED
-    assert all(reason.strip() for reason in SCOPE_ELIGIBILITY_REASONS.values())
     for name in SCOPE_VARIED:
         low, high = extremes(name)
         assert low != high, name
+    assert SCOPE_READ_LABELS
+    assert not SCOPE_READ_LABELS & MANY_LABELS
     assert set(READ_EDGE_KINDS) | set(UNREAD_EDGE_KINDS) == set(IssueRelationKind)
     assert not set(READ_EDGE_KINDS) & set(UNREAD_EDGE_KINDS)
     assert UNREAD_EDGE_KINDS
     assert all(reason.strip() for reason in READ_EDGE_KINDS.values())
+
+
+#: A set of labels a planted reader intersects a row's labels with.
+PLANTED_KINDS = frozenset({"planted-record"})
+
+
+def _reads_a_text(issue: TrackerIssue) -> int:
+    return len(issue.body)
+
+
+def _reads_by_literal_name(issue: TrackerIssue) -> object:
+    return getattr(issue, "url", None)
+
+
+def _reads_by_built_name(issue: TrackerIssue, name: str) -> object:
+    return getattr(issue, name)
+
+
+def _reads_a_label(issue: TrackerIssue) -> bool:
+    return "planted-stage" in issue.issue_labels
+
+
+def _reads_label_kinds(issue: TrackerIssue) -> bool:
+    return bool(issue.issue_labels & PLANTED_KINDS)
+
+
+def test_the_scope_register_is_read_from_the_code() -> None:
+    """The scope flow's eligibility register is what its selection reads.
+
+    The selection's starts are the objects the flow runs: the walk reads
+    the ready set through ``read_scope_ready`` and selects through its own
+    ``_select``, and the tracker's approval read runs the approval reading
+    and its fire-subject read the entry requirement. The path they reach
+    reads the two rank inputs — the topology orders by them — and every
+    field the register holds; the labels it tests for are the criterion
+    label and the record kinds, by the object that names them, and the
+    stage markers are the ones the walk's operation names and the base
+    board's lanes carry.
+
+    Controls for every form the readers follow: an attribute read and a
+    ``getattr`` with a literal name are field reads; a literal tested for
+    membership and a set intersected with the labels are label reads. A
+    name built at run time is not a read, which is the stated limit.
+    """
+    assert set(SCOPE_SELECTION) <= set(SCOPE_PATH)
+    assert read_scope_ready in map(
+        unwrapped, references(ScopeWorkflowEngine.run).values()
+    )
+    assert ScopeWorkflowEngine._select in written_methods(ScopeWorkflowEngine)
+    assert resolve_execution_approval in map(
+        unwrapped, references(LinearMcpTracker._read_execution_approval).values()
+    )
+    assert require_fire_entry in map(
+        unwrapped, references(LinearMcpTracker.read_fire_subject).values()
+    )
+    assert RANK_INPUTS <= set(SCOPE_FIELD_READS)
+    assert SCOPE_ELIGIBILITY_INPUTS
+    assert all(SCOPE_FIELD_READS[name] for name in SCOPE_ELIGIBILITY_INPUTS)
+    assert frozenset(SCOPE_LABEL_READS) == frozenset({CRITERION_LABEL}) | RECORD_KINDS
+    assert all(SCOPE_LABEL_READS.values())
+    assert SCOPE_STAGE_MARKERS
+    for key in LANES:
+        assert scope_lanes(None).issues[key].issue_labels == SCOPE_STAGE_MARKERS, key
+    planted = (
+        _reads_a_text,
+        _reads_by_literal_name,
+        _reads_by_built_name,
+        _reads_a_label,
+        _reads_label_kinds,
+    )
+    assert field_reads(planted, TrackerIssue.model_fields) == {
+        "body": frozenset({home(_reads_a_text)}),
+        "issue_labels": frozenset({home(_reads_a_label), home(_reads_label_kinds)}),
+        "url": frozenset({home(_reads_by_literal_name)}),
+    }
+    assert label_reads(planted, "issue_labels") == {
+        "planted-record": frozenset({home(_reads_label_kinds)}),
+        "planted-stage": frozenset({home(_reads_a_label)}),
+    }
 
 
 def test_every_equal_priority_pair_is_split_both_ways() -> None:
@@ -925,7 +1186,7 @@ async def test_the_ready_read_answers_the_varied_gap() -> None:
     """
     heavy = BOARD[0].issue_key
     closed = SCOPE_CLOSED[0]
-    variation = Variation((), SUBTREE, False, frozenset({heavy, closed}))
+    variation = Variation((), SUBTREE, False, False, frozenset({heavy, closed}))
     port = scope_lanes(variation)
     ready = await read_scope_ready(ref=SCOPE, tracker=port)
     gaps = {lane.issue.issue_key: len(lane.gap) for lane in ready.ready}
