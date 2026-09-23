@@ -34,6 +34,7 @@ from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import (
     AllowedTools,
+    HttpMcpServer,
     KnowledgeGrant,
     PermissionMode,
     SessionType,
@@ -61,9 +62,13 @@ class ClaudeAgentExecutor:
         setting_sources: list[SettingSource],
         knowledge_grant: KnowledgeGrant,
         fire_record: PromptTemplate | None = None,
+        tracker_server: HttpMcpServer | None = None,
     ) -> None:
         self._setting_sources = setting_sources
         self._knowledge_grant = knowledge_grant
+        # The tracker's server definition, attached to the scheduled passes;
+        # None where the deployment holds no tracker credential.
+        self._tracker_server = tracker_server
         self._fire_record = fire_record
         self._log: BoundLogger = get_logger(__name__)
 
@@ -93,7 +98,9 @@ class ClaudeAgentExecutor:
             session_type=session_type.value,
             agent_count=len(agents),
         )
-        knowledge = map_knowledge_mcp(self._knowledge_grant, session_type)
+        knowledge = map_knowledge_mcp(
+            self._knowledge_grant, session_type, self._tracker_server
+        )
         options = ClaudeAgentOptions(
             cwd=cwd,
             permission_mode=map_permission_mode(permission_mode),

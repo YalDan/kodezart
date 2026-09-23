@@ -28,12 +28,15 @@ from kodezart.adapters.claude.agents_mapping import (
 from kodezart.adapters.claude.client_executor import ClaudeClientExecutor
 from kodezart.adapters.claude.skills_mapping import map_skills
 from kodezart.adapters.mcp.mapping import map_knowledge_mcp
+from kodezart.composition.tracker import make_mcp_tool_caller, tracker_mcp_server
+from kodezart.config.tracker import TrackerSettings
 from kodezart.core.protocols import AgentExecutor
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.credentials import REDACTION_SENTINEL
 from kodezart.types.domain.session import (
     HttpKnowledge,
+    HttpMcpServer,
     KnowledgeGrant,
     PermissionMode,
     SessionType,
@@ -550,7 +553,10 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
     ).read_text(encoding="utf-8")
 
     for source in (agent_source, client_source):
-        assert "map_knowledge_mcp(self._knowledge_grant, session_type)" in source
+        assert (
+            "map_knowledge_mcp( self._knowledge_grant, session_type, "
+            "self._tracker_server )" in " ".join(source.split())
+        )
 
     granted = await _options_for(
         "kodezart.adapters.claude.agent_executor",
@@ -569,6 +575,114 @@ async def test_the_unwired_executor_is_covered_by_the_same_grant_logic() -> None
             },
         },
     }
+
+
+#: The tracker's server definition as the composition root builds it, from a
+#: fixture credential of the vendor's own shape.
+TRACKER_TOKEN: Final[str] = "lin_api_" + "T" * 40
+TRACKER_SETTINGS: Final[TrackerSettings] = TrackerSettings()
+TRACKER: Final[HttpMcpServer] = tracker_mcp_server(
+    settings=TRACKER_SETTINGS, token=TRACKER_TOKEN
+)
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_the_tracker_server_reaches_the_scheduled_passes_and_no_other_session(
+    module,
+) -> None:
+    """Grooming, fire prep and the audit judges get the tracker; nobody else does.
+
+    Every session kind, both adapters, no knowledge grant: the scheduled pass
+    carries exactly the tracker server, every other kind carries none, every
+    one of them carries the working-directory guard, and no prompt is given a
+    knowledge map it was never configured to reach.
+    """
+    for session_type in SessionType:
+        session = await recorded_session(
+            module, session_type=session_type, tracker=TRACKER
+        )
+        options = session.options
+        assert options.strict_mcp_config is True, session_type
+        assert session.prompt == "p", session_type
+        if session_type is SessionType.SCHEDULED_PASS:
+            assert options.mcp_servers == {
+                TRACKER_SETTINGS.server_name: {
+                    "type": "http",
+                    "url": TRACKER_SETTINGS.server_url,
+                    "headers": {
+                        TRACKER_SETTINGS.auth_header: (
+                            f"{TRACKER_SETTINGS.auth_scheme} {TRACKER_TOKEN}"
+                        )
+                    },
+                }
+            }
+        else:
+            assert options.mcp_servers == {}, session_type
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_no_tracker_definition_attaches_no_tracker_server(module) -> None:
+    """A deployment holding no tracker credential gives no session the tracker."""
+    session = await recorded_session(
+        module, session_type=SessionType.SCHEDULED_PASS, tracker=None
+    )
+
+    assert session.options.mcp_servers == {}
+    assert session.options.strict_mcp_config is True
+
+
+@pytest.mark.parametrize("module", EXECUTOR_MODULES)
+async def test_a_granted_scheduled_pass_carries_both_servers_and_its_map(
+    module,
+) -> None:
+    """The two attachments are independent: the grant still decides the map."""
+    session = await recorded_session(
+        module,
+        grant=knowledge_grant_for(SessionType.SCHEDULED_PASS),
+        session_type=SessionType.SCHEDULED_PASS,
+        tracker=TRACKER,
+    )
+
+    assert set(session.options.mcp_servers) == {
+        FIXTURE_KNOWLEDGE_SERVER,
+        TRACKER_SETTINGS.server_name,
+    }
+    assert session.prompt == f"{FIXTURE_KNOWLEDGE_MAP}\n\np"
+
+
+def test_the_client_and_the_sessions_render_one_header_from_one_value() -> None:
+    """The programmatic client and the session dial one url with one header.
+
+    Both read the definition :func:`tracker_mcp_server` renders, so a
+    different scheme or header name configured once reaches both.
+    """
+    settings = TrackerSettings(auth_header="X-Tracker-Key", auth_scheme="Token")
+    server = tracker_mcp_server(settings=settings, token=TRACKER_TOKEN)
+    caller = make_mcp_tool_caller(settings=settings, token=TRACKER_TOKEN)
+    attached = map_knowledge_mcp(
+        NO_KNOWLEDGE_GRANT, SessionType.SCHEDULED_PASS, server
+    )["mcp_servers"][settings.server_name]
+
+    assert server.headers == {"X-Tracker-Key": f"Token {TRACKER_TOKEN}"}
+    assert caller._server._headers == server.headers
+    assert attached["headers"] == server.headers
+    assert caller._server._url == attached["url"] == settings.server_url
+    assert TRACKER_TOKEN not in repr(server)
+
+
+def test_a_tracker_server_named_like_the_knowledge_server_refuses() -> None:
+    """One session cannot be given two servers under one name."""
+    clash = tracker_mcp_server(
+        settings=TrackerSettings(server_name=FIXTURE_KNOWLEDGE_SERVER),
+        token=TRACKER_TOKEN,
+    )
+
+    with pytest.raises(ValueError, match="both named"):
+        map_knowledge_mcp(
+            knowledge_grant_for(SessionType.SCHEDULED_PASS),
+            SessionType.SCHEDULED_PASS,
+            clash,
+        )
 
 
 def test_a_grant_without_a_credential_never_builds_a_header() -> None:

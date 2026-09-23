@@ -23,6 +23,7 @@ from kodezart.composition.prompts import boot_prompts
 from kodezart.composition.records import build_run_recorder
 from kodezart.composition.tracker import (
     boot_tracker,
+    tracker_mcp_server,
 )
 from kodezart.composition.workspace import build_git_stack
 from kodezart.config.app import AppConfig
@@ -131,6 +132,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         skills = await boot_skills(settings=config.agent, prompts=prompts, log=log)
         app.state.skills = skills
 
+        # The tracker's server definition, from the same settings and token the
+        # client above dials with: a configured credential gives the grooming
+        # and fire-prep sessions the tracker, and no credential gives them none.
+        tracker_token = config.tracker.token
         executor = ClaudeClientExecutor(
             model=config.agent.model,
             setting_sources=config.agent.setting_sources,
@@ -142,6 +147,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             output_style=config.agent.output_style,
             fire_record=fire_record_template(
                 knowledge=config.knowledge, operation=operation, prompts=prompts
+            ),
+            tracker_server=None
+            if tracker_token is None
+            else tracker_mcp_server(
+                settings=config.tracker, token=tracker_token.get_secret_value()
             ),
         )
         gate = await build_outbound_gate(

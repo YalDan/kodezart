@@ -158,6 +158,7 @@ from kodezart.types.domain.scope_terminal import STATUS_UPDATE_SCOPE_KINDS
 from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
 from kodezart.types.domain.session import (
     HttpKnowledge,
+    HttpMcpServer,
     KnowledgeGrant,
     PermissionMode,
     SessionType,
@@ -393,6 +394,7 @@ def executor_for(
     model: str | None = None,
     output_style: str | None = None,
     fire_record: PromptTemplate | None = None,
+    tracker: HttpMcpServer | None = None,
 ):
     """Build the adapter that lives in *module* with configured setting sources."""
     if module.endswith("client_executor"):
@@ -402,11 +404,13 @@ def executor_for(
             knowledge_grant=grant,
             fire_record=fire_record,
             output_style=output_style,
+            tracker_server=tracker,
         )
     return ClaudeAgentExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES,
         knowledge_grant=grant,
         fire_record=fire_record,
+        tracker_server=tracker,
     )
 
 
@@ -492,6 +496,7 @@ async def recorded_session(
     messages: Sequence[object] = (),
     fire_record: PromptTemplate | None = None,
     run_identity: RunIdentity | None = None,
+    tracker: HttpMcpServer | None = None,
 ) -> RecordedSession:
     """Run one session through *module*'s adapter against a recording transport."""
     recorded: list[RecordedSession] = []
@@ -502,7 +507,12 @@ async def recorded_session(
         else _recording_query(recorded, messages)
     )
     executor = executor_for(
-        module, grant, model=model, output_style=output_style, fire_record=fire_record
+        module,
+        grant,
+        model=model,
+        output_style=output_style,
+        fire_record=fire_record,
+        tracker=tracker,
     )
     events: list[AgentEvent] = []
 

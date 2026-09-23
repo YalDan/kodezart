@@ -33,6 +33,7 @@ from kodezart.services.tracker_boot import reconcile_tracker_mappings
 from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.organize import split_label_key
+from kodezart.types.domain.session import HttpMcpServer
 from kodezart.types.domain.tracker import EnsureAction, TrackerBackend
 
 #: Where the tracker credential is read from, named in the refusal because
@@ -48,19 +49,34 @@ AGENT_IDENTITY_FIELD: Final[str] = "agent_identities"
 ATTRIBUTABLE_WRITER: Final[str] = "attributable writer"
 
 
+def tracker_mcp_server(*, settings: TrackerSettings, token: str) -> HttpMcpServer:
+    """The tracker's MCP server definition: its name, its url, its header.
+
+    The one place the credential header is rendered. Both consumers read
+    this value: the programmatic client on the deterministic path
+    (:func:`make_mcp_tool_caller`) and the session adapter, which attaches
+    the same server to the scheduled-pass sessions.
+    """
+    return HttpMcpServer(
+        name=settings.server_name,
+        url=settings.server_url,
+        headers={settings.auth_header: f"{settings.auth_scheme} {token}"},
+    )
+
+
 def make_mcp_tool_caller(
     *, settings: TrackerSettings, token: str
 ) -> ManagedMcpToolCaller:
     """The vendor MCP transport this deployment dials.
 
-    One server definition, one consumer: this factory, which builds the
-    programmatic client on the deterministic path.  No session attaches
-    the tracker server.
+    Over the server definition :func:`tracker_mcp_server` renders, so the
+    client and the sessions present the same header to the same url.
     """
+    server = tracker_mcp_server(settings=settings, token=token)
     return HttpMcpToolCaller(
-        url=settings.server_url,
-        server_name=settings.server_name,
-        headers={settings.auth_header: f"{settings.auth_scheme} {token}"},
+        url=server.url,
+        server_name=server.name,
+        headers=dict(server.headers),
         timeout_seconds=settings.timeout_seconds,
         call_timeout_seconds=settings.call_timeout_seconds,
         sse_read_timeout_seconds=settings.sse_read_timeout_seconds,

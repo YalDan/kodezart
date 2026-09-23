@@ -614,6 +614,19 @@ def test_the_declared_output_style_reaches_the_executor_through_composition() ->
     assert _executor_keywords()["output_style"] == "config.agent.output_style"
 
 
+def test_the_tracker_server_reaches_the_executor_through_composition() -> None:
+    """A tracker credential gives the scheduled passes the tracker; none, none.
+
+    Built by the one function that renders the tracker's header for the
+    programmatic client too, from the same settings and the same token.
+    """
+    wired = _executor_keywords()["tracker_server"]
+
+    assert wired.startswith("None if tracker_token is None else tracker_mcp_server(")
+    assert "settings=config.tracker" in wired
+    assert "token=tracker_token.get_secret_value()" in wired
+
+
 def test_the_executor_keywords_are_read_off_a_real_call() -> None:
     """Non-vacuity: an empty parse would let the rule above pass over nothing."""
     assert _executor_keywords()["model"] == "config.agent.model"

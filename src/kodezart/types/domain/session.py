@@ -208,6 +208,25 @@ KnowledgeConnection = Annotated[
 ]
 
 
+class HttpMcpServer(BaseModel):
+    """One HTTP MCP server definition: its name, where it is, what it is sent.
+
+    A plain record rather than an :class:`HttpKnowledge`, whose shape is the
+    knowledge connection's own: a transport discriminator, a gateway
+    credential and the hosts that refuse a static one, and no server name.
+    Built once from the deployment's settings where the server is wired, and
+    read as it is by every consumer, so the url and the header format are
+    spelled in one place. The headers carry the credential, so they are kept
+    out of the representation and out of every dump.
+    """
+
+    model_config = ConfigDict(frozen=True, hide_input_in_errors=True, extra="forbid")
+
+    name: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    headers: dict[str, str] = Field(repr=False, exclude=True)
+
+
 class KnowledgeGrant(CamelCaseModel):
     """One resolved capability decision and its rendered knowledge map."""
 
