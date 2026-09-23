@@ -174,13 +174,37 @@ async def test_an_abandoned_criterion_without_a_check_neither_joins_nor_refuses(
     assert tracker_writes() == before
 
 
-#: Every state a criterion counts in and still owes work in, read off the
-#: fixture's own state table so a state added there is covered here too.
+#: Every kind a criterion counts in and still owes work in, read off the
+#: enum itself rather than any fixture's state table, so a kind added to the
+#: vocabulary is covered here too.
+COUNTING_OPEN_KINDS: frozenset[WorkflowStateKind] = frozenset(
+    kind
+    for kind in WorkflowStateKind
+    if not is_non_counting(kind) and kind is not WorkflowStateKind.COMPLETED
+)
+# Checked at collection against the literal set: a predicate widened or
+# narrowed fails here, rather than shrinking the parameter set below to a
+# silent skip.
+assert COUNTING_OPEN_KINDS == {
+    WorkflowStateKind.TRIAGE,
+    WorkflowStateKind.BACKLOG,
+    WorkflowStateKind.UNSTARTED,
+    WorkflowStateKind.STARTED,
+}
+
+#: A state name for every kind.  The fixture's shared table carries no
+#: Triage state, and a row added there would widen every team's status list
+#: in the workspace other cases read, so the one missing name is local here.
+STATE_NAMES: dict[str, str] = {**STATE_TYPES, "Triage": "triage"}
+
+#: Every state name whose kind counts and is still owed.
 COUNTING_OPEN_STATES: tuple[str, ...] = tuple(
     name
-    for name, kind in STATE_TYPES.items()
-    if not is_non_counting(WorkflowStateKind(kind))
-    and WorkflowStateKind(kind) is not WorkflowStateKind.COMPLETED
+    for name, kind in STATE_NAMES.items()
+    if WorkflowStateKind(kind) in COUNTING_OPEN_KINDS
+)
+assert {WorkflowStateKind(STATE_NAMES[name]) for name in COUNTING_OPEN_STATES} == (
+    COUNTING_OPEN_KINDS
 )
 
 
@@ -197,14 +221,13 @@ async def test_a_counting_criterion_without_a_check_refuses_at_the_spec_read(
     so a refusal in any other state is the spec read's alone, and it names
     the subject and the criterion before anything is written.
     """
-    assert COUNTING_OPEN_STATES
     if isinstance(tracker, FakeTrackerPort):
         tracker.issues[ABANDONED] = tracker.issues[ABANDONED].model_copy(
-            update={"state_kind": WorkflowStateKind(STATE_TYPES[state])}
+            update={"state_kind": WorkflowStateKind(STATE_NAMES[state])}
         )
     else:
         server.issues[ABANDONED].status = state
-        server.issues[ABANDONED].status_type = STATE_TYPES[state]
+        server.issues[ABANDONED].status_type = STATE_NAMES[state]
     before = tracker_writes()
 
     with pytest.raises(InvalidFireCriterionError) as raised:
