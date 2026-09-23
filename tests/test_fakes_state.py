@@ -29,6 +29,17 @@ it appends.  None of that can hide in a list that drifted from the port.
 The one write that answers ``True`` is a mapping ensure that ADOPTS what the
 workspace already defines, and it answers True because it writes nothing:
 that case is below as well, with its journal shown empty.
+
+The reach, stated once.  Every keyed read runs over a fully seeded entry:
+the census board fills every field of every model on some instance, and
+the entry each keyed read asks for — the issue at the asked key and the
+comments on it — fills every field of its own model, held per keyed read
+case.  And every read log is trapped at run time: on each census case,
+each log the double declares is replaced by a trap that records every
+read of itself with the stack that made it, and no read may run under a
+method of the double, whatever spelling fetched the log.  The static pass
+beside it reads the source and states its own limit; the trap's one limit
+is a call on the base type that skips the override, held by a control.
 """
 
 import ast

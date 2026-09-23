@@ -1,18 +1,27 @@
 """The fire's hand-off adds no field to its state or to its terminal event.
 
-Inside the reach of this module's pins: the fire's state keys; the terminal
-event model and every model it reaches, including their serialisation and
-validation machinery and their ``extra`` setting; the terminal the
-tracker-native graph's completion node emits for every outcome; and the
-coordinator's public surface, pinned beside the lane's delivery tests.
+The reach of this module's pins, stated once:
 
-Between the node and the wire, the terminal passes through the engine
-relays (the origin-routed engine's run and the fire engine's run), the job
-queue's buffer — which holds event objects, not bytes, until the handler
-renders them — the handler's rendering and the SSE framing.  All of those
-are inside the observed and pinned egress path below.
+- the fire's state keys, by object;
+- the terminal's machinery, by digest: the terminal event model and every
+  model it reaches, with their serialisation and validation machinery and
+  their ``extra`` setting;
+- the tracker-native completion node, driven over every outcome the
+  classifier names under every entry kind the ``LaneEntry`` union names,
+  both work bases and every visibility, on native states the snapshot
+  check admits;
+- the node's construction and binding, by object: its source and the
+  source of every function its event construction calls, by digest, and
+  the compiled native graph's ``complete`` node bound to that method;
+- the relays and the queue up to the handler's rendering: the terminal
+  passes through the origin-routed engine's run and the fire engine's
+  run, the job queue's buffer — which holds event objects, not bytes,
+  until the handler renders them — the handler's rendering and the SSE
+  framing, all observed and pinned by digest as the egress path;
+- the coordinator's public surface, pinned beside the lane's delivery
+  tests.
 
-Outside the reach: transport after the handler's rendering, meaning the
+Outside the reach: only what follows the handler's rendering, meaning the
 bytes the SSE frame becomes, the ASGI messages that carry them and any
 middleware over them.  None of these is the hand-off; they carry whatever
 bytes they are given, and that limit is held by a negative control below.
