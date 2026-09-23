@@ -4659,6 +4659,17 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
     and B, whose blocker closed in the run before, is fired against the
     deliverable branch A's record names. No graph state was persisted by either
     process, so nothing was replayed to reach any of it.
+
+    Between the two runs C's loop branch moves one commit past the sha its
+    record names, as a commit left on the branch after the run would move it,
+    and run two still re-enters C on that branch with nothing reported at
+    warning or above. On the tracker-native arm a branch whose artifact
+    directory was cleaned and a branch the directory was never written to
+    are the same state: nothing on this arm writes the directory, as the
+    native fire graph's node set holds no ticket or criteria generation node
+    (tests/chains/test_native_fire.py::
+    test_the_native_fire_graph_holds_no_ticket_or_criteria_generation_node),
+    and no module reads it (tests/test_artifact_directory_sites.py).
     """
     repos = WalkRepos(url=FORGE_ORIGIN)
     port = board(
@@ -4726,6 +4737,14 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
         ).deliverable_branch
         assert [create["head"] for create in wire.creates] == [finished]
 
+        # C's loop branch moves one commit past what its record names, pushed:
+        # the remote no longer stands where the record says the lane was left.
+        loop = repos.branches[killed.branch]
+        assert loop.pushed == killed.head_sha
+        moved = loop.commit()
+        loop.publish()
+        assert repos.head_of(killed.branch) == moved != killed.head_sha
+
         minted = mint_spy(monkeypatch)
         second = resumable(
             port=port,
@@ -4753,6 +4772,20 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
         for harness in (first, second):
             assert harness.artifacts.persist_calls == []
             assert harness.artifacts.clean_calls == []
+        # The capture is live: the second process's own records are in it —
+        # the rest each lane takes once its record leaves it nothing to do,
+        # one per lane the last tick names as rested, and the note that C's
+        # remote head moved past its record, both at info.
+        assert [
+            record.get("lane")
+            for record in second_logs
+            if record.get("event") == "scope_lane_nothing_to_do"
+        ] == list(ticks_of(events)[-1].rested_lanes)
+        assert [
+            record.get("lane")
+            for record in second_logs
+            if record.get("event") == "lane_record_head_differs"
+        ] == ["C"]
         # Re-entry is the ordinary path, not a recovered one: nothing in the
         # second process reported at warning or above.
         assert [
@@ -4814,6 +4847,7 @@ async def test_a_killed_scope_run_re_enters_from_the_tracker_alone(monkeypatch):
         assert opened["create_branch"] is False
         assert "C/second live Check  bytes" in second.executor.execution_prompts[0]
         assert "C live Check  bytes" not in second.executor.execution_prompts[0]
+        assert "Exact native subject C" in second.executor.execution_prompts[0]
         resumed = await lane_record(port, "C")
         assert resumed.branch == killed.branch
         assert {item.run_id for item in resumed.associations} == {
