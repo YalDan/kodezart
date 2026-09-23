@@ -16,6 +16,7 @@ from kodezart.domain.errors import (
     AuditClaimReadError,
     AuditEvidenceReadError,
     CheckObservationError,
+    CriterionReadError,
     CriterionResolutionError,
     ForgeAPIError,
     GitOperationError,
@@ -75,12 +76,14 @@ AUDIT_PUBLICATION_FAILURES = (
 )
 
 
-# The assertion-drift comparison's own refusals are not audit read failures:
-# widening that tuple would widen publication handling with it.
+# The assertion-drift comparison's own refusals, and its criterion family
+# read, are not audit read failures: widening that tuple would widen
+# publication handling with it.
 DRIFT_READ_FAILURES = (
     *AUDIT_READ_FAILURES,
     AssertionComparisonError,
     RulingRecordReadError,
+    CriterionReadError,
 )
 
 
