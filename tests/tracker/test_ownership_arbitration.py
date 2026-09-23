@@ -993,6 +993,70 @@ async def test_a_confirmation_that_did_not_land_holds_nothing(parent: str) -> No
     assert (rival.holder, rival.surfaces) == ("job-two", spanning)
 
 
+class _HidesOneTargetsFirstBid:
+    """Answer one target's first comment listing without its BID markers.
+
+    The first read-back of an acquisition is the one that looks for the
+    bids just written.  Veiling only the target addressed by *parent*,
+    and only on that target's first listing, leaves the other target's
+    bid readable, so that read-back finds the bid on part of the set and
+    every later listing sees the log whole.
+    """
+
+    def __init__(self, server: FakeLinearMcpServer, *, parent: str) -> None:
+        self._server = server
+        self._parent = parent
+        self.hidden: list[str] = []
+        self._listed = False
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        result = await self._server.call_tool(name=name, arguments=arguments)
+        if self._listed or name != "list_comments" or self._parent not in arguments:
+            return result
+        self._listed = True
+        assert isinstance(result, Mapping)
+        comments = result["comments"]
+        assert isinstance(comments, list)
+        kept = []
+        for entry in comments:
+            if "state: bid" in str(entry["body"]).splitlines():
+                self.hidden.append(str(entry["id"]))
+            else:
+                kept.append(entry)
+        return {**result, "comments": kept}
+
+
+@pytest.mark.parametrize("parent", CONFIRMATION_PARENTS)
+async def test_a_bid_read_back_on_part_of_the_set_holds_nothing(parent: str) -> None:
+    """A bid missing from the first read-back on one target is no bid at all.
+
+    The whole set is bid for, then read back; the read-back must find this
+    holder's bid on every target it wrote one to.  One target's bid hidden
+    from that first listing, the container's or the issue's, is the typed
+    refusal that the log does not carry the marker written to it, with
+    every marker of the requester's taken back, and the set free for the
+    next holder.
+    """
+    board = _Board()
+    veil = _HidesOneTargetsFirstBid(board.server, parent=parent)
+    spanning = frozenset({CONTAINER, ISSUE_DESCRIPTION})
+
+    with pytest.raises(TrackerProtocolError, match="absent from the log") as refused:
+        await board.holder(caller=veil).acquire_surfaces(
+            surfaces=spanning, holder="job-one", lease_seconds=LEASE_SECONDS
+        )
+
+    assert len(veil.hidden) == 1
+    assert refused.value.tool == "list_comments"
+    assert _standing(board.server) == []
+    rival = await board.holder().acquire_surfaces(
+        surfaces=spanning, holder="job-two", lease_seconds=LEASE_SECONDS
+    )
+    assert (rival.holder, rival.surfaces) == ("job-two", spanning)
+
+
 class _RefusesOneWithdrawal:
     """Turn the first deletion down, and answer everything after it.
 
