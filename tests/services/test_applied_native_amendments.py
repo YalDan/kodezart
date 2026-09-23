@@ -677,6 +677,15 @@ async def test_an_undemonstrable_criterion_stays_owed_while_a_lapsed_one_is_owed
     assert evidence.test == lapse_observation(
         observation=evaluation_observation(session_id="eval-session", iteration=1)
     )
+    # The pointer read as the literal it is, not only through the composer above.
+    assert evidence.test.endswith(" — that grading lapsed")
+
+    # Neither arm is a cancellation: nothing on the board is closed as canceled
+    # or duplicate, so the gap below is not the product of one.
+    assert not any(
+        issue.state_kind in {WorkflowStateKind.CANCELED, WorkflowStateKind.DUPLICATE}
+        for issue in port.issues.values()
+    )
 
     # Both are owed, read off one subtree that still reads; the untouched
     # finished criterion is not.
