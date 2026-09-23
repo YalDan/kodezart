@@ -25,9 +25,10 @@ from kodezart.domain.errors import MergeConflictError, UnionHeadReadError
 from kodezart.domain.lane_entry import recorded_branches
 from kodezart.types.domain.operation import CheckStep
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
-from kodezart.types.domain.tracker import IssuePriority
+from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
 from kodezart.types.domain.union_tick import ScopeUnionRequest
 from tests.adapters.test_github_api import _make_client
 from tests.fakes import FakeGitService
@@ -396,6 +397,71 @@ def terminal_of(events):
     return reports[0].outcome, tuple(
         (entry.issue, entry.done, entry.pr) for entry in reports[0].lanes
     )
+
+
+async def short_of_its_criteria():
+    """The delivered scope, with one criterion open again and not offered.
+
+    Both lanes published and recorded their branches, so the union has every
+    head it composes. The board then reopens B's criterion and withdraws B's
+    approval: the scope owes that criterion, no tick offers the lane that
+    carries it, and the walk stops short of it.
+    """
+    port, repos, forge = await delivered_scope()
+    reopened = f"{LANES[-1]}/check"
+    port.issues[reopened] = port.issues[reopened].model_copy(
+        update={"state_name": "Todo", "state_kind": WorkflowStateKind.UNSTARTED}
+    )
+    port.scope_label_members.pop(ScopeRef(kind=ScopeKind.ISSUE, key=LANES[-1]))
+    return port, repos, forge
+
+
+async def test_a_red_union_never_holds_the_report_of_a_scope_that_stops_short(
+    tmp_path,
+):
+    """A red union meets unfinished work, and the walk still reports.
+
+    The same scope walked twice, its union green and then red, each time with
+    a criterion still owed: both walks end in exactly one terminal report,
+    the same one, and it is the vector's own reading, that the scope stopped
+    short.
+    """
+    green_counter, red_counter = tmp_path / "green", tmp_path / "red"
+    walks = {}
+    for name, counter, failing in (
+        ("green", green_counter, False),
+        ("red", red_counter, True),
+    ):
+        port, repos, forge = await short_of_its_criteria()
+        try:
+            walk = armed(
+                port, repos, forge, chain=counting_chain(counter, failing=failing)
+            )
+            with structlog.testing.capture_logs() as logs:
+                events = await bounded_walk(
+                    walk, job=f"{name}-job", origin=FORGE_ORIGIN
+                )
+        finally:
+            await forge.close()
+        walks[name] = (events, logs)
+
+    green_events, green_logs = walks["green"]
+    red_events, red_logs = walks["red"]
+    # The premise: each union really composed, green and red, and the scope
+    # still owes the reopened criterion at the walk's last reading.
+    assert executions(green_counter) == executions(red_counter) == 1
+    assert {
+        line["composition"] for line in stated(green_logs, "scope_union_observed")
+    } == {"green"}
+    assert {
+        line["composition"] for line in stated(red_logs, "scope_union_observed")
+    } == {"red"}
+    assert ticks_of(red_events)[-1].unresolved_criteria == (f"{LANES[-1]}/check",)
+    assert lane_failures(red_events) == ()
+    # Exactly one terminal report on the red walk, the green walk's one.
+    assert len([e for e in red_events if isinstance(e, ScopeTerminalEvent)]) == 1
+    assert terminal_of(red_events) == terminal_of(green_events)
+    assert terminal_of(red_events)[0] is WorkflowOutcome.scope_stopped_short
 
 
 async def test_a_lane_that_published_no_branch_leaves_the_walk_running(tmp_path):

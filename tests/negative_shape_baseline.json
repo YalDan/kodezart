@@ -4157,6 +4157,7 @@
    "test_a_moved_lane_head_is_composed_again_before_the_walk_states_it",
    "test_a_red_composition_stops_no_lane_and_is_stated_once",
    "test_a_conflicting_composition_stops_no_lane_and_is_stated_once",
+   "test_a_red_union_never_holds_the_report_of_a_scope_that_stops_short",
    "test_a_lane_that_published_no_branch_leaves_the_walk_running",
    "test_a_repository_declaring_no_check_chain_is_never_composed",
    "test_a_trunk_absent_from_the_remote_composes_nothing"
