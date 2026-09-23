@@ -2,6 +2,7 @@
 
 import ast
 import inspect
+from collections import Counter
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -2559,30 +2560,39 @@ async def test_a_finding_outside_the_admitted_scope_stays_a_refusal(monkeypatch)
     )
 
 
+def board_tally(board):
+    """Every board call on the log, counted by name; the log is then cleared."""
+    tally = Counter(name for name, _ in board.calls)
+    board.calls.clear()
+    return tally
+
+
+def scaled(tally, times):
+    """*tally* read *times* over, name by name."""
+    return Counter({name: count * times for name, count in tally.items()})
+
+
 class RosterReads:
     """Every ``organize_gap`` call the owner makes, over the reads before it.
 
-    At each call the roster listings and the issue reads already on the
-    board's log are counted, so a listing or an issue read made between a
-    stage's snapshot and its gap call shows up as a higher count: the
-    snapshot's own reads, the scope labels and each retained admission's
-    freshness read are what a caller subtracts to see anything else. The
-    inputs and the answer are kept whole, so the pre-query can be asked the
-    same question the gap was asked.
+    At each call every board call already on the board's log is counted by
+    its name, whatever the name, so any board read made between a stage's
+    snapshot and its gap call shows up in the tally: the snapshot's own
+    reads, the scope labels and each retained admission's freshness read
+    are what a caller subtracts to see anything else. The inputs and the
+    answer are kept whole, so the pre-query can be asked the same question
+    the gap was asked.
     """
 
     def __init__(self, monkeypatch, board):
         self.at_gap = []
-        self.reads_at_gap = []
         self.inputs = []
         self.answers = []
         computed = organize_owner.organize_gap
 
         def recorded(**kwargs):
             answer = computed(**kwargs)
-            names = [name for name, _ in board.calls]
-            self.at_gap.append(names.count("list_issues"))
-            self.reads_at_gap.append(names.count("get_issue"))
+            self.at_gap.append(Counter(name for name, _ in board.calls))
             self.inputs.append(kwargs)
             self.answers.append(tuple(answer))
             return answer
@@ -2604,15 +2614,21 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     not a second read — it is the cardinality of the answer the gap already
     gave.
 
-    The fresh row is a new owner over the converged board, so nothing else
-    is read between a snapshot and its gap. The retained row runs the owner
-    that converged it again, so its admissions are still standing. Between
-    the snapshot and the gap it also makes, per retained admission whose
-    body is still live, one freshness read: that issue's revision and the
-    scope's context, compared against the round's own roster and never a
-    listing of its own. That read asks whether the board moved since the
-    admission, so it reads the board rather than the snapshot, which would
-    answer it vacuously. Any other read there is one unit too many.
+    Every board call before each gap is counted by name, and the tally is
+    asserted whole on both rows. The units are measured here with the real
+    reader: one snapshot (the listing, one revision read per member and the
+    scope labels) and one freshness read (one issue's revision, then the
+    scope's context over the listed members, with every call name that
+    context read makes, its comment reads included).
+
+    The fresh row is a new owner over the converged board, so the ticket
+    gap has one snapshot before it and the criteria gap three (the ticket
+    snapshot and barrier, then the criteria snapshot). The retained row runs
+    the owner that converged it again, so its admissions are still standing:
+    each gap also has one freshness read per retained admission whose body
+    is still live, compared against the round's own roster and never a
+    listing of its own. Any other board read between a snapshot and its gap,
+    of any name, breaks the tally.
     """
     h = owner_harness()
     owner, board, converged = h.two_lane_board()
@@ -2622,28 +2638,27 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     reader = board.tracker()
     board.calls.clear()
     members = await reader.scope_issues(ref=scope)
-    per_read = [name for name, _ in board.calls].count("list_issues")
-    listing_reads = [name for name, _ in board.calls].count("get_issue")
-    board.calls.clear()
+    listing = board_tally(board)
+    per_read = listing["list_issues"]
     for member in members:
         await reader.read_issue_revision(issue_key=member.issue_key)
-    revision_reads = [name for name, _ in board.calls].count("get_issue")
-    board.calls.clear()
+    revisions = board_tally(board)
     await reader.read_scope_labels(ref=scope)
-    label_reads = [name for name, _ in board.calls].count("get_issue")
-    board.calls.clear()
+    labels = board_tally(board)
     # One read per member: the unit a re-read of the snapshot would add.
-    assert revision_reads == len(members)
-    snapshot_reads = listing_reads + revision_reads + label_reads
+    assert revisions["get_issue"] == len(members)
+    snapshot = listing + revisions + labels
     # One retained admission's freshness read: its revision, then the
     # scope's context over the roster the round already holds.
     await reader.read_issue_revision(issue_key=CLAIMED_ISSUE)
     await OrganizeContextReader(tracker=reader, operation=declared_operation()).read(
         scope=scope, member_keys=[member.issue_key for member in members]
     )
-    liveness_reads = [name for name, _ in board.calls].count("get_issue")
-    board.calls.clear()
-    assert liveness_reads > 1
+    liveness = board_tally(board)
+    assert liveness["get_issue"] > 1
+    # The freshness read also reads comments, so the tally counts names the
+    # snapshot never makes.
+    assert liveness["list_comments"] > snapshot["list_comments"]
     ran, spent = (second, executor) if entry == "fresh" else (owner, converged)
     spent.calls.clear()
     probe = RosterReads(monkeypatch, board)
@@ -2653,7 +2668,10 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     assert per_read >= 1
     # The stage's own snapshot, then that stage's barrier and the next
     # stage's snapshot: no listing sits between a snapshot and its gap call.
-    assert probe.at_gap == [per_read, 3 * per_read]
+    assert [tally["list_issues"] for tally in probe.at_gap] == [
+        per_read,
+        3 * per_read,
+    ]
     assert [name for name, _ in board.calls].count("list_issues") == 4 * per_read
     assert len(probe.at_gap) == len(report.completed_phases) == 2
     assert all(
@@ -2663,7 +2681,7 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     assert spent.calls == []
     assert not [name for name, _ in board.calls if name.startswith("save_")]
     if entry == "fresh":
-        assert probe.reads_at_gap == [snapshot_reads, 3 * snapshot_reads]
+        assert probe.at_gap == [snapshot, scaled(snapshot, 3)]
         assert probe.answers[0] != ()
         return
     # The ticket stage converged before any criterion child existed, so it
@@ -2680,11 +2698,11 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
         len(criteria_retained),
     ]
     assert len(ticket_retained) < len(criteria_retained)
-    ticket_fresh = len(ticket_retained) * liveness_reads
-    criteria_fresh = len(criteria_retained) * liveness_reads
-    assert probe.reads_at_gap == [
-        snapshot_reads + ticket_fresh,
-        3 * snapshot_reads + ticket_fresh + criteria_fresh,
+    ticket_fresh = scaled(liveness, len(ticket_retained))
+    criteria_fresh = scaled(liveness, len(criteria_retained))
+    assert probe.at_gap == [
+        snapshot + ticket_fresh,
+        scaled(snapshot, 3) + ticket_fresh + criteria_fresh,
     ]
     # A retained admission still standing answers a stage at rest, so the
     # pre-query's True side is reached at tick level.
