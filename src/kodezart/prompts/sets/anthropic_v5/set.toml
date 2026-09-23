@@ -122,7 +122,12 @@ board_hierarchy = """\
 Keep one tree: initiative → project → milestone → parent issue → sub-issue.
 Deliverables and criteria are sub-issues.
 Place with tracker fields, not prose.
-Missing project or milestone: flag it, don't invent it.\
+Missing project or milestone: flag it, don't invent it.
+Size for quick wins: each parent issue can be finished and shipped on its own, soon, and shows progress when it lands.
+Split a parent issue that is larger; flag a project or milestone that is larger, with the split you propose.
+Don't split finer than one coherent change that is useful by itself.
+A rare or improbable edge case found along the way is its own backlog issue for cleanup, not added scope.
+An issue's finish line stays its stated criteria.\
 """
 
 # Appended as the final block of every member outside the utility roster,
