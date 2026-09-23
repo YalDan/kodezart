@@ -7,9 +7,12 @@ them harder to read.
 """
 
 import ast
+import importlib
 import inspect
+import re
+from collections.abc import Callable
 from pathlib import Path
-from types import UnionType
+from types import ModuleType, UnionType
 from typing import Union, get_args, get_origin, get_type_hints
 
 import pytest
@@ -1729,10 +1732,27 @@ SOURCE_ROOT = Path(kodezart.__file__).resolve().parent
 SUBTREE_READING = read_subtree_criteria.__name__
 
 
+def import_sources(tree: ast.AST) -> dict[str, str]:
+    """Each name a from-import in *tree* binds, mapped to the name it imports.
+
+    Every ``from ... import`` in the tree counts, a function-local one too, so
+    ``read_scope_members as members_of`` reads as ``read_scope_members``.
+    """
+    return {
+        alias.asname or alias.name: alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+
+
 def called_names(tree: ast.AST) -> frozenset[str]:
-    """Every name *tree* calls, bare or as an attribute."""
+    """Every name *tree* calls, bare or as an attribute, aliases resolved."""
+    sources = import_sources(tree)
     return frozenset(
-        node.func.id if isinstance(node.func, ast.Name) else node.func.attr
+        sources.get(node.func.id, node.func.id)
+        if isinstance(node.func, ast.Name)
+        else node.func.attr
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name | ast.Attribute)
@@ -1740,16 +1760,18 @@ def called_names(tree: ast.AST) -> frozenset[str]:
 
 
 def subtree_reading_surface() -> dict[str, str]:
-    """The entry's module and every module that builds an addressable set.
+    """The entry's module and every module that builds or reads the extent.
 
     Derived from symbols, not paths: the module ``TrackerCriteria`` lives in,
     and every module under the package whose own source calls
-    ``addressable_issues``, each mapped to its source.
+    ``addressable_issues`` or the one subtree reading, under any from-import
+    alias, each mapped to its source.
     """
     surface = {TrackerCriteria.__module__: inspect.getsource(criteria_module)}
+    readers = {addressable_issues.__name__, SUBTREE_READING}
     for path in sorted(SOURCE_ROOT.rglob("*.py")):
         source = path.read_text()
-        if addressable_issues.__name__ in called_names(ast.parse(source)):
+        if readers & called_names(ast.parse(source)):
             relative = path.relative_to(SOURCE_ROOT.parent).with_suffix("")
             surface[".".join(relative.parts)] = source
     return surface
@@ -1787,27 +1809,80 @@ def forbidden_reads() -> frozenset[str]:
     return frozenset((helpers | port_reads) - {SUBTREE_READING})
 
 
+def names_bound_to(tree: ast.AST, *, wanted: Callable[[ast.expr], bool]) -> set[str]:
+    """Every name *tree* binds, by plain or annotated assignment, to a wanted value."""
+    return {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign | ast.AnnAssign)
+        and node.value is not None
+        and wanted(node.value)
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
+
+
+def is_criterion_label(node: ast.AST) -> bool:
+    """Whether *node* is the constant ``"criterion"``."""
+    return isinstance(node, ast.Constant) and node.value == "criterion"
+
+
+def reads_issue_labels(node: ast.AST) -> bool:
+    """Whether *node* is an ``.issue_labels`` attribute."""
+    return isinstance(node, ast.Attribute) and node.attr == "issue_labels"
+
+
+def label_filters(tree: ast.AST) -> int:
+    """How many comparisons in *tree* pair the criterion label with the labels.
+
+    A comparison counts, under any operator and at any depth of either side,
+    when it holds the constant ``"criterion"`` or a name bound to it, and an
+    ``.issue_labels`` attribute or a name bound to an expression reading one.
+    """
+    label = names_bound_to(tree, wanted=is_criterion_label)
+    labels = names_bound_to(
+        tree, wanted=lambda value: any(map(reads_issue_labels, ast.walk(value)))
+    )
+    return sum(
+        1
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Compare)
+        and any(
+            is_criterion_label(part)
+            or (isinstance(part, ast.Name) and part.id in label)
+            for part in ast.walk(node)
+        )
+        and any(
+            reads_issue_labels(part)
+            or (isinstance(part, ast.Name) and part.id in labels)
+            for part in ast.walk(node)
+        )
+    )
+
+
 def subtree_reading_sites(source: str, *, forbidden: frozenset[str]) -> list[str]:
     """Every place *source* reads membership other than through the one reading.
 
-    A call to a forbidden name, and a ``"criterion" in <x>.issue_labels``
-    comparison, which is the label filter a private copy of the reading has
-    to spell whatever it reads through.
+    A forbidden name wherever it appears, called or not: a bare name, with a
+    from-import alias resolved to the name it imports; an attribute, so a
+    port read held in a local counts where it is taken; and a string constant
+    whose dotted, colon or format-field parts name it.  Then every comparison
+    of the criterion label with an issue's labels, which is the filter a
+    private copy of the reading has to spell whatever it reads through.
     """
-    sites = sorted(called_names(ast.parse(source)) & forbidden)
-    sites.extend(
+    tree = ast.parse(source)
+    sources = import_sources(tree)
+    sites: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            sites.append(sources.get(node.id, node.id))
+        elif isinstance(node, ast.Attribute):
+            sites.append(node.attr)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            sites.extend(re.split(r"[.:{}\[\]]", node.value))
+    return sorted(site for site in sites if site in forbidden) + [
         "criterion label filter"
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Compare)
-        and isinstance(node.left, ast.Constant)
-        and node.left.value == "criterion"
-        and any(isinstance(op, ast.In) for op in node.ops)
-        and any(
-            isinstance(comparator, ast.Attribute) and comparator.attr == "issue_labels"
-            for comparator in node.comparators
-        )
-    )
-    return sites
+    ] * label_filters(tree)
 
 
 #: The write-time reading this criterion retired: the direct family, read
@@ -1835,22 +1910,138 @@ async def _read_subtree_criteria(self, spec):
     return await read_subtree_criteria(tracker=self._tracker, subject=spec.subject)
 """
 
+#: The same copy through a function-local aliased import, filtered over a
+#: call on the labels rather than the attribute itself.
+ALIASED_COPY = """
+async def _capture(self, subject):
+    from kodezart.services.scope_membership import (
+        read_scope_members as members_of,
+    )
+
+    subtree = await members_of(tracker=self._tracker, scope=subject)
+    return {k: i for k, i in subtree.items() if "criterion" in set(i.issue_labels)}
+"""
+
+#: The copy through a module-level alias, with the label held in a constant
+#: and the labels held in a local.
+BOUND_COPY = """
+from kodezart.services.scope_membership import read_scope_members as _members
+
+_CRITERION = "criterion"
+
+
+async def _capture(self, scope):
+    rows = await _members(tracker=self._tracker, scope=scope)
+    return {k: i for k, i in rows.items() if _CRITERION in i.issue_labels}
+
+
+def _labelled(issue):
+    labels = issue.issue_labels
+    return _CRITERION in labels
+"""
+
+#: The copy through a port read taken as a bound method, never called by its
+#: own name, and a label filter spelled as a superset, with the port member
+#: also named by a literal.
+HELD_COPY = """
+async def _capture(self, ref):
+    scoped = self._tracker.scope_issues
+    rows = await scoped(ref=ref)
+    also = await getattr(self._tracker, "scope_issues")(ref=ref)
+    return {i.issue_key: i for i in [*rows, *also] if i.issue_labels >= {"criterion"}}
+"""
+
+#: The one stated limit, each shape held as unseen: a reader handed across a
+#: function boundary, a name built at run time, and a binding made only when
+#: a function runs.
+UNSEEN_SHAPES = (
+    "async def _capture(self, reader):\n"
+    "    return await reader(tracker=self._tracker)\n",
+    "async def _capture(self, ref):\n"
+    "    return await getattr(self._tracker, 'scope_' + 'issues')(ref=ref)\n",
+    "def bind(make):\n"
+    "    globals()['members'] = make()\n"
+    "\n"
+    "\n"
+    "async def _capture(self, ref):\n"
+    "    return await members(ref=ref)\n",
+)
+
+#: The readers the one reading is taken by, and the only ones: the entry's
+#: capture, the barrier's reading against the captured spec, and the set an
+#: answer may address at the write.
+NAMED_READERS: tuple[Callable[..., object], ...] = (
+    TrackerCriteria._capture,
+    TrackerCriteria._read_subtree_criteria,
+    FireTimeRulings._resolvable,
+)
+
+
+def qualified(function: Callable[..., object]) -> str:
+    """A function's module and qualified name, as one dotted name."""
+    return f"{function.__module__}.{function.__qualname__}"
+
+
+def subtree_readers(module_name: str, source: str) -> set[str]:
+    """Every function of the module whose body calls the one reading.
+
+    Resolved by object, in the module's own namespace after import: a called
+    name counts when the module binds it to ``read_subtree_criteria``, under
+    whatever name, or when it is an attribute of a module that does.  A call
+    inside a nested function counts for the function it is nested in.
+    """
+    namespace = vars(importlib.import_module(module_name))
+
+    def reads(call: ast.Call) -> bool:
+        func = call.func
+        if isinstance(func, ast.Name):
+            return namespace.get(func.id) is read_subtree_criteria
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            owner = namespace.get(func.value.id)
+            return (
+                isinstance(owner, ModuleType)
+                and getattr(owner, func.attr, None) is read_subtree_criteria
+            )
+        return False
+
+    readers: set[str] = set()
+
+    def visit(body: list[ast.stmt], prefix: str) -> None:
+        for node in body:
+            if isinstance(node, ast.ClassDef):
+                visit(node.body, f"{prefix}{node.name}.")
+            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and any(
+                isinstance(call, ast.Call) and reads(call) for call in ast.walk(node)
+            ):
+                readers.add(f"{module_name}.{prefix}{node.name}")
+
+    visit(ast.parse(source).body, "")
+    return readers
+
 
 def test_the_ruling_step_and_the_fire_entry_read_one_subtree_function() -> None:
     """The entry and the write read one extent, through one function.
 
     What the pass is shown is composed at the entry, and what an answer may
     address is read at the write; both are the subtree only while both are
-    read through the same function.  Each module on the surface calls it, and
-    none reads membership any other way.
+    read through the same function.  The surface is exactly the named
+    readers' modules, the functions that call the one reading are exactly the
+    named readers, and no module on the surface reads membership any other
+    way.
+
+    Outside this guard's reach: a value handed across a function boundary,
+    where the other function is not resolved at this site (returned from a
+    helper, stored on an object and read elsewhere, or passed through a
+    container built elsewhere); a name built at run time; a binding made only
+    when a function runs (``setattr`` or ``globals()`` inside a function
+    body).
     """
     surface = subtree_reading_surface()
     forbidden = forbidden_reads()
 
-    # Non-vacuous: the surface holds both readers, and the forbidden set holds
-    # the direct-family read, the membership helpers and the port's own
-    # subtree read, but not the one-issue subject read the entry keeps.
-    assert {TrackerCriteria.__module__, FireTimeRulings.__module__} <= set(surface)
+    # Non-vacuous: the forbidden set holds the direct-family read, the
+    # membership helpers and the port's own subtree read, but not the
+    # one-issue subject read the entry keeps.
     assert {"read_criteria", "read_scope_members", "resolve_scope", "scope_issues"} <= (
         forbidden
     )
@@ -1862,6 +2053,32 @@ def test_the_ruling_step_and_the_fire_entry_read_one_subtree_function() -> None:
         "scope_issues",
         "criterion label filter",
     ]
+    assert subtree_reading_sites(ALIASED_COPY, forbidden=forbidden) == [
+        "read_scope_members",
+        "criterion label filter",
+    ]
+    assert subtree_reading_sites(BOUND_COPY, forbidden=forbidden) == [
+        "read_scope_members",
+        "criterion label filter",
+        "criterion label filter",
+    ]
+    assert subtree_reading_sites(HELD_COPY, forbidden=forbidden) == [
+        "scope_issues",
+        "scope_issues",
+        "criterion label filter",
+    ]
+    for unseen in UNSEEN_SHAPES:
+        assert subtree_reading_sites(unseen, forbidden=forbidden) == [], unseen
+
+    # Exclusive, not a floor: the surface is the named readers' modules and
+    # nothing else, and the one reading is called by the named readers alone.
+    assert set(surface) == {reader.__module__ for reader in NAMED_READERS}
+    readers = {
+        reader
+        for module, source in surface.items()
+        for reader in subtree_readers(module, source)
+    }
+    assert readers == {qualified(reader) for reader in NAMED_READERS}
 
     for module, source in surface.items():
         assert SUBTREE_READING in called_names(ast.parse(source)), module
