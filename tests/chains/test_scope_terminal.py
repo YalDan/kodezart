@@ -13,6 +13,8 @@ tick count is a literal observed from the run before it was written down.
 import ast
 import asyncio
 import inspect
+import sys
+from typing import get_args, get_type_hints
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
@@ -46,6 +48,7 @@ from kodezart.types.domain.scope_terminal import (
     derive_scope_outcome,
 )
 from kodezart.types.domain.ticket_review import TicketReviewMode
+from kodezart.types.domain.union import UnionCompositionResult, UnionOutcome
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.adapters.test_github_api import _make_client
 from tests.chains.test_native_fire import (
@@ -89,7 +92,12 @@ from tests.integration.test_scope_runtime import (
     unapproved_members,
 )
 from tests.lane_fixture import ScopeForgeWire
-from tests.services.test_scope_runtime_static import imported_modules, path_of
+from tests.services.test_scope_runtime_static import (
+    SRC,
+    imported_modules,
+    path_of,
+    submodules_named,
+)
 from tests.tracker.test_linear_tool_roster import SOURCE_ROOT
 
 #: "the caller said nothing about this" where ``None`` is itself an answer
@@ -806,33 +814,50 @@ def terminal_modules() -> set[str]:
     return reached | {TERMINAL_VECTOR}
 
 
-def merge_state_sites(source: str, *, label: str) -> list[str]:
-    """Every place *source* names a merge or a pull request's lifecycle."""
+#: The modules whose import is itself the terminal reaching a merge.
+MERGE_STATE_MODULES = frozenset({"kodezart.types.domain.pr_state"})
+
+
+def vocabulary_sites(
+    source: str, *, label: str, names: frozenset[str], modules: frozenset[str]
+) -> list[str]:
+    """Every place *source* imports one of *modules* or names one of *names*.
+
+    An import of a listed module in any of its spellings (dotted, from the
+    module, or taken by name from its package) is one site.  Otherwise an
+    imported alias, a bare name or an attribute in *names* is a site, and so
+    is a string constant exactly equal to one of them.
+    """
     tree = ast.parse(source)
     sites: list[str] = []
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.ImportFrom)
-            and node.module == "kodezart.types.domain.pr_state"
+        if isinstance(node, ast.ImportFrom) and (
+            reached := {node.module, *submodules_named(node)} & modules
+            if node.module is not None
+            else set()
         ):
-            sites.append(f"{label}:{node.lineno}: pr_state import")
+            sites.append(f"{label}:{node.lineno}: {min(reached)} import")
+        elif isinstance(node, ast.Import) and (
+            reached := {alias.name for alias in node.names} & modules
+        ):
+            sites.append(f"{label}:{node.lineno}: {min(reached)} import")
         elif isinstance(node, ast.ImportFrom | ast.Import):
             sites.extend(
                 f"{label}:{node.lineno}: {alias.name}"
                 for alias in node.names
-                if alias.name in MERGE_STATE_NAMES
+                if alias.name in names
             )
-        elif isinstance(node, ast.Attribute) and node.attr in MERGE_STATE_NAMES:
+        elif isinstance(node, ast.Attribute) and node.attr in names:
             sites.append(f"{label}:{node.lineno}: .{node.attr}")
-        elif isinstance(node, ast.Name) and node.id in MERGE_STATE_NAMES:
+        elif isinstance(node, ast.Name) and node.id in names:
             sites.append(f"{label}:{node.lineno}: {node.id}")
         elif (
             isinstance(node, ast.Constant)
             and isinstance(node.value, str)
-            and node.value in MERGE_STATE_NAMES
+            and node.value in names
         ):
-            # Equality and not a substring, so prose about a merge does not
-            # trip it while a comparison against the state does.
+            # Equality and not a substring, so prose about the thing does not
+            # trip it while a comparison against its value does.
             sites.append(f'{label}:{node.lineno}: "{node.value}"')
     return sites
 
@@ -851,8 +876,11 @@ def test_no_module_of_the_terminal_names_a_merge_or_a_pull_request_lifecycle():
         module: sites
         for module in sorted(modules)
         if (
-            sites := merge_state_sites(
-                path_of(module).read_text(encoding="utf-8"), label=module
+            sites := vocabulary_sites(
+                path_of(module).read_text(encoding="utf-8"),
+                label=module,
+                names=MERGE_STATE_NAMES,
+                modules=MERGE_STATE_MODULES,
             )
         )
     }
@@ -874,7 +902,9 @@ MERGE_STATE_CONTROLS = (
     ids=[source for source, _ in MERGE_STATE_CONTROLS],
 )
 def test_the_merge_state_detector_sees_each_shape_it_claims_to(source, expected):
-    sites = merge_state_sites(source, label="control")
+    sites = vocabulary_sites(
+        source, label="control", names=MERGE_STATE_NAMES, modules=MERGE_STATE_MODULES
+    )
     assert len(sites) == 1 and expected in sites[0], sites
 
 
@@ -894,9 +924,152 @@ def test_the_merge_state_detector_finds_the_modules_that_do_name_one():
     unseen = [
         path.name
         for path in controls
-        if not merge_state_sites(path.read_text(encoding="utf-8"), label=path.name)
+        if not vocabulary_sites(
+            path.read_text(encoding="utf-8"),
+            label=path.name,
+            names=MERGE_STATE_NAMES,
+            modules=MERGE_STATE_MODULES,
+        )
     ]
     assert unseen == []
+
+
+#: The module a union result is defined in, read off the result itself.
+UNION_MODULE = UnionCompositionResult.__module__
+
+#: Every name the union module defines, and every value its outcome takes:
+#: read off the module, so a type added there is a name this scan sees.
+UNION_NAMES = frozenset(
+    name
+    for name, value in vars(sys.modules[UNION_MODULE]).items()
+    if getattr(value, "__module__", None) == UNION_MODULE
+) | frozenset(member.value for member in UnionOutcome)
+
+
+def module_of(path) -> str:
+    """The dotted name of a module under the source tree."""
+    return ".".join(path.relative_to(SRC).with_suffix("").parts)
+
+
+def union_producers() -> frozenset[str]:
+    """The union module and every module under the source tree importing it."""
+    return frozenset(
+        {UNION_MODULE}
+        | {
+            module_of(path)
+            for path in sorted(SOURCE_ROOT.rglob("*.py"))
+            if UNION_MODULE
+            in imported_modules(
+                ast.parse(path.read_text(encoding="utf-8")), ("kodezart.",)
+            )
+        }
+    )
+
+
+def classes_in(hint: object) -> set[type]:
+    """Every class an annotation names, through its arguments."""
+    found = {hint} if isinstance(hint, type) else set()
+    for argument in get_args(hint):
+        found |= classes_in(argument)
+    return found
+
+
+def terminal_input_modules() -> set[str]:
+    """The modules of every class the terminal's signatures take or give.
+
+    Derived from the resolved annotations of ``report``, the constructor and
+    ``derive_scope_outcome``, so the type a reading arrives in is scanned with
+    the act that reads it.  What stays unseen is a type reached only through
+    another types module: the closure above does not follow that package.
+    """
+    return {
+        found.__module__
+        for function in (
+            ScopeTerminal.report,
+            ScopeTerminal.__init__,
+            derive_scope_outcome,
+        )
+        for hint in get_type_hints(function).values()
+        for found in classes_in(hint)
+        if found.__module__.startswith("kodezart.")
+    }
+
+
+def test_no_module_of_the_terminal_reaches_a_union_value():
+    """The terminal reads no union result at all, and cannot start to quietly.
+
+    Over the terminal's import closure and the modules of the types its
+    signatures take and give: no module imports the union module or a module
+    producing its values, and none names a union type or outcome value.
+    """
+    modules = terminal_modules() | terminal_input_modules()
+    producers = union_producers()
+    # Non-vacuity: the producers are found, the vocabulary is the union's,
+    # and the reading the terminal is handed is on the scanned surface.
+    assert producers >= {"kodezart.domain.union_facts", "kodezart.services.union_tick"}
+    assert {"UnionCompositionResult", "UnionRemediationEntry"} <= UNION_NAMES
+    assert {TERMINAL_SEED, "kodezart.types.domain.scope_ready"} <= modules
+    offenders = {
+        module: sites
+        for module in sorted(modules)
+        if (
+            sites := vocabulary_sites(
+                path_of(module).read_text(encoding="utf-8"),
+                label=module,
+                names=UNION_NAMES,
+                modules=producers,
+            )
+        )
+    }
+    assert offenders == {}
+
+
+#: One control per spelling of a union reading the detector claims to see.
+UNION_CONTROLS = (
+    "from kodezart.types.domain.union import UnionOutcome",
+    "import kodezart.domain.union_facts",
+    "from kodezart.domain import union_facts",
+    "x.UnionCompositionResult",
+    'outcome == "red"',
+)
+
+
+@pytest.mark.parametrize("source", UNION_CONTROLS)
+def test_the_union_detector_sees_each_shape_it_claims_to(source):
+    sites = vocabulary_sites(
+        source, label="control", names=UNION_NAMES, modules=union_producers()
+    )
+    assert len(sites) == 1, sites
+
+
+def test_the_union_detector_finds_every_producer():
+    """The control, derived: every module producing a union value is seen."""
+    unseen = [
+        module
+        for module in sorted(union_producers())
+        if not vocabulary_sites(
+            path_of(module).read_text(encoding="utf-8"),
+            label=module,
+            names=UNION_NAMES,
+            modules=union_producers(),
+        )
+    ]
+    assert unseen == []
+
+
+def test_the_terminal_takes_nothing_but_its_reading():
+    """The act and its arithmetic take the reading and the vector, and no more."""
+    assert list(inspect.signature(derive_scope_outcome).parameters) == ["lanes"]
+    assert list(inspect.signature(ScopeTerminal.report).parameters) == [
+        "self",
+        "ready",
+    ]
+    held = get_type_hints(ScopeTerminal.__init__)
+    assert held
+    assert (
+        not {found.__name__ for hint in held.values() for found in classes_in(hint)}
+        & UNION_NAMES
+    )
 
 
 #: The three columns of ``LanePR``, which is the whole of a recorded delivery:

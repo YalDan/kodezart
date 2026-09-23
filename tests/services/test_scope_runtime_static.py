@@ -70,17 +70,32 @@ WALKER = SRC / "kodezart" / "services" / "scope_runtime.py"
 def imported_modules(
     tree: ast.AST, prefixes: tuple[str, ...] = SCANNED_PACKAGES
 ) -> set[str]:
-    """Every module the source imports from *prefixes*."""
+    """Every module the source imports from *prefixes*.
+
+    A from-import names a module either as its source or, when the source is
+    a package, as one of the names it takes from it:
+    ``from kodezart.domain import union_facts`` imports the module
+    ``kodezart.domain.union_facts`` just as its dotted spelling does.
+    """
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module is not None:
-            if node.module.startswith(prefixes):
-                found.add(node.module)
+            named = [node.module, *submodules_named(node)]
+            found.update(module for module in named if module.startswith(prefixes))
         elif isinstance(node, ast.Import):
             found.update(
                 alias.name for alias in node.names if alias.name.startswith(prefixes)
             )
     return found
+
+
+def submodules_named(node: ast.ImportFrom) -> list[str]:
+    """The modules under the source tree a from-import takes from its package."""
+    return [
+        f"{node.module}.{alias.name}"
+        for alias in node.names
+        if path_of(f"{node.module}.{alias.name}").is_file()
+    ]
 
 
 def path_of(module: str) -> Path:

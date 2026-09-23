@@ -21,9 +21,10 @@ from pathlib import Path
 import pytest
 import structlog.testing
 
-from kodezart.domain.errors import UnionHeadReadError
+from kodezart.domain.errors import MergeConflictError, UnionHeadReadError
 from kodezart.domain.lane_entry import recorded_branches
 from kodezart.types.domain.operation import CheckStep
+from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 from kodezart.types.domain.tracker import IssuePriority
@@ -132,7 +133,7 @@ async def delivered_scope():
     return port, repos, forge
 
 
-def armed(port, repos, forge, *, chain):
+def armed(port, repos, forge, *, chain, git=None):
     """A second walk over the same family, with the union armed by *chain*."""
     return resumable(
         port=port,
@@ -141,7 +142,7 @@ def armed(port, repos, forge, *, chain):
         origin=FORGE_ORIGIN,
         forge=forge,
         trunk="main",
-        git=ScratchGit(repos),
+        git=ScratchGit(repos) if git is None else git,
         repo_checks=chain,
     )
 
@@ -273,6 +274,9 @@ async def test_a_red_composition_stops_no_lane_and_is_stated_once(tmp_path):
     assert [line["remediation"] for line in red] == [
         "Repair union check roots: union-gate. Cascading checks: none."
     ] * len(red)
+    # One statement per tick, as on the green walk: the one entry is stated
+    # once each time the union is asked, never twice.
+    assert len(red) == len(green) == len(ticks_of(red_events))
     # The walk itself is the same walk: the same ticks, the same lanes offered
     # and rested, and one terminal report with the same reading of the vector.
     assert [
@@ -283,6 +287,101 @@ async def test_a_red_composition_stops_no_lane_and_is_stated_once(tmp_path):
         for tick in ticks_of(green_events)
     ]
     assert terminal_of(red_events) == terminal_of(green_events)
+    # And that report is the vector's own reading: both lanes delivered.
+    assert terminal_of(red_events)[0] is WorkflowOutcome.scope_converged
+
+
+#: The path both lanes' deliveries edit, where composing the second onto the
+#: first stops.
+SHARED_PATH = "shared.py"
+
+
+class ConflictingScratchGit(ScratchGit):
+    """The scratch tree, where one lane's delivery conflicts with the other's.
+
+    Both deliveries edit one path, so merging the named head onto the tree
+    that already holds the other stops on that path, the way the composing
+    merge would, and reports the path it stopped on.
+    """
+
+    def __init__(self, repos: WalkRepos, *, conflicting_head: str) -> None:
+        super().__init__(repos)
+        self.conflicting_head = conflicting_head
+
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        await super().merge_scratch_head(
+            cwd=cwd,
+            head_sha=head_sha,
+            author_name=author_name,
+            author_email=author_email,
+        )
+        if head_sha == self.conflicting_head:
+            raise MergeConflictError(
+                "scratch merge conflict", source_branch=head_sha, paths=(SHARED_PATH,)
+            )
+
+
+async def test_a_conflicting_composition_stops_no_lane_and_is_stated_once(tmp_path):
+    """A merge conflict is the other red, and it reaches the same terminal.
+
+    The second lane's delivery conflicts with the first's on one path, so the
+    composition stops before any check runs and states its one repair, naming
+    that lane and that path.  The walk offers what the green walk offers and
+    reaches the same terminal report.
+    """
+    green_counter, conflict_counter = tmp_path / "green", tmp_path / "conflict"
+    port, repos, forge = await delivered_scope()
+    try:
+        walk = armed(port, repos, forge, chain=counting_chain(green_counter))
+        with structlog.testing.capture_logs() as green_logs:
+            green_events = await bounded_walk(
+                walk, job="green-job", origin=FORGE_ORIGIN
+            )
+    finally:
+        await forge.close()
+
+    port, repos, forge = await delivered_scope()
+    try:
+        second = LANES[-1]
+        head = repos.head_of(
+            recorded_branches(record=await lane_record(port, second)).deliverable_branch
+        )
+        walk = armed(
+            port,
+            repos,
+            forge,
+            chain=counting_chain(conflict_counter),
+            git=ConflictingScratchGit(repos, conflicting_head=head),
+        )
+        with structlog.testing.capture_logs() as conflict_logs:
+            conflict_events = await bounded_walk(
+                walk, job="green-job", origin=FORGE_ORIGIN
+            )
+    finally:
+        await forge.close()
+
+    # The conflict stopped the composition before its chain: nothing ran.
+    assert executions(green_counter) == 1
+    assert executions(conflict_counter) == 0
+    green = stated(green_logs, "scope_union_observed")
+    conflict = stated(conflict_logs, "scope_union_observed")
+    assert {line["composition"] for line in conflict} == {"red"}
+    assert [line["remediation"] for line in conflict] == [
+        f"Resolve union merge conflict for lane {second} in: {SHARED_PATH}."
+    ] * len(conflict)
+    assert len(conflict) == len(green) == len(ticks_of(conflict_events))
+    assert lane_failures(conflict_events) == ()
+    assert [
+        (tick.tick, tick.dispatched, tick.rested_lanes, tick.failed_lanes)
+        for tick in ticks_of(conflict_events)
+    ] == [
+        (tick.tick, tick.dispatched, tick.rested_lanes, tick.failed_lanes)
+        for tick in ticks_of(green_events)
+    ]
+    assert terminal_of(conflict_events) == terminal_of(green_events)
+    assert terminal_of(conflict_events)[0] is WorkflowOutcome.scope_converged
 
 
 def terminal_of(events):

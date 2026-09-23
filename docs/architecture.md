@@ -1288,7 +1288,9 @@ is independent of lane outcomes. The result is available to any caller;
 it does not itself publish a tracker remediation record or scope terminal.
 The returned remediation supplies no fabricated record reference and no
 terminal outcome; the scope terminal derives its outcome from criterion states
-alone.
+alone. The terminal holds no union collaborator and reads no union value, and a
+static assertion over its import closure, and over the modules of the types its
+signatures take and give, reports any module of it that reaches one.
 
 
 ## Current-head audit claim sessions
