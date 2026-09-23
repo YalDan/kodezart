@@ -16,7 +16,7 @@ import importlib.util
 import inspect
 import sys
 import typing
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType, NoneType
@@ -26,15 +26,24 @@ from pydantic.fields import FieldInfo
 
 from kodezart.core import protocols
 from kodezart.core.protocols import SurfaceLeaseTracker, TrackerPort
+from kodezart.types.domain.scope import (
+    ResolvedScope,
+    ScopeContainer,
+    ScopeKind,
+    ScopeRef,
+)
+from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
+from kodezart.types.domain.scope_terminal import ScopeTerminalEvent
 from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src"
 PACKAGE = "kodezart"
 VENDOR_PACKAGE = f"{PACKAGE}.adapters"
 #: The layers that sit inside the ports: the domain values, the domain
-#: arithmetic, and the chains that compose them. Directories, not modules,
-#: so a module added to any of them is scanned without an edit here.
-INNER_LAYERS = ("types", "domain", "chains")
+#: arithmetic, the chains that compose them, and the orchestration around
+#: them (the services, and the core the ports live in). Directories, not
+#: modules, so a module added to any of them is scanned without an edit here.
+INNER_LAYERS = ("types", "domain", "chains", "services", "core")
 
 
 def _names_vendor(module: str) -> bool:
@@ -298,9 +307,15 @@ def test_the_walk_reports_every_planted_shape_and_nothing_clean(
     assert SurfaceLease in found.resolved[("Planted", "clean")]
 
 
-def _module_name(path: Path) -> str:
-    parts = path.relative_to(SOURCE_ROOT).with_suffix("").parts
+def _module_name(path: Path, *, source_root: Path) -> str:
+    parts = path.relative_to(source_root).with_suffix("").parts
     return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+
+
+def _string(node: ast.expr | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
 
 
 def _imported(
@@ -310,7 +325,10 @@ def _imported(
 
     A relative import is resolved against the importing module's package,
     and ``from kodezart import adapters`` names the vendor package through
-    its imported name, so neither spelling hides the dependency.
+    its imported name, so neither spelling hides the dependency. A call
+    hands a dynamic import its name positionally or by keyword, and a
+    relative name is resolved against the package it is handed, the way
+    ``importlib.import_module`` resolves it.
     """
     if isinstance(node, ast.Import):
         for alias in node.names:
@@ -326,25 +344,71 @@ def _imported(
         for alias in node.names:
             yield f"{base}.{alias.name}"
     elif isinstance(node, ast.Call):
-        for argument in node.args:
-            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
-                yield argument.value
+        for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
+            value = _string(argument)
+            if value is not None:
+                yield value
+        keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+        name = _string(node.args[0] if node.args else keywords.get("name"))
+        package = _string(
+            node.args[1] if len(node.args) > 1 else keywords.get("package")
+        )
+        if name is not None and name.startswith(".") and package is not None:
+            yield importlib.util.resolve_name(name, package)
 
 
-def test_the_types_domain_and_chains_layers_import_no_vendor_module() -> None:
-    """The inside of the hexagon compiles without the outside present.
+def _third_party_roots(directory: Path) -> frozenset[str]:
+    """The top-level packages outside the standard library a tree imports."""
+    roots: set[str] = set()
+    for path in directory.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                names = [node.module]
+            else:
+                continue
+            for name in names:
+                root = name.partition(".")[0]
+                if root != PACKAGE and root not in sys.stdlib_module_names:
+                    roots.add(root)
+    return frozenset(roots)
 
-    Import statements are read from the syntax tree, so a mention of the
-    adapters package in a docstring is not an import and an import inside
-    a function body still is. A call handed the package's dotted name — a
-    dynamic import — counts as an import too.
+
+#: The frameworks the inner layers are built on and may import: a small,
+#: reviewed exception, not a scanned surface.
+INNER_FRAMEWORKS = frozenset({"pydantic", "langgraph", "langchain_core"})
+#: The vendor SDKs, derived: whatever the adapters import from outside the
+#: standard library and this package, less the frameworks above.
+VENDOR_SDKS = _third_party_roots(SOURCE_ROOT / PACKAGE / "adapters") - INNER_FRAMEWORKS
+
+
+def _refused(name: str) -> bool:
+    """Whether an inner layer may not import this module."""
+    return _names_vendor(name) or name.partition(".")[0] in VENDOR_SDKS
+
+
+@dataclass(frozen=True)
+class LayerScan:
+    """Every module one scan opened, by layer, and every refused import."""
+
+    scanned: dict[str, list[str]]
+    refused: list[str]
+
+
+def scan_layers(source_root: Path, layers: Sequence[str]) -> LayerScan:
+    """Read every import of every module under the layers of one source root.
+
+    Import statements are read from the syntax tree, so a mention in a
+    docstring is not an import, and an import inside a function body or
+    under ``TYPE_CHECKING`` still is.
     """
-    scanned: list[str] = []
-    vendor: list[str] = []
-    for layer in INNER_LAYERS:
-        for path in sorted((SOURCE_ROOT / PACKAGE / layer).rglob("*.py")):
-            module = _module_name(path)
-            scanned.append(module)
+    scanned: dict[str, list[str]] = {}
+    refused: list[str] = []
+    for layer in layers:
+        for path in sorted((source_root / PACKAGE / layer).rglob("*.py")):
+            module = _module_name(path, source_root=source_root)
+            scanned.setdefault(layer, []).append(module)
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Import | ast.ImportFrom | ast.Call):
@@ -352,12 +416,132 @@ def test_the_types_domain_and_chains_layers_import_no_vendor_module() -> None:
                 for name in _imported(
                     node, module=module, is_package=path.name == "__init__.py"
                 ):
-                    if _names_vendor(name):
-                        vendor.append(f"{module}:{node.lineno}: {name}")
+                    if _refused(name):
+                        refused.append(f"{module}:{node.lineno}: {name}")
+    return LayerScan(scanned=scanned, refused=refused)
 
-    assert vendor == []
-    assert len(scanned) >= 150
+
+def test_the_types_domain_and_chains_layers_import_no_vendor_module() -> None:
+    """The inside of the hexagon compiles without the outside present.
+
+    Every inner layer is read, the orchestration layer (services, and the
+    core the ports live in) as much as the values and the chains: no module
+    there imports an adapter or a vendor SDK, however the import is
+    spelled. A call handed such a name — a dynamic import — counts too.
+    """
+    scan = scan_layers(SOURCE_ROOT, INNER_LAYERS)
+
+    assert scan.refused == []
+    assert set(scan.scanned) == set(INNER_LAYERS)
+    assert sum(len(modules) for modules in scan.scanned.values()) >= 266
+    assert {"anyio", "claude_agent_sdk", "httpx", "mcp"} <= VENDOR_SDKS
     assert importlib.util.find_spec(VENDOR_PACKAGE) is not None
+
+
+#: One module of an inner layer that imports the outside in every spelling
+#: the scan claims to read, each on its own line, and mentions it once in
+#: a docstring, which is not an import.
+PLANTED_LAYER = '''"""Mentions kodezart.adapters.linear, which imports nothing."""
+
+import importlib
+from typing import TYPE_CHECKING
+
+import kodezart.adapters.linear.wire
+from kodezart.adapters.linear.markers import LinearMarkers
+from .. import adapters
+import mcp
+
+if TYPE_CHECKING:
+    from kodezart.adapters.linear.tracker import LinearMcpTracker
+
+
+def later() -> None:
+    import httpx
+
+
+def dynamic() -> None:
+    importlib.import_module("kodezart.adapters.linear")
+    importlib.import_module(name="kodezart.adapters.linear.tracker")
+    importlib.import_module(".linear.tracker", package="kodezart.adapters")
+    importlib.import_module(".adapters.linear", "kodezart")
+'''
+
+
+def test_the_scan_reports_every_planted_import_and_no_prose(tmp_path: Path) -> None:
+    """The scan's own positive control: one that finds nothing looks green.
+
+    A plain, a from, a relative, a vendor SDK, a TYPE_CHECKING, a
+    function-body and four dynamic imports are each reported on their own
+    line; the docstring's mention is not, and a clean layer reports none.
+    """
+    package = tmp_path / PACKAGE
+    (package / "domain").mkdir(parents=True)
+    (package / "types").mkdir()
+    (package / "domain" / "planted.py").write_text(PLANTED_LAYER, encoding="utf-8")
+    (package / "types" / "clean.py").write_text(
+        "from collections.abc import Sequence\n", encoding="utf-8"
+    )
+
+    scan = scan_layers(tmp_path, ("domain", "types"))
+    lines = PLANTED_LAYER.splitlines()
+    reported = {lines[int(entry.split(":")[1]) - 1].strip() for entry in scan.refused}
+
+    assert scan.scanned == {
+        "domain": [f"{PACKAGE}.domain.planted"],
+        "types": [f"{PACKAGE}.types.clean"],
+    }
+    assert all(entry.startswith(f"{PACKAGE}.domain.planted:") for entry in scan.refused)
+    assert reported == {
+        "import kodezart.adapters.linear.wire",
+        "from kodezart.adapters.linear.markers import LinearMarkers",
+        "from .. import adapters",
+        "import mcp",
+        "from kodezart.adapters.linear.tracker import LinearMcpTracker",
+        "import httpx",
+        'importlib.import_module("kodezart.adapters.linear")',
+        'importlib.import_module(name="kodezart.adapters.linear.tracker")',
+        'importlib.import_module(".linear.tracker", package="kodezart.adapters")',
+        'importlib.import_module(".adapters.linear", "kodezart")',
+    }
+
+
+#: The values the scope work names, each of which must be defined in the
+#: domain types package itself, not merely importable from it.
+SCOPE_VALUES = (
+    ScopeKind,
+    ScopeRef,
+    ResolvedScope,
+    ScopeContainer,
+    WritableSurface,
+    ScopeTerminalEvent,
+    ScopeWalkEvent,
+    ScopeLaneEvent,
+)
+
+
+@pytest.mark.parametrize("value", SCOPE_VALUES, ids=lambda value: value.__name__)
+def test_each_scope_value_is_defined_in_the_domain_types_package(value: type) -> None:
+    """Where a value is defined, not where it can be imported from.
+
+    A re-export leaves the name importable from the old home while the
+    class lives elsewhere; the defining module is the one that says.
+    """
+    assert value.__module__.startswith(f"{PACKAGE}.types.domain."), value.__module__
+
+
+def test_the_lease_calls_are_declared_on_the_port_in_the_port_module() -> None:
+    """Every call the lease role declares, the port declares in its own body.
+
+    Read off each class's own namespace, so a call inherited from a base
+    declared in another module does not count as declared here.
+    """
+    role_calls = {name for name, _ in _own_callables(SurfaceLeaseTracker)}
+
+    assert {"acquire_surfaces", "renew_surfaces", "release_surfaces"} <= role_calls
+    assert role_calls <= set(vars(TrackerPort))
+    assert (
+        TrackerPort.__module__ == SurfaceLeaseTracker.__module__ == protocols.__name__
+    )
 
 
 #: What each lease call takes and answers, stated in domain types. The
