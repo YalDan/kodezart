@@ -24,8 +24,15 @@ from kodezart.types.domain.agent import (
     WRITE_BACK_SCHEMA,
 )
 from kodezart.types.domain.audit import AuditVerdict
-from kodezart.types.domain.audit_evidence import AuditRestampTrace
+from kodezart.types.domain.audit_evidence import (
+    AuditEvidenceObservation,
+    AuditRestampTrace,
+)
 from kodezart.types.domain.audit_overclaim import OverclaimKind
+from kodezart.types.domain.audit_runtime import (
+    AuditPublishedArtifact,
+    AuditTerminalPublication,
+)
 from kodezart.types.domain.audit_terminal import AuditTerminalObservation
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.dispatch import PassRun
@@ -271,11 +278,11 @@ class NativeExecutor(RecordingExecutor):
             yield event
 
 
-def native_operation(repo_url):
+def native_operation(repo_url, trunk="ordinary-name"):
     """The configured operation the native audit fixtures run under."""
     fields = base_operation(repos=(repo_url,)).model_dump()
     fields["repos"][0].update(
-        trunk="ordinary-name",
+        trunk=trunk,
         checks=[{"name": "test", "command": "cat check.txt", "forge_check": "test"}],
     )
     fields["workflow_states"] = WORKFLOW_STATE_NAMES
@@ -297,15 +304,19 @@ def native_operation(repo_url):
     return OperationConfig.model_validate(declare_organize_owner(fields))
 
 
-async def build_native_audit(repository, server, tmp_path, *, gate, pr_head=None):
+async def build_native_audit(
+    repository, server, tmp_path, *, gate, pr_head=None, trunk="ordinary-name"
+):
     """The composed audit over the native doubles, under the supplied gate.
 
     ``pr_head`` is the pull request's head branch and commit, the recorded
     loop branch at the fixture's head unless a case delivers it elsewhere.
+    ``trunk`` is the repository's trunk and the pull request's base, the
+    recorded loop branch unless a case deletes that branch.
     """
     remote, _author, _observer, _prior, head = repository
     pr_branch, pr_sha = pr_head or ("ordinary-name", head)
-    operation = native_operation(remote.as_uri())
+    operation = native_operation(remote.as_uri(), trunk=trunk)
     server._comment_clock = lambda: FIXTURE_NOW
     tracker = tracker_over(
         server,
@@ -337,7 +348,7 @@ async def build_native_audit(repository, server, tmp_path, *, gate, pr_head=None
                 number=7,
                 head_repo_url=remote.as_uri(),
                 base_repo_url=remote.as_uri(),
-                base_branch="ordinary-name",
+                base_branch=trunk,
                 head_branch=pr_branch,
                 head_sha=pr_sha,
                 lifecycle=PRLifecycle.OPEN,
@@ -420,19 +431,23 @@ async def test_current_native_scope_publishes_verified_records_then_summary(
     assert len(audit.last_report.scopes[0].coverage.covered) == 2
 
 
-async def test_a_lane_delivered_through_its_deliverable_branch_is_not_missing(
+async def test_a_lane_delivered_through_its_deliverable_branch_is_verified_at_its_head(
     repository, server, tmp_path
 ):
     """The lane as consolidation leaves it, over actual Git.
 
     The loop commits are merged into the deliverable branch the record
     associates with the same run, the loop branch is deleted on the remote,
-    and the pull request stands on the deliverable branch. The terminal read
-    finds the recorded head in the deliverable branch, so the loop branch is
-    delivered, not missing.
+    and the pull request stands on the deliverable branch against the trunk.
+    The deliverable branch holds the recorded head, so that head is the
+    verification head: every arm reads there, the run completes, and the
+    terminal report is published HOLDS at it.
     """
     remote, author, _observer, prior, head = repository
     deliverable = "has-ralph-in-its-name"
+    # The summary is judged at the trunk head, and the executor double reads
+    # the current contents in every session it serves.
+    command(author, "push", "-q", "configured-remote", f"{head}:refs/heads/main")
     command(author, "checkout", "-q", "-b", deliverable, prior)
     command(author, "merge", "-q", "--no-ff", "-m", "consolidate", "ordinary-name")
     merged = command(author, "rev-parse", "HEAD")
@@ -446,15 +461,11 @@ async def test_a_lane_delivered_through_its_deliverable_branch_is_not_missing(
         tmp_path,
         gate=PassThroughGate(),
         pr_head=(deliverable, merged),
+        trunk="main",
     )
-    # The criterion arms read the loop branch through their own readers, and
-    # whether the run completes is theirs to decide; this case pins only the
-    # terminal read, which is retained either way.
-    try:
-        await audit.run(FIXTURE_NOW)
-        scope = audit.last_report.scopes[0]
-    except AuditRunIncompleteError as incomplete:
-        scope = incomplete.report.scopes[0]
+    assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    scope = audit.last_report.scopes[0]
+    assert scope.status == "complete", scope.model_dump_json()
     terminals = [
         row
         for row in scope.raw_observations
@@ -465,7 +476,27 @@ async def test_a_lane_delivered_through_its_deliverable_branch_is_not_missing(
     assert terminals[0].discrepancies == ()
     assert terminals[0].verdict is AuditVerdict.HOLDS
     assert terminals[0].branch_head is None
+    assert terminals[0].verification_head == head
     assert terminals[0].pr.head_branch == deliverable
+    evidence = [
+        row
+        for row in scope.raw_observations
+        if isinstance(row, AuditEvidenceObservation)
+    ]
+    assert evidence and {row.head_sha for row in evidence} == {head}
+    published = [
+        AuditPublishedArtifact.model_validate_json(
+            write.artifact.content.partition("\n")[2]
+        ).publication
+        for write in scope.writes
+        if write.artifact.surface.ref.key == ROOT
+    ]
+    terminal = [
+        item for item in published if isinstance(item, AuditTerminalPublication)
+    ]
+    assert len(terminal) == 1, published
+    assert terminal[0].report.observation.verdict is AuditVerdict.HOLDS
+    assert terminal[0].report.observation.verification_head == head
 
 
 @pytest.mark.parametrize("change", ["source", "wrong_identity", "cancel", "head"])

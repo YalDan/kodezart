@@ -11,13 +11,13 @@ from kodezart.core.protocols import GitService, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.fire_spec import criterion_check, tracker_spec_from_issues
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES
+from kodezart.services.audit_heads import read_verification_head
 from kodezart.services.audit_requests import (
     AuditRequestReader,
     AuditRequestSnapshot,
     AuditRequestTarget,
 )
 from kodezart.services.audit_terminal import AuditTerminalReader
-from kodezart.services.git_observations import read_remote_head
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
@@ -188,7 +188,7 @@ class AuditReadSweep:
             try:
                 mandate = None
                 if terminal.verdict is AuditVerdict.REFUTED:
-                    if terminal.branch_head is None:
+                    if terminal.verification_head is None:
                         raise AuditClaimReadError(
                             "terminal mandate has no observed branch head"
                         )
@@ -196,7 +196,7 @@ class AuditReadSweep:
                         AuditMandateContext(
                             defect_class=terminal.defect_class(),
                             refutation_evidence=terminal.refutation_evidence(),
-                            head_sha=terminal.branch_head,
+                            head_sha=terminal.verification_head,
                             surfaces=surfaces,
                             repo_url=request.repo_url,
                             cache_key=request.cache_key,
@@ -400,15 +400,13 @@ class AuditReadSweep:
         repository = await ensure_repository(
             cache=self._cache, repo_url=request.repo_url, cache_key=request.cache_key
         )
-        if (
-            await read_remote_head(
-                git=self._git,
-                repository=repository,
-                remote=self._remote,
-                branch=target.source.record.branch,
-            )
-            != head
-        ):
+        verification = await read_verification_head(
+            git=self._git,
+            repository=repository,
+            remote=self._remote,
+            record=target.source.record,
+        )
+        if verification.sha != head:
             raise AuditClaimReadError("observed branch changed during the read sweep")
 
     async def prepare(self) -> AuditRequestSnapshot:

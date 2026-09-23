@@ -641,20 +641,25 @@ reader. Refuted criteria complete the existing mandate hunt over the exact
 scope issue bodies, any addressed parent outside the scope, and the scope
 container body when applicable. The returned surface set bounds the mandate
 finding; it does not claim to have read every charter or ruling elsewhere.
-Terminal observations retain their own issue and native record identity. A
-refutation with an observed branch head now invokes the same mandate hunt as
+Terminal observations retain their own issue and native record identity. The
+audit reads one verification head for a lane, the commit every arm verifies
+against: the loop branch head while the loop branch exists, and otherwise the
+record's head once the deliverable branch of the same run is seen to contain
+it. A loop branch that consolidation merged into that deliverable branch and
+then deleted is therefore not missing: the observation carries no
+missing-branch discrepancy, its branch head stays empty rather than taking the
+deliverable head, and its verification head is the record's head. The criterion
+arms judge at the verification head, and a terminal report is published there.
+A refutation with a verification head invokes the same mandate hunt as
 criterion refutations and returns its mandate-completed terminal report. It
 passes the native discrepancy and PR facts at that exact head, without creating
-a criterion judgment for an issue. Missing-branch observations retain an
-explicit unavailable reason; a historical lane-record head does not supply the
-missing verification context. A loop branch that consolidation merged into the
-deliverable branch of the same run and then deleted is not missing: when that
-deliverable branch's remote head contains the record's head, the observation
-carries no missing-branch discrepancy, and its branch head stays empty rather
-than taking the deliverable head. A failed hunt likewise retains the original
-terminal observation without claiming a complete report. Final terminal and
-scope reads still refuse changed source facts. Independent readable targets
-continue after a target fails.
+a criterion judgment for an issue. A lane with neither branch holding its work
+has no verification head: missing-branch observations retain an explicit
+unavailable reason, the criterion arms refuse, and a historical lane-record
+head does not supply the missing verification context. A failed hunt likewise
+retains the original terminal observation without claiming a complete report.
+Final terminal and scope reads still refuse changed source facts. Independent
+readable targets continue after a target fails.
 When supplied, the existing over-claim verifier runs independently for each
 criterion request. Its four categories retain separate mandate-completed reports
 and their original source evidence. Missing configuration or unreadable revision

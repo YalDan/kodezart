@@ -237,7 +237,7 @@ def _all_reports(
 def _head(publication: AuditPublication) -> str:
     if not isinstance(publication, AuditTerminalPublication):
         return publication.report.claim.head_sha
-    head = publication.report.observation.branch_head
+    head = publication.report.observation.verification_head
     if head is None:
         raise AuditClaimReadError(
             "the terminal report has no immutable verification head"

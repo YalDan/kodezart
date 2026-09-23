@@ -33,6 +33,11 @@ class AuditTerminalObservation(CamelCaseModel):
     ``None`` whenever the remote no longer holds that branch, including a loop
     branch consolidation merged into the deliverable branch and deleted; the
     deliverable branch's head is never substituted for it.
+
+    ``verification_head`` is the commit the audit verified against and the
+    one a report of this observation is published at: the loop branch head
+    when the loop branch exists, otherwise the record's head when the same
+    run's deliverable branch contains it, otherwise ``None`` (``NO_BRANCH``).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -41,6 +46,7 @@ class AuditTerminalObservation(CamelCaseModel):
     verdict: AuditVerdict
     discrepancies: tuple[TerminalDiscrepancy, ...]
     branch_head: str | None
+    verification_head: str | None
     pr: PRState | None
 
     def defect_class(self) -> str:
@@ -69,7 +75,7 @@ class AuditTerminalReport(CamelCaseModel):
         if (observed.verdict is AuditVerdict.REFUTED) != (self.mandate is not None):
             raise ValueError("every terminal refutation requires its mandate verdict")
         if observed.verdict is AuditVerdict.REFUTED:
-            if not observed.branch_head or not observed.discrepancies:
+            if not observed.verification_head or not observed.discrepancies:
                 raise ValueError(
                     "terminal mandate completion requires observed head and discrepancy"
                 )

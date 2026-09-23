@@ -12,7 +12,7 @@ from kodezart.core.protocols import (
 from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES, parse_audit_evidence
-from kodezart.services.git_observations import read_remote_head
+from kodezart.services.audit_heads import read_verification_head
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.types.domain.audit import AuditClaimRequest
@@ -97,9 +97,14 @@ class AuditSourceReader:
 
             async def resolve() -> str:
                 await self._git.fetch(repository)
-                head = await self._git.remote_branch_sha(
-                    repository, self._remote, record.branch
-                )
+                head = (
+                    await read_verification_head(
+                        git=self._git,
+                        repository=repository,
+                        remote=self._remote,
+                        record=record,
+                    )
+                ).sha
                 if not head:
                     raise AuditClaimReadError(
                         "the recorded branch has no live remote head"
@@ -154,14 +159,13 @@ class AuditSourceReader:
             if latest != (snapshot.comment, snapshot.record):
                 raise AuditClaimReadError("the lane record changed during the audit")
             if (
-                await read_remote_head(
+                await read_verification_head(
                     git=self._git,
                     repository=snapshot.repository,
                     remote=self._remote,
-                    branch=snapshot.record.branch,
+                    record=snapshot.record,
                 )
-                != snapshot.head_sha
-            ):
+            ).sha != snapshot.head_sha:
                 raise AuditClaimReadError("the remote head changed during the audit")
         except AuditEvidenceReadError:
             raise

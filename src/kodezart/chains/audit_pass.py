@@ -14,9 +14,9 @@ from kodezart.core.protocols import (
 from kodezart.domain.errors import AuditClaimReadError, CriterionResolutionError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.audit_failures import AUDIT_READ_FAILURES
+from kodezart.services.audit_heads import read_verification_head
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.git_observations import (
-    read_remote_head,
     read_replace_refs,
     read_workspace_head,
 )
@@ -91,7 +91,7 @@ class AuditClaimVerifier:
             raise AuditClaimReadError(str(exc)) from exc
 
     async def verify(self, request: AuditClaimRequest) -> AuditClaimObservation:
-        """Judge the current Check at an exact, live remote head in a fresh session."""
+        """Judge the current Check at the lane's verification head, freshly."""
         criterion = await self._criterion(request)
         check = criterion_check(criterion=criterion, issue_key=request.lane_issue_key)
         comment, record = await self._records.read(
@@ -102,12 +102,14 @@ class AuditClaimVerifier:
         repository = await ensure_repository(
             cache=self._cache, repo_url=request.repo_url, cache_key=request.cache_key
         )
-        head = await read_remote_head(
-            git=self._git,
-            repository=repository,
-            remote=self._remote,
-            branch=record.branch,
-        )
+        head = (
+            await read_verification_head(
+                git=self._git,
+                repository=repository,
+                remote=self._remote,
+                record=record,
+            )
+        ).sha
         if head is None or not head.strip():
             raise AuditClaimReadError("the recorded branch has no live remote head")
         key = PromptKey.AUDIT_CLAIM
@@ -156,12 +158,14 @@ class AuditClaimVerifier:
                 raise AuditClaimReadError(
                     "the audit repository substitutes Git objects"
                 )
-            if await read_remote_head(
-                git=self._git,
-                repository=repository,
-                remote=self._remote,
-                branch=record.branch,
-            ) != head or await read_workspace_head(
+            if (
+                await read_verification_head(
+                    git=self._git,
+                    repository=repository,
+                    remote=self._remote,
+                    record=record,
+                )
+            ).sha != head or await read_workspace_head(
                 git=self._git, workspace=workspace
             ) != (head, False):
                 raise AuditClaimReadError(

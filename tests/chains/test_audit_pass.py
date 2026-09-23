@@ -174,6 +174,7 @@ async def test_open_unmerged_review_terminal_has_no_discrepancy(
     assert result.discrepancies == ()
     assert result.pr.lifecycle is PRLifecycle.OPEN
     assert result.branch_head == HEAD and result.record_ref == comment.comment_key
+    assert result.verification_head == HEAD
     assert tracker_writes() == before
     assert forge[2] == [(REPO, 7), (REPO, 7)]
     assert {call[0] for call in git.calls} == {"remote_branch_sha"}
@@ -225,6 +226,7 @@ async def test_missing_branch_is_measured_from_remote_not_recorded_sha(setup):
     assert result.verdict is AuditVerdict.REFUTED
     assert TerminalDiscrepancy.NO_BRANCH in result.discrepancies
     assert result.branch_head is None
+    assert result.verification_head is None
 
 
 #: The deliverable branch ``record_data`` associates with the loop branch's run,
@@ -264,6 +266,9 @@ async def test_a_loop_branch_consolidated_into_its_deliverable_is_not_missing(
     assert result.verdict is AuditVerdict.HOLDS
     assert result.discrepancies == ()
     assert result.branch_head is None
+    # The loop branch is gone, so the audit verifies at the recorded head the
+    # deliverable branch holds, never at the deliverable's own head.
+    assert result.verification_head == record.head_sha != DELIVERED
     kinds = [call[0] for call in git.calls]
     assert kinds.index("fetch") < kinds.index("is_ancestor")
     assert ("is_ancestor", "/tmp/fake-cache", record.head_sha, DELIVERED) in git.calls
@@ -277,6 +282,7 @@ async def test_a_deliverable_without_the_recorded_head_leaves_the_branch_missing
     result = await reader.observe(REQUEST)
     assert result.verdict is AuditVerdict.REFUTED
     assert result.discrepancies == (TerminalDiscrepancy.NO_BRANCH,)
+    assert result.verification_head is None
 
 
 async def test_an_absent_deliverable_leaves_the_branch_missing(setup, forge):
