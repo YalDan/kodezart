@@ -665,9 +665,13 @@ that is gone from the remote is itself the demonstrated defect: the
 observation is REFUTED with `no_branch`, and its hunt runs with no head pin
 over the tracker surfaces alone, so its verdict is whatever the hunt returns
 and it is unverifiable only when a surface cannot be read. A historical
-lane-record head is never substituted. Its report is published and its
-write-back judged at the remote trunk head, the read the scope summary is
-judged at. A failed hunt retains the original terminal observation beside its
+lane-record head is never substituted. A loop branch that consolidation
+merged into the deliverable branch of the same run and then deleted is not
+missing: when that deliverable branch's remote head contains the record's head,
+the observation carries no missing-branch discrepancy, and its branch head
+stays empty rather than taking the deliverable head. Its report is published
+and its write-back judged at the remote trunk head, the read the scope summary
+is judged at. A failed hunt retains the original terminal observation beside its
 reason without claiming a complete report, and the subject is refused. Final
 terminal and scope reads still refuse changed source facts. Independent
 readable targets continue after a target fails.

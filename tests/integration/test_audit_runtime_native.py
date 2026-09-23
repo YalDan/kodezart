@@ -26,6 +26,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_evidence import AuditRestampTrace
 from kodezart.types.domain.audit_overclaim import OverclaimKind
+from kodezart.types.domain.audit_terminal import AuditTerminalObservation
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.dispatch import PassRun
 from kodezart.types.domain.operation import OperationConfig
@@ -43,6 +44,7 @@ from tests.fakes import (
 from tests.integration.test_audit_scheduler import declare_organize_owner
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.tracker.conftest import APPROVED_ISSUE, FIXTURE_NOW, WORKFLOW_STATE_NAMES
+from tests.tracker.test_audit_evidence_git import command
 from tests.tracker.test_audit_evidence_git import repository as repository
 from tests.tracker.test_audit_overclaim_sweep import payload as overclaims
 from tests.tracker.test_audit_requests import (
@@ -305,14 +307,25 @@ def native_operation(repo_url, *, trunk="ordinary-name"):
 
 
 async def build_native_audit(
-    repository, server, tmp_path, *, gate, trunk="ordinary-name", ci=None
+    repository,
+    server,
+    tmp_path,
+    *,
+    gate,
+    trunk="ordinary-name",
+    ci=None,
+    pr_head=None,
 ):
     """The composed audit over the native doubles, under the supplied gate.
 
     *ci* replaces the checks double, which otherwise answers green at the
     head and has no run at any other commit.
+
+    ``pr_head`` is the pull request's head branch and commit, the recorded
+    loop branch at the fixture's head unless a case delivers it elsewhere.
     """
     remote, _author, _observer, _prior, head = repository
+    pr_branch, pr_sha = pr_head or ("ordinary-name", head)
     operation = native_operation(remote.as_uri(), trunk=trunk)
     server._comment_clock = lambda: FIXTURE_NOW
     tracker = tracker_over(
@@ -346,8 +359,8 @@ async def build_native_audit(
                 head_repo_url=remote.as_uri(),
                 base_repo_url=remote.as_uri(),
                 base_branch="ordinary-name",
-                head_branch="ordinary-name",
-                head_sha=head,
+                head_branch=pr_branch,
+                head_sha=pr_sha,
                 lifecycle=PRLifecycle.OPEN,
             )
         }
@@ -426,6 +439,54 @@ async def test_current_native_scope_publishes_verified_records_then_summary(
     await audit.run(FIXTURE_NOW + timedelta(seconds=120))
     assert audit.last_report.scopes[0].coverage.full
     assert len(audit.last_report.scopes[0].coverage.covered) == 2
+
+
+async def test_a_lane_delivered_through_its_deliverable_branch_is_not_missing(
+    repository, server, tmp_path
+):
+    """The lane as consolidation leaves it, over actual Git.
+
+    The loop commits are merged into the deliverable branch the record
+    associates with the same run, the loop branch is deleted on the remote,
+    and the pull request stands on the deliverable branch. The terminal read
+    finds the recorded head in the deliverable branch, so the loop branch is
+    delivered, not missing.
+    """
+    remote, author, _observer, prior, head = repository
+    deliverable = "has-ralph-in-its-name"
+    command(author, "checkout", "-q", "-b", deliverable, prior)
+    command(author, "merge", "-q", "--no-ff", "-m", "consolidate", "ordinary-name")
+    merged = command(author, "rev-parse", "HEAD")
+    assert merged != head
+    command(author, "push", "-q", "configured-remote", deliverable)
+    command(author, "push", "-q", "configured-remote", "--delete", "ordinary-name")
+    assert command(remote, "branch", "--list", "ordinary-name") == ""
+    audit, *_ = await build_native_audit(
+        repository,
+        server,
+        tmp_path,
+        gate=PassThroughGate(),
+        pr_head=(deliverable, merged),
+    )
+    # The criterion arms read the loop branch through their own readers, and
+    # whether the run completes is theirs to decide; this case pins only the
+    # terminal read, which is retained either way.
+    try:
+        await audit.run(FIXTURE_NOW)
+        scope = audit.last_report.scopes[0]
+    except AuditRunIncompleteError as incomplete:
+        scope = incomplete.report.scopes[0]
+    terminals = [
+        row
+        for row in scope.raw_observations
+        if isinstance(row, AuditTerminalObservation)
+    ]
+    assert len(terminals) == 1, [type(row).__name__ for row in scope.raw_observations]
+    assert terminals[0].issue_key == ROOT
+    assert terminals[0].discrepancies == ()
+    assert terminals[0].verdict is AuditVerdict.HOLDS
+    assert terminals[0].branch_head is None
+    assert terminals[0].pr.head_branch == deliverable
 
 
 @pytest.mark.parametrize("change", ["source", "wrong_identity", "cancel", "head"])

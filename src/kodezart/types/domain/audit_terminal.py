@@ -27,7 +27,13 @@ class AuditTerminalRequest(CamelCaseModel):
 
 
 class AuditTerminalObservation(CamelCaseModel):
-    """A settled read, not an authorization to change tracker state."""
+    """A settled read, not an authorization to change tracker state.
+
+    ``branch_head`` is the remote head of the record's loop branch. It is
+    ``None`` whenever the remote no longer holds that branch, including a loop
+    branch consolidation merged into the deliverable branch and deleted; the
+    deliverable branch's head is never substituted for it.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     issue_key: str
