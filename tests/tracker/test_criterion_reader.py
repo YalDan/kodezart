@@ -7,7 +7,7 @@ from kodezart.domain.errors import CriterionReadError
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.tracker import EnsureAction, MappingKind, MappingRef
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
-from tests.fakes import FakeMcpIssue, FakeTrackerPort
+from tests.fakes import FakeMcpIssue, FakeTrackerPort, nothing_written
 from tests.tracker.conftest import fixture_server
 from tests.tracker.test_empty_fire_entry import PARENT_TEMPLATE_ROWS
 
@@ -84,11 +84,18 @@ async def test_the_criterion_read_acquires_no_write_lease(
     proving nothing about the family it read.
     """
     writes = tracker_writes()
+    # Every journal the fake declares a write can land in, not the handful
+    # the shared write reading compares.
+    unwritten = (
+        nothing_written(tracker) if isinstance(tracker, FakeTrackerPort) else None
+    )
     criteria = await tracker.read_criteria(issue_key=PARENT)
     assert [criterion.issue_key for criterion in criteria] == [FIRST, SECOND]
     assert tracker_writes() == writes
     if isinstance(tracker, FakeTrackerPort):
         assert tracker.lease_acquisitions == []
+        assert unwritten is not None
+        assert unwritten()
         assert tracker.leases == {}
     else:
         assert server.tool_calls("save_comment") == []
