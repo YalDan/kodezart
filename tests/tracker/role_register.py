@@ -495,6 +495,29 @@ def redeclared_from_a_base(text: str) -> dict[str, tuple[str, ...]]:
     return report
 
 
+def register_reports(
+    text: str, modules: Iterable[ModuleType] | None = None
+) -> dict[str, object]:
+    """Every report on where the register's members and roles sit, by name.
+
+    The port module's text read for a member on the aggregate, a class that
+    is not a role declared as one, a member on two roles, a member over its
+    base, a role the aggregate does not name and a second whole surface;
+    and every module of the shipped tree, or *modules*, read for a second
+    surface outside the port module. A misplacement is named by one of
+    them, so a planted one is counted over all of them.
+    """
+    return {
+        "aggregate": own_declarations(text)[AGGREGATE],
+        "stray": stray_classes(text),
+        "twice": twice_declared(text),
+        "redeclared": redeclared_from_a_base(text),
+        "off the aggregate": roles_off_the_aggregate(text),
+        "monolith": monoliths(text),
+        "outside the port": surfaces_outside_the_port(modules),
+    }
+
+
 #: The entry point and the composition root: the only sites KOD-834 lets hold
 #: the whole port, because they hold one adapter and hand it to role-typed
 #: parameters.

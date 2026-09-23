@@ -98,7 +98,9 @@ from tests.tracker.role_register import (
     port_members,
     port_module_text,
     production_modules,
+    protocol_defs,
     redeclared_from_a_base,
+    register_reports,
     roles,
     roles_off_the_aggregate,
     runtime_checkable_classes,
@@ -535,11 +537,7 @@ def test_a_second_surface_outside_the_port_module_is_reported(form, tmp_path):
     sources["services/planted_surface.py"] = body
 
     reports = (
-        surfaces_outside_the_port([module]),
-        monoliths(text),
-        stray_classes(text),
-        twice_declared(text),
-        redeclared_from_a_base(text),
+        *register_reports(text, [module]).values(),
         aggregate_annotations(sources),
         uncredited_roles(sources),
         defaulted_role_parameters(sources),
@@ -557,7 +555,10 @@ def test_a_second_whole_surface_composite_is_reported():
         '    """Every member again, under another name."""\n'
     )
 
+    reports = register_reports(grown)
+
     assert monoliths(grown) == frozenset({"TrackerSurface"})
+    assert [name for name, report in reports.items() if report] == ["monolith"]
 
 
 def test_a_composite_short_of_the_whole_is_reported_where_it_is_taken():
@@ -597,7 +598,10 @@ def test_a_role_dropped_from_the_aggregate_is_reported():
     assert line in text[start:]
     grown = text[:start] + text[start:].replace(line, "\n", 1)
 
+    reports = register_reports(grown)
+
     assert roles_off_the_aggregate(grown) == frozenset({role})
+    assert [name for name, report in reports.items() if report] == ["off the aggregate"]
 
 
 def test_every_class_that_touches_the_surface_is_a_role_declared_as_one():
@@ -651,56 +655,71 @@ def test_a_class_touching_the_surface_that_is_not_a_role_is_reported(form):
     planted, name = PLANTED_STRAYS[form]
     grown = text + planted.format(member=member, role=role)
 
-    reports = (
-        stray_classes(grown),
-        twice_declared(grown),
-        redeclared_from_a_base(grown),
-        {AGGREGATE: ()} if own_declarations(grown)[AGGREGATE] else {},
-    )
+    reports = register_reports(grown)
 
     assert name in stray_classes(grown)
-    assert [bool(report) for report in reports].count(True) == 1
+    assert [name for name, report in reports.items() if report] == ["stray"]
 
 
-#: Each way a member can sit off its one role: the text that arrives, and
+#: Each way a member can sit off its one role: the lines that declare it,
+#: the role that holds them (none for the aggregate's own body; a new role
+#: is composed into the aggregate, so only the misplacement is wrong), and
 #: the one report that must name it.
 PLANTED_PLACEMENTS = {
     "a member back on the aggregate": (
-        "\n\n@runtime_checkable\nclass {aggregate}(Protocol):\n"
         "    async def {member}(self) -> None: ...\n",
+        None,
         "aggregate",
     ),
-    "a member on a sibling role": (
-        "\n\n@runtime_checkable\nclass SecondPlace(Protocol):\n"
-        "    async def {member}(self) -> None: ...\n",
-        "twice",
-    ),
-    "a member shadowing its base": (
-        "\n\n@runtime_checkable\nclass Shadowing({owner}, Protocol):\n"
-        "    async def {member}(self) -> None: ...\n",
-        "redeclared",
-    ),
     "a member annotated on the aggregate": (
-        "\n\n@runtime_checkable\nclass {aggregate}(Protocol):\n"
         "    {member}: Callable[..., Awaitable[None]]\n",
+        None,
         "aggregate",
     ),
     "a member assigned on the aggregate": (
-        "\n\n@runtime_checkable\nclass {aggregate}(Protocol):\n"
         "    {member} = {owner}.{member}\n",
+        None,
         "aggregate",
     ),
+    "a member on a sibling role": (
+        "    async def {member}(self) -> None: ...\n",
+        "SecondPlace(Protocol)",
+        "twice",
+    ),
+    "a member shadowing its base": (
+        "    async def {member}(self) -> None: ...\n",
+        "Shadowing({owner}, Protocol)",
+        "redeclared",
+    ),
     "a member annotated over its base": (
-        "\n\n@runtime_checkable\nclass Shadowing({owner}, Protocol):\n"
         "    {member}: Callable[..., Awaitable[None]]\n",
+        "Shadowing({owner}, Protocol)",
         "redeclared",
     ),
     "a member assigned over its base": (
-        "\n\n@runtime_checkable\nclass Shadowing({owner}, Protocol):\n"
         "    {member} = {owner}.{member}\n",
+        "Shadowing({owner}, Protocol)",
         "redeclared",
     ),
 }
+
+
+def placed(text: str, lines: str, holder: str | None) -> str:
+    """*text* with *lines* in the aggregate's own body, or on a new composed role.
+
+    The aggregate keeps its bases, so a member added to its body is the one
+    thing wrong with it; a new role is named among the aggregate's bases, so
+    a member it declares is off its one role and nothing else is.
+    """
+    source = text.splitlines(keepends=True)
+    node = protocol_defs(text)[AGGREGATE]
+    if holder is None:
+        after = node.body[0].end_lineno or node.lineno
+        return "".join([*source[:after], "\n", lines, *source[after:]])
+    name = holder.split("(", 1)[0]
+    first_base = node.bases[0].lineno - 1
+    with_base = [*source[:first_base], f"    {name},\n", *source[first_base:]]
+    return "".join(with_base) + f"\n\n@runtime_checkable\nclass {holder}:\n{lines}"
 
 
 @pytest.mark.parametrize("form", sorted(PLANTED_PLACEMENTS))
@@ -710,10 +729,15 @@ def test_a_member_off_its_one_role_is_reported(form):
     owner = next(
         name for name in sorted(roles(text)) if member in own_declarations(text)[name]
     )
-    planted, expected = PLANTED_PLACEMENTS[form]
-    grown = text + planted.format(aggregate=AGGREGATE, member=member, owner=owner)
+    lines, holder, expected = PLANTED_PLACEMENTS[form]
+    grown = placed(
+        text,
+        lines.format(member=member, owner=owner),
+        None if holder is None else holder.format(owner=owner),
+    )
 
-    reports = {
+    reports = register_reports(grown)
+    names = {
         "aggregate": member in own_declarations(grown)[AGGREGATE],
         "twice": member in twice_declared(grown),
         "redeclared": any(
@@ -721,7 +745,8 @@ def test_a_member_off_its_one_role_is_reported(form):
         ),
     }
 
-    assert [name for name, reported in reports.items() if reported] == [expected]
+    assert [name for name, report in reports.items() if report] == [expected]
+    assert names[expected]
 
 
 def kod_390_role() -> str:
