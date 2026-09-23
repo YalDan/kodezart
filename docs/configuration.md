@@ -824,9 +824,10 @@ configuration:
   observation tick, under either setting.
 
 `scheduled_passes_not_wired` carries `dispatch_workflow` beside its three
-premises, and `scope_heartbeat_not_wired` carries `dispatch_workflow` and
-`organize_scopes_declared`, so the reason is in the log rather than inferred
-from an empty schedule. Boot probes the gate signals of exactly the passes it
+premises, and `scope_heartbeat_not_wired`, logged only when `[[organize_scopes]]`
+rows are declared and the setting is `fire`, carries `dispatch_workflow`, so the
+reason is in the log rather than inferred from an empty schedule. An operation
+that declares no rows logs no heartbeat event at all. Boot probes the gate signals of exactly the passes it
 wires and renders exactly their templates.
 
 `[[organize_scopes]]` rows are the standing scopes: each one is groomed before

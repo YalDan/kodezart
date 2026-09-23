@@ -16,6 +16,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+import structlog.testing
 from pydantic import SecretStr
 
 from kodezart.adapters.linear.markers import LinearMarkers
@@ -123,53 +124,62 @@ def v020_example(tmp_path: Path) -> Path:
     return path
 
 
-async def test_the_v020_example_boots_unchanged_and_schedules_the_per_issue_passes(
-    tmp_path,
-):
+async def _boot_v020(tmp_path, *, forge):
+    """The v0.2.0 example booted as the composition root boots it.
+
+    One registry bound to the operation, preflight, then the wiring, with the
+    dispatch setting left at its default. Returns the operation, the runtime
+    and every event preflight and the wiring logged.
+    """
     loaded = read_operation_file(v020_example(tmp_path))
     assert loaded.ignored == ("initiatives",)
     assert loaded.defaulted == ("marker_prefixes",)
     operation = loaded.config
     assert operation.marker_prefixes == V02_WIRE_PREFIXES
 
-    # As the composition root does it: one registry bound to the operation,
-    # preflight, then the wiring. The dispatch setting is left at its default.
     config = _config(tmp_path)
     assert config.dispatch_workflow is DispatchWorkflow.FIRE
     prompts = load_registry(bindings=operation_bindings(operation))
     board = FakeTrackerPort()
-    forge = FakeDeliveryProbe()
     queue = FakeJobQueue()
-    await verify_pass_preflight(
-        config=config,
-        operation=operation,
-        tracker=board,
-        github_api=forge,
-        prompts=prompts,
-    )
-    runtime = await build_dispatch_runtime(
-        config=config,
-        operation=operation,
-        dialled=DialledTracker(
-            tracker=board,
-            caller=ManagedFakeLinearMcpServer(),
+    with structlog.testing.capture_logs() as logs:
+        await verify_pass_preflight(
+            config=config,
             operation=operation,
-            ledger=board.self_writes,
-            status=FakeScopeStatusWriter(),
-        ),
-        github_api=forge,
-        queue=queue,
-        registry=queue,
-        gate=PassThroughGate(),
-        git=FakeGitService(),
-        cache=FakeRepoCache(),
-        workspace=FakeWorkspaceProvider(),
-        prompts=prompts,
-        runner=FakeAgentRunner(events=[]),
-        skills=SUPPRESS_ALL_SKILLS,
-        recorder=RunRecorder(records={}, sinks={}),
-        log=get_logger(__name__),
-    )
+            tracker=board,
+            github_api=forge,
+            prompts=prompts,
+        )
+        runtime = await build_dispatch_runtime(
+            config=config,
+            operation=operation,
+            dialled=DialledTracker(
+                tracker=board,
+                caller=ManagedFakeLinearMcpServer(),
+                operation=operation,
+                ledger=board.self_writes,
+                status=FakeScopeStatusWriter(),
+            ),
+            github_api=forge,
+            queue=queue,
+            registry=queue,
+            gate=PassThroughGate(),
+            git=FakeGitService(),
+            cache=FakeRepoCache(),
+            workspace=FakeWorkspaceProvider(),
+            prompts=prompts,
+            runner=FakeAgentRunner(events=[]),
+            skills=SUPPRESS_ALL_SKILLS,
+            recorder=RunRecorder(records={}, sinks={}),
+            log=get_logger(__name__),
+        )
+    return operation, runtime, logs
+
+
+async def test_the_v020_example_boots_unchanged_and_schedules_the_per_issue_passes(
+    tmp_path,
+):
+    operation, runtime, _logs = await _boot_v020(tmp_path, forge=FakeDeliveryProbe())
 
     assert [entry.name for entry in runtime.scheduler.passes] == [
         *(f"dispatch:{repo.url}" for repo in operation.repos),
@@ -179,6 +189,55 @@ async def test_the_v020_example_boots_unchanged_and_schedules_the_per_issue_pass
     assert len(operation.repos) == 2
     # The lifecycle writer, which needs the outcome marker, was constructed.
     assert runtime.lifecycle is not None
+
+
+#: The not-wired events the v0.2.0 example's boot logs under the default
+#: setting, by whether a delivery probe is configured: the audit pass and the
+#: observation tick, which it does not configure, and without a probe the
+#: dispatch pass. The same set it logged before ``dispatch_workflow`` existed.
+V020_NOT_WIRED = {
+    True: {"audit_pass_not_wired", "supervisor_pass_not_wired"},
+    False: {
+        "audit_pass_not_wired",
+        "supervisor_pass_not_wired",
+        "scheduled_passes_not_wired",
+    },
+}
+
+
+@pytest.mark.parametrize("probe", [True, False], ids=["probe", "no_probe"])
+async def test_the_v020_example_logs_the_v02_not_wired_events_and_no_heartbeat(
+    tmp_path, probe
+):
+    """A v0.2 file's boot log says nothing about a scope heartbeat.
+
+    It declares no ``[[organize_scopes]]`` row, so there is no heartbeat for
+    it to miss. The one change is the dispatch event's reason field: it names
+    the setting, ``dispatch_workflow``, where it named declared scopes.
+    """
+    _operation, _runtime, logs = await _boot_v020(
+        tmp_path, forge=FakeDeliveryProbe() if probe else None
+    )
+
+    events = [entry["event"] for entry in logs]
+    assert "scope_heartbeat_not_wired" not in events
+    assert {event for event in events if event.endswith("_not_wired")} == (
+        V020_NOT_WIRED[probe]
+    )
+    if not probe:
+        (withheld,) = [
+            entry for entry in logs if entry["event"] == "scheduled_passes_not_wired"
+        ]
+        assert set(withheld) == {
+            "event",
+            "log_level",
+            "dispatch_workflow",
+            "tracker_present",
+            "operation_config_present",
+            "delivery_probe_present",
+        }
+        assert withheld["dispatch_workflow"] == "fire"
+        assert withheld["delivery_probe_present"] is False
 
 
 async def test_a_v020_file_claims_dispatches_and_records_its_outcome(tmp_path):

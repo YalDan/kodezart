@@ -988,11 +988,14 @@ async def build_dispatch_runtime(
                     run=heartbeat.run,
                 )
             )
-        else:
+        elif operation.organize_scopes:
+            # Only where there are rows it would have submitted: declared rows
+            # and no heartbeat means the setting dispatches through the fire,
+            # and the event names it. An operation that declares none (every
+            # v0.2 file) has no heartbeat to miss, and its boot log stays v0.2's.
             await log.ainfo(
                 "scope_heartbeat_not_wired",
                 dispatch_workflow=config.dispatch_workflow.value,
-                organize_scopes_declared=bool(operation.organize_scopes),
             )
     else:
         # The other arm of the same event: no operation config at all, so

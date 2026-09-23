@@ -36,7 +36,8 @@ concerns.
   `scope_heartbeat` over the declared `[[organize_scopes]]` rows, so no
   scheduled run starts without a scope. `scheduled_passes_not_wired` carries
   `dispatch_workflow` beside its premises, and a new `scope_heartbeat_not_wired`
-  event carries `dispatch_workflow` and `organize_scopes_declared`. Boot probes
+  event, logged only when `[[organize_scopes]]` rows are declared under `fire`,
+  carries `dispatch_workflow`; an operation with no rows logs no heartbeat event. Boot probes
   the gate signals of exactly the passes it wires.
 - The organize tick is scheduled as `organize_pass`, on the grooming cadence and
   budget, and reports under a run kind of its own, `organize`

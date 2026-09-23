@@ -108,9 +108,17 @@ async def test_the_fire_starts_the_dispatch_passes_and_no_heartbeat(tmp_path, sc
     names = [entry.name for entry in runtime.scheduler.passes]
     assert HEARTBEAT_PASS not in names
     assert _logged(logs, "scheduled_passes_not_wired") == []
-    (absent,) = _logged(logs, "scope_heartbeat_not_wired")
-    assert absent["dispatch_workflow"] == "fire"
-    assert absent["organize_scopes_declared"] is scopes
+    # Named where there are rows the heartbeat would have submitted; an
+    # operation with none has no heartbeat to miss and logs nothing about it.
+    absent = _logged(logs, "scope_heartbeat_not_wired")
+    if scopes:
+        (event,) = absent
+        assert event["dispatch_workflow"] == "fire"
+        # The setting is the whole reason: rows are declared wherever it is
+        # logged, so no field says so.
+        assert set(event) == {"event", "log_level", "dispatch_workflow"}
+    else:
+        assert absent == []
     # Preflight asks for the dispatch signal, because the dispatch pass is wired.
     assert await _probed(config, operation, prompts) == [[PassSignal.approved_changed]]
 
@@ -134,13 +142,10 @@ async def test_the_scope_setting_builds_no_dispatch_pass(tmp_path, scopes):
     assert withheld["tracker_present"] is True
     assert withheld["operation_config_present"] is True
     assert withheld["delivery_probe_present"] is True
-    absent = _logged(logs, "scope_heartbeat_not_wired")
-    if scopes:
-        assert absent == []
-    else:
-        (event,) = absent
-        assert event["dispatch_workflow"] == "scope"
-        assert event["organize_scopes_declared"] is False
+    assert "organize_scopes_declared" not in withheld
+    # With rows the heartbeat is wired; without them there is nothing it
+    # would submit, and the dispatch event above already names the setting.
+    assert _logged(logs, "scope_heartbeat_not_wired") == []
     # Preflight asks nothing for a dispatch pass that is not wired.
     assert await _probed(config, operation, prompts) == []
 
