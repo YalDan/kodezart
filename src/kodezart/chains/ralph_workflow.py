@@ -474,11 +474,12 @@ class RalphWorkflowEngine:
         spec = state["fire_spec"]
         if not isinstance(spec, TrackerSpec):
             return
-        landed_sha = landed.get("feature_tip_sha")
-        if (
-            not isinstance(landed_sha, str)
-            or landed.get("feature_branch") != state["feature_branch"]
-        ):
+        landed_sha = (
+            landed.get("feature_tip_sha")
+            if landed.get("feature_branch") == state["feature_branch"]
+            else state["best_iteration_sha"]
+        )
+        if not isinstance(landed_sha, str):
             return
         ctx = ExecutionContext.from_configurable(config)
         if ctx.surface_holder is None:

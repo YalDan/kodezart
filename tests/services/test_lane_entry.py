@@ -115,9 +115,9 @@ def composed(*acts: str, landed: str | None = None) -> LaneRunState:
     Every row goes through ``next_lane_record`` (KOD-685), so the value is one
     the writer could have left: the rows are the acts in the order they were
     made, the head field is the last of them, and the push is the last one the
-    loop observed on its own branch. *landed* is the stall landing's act — the
-    tip the consolidation left the deliverable branch at — which the loop
-    branch's own push is untouched by.
+    loop observed on its own branch. *landed* is the stall exit's recorded
+    best act — the consolidated tip when the landing integrated, and otherwise
+    the best commit itself — which the loop branch's own push is untouched by.
     """
     binding = LaneBinding(
         lane_key=LANE,
@@ -344,18 +344,18 @@ async def test_a_non_convergent_lane_resolves_its_recorded_commit_by_sha():
     assert (moved[0]["base_head"], moved[0]["deliverable_head"]) == (BASE_TIP, LANDED)
 
 
-async def test_a_stall_landing_nothing_resumes_its_last_act_deliverable_at_base_tip():
+async def test_a_stall_whose_deliverable_is_at_base_tip_resumes_at_its_best_iteration():
     """The stall case: the deliverable at its base tip is this case's premise.
 
-    Observed by sha, at the branch the DELIVERABLE role resolves. Nothing was
-    landed, so the record names no best iteration and re-entry resolves its
-    last act, on its loop branch, which the remote holds exactly there. The
-    best iteration is resolved in the landed case, whose premise is the
-    deliverable at the landed sha: no record the writer composes holds a
-    landing act and a deliverable at its base tip at once, so the two premises
-    are two fixtures.
+    Observed by sha, at the branch the DELIVERABLE role resolves. The run did
+    not converge and its landing put nothing on the deliverable branch, so the
+    stall exit recorded the best commit itself as the lane's last act. That
+    commit is not the loop tip the run slipped back to: re-entry resolves it
+    through the loop level, finds the loop branch standing past it, and so
+    carries no loop branch, and the fire cuts a fresh one from the best
+    commit (KOD-705).
     """
-    stored = composed(*ACTS)
+    stored = composed(*ACTS, landed=ACTS[1])
     port = await board(stored)
     git = FakeGitService(
         remote_branch_shas={LOOP: ACTS[-1], DELIVERABLE: BASE_TIP, BASE: BASE_TIP}
@@ -369,12 +369,19 @@ async def test_a_stall_landing_nothing_resumes_its_last_act_deliverable_at_base_
     assert git.calls == reads(LOOP, DELIVERABLE, BASE)
     assert entry == ResumedLane(
         deliverable_branch=DELIVERABLE,
-        loop_branch=LOOP,
-        head_sha=ACTS[-1],
+        loop_branch=None,
+        head_sha=ACTS[1],
         deliverable_head_sha=BASE_TIP,
         body_digest=DIGEST,
     )
-    assert [item for item in logs if item["event"] == "lane_record_head_differs"] == []
+    assert entry.head_sha != ACTS[-1]
+    differs = [item for item in logs if item["event"] == "lane_record_head_differs"]
+    assert len(differs) == 1
+    assert (
+        differs[0]["branch"],
+        differs[0]["recorded_head"],
+        differs[0]["remote_head"],
+    ) == (LOOP, ACTS[1], ACTS[-1])
     assert [
         item for item in logs if item["event"] == "lane_deliverable_head_differs"
     ] == []
