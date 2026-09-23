@@ -22,10 +22,23 @@ the member a ``stage=`` keyword is handed, where the value is the member
 itself — and its rule reports a name bound to a comparison against the
 member, which here would report a body that decided nothing.
 
-The walk is textual and executes nothing.  Its blind spots, which review has
-to read from the code instead: a state kind reached through ``getattr`` or
-any other name composed at run time, and a helper that decides finishedness
-inside itself and is called somewhere this walk therefore leaves alone.
+A closed kind is found by object after import, tree-wide: a name bound
+anywhere to a closed member or to a collection of nothing but closed members,
+followed through imports (``HELD_CRITERION_STATE``, ``_CLOSED_STATE_KINDS``);
+the vocabulary under an ``as`` import or reached through a module attribute;
+any attribute chain ending in a closed member; a comparison of a
+``state_kind`` read against a string equal to a closed member's value; and
+the openness predicate called, held uncalled, passed on, or imported under
+another name.  The narrow textual rules stay beside that reading, so a
+planted body that never imports the vocabulary is read too.
+
+Outside this reach, as for every static guard: a value handed across a
+function boundary, where the other function is not resolved at this site
+(returned from a helper, stored on an object and read elsewhere, or passed
+through a container built elsewhere); a name built at run time; and a
+binding made only when a function runs (``setattr`` or ``globals()`` inside
+a function body).  Outside it too, by the Check's own words: a selection
+over the open kinds that decides which criteria a fire works on.
 """
 
 import ast
@@ -40,13 +53,14 @@ from kodezart.domain.gap import compute_gap, in_gap
 from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
 from kodezart.types.domain.criteria import TrackerCriterion
 from kodezart.types.domain.operation import LifecycleStage
-from kodezart.types.domain.tracker import WorkflowStateKind, is_open
+from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind, is_open
 from tests.domain.test_criterion_cross_off import (
     qualified_names,
     source_tree,
     stage_moves,
 )
 from tests.fakes import make_tracker_issue
+from tests.object_resolution import UNBOUND, denoted, names_of, names_of_tree
 
 #: The package the rule is packaged in, and so the tree it speaks for.
 SOURCE = Path(sys.modules[in_gap.__module__].__file__ or "").resolve().parents[1]
@@ -56,6 +70,15 @@ ARITHMETIC = (in_gap, compute_gap, SubtreeClosure, open_criteria)
 TERMINAL = frozenset(kind.name for kind in WorkflowStateKind if not is_open(kind))
 VOCABULARY = WorkflowStateKind.__name__
 OPENNESS = is_open.__name__
+#: The closed members themselves, and the values they are persisted as.
+CLOSED = frozenset(kind for kind in WorkflowStateKind if not is_open(kind))
+CLOSED_VALUES = frozenset(kind.value for kind in CLOSED)
+#: The row field a criterion's kind is read from, read off the row itself.
+(STATE_FIELD,) = (
+    name
+    for name, info in TrackerIssue.model_fields.items()
+    if info.annotation is WorkflowStateKind
+)
 CRITERION_LABEL = "criterion"
 MODULE_BODY = "<module>"
 
@@ -84,6 +107,21 @@ EXEMPT = {
     "types/domain/tracker.py::<module>": (
         "the vocabulary itself: the closed-kind set the openness predicate is "
         "written from decides nothing"
+    ),
+    "types/domain/tracker.py::is_open": (
+        "the vocabulary's own openness predicate over one kind: it decides "
+        "nothing about a family, and each body that consults it is reported "
+        "where it does"
+    ),
+    "chains/criteria.py::TrackerCriteria._owed": (
+        "selects the criteria this fire works on (the unstarted ones, plus the "
+        "ones this fire already crossed off); decides nothing about whether "
+        "anything is finished"
+    ),
+    "services/lane_state_writer.py::TrackerLaneStateWriter._take_back": (
+        "the precondition of one write on one criterion: only a criterion the "
+        "board still holds finished is moved back, and nothing about whether a "
+        "family is finished is decided"
     ),
     "domain/criterion_cross_off.py::<module>": (
         "the vocabulary itself: the constant naming the state a held grading "
@@ -174,6 +212,51 @@ def _aliases(tree: ast.Module) -> frozenset[str]:
     return frozenset(names)
 
 
+def _closed(value: object) -> bool:
+    """Whether an object is a closed member, or a non-empty collection of
+    nothing but closed members."""
+    if isinstance(value, WorkflowStateKind):
+        return value in CLOSED
+    return (
+        isinstance(value, set | frozenset | tuple | list)
+        and bool(value)
+        and all(
+            isinstance(member, WorkflowStateKind) and member in CLOSED
+            for member in value
+        )
+    )
+
+
+def _reads_a_closed_kind(node: ast.AST, names: dict[str, object]) -> bool:
+    """Whether *node* reads a closed kind or the openness predicate, by
+    object: a name or attribute chain denoting either, however it is bound,
+    imported or aliased, and wherever it stands (called, held, or passed)."""
+    if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+        return False
+    if not isinstance(node, ast.Name | ast.Attribute):
+        return False
+    found = denoted(node, names)
+    return found is not UNBOUND and (found is is_open or _closed(found))
+
+
+def _state_kind_read(node: ast.expr) -> bool:
+    """A read of a row's kind, or of the value it is persisted as."""
+    if isinstance(node, ast.Attribute) and node.attr == "value":
+        node = node.value
+    return isinstance(node, ast.Attribute) and node.attr == STATE_FIELD
+
+
+def _compares_a_closed_value(node: ast.AST) -> bool:
+    """A comparison of a row's kind against a string that IS a closed value."""
+    if not isinstance(node, ast.Compare):
+        return False
+    operands = [node.left, *node.comparators]
+    return any(_state_kind_read(operand) for operand in operands) and any(
+        isinstance(operand, ast.Constant) and operand.value in CLOSED_VALUES
+        for operand in operands
+    )
+
+
 def _calls_openness(node: ast.AST) -> bool:
     if not isinstance(node, ast.Call):
         return False
@@ -183,16 +266,23 @@ def _calls_openness(node: ast.AST) -> bool:
     )
 
 
-def _sites(tree: ast.Module) -> frozenset[str]:
-    """Every body of *tree* that reads a criterion's finishedness."""
+def _sites(tree: ast.Module, names: dict[str, object] | None = None) -> frozenset[str]:
+    """Every body of *tree* that reads a criterion's finishedness.
+
+    *names* is what the module's names denote; without it they are read
+    off the tree's own imports.
+    """
     where = qualified_names(tree)
     named = _aliases(tree)
+    resolved = names_of_tree(tree) if names is None else names
     return frozenset(
         where.get(id(node), "") or MODULE_BODY
         for node in ast.walk(tree)
         if _member(node)
         or (isinstance(node, ast.Name) and node.id in named)
         or _calls_openness(node)
+        or _reads_a_closed_kind(node, resolved)
+        or _compares_a_closed_value(node)
     )
 
 
@@ -201,8 +291,10 @@ def surface(root: Path) -> frozenset[str]:
     found: set[str] = set()
     for path in sorted(root.rglob("*.py")):
         module = path.relative_to(root).as_posix()
+        text = path.read_text()
         found.update(
-            f"{module}::{site}" for site in _sites(ast.parse(path.read_text()))
+            f"{module}::{site}"
+            for site in _sites(ast.parse(text), names_of(module, text, root))
         )
     return frozenset(found)
 
@@ -270,7 +362,7 @@ def test_the_scanned_vocabulary_is_the_rules_own_terminal_set():
         if not owed or owed != superseded:
             closed.add(kind.name)
         else:
-            assert owed and superseded, kind
+            assert kind.name not in TERMINAL, kind
     assert closed == TERMINAL
 
 
@@ -293,6 +385,7 @@ def test_a_name_bound_to_a_comparison_is_not_an_alias_of_the_member():
         f"    return row.state_kind is done\n"
     )
     assert _aliases(bound) == frozenset({"done"})
+    assert _sites(bound) == frozenset({"observe"})
 
 
 def test_the_closure_arithmetic_is_declared_once_and_only_there():
@@ -396,7 +489,169 @@ def test_every_exemption_carries_the_reason_it_is_one():
 def test_a_second_body_deciding_finishedness_is_reported(tmp_path, body):
     (tmp_path / "second.py").write_text(body)
     assert surface(tmp_path) == frozenset({"second.py::finished"})
-    assert surface(tmp_path) - frozenset(EXEMPT) != frozenset({RULE_SITE})
+
+
+VOCABULARY_MODULE = WorkflowStateKind.__module__
+HELD_MODULE = "kodezart.domain.criterion_cross_off"
+
+#: A second body deciding finishedness, in each spelling of a closed kind the
+#: walk resolves, each with the bodies it must report.
+CLOSED_KIND_SPELLINGS = {
+    "vocabulary-as-import": (
+        f"from {VOCABULARY_MODULE} import {VOCABULARY} as Kind\n\n\n"
+        "def finished(rows):\n"
+        "    return all(c.state_kind is Kind.COMPLETED for c in rows)\n",
+        {"finished"},
+    ),
+    "module-attribute-chain": (
+        "from kodezart.types.domain import tracker\n\n\n"
+        "def finished(rows):\n"
+        "    return all(\n"
+        f"        c.state_kind is tracker.{VOCABULARY}.COMPLETED for c in rows\n"
+        "    )\n",
+        {"finished"},
+    ),
+    "string-value": (
+        "def finished(rows):\n"
+        '    return all(c.state_kind == "completed" for c in rows)\n',
+        {"finished"},
+    ),
+    "string-value-on-the-left": (
+        "def finished(rows):\n"
+        '    return all("canceled" != c.state_kind.value for c in rows)\n',
+        {"finished"},
+    ),
+    "module-alias-read-in-a-body": (
+        f"done = {VOCABULARY}.COMPLETED\n\n\n"
+        "def finished(row):\n"
+        "    return row.state_kind is done\n",
+        {MODULE_BODY, "finished"},
+    ),
+    "imported-held-state": (
+        f"from {HELD_MODULE} import HELD_CRITERION_STATE\n\n\n"
+        "def finished(rows):\n"
+        "    return all(row.state_kind is HELD_CRITERION_STATE for row in rows)\n",
+        {"finished"},
+    ),
+    "imported-held-state-negated": (
+        f"from {HELD_MODULE} import HELD_CRITERION_STATE\n\n\n"
+        "def finished(criteria):\n"
+        "    return not any(\n"
+        "        row.state_kind is not HELD_CRITERION_STATE for row in criteria\n"
+        "    )\n",
+        {"finished"},
+    ),
+    "imported-closed-set": (
+        f"from {VOCABULARY_MODULE} import _CLOSED_STATE_KINDS\n\n\n"
+        "def finished(rows):\n"
+        "    return all(row.state_kind in _CLOSED_STATE_KINDS for row in rows)\n",
+        {"finished"},
+    ),
+    "vocabulary-as-import-in-a-display": (
+        f"from {VOCABULARY_MODULE} import {VOCABULARY} as Kind\n\n\n"
+        "def finished(rows):\n"
+        "    return all(\n"
+        "        c.state_kind in (Kind.COMPLETED, Kind.CANCELED) for c in rows\n"
+        "    )\n",
+        {"finished"},
+    ),
+    "openness-passed-to-map": (
+        f"from {VOCABULARY_MODULE} import {OPENNESS}\n\n\n"
+        "def finished(rows):\n"
+        f"    return not any(map({OPENNESS}, (r.state_kind for r in rows)))\n",
+        {"finished"},
+    ),
+    "openness-held-uncalled": (
+        f"from {VOCABULARY_MODULE} import {OPENNESS}\n\n\n"
+        "def finished(rows):\n"
+        f"    check = {OPENNESS}\n"
+        "    return not any(check(r.state_kind) for r in rows)\n",
+        {"finished"},
+    ),
+    "openness-imported-as": (
+        f"from {VOCABULARY_MODULE} import {OPENNESS} as still_open\n\n\n"
+        "def finished(rows):\n"
+        "    return not any(still_open(r.state_kind) for r in rows)\n",
+        {"finished"},
+    ),
+    "closure-by-string": (
+        "class SubtreeClosure:\n"
+        "    def is_closed(self, key):\n"
+        "        return all(\n"
+        '            row.state_kind == "completed" for row in self.roster(key)\n'
+        "        )\n",
+        {"SubtreeClosure.is_closed"},
+    ),
+    "closure-by-held-state": (
+        f"from {HELD_MODULE} import HELD_CRITERION_STATE\n\n\n"
+        "class SubtreeClosure:\n"
+        "    def is_closed(self, key):\n"
+        "        return all(\n"
+        "            row.state_kind is HELD_CRITERION_STATE\n"
+        "            for row in self.roster(key)\n"
+        "        )\n",
+        {"SubtreeClosure.is_closed"},
+    ),
+}
+
+
+@pytest.mark.parametrize("spelling", sorted(CLOSED_KIND_SPELLINGS))
+def test_a_closed_kind_is_read_however_it_is_spelled(tmp_path, spelling):
+    body, sites = CLOSED_KIND_SPELLINGS[spelling]
+    (tmp_path / "second.py").write_text(body)
+    assert surface(tmp_path) == frozenset(f"second.py::{site}" for site in sites)
+
+
+def test_the_closed_kinds_and_their_values_are_read_off_the_vocabulary():
+    assert {kind.name for kind in CLOSED} == TERMINAL
+    assert CLOSED_VALUES == {kind.value for kind in CLOSED}
+    assert STATE_FIELD
+
+
+def test_an_open_kind_or_a_mixed_set_is_not_a_closed_reading(tmp_path):
+    (tmp_path / "open.py").write_text(
+        f"from {VOCABULARY_MODULE} import {VOCABULARY}\n\n"
+        f"MIXED = frozenset({{{VOCABULARY}.UNSTARTED, {VOCABULARY}.STARTED}})\n\n\n"
+        "def owed(rows):\n"
+        f"    return [r for r in rows if r.state_kind is {VOCABULARY}.UNSTARTED]\n"
+        "\n\n"
+        "def fresh(rows):\n"
+        "    return [r for r in rows if r.state_kind in MIXED]\n"
+    )
+    assert surface(tmp_path) == frozenset()
+
+
+def test_a_value_handed_across_a_function_boundary_is_not_seen(tmp_path):
+    """The stated limit: a closed kind returned from a helper elsewhere."""
+    (tmp_path / "second.py").write_text(
+        "def finished(rows, kinds):\n"
+        "    closed = kinds.closed()\n"
+        "    return all(row.state_kind in closed for row in rows)\n"
+    )
+    assert surface(tmp_path) == frozenset()
+
+
+def test_a_name_built_at_run_time_is_not_seen(tmp_path):
+    """The stated limit: a member reached by a name composed when it runs."""
+    (tmp_path / "second.py").write_text(
+        f"from {VOCABULARY_MODULE} import {VOCABULARY}\n\n\n"
+        "def finished(rows):\n"
+        f"    done = getattr({VOCABULARY}, 'COMP' + 'LETED')\n"
+        "    return all(row.state_kind is done for row in rows)\n"
+    )
+    assert surface(tmp_path) == frozenset()
+
+
+def test_a_binding_made_only_when_a_function_runs_is_not_seen(tmp_path):
+    """The stated limit: a closed member bound through ``globals()``."""
+    (tmp_path / "second.py").write_text(
+        f"from {HELD_MODULE} import HELD_CRITERION_STATE\n\n\n"
+        "def bind():\n"
+        "    globals()['DONE_KIND'] = HELD_CRITERION_STATE\n\n\n"
+        "def finished(rows):\n"
+        "    return all(row.state_kind is DONE_KIND for row in rows)\n"
+    )
+    assert surface(tmp_path) == frozenset({"second.py::bind"})
 
 
 #: The stage a finished criterion is moved to, and the write that moves it,
