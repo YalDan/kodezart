@@ -645,6 +645,46 @@ async def test_a_rerun_red_only_outside_the_roster_is_a_rostered_flake(setup):
     assert AuditForgeObservation.model_validate_json(result.model_dump_json()) == result
 
 
+async def test_a_rostered_check_first_red_on_the_rerun_is_not_read_as_a_flake(setup):
+    """The first run reports only one rostered check, red; the rerun is red
+    only in another rostered check the first run never reported.  The
+    classifier counts the roster, not the first snapshot's names, so the
+    rostered red on the rerun is a different red and not a flake, and the
+    reason states the classification rather than an exception class."""
+    ci = FakeCIMonitor(
+        passed=False,
+        failed_names=frozenset({"unit"}),
+        check_names=frozenset({"unit"}),
+        rerun_results=[(False, "late rostered red", frozenset({"integration"}))],
+        observed_sha_by_ref={SHA: SHA},
+    )
+    result = await setup(ci).observe(REQUEST)
+    assert result.verdict is AuditVerdict.UNVERIFIABLE
+    assert result.red.red_class is not CheckRedClass.RUNNER_FLAKE
+    assert "ValidationError" not in result.reason
+
+
+async def test_under_an_empty_roster_a_different_rerun_red_is_unclassified(setup):
+    """A repository rostering no forge check counts every reported check on
+    every snapshot, the rerun's included: a rerun red in a check the first
+    run reported green is a different red, so the red is unclassified."""
+    repository = REPOSITORY.model_copy(
+        update={"checks": (CheckStep(name="local-only", command="run local"),)}
+    )
+    ci = FakeCIMonitor(
+        passed=False,
+        failed_names=frozenset({"unit"}),
+        check_names=NAMES,
+        rerun_results=[(False, "a different red", frozenset({LATE}))],
+        observed_sha_by_ref={SHA: SHA},
+    )
+    result = await setup(ci, repository=repository).observe(REQUEST)
+    assert result.verdict is AuditVerdict.UNVERIFIABLE
+    assert result.red.red_class is CheckRedClass.UNCLASSIFIED
+    assert "red checks are unclassified" in result.reason
+    assert "ValidationError" not in result.reason
+
+
 @pytest.mark.parametrize("backend", ["fake", "github"])
 async def test_an_empty_declared_roster_excludes_nothing_and_still_classifies_red(
     setup, backend

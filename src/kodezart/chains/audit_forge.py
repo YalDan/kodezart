@@ -147,7 +147,7 @@ class AuditForgeVerifier:
                 repo_url=repository.url,
                 initial=checks,
                 max_attempts=self._config.delivery_red_rerun_max_attempts,
-                counted=checks.check_names - counted.excluded,
+                counted=required or None,
             )
             if isinstance(red.observation, AbsentChecks):
                 return result(
