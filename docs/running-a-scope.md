@@ -119,10 +119,12 @@ found ready, which are blocked and by what, which are unapproved, which it has
 dispatched and which are resting. It also names each ready lane's open
 criteria, any open criterion under a ready lane that the scope's filter cannot
 reach together with the reason, and the canceled or duplicate criteria it set
-aside. Those names are on the row only; nothing the run writes to the tracker
-repeats them. A `scope_lane` row wraps one lane's own fire
-events. A lane's failure appears on the observation rather than ending the
-stream.
+aside. Those lists are on the row only: no list of those keys is written to
+the tracker, whether on the lane record comment, a criterion's Evidence row or
+the scope status update. A single key does appear there, in a criterion's own
+Evidence and in the event that crosses it off. A `scope_lane` row wraps one
+lane's own fire events. A lane's failure appears on the observation rather
+than ending the stream.
 
 ## Whether the scope's lanes compose
 
