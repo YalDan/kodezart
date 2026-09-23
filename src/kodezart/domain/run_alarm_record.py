@@ -15,11 +15,15 @@ from kodezart.domain.comment_markers import (
     configured_marker_prefix,
 )
 from kodezart.domain.errors import DuplicateCommentMarkerError, SurfaceLeaseError
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     AlarmSubject,
+    EscalationSubject,
+    LaneSubject,
     RunAlarm,
 )
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import TrackerComment
@@ -198,3 +202,75 @@ def _record_under(
     ):
         raise ValueError("the alarm record does not carry the address it is under")
     return alarm
+
+
+#: The stream's whole vocabulary for one alarm: one raise, one clear.
+_TRANSITION_KINDS = frozenset(
+    {RunEventKind.RUN_ALARM_RAISED, RunEventKind.RUN_ALARM_CLEARED}
+)
+
+
+def alarm_event_key(record: RunAlarm) -> str:
+    """The key a record's transition events carry on its lane's stream.
+
+    A lane subject has one record per signal on its lane, so the signal is
+    the key, and the tally key streams already carry reads the same. An
+    escalation subject has one record per open question, and a lane holds
+    several, so the question's own occurrence is part of the key: a raise
+    for one question and a clear for another are two streams, not one.
+    """
+    subject = record.subject
+    if isinstance(subject, LaneSubject):
+        return record.signal.value
+    if isinstance(subject, EscalationSubject) and subject.lane_key is not None:
+        return f"{record.signal.value}:{subject.member_id}"
+    raise ValueError("an alarm event is keyed to a lane or to a lane's question")
+
+
+def alarm_event_lane(record: RunAlarm) -> str:
+    """The lane whose stream carries *record*'s transition events."""
+    subject = record.subject
+    if isinstance(subject, LaneSubject | EscalationSubject) and subject.lane_key:
+        return subject.lane_key
+    raise ValueError("an alarm event is keyed to a lane")
+
+
+def alarm_event_due(
+    *, record: RunAlarm, raised: bool, events: Sequence[LaneRunEvent]
+) -> LaneRunEvent | None:
+    """The transition event this lane's stream still owes for *record*.
+
+    The owed event is read from the tracker rather than derived from what
+    this tick changed, so a tick killed between the record write and the
+    event post is repaired by the next one: the record says raised, the
+    stream's last word on this record says nothing, and the difference is the
+    event to post. A stream already agreeing with the record owes nothing,
+    which is what keeps a condition firing across many ticks to one event.
+
+    *raised* is the record's own replayed answer, read by the arm that wrote
+    it. Only the two transition kinds are read, and only the entries keyed
+    to this record: another signal or another question clearing on the same
+    lane is not this one clearing.
+    """
+    key = alarm_event_key(record)
+    lane_key = alarm_event_lane(record)
+    spoken = [
+        event
+        for event in events
+        if event.kind in _TRANSITION_KINDS and event.subject_key == key
+    ]
+    last = spoken[-1] if spoken else None
+    if last is None:
+        # A stream that has never spoken for this record owes a raise and
+        # nothing else: there is no clear to post for an alarm nobody heard.
+        if not raised:
+            return None
+    elif (last.kind is RunEventKind.RUN_ALARM_RAISED) == raised:
+        return None
+    return LaneRunEvent(
+        kind=RunEventKind.RUN_ALARM_RAISED
+        if raised
+        else RunEventKind.RUN_ALARM_CLEARED,
+        lane_key=lane_key,
+        subject_key=key,
+    )

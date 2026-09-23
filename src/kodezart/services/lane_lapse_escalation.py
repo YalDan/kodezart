@@ -32,6 +32,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.lapse import lapse_escalation_key
 from kodezart.services.lane_escalation import LaneEscalationWriter
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criterion_lifecycle import CriterionCrossOff
@@ -59,7 +60,7 @@ def lapse_question(*, lane_key: str, cross_off: CriterionCrossOff) -> LaneEscala
     """
     return LaneEscalation(
         issue_id=lane_key,
-        escalation_key=f"{cross_off.criterion}:lapse",
+        escalation_key=lapse_escalation_key(cross_off.criterion),
         raised_by=RunKind.FIRE.value,
         raised_at_sha=cross_off.evidence.graded_sha,
         question=(

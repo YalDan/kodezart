@@ -148,6 +148,7 @@ async def test_valid_payload_with_foreign_identity_refuses_at_record_reader(
 def test_actual_collector_declares_only_tracker_reads_and_pure_observation_calls():
     allowed = {
         "self._tracker.list_comments",
+        "self.find",
         "refusal",
         "compose_comment_marker",
         "comment_under_marker",

@@ -103,7 +103,7 @@ async def test_same_native_sources_feed_both_age_arms_and_replay(
             run_alarm_escalation_age_max_ticks=tick_bound,
         )
     )
-    alarm = await observe_recorded_escalation_ageing(
+    alarm, _ = await observe_recorded_escalation_ageing(
         tracker=tracker,
         escalation_ref=question.comment_key,
         lane_record_ref=record.comment_key,
@@ -166,12 +166,13 @@ async def test_current_decision_clears_the_same_record_without_a_write(
 ):
     question = await seed_escalation(tracker)
     await seed(tracker)
-    assert await observe_recorded_escalation_ageing(tracker=tracker, **arguments())
+    assert (await observe_recorded_escalation_ageing(tracker=tracker, **arguments()))[0]
     await answer(tracker, server, question)
     before = tracker_writes()
-    assert (
-        await observe_recorded_escalation_ageing(tracker=tracker, **arguments()) is None
+    cleared, _ = await observe_recorded_escalation_ageing(
+        tracker=tracker, **arguments()
     )
+    assert cleared is None
     assert tracker_writes() == before
 
 
@@ -186,7 +187,7 @@ async def test_cold_reader_uses_persisted_current_bytes(tracker, server):
         ]
     else:
         tracker = linear_over_fake_mcp(server)
-    alarm = await observe_recorded_escalation_ageing(tracker=tracker, **arguments())
+    alarm, _ = await observe_recorded_escalation_ageing(tracker=tracker, **arguments())
     assert alarm.readings[2].source_ref == stored.comment_key
     assert alarm.bound.observed_value == 1
 

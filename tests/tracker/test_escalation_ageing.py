@@ -5,7 +5,7 @@ import pytest
 from kodezart.config.app import AppConfig
 from kodezart.domain.errors import EscalationReadError, RunShapeReadError
 from kodezart.domain.run_shape import escalation_ageing
-from kodezart.services.run_shape import observe_escalation_ageing
+from kodezart.services.run_shape import read_escalation_ageing
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     CountEvidence,
@@ -78,7 +78,7 @@ async def test_real_resolution_and_config_feed_each_pure_arm_without_writes(
         run_alarm_escalation_age_max_commits=commits_limit,
         run_alarm_escalation_age_max_ticks=ticks_limit,
     )
-    alarm = await observe_escalation_ageing(tracker=tracker, config=config, **inputs)
+    alarm, _ = await read_escalation_ageing(tracker=tracker, config=config, **inputs)
     assert alarm is not None
     assert alarm.bound.config_field == expected_field
     assert alarm.bound.observed_value == expected_value
@@ -107,7 +107,7 @@ async def test_current_decision_clears_the_same_ageing_observation(
         run_alarm_escalation_age_max_commits=0,
         run_alarm_escalation_age_max_ticks=0,
     )
-    assert await observe_escalation_ageing(tracker=tracker, config=config, **inputs)
+    assert (await read_escalation_ageing(tracker=tracker, config=config, **inputs))[0]
     parent = inputs["escalation"].source_ref
     if isinstance(tracker, FakeTrackerPort):
         decision = await tracker.post_comment(
@@ -122,10 +122,8 @@ async def test_current_decision_clears_the_same_ageing_observation(
             arguments={"parentId": parent, "body": DECISION_MARKER + "\nAnswered."},
         )
     before = tracker_writes()
-    assert (
-        await observe_escalation_ageing(tracker=tracker, config=config, **inputs)
-        is None
-    )
+    cleared, _ = await read_escalation_ageing(tracker=tracker, config=config, **inputs)
+    assert cleared is None
     assert tracker_writes() == before
 
 
@@ -138,7 +136,7 @@ async def test_unreachable_decision_read_never_appears_unanswered_or_clear(
     else:
         server._tool_errors["list_comments"] = "unreachable"
     with pytest.raises(EscalationReadError):
-        await observe_escalation_ageing(
+        await read_escalation_ageing(
             tracker=tracker, config=AppConfig(_env_file=None), **inputs
         )
 
@@ -150,7 +148,7 @@ async def test_unreadable_record_is_a_typed_refusal(tracker, tracker_writes):
     )
     before = tracker_writes()
     with pytest.raises(RunShapeReadError) as raised:
-        await observe_escalation_ageing(
+        await read_escalation_ageing(
             tracker=tracker, config=AppConfig(_env_file=None), **inputs
         )
     assert raised.value.source_ref == "broken-comment"

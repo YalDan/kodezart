@@ -14,7 +14,12 @@ from typing import get_type_hints
 from typing_extensions import get_protocol_members
 
 from kodezart.composition.supervisor import build_supervisor_pass
-from kodezart.core.protocols import RunAlarmTracker, ScopeTallyReader
+from kodezart.core.protocols import (
+    EscalationResolutionReader,
+    EscalationSignalReader,
+    RunAlarmTracker,
+    ScopeTallyReader,
+)
 from kodezart.services.scope_tally import observe_scope_barrier
 from kodezart.services.supervisor_pass import SupervisorPass
 
@@ -26,6 +31,8 @@ SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src"
 ENTRY_POINTS = (
     "kodezart.services.supervisor_pass",
     "kodezart.services.alarm_supervisor",
+    "kodezart.services.escalation_ageing_supervisor",
+    "kodezart.services.run_alarm_recorder",
     "kodezart.composition.supervisor",
 )
 #: The one place the whole port is held on purpose, by design: the composition
@@ -82,16 +89,23 @@ SUPERVISOR_ROLE_MEMBERS = frozenset(
         "post_run_event",
     }
 )
-#: The observation's own four modules: the tick, the lane observer, the
-#: composition root and the scope arm's collector. The clock rules below are
-#: scoped to these rather than to the whole closure, because the scheduler that
-#: drives the tick legitimately holds a clock and an event loop; what is
-#: refused is a second one, of the observation's own. Listed rather than
-#: derived: the same closure reaches the scheduler, which holds the clock by
-#: design, and telling the two apart would take a rule of its own.
+#: The observation's own modules: the tick, the lane observer, the composition
+#: root, the scope arm's collector, and the ones that compute an open
+#: question's age (KOD-507, KOD-851): no signal reads wall-clock time. The
+#: clock rules below are scoped to these rather than to the whole closure,
+#: because the scheduler that drives the tick legitimately holds a clock and an
+#: event loop; what is refused is a second one, of the observation's own.
+#: Listed rather than derived: the same closure reaches the scheduler, which
+#: holds the clock by design, and telling the two apart would take a rule of
+#: its own.
 OWN_MODULES = (
     "kodezart.services.supervisor_pass",
     "kodezart.services.alarm_supervisor",
+    "kodezart.services.escalation_ageing_supervisor",
+    "kodezart.services.run_alarm_recorder",
+    "kodezart.services.escalation_signals",
+    "kodezart.services.escalation_records",
+    "kodezart.domain.escalation_age_record",
     "kodezart.composition.supervisor",
     "kodezart.services.scope_tally",
 )
@@ -351,7 +365,7 @@ def test_the_supervisor_keeps_no_sleep_timer_or_clock_of_its_own():
     A pass that slept, armed a timer, or read a clock of its own would have a
     cadence and a notion of elapsed time that no configuration names, and a
     short sleep is invisible to a bounded integration tick. The rule is scoped
-    to the observation's own four modules: the scheduler it is registered on
+    to the observation's own modules: the scheduler it is registered on
     holds the event loop and the one clock, which is where they belong.
 
     ``from datetime import datetime`` stays admissible — it is the type of the
@@ -387,6 +401,21 @@ def test_the_supervisor_role_names_no_state_moving_method():
 
     assert members == SUPERVISOR_ROLE_MEMBERS
     assert members.isdisjoint(STATE_MOVING_CALLS), members & STATE_MOVING_CALLS
+
+
+def test_the_ageing_roles_name_only_reads():
+    """The roles an open question's age is read through hold no write at all.
+
+    Both are narrowings of the port, so the port satisfies any widening of
+    them; the member sets are pinned exactly for the reason the observation's
+    own role is.
+    """
+    resolution = get_protocol_members(EscalationResolutionReader)
+    ageing = get_protocol_members(EscalationSignalReader)
+
+    assert resolution == {"read_escalation_resolution"}
+    assert ageing == {"list_comments", "read_escalation_resolution"}
+    assert ageing.isdisjoint(STATE_MOVING_CALLS), ageing & STATE_MOVING_CALLS
 
 
 def test_the_pass_factory_takes_no_runner_and_no_repository_collaborator():

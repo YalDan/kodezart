@@ -511,8 +511,8 @@ value carries the decision comment reference; an unanswered readable
 escalation returns unresolved. Missing or ambiguous records, unreadable
 reply links and incomplete pages raise `EscalationReadError`. Resolution
 reads every comment page and does not parse historical escalation bodies
-as JSON, cache answers, write comments or change labels. Consuming this read
-in an alarm computation is still owed; the supervisor tick that exists
+as JSON, cache answers, write comments or change labels. The supervisor tick
+consumes this read for each ready lane's open lapse questions. That tick also
 observes each declared scope's stage barrier from its roster and stage markers,
 reads the ready set of every scope the operation declares, observes the lane
 tally arm for each ready lane and each finished member, and observes every

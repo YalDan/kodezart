@@ -5,9 +5,13 @@ from collections.abc import Awaitable
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.config.app import AppConfig
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.comment_markers import configured_marker_prefix
 from kodezart.services.alarm_supervisor import AlarmSupervisor
+from kodezart.services.escalation_ageing_supervisor import EscalationAgeingSupervisor
+from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.pass_scheduler import ScheduledPass
+from kodezart.services.run_alarm_recorder import RunAlarmRecorder
 from kodezart.services.scope_tally import observe_scope_barrier
 from kodezart.services.supervisor_pass import (
     SUPERVISOR_TICK_NAME,
@@ -35,7 +39,13 @@ def build_supervisor_pass(
     wrote it, and a re-entry by the same pass is re-acquisition rather than
     contention. It is not composed from ``dispatch_holder``: that names the
     process that holds fire claims, and a lease holder is never derived from it.
+
+    The ageing arm writes its records through a leased recorder under the
+    same holder as the lane observer. An operation that cannot address the
+    questions the ageing arm reads is refused here, typed, before any backend
+    call.
     """
+    configured_marker_prefix(operation.marker_prefixes, purpose="escalation")
     holder = supervisor_holder(operation_name=operation.operation_name)
     records = LaneRecordReader(tracker=tracker, operation=operation)
     alarms = AlarmSupervisor(
@@ -45,6 +55,19 @@ def build_supervisor_pass(
         max_commits_without_closure=config.run_alarm_max_commits_without_closure,
         holder=holder,
         lease_seconds=config.tracker.surface_lease_seconds,
+    )
+    ageing = EscalationAgeingSupervisor(
+        sources=tracker,
+        escalations=EscalationRecordReader(tracker=tracker, operation=operation),
+        records=records,
+        alarms=RunAlarmRecorder(
+            tracker=tracker,
+            marker_prefixes=operation.marker_prefixes,
+            holder=holder,
+            lease_seconds=config.tracker.surface_lease_seconds,
+        ),
+        operation=operation,
+        config=config,
     )
 
     def read_ready(ref: ScopeRef) -> Awaitable[ScopeReadySet]:
@@ -70,6 +93,7 @@ def build_supervisor_pass(
         read_ready=read_ready,
         observe_scope=observe_scope,
         alarms=alarms,
+        ageing=ageing,
     )
     return ScheduledPass(
         name=SUPERVISOR_TICK_NAME,

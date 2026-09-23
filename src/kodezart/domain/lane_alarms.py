@@ -25,6 +25,7 @@ written and nothing refuses.
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from kodezart.domain.run_alarm_record import alarm_event_due as transition_due
 from kodezart.domain.run_alarm_table import ALARM_TABLE, alarm_raised
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.domain.stream_signals import ACCOUNT_KINDS
@@ -56,11 +57,6 @@ OBSERVED_ALARMS = frozenset(
         AlarmSignal.LAPSE_UNDISCHARGED,
         AlarmSignal.COMPOSITION_SUBSTITUTED,
     }
-)
-
-#: The stream's whole vocabulary for an alarm transition: one raise, one clear.
-_TRANSITION_KINDS = frozenset(
-    {RunEventKind.RUN_ALARM_RAISED, RunEventKind.RUN_ALARM_CLEARED}
 )
 
 
@@ -397,27 +393,9 @@ def alarm_event_due(
 
     Only this signal's own two kinds are read, and only the entries keyed to
     it: another signal clearing on the same lane is not this one clearing.
+    The transition arithmetic is the record module's one rule, asked with
+    this record's own replayed answer.
     """
     if not isinstance(record.subject, LaneSubject):
         raise ValueError("an alarm transition event is keyed to a lane")
-    spoken = [
-        event
-        for event in events
-        if event.kind in _TRANSITION_KINDS and event.subject_key == record.signal.value
-    ]
-    raised = alarm_raised(record)
-    last = spoken[-1] if spoken else None
-    if last is None:
-        # A stream that has never spoken for this signal owes a raise and
-        # nothing else: there is no clear to post for an alarm nobody heard.
-        if not raised:
-            return None
-    elif (last.kind is RunEventKind.RUN_ALARM_RAISED) == raised:
-        return None
-    return LaneRunEvent(
-        kind=RunEventKind.RUN_ALARM_RAISED
-        if raised
-        else RunEventKind.RUN_ALARM_CLEARED,
-        lane_key=record.subject.lane_key,
-        subject_key=record.signal.value,
-    )
+    return transition_due(record=record, raised=alarm_raised(record), events=events)

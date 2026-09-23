@@ -5,7 +5,9 @@ import asyncio
 import pytest
 import structlog.testing
 
+from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.lane_alarms import stored_alarm
+from kodezart.domain.lane_record import RUN_STATE_PURPOSE
 from kodezart.domain.run_alarm_record import run_alarm_marker
 from kodezart.domain.run_alarm_table import alarm_raised
 from kodezart.domain.run_event_stream import LaneRunEvent
@@ -17,6 +19,7 @@ from kodezart.domain.run_shape import (
 from kodezart.domain.stream_signals import lapse_undischarged
 from kodezart.services.alarm_supervisor import AlarmSupervisor
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.run_alarm_recorder import RunAlarmRecorder
 from kodezart.services.supervisor_pass import (
     SupervisorIncompleteError,
     SupervisorPass,
@@ -44,6 +47,7 @@ from tests.services.lane_tally_fixtures import (
     LEASE_SECONDS,
     PREFIXES,
     SCOPE,
+    ageing,
     alarm_marker,
     allow_foreign_write,
     board,
@@ -132,6 +136,7 @@ def pass_over(port, *, readings, tally=None, scope_arm=None):
         read_ready=read_ready,
         observe_scope=observe_scope,
         alarms=tally if tally is not None else supervisor(port),
+        ageing=ageing(port),
     )
 
 
@@ -162,6 +167,41 @@ async def test_one_unobservable_lane_is_reported_and_the_others_are_still_observ
     assert [event.kind.value for event in await events_on(port, "LANE-C")] == [
         "run_alarm_raised"
     ]
+
+
+async def test_a_damaged_lane_record_leaves_questions_unobserved_and_tallies_written():
+    """The scope's position needs every member's record; its tallies do not.
+
+    One member's run-state record is damaged, so the position the scope's
+    open questions are aged against cannot be read and none of them is aged
+    this tick: the scope is reported. The damaged lane's own tally fails as
+    that lane's, and the other lane's tally is still written.
+    """
+    port = await board(lanes=LANES)
+    marker = compose_comment_marker(
+        prefixes=PREFIXES, purpose=RUN_STATE_PURPOSE, lane="LANE-B"
+    )
+    index = next(
+        position
+        for position, row in enumerate(port.comments)
+        if row.issue_key == "LANE-B" and row.body.startswith(marker)
+    )
+    port.comments[index] = port.comments[index].model_copy(
+        update={"body": f"{marker}\nnot a lane record"}
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        with pytest.raises(SupervisorIncompleteError) as caught:
+            await pass_over(port, readings={REF: ready_set()}).run(FIXTURE_EPOCH)
+
+    assert caught.value.failed == (SCOPE, "LANE-B")
+    assert [
+        entry["scope"]
+        for entry in logs
+        if entry["event"] == "supervisor_escalations_unobserved"
+    ] == [SCOPE]
+    assert records_on(port, "LANE-B") == []
+    assert len(records_on(port, "LANE-C")) == 1
 
 
 async def test_a_failed_scope_read_does_not_stop_the_next_scope():
@@ -394,6 +434,11 @@ async def test_a_blocked_members_tally_raise_stands(monkeypatch, waiting):
     grading lapsed keeps its lane's gap open, so a lane holding one is never a
     ready lane, and a tick that passed over the blocked members could not see
     an undischarged lapse anywhere.
+
+    Its run-state record is still read for the scope's position the open
+    questions are aged against (KOD-892): a lane blocked when a question was
+    first observed would otherwise count its whole history once it is ready
+    again.
     """
     port = await board(lanes=LANES)
     tally = supervisor(port)
@@ -705,6 +750,13 @@ def test_a_blank_holder_refuses_before_any_read():
             records=LaneRecordReader(tracker=port, operation=operation()),
             marker_prefixes=PREFIXES,
             max_commits_without_closure=BOUND,
+            holder="   ",
+            lease_seconds=LEASE_SECONDS,
+        )
+    with pytest.raises(ValueError, match="names the holder"):
+        RunAlarmRecorder(
+            tracker=port,
+            marker_prefixes=PREFIXES,
             holder="   ",
             lease_seconds=LEASE_SECONDS,
         )

@@ -195,3 +195,12 @@ def held_standing(
         lapsed=tuple(lapsed),
         newly_lapsed=tuple(newly_lapsed),
     )
+
+
+def lapse_escalation_key(criterion: str) -> str:
+    """The occurrence key of the one question a lapsed observation raises.
+
+    Spelled once, so the writer that raises the question and the supervisor
+    that ages it address the same occurrence.
+    """
+    return f"{criterion}:lapse"
