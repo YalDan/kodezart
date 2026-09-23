@@ -1357,6 +1357,10 @@ async def test_a_check_the_base_already_passes_is_no_reading_of_the_branch():
     What the board does get is the reason, once, on the lane's own stream:
     one ``criterion_satisfied_at_base`` event keyed to that sub-issue at the
     sha the verdict would have been stamped with, and no other comment.
+
+    The two it crossed off record their gradings there too, one
+    ``criterion_passed`` entry each (KOD-506), and the withheld one gets
+    none: its Evidence row was not written, so no entry may claim it was.
     """
     first, *rest = OWED_KEYS
     lane = Lane(evaluations=[graded(OWED_KEYS)])
@@ -1378,15 +1382,19 @@ async def test_a_check_the_base_already_passes_is_no_reading_of_the_branch():
     assert first not in {key for key, _ in lane.port.workflow_writes}
     assert first not in {key for key, _, _ in lane.port.issue_writes}
     # The one thing on the board that says why is the reason's own event on
-    # the lane's stream: the lane's record, its first push and that event are
-    # every comment this run wrote.
+    # the lane's stream: the lane's record, its first push, that event and
+    # the gradings of the two it crossed off are every comment this run wrote.
     posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
     assert [event.kind for event in posted] == [
         RunEventKind.FIRST_PUSH,
         RunEventKind.CRITERION_SATISFIED_AT_BASE,
+        *(RunEventKind.CRITERION_PASSED for _ in rest),
     ]
     assert survived(posted, RunEventKind.CRITERION_SATISFIED_AT_BASE) == [
         (first, lane.repo.head)
+    ]
+    assert survived(posted, RunEventKind.CRITERION_PASSED) == [
+        (key, lane.repo.head) for key in rest
     ]
     assert len(posted) + len(lane.record_comments()) == len(lane.port.comments)
     assert {comment.issue_key for comment in lane.port.comments} == {SUBJECT}
@@ -2740,7 +2748,10 @@ async def test_a_criterion_whose_check_fails_in_the_mutant_tree_keeps_its_verdic
     """A fail read in the mutant tree is no more the branch's than a pass is.
 
     So the harness withholds and never converts: the criterion is crossed off
-    at the sha the clean grading read, and no event on the lane names it.
+    at the sha the clean grading read, and no reading-failure event on the
+    lane names it. The one entry keyed to it is its own passing grading at
+    that sha, which every cross-off that finishes a criterion records
+    (KOD-506).
     """
     lane = mutation_lane(tmp_path)
 
@@ -2751,7 +2762,11 @@ async def test_a_criterion_whose_check_fails_in_the_mutant_tree_keeps_its_verdic
         == lane.repo.head
     )
     posted = await lane.port.lane_run_events(issue_key=SUBJECT, lane_key=SUBJECT)
-    assert MUTATION_WIRED not in {event.subject_key for event in posted}
+    assert [
+        (event.kind, event.graded_sha)
+        for event in posted
+        if event.subject_key == MUTATION_WIRED
+    ] == [(RunEventKind.CRITERION_PASSED, lane.repo.head)]
 
 
 async def test_the_surviving_criterion_reaches_no_passing_state(tmp_path):
@@ -2924,6 +2939,11 @@ async def test_the_vacuous_reading_is_the_same_value_the_mutation_reading_produc
     Read off the two runs in this module rather than from repeated literals,
     so a second mechanism for one state — a reason of its own, a kind of its
     own — would show up here as a difference between them.
+
+    The kinds compared are those keyed to a criterion the run did not
+    finish: the survivor run also crosses its other criterion off, and that
+    records a passing grading (KOD-506) the vacuous run has no criterion to
+    record, which is a difference in the rosters and not in the reading.
     """
     vacuous = mutation_lane(tmp_path / "vacuous", checks=VACUOUS)
     vacuous_received = reasons_given(vacuous)
@@ -2945,12 +2965,20 @@ async def test_the_vacuous_reading_is_the_same_value_the_mutation_reading_produc
         if state is CrossOffState.undemonstrated
     ]
     assert vacuous_received == withheld
-    vacuous_kinds = {e.kind for e in vacuous_posted if e.subject_key is not None}
+    vacuous_done = finished(vacuous.port, VACUOUS)
+    survivor_done = finished(survivor.port, TOLD_APART)
+    vacuous_kinds = {
+        e.kind
+        for e in vacuous_posted
+        if e.subject_key is not None and e.subject_key not in vacuous_done
+    }
     assert vacuous_kinds, (
         "non-vacuity: the vacuous run keyed some reading to its sub-issue"
     )
     assert vacuous_kinds == {
-        e.kind for e in survivor_posted if e.subject_key is not None
+        e.kind
+        for e in survivor_posted
+        if e.subject_key is not None and e.subject_key not in survivor_done
     }
 
 
