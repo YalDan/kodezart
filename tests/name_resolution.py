@@ -61,6 +61,7 @@ import operator
 import pkgutil
 import re
 import string
+import symtable
 import sys
 import types
 import typing
@@ -2496,3 +2497,60 @@ def holding(
         }
         held |= {(key, word) for word in read}
     return frozenset(held)
+
+
+def rebound_words(source: str, *, names: Collection[str]) -> frozenset[str]:
+    """Each of *names* the source binds by anything but an import, anywhere.
+
+    Read off the compiler's own symbol table rather than off a list of
+    statement kinds: whatever the grammar lets bind a word -- an assignment to
+    any target shape, ``for``, ``with ... as``, ``except ... as``, a match
+    capture, a walrus, ``def``, ``class``, ``type``, a parameter, a type
+    parameter, ``del`` -- is recorded there as assigning that word in the
+    scope it binds in.  Every table of the module is read, so a function
+    body, a class body and a comprehension are not hiding places, and a
+    ``global`` declaration of the word counts, because that is how a function
+    binds the module's own word.  The tables are a finite tree and each is
+    taken once.
+
+    Two writes the table does not record are read beside it: an attribute
+    stored or deleted under the word (``module.Word = ...``), and the word
+    spelled as a whole string literal, which is the only way a write through
+    a string (``globals()["Word"] = ...``, ``setattr(m, "Word", ...)``) can
+    name it.  So a quoted annotation of the word, or an ``__all__`` entry
+    naming it, is reported as well.
+
+    An import is not reported: which import binds a word, and out of which
+    module, is the caller's to judge.  Not read: a word built at run time,
+    and ``eval`` or ``exec``.
+    """
+    wanted = frozenset(names)
+    found: set[str] = set()
+    tables = [symtable.symtable(source, "<source>", "exec")]
+    while tables:
+        table = tables.pop()
+        tables.extend(table.get_children())
+        found.update(
+            symbol.get_name()
+            for symbol in table.get_symbols()
+            if symbol.get_name() in wanted
+            and (
+                symbol.is_assigned()
+                or symbol.is_parameter()
+                or symbol.is_declared_global()
+            )
+        )
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.ctx, ast.Store | ast.Del)
+            and node.attr in wanted
+        ):
+            found.add(node.attr)
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value in wanted
+        ):
+            found.add(node.value)
+    return frozenset(found)
