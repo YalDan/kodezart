@@ -1677,7 +1677,8 @@ a person canceled is not minted again. The stage asks `criteria_owed` before
 each author session and again after it, so an item the session left out keeps
 the stage owed and no parent is marked while one is uncovered. The task-list
 items are read by `checklist_items`, beside the row grammar in
-`domain/fire_spec.py`. A re-run
+`domain/fire_spec.py` and under its fence and HTML-comment rules, so a
+task-list line inside a fenced block or behind a comment is no item. A re-run
 mints nothing because check-before-create compares the Check text with outer
 whitespace stripped. A native
 identity is the sub-issue key and nothing else: removing one criterion and
