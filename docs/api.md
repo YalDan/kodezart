@@ -283,8 +283,9 @@ and emits none. A lane is done when no criterion under it is open, and the
 outcome reads that column and nothing else — not a pull request, not a merge.
 Unapproved and skipped lanes, unresolved criterion keys and unreachable
 criteria remain explicit in `scope_walk.observation`. An unreachable criterion
-is an open criterion under a lane whose own issue the scope's filter never
-carried; the lane is still fired for it; its reason is `other_project` or
+is an open criterion whose own issue the scope's filter never carried. It is
+named under any member, approved or not, blocked or not, and only a lane that is
+ready (approved and unblocked) is fired for it. Its reason is `other_project` or
 `no_project` under a project or initiative scope and `other_milestone` or
 `no_milestone` under a milestone scope.
 
