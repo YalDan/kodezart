@@ -448,13 +448,14 @@ def approval_classifications(
     an answer derived from half the workspace would be right for one of
     them by accident.
     """
-    approved = (scope_labels or SCOPE_LABELS).get(ScopeLabel.APPROVED.value)
     return frozenset(
         key
         for key, label in (
             issue_labels if issue_labels is not None else ISSUE_LABELS
         ).items()
-        if approved is not None and label == approved
+        if aliases_approval_member(
+            label=label, scope_labels=scope_labels or SCOPE_LABELS
+        )
     )
 
 
