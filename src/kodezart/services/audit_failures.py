@@ -12,6 +12,7 @@ from kodezart.core.errors import (
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import (
     AgentSDKError,
+    AssertionComparisonError,
     AuditClaimReadError,
     AuditEvidenceReadError,
     CheckObservationError,
@@ -25,6 +26,7 @@ from kodezart.domain.errors import (
     OutboundContentBlockedError,
     PrincipalAuthoredSurfaceError,
     PRStateReadError,
+    RulingRecordReadError,
     ScopeReadError,
     SurfaceLeaseError,
     SurfaceLeaseLostError,
@@ -70,6 +72,15 @@ AUDIT_PUBLICATION_FAILURES = (
     SurfaceLeaseLostError,
     SurfaceWriteAttributionError,
     TrackerWriterAttributionError,
+)
+
+
+# The assertion-drift comparison's own refusals are not audit read failures:
+# widening that tuple would widen publication handling with it.
+DRIFT_READ_FAILURES = (
+    *AUDIT_READ_FAILURES,
+    AssertionComparisonError,
+    RulingRecordReadError,
 )
 
 

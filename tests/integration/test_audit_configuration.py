@@ -88,3 +88,19 @@ def test_declared_audit_generic_sink_refuses_until_verified_record_seam_exists()
         verify_audit_configuration(
             config=config, operation=operation, tracker=tracker, forge=forge
         )
+
+
+def test_an_audit_operation_declaring_no_protection_record_prefix_is_refused():
+    """The drift arm reads decision records; an operation that cannot address
+    them is refused by the member's own name, before any backend call.
+    """
+    config, operation, server, tracker, forge = dependencies()
+    fields = operation.model_dump()
+    del fields["marker_prefixes"]["ruling"]
+    loaded = OperationConfig.model_validate(fields)
+    with pytest.raises(OperationMemberAbsentError) as refused:
+        verify_audit_configuration(
+            config=config, operation=loaded, tracker=tracker, forge=forge
+        )
+    assert refused.value.missing == "marker_prefixes['ruling']"
+    assert server.calls == []

@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import os
 import subprocess
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from kodezart.adapters.git.worktree_provider import GitWorktreeProvider
 from kodezart.composition.audit import build_audit_pass
 from kodezart.config.app import AppConfig
 from kodezart.domain.criterion_evidence import render_evidence_field
+from kodezart.domain.rulings import render_ruling, ruling_marker
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_runtime import AuditRunIncompleteError
@@ -23,7 +26,10 @@ from kodezart.types.domain.agent import (
     AUDIT_OVERCLAIM_SCHEMA,
     DETECTOR_REMOVAL_SCHEMA,
     WRITE_BACK_SCHEMA,
+    Ruling,
+    RulingProtectedTestRef,
 )
+from kodezart.types.domain.assertion_drift import AssertionDeviationClaim
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_evidence import (
     AuditEvidenceObservation,
@@ -31,6 +37,7 @@ from kodezart.types.domain.audit_evidence import (
 )
 from kodezart.types.domain.audit_overclaim import OverclaimKind
 from kodezart.types.domain.audit_runtime import (
+    AuditDeferral,
     AuditPublishedArtifact,
     AuditTerminalPublication,
 )
@@ -45,6 +52,7 @@ from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.surface import SurfaceKind
 from tests.chains.test_organize import RecordingExecutor, result
+from tests.domain.test_rulings import ruling_data
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeCIMonitor,
@@ -54,7 +62,12 @@ from tests.fakes import (
 )
 from tests.integration.test_audit_scheduler import declare_organize_owner
 from tests.prompts.test_prompt_wiring import load_registry
+from tests.services.test_assertion_drift import PATH
+from tests.services.test_assertion_drift import commit as drift_commit
+from tests.services.test_assertion_drift import git as drift_git
+from tests.services.test_assertion_drift import source as drift_source
 from tests.tracker.conftest import APPROVED_ISSUE, FIXTURE_NOW, WORKFLOW_STATE_NAMES
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_audit_evidence_git import command
 from tests.tracker.test_audit_evidence_git import repository as repository
 from tests.tracker.test_audit_overclaim_sweep import payload as overclaims
@@ -1196,3 +1209,163 @@ async def test_declared_executor_outage_retains_unavailable_and_other_observatio
     assert any(row.kind == "overclaim" for row in scope.observations)
     assert not any('"detector":"current_check"' in row.body for row in server.comments)
     assert not workspace._workspaces
+
+
+# ---------------------------------------------------------------------------
+# The recorded assertion-drift arm in the composed audit (KOD-510, KOD-891).
+# ---------------------------------------------------------------------------
+
+
+def protected_test_green(repo):
+    """The protected test passes in *repo*'s checked-out tree.
+
+    Addressed by its own node, so a head that adds a second test in the same
+    file is still asked about the protected one.
+    """
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            f"{PATH}::test_contract",
+        ],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "1 passed" in completed.stdout
+
+
+def drifting(repository, change):
+    """The fixture repository with a protected test graded behind its head.
+
+    The graded commit adds ``tests/test_contract.py`` at ``source(1)``; the
+    head either changes the expected value (``value``) or adds another test
+    and leaves the protected assertion alone (``added``). The protected test
+    is green at both, because greenness is the fixture's condition and never
+    an exemption from the comparison. ``check.txt`` is untouched, so every
+    session of the other arms reads the tree they always read.
+    """
+    remote, author, observer, prior, _head = repository
+    (author / "tests").mkdir()
+    graded = drift_commit(author, drift_source(1))
+    head = drift_commit(
+        author,
+        drift_source(2)
+        if change == "value"
+        else drift_source(1) + "\ndef test_added():\n    assert True\n",
+    )
+    drift_git(author, "checkout", "-q", "--detach", graded)
+    protected_test_green(author)
+    drift_git(author, "checkout", "-q", "ordinary-name")
+    protected_test_green(author)
+    drift_git(author, "push", "-q", "configured-remote", "ordinary-name")
+    return (remote, author, observer, prior, head), graded
+
+
+async def protection_record(tracker, operation):
+    """One decision record on ``ROOT`` naming the protected test, as written."""
+    data = ruling_data(issue_ref=ROOT, question="Which value is pinned?")
+    data["protected_tests"] = (
+        RulingProtectedTestRef(
+            source_ref=data["ruling_id"], path=PATH, qualified_name="test_contract"
+        ),
+    )
+    body = render_ruling(
+        ruling=Ruling.model_validate(data),
+        lane_key=LANE_KEY,
+        marker_prefixes=operation.marker_prefixes,
+    )
+    marker, payload = body.split("\n", 1)
+    return await leased_comment(tracker, target=ROOT, marker=marker, body=payload)
+
+
+@pytest.mark.parametrize("change", ["value", "added"])
+async def test_the_composed_audit_carries_a_changed_protected_assertion_as_a_claim(
+    repository, server, tmp_path, change
+):
+    """A changed expected value is one claim on the report; an added test none.
+
+    The claim is evidence, not a verdict: the criterion whose Evidence row
+    supplied the graded sha stays Done, nothing moves its state, and no
+    comment beyond the records the pass already publishes is written. A Done
+    criterion graded behind its head is deferred before any arm's reading
+    counts, so the claim is carried on the scope's raw observations only.
+    """
+    drifted, graded = drifting(repository, change)
+    audit, _executor, server, tracker, *_ = await build_native_audit(
+        drifted, server, tmp_path, gate=PassThroughGate()
+    )
+    head = drifted[4]
+    server.issues[CHILD].description = criterion_body(
+        check=BASE_CHECK, graded_sha=graded
+    )
+    record = await protection_record(tracker, native_operation(drifted[0].as_uri()))
+    comments_before = len(server.comments)
+
+    # The other arms make this scope complete, so the run returns rather than
+    # raising, and the report is the one this run left.
+    assert await audit.run(FIXTURE_NOW) is PassRun.RAN
+    scope = audit.last_report.scopes[0]
+    assert scope.status == "complete", audit.last_report.model_dump_json()
+    claims = [
+        row
+        for row in scope.raw_observations
+        if isinstance(row, AssertionDeviationClaim)
+    ]
+    if change == "value":
+        (claim,) = claims
+        assert claim.protected_test.source_ref == record.comment_key
+        assert claim.graded_sha == graded and claim.head_sha == head
+        assert claim.before[0].expression == "implementation() == 1"
+        assert claim.after[0].expression == "implementation() == 2"
+    else:
+        assert claims == []
+    assert [(row.subject.key, row.reason) for row in scope.deferred] == [
+        (CHILD, AuditDeferral.GRADED_BEHIND_HEAD)
+    ]
+    assert state_writes(server) == []
+    assert server.issues[CHILD].status == "Done"
+    assert len(server.comments) - comments_before == len(scope.writes)
+
+
+async def test_an_unreadable_protection_record_refuses_the_criterion_not_the_audit(
+    native_audit,
+):
+    """A comparison that cannot read its records refuses that subject's coverage.
+
+    CHILD is graded at the head, so it is judged rather than deferred, and
+    one comment in the lane's decision-record namespace is not a record. The
+    comparison is unavailable for CHILD, which leaves the scope incomplete
+    and the run incomplete with it; nothing moves CHILD's state.
+    """
+    audit, _executor, server, tracker, _git, _workspace, repository = native_audit
+    operation = native_operation(repository[0].as_uri())
+    marker = ruling_marker(
+        ruling_id=ruling_data(issue_ref=ROOT)["ruling_id"],
+        lane_key=LANE_KEY,
+        marker_prefixes=operation.marker_prefixes,
+    )
+    await leased_comment(
+        tracker, target=ROOT, marker=marker, body="not a decision record"
+    )
+
+    with pytest.raises(AuditRunIncompleteError):
+        await audit.run(FIXTURE_NOW)
+
+    scope = audit.last_report.scopes[0]
+    unavailable = [row for row in scope.unavailable if row.subject.key == CHILD]
+    assert [
+        row.reason.startswith("RulingRecordReadError: ") for row in unavailable
+    ] == [True], scope.model_dump_json()
+    assert state_writes(server) == []
+    assert server.issues[CHILD].status == "Done"

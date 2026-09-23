@@ -1999,6 +1999,22 @@ and a finding that names another defect. The trace itself is not edited, and
 the report is not published: the raw observations still carry the trace.
 
 
+### Recorded assertion drift
+
+`build_audit_read_sweep` constructs `RecordedAssertionDriftDetector`, and
+`AuditReadSweep` runs it for every criterion target, comparing each test a
+protection record names between the criterion's graded sha and the head
+(KOD-510, KOD-891). Each `AssertionDeviationClaim` rides in the scope report's
+raw observations and adds no comment, marker, escalation, reopen or state
+move of its own: a deviation is evidence, not a verdict on the criterion whose
+Evidence supplied the baseline. A comparison that cannot be made — an
+unreadable protection record or a refused comparison, collected in
+`DRIFT_READ_FAILURES` rather than widening the audit's read failures — refuses
+that subject's coverage as the other arms do. A completed criterion graded
+behind the head is deferred before any arm's reading counts, so its claim is
+carried on the report and not judged.
+
+
 ## Standing over-claim observations
 
 `AuditOverclaimVerifier.observe` reads the criterion through `AuditSourceReader`

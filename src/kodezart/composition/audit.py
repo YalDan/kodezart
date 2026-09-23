@@ -24,6 +24,7 @@ from kodezart.core.protocols import (
     WorkspaceProvider,
 )
 from kodezart.domain.comment_markers import configured_marker_prefix
+from kodezart.services.assertion_drift import AssertionDriftDetector
 from kodezart.services.audit_coverage import AuditCoverage
 from kodezart.services.audit_escalation import AuditEscalations
 from kodezart.services.audit_publication import AuditPublisher
@@ -34,6 +35,8 @@ from kodezart.services.audit_sources import AuditSourceReader
 from kodezart.services.audit_terminal import AuditTerminalReader
 from kodezart.services.criterion_sources import NativeCriterionResolver
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.recorded_assertion_drift import RecordedAssertionDriftDetector
+from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationConfig,
@@ -100,6 +103,9 @@ def verify_audit_configuration(
         _report_issue_key(binding)
     configured_marker_prefix(operation.marker_prefixes, purpose="audit")
     configured_marker_prefix(operation.marker_prefixes, purpose="escalation")
+    # The drift arm reads protection records; an operation that cannot address
+    # them is refused here, typed, before any backend call.
+    configured_marker_prefix(operation.marker_prefixes, purpose="ruling")
     if tracker is None:
         raise OperationMemberAbsentError(
             missing="tracker", stops="configured audit scheduling"
@@ -214,6 +220,12 @@ def build_audit_read_sweep(
         ),
         forge=AuditForgeVerifier(
             resolver=resolver, ci=ci, operation=operation, config=config
+        ),
+        drift=RecordedAssertionDriftDetector(
+            tracker=tracker,
+            sources=sources,
+            rulings=RulingRecordReader(tracker=tracker, operation=operation),
+            detector=AssertionDriftDetector(git=source),
         ),
     )
 

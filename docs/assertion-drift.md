@@ -91,7 +91,11 @@ That covers an inner definition nothing calls, a branch that never runs, code
 after a `return`, and a handler that swallows `AssertionError`. A skip mark on
 a designated test is the census's concern, not this reading's.
 
-`RecordedAssertionDriftDetector`, which addresses a designation by its comment
-identity and rereads the criterion family around the comparison, is not
-constructed anywhere in the composition root. The current pinned-record
-producer and historical declaration migration remain separate work.
+`RecordedAssertionDriftDetector` addresses a designation by its comment
+identity and rereads the criterion family around the comparison. The scheduled
+audit runs this comparison for every criterion target and carries each claim on
+the scope report's raw observations. An unavailable comparison refuses that
+subject's coverage, as the audit's other arms do. A claim there reopens nothing
+and moves no state. The current pinned-record producer (none records one today,
+so the scheduled arm is quiet in a run) and historical declaration migration
+remain separate work.
