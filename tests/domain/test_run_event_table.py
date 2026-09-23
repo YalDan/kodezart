@@ -16,10 +16,10 @@ no scan here sees it.
 
 import ast
 import inspect
-import re
 import textwrap
 import tomllib
 import typing
+from collections import Counter
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import get_args
@@ -32,9 +32,10 @@ from kodezart.adapters.linear.tracker import LinearMcpTracker
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import DialledTracker, boot_tracker
 from kodezart.config.app import AppConfig
-from kodezart.core import prompt_namespaces
+from kodezart.core import prompt_namespaces, prompt_rendering
 from kodezart.core.errors import OperationConfigError
 from kodezart.types.domain.operation import LifecycleStage, OperationConfig
+from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_event import (
     DERIVED_RUN_EVENTS,
     RUN_EVENT_PUBLISHERS,
@@ -43,7 +44,7 @@ from kodezart.types.domain.run_event import (
     RunEventKind,
     RunEventPublisher,
 )
-from tests.fakes import ManagedFakeLinearMcpServer
+from tests.fakes import ManagedFakeLinearMcpServer, pass_render_variables
 from tests.run_events import RUN_EVENT_STATES, RUN_EVENT_TOML
 
 #: The non-human writer the dialling case declares and the backend reports, so
@@ -209,8 +210,6 @@ ADAPTER_MAPPING = frozenset(
     and get_args(hint)[:1] == (LifecycleStage,)
 )
 PROMPTS_ROOT = SOURCE_ROOT / "prompts"
-#: A block helper's opening or closing tag, with the helper and its argument.
-BLOCK_TAG = re.compile(r"\{\{([#/])(\w+)(?:\s+([^}]*?))?\s*\}\}")
 
 
 def operation_files() -> tuple[Path, ...]:
@@ -265,17 +264,25 @@ def binding_call(name: str) -> str:
 def template_blocks(text: str, name: str) -> tuple[tuple[str, int, int], ...]:
     """Every block helper opened on *name*, as its helper and its span.
 
-    Each span ends at the block's MATCHING close, read by nesting depth over
-    every block helper of the template, so an ``{{#if}}`` nested inside the
-    block does not end it.  An unbalanced template raises.
+    Tags are read with the renderer's own grammar: its tag pattern, and the
+    strip and partition it applies to a tag's body, so a spaced opener or
+    closer (``{{ #each run_event_states }}``, ``{{ /each }}``) is a block
+    here exactly as it is to the renderer.  Each span ends at the block's
+    MATCHING close, read by nesting depth over every block helper of the
+    template, so an ``{{#if}}`` nested inside the block does not end it.  An
+    unbalanced template raises.
     """
     open_blocks: list[tuple[str, str, int]] = []
     blocks = []
-    for tag in BLOCK_TAG.finditer(text):
-        sign, helper, argument = tag.group(1), tag.group(2), tag.group(3) or ""
-        if sign == "#":
+    for tag in prompt_rendering._TAG.finditer(text):
+        body = tag.group(1).strip()
+        if body.startswith("#"):
+            helper, _, argument = body[1:].partition(" ")
             open_blocks.append((helper, argument.strip(), tag.start()))
             continue
+        if not body.startswith("/"):
+            continue
+        helper = body[1:]
         if not open_blocks or open_blocks[-1][0] != helper:
             raise LookupError(f"{tag.group(0)} at {tag.start()} closes no open block")
         opened, argument, start = open_blocks.pop()
@@ -360,10 +367,11 @@ def table_readers(sources: Mapping[str, str]) -> dict[str, str]:
 
     A function reads the table when an attribute naming the field is read in
     its own body.  The function holding the table's prompt binding is
-    surfaced as that one binding call, because the same function binds the
-    configured state mapping beside it, which is the resolution site and
-    stays unscanned.  A read at module or class level, outside every
-    function, is not seen.
+    surfaced as every statement of its body that reads the table
+    (``table_statements``), because the same function binds the configured
+    state mapping beside it, which is the resolution site and stays
+    unscanned.  A read at module or class level, outside every function, is
+    not seen.
     """
     readers = {}
     for name, text in sorted(sources.items()):
@@ -376,13 +384,12 @@ def table_readers(sources: Mapping[str, str]) -> dict[str, str]:
                 for node in own
             ):
                 continue
-            bindings = [node for node in own if _is_binding(node, TABLE_FIELD)]
+            source = textwrap.dedent(
+                ast.get_source_segment(text, function, padded=True) or ""
+            )
+            binds = any(_is_binding(node, TABLE_FIELD) for node in own)
             readers[f"{name}::{qualname}"] = (
-                ast.unparse(bindings[0])
-                if bindings
-                else textwrap.dedent(
-                    ast.get_source_segment(text, function, padded=True) or ""
-                )
+                table_statements(source) if binds else source
             )
     return readers
 
@@ -515,7 +522,7 @@ def test_no_tracker_state_string_appears_in_the_table_or_its_consumers():
         f"{OperationConfig.require_run_event_table.__qualname__}"
     ) in readers
     binding = binding_call(TABLE_FIELD)
-    assert binding in readers.values()
+    assert any(binding in text.splitlines() for text in readers.values())
     assert f"{TABLE_FIELD}.items()" in binding
     for name, text in {**readers, **templates}.items():
         assert TABLE_FIELD in text, name
@@ -676,6 +683,113 @@ def test_a_second_prompt_rendering_the_table_is_reported(tmp_path):
     (tmp_path / "sets" / "third.md").write_text(f"{{{{{TABLE_FIELD}}}}}\n")
     with pytest.raises(LookupError, match="no"):
         consumer_templates(prompt_sources(tmp_path))
+
+
+#: Blocks over the table spelled the way the renderer also accepts, with
+#: spaces inside the braces, each carrying a state string where it renders.
+SPACED_TABLE_BLOCKS = {
+    "second-spaced-block": (
+        "{{ #if %(field)s }}{{ #each %(field)s }}- {{this.event}}: move it to "
+        "%(token)s\n{{ /each }}{{ /if }}\n",
+        1,
+    ),
+    "spaced-closers-inside-the-block": (
+        "{{#if %(field)s}}The harness declares these effects.\n"
+        "{{#each %(field)s}}- {{this.event}}: {{this.effect}}"
+        "{{ #if marker_prefixes }}{{ #each teams }}{{/each}}{{/if}} "
+        "(move it to %(token)s)\n{{ /each }}{{ /if }}\n",
+        0,
+    ),
+    "spaced-guard-alone": (
+        "{{ #if %(field)s}}Move every DERIVED event to %(token)s.{{ /if}}\n",
+        1,
+    ),
+}
+
+
+@pytest.mark.parametrize("spelling", sorted(SPACED_TABLE_BLOCKS))
+def test_a_table_block_in_the_renderers_spaced_spelling_is_reported(spelling):
+    token = sorted(vendor_state_names())[0]
+    block, index = SPACED_TABLE_BLOCKS[spelling]
+    planted = block % {"field": TABLE_FIELD, "token": token}
+    text = planted if index == 0 else _table_block() + planted
+    assert state_names_in(consumer_templates({"p.md": text}), vendor_state_names()) == {
+        f"p.md:{TABLE_FIELD}[{index}]": (token,)
+    }
+
+
+def test_a_spaced_table_rendering_outside_the_guarded_region_is_reported():
+    token = sorted(vendor_state_names())[0]
+    text = (
+        _table_block()
+        + f"{{{{ #each {TABLE_FIELD}}}}}- {{{{this.event}}}} -> {token}\n"
+        + "{{ /each}}\n"
+    )
+    with pytest.raises(LookupError, match="outside every scanned region"):
+        consumer_templates({"p.md": text})
+
+
+def table_operations() -> dict[str, OperationConfig]:
+    """Every shipped operation file that declares a table, loaded."""
+    return {
+        path.name: load_operation_config(path)
+        for path in operation_files()
+        if tomllib.loads(path.read_text()).get(TABLE_FIELD)
+    }
+
+
+def table_rendered_lines(text: str, bindings: Mapping[str, object]) -> list[str]:
+    """The lines the prompt's blocks over the table render for its rows.
+
+    The prompt is rendered by the renderer with *bindings*, and again with
+    the table bound to no rows; what the first render holds beyond the
+    second is what the ``{{#each}}`` blocks over the table produced, however
+    they are spelled and whatever the binding put in the rows.
+    """
+    render = prompt_rendering.render_template
+    with_rows = render(text, bindings).splitlines()
+    without_rows = render(text, {**bindings, TABLE_FIELD: []}).splitlines()
+    return list((Counter(with_rows) - Counter(without_rows)).elements())
+
+
+def test_the_rendered_table_and_its_bound_rows_carry_no_tracker_state_string():
+    """A behavioural pin beside the static scan: each prompt that renders the
+    table is rendered with the real bindings of each shipped operation file
+    that declares one, and the rows the table renders, and the rows bound,
+    carry no configured state string."""
+    tokens = vendor_state_names()
+    assert tokens
+    operations = table_operations()
+    assert operations
+    prompts = prompt_sources()
+    assert prompts
+    for file, config in operations.items():
+        bindings = prompt_namespaces.operation_bindings(config)
+        bound = {f"{file}:bound": repr(bindings[TABLE_FIELD])}
+        assert state_names_in(bound, tokens) == {}
+        for name, text in prompts.items():
+            variables = {
+                **pass_render_variables(PromptKey(Path(name).stem)),
+                **bindings,
+            }
+            lines = table_rendered_lines(text, variables)
+            assert lines, name
+            rendered = {f"{file}:{name}": "\n".join(lines)}
+            assert state_names_in(rendered, tokens) == {}
+
+
+def test_a_state_string_rendered_or_bound_into_the_table_is_reported():
+    tokens = vendor_state_names()
+    token = sorted(tokens)[0]
+    rows = [{"event": "pr_opened", "effect": token}]
+    assert state_names_in({"bound": repr(rows)}, tokens) == {"bound": (token,)}
+    text = (
+        f"{{{{ #each {TABLE_FIELD} }}}}- {{{{this.event}}}}: {{{{this.effect}}}}\n"
+        "{{ /each }}"
+    )
+    lines = table_rendered_lines(text, {TABLE_FIELD: rows})
+    assert lines == [f"- pr_opened: {token}"]
+    assert state_names_in({"p.md": "\n".join(lines)}, tokens) == {"p.md": (token,)}
 
 
 def test_a_function_reading_the_table_is_a_scanned_consumer():
