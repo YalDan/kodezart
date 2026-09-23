@@ -42,15 +42,16 @@ directive at all, sitting beside the module it shadows, takes that module
 out of the type checker's reach, because the checker reads the stub in
 place of it.  That shape has no directive to count and no roster can see
 it; it is a diff the code review has to catch.  A fourth is out of it: the
-type checker's own switches are read in two spellings only -- the standard
-library's `no_type_check` decorator, through the module's bindings, and a
-block under the negated type-checking flag -- and not in the others the
-checker honours.  Unread are the else arm of a block under the flag itself,
-a conditional expression on the negated flag, the flag compared rather than
-negated, a block under a version or platform test the checker takes as
-false, the decorator spelled through `typing_extensions`, which re-exports
-the same object, and either spelling reached the ways the resolver states
-it does not follow.
+type checker's own switches are read in two shapes only -- the
+`no_type_check` decorator of `typing` or `typing_extensions`, through the
+module's bindings, and an `if` or `elif` block whose test the checker folds
+to false through a negated `TYPE_CHECKING` or `MYPY`, matched by name as the
+checker matches it -- and not in the others the checker honours.  Unread
+are the else and elif arms below a block under the flag itself, a
+conditional expression on the negated flag, a `match` guard on it, the flag
+compared rather than negated, a block under a version or platform test the
+checker takes as false, alone or folded with the flag, and the decorator
+reached the ways the resolver states it does not follow.
 
 A new row in any table below, and a deleted name or a lowered count in
 `negative_shape_baseline.json`, is a decision.  It belongs in the commit
@@ -380,6 +381,11 @@ DIRECTIVE_CONTROLS: tuple[str, ...] = (
 #: name, under an alias of its own, and through the module under an alias.
 TYPE_CHECK_CONTROLS: tuple[tuple[str, str], ...] = (
     (
+        "typing_extensions.no_type_check",
+        "from typing_extensions import no_type_check\n@no_type_check\n"
+        "def f() -> int: ...\n",
+    ),
+    (
         "typing.no_type_check",
         "import typing\n@typing.no_type_check\ndef f() -> int: ...\n",
     ),
@@ -398,12 +404,87 @@ TYPE_CHECK_CONTROLS: tuple[tuple[str, str], ...] = (
     ),
 )
 
-#: A block under the negated flag in each shape a module can bind the flag.
-UNCHECKED_BLOCK_CONTROLS: tuple[str, ...] = (
-    "from typing import TYPE_CHECKING\nif not TYPE_CHECKING:\n    x: int = 'x'\n",
-    "import typing\nif not typing.TYPE_CHECKING:\n    x: int = 'x'\n",
-    "from typing import TYPE_CHECKING as CHECKING\n"
-    "def f() -> None:\n    if not CHECKING:\n        x: int = 'x'\n",
+#: A block the checker folds to false through the negated flag, in each
+#: shape a module can bind or spell the flag, as (the test reported, the
+#: module).
+UNCHECKED_BLOCK_CONTROLS: tuple[tuple[str, str], ...] = (
+    (
+        "not TYPE_CHECKING",
+        "from typing import TYPE_CHECKING\nif not TYPE_CHECKING:\n    x: int = 'x'\n",
+    ),
+    (
+        "not typing.TYPE_CHECKING",
+        "import typing\nif not typing.TYPE_CHECKING:\n    x: int = 'x'\n",
+    ),
+    (
+        "not CHECKING",
+        "from typing import TYPE_CHECKING as CHECKING\n"
+        "def f() -> None:\n    if not CHECKING:\n        x: int = 'x'\n",
+    ),
+    # The negated flag folded into a boolean ``and``: false for the checker.
+    (
+        "not TYPE_CHECKING and ENABLED",
+        "from typing import TYPE_CHECKING\nENABLED = True\n"
+        "if not TYPE_CHECKING and ENABLED:\n    x: int = 'x'\n",
+    ),
+    (
+        "ENABLED and (not TYPE_CHECKING)",
+        "from typing import TYPE_CHECKING\nENABLED = True\n"
+        "if ENABLED and (not TYPE_CHECKING):\n    x: int = 'x'\n",
+    ),
+    # Both sides of an ``or`` false for the checker, and the flag inside an
+    # ``or`` that is negated whole: each false for the checker.
+    (
+        "not TYPE_CHECKING or not MYPY",
+        "from typing import TYPE_CHECKING\nMYPY = False\n"
+        "if not TYPE_CHECKING or not MYPY:\n    x: int = 'x'\n",
+    ),
+    (
+        "not (TYPE_CHECKING or ENABLED)",
+        "from typing import TYPE_CHECKING\nENABLED = True\n"
+        "if not (TYPE_CHECKING or ENABLED):\n    x: int = 'x'\n",
+    ),
+    # The checker matches the name, not the object it is bound to.
+    ("not MYPY", "MYPY = False\nif not MYPY:\n    x: int = 'x'\n"),
+    (
+        "not TYPE_CHECKING",
+        "TYPE_CHECKING = False\nif not TYPE_CHECKING:\n    x: int = 'x'\n",
+    ),
+    (
+        "not settings.TYPE_CHECKING",
+        "import settings\nif not settings.TYPE_CHECKING:\n    x: int = 'x'\n",
+    ),
+    # The flag as ``typing_extensions`` re-exports it, spelled through the
+    # module and bound under a name of its own.
+    (
+        "not typing_extensions.TYPE_CHECKING",
+        "import typing_extensions\n"
+        "if not typing_extensions.TYPE_CHECKING:\n    x: int = 'x'\n",
+    ),
+    (
+        "not CHECKING",
+        "from typing_extensions import TYPE_CHECKING as CHECKING\n"
+        "if not CHECKING:\n    x: int = 'x'\n",
+    ),
+    # An ``elif`` is an ``if`` nested in the arm above it.
+    (
+        "not TYPE_CHECKING",
+        "from typing import TYPE_CHECKING\nENABLED = True\n"
+        "if ENABLED:\n    pass\nelif not TYPE_CHECKING:\n    x: int = 'x'\n",
+    ),
+)
+
+#: Tests the checker does not fold to false, so it reads their blocks: the
+#: negated flag in an ``or`` whose other side it cannot decide, the flag
+#: inside an ``and`` that is negated whole, the flag doubly negated, and a
+#: name that only contains the flag's.
+CHECKED_BLOCK_CONTROLS: tuple[str, ...] = (
+    "from typing import TYPE_CHECKING\nENABLED = True\n"
+    "if not TYPE_CHECKING or ENABLED:\n    x: int = 1\n",
+    "from typing import TYPE_CHECKING\nENABLED = True\n"
+    "if not (TYPE_CHECKING and ENABLED):\n    x: int = 1\n",
+    "from typing import TYPE_CHECKING\nif not not TYPE_CHECKING:\n    x: int = 1\n",
+    "NOT_TYPE_CHECKING = False\nif not NOT_TYPE_CHECKING:\n    x: int = 1\n",
 )
 
 #: The files a tool discovers instead of, or ahead of, the project file.
@@ -572,14 +653,39 @@ def test_every_type_checker_switch_is_controlled() -> None:
     )
 
 
-@pytest.mark.parametrize("control", UNCHECKED_BLOCK_CONTROLS)
+@pytest.mark.parametrize(
+    ("test", "control"),
+    UNCHECKED_BLOCK_CONTROLS,
+    ids=[f"{index}" for index in range(len(UNCHECKED_BLOCK_CONTROLS))],
+)
 def test_a_block_under_the_negated_flag_is_read_in_each_binding(
-    control: str,
+    test: str, control: str
 ) -> None:
     """The flag's spelling does not change that the block goes unread."""
     found = negative_shape.unchecked_blocks(Source.of("control.py", control))
 
-    assert found == ("not typing.TYPE_CHECKING",)
+    assert found == (test,)
+
+
+@pytest.mark.parametrize("control", CHECKED_BLOCK_CONTROLS)
+def test_a_block_the_checker_reads_is_not_an_unchecked_one(control: str) -> None:
+    """The fold is the checker's: a test it cannot decide leaves the block read."""
+    assert negative_shape.unchecked_blocks(Source.of("control.py", control)) == ()
+
+
+def test_every_flag_name_and_origin_is_controlled() -> None:
+    """A name or an origin added to the flag without a control is one nothing proves."""
+    controls = "".join(control for _, control in UNCHECKED_BLOCK_CONTROLS)
+
+    assert negative_shape.TYPE_CHECKING_NAMES
+    assert negative_shape.TYPE_CHECKING_FLAGS
+    assert all(
+        f"not {name}:" in controls for name in negative_shape.TYPE_CHECKING_NAMES
+    )
+    assert all(
+        flag.rpartition(".")[0] in controls
+        for flag in negative_shape.TYPE_CHECKING_FLAGS
+    )
 
 
 def test_the_typing_root_reports_only_what_is_rostered() -> None:
