@@ -398,12 +398,12 @@ async def test_undemonstrable_refusal_escalates_once_and_a_replay_writes_nothing
     archive lands on, and the same `decision` classification after it. What it
     carries is its own question, composed from the claim and the judgment.
 
-    The replay is the re-entry production actually makes. The occurrence is
+    The replay is a replay of the same refusal occurrence: the crash window
+    between the escalation comment and the classification. The occurrence is
     computed over the sub-issue row, and the classification enters that row, so
-    the window a killed run re-enters is the one between the escalation comment
-    and the classification: restore the row to what it was when the occurrence
-    was computed, judge the same claim again, and the escalation resolves to the
-    comment already posted while the classification completes.
+    restore the row to what it was when the occurrence was computed, judge the
+    same claim again, and the escalation resolves to the comment already posted
+    while the classification completes.
     """
     port = tracker()
     executor = Executor(
@@ -425,10 +425,18 @@ async def test_undemonstrable_refusal_escalates_once_and_a_replay_writes_nothing
         assert refusal.publication.kind == "escalated"
         escalation_artifact = refusal.publication.escalation.artifact
         assert escalation_artifact.surface.ref.key == DIRECT_OWED
+        # The escalation's evidence is the escalation write itself, not the
+        # archive record standing in for it.
+        assert escalation_artifact != refusal.publication.record.artifact
+        assert escalation_artifact.content.startswith("[fixture-escalation:")
         # One escalation for this occurrence, keyed on it: the archive marker
         # and the escalation marker name the same refusal.
         raised = escalations_on(port, DIRECT_OWED)
         assert len(raised) == 1
+        # Exactly one across the board, not only on the refused criterion.
+        assert [
+            c for c in port.comments if c.body.startswith("[fixture-escalation:")
+        ] == raised
         archives = [
             c
             for c in port.comments
