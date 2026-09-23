@@ -37,7 +37,13 @@ A second class is out of it too: `addopts` (with `-k` or `--deselect`),
 false, and a `parametrize` mark whose parameter set is empty (which the
 runner reports as a skip at collection, under a setting of its own table)
 can each stop a test being collected at all, and nothing here reads them;
-they are a later slice.  A third is out of it as well: a stub carrying no
+they are a later slice.  The same holds for the collection-name keys of the
+runner's table (`python_files`, `python_classes`, `python_functions`),
+which decide what is a test in the first place; for a mark that relaxes the
+warning filter on one test or a whole module (`filterwarnings` applied as a
+mark rather than set in the pinned table); and for the type checker's own
+skip decorator (`typing.no_type_check`), which exempts a body from the
+checker with no comment to count.  A third is out of it as well: a stub carrying no
 directive at all, sitting beside the module it shadows, takes that module
 out of the type checker's reach, because the checker reads the stub in
 place of it.  That shape has no directive to count and no roster can see
