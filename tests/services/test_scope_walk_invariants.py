@@ -11,6 +11,7 @@ clone or an origin, so the lane graph is inert and every other collaborator the
 walker could reach refuses: a subject that went further would fail loudly.
 """
 
+import asyncio
 from typing import NoReturn
 
 from kodezart.chains.scope_walker import read_scope_ready
@@ -27,6 +28,7 @@ from tests.services.test_scope_runtime import (
     SCOPE,
     STAGED,
     URL,
+    WALK_BOUND_SECONDS,
     criterion_row,
     engine,
     scope_board,
@@ -48,11 +50,35 @@ class InertLane:
         raise AssertionError(f"the walk reached the lane graph: {name}")
 
 
-async def first_observation(port: FakeTrackerPort):
-    """The walk's first ``scope_walk`` observation over *port*, and nothing more."""
-    walk = engine(
+class FireNotUnderTestError(Exception):
+    """What a lane's fire answers here: its preparation is not what is read."""
+
+
+class UnfiredPreparation:
+    """A fire whose preparation refuses, so the lane's own boundary rests it."""
+
+    def prepare(self, **_facts: object) -> NoReturn:
+        raise FireNotUnderTestError
+
+
+class RestingLane:
+    """A lane graph whose every turn ends inside the lane's own boundary.
+
+    The refusal is the lane's, so the walk rests that lane and takes its next
+    tick with the board unchanged. That is what lets one walk put the same
+    ready lanes in front of several observations without a fire, a clone or
+    an origin.
+    """
+
+    delivers = False
+    fire = UnfiredPreparation()
+
+
+def walk_over(port: FakeTrackerPort, lane: object):
+    """The walker's ``run`` over *port*, with every lane answered by *lane*."""
+    return engine(
         port,
-        lane_for=lambda _: InertLane(),
+        lane_for=lambda _: lane,
         probe_for=lambda _: FakeDeliveryProbe(),
         repositories=(RepoEntry(url=URL, trunk="main"),),
     ).run(
@@ -65,6 +91,11 @@ async def first_observation(port: FakeTrackerPort):
         allowed_tools=[],
         cache_key="fixture-job",
     )
+
+
+async def first_observation(port: FakeTrackerPort):
+    """The walk's first ``scope_walk`` observation over *port*, and nothing more."""
+    walk = walk_over(port, InertLane())
     try:
         event = await anext(walk)
     finally:
@@ -113,26 +144,48 @@ async def test_the_walk_lists_the_excluded_criteria_beside_each_gap() -> None:
     assert ready.excluded == ("A/dropped", "B/twin")
 
 
+#: The project B1's criterion sits in, which is not the addressed scope: the
+#: reason the filter gives for it is this identity, where A1's criterion,
+#: belonging to no project, is given a sentence saying so.
+ELSEWHERE = "another-project"
+
+
 def out_of_reach_board() -> FakeTrackerPort:
-    """One lane, a deliverable child under it, and a criterion under the child.
+    """Two lanes, a deliverable child under each, and a criterion under each child.
 
     The child is the shape a container filter misses: it is nobody's direct
     criterion child, so no member read resolves it, while the criterion it
     carries is squarely inside the lane's subtree and squarely the lane's work.
+    Two lanes so every ready lane is shown to be read, and two different
+    reasons so each is shown to be the one its own criterion is given.
     """
     return scope_board(
         criterion_row("A/check"),
         criterion_row("A1/check", parent="A1"),
-        children=(
+        criterion_row("B/check", parent="B"),
+        criterion_row("B1/check", parent="B1").model_copy(
+            update={"project_id": ELSEWHERE}
+        ),
+        lanes=("A", "B"),
+        children=tuple(
             make_tracker_issue(
-                "A1",
-                parent_key="A",
+                child,
+                parent_key=lane,
                 issue_labels=frozenset({STAGED}),
                 state_name=LANE_STATE,
                 state_kind=WorkflowStateKind.STARTED,
-            ),
+            )
+            for lane, child in (("A", "A1"), ("B", "B1"))
         ),
     )
+
+
+#: Both out-of-reach criteria, with the reason the filter gives each, in the
+#: order their lanes are ready.
+OUT_OF_REACH = [
+    ("A1/check", ExclusionClause.OUT_OF_SCOPE, "the issue belongs to no project"),
+    ("B1/check", ExclusionClause.OUT_OF_SCOPE, ELSEWHERE),
+]
 
 
 def out_of_scope(observation) -> list[tuple[str, ExclusionClause, str]]:
@@ -156,13 +209,44 @@ async def test_an_open_criterion_the_filter_cannot_reach_is_named_with_its_reaso
     """
     observation = await first_observation(out_of_reach_board())
 
-    assert out_of_scope(observation) == [
-        ("A1/check", ExclusionClause.OUT_OF_SCOPE, "the issue belongs to no project")
-    ]
+    assert out_of_scope(observation) == OUT_OF_REACH
     assert "A/check" not in [key for key, _, _ in out_of_scope(observation)]
     assert observation.gaps == (
         GapMeasurement(lane_key="A", criterion_keys=("A/check", "A1/check")),
+        GapMeasurement(lane_key="B", criterion_keys=("B/check", "B1/check")),
     )
+
+
+async def test_every_tick_names_the_out_of_reach_criteria_of_every_ready_lane() -> None:
+    """The naming is the walk's on every tick, not the first observation's.
+
+    Each lane's turn ends inside its own boundary, so the board never changes
+    and both lanes stay ready while the walk rests them one tick at a time.
+    Every observation therefore owes both statements, whichever lane the
+    tick goes on to offer.
+    """
+    walk = walk_over(out_of_reach_board(), RestingLane())
+    async with asyncio.timeout(WALK_BOUND_SECONDS):
+        observations = [
+            event.observation
+            async for event in walk
+            if isinstance(event, ScopeWalkEvent)
+        ]
+
+    assert [observation.tick for observation in observations] == [1, 2, 3]
+    assert [observation.rested_lanes for observation in observations] == [
+        (),
+        ("A",),
+        ("A", "B"),
+    ]
+    assert [
+        failure.issue_key
+        for failure in observations[-1].failed_lanes
+        if failure.error.error_kind == FireNotUnderTestError.__name__
+    ] == ["A", "B"]
+    for observation in observations:
+        assert observation.ready == ("A", "B")
+        assert out_of_scope(observation) == OUT_OF_REACH
 
 
 async def test_the_same_shape_inside_the_filter_names_no_out_of_scope_entry() -> None:
@@ -173,10 +257,11 @@ async def test_the_same_shape_inside_the_filter_names_no_out_of_scope_entry() ->
     appeared here would be naming reachable work unreachable.
     """
     port = out_of_reach_board()
-    port.scope_memberships[SCOPE] = ("A", "A1")
-    port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key="A1")] = frozenset(
-        {ScopeLabel.APPROVED}
-    )
+    port.scope_memberships[SCOPE] = ("A", "A1", "B", "B1")
+    for child in ("A1", "B1"):
+        port.scope_label_members[ScopeRef(kind=ScopeKind.ISSUE, key=child)] = frozenset(
+            {ScopeLabel.APPROVED}
+        )
 
     observation = await first_observation(port)
 
@@ -184,4 +269,6 @@ async def test_the_same_shape_inside_the_filter_names_no_out_of_scope_entry() ->
     assert observation.gaps == (
         GapMeasurement(lane_key="A", criterion_keys=("A1/check", "A/check")),
         GapMeasurement(lane_key="A1", criterion_keys=("A1/check",)),
+        GapMeasurement(lane_key="B", criterion_keys=("B1/check", "B/check")),
+        GapMeasurement(lane_key="B1", criterion_keys=("B1/check",)),
     )
