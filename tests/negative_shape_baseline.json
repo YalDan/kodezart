@@ -334,6 +334,7 @@
   "tests/services/test_audit_session_ownership.py": 12,
   "tests/services/test_audit_sessions.py": 14,
   "tests/services/test_audit_sources.py": 17,
+  "tests/services/test_capability_boot_static.py": 21,
   "tests/services/test_check_classification.py": 19,
   "tests/services/test_claim_heartbeat.py": 44,
   "tests/services/test_dispatch_delta_cancel_independent.py": 3,
@@ -389,10 +390,13 @@
   "tests/services/test_union_tick.py": 75,
   "tests/services/test_weakened_assertions.py": 24,
   "tests/spec/test_model_agreement.py": 73,
+  "tests/test_artifact_directory_sites.py": 11,
+  "tests/test_association_read_sites.py": 12,
   "tests/test_audit_lane_placement.py": 13,
   "tests/test_capability_checked_at_boot.py": 9,
   "tests/test_composition_root.py": 35,
   "tests/test_criterion_resolution_boundary.py": 14,
+  "tests/test_cross_off_signature_sites.py": 15,
   "tests/test_default_run_isolation.py": 31,
   "tests/test_fakes_state.py": 8,
   "tests/test_forge_origin_selection.py": 46,
@@ -4626,6 +4630,17 @@
    "test_missing_evidence_is_never_a_current_head_default",
    "test_valid_same_comment_replacement_invalidates_the_original_snapshot"
   ],
+  "tests/services/test_capability_boot_static.py": [
+   "test_the_capability_probe_is_called_from_the_boot_preflight_alone",
+   "test_no_consumer_names_the_capability_answer",
+   "test_no_handler_lets_the_probe_or_the_boot_refusal_continue",
+   "test_each_detector_reports_a_planted_site",
+   "test_a_second_handled_caller_of_the_holder_is_reported",
+   "test_a_second_caller_of_the_boot_act_is_reported",
+   "test_a_probe_inlined_into_the_preflight_satisfies_the_reach",
+   "test_a_preflight_module_function_naming_the_abort_is_reported",
+   "test_a_boot_that_carries_its_refusal_out_is_not_reported"
+  ],
   "tests/services/test_check_classification.py": [
    "test_not_red_at_same_sha_establishes_flake",
    "test_zero_bound_reproduces_without_rerun",
@@ -5540,6 +5555,20 @@
    "test_one_reader_counts_both_declaration_forms",
    "test_live_workspace_equals_supplied_snapshot"
   ],
+  "tests/test_artifact_directory_sites.py": [
+   "test_the_artifact_directory_is_named_by_its_constant_and_the_persister_alone",
+   "test_no_site_reads_a_path_under_the_artifact_directory",
+   "test_every_exemption_carries_the_reason_it_is_one",
+   "test_a_planted_read_is_reported",
+   "test_a_planted_write_only_module_is_not_reported",
+   "test_prose_naming_the_directory_is_not_a_module_naming_it"
+  ],
+  "tests/test_association_read_sites.py": [
+   "test_the_names_the_walk_keys_on_are_productions_own",
+   "test_no_module_that_reads_associations_names_an_attachment_read",
+   "test_a_module_reading_associations_beside_an_attachment_is_reported",
+   "test_a_module_that_only_reads_associations_is_not_reported"
+  ],
   "tests/test_audit_lane_placement.py": [
    "test_each_named_module_owns_the_symbol_the_placement_names",
    "test_the_grading_history_role_holds_its_one_read_and_nothing_beside_it",
@@ -5594,6 +5623,14 @@
    "test_a_protocol_declaration_is_not_an_implementation",
    "test_each_spelling_of_a_checkbox_scan_is_reported",
    "test_a_criterion_text_comparison_on_a_key_addressed_target_is_not_reported"
+  ],
+  "tests/test_cross_off_signature_sites.py": [
+   "test_the_pair_model_is_what_the_field_rule_reads",
+   "test_no_signature_carries_a_cross_off_state_apart_from_its_pair",
+   "test_every_exemption_carries_the_reason_it_is_one",
+   "test_the_pair_binds_both_halves_and_neither_has_a_default",
+   "test_every_spelling_of_a_lone_state_is_reported",
+   "test_a_signature_carrying_the_pair_is_not_reported"
   ],
   "tests/test_default_run_isolation.py": [
    "test_a_default_run_item_cannot_reach_a_non_loopback_address",
