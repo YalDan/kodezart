@@ -333,6 +333,11 @@ PLANTED_CALLERS = {
         '        tracker = self._trackers.get("k")\n        tracker.{name}()\n',
         True,
     ),
+    "an element of star parameters": (
+        "def use(*trackers: {role}) -> None:\n"
+        "    for tracker in trackers:\n        tracker.{name}()\n",
+        True,
+    ),
     "the container itself": (
         "def use(*, trackers: Mapping[str, {role}]) -> None:\n    trackers.{name}()\n",
         False,
@@ -971,6 +976,19 @@ PLANTED_SPELLINGS = {
     "a type alias of a role admitting None": (
         "type Refs = {role}\n\n\n"
         "def hold(*, refs: Refs | None) -> None:\n    refs.{member}()\n",
+        "default",
+    ),
+    "the whole port as star parameters": (
+        "def hold(*ports: {aggregate}) -> None:\n    ports[0].{member}()\n",
+        "aggregate",
+    ),
+    "a role in star parameters it never uses": (
+        "def hold(*holders: {role}) -> None:\n    return None\n",
+        "credit",
+    ),
+    "a role admitting None in keyword star parameters": (
+        "def hold(**deps: {role} | None) -> None:\n"
+        "    for dep in deps.values():\n        dep.{member}()\n",
         "default",
     ),
     "a quoted role admitting None": (

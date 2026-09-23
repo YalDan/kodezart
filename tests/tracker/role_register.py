@@ -573,9 +573,15 @@ def functions(text: str) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef, ...]:
 
 
 def parameters(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg]:
-    """Every named parameter of *function*, however it may be passed."""
+    """Every parameter of *function*, however it may be passed, stars included."""
     arguments = function.args
-    return [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]
+    return [
+        *arguments.posonlyargs,
+        *arguments.args,
+        *([arguments.vararg] if arguments.vararg else []),
+        *arguments.kwonlyargs,
+        *([arguments.kwarg] if arguments.kwarg else []),
+    ]
 
 
 def spelled(annotation: ast.expr) -> list[ast.expr]:
@@ -907,7 +913,8 @@ class Binding:
     every attribute or local name it is assigned to; an attribute is read
     anywhere in the class that holds it, or the module when no class does.
     A binding whose annotation holds the role inside a container, such as
-    ``Mapping[K, R]``, is a container of the role rather than the role.
+    ``Mapping[K, R]``, or a star parameter annotated with it, is a container
+    of the role rather than the role.
     """
 
     role: str
@@ -998,7 +1005,8 @@ def bindings(
                         name_scope=node,
                         attributes=frozenset(attributes),
                         attribute_scope=owner,
-                        container=holds_in_a_container(argument.annotation),
+                        container=holds_in_a_container(argument.annotation)
+                        or argument in (node.args.vararg, node.args.kwarg),
                     )
                     for role in sorted(held)
                 )
