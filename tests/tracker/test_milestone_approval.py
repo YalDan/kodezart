@@ -6,6 +6,7 @@ from kodezart.domain.errors import ScopeReadError
 from kodezart.services.scope_approval import scope_approved, scope_carries
 from kodezart.services.scope_resolution import resolve_scope
 from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.tracker.test_scope_approval import (
     APPROVAL_LABELS,
     PARENT,
@@ -109,6 +110,42 @@ async def test_a_milestone_resolves_its_projects_member_as_it_resolves_its_appro
         await scope_carries(ref=MILESTONE, member=member, tracker=approval.tracker)
         is True
     )
+    assert not approval.fake.issue_writes
+
+
+@pytest.mark.parametrize(
+    "addressed", [MILESTONE, PROJECT], ids=lambda ref: ref.kind.value
+)
+@pytest.mark.parametrize(
+    "member", [ScopeLabel.TRIAGE, ScopeLabel.PROPOSED], ids=lambda m: m.value
+)
+async def test_an_addressed_container_resolves_its_initiatives_member(
+    approval: ApprovalFixture, addressed: ScopeRef, member: ScopeLabel
+) -> None:
+    """Every addressed container kind is answered by the one walk.
+
+    A project-addressed scope and a milestone-addressed one are asked the
+    same question, over each port: the member sits on the initiative at the
+    top of the chain and on nothing the scope addresses, so an answer that
+    stopped at the addressed node — or took any path of its own for one
+    kind — would read it as absent.
+    """
+    if addressed.kind is ScopeKind.MILESTONE:
+        approval.fake.scope_containers[MILESTONE] = _container(MILESTONE, PROJECT)
+
+    assert (
+        await scope_carries(ref=addressed, member=member, tracker=approval.tracker)
+        is False
+    )
+
+    approval.labels(INITIATIVE, member)
+    assert await approval.tracker.read_scope_labels(ref=addressed) == frozenset()
+    assert (
+        await scope_carries(ref=addressed, member=member, tracker=approval.tracker)
+        is True
+    )
+    # The same chain, asked for the approval member instead: absent here.
+    assert await scope_approved(ref=addressed, tracker=approval.tracker) is False
     assert not approval.fake.issue_writes
 
 
