@@ -56,6 +56,7 @@ from kodezart.types.domain.operation import (
     OperationConfig,
     OperationMemberAbsentError,
 )
+from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.run_event import (
     RUN_EVENT_PUBLISHERS,
     RunEventKind,
@@ -91,6 +92,7 @@ from tests.domain.test_criterion_cross_off import callers_of
 from tests.fakes import (
     FakeBranchMerger,
     FakeRefPublisher,
+    FakeWorkspaceProvider,
     dispatched_checks,
     dispatched_ids,
     make_criteria,
@@ -3225,41 +3227,110 @@ async def test_a_forge_less_stall_records_the_best_iteration_as_the_next_act():
     assert [row.sha for row in record.commits] == [*repo.shas, repo.shas[0]]
 
 
+class CutAtItsBase(FakeWorkspaceProvider):
+    """A tree cut fresh for a branch other than the repository's own stands at its base.
+
+    The repository's own branch is the one its commits are made on, so its
+    tree stands at the repository head. Any other loop branch cut fresh is
+    a tree at the commit its base resolves to, as a real checkout of that
+    base is: the head the amendment guard begins a round from, and the head
+    a persist of a round that committed nothing finds.
+    """
+
+    def __init__(self, *, git: LaneGit, source: LaneSource) -> None:
+        super().__init__(git=git)
+        self.lane_git = git
+        self.source = source
+
+    async def acquire(self, **kwargs):
+        path = await super().acquire(**kwargs)
+        if (
+            kwargs.get("create_branch", True)
+            and kwargs.get("branch_name") != self.lane_git.repo.branch
+        ):
+            self.lane_git.heads[path] = await self.source.resolve_commit(
+                cwd=path, ref=kwargs["ref"]
+            )
+        return path
+
+
 class CommitsFirst(LanePersister):
     """Commits the lane's first *limit* iterations and none after them.
 
-    What an iteration that changed nothing leaves: no commit and so no push,
-    and a loop branch that round was cut on that the remote never holds.
-    Every branch a persist was asked for is kept, committed to or not.
+    What an iteration that changed nothing leaves is what ``ChangePersister``
+    leaves: a clean tree whose head the remote does not hold is pushed as it
+    stands, and the receipt names that head as the agent's own commit. A
+    round that committed nothing stands at its cut point, so its fresh loop
+    branch is pushed there, and a later iteration on a branch the remote
+    already holds at its head pushes nothing. Every branch a persist was
+    asked for is kept, committed to or not, and so is every branch this
+    double pushed without a commit, at the sha it pushed.
     """
 
-    def __init__(self, repo: LaneRepo, *, limit: int) -> None:
+    def __init__(self, repo: LaneRepo, git: LaneGit, *, limit: int) -> None:
         super().__init__(repo)
+        self.git = git
         self.limit = limit
         self.asked: list[str] = []
+        self.pushed: dict[str, str] = {}
 
     async def persist(self, **kwargs):
         self.asked.append(kwargs["branch"])
-        if len(self.repo.shas) >= self.limit:
+        if len(self.repo.shas) < self.limit:
+            return await super().persist(**kwargs)
+        path, branch = kwargs["workspace_path"], kwargs["branch"]
+        before_commit = kwargs.get("before_commit")
+        before_publish = kwargs.get("before_publish")
+        if before_commit is not None:
+            await before_commit()
+        head = await self.git.current_sha(path)
+        remote_tip = self.pushed.get(branch)
+        if remote_tip is None:
+            remote_tip = await self.git.remote_branch_sha(
+                path, self.repo.remote, branch
+            )
+        if remote_tip == head:
             return None
-        return await super().persist(**kwargs)
+        if before_publish is not None:
+            await before_publish(head)
+        self.pushed[branch] = head
+        return PersistResult(
+            commit_sha=head,
+            branch=branch,
+            message="the commit this branch was cut at",
+            source=PersistSource.AGENT_DIRECT_COMMIT,
+        )
 
 
-async def test_a_stall_whose_last_round_committed_nothing_re_enters_at_its_best():
-    """The best act is bound to the loop branch that holds it, not the last one.
+class PushedSource(LaneSource):
+    """Resolves this lane's refs, and a branch pushed without a commit to its sha."""
+
+    def __init__(self, repo: LaneRepo, persister: CommitsFirst) -> None:
+        super().__init__(repo)
+        self.persister = persister
+
+    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+        pushed = self.persister.pushed.get(ref)
+        if pushed is not None:
+            return pushed
+        return await super().resolve_commit(cwd=cwd, ref=ref)
+
+
+async def stalled_after_an_empty_round(*, merger, ref_publisher=None):
+    """A native fire whose best is in round one and whose remediation round is empty.
 
     Round one commits twice and grades both the same, so its best is its
-    first commit and not its tip; the remediation round draws a loop branch
-    of its own and commits nothing, so that branch is never pushed. Forge-less,
-    so nothing is published or consolidated. The landing row names the best
-    commit, and a row bound to the empty round's branch would name a branch
-    the remote does not hold: every later walk would refuse the lane as absent
-    from the remote. Bound to round one's branch, a re-entry resolves the best
-    commit (KOD-705).
+    first commit and not its tip. The remediation round draws a loop branch
+    of its own, cut at the trunk, and commits nothing: the persister pushes
+    that branch at its cut point, as ``ChangePersister`` does, and the round
+    ends. The run then stalls into the landing *merger* and *ref_publisher*
+    decide.
     """
     port = tracker()
     repo = LaneRepo(branch="unnamed")
-    persister = CommitsFirst(repo, limit=2)
+    git = LaneGit(repo)
+    persister = CommitsFirst(repo, git, limit=2)
+    source = PushedSource(repo, persister)
     executor = NativeExecutor([native_evaluation(failed=True) for _ in range(4)])
     fire = engine(
         criteria=CountingCriteria(tracker=port),
@@ -3267,11 +3338,13 @@ async def test_a_stall_whose_last_round_committed_nothing_re_enters_at_its_best(
         max_iterations=2,
         remediation_rounds=1,
         executor=executor,
-        git=LaneGit(repo),
-        source=LaneSource(repo),
+        git=git,
+        source=source,
+        workspace=CutAtItsBase(git=git, source=source),
         persister=persister,
         forge=lane_forge(),
-        merger=FakeBranchMerger(),
+        merger=merger,
+        ref_publisher=ref_publisher,
     )
     state, config = fire.prepare(
         prompt="Implement the current Checks.",
@@ -3286,8 +3359,8 @@ async def test_a_stall_whose_last_round_committed_nothing_re_enters_at_its_best(
         surface_holder=JOB,
     )
     first_round = state["ralph_branch"]
-    # The repository double holds one branch on the remote: round one's, the
-    # only one a commit was pushed on.
+    # The repository double's own branch is round one's, the only one a
+    # commit was made on.
     repo.branch = first_round
 
     async for _ in fire.native_graph.astream(
@@ -3297,21 +3370,46 @@ async def test_a_stall_whose_last_round_committed_nothing_re_enters_at_its_best(
 
     # The premise, observed: two commits pushed on round one's branch, one
     # remediation round, and that round asked to persist on a branch of its
-    # own and committed nothing there.
+    # own, committed nothing there, and had that branch pushed at the trunk.
     assert len(repo.shas) == 2
     assert [call["branch"] for call in persister.calls] == [first_round] * 2
     assert len(executor.remediation_prompts) == 1
     assert persister.asked[:2] == [first_round] * 2
-    assert len(persister.asked) > 2
-    assert first_round not in persister.asked[2:]
+    empty_rounds = set(persister.asked[2:])
+    assert len(empty_rounds) == 1
+    assert first_round not in empty_rounds
+    assert persister.pushed == dict.fromkeys(empty_rounds, TRUNK_SHA)
 
-    record = await LaneRecordReader(tracker=port, operation=native_operation()).read(
+    _, record = await LaneRecordReader(tracker=port, operation=native_operation()).read(
         issue_key=SUBJECT, lane_key=SUBJECT
     )
-    landed = record[1]
+    return port, repo, first_round, record
+
+
+async def test_a_stall_whose_last_round_committed_nothing_re_enters_at_its_best():
+    """The best act is bound to the loop branch that holds it, not the last one.
+
+    Round one commits twice and grades both the same, so its best is its
+    first commit and not its tip; the remediation round draws a loop branch
+    of its own and commits nothing. A round that committed nothing may push
+    its branch at its cut point, but that push is not an iteration commit
+    and never replaces an earlier best. Forge-less, so nothing is published
+    or consolidated. The landing row names the best commit and not the
+    trunk the empty round was cut at, and it is bound to round one's
+    branch: a row bound to the empty round's would re-enter at the trunk.
+    A re-entry resolves the best commit (KOD-705).
+    """
+    port, repo, first_round, landed = await stalled_after_an_empty_round(
+        merger=FakeBranchMerger()
+    )
+
     assert landed.commits[-1].sha == repo.shas[0] != repo.shas[-1]
     assert landed.commits[-1].subject == LANDING_ROW_SUBJECT
-    # The branch the record names is one the remote holds.
+    # The empty round's push is no act of this lane: no row stands at the
+    # trunk it was cut at.
+    assert TRUNK_SHA not in {row.sha for row in landed.commits}
+    assert [row.sha for row in landed.commits] == [*repo.shas, repo.shas[0]]
+    # The branch the record names is the one holding the best commit.
     assert landed.branch == first_round
     assert (
         await LaneGit(repo).remote_branch_sha("/tmp/fire", "origin", landed.branch)
@@ -3331,3 +3429,56 @@ async def test_a_stall_whose_last_round_committed_nothing_re_enters_at_its_best(
     )
     assert isinstance(entry, ResumedLane)
     assert (entry.loop_branch, entry.head_sha) == (None, repo.shas[0])
+
+
+async def test_a_divergent_landing_after_an_empty_round_binds_the_best_branch():
+    """On the divergent arm the landing row is bound to the branch holding the best.
+
+    The best is published under a ref of its own and the consolidation
+    reports it divergent, so the row is the best commit itself, one of round
+    one's commits. The empty remediation round's branch holds the trunk it
+    was cut at and no commit of this lane, so the record names round one's
+    branch (KOD-705).
+    """
+    publisher = FakeRefPublisher()
+    merger = FakeBranchMerger(
+        consolidation_outcomes=[
+            ConsolidationOutcome(
+                status=ConsolidationStatus.DIVERGENT, feature_tip_sha=UNMOVED_TIP
+            )
+        ]
+    )
+    _, repo, first_round, record = await stalled_after_an_empty_round(
+        merger=merger, ref_publisher=publisher
+    )
+
+    assert [call["status"] for call in merger.calls] == [ConsolidationStatus.DIVERGENT]
+    assert publisher.calls[0]["commit_sha"] == repo.shas[0]
+    assert record.commits[-1].sha == repo.shas[0] != repo.shas[-1]
+    assert record.commits[-1].subject == LANDING_ROW_SUBJECT
+    assert TRUNK_SHA not in {row.sha for row in record.commits}
+    assert record.branch == first_round
+
+
+async def test_an_integrated_landing_after_an_empty_round_binds_the_best_branch():
+    """On the integrated arm the landing row is bound to the branch holding the best.
+
+    The best is published and fast-forwarded onto the deliverable branch, so
+    the row is the consolidated tip. The empty remediation round's branch
+    holds the trunk it was cut at and no commit of this lane, so the record
+    names round one's branch (KOD-705).
+    """
+    publisher = FakeRefPublisher()
+    merger = FakeBranchMerger(merge_sha=LANDED_TIP)
+    _, repo, first_round, record = await stalled_after_an_empty_round(
+        merger=merger, ref_publisher=publisher
+    )
+
+    assert [call["status"] for call in merger.calls] == [
+        ConsolidationStatus.FAST_FORWARDED
+    ]
+    assert publisher.calls[0]["commit_sha"] == repo.shas[0]
+    assert record.commits[-1].sha == LANDED_TIP
+    assert record.commits[-1].subject == LANDING_ROW_SUBJECT
+    assert TRUNK_SHA not in {row.sha for row in record.commits}
+    assert record.branch == first_round
