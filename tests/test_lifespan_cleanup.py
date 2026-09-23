@@ -771,6 +771,55 @@ async def test_actual_lifespan_agent_settings_reach_native_session(
             assert native.data["model"] == "actual-native-model"
 
 
+@pytest.mark.parametrize("token_configured", [True, False], ids=["token", "no_token"])
+async def test_actual_lifespan_gives_the_executor_the_tracker_server_only_with_a_token(
+    resources, monkeypatch, tmp_path, token_configured
+):
+    """A configured tracker credential reaches the sessions; none reaches none.
+
+    The actual lifespan over an operation file, with the executor's own
+    keywords recorded: with a token it is built with the tracker's server
+    definition, rendered from the tracker section and that token, and
+    without one it is built with no tracker server at all.
+    """
+    from kodezart.adapters.toml_operation_config import OperationFile
+    from kodezart.composition.tracker import tracker_mcp_server
+    from tests.core.test_tracker_settings import TOKEN
+    from tests.tracker.test_tracker_boot import operation_config
+
+    config = AppConfig(
+        _env_file=None,
+        operation_config=str(tmp_path / "operation.toml"),
+        tracker={"token": TOKEN} if token_configured else {},
+    )
+    assert (config.tracker.token is not None) is token_configured
+    resources.app.state.config = config
+    monkeypatch.setattr(
+        main,
+        "read_operation_file",
+        lambda _path: OperationFile(operation_config(), (), ()),
+    )
+    built = []
+
+    def executor(**kwargs):
+        built.append(kwargs)
+
+    monkeypatch.setattr(main, "ClaudeClientExecutor", executor)
+    async with resources.app.router.lifespan_context(resources.app):
+        pass
+
+    (keywords,) = built
+    wired = keywords["tracker_server"]
+    if token_configured:
+        expected = tracker_mcp_server(settings=config.tracker, token=TOKEN)
+        assert wired is not None
+        assert wired.name == expected.name == config.tracker.server_name
+        assert wired.url == expected.url == config.tracker.server_url
+        assert wired.headers == expected.headers
+    else:
+        assert wired is None
+
+
 @pytest.mark.parametrize("custom", [False, True])
 async def test_actual_lifespan_tracker_section_reaches_native_boot_and_recorder(
     resources, monkeypatch, tmp_path, custom
