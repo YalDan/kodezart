@@ -4,7 +4,7 @@ import ipaddress
 import logging
 import os
 import socket
-from collections.abc import AsyncGenerator, Callable, Generator, Iterator
+from collections.abc import AsyncGenerator, Callable, Iterator
 
 import pytest
 import structlog
@@ -32,12 +32,6 @@ from tests.fakes import (
 for _ambient in [name for name in os.environ if name.startswith("KODEZART_")]:
     del os.environ[_ambient]
 AppConfig.model_config["env_file"] = None
-# An HTTP client honours a proxy named in the environment, and a proxy on a
-# loopback port would relay an in-process request off this machine past the
-# socket guard below, which sees only the loopback connect to the proxy.
-for _proxy in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
-    os.environ.pop(_proxy, None)
-    os.environ.pop(_proxy.lower(), None)
 
 
 @pytest.fixture(autouse=True)
@@ -117,6 +111,18 @@ _REFUSALS: list[LiveReachError] = []
 _GUARDED_METHODS = ("connect", "connect_ex")
 _UNGUARDED: dict[str, Callable[[socket.socket, object], object]] = {}
 
+#: The proxy variables an HTTP client honours, in both cases. A proxy on a
+#: loopback port would relay an in-process request off this machine past the
+#: socket guard, which sees only the loopback connect to the proxy, so they
+#: are out of the environment while the guard is on and back while it is
+#: lifted: a ``pytest -m live`` run keeps the proxy it was started with.
+PROXY_VARIABLES = tuple(
+    spelling
+    for proxy in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY")
+    for spelling in (proxy, proxy.lower())
+)
+_STRIPPED_PROXIES: dict[str, str] = {}
+
 
 def _guarded[R](
     original: Callable[[socket.socket, object], R],
@@ -134,14 +140,30 @@ def _guarded[R](
 
 
 def _guard(*, on: bool) -> None:
-    """Put the guard on the socket class, or put the shipped methods back."""
+    """Put the guard on the socket class, or put the shipped methods back.
+
+    The proxy variables go with it: taken out of the environment, and kept,
+    when the guard goes on; put back when it is lifted.
+    """
     for name, original in _UNGUARDED.items():
         setattr(socket.socket, name, _guarded(original) if on else original)
+    if on:
+        for name in PROXY_VARIABLES:
+            value = os.environ.pop(name, None)
+            if value is not None:
+                _STRIPPED_PROXIES[name] = value
+    else:
+        os.environ.update(_STRIPPED_PROXIES)
+        _STRIPPED_PROXIES.clear()
 
 
 def guarded() -> bool:
-    """Whether both socket methods are wrapped by the guard right now."""
-    return all(
+    """Whether both socket methods are wrapped by the guard right now.
+
+    False before the guard was ever installed: an empty table of shipped
+    methods wraps nothing, and is no guard.
+    """
+    return bool(_UNGUARDED) and all(
         getattr(socket.socket, name) is not original
         for name, original in _UNGUARDED.items()
     )
@@ -188,34 +210,42 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     _guard(on=False)
 
 
-@pytest.hookimpl(wrapper=True)
-def pytest_runtest_protocol(
-    item: pytest.Item, nextitem: pytest.Item | None
-) -> Generator[None, object, object]:
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item: pytest.Item) -> None:
     """Lift the guard for exactly the item a gated mark lets leave the machine.
 
-    Setup, call and teardown of that item run unguarded, and the guard is
-    back before the next item begins. Every item starts with no refusal on
-    record, so what the teardown check reads is that item's own.
+    First among the setup hooks, so that item's fixtures set up unguarded;
+    the teardown hook below puts the guard back after its fixtures are torn
+    down. Every item starts with no refusal on record, so what the teardown
+    check reads is that item's own.
     """
-    _ = nextitem
     _REFUSALS.clear()
-    if not leaves_the_machine(item):
-        return (yield)
-    _guard(on=False)
-    try:
-        return (yield)
-    finally:
+    if leaves_the_machine(item):
+        _guard(on=False)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> None:
+    """Put the guard back after a gated item, before the next item begins."""
+    _ = nextitem
+    if leaves_the_machine(item):
         _guard(on=True)
+
+
+def refusal_failure(refusals: list[LiveReachError]) -> str | None:
+    """What fails an item whose code caught *refusals* and carried on, if any."""
+    if refusals:
+        return f"a refused off-machine connect was swallowed: {refusals}"
+    return None
 
 
 @pytest.fixture(autouse=True)
 def _no_swallowed_refusal() -> Iterator[None]:
     """Fail an item whose code under test caught a refusal and carried on."""
     yield
-    swallowed = take_refusals()
-    if swallowed:
-        pytest.fail(f"a refused off-machine connect was swallowed: {swallowed}")
+    failure = refusal_failure(take_refusals())
+    if failure is not None:
+        pytest.fail(failure)
 
 
 def pytest_collection_modifyitems(
