@@ -3,12 +3,28 @@
 The static guard beside this one (``test_dispatch_rank_inputs.py``) pins the
 rank's code as it stands: the ordering key texts and the bodies of the
 definitions on the dispatch path. This one pins the decision itself, which
-no respelling of that code can reach around. The dispatcher is built the way
-the composition root builds it — through ``build_dispatch_runtime``, the
-function ``main.py`` calls, over the fake tracker and a scripted queue — and
-its passes are run until the board is drained. What is recorded is the
-sequence of issues claimed and the sequence of fires enqueued, which is what
-the hand-off to ``launch`` produces.
+no respelling of that code can reach around, in both flows that decide what
+fires.
+
+The dispatch pass. The dispatcher is built the way the composition root
+builds it — through ``build_dispatch_runtime``, the function ``main.py``
+calls, over the fake tracker and a scripted queue — and its passes are run
+until the board is drained. What is recorded is the sequence of issues
+claimed and the sequence of fires enqueued, which is what the hand-off to
+``launch`` produces.
+
+The scope flow. In a scope deployment the lane that fires is chosen by
+``ScopeWorkflowEngine``, which ``build_workflow_engine`` (the function
+``main.py`` calls) builds through ``build_scope_runtime``. It is built that
+way here, over a scope board whose lanes are the board's issues with their
+priorities and ages, and one walk is run to its end. Every fire it launches
+is refused at its first session by the scripted executor, which the lane
+boundary contains and rests, so each lane is fired once and the walk ends
+when none is left: what is recorded is the sequence of lanes fired, with
+each lane's contained failure, and that sequence is the lane selector's
+order. The scope flow's own eligibility inputs are registered apart
+(``SCOPE_ELIGIBILITY_REASONS``), and its varied fields are derived from the
+row model the same way.
 
 The row is partitioned three ways, off the row model itself. ``RANK_INPUTS``
 are the two fields a rank is made from. ``ELIGIBILITY_INPUTS`` are the fields
@@ -17,9 +33,11 @@ count field is among them. Every other field of ``TrackerIssue`` is varied,
 so a field added to the row is varied as soon as it exists, and a field whose
 range this module does not know fails loudly. Beyond the row, what the port
 answers about an issue's subtree is varied too: its sub-issues, its
-criterion sub-issues and its comments. So are the edge kinds no eligibility
-clause reads: the blocker clause reads blocked-by edges alone, so the
-issue's other edges (blocks, related, duplicate) are a count like any other.
+criterion sub-issues and its comments. In the scope flow these are the
+lane's gap: many open criteria under it, and many deliverable children, each
+owing a criterion of its own. So are the edge kinds no eligibility clause
+reads: the blocker clause reads blocked-by edges alone, so the issue's other
+edges (blocks, related, duplicate) are a count like any other.
 Each varied input is set to its extremes — nothing, and a great deal — one
 input at a time, then all of them together, over several heavy sets: the
 issues at each parity of the board, the older member of each equal-priority
@@ -29,21 +47,27 @@ every such pair is split both ways, so a size that reaches the rank only
 below the priority — as a tie-break, or folded into the age — moves the
 decision here. The decision must equal the base decision every time.
 
-Reach: the decision as the composition root composes it is invariant under
-every non-rank, non-eligibility input the board holds, at the extremes
-above. So a size read off the board anywhere between the scan and the
-enqueue — a rebinding at boot, a subclass built at the root, a validator on
-the row, an eligibility clause, a table consulted after the selection, a
-hook in the rank value, a tie-break among equal priorities, an age shifted
-by a size, a count over the edges no clause reads — fails here whatever it
-is spelled, as soon as it moves the decision for a board holding those
-extremes.
+Reach: in both flows, the decision as the composition root composes it is
+invariant under every non-rank, non-eligibility input the board holds, at
+the extremes above. So a size read off the board anywhere between the read
+and the fire — a rebinding at boot, a subclass built at the root, a
+validator on the row, an eligibility clause, a table consulted after the
+selection, a hook in the rank value, a tie-break among equal priorities, an
+age shifted by a size, a count over the edges no clause reads, a lane
+skipped or chosen by its gap — fails here whatever it is spelled, as soon as
+it moves the decision for a board holding those extremes.
 
 Limit: a size taken from outside the board (for example, from the
-repository) is not varied here. It would have to be read in one of the path
-bodies the static guard pins, or after the selection, where only the
-board-derived variation reaches it. A size rule that moves nothing at these
-extremes — a threshold beyond them — is not seen. The pass runs ungated
+repository) is not varied here, so it would have to be read in a path body
+the static guard pins to be seen; the scope flow's lane selector
+(``ScopeWorkflowEngine._select``) and the dispatch pass's hand-off after the
+selection are not among those bodies. A size rule that moves nothing at
+these extremes — a threshold beyond them — is not seen; in the scope flow
+the subtree's great deal is ``SCOPE_MANY`` per part, because the ready read
+re-reads every lane's subtree on every tick. In the scope flow a lane whose
+body and title are both empty has no subject and is refused before its
+graph launches, so there the everything case leaves the title alone and the
+title is varied on its own. The pass runs ungated
 (``dispatch_pass_gate_signals`` empty, a legal deployment), so the gate's
 own reading of the board is outside this test; the gate decides whether a
 pass runs, not which issue it claims.
@@ -53,11 +77,14 @@ import asyncio
 import types
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
+from enum import StrEnum
 from typing import Union, get_args, get_origin
 
 import pytest
+import structlog.testing
 
+from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.composition.passes import build_dispatch_runtime
 from kodezart.composition.tracker import DialledTracker
 from kodezart.config.app import AppConfig
@@ -65,6 +92,7 @@ from kodezart.core.logging import get_logger
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.operation import QueueState
+from kodezart.types.domain.scope_runtime import ScopeWalkEvent
 from kodezart.types.domain.tracker import (
     IssuePriority,
     IssueQuery,
@@ -76,6 +104,7 @@ from kodezart.types.domain.tracker import (
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
+    FakeAgentExecutor,
     FakeAgentRunner,
     FakeDeliveryProbe,
     FakeGitService,
@@ -89,6 +118,9 @@ from tests.fakes import (
     make_prompt_provider,
     make_tracker_issue,
 )
+from tests.integration.test_scope_runtime import SCOPE, bounded_walk
+from tests.integration.test_scope_runtime import board as scope_board
+from tests.integration.test_scope_runtime import runtime as scope_runtime
 from tests.services.test_dispatch_pass import APPROVER, operation_config
 
 #: The row fields a rank is made from: ``rank_key`` reads these two.
@@ -112,6 +144,35 @@ ELIGIBILITY_INPUTS = frozenset(ELIGIBILITY_REASONS)
 #: Every other field of the row, derived from the model.
 VARIED = frozenset(TrackerIssue.model_fields) - RANK_INPUTS - ELIGIBILITY_INPUTS
 
+#: Exact. The row fields the scope flow reads to decide which lanes it may
+#: fire, one reason each: the ready read, the scope's entry and approval.
+#: No size, body or count field belongs here.
+SCOPE_ELIGIBILITY_REASONS: dict[str, str] = {
+    "issue_key": "the scope's membership and every per-lane read are keyed by it",
+    "issue_labels": "the ready read sets criteria and record issues apart by "
+    "label, and the entry requires every member's organize stage markers",
+    "state_kind": "the subtree closure reads which criteria are open, and a lane "
+    "owing none is closed",
+    "relations": "the topology reads the lane's blocked-by edges; the other kinds "
+    "are varied (UNREAD_EDGE_KINDS)",
+    "parent_key": "the ready read roots each lane's subtree by parentage, and "
+    "approval is inherited up it",
+    "project": "approval refuses a project member with no canonical project key",
+    "project_id": "approval is inherited from the lane's project",
+    "milestone_key": "approval refuses a milestone member with no owning project",
+}
+SCOPE_ELIGIBILITY_INPUTS = frozenset(SCOPE_ELIGIBILITY_REASONS)
+
+#: Every other field of a scope lane's row, derived from the model.
+SCOPE_VARIED = (
+    frozenset(TrackerIssue.model_fields) - RANK_INPUTS - SCOPE_ELIGIBILITY_INPUTS
+)
+
+#: The field the scope flow's everything case leaves alone: a lane's subject
+#: is its body, or its title where the body is empty, and a lane with
+#: neither is refused before its graph launches.
+SCOPE_SUBJECT_FALLBACK = "title"
+
 #: What the port answers about an issue's subtree, beyond the row.
 SUBTREE = ("sub_issues", "criteria", "comments")
 
@@ -131,6 +192,11 @@ LONG_TEXT = "\n".join(f"line {number} of a very long text" for number in range(5
 MANY = 200
 MANY_LABELS = frozenset(f"label-{number}" for number in range(MANY))
 CRITERION_LABEL = "criterion"
+#: A great deal of time: an age of centuries.
+LONG_TIME = timedelta(days=100 * 365)
+#: The scope flow's subtree great deal, per part and per lane: the ready read
+#: re-reads every lane's subtree several times a tick, one port read each.
+SCOPE_MANY = 12
 
 HOUR = timedelta(hours=1)
 
@@ -182,6 +248,19 @@ BASE_DECISION = (
     ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3"),
 )
 
+#: The scripted executor's refusal: what every scope fire ends in.
+FIRE_REFUSAL = "the scripted executor opens no session"
+
+#: Exact. The scope flow's decision over the same lanes: every lane fired
+#: once, in rank order, each ending in the contained refusal.
+SCOPE_BASE_DECISION = (
+    ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3"),
+    tuple(
+        (key, "RuntimeError", FIRE_REFUSAL)
+        for key in ("K-2", "K-6", "K-4", "K-5", "K-1", "K-3")
+    ),
+)
+
 
 def extremes(name: str) -> tuple[object, object]:
     """The two ends of a varied field's range: nothing, and a great deal."""
@@ -194,8 +273,16 @@ def extremes(name: str) -> tuple[object, object]:
         return None, LONG_TEXT
     if get_origin(annotation) is frozenset and get_args(annotation) == (str,):
         return frozenset(), MANY_LABELS
+    if (
+        get_origin(annotation) is frozenset
+        and isinstance(get_args(annotation)[0], type)
+        and issubclass(get_args(annotation)[0], StrEnum)
+    ):
+        return frozenset(), frozenset(get_args(annotation)[0])
     if annotation is int:
         return 0, 10**9
+    if annotation is datetime:
+        return FIXTURE_EPOCH, FIXTURE_EPOCH + LONG_TIME
     pytest.fail(f"no extremes are known for {name}: {annotation}")
 
 
@@ -235,8 +322,12 @@ class Variation:
     heavy: frozenset[str]
 
     def board(self) -> tuple[TrackerIssue, ...]:
+        return self.rows(BOARD)
+
+    def rows(self, base: Sequence[TrackerIssue]) -> tuple[TrackerIssue, ...]:
+        """*base* with this variation's fields and edges set, issue by issue."""
         rows = []
-        for issue in BOARD:
+        for issue in base:
             heavy = issue.issue_key in self.heavy
             update: dict[str, object] = {
                 name: extremes(name)[1 if heavy else 0] for name in self.fields
@@ -376,22 +467,136 @@ async def decision(
             await runtime.lifecycle.drain()
 
 
-def variations() -> dict[str, Variation]:
-    """Each varied input alone, then all of them together, per heavy set."""
+def variations(
+    varied: frozenset[str], together: frozenset[str]
+) -> dict[str, Variation]:
+    """Each varied input alone, then *together* at once, per heavy set."""
     cases: dict[str, Variation] = {}
     for side, heavy in HEAVY_SETS.items():
-        for name in sorted(VARIED):
+        for name in sorted(varied):
             cases[f"{name}-{side}"] = Variation((name,), (), False, heavy)
         for part in SUBTREE:
             cases[f"{part}-{side}"] = Variation((), (part,), False, heavy)
         cases[f"unread_edges-{side}"] = Variation((), (), True, heavy)
         cases[f"everything-{side}"] = Variation(
-            tuple(sorted(VARIED)), SUBTREE, True, heavy
+            tuple(sorted(together)), SUBTREE, True, heavy
         )
     return cases
 
 
-VARIATIONS = variations()
+VARIATIONS = variations(VARIED, VARIED)
+SCOPE_VARIATIONS = variations(SCOPE_VARIED, SCOPE_VARIED - {SCOPE_SUBJECT_FALLBACK})
+
+
+class RefusingExecutor(FakeAgentExecutor):
+    """An agent boundary that refuses every session a fire opens.
+
+    A fire's first session raises, the lane boundary contains it and rests
+    the lane, so each lane is fired once and nothing a fire does after its
+    launch can bear on which lane the walk fires next.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(events=[])
+        self.refused: list[str] = []
+
+    async def stream(self, **kwargs: object) -> AsyncGenerator[AgentEvent, None]:
+        self.refused.append(str(kwargs.get("prompt")))
+        raise RuntimeError(FIRE_REFUSAL)
+        yield
+
+
+def scope_lanes(variation: Variation | None) -> FakeTrackerPort:
+    """The scope board: one lane per board issue, varied by *variation*.
+
+    Each lane carries its issue's priority and age, and the stage markers
+    and one criterion the scope board gives every lane. Heavy lanes are
+    given the variation's subtree: ``SCOPE_MANY`` open criteria, as many
+    deliverable children each owing one criterion, and as many long
+    comments.
+    """
+    keys = tuple(issue.issue_key for issue in BOARD)
+    port = scope_board(
+        lanes=keys, priorities={issue.issue_key: issue.priority for issue in BOARD}
+    )
+    aged = tuple(
+        rebuilt(
+            port.issues[issue.issue_key],
+            created_at=issue.created_at,
+            updated_at=issue.created_at,
+        )
+        for issue in BOARD
+    )
+    lanes = aged if variation is None else variation.rows(aged)
+    for lane in lanes:
+        port.issues[lane.issue_key] = lane
+    parts = () if variation is None else variation.subtree
+    for lane in lanes:
+        if variation is None or lane.issue_key not in variation.heavy:
+            continue
+        for number in range(SCOPE_MANY):
+            owed = []
+            if "criteria" in parts:
+                owed.append((f"{lane.issue_key}/many-{number}", lane.issue_key))
+            if "sub_issues" in parts:
+                child = make_tracker_issue(
+                    f"{lane.issue_key}-child-{number}",
+                    parent_key=lane.issue_key,
+                    queue_states=(),
+                    issue_labels=lane.issue_labels,
+                )
+                port.issues[child.issue_key] = child
+                owed.append((f"{child.issue_key}/check", child.issue_key))
+            for key, parent in owed:
+                port.issues[key] = make_tracker_issue(
+                    key,
+                    parent_key=parent,
+                    queue_states=(),
+                    issue_labels=frozenset({CRITERION_LABEL}),
+                    body=f"**Check:** {key} holds\n**Evidence:** —",
+                )
+            if "comments" in parts:
+                port.comments.append(
+                    TrackerComment(
+                        comment_key=f"{lane.issue_key}-comment-{number}",
+                        issue_key=lane.issue_key,
+                        author_key=APPROVER,
+                        body=LONG_TEXT,
+                        created_at=FIXTURE_EPOCH,
+                    )
+                )
+    return port
+
+
+async def scope_decision(
+    port: FakeTrackerPort,
+) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
+    """The lanes one scope walk fires, and how each lane's turn ended.
+
+    Built through ``build_workflow_engine``, the function ``main.py``
+    calls, which composes the scope flow through ``build_scope_runtime``.
+    Bounded: the walk runs under the scope suite's own time bound, and each
+    lane is fired at most once because its refused fire rests it. The log
+    is captured rather than rendered, since each contained refusal logs its
+    traceback.
+    """
+    executor = RefusingExecutor()
+    harness = scope_runtime(
+        port=port,
+        lanes=tuple(issue.issue_key for issue in BOARD),
+        executor=executor,
+    )
+    with structlog.testing.capture_logs():
+        events = await bounded_walk(harness)
+    observations = [
+        event.observation for event in events if isinstance(event, ScopeWalkEvent)
+    ]
+    last = observations[-1]
+    assert len(executor.refused) == len(last.dispatched)
+    return last.dispatched, tuple(
+        (failure.issue_key, failure.error.error_kind, failure.error.error)
+        for failure in last.failed_lanes
+    )
 
 
 def test_the_row_is_partitioned_into_rank_eligibility_and_varied_fields() -> None:
@@ -411,6 +616,17 @@ def test_the_row_is_partitioned_into_rank_eligibility_and_varied_fields() -> Non
     for name in VARIED:
         low, high = extremes(name)
         assert low != high, name
+    scope_fields = SCOPE_ELIGIBILITY_INPUTS | SCOPE_VARIED
+    assert RANK_INPUTS | scope_fields == fields
+    assert not RANK_INPUTS & SCOPE_ELIGIBILITY_INPUTS
+    assert not RANK_INPUTS & SCOPE_VARIED
+    assert not SCOPE_ELIGIBILITY_INPUTS & SCOPE_VARIED
+    assert SCOPE_VARIED
+    assert SCOPE_SUBJECT_FALLBACK in SCOPE_VARIED
+    assert all(reason.strip() for reason in SCOPE_ELIGIBILITY_REASONS.values())
+    for name in SCOPE_VARIED:
+        low, high = extremes(name)
+        assert low != high, name
     assert set(READ_EDGE_KINDS) | set(UNREAD_EDGE_KINDS) == set(IssueRelationKind)
     assert not set(READ_EDGE_KINDS) & set(UNREAD_EDGE_KINDS)
     assert UNREAD_EDGE_KINDS
@@ -427,12 +643,13 @@ def test_every_equal_priority_pair_is_split_both_ways() -> None:
     moves the order of that pair in one of them.
     """
     assert EQUAL_PRIORITY_PAIRS
-    for older, younger in EQUAL_PRIORITY_PAIRS:
-        splits = {
-            (older in variation.heavy, younger in variation.heavy)
-            for variation in VARIATIONS.values()
-        }
-        assert {(True, False), (False, True)} <= splits, (older, younger)
+    for cases in (VARIATIONS, SCOPE_VARIATIONS):
+        for older, younger in EQUAL_PRIORITY_PAIRS:
+            splits = {
+                (older in variation.heavy, younger in variation.heavy)
+                for variation in cases.values()
+            }
+            assert {(True, False), (False, True)} <= splits, (older, younger)
 
 
 async def test_the_composed_dispatcher_drains_the_board_in_rank_order() -> None:
@@ -481,3 +698,46 @@ async def test_the_decision_does_not_move_when_a_size_moves(case: str) -> None:
     assert await decision(board, children=children, comments=comments) == (
         BASE_DECISION
     )
+
+
+async def test_the_composed_scope_flow_fires_its_lanes_in_rank_order() -> None:
+    """The scope flow's base decision: priority first, age second, each once.
+
+    The literal is written out, so a walk that fired nothing, or a scope
+    flow composed some other way, fails here before any variation is
+    compared with it.
+    """
+    assert await scope_decision(scope_lanes(None)) == SCOPE_BASE_DECISION
+
+
+async def test_the_ready_read_answers_the_varied_gap() -> None:
+    """The control for the scope subtree: the lane selector is handed it.
+
+    A lane given the whole subtree is read back through the ready read the
+    walk selects from: its gap is its own criterion, the ``SCOPE_MANY``
+    criteria under it and one criterion under each of its ``SCOPE_MANY``
+    children, and a light lane's gap is its own criterion alone.
+    """
+    heavy = BOARD[0].issue_key
+    variation = Variation((), SUBTREE, False, frozenset({heavy}))
+    port = scope_lanes(variation)
+    ready = await read_scope_ready(ref=SCOPE, tracker=port)
+    gaps = {lane.issue.issue_key: len(lane.gap) for lane in ready.ready}
+    assert gaps == {
+        issue.issue_key: 1 + 2 * SCOPE_MANY if issue.issue_key == heavy else 1
+        for issue in BOARD
+    }
+    assert len(await port.list_comments(issue_key=heavy)) == SCOPE_MANY
+
+
+@pytest.mark.parametrize("case", sorted(SCOPE_VARIATIONS))
+async def test_the_scope_flow_does_not_move_when_a_size_moves(case: str) -> None:
+    """The same lanes fired in the same order, whatever the varied inputs hold.
+
+    The variation is checked to reach the scope board first, so a variation
+    that changed nothing cannot pass for one the walk withstood.
+    """
+    variation = SCOPE_VARIATIONS[case]
+    port = scope_lanes(variation)
+    assert port.issues != scope_lanes(None).issues or port.comments, case
+    assert await scope_decision(port) == SCOPE_BASE_DECISION
