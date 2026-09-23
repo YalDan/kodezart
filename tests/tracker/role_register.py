@@ -192,6 +192,35 @@ def declaring_roles(text: str) -> frozenset[str]:
     return frozenset(name for name in roles(text) if own[name])
 
 
+def adapter_callables() -> frozenset[str]:
+    """The public callables of the vendor adapter, read off the object.
+
+    A surface the aggregate's own composition does not decide, so a role
+    left out of the aggregate still has its members counted here.
+    """
+    return frozenset(
+        name
+        for name in dir(LinearMcpTracker)
+        if not name.startswith("_") and callable(getattr(LinearMcpTracker, name))
+    )
+
+
+def roles_off_the_aggregate(text: str) -> frozenset[str]:
+    """Every protocol declaring adapter members that the aggregate does not name.
+
+    A protocol whose own body is non-empty and answered wholly by the
+    adapter declares part of the tracker surface, and the aggregate must
+    list it as a base of its own rather than reach it through another role.
+    """
+    surface = adapter_callables()
+    named = set(declared_bases(text).get(AGGREGATE, ()))
+    return frozenset(
+        name
+        for name, members in own_declarations(text).items()
+        if name != AGGREGATE and members and members <= surface and name not in named
+    )
+
+
 def twice_declared(text: str) -> dict[str, tuple[str, ...]]:
     """Every member declared on more than one role, with the roles that do."""
     own = own_declarations(text)

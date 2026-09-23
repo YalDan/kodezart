@@ -2025,12 +2025,37 @@ class LifecycleStateWriter(
 class TrackerPort(
     FireSubjectReader,
     LifecycleStateWriter,
+    WorkRefRecorder,
+    WorkRefReader,
     OrganizeOwnerTracker,
+    TrackerArtifactReader,
+    TrackerScopeApprovalReader,
+    ClassificationWriter,
+    CommentRecordWriter,
+    StateRestorer,
+    ContainerMetadataReader,
     FireDispatchTracker,
+    ClaimHolder,
     ModelMemberReader,
     OrganizeContextTracker,
+    IssueReader,
+    PlanningIssueReader,
+    ScopeReadPreflight,
+    TrackerCommentReader,
+    TrackerCriteriaReader,
+    ExecutionApprovalReader,
+    CriterionMintWriter,
+    DescriptionWriter,
+    IssueRevisionReader,
+    ScopeFamilyReader,
     PassGateReader,
+    IssueScanReader,
+    RecordedRepositoryReader,
     RunAlarmTracker,
+    LaneEventHistory,
+    LaneEventWriter,
+    SurfaceLeaseTracker,
+    WorkflowStateWriter,
     CriterionReopener,
     EscalationResolutionReader,
     ScanCapabilityReader,
@@ -2062,7 +2087,9 @@ class TrackerPort(
     It declares no member of its own: every member belongs to the role its
     consumer names, and this is the whole of them, composed once for the
     composition that holds one adapter and hands it to role-typed
-    parameters.
+    parameters. It names every role that declares a member as a base of its
+    own, most-derived first, so narrowing a consumer's role never takes a
+    member off the whole.
     """
 
 
