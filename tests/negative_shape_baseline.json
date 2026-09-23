@@ -56,7 +56,7 @@
   "tests/chains/test_audit_pass.py": 44,
   "tests/chains/test_authored_check_routing.py": 47,
   "tests/chains/test_authored_publication_clean.py": 1,
-  "tests/chains/test_authority_independent_review.py": 22,
+  "tests/chains/test_authority_independent_review.py": 23,
   "tests/chains/test_criteria_stage_order.py": 21,
   "tests/chains/test_criteria_validation.py": 116,
   "tests/chains/test_delivery_coordinator.py": 50,
@@ -82,7 +82,7 @@
   "tests/chains/test_native_prepare_cancel_peer.py": 7,
   "tests/chains/test_native_prepare_cleanup_peer.py": 7,
   "tests/chains/test_node_session_events.py": 16,
-  "tests/chains/test_organize.py": 237,
+  "tests/chains/test_organize.py": 275,
   "tests/chains/test_organize_correction.py": 6,
   "tests/chains/test_organize_delivery_independent.py": 16,
   "tests/chains/test_organize_description_authority.py": 10,
@@ -1702,7 +1702,12 @@
    "test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read",
    "test_both_sets_put_the_declared_environments_in_front_of_the_admission",
    "test_an_undemonstrable_deliverable_is_refused_and_relocated_on_the_board",
-   "test_a_criterion_naming_no_demonstration_is_refused_before_it_is_created"
+   "test_a_criterion_naming_no_demonstration_is_refused_before_it_is_created",
+   "test_an_unverifiable_verdict_first_met_in_verification_reaches_the_halt",
+   "test_a_surface_another_run_is_bidding_for_leaves_the_mandate_open",
+   "test_a_later_round_lists_the_roster_once_before_its_gap",
+   "test_both_sets_tell_the_criteria_author_to_name_what_fills_the_evidence",
+   "test_a_replayed_child_naming_nothing_stays_dry_beside_a_new_named_one"
   ],
   "tests/chains/test_organize_correction.py": [
    "test_escalation_rechecks_approval_before_its_second_write"
