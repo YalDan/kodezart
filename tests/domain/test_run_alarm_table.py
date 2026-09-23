@@ -131,6 +131,35 @@ def test_a_record_carrying_a_bound_its_readings_never_crossed_refuses():
         alarm_raised(forged)
 
 
+def test_a_record_whose_signal_has_no_fold_is_refused_not_answered_quiet(monkeypatch):
+    """No runtime arm answers a missing fold, however that arm is spelled.
+
+    The boot refuses a table short of any member, so no row is missing once
+    anything runs; an arm that answered "not raised" for a missing row would
+    switch a signal off without a knob. Asked of the behaviour rather than of
+    a spelling: with the record's own row taken out of the table the process
+    runs with, the replay raises ``KeyError`` instead of returning an answer.
+    """
+    on, firing, _ = REGRESSED_PAIR
+    raised = tally_regressed(
+        subject=on, readings=firing, raised_at_sha=HEAD, raised_by=HOLDER
+    )
+    assert raised is not None
+    assert alarm_raised(raised)
+    monkeypatch.setattr(
+        run_alarm_table,
+        "ALARM_TABLE",
+        {
+            signal: row
+            for signal, row in ALARM_TABLE.items()
+            if signal is not raised.signal
+        },
+    )
+
+    with pytest.raises(KeyError):
+        alarm_raised(raised)
+
+
 # ---------------------------------------------------------------------------
 # Every folded signal is a member; every widening an arm of its member.
 # ---------------------------------------------------------------------------

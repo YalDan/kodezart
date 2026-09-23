@@ -888,9 +888,20 @@ alarm's declared scans, and the landed probe refuses with
 declares it. A deployment that does not schedule the tick probes nothing on its
 behalf. Nothing at runtime asks whether a signal has a fold or a capability, no
 configuration field can name a signal, and nothing catches either refusal;
-`tests/test_capability_checked_at_boot.py` holds all three. Whether a stored
-record is an alarm is answered by `alarm_raised`, which replays the record
-through its own row's fold for every signal alike.
+`tests/test_capability_checked_at_boot.py` holds all three for the spellings it
+scans. Whether a stored record is an alarm is answered by `alarm_raised`, which
+replays the record through its own row's fold for every signal alike, and a
+missing fold is never answered as a quiet signal: with a record's row taken out
+of the table, `alarm_raised` raises `KeyError`, which
+`tests/domain/test_run_alarm_table.py` holds whatever an arm's spelling. No
+knob, whatever its name or type, narrows what the supervisor observes: every
+function that reads `OBSERVED_ALARMS`, the supervisor arm of
+`_verify_wired_gates` and the lane observation's `_announceable` among them,
+reads no `AppConfig` or `OperationConfig` field inside the statements that
+read that set other than a `run_alarm_*` numeric bound. That scan is keyed on
+the consumer and resolved by object; a value handed across a function
+boundary, a name built at run time and a binding made only when a function
+runs are outside its reach.
 
 ### Supervisor pass
 
