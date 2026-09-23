@@ -11,7 +11,10 @@ A role double answers its role plus the roles it composes and the roles
 whose members it calls through: its bases are exactly the doubles of the
 declaring roles its role composes and of the classes defining what its own
 body calls on itself, both derived, so it answers nothing wider and works
-when it is built alone. The store it is built over declares nothing public.
+when it is built alone. The store it is built over declares nothing public
+and reads nothing of itself it does not define, so no role member is reached
+through the store. A member read through ``getattr(self, ...)``,
+``type(self)`` or an alias of ``self`` is read like ``self.<name>``.
 
 The classes are found by what they declare, read off the module's own text,
 assignments counted as well as definitions, and the roles by the register
@@ -39,6 +42,7 @@ from tests.domain.test_lane_record import record_data
 from tests.fakes import FIXTURE_EPOCH, FakeTrackerPort
 from tests.tracker import test_lane_records as lane
 from tests.tracker.role_register import (
+    class_defs,
     class_per_role,
     classes_outside_one_role,
     consumer_classes,
@@ -51,6 +55,7 @@ from tests.tracker.role_register import (
     port_module_text,
     roles_implemented_nowhere,
     roles_implemented_twice,
+    store_publics,
 )
 from tests.tracker.role_register import roles as register_roles
 
@@ -128,6 +133,7 @@ def test_the_composed_double_declares_nothing_and_composes_every_role_class():
 
 def test_each_role_double_is_built_over_exactly_the_doubles_it_needs():
     assert edge_report(MODULE_TEXT, state=STATE.__name__, whole=WHOLE) == {}
+    assert store_publics(MODULE_TEXT, state=STATE.__name__) == frozenset()
 
 
 def test_the_store_declares_no_public_callable():
@@ -256,39 +262,144 @@ def planted(*, members: frozenset[str], name: str, base: str) -> str:
     return f"\n\nclass {name}({base}):\n{body or '    ...'}\n"
 
 
-#: Each way the double could stop being one class per role: the text that
-#: arrives, and the one report that must name it.
+def with_header(text: str, name: str, header: str) -> str:
+    """*text* with class *name*'s header, its bases, replaced by *header*."""
+    lines = text.splitlines(keepends=True)
+    node = class_defs(text)[name]
+    return "".join(
+        [*lines[: node.lineno - 1], f"{header}\n", *lines[node.body[0].lineno - 1 :]]
+    )
+
+
+def with_lines(text: str, name: str, added: str) -> str:
+    """*text* with *added* at the head of class *name*'s body, after its docstring."""
+    lines = text.splitlines(keepends=True)
+    after = class_defs(text)[name].body[0].end_lineno or 0
+    return "".join([*lines[:after], "\n", added, *lines[after:]])
+
+
+def plants() -> dict[str, str]:
+    """Each way the double could stop being one class per role, as the text.
+
+    The classes are chosen off the derivations, not named: a role double
+    that needs another, two leaves that need nothing, a consumer double, a
+    leaf its role does not compose, and leaves no other double needs, so a
+    member planted twice is the one thing wrong with the text.
+    """
+    state = STATE.__name__
+    classes = class_defs(MODULE_TEXT)
+    needs = needed_classes(MODULE_TEXT, state=state, whole=WHOLE)
+    doubles = class_per_role(role_classes())
+    consumers = consumer_doubles()
+    role_of = {name: role for role, name in doubles.items()}
+    leaves = sorted(
+        name
+        for name in doubles.values()
+        if not needs[name]
+        and [base.id for base in classes[name].bases if isinstance(base, ast.Name)]
+        == [state]
+    )
+    needing = min(name for name in doubles.values() if needs[name])
+    first, second = leaves[0], leaves[1]
+    held = min(declared_by_role()[role_of[second]])
+    consumer = min(consumers)
+    composed_there = {role_of[name] for name in needs[consumer] if name in role_of}
+    outsider = next(name for name in leaves if role_of[name] not in composed_there)
+    unneeded = sorted(
+        name
+        for name in leaves
+        if not any(name in needs[other] for other in needs if other != name)
+    )
+    members = declared_by_role()[role_of[unneeded[0]]]
+    other = min(declared_by_role()[role_of[unneeded[-1]]])
+    return {
+        "a member outside its role": MODULE_TEXT
+        + planted(members=members | {other}, name="WiderDouble", base=state),
+        "a second class for one role": MODULE_TEXT
+        + planted(members=members, name="SecondDouble", base=state),
+        "a member on the composed double": MODULE_TEXT
+        + planted(members=members, name=WHOLE, base=state),
+        "a dropped needed base": with_header(
+            MODULE_TEXT, needing, f"class {needing}({state}):"
+        ),
+        "an extra base": with_header(MODULE_TEXT, first, f"class {first}({second}):"),
+        "a base that is no role double": with_header(
+            MODULE_TEXT, first, f"class {first}({state}, PlantedMixin):"
+        ),
+        "a consumer double with an extra base": with_header(
+            MODULE_TEXT,
+            consumer,
+            f"class {consumer}("
+            + ", ".join(
+                [
+                    *(ast.unparse(base) for base in classes[consumer].bases),
+                    outsider,
+                ]
+            )
+            + "):",
+        ),
+        "a public member on the store": with_lines(
+            MODULE_TEXT,
+            state,
+            "    def seed_issue(self) -> None:\n        return None\n",
+        ),
+        "the store reading a role member": with_lines(
+            MODULE_TEXT,
+            state,
+            f"    def _peek(self) -> object:\n        return self.{held}\n",
+        ),
+        "a member read through getattr": with_lines(
+            MODULE_TEXT,
+            first,
+            f'    def _peek(self) -> object:\n        return getattr(self, "{held}")\n',
+        ),
+        "a member read through type(self)": with_lines(
+            MODULE_TEXT,
+            first,
+            f"    def _peek(self) -> object:\n        return type(self).{held}\n",
+        ),
+        "a member read through an alias of self": with_lines(
+            MODULE_TEXT,
+            first,
+            "    def _peek(self) -> object:\n"
+            f"        me = self\n        return me.{held}\n",
+        ),
+    }
+
+
+#: Each way the double could stop being one class per role, and the one
+#: report that must name it.
 PLANTED_DOUBLES = {
-    "a member outside its role": ("wider", "outside"),
-    "a second class for one role": ("second", "twice"),
-    "a member on the composed double": ("whole", "whole"),
+    "a member outside its role": "outside",
+    "a second class for one role": "twice",
+    "a member on the composed double": "whole",
+    "a dropped needed base": "edges",
+    "an extra base": "edges",
+    "a base that is no role double": "edges",
+    "a consumer double with an extra base": "outside",
+    "a public member on the store": "store",
+    "the store reading a role member": "edges",
+    "a member read through getattr": "edges",
+    "a member read through type(self)": "edges",
+    "a member read through an alias of self": "edges",
 }
 
 
 @pytest.mark.parametrize("form", sorted(PLANTED_DOUBLES))
 def test_a_double_that_leaves_its_roles_is_reported(form):
-    roles = declared_by_role()
-    _, members = min(roles.items())
-    other = next(iter(sorted(roles[max(roles)])))
-    shape, expected = PLANTED_DOUBLES[form]
-    text = (
-        MODULE_TEXT
-        + {
-            "wider": planted(
-                members=members | {other}, name="WiderDouble", base=STATE.__name__
-            ),
-            "second": planted(
-                members=members, name="SecondDouble", base=STATE.__name__
-            ),
-            "whole": planted(members=members, name=WHOLE, base=STATE.__name__),
-        }[shape]
-    )
+    text = plants()[form]
     classes = role_classes(text)
+    state = STATE.__name__
 
     reports = {
         "outside": bool(classes_outside_one_role(classes, consumer_doubles(text))),
         "twice": bool(roles_implemented_twice(classes)),
         "whole": bool(whole_declares(text)),
+        "edges": bool(edge_report(text, state=state, whole=WHOLE)),
+        "store": bool(store_publics(text, state=state)),
     }
 
-    assert [name for name, reported in reports.items() if reported] == [expected]
+    assert text != MODULE_TEXT
+    assert [name for name, reported in reports.items() if reported] == [
+        PLANTED_DOUBLES[form]
+    ]

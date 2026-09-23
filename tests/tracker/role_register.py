@@ -1667,20 +1667,66 @@ def public(names: frozenset[str]) -> frozenset[str]:
     return frozenset(name for name in names if not name.startswith("_"))
 
 
-def self_calls(node: ast.ClassDef) -> frozenset[str]:
-    """Every ``self.<name>`` a class body reads, public or private.
+def selves(node: ast.ClassDef) -> frozenset[str]:
+    """The names a class body reads its own instance under: ``self`` and aliases."""
+    names = {"self"}
+    pairs = assigned_pairs(node)
+    grown = True
+    while grown:
+        aliases = {
+            target.id
+            for target, value in pairs
+            if isinstance(target, ast.Name)
+            and isinstance(value, ast.Name)
+            and value.id in names
+        }
+        grown = not aliases <= names
+        names |= aliases
+    return frozenset(names)
 
-    A call and a bound method handed on as a callback both reach the member,
-    so both count; an attribute the body assigns is not a read.
+
+def self_calls(node: ast.ClassDef) -> frozenset[str]:
+    """Every member of its own instance a class body reads, public or private.
+
+    Read as ``self.<name>``, ``type(self).<name>`` or ``getattr(self,
+    "<name>")``, through ``self`` or a local alias of it. A call and a bound
+    method handed on as a callback both reach the member, so both count; an
+    attribute the body assigns is not a read.
     """
-    return frozenset(
-        part.attr
-        for part in ast.walk(node)
-        if isinstance(part, ast.Attribute)
-        and isinstance(part.ctx, ast.Load)
-        and isinstance(part.value, ast.Name)
-        and part.value.id == "self"
-    )
+    own = selves(node)
+
+    def instance(value: ast.expr) -> bool:
+        if isinstance(value, ast.Name):
+            return value.id in own
+        return (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == "type"
+            and len(value.args) == 1
+            and isinstance(value.args[0], ast.Name)
+            and value.args[0].id in own
+        )
+
+    found: set[str] = set()
+    for part in ast.walk(node):
+        if (
+            isinstance(part, ast.Attribute)
+            and isinstance(part.ctx, ast.Load)
+            and instance(part.value)
+        ):
+            found.add(part.attr)
+        elif (
+            isinstance(part, ast.Call)
+            and isinstance(part.func, ast.Name)
+            and part.func.id == "getattr"
+            and len(part.args) >= 2
+            and isinstance(part.args[0], ast.Name)
+            and part.args[0].id in own
+            and isinstance(part.args[1], ast.Constant)
+            and isinstance(part.args[1].value, str)
+        ):
+            found.add(part.args[1].value)
+    return frozenset(found)
 
 
 def self_assigned(node: ast.ClassDef) -> frozenset[str]:
@@ -1770,7 +1816,10 @@ def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ..
     bases reach must be exactly those and what they reach in turn, each base
     must be the state or a role class, and every ``self.<name>`` its body
     reads must be defined by the state or a role class: nothing wider is
-    inherited and nothing it calls is missing when it is built alone.
+    inherited and nothing it calls is missing when it is built alone. A
+    class that answers no role is the one-role report's, not this one's.
+    The state itself reads nothing it does not define, so no role class
+    built over it alone reaches for a member it lacks.
     """
     classes = class_defs(text)
     implemented = implementation_classes(text, state=state, whole=whole)
@@ -1795,8 +1844,18 @@ def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ..
             frontier.extend(bases.get(name, ()))
         return reached
 
+    answering = set(class_per_role(implemented).values()) | set(
+        consumer_classes(text, state=state, whole=whole)
+    )
     report: dict[str, tuple[str, ...]] = {}
+    if unbound := sorted(self_calls(classes[state]) - from_state):
+        report[state] = tuple(
+            f"reads self.{called}, which the state does not define"
+            for called in unbound
+        )
     for name in sorted(implemented):
+        if name not in answering:
+            continue
         own = bound_in_body(classes[name])
         needed = set(needs[name])
         findings = [
@@ -1816,6 +1875,11 @@ def edge_report(text: str, *, state: str, whole: str) -> dict[str, tuple[str, ..
         if findings:
             report[name] = tuple(findings)
     return report
+
+
+def store_publics(text: str, *, state: str) -> frozenset[str]:
+    """Every public name the state's own body binds; it should bind none."""
+    return public(bound_in_body(class_defs(text)[state]))
 
 
 def declared_by_role() -> dict[str, frozenset[str]]:
