@@ -372,8 +372,8 @@ Evidence row, the sub-issue then moves to the configured `done` stage, and one
 `marker_prefixes.run_event` last — the body edit under its own compare-and-set
 precondition, the transition after it, the announcement after that. The event
 is what makes the lane's stream the Evidence row's own write history, which is
-what the audit's restamp trace reads; the stream is read for that entry before
-anything is written, so the same verdict written again at the same head
+what the audit's restamp trace reads; the stream is looked up for that entry
+before anything is written, so the same verdict written again at the same head
 restamps the same row and announces nothing twice. For a criterion the attempt
 failed that this fire had already finished, the sub-issue moves back to the
 team's unstarted state first, the refuting grading then goes on its Evidence
@@ -382,10 +382,11 @@ row, and one `criterion_refuted` event is posted under
 failure anywhere after the move back leaves the criterion owed, and the next
 fire re-grades it, instead of leaving it certified at a sha that failed it. The
 lane's event stream is read once for the whole act, before any sub-issue is
-touched, and only when the roster holds a fail or an undemonstrated reading, so
-a refutation and an undemonstrated reading in one attempt share that one
-reading of the board; for a criterion the attempt read nothing about, its event
-is the act's only write.
+touched, and only when the roster holds a pass, a fail or an undemonstrated
+reading, so a pass, a refutation and an undemonstrated reading in one attempt
+look their entries up in that one reading of the board; an act of lapses alone
+reads no stream. For a criterion the attempt read nothing about, its event is
+the act's only write.
 
 A criterion whose grading no longer stands goes back the same way and announces
 nothing. The sub-issue returns to the team's unstarted state, keeping the sha it

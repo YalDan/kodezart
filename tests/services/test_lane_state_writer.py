@@ -1907,19 +1907,35 @@ async def test_a_refutation_and_an_unverified_reading_share_one_board_read():
     assert [event.subject_key for event in unverified(port)] == [unread]
 
 
-async def test_an_attempt_that_passed_everything_reads_no_board():
-    """Nothing to de-duplicate against, so no listing is paid for.
+async def test_an_attempt_that_passed_everything_reads_the_board_once():
+    """Every pass looks its entry up in the act's one reading of the stream.
 
-    The stream is read for the events this act might post; an attempt with
-    no event to post would pay a round trip per iteration for an answer it
-    never looks at.
+    The stream is read for the events this act might post. A passing
+    cross-off now records its grading there (KOD-506), so an attempt that
+    passed everything has an entry per criterion to de-duplicate, and it
+    pays for that once for the whole act rather than once per criterion.
+    The same verdict at the same head then posts nothing: each entry is
+    found in that one reading.
+
+    An act with no event to post still reads no board; the lapse case below
+    is that act now, and asserts it.
     """
     port = counting_criteria_board()
     lane_state = writer(port, lane_repo())
 
     await tick(lane_state, sha="3" * 40)
 
-    assert port.listings == 0
+    assert port.listings == 1
+    assert [(event.kind, event.subject_key) for event in stream(port)] == [
+        (RunEventKind.CRITERION_PASSED, key) for key in CRITERIA
+    ]
+
+    port.count_the_next_write()
+    posted = len(port.comments)
+    await tick(lane_state, sha="3" * 40)
+
+    assert port.listings == 1
+    assert len(port.comments) == posted
 
 
 async def test_a_second_undemonstrated_grading_at_a_later_head_is_its_own_event():

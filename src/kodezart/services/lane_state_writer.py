@@ -59,10 +59,13 @@ from kodezart.types.domain.run_state import LaneBinding, LanePR, LaneRunState
 from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
 
 #: The cross-off states whose write can announce something on the lane's
-#: run-event stream: a fail announces a refutation and an undemonstrated
-#: reading announces which reading failed. A pass and a lapse announce
-#: nothing, so an act holding only those reads no stream.
-ANNOUNCING_STATES = frozenset({CrossOffState.failed, CrossOffState.undemonstrated})
+#: run-event stream: a pass announces the grading it stamped, a fail
+#: announces a refutation and an undemonstrated reading announces which
+#: reading failed. A lapse announces nothing, so an act holding only lapses
+#: reads no stream.
+ANNOUNCING_STATES = frozenset(
+    {CrossOffState.passed, CrossOffState.failed, CrossOffState.undemonstrated}
+)
 
 
 class TrackerLaneStateWriter:
@@ -374,11 +377,11 @@ class TrackerLaneStateWriter:
 
         The stream is read once for the whole act, before any sub-issue is
         touched, and only when the roster holds something the act could
-        announce — a fail or an undemonstrated reading: an attempt that
-        passed everything writes no event and reads no board, a take-back
-        announcing nothing asks the board nothing extra, and a stream that
-        will not parse refuses while every sub-issue still reads as whatever
-        the last attempt left on it.
+        announce — a pass, a fail or an undemonstrated reading: a pass, a
+        refutation and an undemonstrated reading in one attempt share that
+        one reading, a take-back announcing nothing asks the board nothing
+        extra, and a stream that will not parse refuses while every
+        sub-issue still reads as whatever the last attempt left on it.
         """
         addressed = tuple(str(cross_off.criterion) for cross_off in cross_offs)
         if addressed != tuple(str(criterion.id) for criterion in dispatched):
@@ -392,7 +395,7 @@ class TrackerLaneStateWriter:
         for criterion, cross_off in zip(dispatched, cross_offs, strict=True):
             if cross_off.state is CrossOffState.passed:
                 await self._write_one(
-                    lane=lane, criterion=criterion, cross_off=cross_off
+                    lane=lane, criterion=criterion, cross_off=cross_off, events=events
                 )
                 continue
             reason = cross_off.undemonstrated_reason
@@ -475,6 +478,7 @@ class TrackerLaneStateWriter:
         lane: LaneBinding,
         criterion: TrackerCriterion,
         cross_off: CriterionCrossOff,
+        events: Sequence[LaneRunEvent],
     ) -> None:
         """Finish one criterion at the sha it was graded at.
 
@@ -502,15 +506,16 @@ class TrackerLaneStateWriter:
 
         It is the LAST write of the act, and it is announced once for one
         grading: the same verdict written again at the same head restamps
-        the same row and is the same entry, so the stream is read for that
-        entry before anything is written — the way a take-back reads it —
-        and a stream that will not parse refuses while the sub-issue still
-        reads as it did. A transition that never landed leaves the criterion
-        unfinished and re-graded by the next attempt, which announces its own
-        grading. A post that fails leaves the criterion finished and
-        unannounced, which is the same partial state a lost refutation
-        leaves and is repaired by nobody: finished, it is in no later
-        attempt's roster.
+        the same row and is the same entry, so the stream is looked up for
+        that entry in *events*, the act's one reading of it, taken before
+        anything is written — the reading a take-back looks its refutation
+        up in — and a stream that will not parse has refused before this
+        sub-issue was read. A transition that never landed leaves the
+        criterion unfinished and re-graded by the next attempt, which
+        announces its own grading. A post that fails leaves the criterion
+        finished and unannounced, which is the same partial state a lost
+        refutation leaves and is repaired by nobody: finished, it is in no
+        later attempt's roster.
         """
         issue = await self._tracker.read_issue(issue_key=criterion.id)
         require_tickable(issue=issue, criterion=criterion)
@@ -520,7 +525,7 @@ class TrackerLaneStateWriter:
             subject_key=criterion.id,
             graded_sha=cross_off.evidence.graded_sha,
         )
-        posted = event in self._events(comments=await self._board(lane), lane=lane)
+        posted = event in events
         await self._stamp(
             lane=lane, criterion=criterion, issue=issue, cross_off=cross_off
         )
