@@ -2197,6 +2197,158 @@ async def test_a_round_whose_own_write_empties_the_roster_still_spends_its_dry_r
     assert report.completed_phases == ()
 
 
+def leaving_member_scope(monkeypatch, *, groom, answer):
+    """The board of the round-emptying case, on either row.
+
+    The root and the labelled sibling carry the row's marker, the leaving
+    member carries none, and the leaving member's proposal clears its
+    parent. Once that member has no parent, every verification of the
+    sibling's criterion child is answered by ``answer(payload)``, where
+    *payload* is the harness's own answer. Returns the owner, the board and
+    the key of every verification so answered.
+    """
+    import re
+
+    h = owner_harness()
+    if groom:
+        owner, board, executor = h.factory(body=h.PREPARED_BODY, convergence_bound=2)
+        markers = ["graph complete"]
+    else:
+        owner, board, executor = h.factory(
+            under_approval=True,
+            phases=h.ticket_only,
+            body=h.PREPARED_BODY,
+            convergence_bound=2,
+        )
+        markers = ["body complete", "criteria complete"]
+    board.server.issues[CLAIMED_ISSUE].labels.append(markers[0])
+    board.server.issues[LEAVING_MEMBER] = FakeMcpIssue(
+        id=LEAVING_MEMBER,
+        parent_id=CLAIMED_ISSUE,
+        description="Missing specification",
+    )
+    board.server.issues[DONE_SIBLING] = FakeMcpIssue(
+        id=DONE_SIBLING,
+        parent_id=CLAIMED_ISSUE,
+        description=h.PREPARED_BODY,
+        labels=list(markers),
+    )
+    board.server.issues[DONE_SIBLING_CHECK] = FakeMcpIssue(
+        id=DONE_SIBLING_CHECK,
+        parent_id=DONE_SIBLING,
+        description=h.REFERENCING_BODY,
+        labels=["check"],
+    )
+    answered = []
+    original = executor.stream
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        async for event in original(**kwargs):
+            if title == "OrganizeProposal" and keys[-1:] == [LEAVING_MEMBER]:
+                event = result(
+                    structured_output={
+                        "kind": "graph",
+                        "issue_id": LEAVING_MEMBER,
+                        "changes": [{"kind": "parent", "parent_id": None}],
+                    }
+                )
+            elif (
+                title == "AdmissionJudgment"
+                and keys[-1:] == [DONE_SIBLING_CHECK]
+                and h.VERIFY_OPENING in kwargs["prompt"]
+                and board.server.issues[LEAVING_MEMBER].parent_id is None
+            ):
+                answered.append(DONE_SIBLING_CHECK)
+                event = result(structured_output=answer(event.structured_output))
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    return owner, board, answered
+
+
+async def test_a_groom_round_whose_own_write_empties_the_roster_still_halts(
+    monkeypatch,
+):
+    """The pre-approval row, too, spends its dry round after emptying its roster.
+
+    Grooming admits every member through its scope gate and owes only the
+    unlabelled ones. Round one grooms the only unlabelled member, whose
+    proposal clears its parent, so round two admits nobody who owes the
+    marker. That is not the empty roster of a first round: the sibling's
+    criterion child is still named, so round two verifies again and the pass
+    halts at the convergence bound naming the child's finding.
+    """
+    h = owner_harness()
+    owner, board, answered = leaving_member_scope(
+        monkeypatch,
+        groom=True,
+        answer=lambda payload: {
+            **payload,
+            "findings": [
+                {
+                    "issue_id": DONE_SIBLING_CHECK,
+                    "defect_class": h.REGROWTH_CLASS,
+                    "evidence": "The check reads a deliverable gone.",
+                    "role": "instance",
+                }
+            ],
+        },
+    )
+    report = await h.run_owner(owner)
+    assert board.server.issues[LEAVING_MEMBER].parent_id is None
+    assert answered == [DONE_SIBLING_CHECK] * 2
+    halt = report.halt
+    assert halt is not None
+    assert halt.cause == "convergence_exhausted"
+    assert halt.bound.setting == "organize.max_convergence_rounds"
+    assert halt.bound.value == halt.bound.rounds_used == 2
+    assert [(f.issue_id, f.defect_class) for f in halt.surviving_findings] == [
+        (DONE_SIBLING_CHECK, h.REGROWTH_CLASS)
+    ]
+    assert report.completed_phases == ()
+
+
+REFUSED_CHECK = {
+    "issue_id": DONE_SIBLING_CHECK,
+    "verdict": "not_buildable",
+    "evidence": "The check reads a deliverable that has left the scope.",
+    "refusal_kind": "spec_gap",
+    "invented_decision": "Name the deliverable the check now reads.",
+    "findings": [],
+}
+
+
+async def test_a_refusal_with_no_finding_after_the_roster_empties_still_halts(
+    monkeypatch,
+):
+    """A dry round that fails on a refusal alone is not followed by a completion.
+
+    The ticket stage's round one clears the leaving member's parent. Its dry
+    round then refuses the sibling's criterion child and names no finding,
+    so round two has no subject and no live finding, yet the dry round
+    before it did not hold. Round two verifies again, the refusal stands,
+    and the pass halts at the convergence bound carrying it.
+    """
+    h = owner_harness()
+    owner, board, answered = leaving_member_scope(
+        monkeypatch, groom=False, answer=lambda _payload: REFUSED_CHECK
+    )
+    report = await h.run_owner(owner)
+    assert board.server.issues[LEAVING_MEMBER].parent_id is None
+    assert answered == [DONE_SIBLING_CHECK] * 2
+    halt = report.halt
+    assert halt is not None
+    assert halt.cause == "convergence_exhausted"
+    assert halt.bound.value == halt.bound.rounds_used == 2
+    assert halt.surviving_findings == ()
+    assert [(r.issue_id, r.verdict) for r in halt.admission_results] == [
+        (DONE_SIBLING_CHECK, AdmissionVerdict.NOT_BUILDABLE)
+    ]
+    assert report.completed_phases == ()
+
+
 def description_surface(key):
     return WritableSurface(
         kind=SurfaceKind.ISSUE_DESCRIPTION,
