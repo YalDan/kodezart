@@ -778,15 +778,20 @@ async def test_the_walk_observes_the_criterion_its_filter_cannot_reach(
     if placement == "inside":
         port.scope_memberships[walk.SCOPE] = ("A", "A-deliverable")
 
+    # An out-of-filter placement is read on to the tick after lane A's fire,
+    # so the naming is seen carried past the walk's first observation.
+    wanted = 1 if placement == "inside" else 2
     stream = walk.drive(walk.runtime(port=port))
-    event = None
+    observed: list[ScopeWalkEvent] = []
     async with asyncio.timeout(walk.WALK_BOUND_SECONDS):
         async for emitted in stream:
             if isinstance(emitted, ScopeWalkEvent):
-                event = emitted
-                break
+                observed.append(emitted)
+                if len(observed) == wanted:
+                    break
     await stream.aclose()
-    assert event is not None, "a walk that observed nothing states nothing here"
+    assert len(observed) == wanted, "a walk that stopped early states nothing here"
+    event = observed[0]
     observation = event.observation
 
     assert observation.tick == 1
@@ -801,3 +806,10 @@ async def test_the_walk_observes_the_criterion_its_filter_cannot_reach(
         assert "A-deliverable" in observation.ready
     else:
         assert observation.ready == ("A",)
+        # The deliverable's criterion is neither a member nor on A's own
+        # evaluation set, so A's fire leaves it open and the next tick names
+        # it again.
+        after_the_fire = observed[1].observation
+        assert after_the_fire.tick == 2
+        assert after_the_fire.dispatched == ("A",)
+        assert after_the_fire.unreachable_criteria == named
