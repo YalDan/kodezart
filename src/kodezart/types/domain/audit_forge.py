@@ -62,6 +62,17 @@ class AuditForgeObservation(CamelCaseModel):
             )
         if self.verdict is AuditVerdict.UNVERIFIABLE:
             return self
+        # The red's own snapshot is read through the same roster: a rerun red
+        # only in a check the arm leaves out is green for the claim.
+        red_failures = (
+            counted_checks(
+                reported=self.red.observation.check_names,
+                failed=self.red.observation.failed_check_names,
+                rostered=self.required_check_names,
+            ).failures
+            if self.red is not None and isinstance(self.red.observation, ObservedChecks)
+            else None
+        )
         if self.checks is None or not self.checks.check_names:
             raise ValueError("a definite verdict requires the observed check roster")
         if self.verdict is AuditVerdict.HOLDS:
@@ -73,7 +84,8 @@ class AuditForgeObservation(CamelCaseModel):
                 self.red is not None
                 and (
                     self.red.red_class is not CheckRedClass.RUNNER_FLAKE
-                    or self.red.checks_passed is not True
+                    or red_failures is None
+                    or red_failures
                 )
             ):
                 raise ValueError("a clean forge claim requires a green exact-SHA run")
@@ -81,7 +93,7 @@ class AuditForgeObservation(CamelCaseModel):
             not counted.failures
             or self.red is None
             or self.red.red_class is not CheckRedClass.WORK_DEFECT
-            or self.red.checks_passed is not False
+            or not red_failures
         ):
             raise ValueError("a refuted forge claim requires classified work failure")
         return self
