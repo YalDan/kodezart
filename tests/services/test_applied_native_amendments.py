@@ -802,11 +802,15 @@ async def test_a_held_marked_model_refuses_the_write_backs_own_acquisition(repos
         await cleanup(workspace)
 
 
-async def designated_repository(repo, port):
-    """Pin a record designating the boundary test and commit it on ``main``."""
-    pinned = pinned_designation(issue_ref=SUBJECT)
+async def designated_repository(repo, port, *, issue_ref=SUBJECT):
+    """Pin a record designating the boundary test and commit it on ``main``.
+
+    *issue_ref* is the subtree member the record is pinned on; the lane reads
+    the records of every member of its subtree, not only its own.
+    """
+    pinned = pinned_designation(issue_ref=issue_ref)
     await port.post_comment(
-        issue_key=SUBJECT,
+        issue_key=issue_ref,
         body=render_ruling(
             ruling=pinned,
             lane_key=SUBJECT,
@@ -828,6 +832,11 @@ def criterion_children(port):
         for key, issue in port.issues.items()
         if issue.parent_key == SUBJECT and "criterion" in issue.issue_labels
     }
+
+
+def new_issues(port, before):
+    """Every issue on the board whose key is not in *before*, whatever its parent."""
+    return {key: issue for key, issue in port.issues.items() if key not in before}
 
 
 async def weaken(title, payload, kwargs):
@@ -875,7 +884,7 @@ async def test_a_weakened_designated_assertion_marks_the_lane_and_is_never_pushe
     repo = repository[0]
     port = tracker()
     pinned = await designated_repository(repo, port)
-    before = criterion_children(port)
+    before = set(port.issues)
     executor = Executor(claim=False, mutate=weaken)
     service, guard, workspace, port = await build(repository, executor, port=port)
     try:
@@ -890,11 +899,9 @@ async def test_a_weakened_designated_assertion_marks_the_lane_and_is_never_pushe
         assert await git(path, "show", f"HEAD:{PROTECTED_PATH}") == (
             WEAKENED_BODY.strip()
         )
-        minted = {
-            key: issue
-            for key, issue in criterion_children(port).items()
-            if key not in before
-        }
+        # Every issue the run added, wherever it was parented, so the parent
+        # and the label below are read rather than selected for.
+        minted = new_issues(port, before)
         assert len(minted) == 1
         (key,) = minted
         assert minted[key].parent_key == SUBJECT
@@ -926,6 +933,42 @@ async def test_a_weakened_designated_assertion_marks_the_lane_and_is_never_pushe
             "NativeWriterOutput",
             "CommitMessageOutput",
         ]
+    finally:
+        await cleanup(workspace)
+
+
+async def test_a_record_pinned_on_a_subtree_member_still_marks_the_lane_itself(
+    repository,
+):
+    """The lane reads the records of its whole subtree, and the mark is the lane's.
+
+    The designating record here is pinned on one of the lane's own criterion
+    sub-issues rather than on the lane, so the record's owning issue and the
+    lane differ: the mark still goes on the lane, where its gap is read.
+    """
+    repo = repository[0]
+    port = tracker()
+    await designated_repository(repo, port, issue_ref=DIRECT_OWED)
+    before = set(port.issues)
+    executor = Executor(claim=False, mutate=weaken)
+    service, guard, workspace, port = await build(repository, executor, port=port)
+    try:
+        with pytest.raises(AssertionWeakenedError) as caught:
+            await drive(service, guard, repository)
+
+        minted = new_issues(port, before)
+        assert len(minted) == 1
+        (key,) = minted
+        assert minted[key].parent_key == SUBJECT
+        assert caught.value.marks == (key,)
+        assert key in {
+            issue.issue_key
+            for issue in gap.compute_gap(
+                criteria=await port.read_criteria(issue_key=SUBJECT),
+                supersession_refs={},
+            )
+        }
+        assert await git(repo, "ls-remote", "origin", "refs/heads/native-test") == ""
     finally:
         await cleanup(workspace)
 
