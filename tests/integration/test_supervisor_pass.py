@@ -25,7 +25,7 @@ from kodezart.types.domain.operation import (
     OrganizeScopeBinding,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.run_alarm import LaneSubject
+from kodezart.types.domain.run_alarm import LaneSubject, ScopeSubject
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeWalkEvent
@@ -601,6 +601,28 @@ async def test_a_stalled_lane_whose_landing_repeats_a_sha_raises_on_distinct_sha
     assert len(raised) == 1
 
 
+async def write_ledger(port):
+    """Every write a tick left on the board, per issue, as one comparable value.
+
+    Each comment write with the issue it landed on and its body, each issue's
+    whole stream, every alarm record on each issue, and each lease grant's
+    holder and surfaces. Nothing here is keyed by a comment's own identity, so
+    two boards built the same way compare equal exactly when the same writes
+    landed on them.
+    """
+    rows = {row.comment_key: row for row in port.comments}
+    issues = sorted(port.issues)
+    return (
+        sorted((rows[key].issue_key, body) for key, body in port.comment_writes),
+        {
+            key: list(await port.lane_run_events(issue_key=key, lane_key=key))
+            for key in issues
+        },
+        {key: list(await port.read_run_alarms(issue_key=key)) for key in issues},
+        [(lease.holder, lease.surfaces) for lease in port.lease_writes],
+    )
+
+
 async def test_the_composed_tick_observes_a_scope_stalled_at_a_stage_barrier():
     """KOD-503: the scope arm runs in the composed tick, beside the lane arm.
 
@@ -608,41 +630,60 @@ async def test_the_composed_tick_observes_a_scope_stalled_at_a_stage_barrier():
     the body stage's marker, so the barrier between the two is open and the
     tick says so at warning, naming the scope and the rung's marker. It writes
     nothing about the scope anywhere — no record and no event is keyed to it —
-    and the lanes are still observed exactly as without it.
+    and the lanes are still observed exactly as without it: the whole write
+    ledger of the tick equals the one the same tick leaves on the same board
+    with no stage marker on any member, where the scope arm observes nothing.
     """
     operation = declared(scopes=(SCOPE,))
-    port = await board(
-        lanes=LANES,
-        scope=SCOPE,
-        holder=supervisor_holder(operation_name=operation.operation_name),
-    )
-    for lane in LANES:
-        issue = port.issues[lane]
-        port.issues[lane] = issue.model_copy(
-            update={"issue_labels": issue.issue_labels | {"criteria"}}
-        )
-    scheduled = build_supervisor_pass(
-        config=AppConfig(
-            _env_file=None,
-            run_alarm_max_commits_without_closure=BOUND,
-            supervisor_pass_interval_seconds=INTERVAL,
-            supervisor_pass_timeout_seconds=TIMEOUT,
-        ),
-        operation=operation,
-        tracker=port,
-    )
 
-    with structlog.testing.capture_logs() as logs:
-        async with asyncio.timeout(TICK_BOUND_SECONDS):
-            assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+    async def tick(*, staged):
+        port = await board(
+            lanes=LANES,
+            scope=SCOPE,
+            holder=supervisor_holder(operation_name=operation.operation_name),
+        )
+        if staged:
+            for lane in LANES:
+                issue = port.issues[lane]
+                port.issues[lane] = issue.model_copy(
+                    update={"issue_labels": issue.issue_labels | {"criteria"}}
+                )
+        scheduled = build_supervisor_pass(
+            config=AppConfig(
+                _env_file=None,
+                run_alarm_max_commits_without_closure=BOUND,
+                supervisor_pass_interval_seconds=INTERVAL,
+                supervisor_pass_timeout_seconds=TIMEOUT,
+            ),
+            operation=operation,
+            tracker=port,
+        )
+        with structlog.testing.capture_logs() as logs:
+            async with asyncio.timeout(TICK_BOUND_SECONDS):
+                assert await scheduled.run(FIXTURE_EPOCH) is PassRun.RAN
+        return port, logs
+
+    port, logs = await tick(staged=True)
+    unstaged, quiet = await tick(staged=False)
 
     assert [
         (entry["log_level"], entry["scope"], entry["marker"])
         for entry in logs
         if entry["event"] == "supervisor_scope_alarm_raised"
     ] == [("warning", SCOPE.key, TICKET_MARKER_SOURCE)]
+    assert [entry for entry in quiet if "scope" in entry["event"]] == []
     written = {row.comment_key: row.issue_key for row in port.comments}
     assert {written[key] for key, _ in port.comment_writes} == set(LANES)
+    assert await write_ledger(port) == await write_ledger(unstaged)
+    for lane in LANES:
+        assert all(
+            event.subject_key != SCOPE.key
+            for event in await port.lane_run_events(issue_key=lane, lane_key=lane)
+        )
+        assert all(
+            not isinstance(record.subject, ScopeSubject)
+            for record in await port.read_run_alarms(issue_key=lane)
+        )
     for lane in LANES:
         stored = stored_alarm(
             await port.read_run_alarms(issue_key=lane),
