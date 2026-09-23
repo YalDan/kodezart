@@ -960,13 +960,22 @@ def test_the_terminal_is_handed_the_ready_read_and_nothing_else() -> None:
     carries, so a terminal handed the walk's memory as a second argument would
     report exactly what this one reports. So the seam is read instead:
 
-    - the terminal's whole public surface is the one report method;
+    - the terminal's whole public surface is the one report method, and its
+      whole method surface, private methods included, is pinned;
     - the two signatures, annotated or not, whose every name is read off the
       objects they belong to;
-    - the walker's every use of the terminal, which is that one call, handing
-      the tick's ready read by keyword and nothing else;
+    - every spelling of the terminal's attribute on ``self`` in the walker's
+      module: one store, in the engine's constructor, which reads the
+      terminal parameter exactly once, and one load, the callee of the one
+      report call, handing the tick's ready read by keyword and nothing else;
     - and the value it hands, a local every binding of which is an awaited
       ready read of the scope.
+
+    A computed ``getattr`` — the attribute's name built at run time — reaches
+    the terminal without spelling it, and is not read here. A collaborator
+    the terminal shares with the walker is not read here either; the
+    integration walk in which the board closes a halted lane before the exit
+    pins that by behaviour.
     """
     report_hints = get_type_hints(ScopeTerminal.report)
     init_hints = get_type_hints(ScopeTerminal.__init__)
@@ -994,6 +1003,10 @@ def test_the_terminal_is_handed_the_ready_read_and_nothing_else() -> None:
     assert {name for name in vars(ScopeTerminal) if not name.startswith("_")} == {
         ScopeTerminal.report.__name__
     }
+    # And a private one would be the same channel under another name.
+    assert {
+        name for name, value in vars(ScopeTerminal).items() if inspect.isfunction(value)
+    } == {"__init__", "report", "_entry", "_post"}
     receiver = f"self.{_terminal_attribute()}"
     walker = ast.parse(inspect.getsource(sys.modules[ScopeWorkflowEngine.__module__]))
     calls = [
@@ -1024,6 +1037,50 @@ def test_the_terminal_is_handed_the_ready_read_and_nothing_else() -> None:
         for node in walker.body
         if isinstance(node, ast.ClassDef) and node.name == ScopeWorkflowEngine.__name__
     )
+    # The receiver itself, wherever the walker's module spells it: loaded
+    # once, as that call's callee, and stored once, in the engine's
+    # constructor. An alias, a helper handed the terminal, a setattr or a
+    # vars() over it would each be a second load.
+    occurrences = [
+        node
+        for node in ast.walk(walker)
+        if isinstance(node, ast.Attribute) and ast.unparse(node) == receiver
+    ]
+    assert [node for node in occurrences if isinstance(node.ctx, ast.Load)] == [
+        call.func.value
+    ]
+    stores = [node for node in occurrences if isinstance(node.ctx, ast.Store)]
+    assert len(stores) == 1
+    assert len(occurrences) == 2
+    (constructor,) = (
+        node
+        for node in engine.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == ScopeWorkflowEngine.__init__.__name__
+    )
+    assert any(node is stores[0] for node in ast.walk(constructor))
+    # The constructor reads the terminal parameter exactly once: the value of
+    # that one store, and no second attribute holding the same terminal.
+    (parameter,) = (
+        argument.arg
+        for argument in parameters_of(constructor)
+        if argument.annotation is not None
+        and ast.unparse(argument.annotation) == ScopeTerminal.__name__
+    )
+    loads = [
+        node
+        for node in ast.walk(constructor)
+        if isinstance(node, ast.Name)
+        and node.id == parameter
+        and isinstance(node.ctx, ast.Load)
+    ]
+    assert len(loads) == 1
+    (store,) = (
+        node
+        for node in ast.walk(constructor)
+        if isinstance(node, ast.Assign) and stores[0] in node.targets
+    )
+    assert store.value is loads[0]
     (run,) = (
         node
         for node in engine.body
