@@ -2,8 +2,8 @@
 
 import ast
 import functools
-import importlib
 import inspect
+import sys
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime, timedelta
 
@@ -14,20 +14,35 @@ from pydantic import ValidationError
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.domain.errors import OrganizeAdmissionIdentityError, ScopeReadError
-from kodezart.domain.gap import compute_gap
+from kodezart.domain.gap import compute_gap, in_gap
 from kodezart.domain.issue_tree import SubtreeClosure, open_criteria
-from kodezart.domain.organize import organize_at_rest, organize_gap, stage_unlabelled
+from kodezart.domain.organize import (
+    admission_route,
+    is_admission_live,
+    is_organize_subject,
+    organize_at_rest,
+    organize_gap,
+    owes_stage_label,
+    stage_pending,
+    stage_rows,
+    stage_unlabelled,
+)
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
 from kodezart.types.domain.organize import (
+    MANDATE_PHASE_ROLES,
     AdmissionJudgment,
     AdmissionResult,
+    AdmissionRoute,
     AdmissionVerdict,
     DefectRole,
+    MandateKind,
+    MandateSpec,
     OrganizeAdmissionRequest,
     RefusalKind,
+    ResolvedMandateSpec,
     SpecFinding,
 )
 from kodezart.types.domain.prompts import PromptKey
@@ -1381,21 +1396,41 @@ GAP_ARITHMETIC = (compute_gap, organize_gap)
 
 
 @functools.cache
+def gap_home_modules():
+    """The gap homes as module objects, read off the arithmetic's own ``__module__``."""
+    return tuple(
+        sys.modules[name]
+        for name in sorted({value.__module__ for value in GAP_ARITHMETIC})
+    )
+
+
+@functools.cache
 def gap_home_functions():
     """Every function a gap home defines, read off the module objects.
 
     The homes are the modules defining ``GAP_ARITHMETIC``; every function
     whose ``__module__`` is one of them is inside the arithmetic — ``in_gap``,
     ``organize_at_rest`` and each stage helper beside them — so a definition
-    referring to any one of them is a call site of the arithmetic.
+    referring to any one of them is a call site of the arithmetic, and every
+    one of them is an entry point the trap below runs.
     """
-    homes = sorted({value.__module__ for value in GAP_ARITHMETIC})
     return tuple(
         value
-        for home in homes
-        for value in vars(importlib.import_module(home)).values()
-        if inspect.isfunction(value) and value.__module__ == home
+        for home in gap_home_modules()
+        for value in vars(home).values()
+        if inspect.isfunction(value) and value.__module__ == home.__name__
     )
+
+
+def gap_home_objects():
+    """What a call site refers to: the home modules themselves and their functions.
+
+    A definition that denotes a home module — bound by an import, by a local
+    assigned from ``pkgutil.resolve_name`` or ``importlib.import_module``,
+    or read as ``getattr(gap, "compute_gap")`` — refers to the arithmetic by
+    object as surely as one that denotes a function of it.
+    """
+    return (*gap_home_modules(), *gap_home_functions())
 
 
 #: Every supplied module the reach below finds, re-measured off the tree
@@ -1433,10 +1468,10 @@ GAP_COMPUTATION_MODULES = frozenset(
 #: arithmetic found by object.  A module that newly spells the stamp arrives
 #: here as a decision with its reason written down, or reds.  The register is
 #: kept per module, so a new read inside a module already here is not seen by
-#: it: the trap below holds it when the arithmetic, or a call site the
-#: fixtures can run, runs it; and the call-site scan holds it when the
-#: reading function refers to a function of a gap home, by the stamp's
-#: spelling or by the value a name it loads is bound to.
+#: it: the trap below holds it when a function of a gap home, or a call site
+#: the fixtures can run, runs it; and the call-site scan holds it when the
+#: reading function refers to a gap home or a function of one by object, by
+#: the stamp's spelling or by the value a name it loads is bound to.
 CHANGE_STAMP_READERS = {
     "adapters/linear/tracker.py": "The adapter: it reads the stamp off the wire "
     "and exposes it, and scans by recency, which the Check allows.",
@@ -1634,7 +1669,7 @@ def _arithmetic_sites_of(relative, source):
             ),
         )
         for name, node in referencing_definitions(
-            relative, tree, namespace, wanted=gap_home_functions()
+            relative, tree, namespace, wanted=gap_home_objects()
         )
     )
 
@@ -1642,13 +1677,16 @@ def _arithmetic_sites_of(relative, source):
 def arithmetic_call_sites(sources):
     """``(module, definition)`` -> what it reads of the stamp, per call site.
 
-    A call site is a definition whose text refers to a function of a gap
-    home by object (``gap_home_functions``), called or not: under an aliased
-    import, an import inside the function, a relative import, a module-level
-    rebinding, a ``functools.partial``, a static method, loaded as a value
-    and handed on, named by a string constant as ``module:attr`` or
-    ``module.attr``, or taken as an attribute off a call handed a string
-    naming its module (``referencing_definitions``).  Each is scanned whole
+    A call site is a definition whose text refers to a gap home, or to a
+    function of one, by object (``gap_home_objects``), called or not: under
+    an aliased import, an import inside the function, a relative import, a
+    module-level rebinding, a ``functools.partial``, a static method, loaded
+    as a value and handed on, named by a string constant as ``module:attr``
+    or ``module.attr``, taken as an attribute off a call handed a string
+    naming its module or off a local assigned from one, or read as a literal
+    name off the module through ``getattr``, ``operator.attrgetter``,
+    ``vars`` or ``__dict__`` (``referencing_definitions``).  Each is scanned
+    whole
     for the stamp's spelling (``change_stamp_reads``) and for a loaded name
     bound to a stamp field, in its module or through an import
     (``change_stamp_values``).  Out of reach: a function handed the
@@ -1685,6 +1723,8 @@ def test_no_call_site_of_the_arithmetic_found_by_object_reads_the_change_stamp()
     """
     sites = arithmetic_call_sites(source_tree())
 
+    assert len(gap_home_modules()) == len(gap_homes()) > 0
+    assert set(gap_home_functions()) > set(GAP_ARITHMETIC)
     assert sites
     assert {site for site, reads in sites.items() if reads} == set()
     assert {module for module, _name in sites} <= GAP_COMPUTATION_MODULES
@@ -1804,6 +1844,16 @@ CALL_SITE_ROUTES = {
     "def plan(criteria, since):\n"
     "    window = gap.__dict__['compute_gap']\n"
     "    return [c for c in window(criteria, supersession_refs={}){READ}]\n",
+    "home_module_bound_to_a_local_and_handed_on": "from kodezart.domain import gap\n"
+    "\n"
+    "def plan(criteria, since, run):\n"
+    "    arithmetic = gap\n"
+    "    return [c for c in run(arithmetic, criteria){READ}]\n",
+    "organize_home_named_by_a_string_and_handed_on": "import pkgutil\n"
+    "\n"
+    "def plan(criteria, since, run):\n"
+    "    home = pkgutil.resolve_name('kodezart.domain:organize')\n"
+    "    return [c for c in run(home, criteria){READ}]\n",
 }
 #: The module every call-site route is planted into: inside the gap's reach
 #: already and not on the stamp register, so the route alone is what makes
@@ -1825,9 +1875,10 @@ def test_a_call_site_of_the_arithmetic_is_found_by_object_and_scanned(route, rea
     reads an import the globals never hold, relative, aliased or dotted.  The
     partial and static-method rows are what unwraps a stand-in, the string
     rows what resolves a named object, the two local rows what follows a
-    local assigned from a resolving call, and the four literal-name rows
-    what reads ``getattr``, ``attrgetter``, ``vars`` and ``__dict__`` off
-    the home module.
+    local assigned from a resolving call, the four literal-name rows what
+    reads ``getattr``, ``attrgetter``, ``vars`` and ``__dict__`` off the
+    home module, and the two handed-on rows what makes a home module itself
+    a referent: they denote no function of it.
     """
     assert CALL_SITE_HOST in GAP_COMPUTATION_MODULES
     assert CALL_SITE_HOST not in CHANGE_STAMP_READERS
@@ -2009,13 +2060,17 @@ def arithmetic_cases(stamp):
 
     ``case -> (entry point, keyword arguments, records)``; every record's
     change stamp is ``stamp(n)`` for the n-th record the case builds, and an
-    answer is read as the positions of its records among *records*.
+    answer is read as the positions of its records among *records*, or as
+    itself when it is a truth value, a route or ``None``.  Every function of
+    a gap home has a case here, so the trap runs each one on its own.
 
     The arms reached.  ``compute_gap`` and the ``in_gap`` it runs: every
     workflow state kind, each with and without a supersession, so an open
     criterion, a completed one, and a canceled and a duplicate one either
     superseded or not; an empty board; and its three refusals — a criterion
-    twice, a record that is no criterion, a blank supersession.  The organize
+    twice, a record that is no criterion, a blank supersession.  ``in_gap``
+    on its own: an open criterion, a completed one, a canceled one superseded
+    and unsuperseded, and its two refusals.  The organize
     gap, asked by ``organize_gap`` and by ``organize_at_rest``: a board with a
     subject at rest, a nested subtree (a deliverable child under it holding
     its own criterion), a subject without its marker, one without an
@@ -2024,7 +2079,19 @@ def arithmetic_cases(stamp):
     open finding, one whose criterion child has one, and a tracker record and
     a decision record that are no subject; a board at rest; an empty board;
     and its four refusals — a blank marker, a revision twice, an admission
-    twice, a criterion without its parent.
+    twice, a criterion without its parent.  ``admission_route``: a buildable
+    result, an unverifiable one whose blocker is a blocked-by edge inside the
+    scope and one whose blocker is outside it, a refusal needing a human
+    decision and one over a specification gap, and its refusal of a result
+    for another issue.  ``is_organize_subject`` and ``owes_stage_label``: a
+    work subject, a criterion, an escalated member and a tracker record.
+    ``stage_unlabelled``: a member owing the marker, one carrying it, and a
+    criterion and a tracker record that owe none; and its two refusals, a
+    blank marker and a member twice.  ``stage_pending``: a run stage, a
+    pre-approval phase with an admitted member, and one admitting nobody.
+    ``stage_rows``: the rows on each side of approval.  ``is_admission_live``
+    takes two digests and no record, so the stamp cannot reach it: the same
+    digest, a changed one, and its refusal of a blank one.
     """
     built = iter(range(1_000))
 
@@ -2128,6 +2195,97 @@ def arithmetic_cases(stamp):
         for key in (found[0].issue.issue_key, found_child[1].issue.issue_key)
     )
     orphan = revision("orphan/check", parent_key="absent/1", issue_labels=["criterion"])
+    open_criterion = criterion("member/open", WorkflowStateKind.UNSTARTED)
+    completed = criterion("member/completed", WorkflowStateKind.COMPLETED)
+    canceled = criterion("member/canceled", WorkflowStateKind.CANCELED)
+    plain = record("member/plain")
+
+    def membership(each, ref):
+        return in_gap, {"criterion": each, "supersession_ref": ref}, (each,)
+
+    blocked = record(
+        SUBJECT,
+        relations=[
+            IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key="blocker/1")
+        ],
+    )
+
+    def admission(**fields):
+        return AdmissionResult.model_validate(
+            {
+                "issue_id": SUBJECT,
+                "evidence": "Concrete repository evidence.",
+                "admitted_body_digest": "opaque:subject",
+                "admitted_scope": {"kind": "issue", "key": SUBJECT},
+                "admitted_context_digest": "fixture-context",
+                **fields,
+            }
+        )
+
+    unverifiable = admission(
+        verdict=AdmissionVerdict.UNVERIFIABLE,
+        missing_artifact="The schema the named blocker produces.",
+        pending_blocker_id="blocker/1",
+    )
+
+    def refusal(kind):
+        return admission(
+            verdict=AdmissionVerdict.NOT_BUILDABLE,
+            invented_decision="Which store holds the record.",
+            refusal_kind=kind,
+        )
+
+    def route(result, scope):
+        return (
+            admission_route,
+            {"result": result, "issue": blocked, "scope_issue_keys": frozenset(scope)},
+            (blocked,),
+        )
+
+    members = (
+        record("member/1"),
+        record("marked/1", issue_labels=[BODY_MARKER]),
+        record("tracker/1", issue_labels=["tracker"]),
+        kinds[0],
+        record("unmarked/1"),
+    )
+    escalated = record("escalated/1", issue_labels=["decision"])
+    owed = (record("owed/1"), record("owed/2"))
+
+    def pending(admitted, under_approval):
+        return (
+            stage_pending,
+            {
+                "unlabelled": tuple(each.issue_key for each in owed),
+                "admitted": admitted,
+                "under_approval": under_approval,
+            },
+            owed,
+        )
+
+    def mandate_row(kind):
+        return ResolvedMandateSpec(
+            spec=MandateSpec(
+                kind=kind,
+                gate_label_key="scope_labels.gate",
+                rubric_prompt_key=PromptKey.ORGANIZE_ASSESS,
+                admission_prompt_key=PromptKey.ORGANIZE_ASSESS,
+                terminal_marker_key=f"issue_labels.{kind.value}",
+            ),
+            gate_label="gate",
+            terminal_marker=kind.value,
+            role=MANDATE_PHASE_ROLES[kind],
+            marker_source=f"issue_labels.{kind.value}",
+        )
+
+    table = tuple(mandate_row(kind) for kind in MandateKind)
+
+    def liveness(admitted, current):
+        return (
+            is_admission_live,
+            {"admitted_body_digest": admitted, "current_body_digest": current},
+            (),
+        )
 
     def organize(revisions, *, admitted=None, open_findings=(), marker=BODY_MARKER):
         return {
@@ -2170,6 +2328,88 @@ def arithmetic_cases(stamp):
             for name, arguments in organize_boards.items()
             for entry in (organize_gap, organize_at_rest)
         },
+        "in_gap: an open criterion": membership(open_criterion, None),
+        "in_gap: a completed criterion": membership(completed, None),
+        "in_gap: a canceled criterion superseded": membership(canceled, "over/1"),
+        "in_gap: a canceled criterion unsuperseded": membership(canceled, None),
+        "in_gap refuses a record that is no criterion": membership(plain, None),
+        "in_gap refuses a blank supersession": membership(open_criterion, " "),
+        "admission_route: a buildable result": route(
+            admission(verdict=AdmissionVerdict.BUILDABLE), {SUBJECT}
+        ),
+        "admission_route: an unverifiable result blocked inside the scope": route(
+            unverifiable, {SUBJECT, "blocker/1"}
+        ),
+        "admission_route: an unverifiable result blocked outside the scope": route(
+            unverifiable, {SUBJECT}
+        ),
+        "admission_route: a refusal needing a human decision": route(
+            refusal(RefusalKind.HUMAN_DECISION), {SUBJECT}
+        ),
+        "admission_route: a refusal over a specification gap": route(
+            refusal(RefusalKind.SPEC_GAP), {SUBJECT}
+        ),
+        "admission_route refuses a result for another issue": route(
+            admission(issue_id="other/1", verdict=AdmissionVerdict.BUILDABLE),
+            {SUBJECT},
+        ),
+        "is_organize_subject: a work subject": (
+            is_organize_subject,
+            {"issue": members[0]},
+            (members[0],),
+        ),
+        "is_organize_subject: a criterion": (
+            is_organize_subject,
+            {"issue": kinds[0]},
+            (kinds[0],),
+        ),
+        "owes_stage_label: an escalated member": (
+            owes_stage_label,
+            {"issue": escalated},
+            (escalated,),
+        ),
+        "owes_stage_label: a tracker record": (
+            owes_stage_label,
+            {"issue": members[2]},
+            (members[2],),
+        ),
+        "stage_unlabelled: owing, carrying and exempt members": (
+            stage_unlabelled,
+            {"issues": members, "marker": BODY_MARKER},
+            members,
+        ),
+        "stage_unlabelled refuses a blank marker": (
+            stage_unlabelled,
+            {"issues": members, "marker": " "},
+            members,
+        ),
+        "stage_unlabelled refuses a member twice": (
+            stage_unlabelled,
+            {"issues": (*members, members[0]), "marker": BODY_MARKER},
+            members,
+        ),
+        "stage_pending: a run stage owes every unlabelled member": pending(
+            {"owed/1": False}, True
+        ),
+        "stage_pending: a pre-approval phase owes the admitted members": pending(
+            {"owed/1": True, "owed/2": False}, False
+        ),
+        "stage_pending: a pre-approval phase admitting nobody is not open": pending(
+            {}, False
+        ),
+        "stage_rows: the rows under approval": (
+            stage_rows,
+            {"rows": table, "under_approval": True},
+            table,
+        ),
+        "stage_rows: the rows before approval": (
+            stage_rows,
+            {"rows": table, "under_approval": False},
+            table,
+        ),
+        "is_admission_live: the same digest": liveness("opaque:1", "opaque:1"),
+        "is_admission_live: a changed digest": liveness("opaque:1", "opaque:2"),
+        "is_admission_live refuses a blank digest": liveness("opaque:1", " "),
     }
 
 
@@ -2177,13 +2417,14 @@ def arithmetic_outcome(entry, arguments, records):
     """What one entry point answers: its records by position, or its refusal.
 
     A record answered by its key is read at the position of the record
-    carrying that key; a subtree read refuses as a scope read error.
+    carrying that key; a truth value, a route and ``None`` are read as
+    themselves; a subtree read refuses as a scope read error.
     """
     try:
         answer = entry(**arguments)
     except (ValueError, ScopeReadError) as refusal:
         return ("refused", str(refusal))
-    if isinstance(answer, bool):
+    if isinstance(answer, bool | str) or answer is None:
         return ("answered", answer)
     return (
         "answered",
@@ -2232,6 +2473,69 @@ ARITHMETIC_OUTCOMES = {
         }.items()
         for entry in (organize_gap, organize_at_rest)
     },
+    "in_gap: an open criterion": ("answered", True),
+    "in_gap: a completed criterion": ("answered", False),
+    "in_gap: a canceled criterion superseded": ("answered", False),
+    "in_gap: a canceled criterion unsuperseded": ("answered", True),
+    "in_gap refuses a record that is no criterion": (
+        "refused",
+        "gap membership requires a criterion sub-issue",
+    ),
+    "in_gap refuses a blank supersession": (
+        "refused",
+        "a supersession reference must be nonempty",
+    ),
+    "admission_route: a buildable result": ("answered", AdmissionRoute.MARK_COMPLETE),
+    "admission_route: an unverifiable result blocked inside the scope": (
+        "answered",
+        AdmissionRoute.MARK_COMPLETE,
+    ),
+    "admission_route: an unverifiable result blocked outside the scope": (
+        "answered",
+        AdmissionRoute.REAUTHOR,
+    ),
+    "admission_route: a refusal needing a human decision": (
+        "answered",
+        AdmissionRoute.ESCALATE,
+    ),
+    "admission_route: a refusal over a specification gap": (
+        "answered",
+        AdmissionRoute.REAUTHOR,
+    ),
+    "admission_route refuses a result for another issue": (
+        "refused",
+        f"admission issue other/1 does not match tracker issue {SUBJECT}",
+    ),
+    "is_organize_subject: a work subject": ("answered", True),
+    "is_organize_subject: a criterion": ("answered", False),
+    "owes_stage_label: an escalated member": ("answered", True),
+    "owes_stage_label: a tracker record": ("answered", False),
+    "stage_unlabelled: owing, carrying and exempt members": ("answered", (0, 4)),
+    "stage_unlabelled refuses a blank marker": (
+        "refused",
+        "a stage roster requires a nonempty marker key",
+    ),
+    "stage_unlabelled refuses a member twice": (
+        "refused",
+        "a stage roster requires one record per issue",
+    ),
+    "stage_pending: a run stage owes every unlabelled member": ("answered", (0, 1)),
+    "stage_pending: a pre-approval phase owes the admitted members": (
+        "answered",
+        (0,),
+    ),
+    "stage_pending: a pre-approval phase admitting nobody is not open": (
+        "answered",
+        None,
+    ),
+    "stage_rows: the rows under approval": ("answered", (1, 2)),
+    "stage_rows: the rows before approval": ("answered", (0,)),
+    "is_admission_live: the same digest": ("answered", True),
+    "is_admission_live: a changed digest": ("answered", False),
+    "is_admission_live refuses a blank digest": (
+        "refused",
+        "admission liveness requires both nonempty body digests",
+    ),
 }
 #: Each change stamp the records are read under besides the baseline: a trap
 #: that raises on any operation, and two readings far apart whose order runs
@@ -2253,19 +2557,22 @@ def stamp_variant(variant, reads):
 
 
 def arithmetic_entry_points():
-    """The arithmetic and every definition beside it that refers to it, as objects.
+    """Every function of a gap home, and every definition there referring to one.
 
-    Found by object in the homes read off ``GAP_ARITHMETIC``, the way the
-    call sites are, so a helper added beside the arithmetic that hands on its
-    answer is an entry point the trap has to run.
+    Derived from ``gap_home_functions``, the way the call sites are, so a
+    function added beside the arithmetic — one that hands on its answer, or
+    one that reads a record on its own, as ``admission_route`` does — is an
+    entry point the trap has to run, whether or not the arithmetic runs it.
     """
-    points = {id(value): value for value in GAP_ARITHMETIC}
+    points = {id(value): value for value in gap_home_functions()}
     for home in sorted(gap_homes()):
         source = source_tree()[home]
         namespace = module_namespace(home, source)
         for name, _node in referencing_definitions(
-            home, ast.parse(source), namespace, wanted=GAP_ARITHMETIC
+            home, ast.parse(source), namespace, wanted=gap_home_functions()
         ):
+            if name == "<module>":
+                continue
             value = functools.reduce(
                 getattr, name.split(".")[1:], namespace[name.split(".")[0]]
             )
@@ -2276,8 +2583,9 @@ def arithmetic_entry_points():
 def test_the_trapped_boards_run_every_entry_point_and_reach_every_arm():
     """The boards the trap runs over are the ones the arithmetic answers.
 
-    Every entry point is run, and nothing else is; each case answers what it
-    was built for over the baseline stamp, so a board that stops reaching its
+    Every entry point is run, and nothing else is, so a function added to a
+    gap home reds here until it has a case; each case answers what it was
+    built for over the baseline stamp, so a board that stops reaching its
     arm — a refusal where an answer was meant, an empty gap where a member
     was — reds here rather than turning the trap into a vacuous pass.
     """
@@ -2298,10 +2606,9 @@ def test_the_trapped_boards_run_every_entry_point_and_reach_every_arm():
 def test_the_arithmetic_answers_alike_whatever_the_change_stamp_holds(case, variant):
     """The arithmetic runs with the change stamp trapped, and never reads it.
 
-    The reach of the Check, shown by running it: ``compute_gap``,
-    ``organize_gap`` and every definition beside them that refers to them,
-    together with everything they execute — a model method, a helper in a
-    module they import, a class pattern — answer every case the same with
+    The reach of the Check, shown by running it: every function of a gap
+    home, together with everything it executes — a model method, a helper in
+    a module it imports, a class pattern — answers every case the same with
     the stamp trapped, far in the past and far in the future, and no
     operation touches the trap.  An identity test against the trap (``is``)
     is no operation it can see, and cannot move an answer either.
@@ -2322,10 +2629,7 @@ def call_site_cases(stamp):
     each state kind so an order the stamp imposes shows; an empty family;
     and its refusal of a canceled or duplicate criterion with no supersession
     reader.  ``SubtreeClosure.open_criterion_keys``, run on a closure over a
-    subject and a criterion of every state kind.  ``stage_unlabelled``: a
-    member owing the marker, one carrying it, and a criterion and a tracker
-    record that owe none; and its two refusals, a blank marker and a member
-    twice.
+    subject and a criterion of every state kind.
     """
     built = iter(range(1_000))
 
@@ -2355,13 +2659,6 @@ def call_site_cases(stamp):
     closure = SubtreeClosure(
         facts={each.issue_key: each for each in (subject, *kinds)}, ref=ref
     )
-    members = (
-        subject,
-        record("marked/1", issue_labels=[BODY_MARKER]),
-        record("tracker/1", issue_labels=["tracker"]),
-        kinds[0],
-        record("unmarked/1"),
-    )
     return {
         "open_criteria: open and completed criteria": (
             open_criteria,
@@ -2383,21 +2680,6 @@ def call_site_cases(stamp):
             {"self": closure},
             (subject, *kinds),
         ),
-        "stage_unlabelled: owing, carrying and exempt members": (
-            stage_unlabelled,
-            {"issues": members, "marker": BODY_MARKER},
-            members,
-        ),
-        "stage_unlabelled refuses a blank marker": (
-            stage_unlabelled,
-            {"issues": members, "marker": " "},
-            members,
-        ),
-        "stage_unlabelled refuses a member twice": (
-            stage_unlabelled,
-            {"issues": (*members, members[0]), "marker": BODY_MARKER},
-            members,
-        ),
     }
 
 
@@ -2418,15 +2700,6 @@ CALL_SITE_OUTCOMES = {
     "SubtreeClosure.open_criterion_keys: every state kind": (
         "answered",
         (1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14),
-    ),
-    "stage_unlabelled: owing, carrying and exempt members": ("answered", (0, 4)),
-    "stage_unlabelled refuses a blank marker": (
-        "refused",
-        "a stage roster requires a nonempty marker key",
-    ),
-    "stage_unlabelled refuses a member twice": (
-        "refused",
-        "a stage roster requires one record per issue",
     ),
 }
 #: The call sites found by object that the arithmetic's fixtures cannot run,
@@ -2472,9 +2745,9 @@ def test_every_call_site_the_fixtures_can_run_is_run_under_the_trap():
     """The call sites outside the entry points are run where the fixtures can run them.
 
     Every call site found by object that is not an entry point the trap
-    already runs is either a case of ``call_site_cases`` — ``open_criteria``,
-    ``SubtreeClosure.open_criterion_keys`` and ``stage_unlabelled`` — or named
-    in ``CALL_SITES_NOT_RUN`` with why: ``OrganizeAdmission.is_live``,
+    already runs is either a case of ``call_site_cases`` — ``open_criteria``
+    and ``SubtreeClosure.open_criterion_keys`` — or named in
+    ``CALL_SITES_NOT_RUN`` with why: ``OrganizeAdmission.is_live``,
     ``build_scope_organizer``, ``observe_ruling_growth``, the organize
     service's ``_proof_live``, ``_roster``, ``_route`` and ``run``,
     ``read_barren_tick`` and ``observe_scope_tally``, each of which needs a
