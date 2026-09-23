@@ -476,6 +476,15 @@ async def test_a_groom_that_only_describes_a_re_parent_never_completes(
         assert "graph complete" in issues[MOVED].labels
         return
     assert report.halt.cause == "admission_exhausted"
+    # The premise: the author was asked for MOVED and its describing body
+    # reached the board, so what is left unanswered is the structure alone.
+    assert [
+        call
+        for call in executor.calls
+        if call["output_format"]["schema"].get("title") == "OrganizeProposal"
+        and re.findall(r"<issue_key>(.*?)</issue_key>", call["prompt"])[-1:] == [MOVED]
+    ]
+    assert issues[MOVED].description == proposal["body"]
     assert issues[MOVED].parent_id == CLAIMED_ISSUE
     assert "graph complete" not in issues[MOVED].labels
     assert "needs decision" in issues[MOVED].labels
