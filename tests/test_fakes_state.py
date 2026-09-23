@@ -16,14 +16,15 @@ DECLARES, read off the port's whole class line — the port and the reader
 roles it extends — with no list of verbs deciding which of them count as
 writes.  Each member is classified by a case that RUNS it: a write case
 declares the journals its write fills and they are compared exactly, and a
-read case declares none and is shown to move no attribute of the double but
-its own read log.  A member added to the port under any name arrives with no
-case and fails here, naming it; a write the double reaches through no journal
-fails its case; a read whose double moves anything else — a journal, an
-issue, a comment — fails its case; and a journal no write fills fails here
-too.  The read logs themselves are derived here from what the reads move, and
-held apart from every write.  None of that can hide in a list that drifted
-from the port.
+read case declares none and is shown, on a board that holds something in
+every attribute, to move no attribute of the double but its own read log.
+A member added to the port under any name arrives with no case and fails
+here, naming it; a write the double reaches through no journal fails its
+case; a read whose double moves anything else — a journal, an issue, a
+comment — fails its case; and a journal no write fills fails here too.  The
+read logs themselves are derived here from what the reads move, held apart
+from every write, and shown read by no method for anything but the record
+it appends.  None of that can hide in a list that drifted from the port.
 
 The one write that answers ``True`` is a mapping ensure that ADOPTS what the
 workspace already defines, and it answers True because it writes nothing:
@@ -33,7 +34,7 @@ that case is below as well, with its journal shown empty.
 import ast
 import inspect
 import textwrap
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sized
 from dataclasses import dataclass
 
 import pytest
@@ -57,13 +58,19 @@ from kodezart.types.domain.run_alarm import (
 )
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
-from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.surface import (
+    SurfaceAuthorship,
+    SurfaceKind,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import (
     IssuePriority,
     IssueQuery,
     MappingKind,
     MappingRef,
     ReviewQuery,
+    TrackerAsset,
+    TrackerReview,
     WorkflowStateKind,
 )
 from tests.chains.test_native_fire import CountingTracker
@@ -434,7 +441,10 @@ async def hold_fire_entry(port: FakeTrackerPort) -> None:
 
 async def hold_escalation(port: FakeTrackerPort) -> None:
     # The one escalation record the resolution read requires, with no
-    # decision under it yet.
+    # decision under it yet, and the comment read refusal the census board
+    # holds lifted: with it the read answers with that refusal and reads no
+    # comment at all.
+    port.comment_read_error = None
     marker = compose_comment_marker(
         prefixes=PREFIXES, purpose="escalation", lane=LANE, occurrence_key=ESCALATION
     )
@@ -935,6 +945,104 @@ CASES: Mapping[str, Case] = {
 READS = sorted(name for name, row in CASES.items() if not row.journals)
 WRITES = sorted(name for name, row in CASES.items() if row.journals)
 
+#: The repository the census board's review and recorded repository sit in.
+REPO = "https://example.invalid/fixture-repo"
+
+
+async def full_board() -> FakeTrackerPort:
+    """The census board: every attribute but the read logs holds something.
+
+    :func:`board`, then one of each write the census declares, each after
+    its own setup, then by hand whatever those writes leave empty: the
+    project with a member and an initiative, the fire entry's stage label
+    and approval, an asset, a review, a recorded repository, a body's
+    authorship and held writer, a refused scan, the approval aliases and a
+    comment read refusal.  A read that moves any attribute — empties the
+    reviews, drops a lease, rebinds the clock — therefore moves something
+    on it.  Held to that by
+    :func:`test_the_census_board_holds_something_in_every_attribute`.
+    """
+    port = board()
+    for case in WRITES:
+        row = CASES[case]
+        if row.setup is not None:
+            await row.setup(port)
+        await row.call(port)
+    await hold_project(port)
+    await hold_fire_entry(port)
+    port.scope_memberships[PROJECT] = (ISSUE,)
+    port.initiative_identifiers_by_project[PROJECT.key] = frozenset({"an initiative"})
+    port._assets[ISSUE] = (
+        TrackerAsset(
+            asset_key="fixture-asset",
+            title="an asset",
+            url="https://example.invalid/asset/fixture-asset",
+        ),
+    )
+    port.reviews[REPO] = [
+        TrackerReview(review_key="fixture-review", updated_at=FIXTURE_EPOCH)
+    ]
+    port.recorded_repositories[ISSUE] = REPO
+    port.body_authorship[ISSUE] = SurfaceAuthorship.MACHINE_AUTHORED
+    port.body_write_holders[leased_surface()] = [HOLDER]
+    port.scan_refusals[next(iter(PassSignal))] = "a refused scan"
+    port.approval_classifications = frozenset({"fixture-approval"})
+    port.approval_queue_states = frozenset({QueueState.DECISION})
+    port.comment_read_error = "a refused comment read"
+    return port
+
+
+async def case_board(case: str) -> FakeTrackerPort:
+    """The board *case* runs on, its setup done.
+
+    A read runs on the full census board, so whatever it could move is
+    there to move; a write runs on :func:`board`, whose empty journals are
+    what its case's journals are compared against.
+    """
+    row = CASES[case]
+    port = board() if row.journals else await full_board()
+    if row.setup is not None:
+        await row.setup(port)
+    return port
+
+
+def holds_nothing(value: object) -> bool:
+    """Whether *value* holds nothing a read could take away.
+
+    ``None``, and a container or a string with no member.  A plain object,
+    one compared by identity, holds nothing when none of its attributes
+    holds anything; bounded by the depth of those objects.  A flag and a
+    number hold whichever value they have, and so does a callable.
+    """
+    if (
+        type(value).__eq__ is object.__eq__
+        and hasattr(value, "__dict__")
+        and not callable(value)
+    ):
+        return all(holds_nothing(item) for item in vars(value).values())
+    return value is None or (isinstance(value, Sized) and len(value) == 0)
+
+
+async def test_the_census_board_holds_something_in_every_attribute() -> None:
+    """The board every read case runs on leaves no attribute empty.
+
+    The read cases compare the whole state, and that is only as strong as
+    the board: a read that empties an attribute the board holds nothing in
+    moves nothing.  So every attribute of the double but its read logs
+    holds something here.  The only attribute a case's own setup lifts is
+    the comment read refusal, for the one read that answers with it.  The
+    read cases hold the flag that makes a read move an issue's stamp at
+    its default, off.
+    """
+    port = await full_board()
+    held = {
+        name: value
+        for name, value in vars(port).items()
+        if name not in type(port).READ_LOGS
+    }
+    assert held != {}
+    assert sorted(name for name, value in held.items() if holds_nothing(value)) == []
+
 
 def port_members() -> frozenset[str]:
     """Every public member the port declares, read off its whole class line.
@@ -984,9 +1092,7 @@ async def test_a_write_on_any_journal_answers_that_the_board_was_touched(
 ) -> None:
     """One write, through one port method, and both answers are False."""
     row = CASES[case]
-    port = board()
-    if row.setup is not None:
-        await row.setup(port)
+    port = await case_board(case)
     untouched = handed_over(port)
     unwritten = nothing_written(port)
     before = tracker_state(port)
@@ -1005,16 +1111,14 @@ async def test_a_write_on_any_journal_answers_that_the_board_was_touched(
 
 
 async def moved_by(case: str) -> dict[str, tuple[object, object]]:
-    """Every attribute of a fresh board the case's call moves, before and after.
+    """Every attribute of the case's board its call moves, before and after.
 
     The WHOLE state, read logs included, rendered on each side, so what
     comes back is everything the call did to the double and nothing its
     setup did before it.
     """
     row = CASES[case]
-    port = board()
-    if row.setup is not None:
-        await row.setup(port)
+    port = await case_board(case)
     before = {**written_state(port), **read_logs(port)}
     await row.call(port)
     after = {**written_state(port), **read_logs(port)}
@@ -1038,16 +1142,16 @@ def read_logs(port: FakeTrackerPort) -> dict[str, object]:
 async def test_a_read_through_any_port_method_moves_no_state(case: str) -> None:
     """One read, through one port method, and the double stands still.
 
-    Every attribute of the instance is compared, deep-copied, before and
-    after — not the journals a list names — leaving out only the read logs.
-    A read whose double rewrites an issue, appends a comment, or moves any
-    other attribute fails here, naming the read, and ``nothing_written``
-    answers False for it, because it makes the same comparison.
+    Run on the full census board, so every attribute holds something the
+    read could move.  Every attribute of the instance is compared,
+    deep-copied, before and after — not the journals a list names — leaving
+    out only the read logs.  A read whose double rewrites an issue, appends
+    a comment, empties the reviews, rebinds the clock or moves any other
+    attribute fails here, naming the read, and ``nothing_written`` answers
+    False for it, because it makes the same comparison.
     """
     row = CASES[case]
-    port = board()
-    if row.setup is not None:
-        await row.setup(port)
+    port = await case_board(case)
     unwritten = nothing_written(port)
     before = written_state(port)
 
@@ -1062,8 +1166,8 @@ async def test_a_read_through_any_port_method_moves_no_state(case: str) -> None:
 async def test_the_read_logs_are_what_the_reads_fill() -> None:
     """The read logs are derived by what they are: what the reads append to.
 
-    Every read the port declares is run on a fresh board, and the attributes
-    those reads move — the whole state, nothing projected — are exactly the
+    Every read the port declares is run on the full census board, and the
+    attributes those reads move — the whole state, nothing projected — are exactly the
     logs ``nothing_written`` leaves out, each moved only by appending to
     what it held.  A read that fills anything else widens the first set and
     fails here as well as in its own case; a log no read fills fails here
@@ -1201,6 +1305,141 @@ def test_a_read_log_is_moved_by_the_port_s_reads_alone() -> None:
                 assert not logged or name in reads, (double, name, logged)
                 filled |= logged
         assert filled == double.READ_LOGS, double
+
+
+#: The calls a read log is recorded with.
+RECORDERS = frozenset({"append", "extend"})
+
+
+def own_log(node: ast.AST, logs: frozenset[str]) -> str | None:
+    """The log *node* is, when it is ``self.<log>`` for one of *logs*."""
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "self"
+        and node.attr in logs
+    ):
+        return node.attr
+    return None
+
+
+def logs_read_in(function: Callable[..., object], logs: frozenset[str]) -> set[str]:
+    """Every one of *logs* *function*'s own body reads for anything but recording.
+
+    Read off the source.  A load of ``self.<log>`` is allowed in two places
+    only: as the receiver of an ``.append(...)`` or ``.extend(...)`` call,
+    and as the whole value assigned to a local name, which then counts as
+    the log, so each load of that name is held to the same rule.  An
+    augmented assignment to ``self.<log>`` — a counter's ``+= 1`` — is a
+    store and records.  Every other load is a read of the log.  Bounded by
+    the body's syntax tree.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+    aliases: dict[str, str] = {}
+    recording: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign | ast.AnnAssign) and node.value is not None:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            log = own_log(node.value, logs)
+            if log is not None and len(targets) == 1:
+                (target,) = targets
+                if isinstance(target, ast.Name):
+                    aliases[target.id] = log
+                    recording.add(id(node.value))
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in RECORDERS
+        ):
+            recording.add(id(node.func.value))
+    read: set[str] = set()
+    for node in ast.walk(tree):
+        if id(node) in recording:
+            continue
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            log = own_log(node, logs)
+            if log is not None:
+                read.add(log)
+        elif (
+            isinstance(node, ast.Name)
+            and isinstance(node.ctx, ast.Load)
+            and node.id in aliases
+        ):
+            read.add(aliases[node.id])
+    return read
+
+
+def class_line_functions(
+    double: type[FakeTrackerPort],
+) -> list[tuple[str, Callable[..., object]]]:
+    """Every function defined on *double*'s class line, ``object`` left out.
+
+    Methods, static and class methods through the function they wrap, and
+    each accessor of a property.  Bounded by the classes on the line.
+    """
+    found: list[tuple[str, Callable[..., object]]] = []
+    for cls in double.__mro__:
+        if cls is object:
+            continue
+        for name, member in vars(cls).items():
+            accessors = (
+                [member.fget, member.fset, member.fdel]
+                if isinstance(member, property)
+                else [getattr(member, "__func__", member)]
+            )
+            found.extend(
+                (f"{cls.__qualname__}.{name}", accessor)
+                for accessor in accessors
+                if inspect.isfunction(accessor)
+            )
+    return found
+
+
+def test_a_read_log_decides_no_answer() -> None:
+    """Read in the code: a read log is history, and no method reads it.
+
+    For the double and every imported subclass that declares read logs of
+    its own, every function on its class line is read, and none may read a
+    log for anything but the append or extend that records it.  A read
+    that answers differently once its key is in the log — which moves the
+    board's answers while the state the census compares stands still —
+    fails here, naming the method and the log.
+    """
+    doubles = declaring_doubles()
+    assert CountingTracker in doubles
+    for double in doubles:
+        functions = class_line_functions(double)
+        assert functions != [], double
+        for name, function in functions:
+            assert logs_read_in(function, double.READ_LOGS) == set(), (double, name)
+
+
+class _LogUses:
+    """Planted uses of a read log, for the pass above to classify."""
+
+    def recorded(self, key: str) -> None:
+        self.issue_reads.append(key)
+        log = self.issue_reads
+        log.extend([key])
+        self.spec_reads += 1
+
+    def decided(self, key: str) -> bool:
+        self.issue_reads.append(key)
+        return key in self.issue_reads[:-1]
+
+    def decided_through_a_local(self, key: str) -> int:
+        log = self.issue_reads
+        log.append(key)
+        return len(log)
+
+
+def test_the_log_pass_reads_a_log_through_a_local_and_passes_a_record() -> None:
+    """The control for the pass: each planted use is classified as it is."""
+    logs = frozenset({"issue_reads", "spec_reads"})
+    assert logs_read_in(_LogUses.recorded, logs) == set()
+    assert logs_read_in(_LogUses.decided, logs) == {"issue_reads"}
+    assert logs_read_in(_LogUses.decided_through_a_local, logs) == {"issue_reads"}
 
 
 async def test_an_ensure_that_adopts_a_defined_value_writes_nothing() -> None:
