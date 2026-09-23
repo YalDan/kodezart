@@ -7,19 +7,19 @@ module's own text and from the aggregate's live member set, so a member moved
 between roles moves the guard with it and a member declared twice is named.
 
 The second half is the caller question. A member no production module calls
-is a capability nothing uses, carried
-on every implementation for no consumer. The list of such members is
-derived: every member of the whole port, found as a member call in the
-parsed modules of the shipped tree outside the port module and the vendor
-adapters, so a member spelled only in a comment, a docstring or a string
-has no caller. A caller in a module the run does not reach still counts,
-as the criterion words it, and the reachability of its role is pinned
-separately. It holds
-nothing but two named exemptions — the four run-record members KOD-798
-decides, and the authorship read KOD-390 names as landed — and the three
-issue writes that had no caller are gone from every tree, tests included,
-because the type gate reads ``src/`` only and a deleted member surviving in
-test scaffolding would otherwise pass it.
+is a capability nothing uses, carried on every implementation for no
+consumer. The list of such members is derived: every member of the whole
+port, found as a member call in the parsed modules of the shipped tree
+outside the port module, the vendor adapters and the test tree, so a member
+spelled only in a comment, a docstring or a string has no caller, and a call
+moved into one of those three places is no caller either. A caller in a
+module the run does not reach still counts, as the criterion words it, and
+the reachability of its role is pinned separately. It holds nothing but two
+named exemptions — the four run-record members KOD-798 decides, and the
+authorship read KOD-390 names as landed — and the three issue writes that
+had no caller are gone from every tree, tests included, because the type
+gate reads ``src/`` only and a deleted member surviving in test scaffolding
+would otherwise pass it.
 
 The third half is the dependency question. Every service and chain names
 the roles it takes in its annotations and nothing wider: the whole port is
@@ -52,9 +52,12 @@ from tests.chains.test_write_back_adoption import write_methods
 from tests.domain.test_criterion_cross_off import source_tree
 from tests.fakes import FakeTrackerPort
 from tests.tracker.role_register import (
+    ADAPTERS,
     AGGREGATE,
     EXEMPT_UNTIL_KOD_390,
+    PORT_MODULE,
     RUN_RECORD_EXEMPTION,
+    TESTS,
     UNWIRED_CONSUMER_ROLES,
     adapter_importers,
     aggregate_annotations,
@@ -170,6 +173,28 @@ def test_a_member_whose_only_caller_goes_is_reported():
     del sources[module]
 
     assert name in zero_callers(sources, members)
+
+
+#: The places a call does not count as a caller, as KOD-836 words it: the
+#: vendor adapters, the port module and the test tree, each as the path a
+#: module moved there would arrive under.
+PLANTED_ELSEWHERE = {
+    "the vendor adapters": f"{ADAPTERS}/planted.py",
+    "the port module": PORT_MODULE,
+    "the test tree": f"{TESTS}/planted.py",
+}
+
+
+@pytest.mark.parametrize("place", sorted(PLANTED_ELSEWHERE))
+def test_a_caller_outside_the_production_modules_does_not_count(place):
+    """A member whose one caller moves out of the counted modules has none."""
+    sources = source_tree()
+    name, module = single_caller(sources)
+    text = sources.pop(module)
+    sources[PLANTED_ELSEWHERE[place]] = text
+
+    assert name in called_members(text)
+    assert name in zero_callers(sources, port_members())
 
 
 #: The ways a module can spell a member without calling it.

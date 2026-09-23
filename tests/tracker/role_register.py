@@ -23,6 +23,10 @@ from tests.tracker.test_criterion_port_sites import module_of
 
 TESTS_ROOT = Path(__file__).parents[1]
 
+#: The test tree's own top-level directory, the prefix a test module's path
+#: carries beside the shipped tree's, read off the tree rather than spelled.
+TESTS = TESTS_ROOT.name
+
 #: The name of the composed surface, off the object rather than spelled.
 AGGREGATE = TrackerPort.__name__
 
@@ -72,11 +76,11 @@ def call_pattern(name: str) -> re.Pattern[str]:
 
 
 def production_modules(sources: Mapping[str, str]) -> dict[str, str]:
-    """The shipped modules a caller counts in: all of them but the port and adapters."""
+    """The modules a caller counts in: all but the port, the adapters and tests."""
     return {
         path: text
         for path, text in sources.items()
-        if path != PORT_MODULE and not path.startswith(f"{ADAPTERS}/")
+        if path != PORT_MODULE and not path.startswith((f"{ADAPTERS}/", f"{TESTS}/"))
     }
 
 
