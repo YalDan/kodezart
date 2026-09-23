@@ -10,6 +10,7 @@ carried alongside that read stands in for it.
 import inspect
 import re
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from unittest.mock import Mock
 
 import pytest
@@ -75,7 +76,11 @@ from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
-from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
+from kodezart.types.domain.tracker import (
+    IssuePriority,
+    TrackerIssue,
+    WorkflowStateKind,
+)
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
@@ -969,6 +974,7 @@ async def test_a_refused_scope_read_inside_the_subtree_read_stays_a_typed_error(
 #: The scope the subject is read as, and the refusal the cross-check raises.
 SUBJECT_SCOPE = ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT)
 MEMBERSHIP_REFUSAL = "scope criterion membership changed"
+DUPLICATE_REFUSAL = "duplicate scope criterion member"
 
 
 async def subtree_outcome(source: TrackerCriteria) -> tuple[str, ...]:
@@ -1022,11 +1028,16 @@ def disagreeing_read(case: str, read: CriterionRead) -> CriterionRead:
         """The criterion read answers nothing, for any member."""
         return ()
 
+    async def answered_twice(*, issue_key: str) -> tuple[TrackerIssue, ...]:
+        """The owning parent answers its criterion twice in one read."""
+        return tuple(await read(issue_key=issue_key)) * 2
+
     return {
         "disowned": disowned,
         "answered by another member": answered_by_another_member,
         "restated under its own parent": restated_under_its_own_parent,
         "omitted": omitted,
+        "answered twice": answered_twice,
     }[case]
 
 
@@ -1035,12 +1046,15 @@ def disagreeing_read(case: str, read: CriterionRead) -> CriterionRead:
 #: that is not the member asked (both halves at once, then the ownership half
 #: alone with the record left identical), and the criterion answered under its
 #: own parent with a record the listing never carried (the contradiction half
-#: alone).  An omission is not a contradiction and stays admitted from the
+#: alone).  A criterion one read answers twice is refused as a duplicate: the
+#: second answer is identical to the first, so only the duplicate refusal can
+#: decide it.  An omission is not a contradiction and stays admitted from the
 #: listing, which is the source of membership.
 PORT_READ_DISAGREEMENTS = {
     "disowned": refused(MEMBERSHIP_REFUSAL),
     "answered by another member": refused(MEMBERSHIP_REFUSAL),
     "restated under its own parent": refused(MEMBERSHIP_REFUSAL),
+    "answered twice": refused(DUPLICATE_REFUSAL),
     "omitted": ("admitted", NESTED_OWED),
 }
 
@@ -1064,9 +1078,12 @@ async def test_the_port_criterion_read_cross_reads_the_listed_membership(
     leaves the record identical so only ownership decides, and the third
     leaves the parent right so only the contradiction does.  A cross-check
     reduced to either half keeps the first row green and loses one of the
-    others.
+    others.  The duplicate row answers one criterion twice under its own
+    parent with its record unchanged, so only the duplicate refusal decides
+    it.  The contradiction half is read over every field of the record in
+    ``test_a_criterion_restated_under_its_own_parent_refuses_whatever_field_moved``.
 
-    The fourth row is the tolerance the Check states: a child the port read
+    The omitted row is the tolerance the Check states: a child the port read
     merely omits stays admitted from the listing.  It is asserted as a roster
     that IS answered, so the tolerance is a recorded reading rather than an
     unwritten case.
@@ -1087,11 +1104,84 @@ async def test_the_port_criterion_read_cross_reads_the_listed_membership(
 
     assert await subtree_outcome(source) == expected
     if expected[0] == "refused":
-        with pytest.raises(ScopeReadError, match=MEMBERSHIP_REFUSAL):
+        with pytest.raises(ScopeReadError) as caught:
             await source.read_entry(issue_key=SUBJECT)
+        assert ("refused", str(caught.value)) == expected
 
     assert port.issue_writes == []
     assert port.issue_creations == []
+
+
+def foreign_record() -> TrackerIssue:
+    """A criterion record that differs from the nested one in every field."""
+    return make_tracker_issue(
+        "foreign/record",
+        priority=IssuePriority.URGENT,
+        state_name="Done",
+        state_kind=WorkflowStateKind.COMPLETED,
+        queue_states=(),
+        blocked_by=("foreign/blocker",),
+        parent_key="foreign/parent",
+        team_key="foreign-team",
+        created_at=datetime(2031, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2031, 1, 2, tzinfo=UTC),
+        project="foreign project",
+        project_id="foreign-project",
+        body="a foreign body",
+        issue_labels=frozenset({"foreign"}),
+    ).model_copy(
+        update={"milestone_key": "foreign-milestone", "assignee_key": "foreign-person"}
+    )
+
+
+#: Every field of a criterion record but the two that decide something else:
+#: the key names another member, and the parent is the ownership half.  Read
+#: off the model, so a field the record gains is compared here too.
+RESTATED_FIELDS = tuple(
+    sorted(set(TrackerIssue.model_fields) - {"issue_key", "parent_key"})
+)
+
+
+def test_the_foreign_record_differs_from_the_listed_criterion_in_every_field():
+    """Each restated row below changes the field it names, and no row is empty."""
+    listed = nested_only_board().issues[NESTED_OWED]
+    foreign = foreign_record()
+
+    assert RESTATED_FIELDS
+    assert [
+        field
+        for field in RESTATED_FIELDS
+        if getattr(foreign, field) == getattr(listed, field)
+    ] == []
+
+
+@pytest.mark.parametrize("field", RESTATED_FIELDS)
+async def test_a_criterion_restated_under_its_own_parent_refuses_whatever_field_moved(
+    monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    """The contradiction half compares the whole record, not its body.
+
+    The owning parent answers its criterion under the right parent, with one
+    field of the record taken from a foreign one.  Whichever field moved
+    between the listing and the port's read — the state, the title, the
+    labels, the stamp — the membership moved with it and the roster refuses.
+    """
+    port = nested_only_board()
+    source = TrackerCriteria(tracker=port)
+    assert await subtree_outcome(source) == ("admitted", NESTED_OWED)
+    read = port.read_criteria
+    moved = getattr(foreign_record(), field)
+
+    async def restated(*, issue_key: str) -> tuple[TrackerIssue, ...]:
+        """Every criterion answers with the one field taken from elsewhere."""
+        return tuple(
+            criterion.model_copy(update={field: moved})
+            for criterion in await read(issue_key=issue_key)
+        )
+
+    monkeypatch.setattr(port, "read_criteria", restated)
+
+    assert await subtree_outcome(source) == refused(MEMBERSHIP_REFUSAL)
 
 
 async def test_the_actual_native_entry_refuses_a_zero_criterion_subtree_before_the_loop(
