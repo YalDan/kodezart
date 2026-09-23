@@ -8,9 +8,19 @@ module's own production walk, which resolves a write through the attribute
 it is called on and skips a call of the method inside the class that states
 it, so the port declaration and the backend adapter are outside the surface
 by construction rather than by an exemption anybody has to maintain.  What
-that walk skips is read again here: inside a class that states a move, a
-call of it on anything but ``self`` is reported, and so is a move named
-anywhere without being called.
+that walk skips is read again here.  Inside a class that states a move, as a
+method or as an annotated field (the walk's own test), a call of it on
+anything but ``self`` is reported, and a call on ``self`` is permitted only
+as a pure forward: the stage or state name it hands on is a parameter of the
+method making the call, so a stage chosen inside an adapter is reported.  A
+move named anywhere without being called is reported too.  The one case
+left to that last rule alone is a class that states a move as a field and
+calls it on ``self``: filling such a field from a port takes the move
+uncalled, which is what the rule reports.
+
+The moves are read off every protocol the protocols module declares and every
+role dialled beside the port: each public member with a parameter whose type
+mentions a lifecycle stage anywhere in its arguments, and the restore.
 
 A write that can be recomputed from durable state by a process that never
 held the session belongs to a node rather than to a session.  That clause is
@@ -36,7 +46,10 @@ import inspect
 import typing
 from collections.abc import Iterator, Mapping
 
-from kodezart.core.protocols import TrackerPort
+import pytest
+
+from kodezart.core import protocols
+from kodezart.core.protocols import LaneStateTracker, TrackerPort
 from kodezart.types.domain.operation import LifecycleStage
 from kodezart.types.domain.tracker import TrackerIssue
 from tests.chains.test_write_back_adoption import (
@@ -45,12 +58,14 @@ from tests.chains.test_write_back_adoption import (
     LANE_STATE,
     LANE_STATE_WRITES,
     LIFECYCLE,
+    TRACKER_SURFACE,
     WALKER,
     CallSite,
     Production,
     Source,
     artifact_writes,
     called_name,
+    defines,
     direct_calls,
     production_sources,
 )
@@ -58,23 +73,51 @@ from tests.domain.test_run_event_table import ADAPTER_MAPPING, CONFIGURED
 
 SET_STATE = TrackerPort.set_workflow_state.__name__
 RESTORE_STATE = TrackerPort.restore_workflow_state.__name__
-#: The port's state moves: every member that takes a lifecycle stage, and the
-#: restore that puts a board-read state name back.  Read off the port, so a
-#: member that grows a stage parameter joins the scan.
-STATE_MOVES = frozenset(
-    {
-        *(
-            name
-            for name, method in inspect.getmembers(TrackerPort, inspect.isfunction)
-            if any(
-                hint is LifecycleStage
-                for parameter, hint in typing.get_type_hints(method).items()
-                if parameter != "return"
-            )
-        ),
-        RESTORE_STATE,
-    }
+
+
+def mentions_a_stage(hint: object) -> bool:
+    """Whether the lifecycle stage occurs anywhere in a type's argument tree:
+    itself, or inside an ``Optional``, a union or a generic."""
+    return hint is LifecycleStage or any(
+        mentions_a_stage(argument) for argument in typing.get_args(hint)
+    )
+
+
+#: Every protocol the protocols module declares, and every role dialled beside
+#: the port over the same session: the surfaces a move can be declared on.
+ROLES: tuple[type, ...] = tuple(
+    dict.fromkeys(
+        (
+            *(
+                value
+                for value in vars(protocols).values()
+                if isinstance(value, type)
+                and getattr(value, "_is_protocol", False)
+                and value.__module__ == protocols.__name__
+            ),
+            *TRACKER_SURFACE,
+        )
+    )
 )
+#: Each public member of a role that takes a lifecycle stage, with the
+#: parameters that carry it.
+STAGE_TAKING: dict[tuple[type, str], frozenset[str]] = {
+    (role, name): stages
+    for role in ROLES
+    for name, method in inspect.getmembers(role, inspect.isfunction)
+    if not name.startswith("_")
+    and (
+        stages := frozenset(
+            parameter
+            for parameter, hint in typing.get_type_hints(method).items()
+            if parameter != "return" and mentions_a_stage(hint)
+        )
+    )
+}
+#: The state moves: every stage-taking member of any role, and the restore
+#: that puts a board-read state name back, so a member that grows a stage
+#: parameter on any role joins the scan.
+STATE_MOVES = frozenset({*(name for _, name in STAGE_TAKING), RESTORE_STATE})
 PERMITTED = frozenset(
     site
     for site in KOD_806_STATE_MOVES | LANE_STATE_WRITES
@@ -87,10 +130,33 @@ PERMITTED = frozenset(
     for name in inspect.signature(TrackerPort.restore_workflow_state).parameters
     if name not in {"self", "issue_key"}
 )
+#: The keywords a move hands its stage or its state name under.
+MOVE_VALUES = frozenset(
+    {*(p for ps in STAGE_TAKING.values() for p in ps), RESTORED_NAME}
+)
 
 
 def test_the_state_moves_are_the_stage_taking_members_and_the_restore():
+    assert ROLES
+    assert (TrackerPort, SET_STATE) in STAGE_TAKING
+    assert (LaneStateTracker, SET_STATE) in STAGE_TAKING
     assert STATE_MOVES == {SET_STATE, RESTORE_STATE}
+    assert MOVE_VALUES == {"stage", RESTORED_NAME}
+
+
+@pytest.mark.parametrize(
+    ("hint", "mentions"),
+    [
+        (LifecycleStage, True),
+        (LifecycleStage | None, True),
+        (list[LifecycleStage], True),
+        (dict[LifecycleStage, str], True),
+        (str, False),
+        (str | None, False),
+    ],
+)
+def test_a_stage_anywhere_in_a_parameter_type_makes_a_move(hint, mentions):
+    assert mentions_a_stage(hint) is mentions
 
 
 def test_only_the_node_side_writers_name_an_issue_state():
@@ -151,15 +217,34 @@ def test_a_module_that_only_states_the_method_is_not_a_move_site():
     assert Production(sources).call_sites(STATE_MOVES) == frozenset()
 
 
+def _chosen(call: ast.Call, method: ast.AST) -> list[str]:
+    """What a sibling call hands on that its method did not receive.
+
+    A stage or state name passed as a parameter of *method* is a pure
+    forward; any other value, and a ``**`` splat that could carry one, is a
+    choice made here.
+    """
+    received = set(_parameters(method)) if isinstance(method, FUNCTIONS) else set[str]()
+    return [
+        ast.unparse(word.value)
+        if word.arg is not None
+        else f"**{ast.unparse(word.value)}"
+        for word in call.keywords
+        if (word.arg is None or word.arg in MOVE_VALUES)
+        and not (isinstance(word.value, ast.Name) and word.value.id in received)
+    ]
+
+
 def unseen_moves(sources: Mapping[str, str]) -> tuple[str, ...]:
     """The state moves the production walk above cannot see.
 
     That walk skips every call of a move inside a class that states the
-    move, and resolves a move only where it is called.  So two shapes are
-    reported here: inside a class that states a move, a call of that move on
-    anything but bare ``self``; and, anywhere, a move referenced without
-    being called, which is how a bound method is handed on and called under
-    another name.
+    move, as a method or as a field, and resolves a move only where it is
+    called.  So three shapes are reported here: inside a class that states a
+    move, a call of that move on anything but bare ``self``, and a call on
+    ``self`` that hands on a stage or state name its method did not receive;
+    and, anywhere, a move referenced without being called, which is how a
+    bound method is handed on and called under another name.
     """
     found = []
     for module, text in sorted(sources.items()):
@@ -176,23 +261,29 @@ def unseen_moves(sources: Mapping[str, str]) -> tuple[str, ...]:
                 found.append(f"{module}:{node.lineno}: {ast.unparse(node)} uncalled")
             if not isinstance(node, ast.ClassDef):
                 continue
-            stated = STATE_MOVES & {
-                item.name for item in node.body if isinstance(item, FUNCTIONS)
-            }
-            for call in ast.walk(node):
-                if (
-                    isinstance(call, ast.Call)
-                    and isinstance(call.func, ast.Attribute)
-                    and call.func.attr in stated
-                    and not (
+            stated = frozenset(move for move in STATE_MOVES if defines(node, move))
+            for method in node.body:
+                for call in ast.walk(method):
+                    if not (
+                        isinstance(call, ast.Call)
+                        and isinstance(call.func, ast.Attribute)
+                        and call.func.attr in stated
+                    ):
+                        continue
+                    on_self = (
                         isinstance(call.func.value, ast.Name)
                         and call.func.value.id == "self"
                     )
-                ):
-                    found.append(
-                        f"{module}:{call.lineno}: {ast.unparse(call.func)} "
-                        f"inside {node.name}"
-                    )
+                    if not on_self:
+                        found.append(
+                            f"{module}:{call.lineno}: {ast.unparse(call.func)} "
+                            f"inside {node.name}"
+                        )
+                    for value in _chosen(call, method) if on_self else ():
+                        found.append(
+                            f"{module}:{call.lineno}: {ast.unparse(call.func)} "
+                            f"chooses {value} inside {node.name}"
+                        )
     return tuple(found)
 
 
@@ -233,6 +324,54 @@ def test_a_move_handed_on_as_a_bound_method_is_reported():
 
 def test_a_sibling_call_inside_the_class_that_states_the_move_is_not_unseen():
     assert unseen_moves({"adapters/backend.py": STATES_THE_METHOD}) == ()
+
+
+FIELD_WRITER = f"""
+class ScopeLaneCloser:
+    {SET_STATE}: object = None
+
+    def __init__(self, tracker):
+        self._tracker = tracker
+
+    async def close(self, key):
+        await self._tracker.{SET_STATE}(issue_key=key, stage=LifecycleStage.DONE)
+"""
+
+
+def test_a_move_from_a_class_stating_it_as_a_field_is_reported():
+    """A field named for the move exempts the class from the walk, exactly
+    as a method does, so the complement reads that class too."""
+    sources = {"chains/scope_walker.py": FIELD_WRITER}
+    assert Production(sources).call_sites(STATE_MOVES) == frozenset()
+    assert unseen_moves(sources) == (
+        f"chains/scope_walker.py:9: self._tracker.{SET_STATE} inside ScopeLaneCloser",
+    )
+
+
+CHOSEN_INSIDE = f"""
+class Backend:
+    async def {SET_STATE}(self, *, issue_key, stage):
+        ...
+
+    async def start_issue(self, *, issue_key):
+        return await self.{SET_STATE}(
+            issue_key=issue_key, stage=LifecycleStage.IN_PROGRESS
+        )
+
+    async def finish(self, *, issue_key):
+        return await self.{SET_STATE}(issue_key=issue_key, **self._options)
+"""
+
+
+def test_a_stage_chosen_inside_the_class_that_states_the_move_is_reported():
+    """A sibling call forwards only what its method received; a stage it
+    picks itself, or a splat that could carry one, is a choice made there."""
+    assert unseen_moves({"adapters/backend.py": CHOSEN_INSIDE}) == (
+        f"adapters/backend.py:7: self.{SET_STATE} chooses "
+        "LifecycleStage.IN_PROGRESS inside Backend",
+        f"adapters/backend.py:12: self.{SET_STATE} chooses **self._options inside "
+        "Backend",
+    )
 
 
 #: The board row's own state-name field, read off TrackerIssue: the field the
