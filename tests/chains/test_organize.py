@@ -2411,10 +2411,12 @@ class RosterReads:
     """Every ``organize_gap`` call the owner makes, over the reads before it.
 
     At each call the roster listings and the issue reads already on the
-    board's log are counted, so a listing or a revision read made between a
-    stage's snapshot and its gap call shows up as a higher count. The inputs
-    and the answer are kept whole, so the pre-query can be asked the same
-    question the gap was asked.
+    board's log are counted, so a listing or an issue read made between a
+    stage's snapshot and its gap call shows up as a higher count: the
+    snapshot's own reads, the scope labels and each retained admission's
+    freshness read are what a caller subtracts to see anything else. The
+    inputs and the answer are kept whole, so the pre-query can be asked the
+    same question the gap was asked.
     """
 
     def __init__(self, monkeypatch, board):
@@ -2445,14 +2447,20 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     A heartbeat over a converged scope. The tick lists the roster four
     times: the ticket snapshot, the ticket barrier, the criteria snapshot and
     the criteria barrier. Each stage asks the gap over exactly its own
-    snapshot, with nothing read between them but that snapshot's revision
-    reads and the scope labels. The pre-query is not a second read — it is
-    the cardinality of the answer the gap already gave.
+    snapshot. The obligation read the gap is built from is that listing and
+    the snapshot's revision reads, with the scope labels. The pre-query is
+    not a second read — it is the cardinality of the answer the gap already
+    gave.
 
-    The fresh row is a new owner over the converged board. The retained row
-    runs the owner that converged it again, so its admissions are still
-    standing: their liveness is read against the round's own roster, never
-    a listing of its own.
+    The fresh row is a new owner over the converged board, so nothing else
+    is read between a snapshot and its gap. The retained row runs the owner
+    that converged it again, so its admissions are still standing. Between
+    the snapshot and the gap it also makes, per retained admission whose
+    body is still live, one freshness read: that issue's revision and the
+    scope's context, compared against the round's own roster and never a
+    listing of its own. That read asks whether the board moved since the
+    admission, so it reads the board rather than the snapshot, which would
+    answer it vacuously. Any other read there is one unit too many.
     """
     h = owner_harness()
     owner, board, converged = h.two_lane_board()
@@ -2475,6 +2483,15 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
     # One read per member: the unit a re-read of the snapshot would add.
     assert revision_reads == len(members)
     snapshot_reads = listing_reads + revision_reads + label_reads
+    # One retained admission's freshness read: its revision, then the
+    # scope's context over the roster the round already holds.
+    await reader.read_issue_revision(issue_key=CLAIMED_ISSUE)
+    await OrganizeContextReader(tracker=reader, operation=declared_operation()).read(
+        scope=scope, member_keys=[member.issue_key for member in members]
+    )
+    liveness_reads = [name for name, _ in board.calls].count("get_issue")
+    board.calls.clear()
+    assert liveness_reads > 1
     ran, spent = (second, executor) if entry == "fresh" else (owner, converged)
     spent.calls.clear()
     probe = RosterReads(monkeypatch, board)
@@ -2497,6 +2514,26 @@ async def test_one_tick_asks_the_gap_once_per_round_over_its_one_roster_read(
         assert probe.reads_at_gap == [snapshot_reads, 3 * snapshot_reads]
         assert probe.answers[0] != ()
         return
+    # The ticket stage converged before any criterion child existed, so it
+    # retains its two lanes; the criteria stage then gave each lane a child
+    # and its dry round verified every member, so it retains them all. No
+    # retained body has changed since, so each costs one full freshness read
+    # before its stage's gap. The ticket admissions judged a context without
+    # the children, so none of them is still live and none reaches the gap;
+    # every criteria admission does.
+    ticket_retained = [m for m in members if m.issue_key in h.LANES]
+    criteria_retained = list(members)
+    assert [len(inputs["admissions"]) for inputs in probe.inputs] == [
+        0,
+        len(criteria_retained),
+    ]
+    assert len(ticket_retained) < len(criteria_retained)
+    ticket_fresh = len(ticket_retained) * liveness_reads
+    criteria_fresh = len(criteria_retained) * liveness_reads
+    assert probe.reads_at_gap == [
+        snapshot_reads + ticket_fresh,
+        3 * snapshot_reads + ticket_fresh + criteria_fresh,
+    ]
     # A retained admission still standing answers a stage at rest, so the
     # pre-query's True side is reached at tick level.
     assert () in probe.answers
