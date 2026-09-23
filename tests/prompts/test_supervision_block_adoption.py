@@ -3,8 +3,9 @@
 ``docs/supervision-block.md`` is the block's text of record (KOD-872).  Both
 the block and the grooming template are read from disk here, so no text is
 copied into this module except the re-pointed references, which are the one
-place the template is allowed to differ from the block, and the three
-prohibitions the one amended base rule no longer states.
+place the template is allowed to differ from the block, the two amended base
+lines and the base sentences that concern GitHub, each pinned whole, and the
+three prohibitions the amended base rule no longer states.
 
 * Seven self-contained sections occur in the template byte for byte, heading
   and body, exactly once each.
@@ -17,10 +18,18 @@ prohibitions the one amended base rule no longer states.
 * Every adopted section sits between the base's top-level ``<tag>`` sections
   and never inside one, so adopting a section cannot edit a base section;
   the file is never replaced by the block.
-* One base rule is amended, and only that one (KOD-573): Supervision
-  Boundaries allows verification branches, commits and pushes, so the
-  ``<authority>`` GitHub prohibition points at it by its heading and no
-  sentence of the template still forbids them outright.
+* The GitHub boundary has one owner, Supervision Boundaries (KOD-573).  It
+  allows verification branches, commits and pushes, so no sentence of the
+  template forbids them outright.  Two base lines are amended, and only
+  those: the ``<authority>`` GitHub rule points at Supervision Boundaries by
+  its heading and adds only what that section does not cover, and the
+  closing ``**Boundary:**`` line no longer restates the boundary.  Both are
+  pinned whole.  Outside Supervision Boundaries, every sentence that names
+  GitHub or an act that section grants (a branch, a commit, a push) is
+  either the pointer sentence or one of the base's own sentences that only
+  reads, pinned whole, so a new prohibition sentence in any of those terms
+  fails.  Its limit: a sentence that forbids a GitHub write without any of
+  those words is not seen.
 """
 
 import re
@@ -104,11 +113,114 @@ REMOVED: tuple[str, ...] = (
     "GitHub is read-only for you",
 )
 
+#: The one ``<authority>`` rule on GitHub, whole: it points at Supervision
+#: Boundaries and adds only what that section does not cover.
+AUTHORITY_GITHUB_RULE = (
+    "- Write to GitHub beyond what `Supervision Boundaries` allows. All "
+    "communication happens in Linear, so no pull-request or issue "
+    "comments and no labels. (Reading includes history: a synced issue's "
+    "past body revisions via the mirror's edit history are yours to "
+    "read.)"
+)
+
+#: The closing boundary line, whole: it does not restate the GitHub boundary.
+BOUNDARY_LINE = (
+    "**Boundary:** you groom to reality and reply in-thread — never an "
+    "approval granted or revoked, never a fire, never a moved date, never "
+    "a restored edge a principal removed."
+)
+
+#: With "GitHub" itself, the acts Supervision Boundaries grants ("cut
+#: branches, commit on them, push them"): a sentence naming none of them does
+#: not concern a GitHub write.
+GITHUB_ACTS: tuple[str, ...] = ("branch", "commit", "push")
+
+#: Every sentence outside Supervision Boundaries that names GitHub or one of
+#: its acts, other than the pointer sentence, in template order.  Each reads,
+#: describes, or uses the word in another sense; none rules on a GitHub write.
+READING: tuple[str, ...] = (
+    "- Claude Code cloud job with real git/GitHub, whatever build "
+    "toolchains each declared repository's own check chain invokes, `gh`, "
+    "and the Linear MCP ({{workspace}} workspace).",
+    "- **What you can reach:** the repositories this operation declares "
+    "(git/`gh`) and Linear (MCP) — one line each, giving the short name, "
+    "the owner/name form you clone, and the branch a lane with no "
+    "blockers is based on:\n{{#each repos}}  - `{{this.slug}}` — "
+    "{{this.name}}, trunk `{{this.trunk}}`\n{{/each}}  You do NOT have any "
+    "other repo, any local file, or any guaranteed skill from another "
+    "environment — everything you need is in this prompt; never reference "
+    "something you can't open here.",
+    "**Ground against the branch the work is on.** Read the real code at "
+    "the head of the relevant open PR, not just `main` — the work often "
+    "lives unmerged.",
+    "Object once, then commit.",
+    "Clone every declared repository and run its real chain, capturing "
+    "per-check exit codes and HEAD SHAs — on its trunk and on every "
+    "unlanded ref principle 2 sends you to, their composition included, "
+    "and on gate failure apply principle 1a:\n{{#each repos}}- "
+    "{{this.name}} (trunk `{{this.trunk}}`):\n{{#each this.checks}}  - "
+    "{{this.name}} — `{{this.command}}`{{#if this.depends_on}}, after "
+    "{{this.depends_on}}{{/if}}{{#if this.depends_on_absent}}, a gate: "
+    "its failure is a root cause{{/if}}\n{{/each}}{{#if "
+    "this.checks_absent}}  - no chain is declared: the repository's own "
+    "CI defines its gate — read it in-repo and run that chain, "
+    "classifying gates and cascades from what it actually "
+    "is\n{{/if}}{{/each}}Also capture each repo's default-branch history "
+    "since the mention-scan checkpoint (`git log --format='%h %ad %s' "
+    "--stat`) — this commit list is step 2's reconciliation input: every "
+    "commit in it must end the pass mapped to an issue or swept against "
+    "open-issue premises.",
+    "- **Reconcile shipped work** against the verified build + `gh` PR "
+    "state (principles 1, 2, 4), grounded in the actual git history, not "
+    "just PR lists: for each repo, `git log <default-branch> "
+    "--since=<mention-scan checkpoint>` (plus any other branch a fire "
+    "landed on), and account for EVERY commit — map each to its merged PR "
+    "and that PR to its Linear issue (close/advance the issue with the "
+    "SHA as evidence), and treat any commit NOT explained by a reconciled "
+    "PR↔issue pair (direct pushes, chore merges with no issue) as an "
+    "unmapped change: read its diff, then sweep the open issues whose "
+    "premises, frozen-body claims, wrapper fields, or blocking edges "
+    "touch the changed paths — an approved fire whose target files just "
+    "moved is the highest-value catch.",
+    'No commit in the window may end the pass unexplained — "no issue '
+    'references it" is the start of the check, not its conclusion.',
+    "Work started (branch pushed, fire running) → "
+    "{{workflow_states.in_progress}}; open PR → "
+    "{{workflow_states.in_review}}; the work demonstrated in the branch "
+    "that carries it — that branch's own checks run green at a head SHA "
+    "you name — is evidence to verify per branch with `gh`, never "
+    "batch-assumed.",
+    "A parent's finished state is read from its current criterion subtree "
+    "and compliance record, never written from a green build or a merged "
+    "branch.",
+    "Demonstration remains independent of whether the branch is later "
+    "merged, rebased away or superseded.",
+    "(iv) *Approved-readiness integrity* on every "
+    "`{{queue_states.approved}}` issue — they are one tick from firing: "
+    "body present and substantive (an approved issue with an empty or "
+    "gutted body is a fire with no prompt — if the issue is "
+    "GitHub-synced, recover the pre-wipe body read-only from the mirror's "
+    "edit history, `gh api graphql` → `userContentEdits` full snapshots, "
+    "restore it verbatim with a provenance comment; otherwise flag it to "
+    "the CEO as unfireable), base branch resolvable at `gh`, and "
+    "label-vs-body contradictions resolved in the label's favor with a "
+    "comment recording the supersession.",
+    "When the pass surfaced something a principal should act on now — a "
+    "pending decision, a deploy blocker, a principal waiting on a posted "
+    "reply — send a push notification leading with that one sentence; it "
+    "points at the status update, reply, or issue, never replaces them.",
+    "Unmapped commits: a chore merge lands on `main` with no Linear issue "
+    '— "nothing references it" is not the end.',
+    "The sweep is path-driven, not title-driven: the commit message never "
+    "mentioned the fire.",
+)
+
 _HEADING = re.compile(r"^(?=## )", re.MULTILINE)
 _TOP_LEVEL_HEADING = re.compile(r"^## ", re.MULTILINE)
 _OPENING_LINE = re.compile(r"^<([a-z_]+)>$", re.MULTILINE)
 _SENTENCE_END = re.compile(r"(?<=\.)\s+")
 _TAG_REFERENCE = re.compile(r"<([a-z_]+)>")
+_GITHUB_SUBJECT = re.compile(rf"\b(?:GitHub|{'|'.join(GITHUB_ACTS)})", re.IGNORECASE)
 
 
 def block_text() -> str:
@@ -264,3 +376,45 @@ def test_no_sentence_of_the_template_forbids_commits_pushes_or_branches():
         if any(phrase in sentence.casefold() for phrase in removed)
     ]
     assert forbidding == []
+
+
+def test_the_github_boundary_lines_are_pinned_whole():
+    """KOD-573: the pointer and the closing Boundary line, each exactly."""
+    text = template_text()
+    authority = [
+        text[open_:close]
+        for name, open_, close in top_level_spans(text)
+        if name == "authority"
+    ]
+    assert len(authority) == 1
+    github = [line for line in authority[0].splitlines() if "GitHub" in line]
+    assert github == [AUTHORITY_GITHUB_RULE]
+    closing = [line for line in text.splitlines() if line.startswith("**Boundary:**")]
+    assert closing == [BOUNDARY_LINE]
+
+
+def test_the_github_acts_are_the_ones_supervision_boundaries_grants():
+    """The walk's vocabulary is read off the section that owns the boundary."""
+    boundaries = template_section(template_text(), BOUNDARIES).casefold()
+    assert GITHUB_ACTS
+    for act in GITHUB_ACTS:
+        assert act in boundaries, act
+
+
+def test_every_github_sentence_outside_supervision_boundaries_only_reads():
+    """KOD-573: only Supervision Boundaries rules on a GitHub write.
+
+    Outside it, the one sentence that names a GitHub write is the pointer
+    to it; every other sentence naming GitHub or one of its acts is pinned
+    whole, so a new or amended one fails whatever its wording.
+    """
+    text = template_text()
+    outside = text.replace(template_section(text, BOUNDARIES), "", 1)
+    pointer = _SENTENCE_END.split(AUTHORITY_GITHUB_RULE)[0]
+    named = [
+        sentence
+        for sentence in _SENTENCE_END.split(outside)
+        if _GITHUB_SUBJECT.search(sentence)
+    ]
+    assert named.count(pointer) == 1
+    assert [sentence for sentence in named if sentence != pointer] == list(READING)
