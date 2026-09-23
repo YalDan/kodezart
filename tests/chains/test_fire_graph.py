@@ -1,11 +1,13 @@
 """The actual compiled fire excludes every delivery node and route."""
 
+import ast
 import asyncio
 import hashlib
 import inspect
 import json
 import re
 import sys
+import textwrap
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
 from enum import Enum
 from itertools import product
@@ -16,6 +18,7 @@ from typing import Annotated, Literal, Union, get_args, get_origin
 
 import pytest
 from fastapi import FastAPI
+from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
 from pydantic_core import SchemaSerializer
 from starlette.types import Message
@@ -24,6 +27,7 @@ import kodezart
 from kodezart.adapters import asyncio_job_queue
 from kodezart.api.v1.endpoints import agent as agent_routes
 from kodezart.api.v1.endpoints import jobs as job_routes
+from kodezart.chains import ralph_workflow
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.composition.jobs import build_job_service
 from kodezart.domain.accept_gate import gate_cleared
@@ -32,7 +36,11 @@ from kodezart.handlers import agent_handler
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.accept import AcceptVerdict
-from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
+from kodezart.types.domain.agent import (
+    AgentEvent,
+    AuthoredWorkflowCompleteEvent,
+    WorkflowCompleteEvent,
+)
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
     Contradiction,
@@ -44,6 +52,7 @@ from kodezart.types.domain.criteria import (
     ForbiddenCriterionClass,
 )
 from kodezart.types.domain.delivery import LaneDelivery
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
@@ -649,6 +658,307 @@ def test_the_fire_s_state_keys_are_pinned_whole():
 
     assert state_keys(Delivered) - STATE_KEYS == {"pr_url"}
     assert DELIVERY_FIELDS & state_keys(Delivered) == {"pr_url"}
+
+
+def delivery_keys() -> set[str]:
+    """Every key a delivery fact goes out under, by field name and by alias.
+
+    Derived from the models: the fields the authored terminal declares
+    beyond the fire's — the pull request's url and number, the CI status —
+    and every field of the lane's delivery record but the fire's own facts
+    the record repeats (:data:`SHARED_WITH_TERMINAL`), each under its field
+    name and under the alias it is sent by.
+    """
+    authored = {
+        name: field
+        for name, field in AuthoredWorkflowCompleteEvent.model_fields.items()
+        if name not in WorkflowCompleteEvent.model_fields
+    }
+    lane = {
+        name: field
+        for name, field in LaneDelivery.model_fields.items()
+        if name not in SHARED_WITH_TERMINAL
+    }
+    return {
+        key
+        for fields in (authored, lane)
+        for name, field in fields.items()
+        for key in (name, field.serialization_alias or field.alias or name)
+    }
+
+
+def classified_outcomes() -> set[WorkflowOutcome]:
+    """Every outcome the shipped classifier names, read off its source.
+
+    The completion node classifies through :func:`classify_outcome`, so
+    the outcomes it can emit are the members that function names; the
+    rest of the enumeration is assigned at the queue boundary or by the
+    delivery and scope arms, never by the fire's graph.  Bounded by the
+    function's syntax tree.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(classify_outcome)))
+    return {
+        WorkflowOutcome[node.attr]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "WorkflowOutcome"
+    }
+
+
+def trajectory(*, plateaued: bool, never_passed: list[str]) -> LoopTrajectory:
+    """A one-record trajectory at the plateau flag and never-passed set asked."""
+    return LoopTrajectory(
+        records=[
+            IterationRecord(
+                iteration=1,
+                passed_count=0,
+                failing_criterion_ids=never_passed,
+                commit_sha="d" * 40,
+            )
+        ],
+        never_passed_ids=never_passed,
+        best_passed_count=0,
+        best_iteration=1,
+        best_commit_sha="d" * 40,
+        plateaued=plateaued,
+    )
+
+
+def fire_state(
+    *,
+    feature_tip_sha: str | None = None,
+    criteria_validation: CriteriaValidation | None = None,
+    unconfirmed: bool = False,
+    **classified: object,
+) -> WorkflowState:
+    """A state as the completion node reads it, with exactly the fire's keys.
+
+    The classifier tests' neutral state with *classified* set on it, the
+    lane's delivery keys taken off, and the keys the fire's prepare step
+    writes that the neutral state does not carry added at the values
+    prepare gives a fresh run against trunk; the terminal's other inputs
+    are set as asked.  Held to the pinned key set, so the drive runs on the
+    fire's own shape.
+    """
+    legacy = _state(**classified)
+    state = WorkflowState(
+        **{key: value for key, value in legacy.items() if key not in DELIVERY_FIELDS},
+        lane_entry=None,
+        work_base_ref="main",
+        repo_visibility=RepoVisibility.UNKNOWN,
+    )
+    state["feature_tip_sha"] = feature_tip_sha
+    state["criteria_validation"] = criteria_validation
+    if unconfirmed:
+        state["ruling_unrecorded"] = True
+    assert set(WorkflowState.__required_keys__) <= set(state) <= STATE_KEYS
+    return state
+
+
+#: The commit a merged hand-off's terminal carries.
+LANDED = "m" * 40
+
+
+def completions() -> dict[str, tuple[WorkflowOutcome, WorkflowState]]:
+    """One state per outcome the classifier names, and the outcome it names.
+
+    The loop exits are run with the trajectory's plateau flag set and, under
+    the same exit, unset; the merged hand-off carries its commit and no
+    merge error; the clean run's trajectory has nothing that never passed.
+    """
+    accepted: dict[str, object] = {
+        "verdict": AcceptVerdict.accepted,
+        "merged": True,
+        "review_passed": True,
+        "feature_tip_sha": LANDED,
+    }
+    return {
+        "a merge that diverged": (
+            WorkflowOutcome.merge_divergent,
+            fire_state(merge_error="the branches diverged"),
+        ),
+        "a fix whose consolidation failed": (
+            WorkflowOutcome.fix_consolidation_failed,
+            fire_state(merge_error="the branches diverged", remediation_rounds_used=1),
+        ),
+        "a loop that plateaued": (
+            WorkflowOutcome.loop_plateaued,
+            fire_state(trajectory=trajectory(plateaued=True, never_passed=["AC-1"])),
+        ),
+        "a loop that did not plateau": (
+            WorkflowOutcome.loop_not_accepted,
+            fire_state(trajectory=trajectory(plateaued=False, never_passed=["AC-1"])),
+        ),
+        "a loop with no trajectory": (
+            WorkflowOutcome.loop_not_accepted,
+            fire_state(),
+        ),
+        "a loop that committed nothing": (
+            WorkflowOutcome.zero_commit_no_pr,
+            fire_state(
+                best_iteration_sha=None,
+                trajectory=trajectory(plateaued=True, never_passed=["AC-1"]),
+            ),
+        ),
+        "a remediation budget spent": (
+            WorkflowOutcome.remediation_budget_exhausted,
+            fire_state(remediation_rounds_used=1),
+        ),
+        "an infeasible criteria sweep": (
+            WorkflowOutcome.criteria_infeasible,
+            fire_state(
+                criteria_infeasible=True,
+                criteria_validation=carried()["criteria_validation"],
+            ),
+        ),
+        "an unconfirmed pin": (
+            WorkflowOutcome.ruling_unrecorded,
+            fire_state(unconfirmed=True),
+        ),
+        "a merged hand-off": (
+            WorkflowOutcome.handed_off_for_delivery,
+            fire_state(**accepted),
+        ),
+        "a clean run": (
+            WorkflowOutcome.handed_off_for_delivery,
+            fire_state(
+                **accepted, trajectory=trajectory(plateaued=False, never_passed=[])
+            ),
+        ),
+        "a review that failed": (
+            WorkflowOutcome.review_failed_fix_budget_exhausted,
+            fire_state(**{**accepted, "review_passed": False}),
+        ),
+    }
+
+
+def declared_keys(
+    value: BaseModel, *, by_alias: bool, exclude_none: bool
+) -> dict[str, str]:
+    """The key each field of *value* is dumped under, in the rendering asked for."""
+    return {
+        (field.serialization_alias or field.alias or name) if by_alias else name: name
+        for name, field in type(value).model_fields.items()
+        if not (exclude_none and getattr(value, name) is None)
+    }
+
+
+def assert_dumped_as_declared(
+    value: BaseModel,
+    dump: object,
+    *,
+    by_alias: bool,
+    exclude_none: bool,
+    where: str,
+) -> None:
+    """*dump* has exactly the keys *value*'s schema declares, at every depth."""
+    assert isinstance(dump, Mapping), where
+    keys = declared_keys(value, by_alias=by_alias, exclude_none=exclude_none)
+    assert set(dump) == set(keys), where
+    for key, name in keys.items():
+        held = getattr(value, name)
+        sent = dump[key]
+        if isinstance(held, list):
+            assert isinstance(sent, list), f"{where} / {key}"
+            pairs = list(zip(held, sent, strict=True))
+        else:
+            pairs = [(held, sent)]
+        for item, sent_item in pairs:
+            if isinstance(item, BaseModel):
+                assert_dumped_as_declared(
+                    item,
+                    sent_item,
+                    by_alias=by_alias,
+                    exclude_none=exclude_none,
+                    where=f"{where} / {key}",
+                )
+
+
+def keys_in(dump: object) -> set[str]:
+    """Every key of every mapping in *dump*, at any depth."""
+    if isinstance(dump, Mapping):
+        return {str(key) for key in dump} | {
+            key for value in dump.values() for key in keys_in(value)
+        }
+    if isinstance(dump, list):
+        return {key for item in dump for key in keys_in(item)}
+    return set()
+
+
+async def test_the_completion_node_emits_exactly_the_terminal_for_every_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The tracker-native graph's completion node, run over every outcome it classifies.
+
+    The fire's terminal is built in one place, the engine's completion
+    node, which the egress drive replaces with a held engine and the
+    machinery pins read as a class rather than run.  It is run here, on the
+    compiled fire's own engine with the stream writer a graph run would
+    hand it, over a state for every outcome the shipped classifier names —
+    derived from the classifier's source, so a member it starts producing
+    is a run missing here — among them the plateau with the trajectory's
+    flag set and, under the same loop exit, unset; the merged hand-off with
+    its commit present and no merge error; and a clean run whose trajectory
+    has nothing that never passed.  For each: the event is exactly
+    ``WorkflowCompleteEvent`` and not a subclass; its dump in python and in
+    JSON mode, with and without aliases, with and without its ``None``
+    fields, has exactly the keys the schema declares at every depth; and no
+    delivery key, under its field name or its alias, is anywhere in any of
+    them.
+
+    This is about the tracker-native graph alone.  The authored v0.2 arm
+    legitimately emits ``AuthoredWorkflowCompleteEvent``, with its
+    delivery fields, from its own graph; that arm is not this one, and no
+    state of this graph may reach that type.
+    """
+    runs = completions()
+    assert {outcome for outcome, _ in runs.values()} == classified_outcomes()
+    assert classified_outcomes() != set()
+    assert {
+        state["trajectory"].plateaued
+        for _, state in runs.values()
+        if state["trajectory"] is not None
+    } == {False, True}
+    _, handed = runs["a merged hand-off"]
+    assert handed["feature_tip_sha"] == LANDED and handed["merge_error"] is None
+    _, clean = runs["a clean run"]
+    assert clean["trajectory"] is not None
+    assert clean["trajectory"].never_passed_ids == []
+    forbidden = delivery_keys()
+    assert {"prUrl", "prNumber", "ciStatus"} <= forbidden
+    assert forbidden & set(WorkflowCompleteEvent.model_fields) == set()
+
+    written: list[AgentEvent] = []
+    monkeypatch.setattr(ralph_workflow, "get_stream_writer", lambda: written.append)
+    engine = fire()
+    for name, (outcome, state) in runs.items():
+        del written[:]
+        assert await engine._complete_node(state, RunnableConfig()) == {}, name
+        (event,) = written
+        assert type(event) is WorkflowCompleteEvent, name
+        assert event.outcome is outcome, name
+        renderings = {
+            (mode, by_alias, exclude_none): event.model_dump(
+                mode=mode, by_alias=by_alias, exclude_none=exclude_none
+            )
+            for mode in ("python", "json")
+            for by_alias in (False, True)
+            for exclude_none in (False, True)
+        } | {
+            ("json text", by_alias, exclude_none): json.loads(
+                event.model_dump_json(by_alias=by_alias, exclude_none=exclude_none)
+            )
+            for by_alias in (False, True)
+            for exclude_none in (False, True)
+        }
+        for (mode, by_alias, exclude_none), dump in renderings.items():
+            where = f"{name}: {mode}, {'aliased' if by_alias else 'named'}"
+            where += ", nones off" if exclude_none else ", nones on"
+            assert_dumped_as_declared(
+                event, dump, by_alias=by_alias, exclude_none=exclude_none, where=where
+            )
+            assert keys_in(dump) & forbidden == set(), where
 
 
 #: What a class may define to be rendered some other way than by its
