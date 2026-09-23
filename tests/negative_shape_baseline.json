@@ -208,6 +208,7 @@
   "tests/domain/test_no_ref_parsing.py": 1,
   "tests/domain/test_operation_optionality.py": 12,
   "tests/domain/test_organize.py": 33,
+  "tests/domain/test_organize_graph_peers.py": 3,
   "tests/domain/test_organize_routing.py": 6,
   "tests/domain/test_outcome.py": 31,
   "tests/domain/test_owed_rulings.py": 47,
@@ -3376,6 +3377,11 @@
    "test_normal_toml_loader_resolves_the_declared_phase_table",
    "test_invalid_table_stops_normal_boot_before_tracker_or_dispatch",
    "test_evidence_is_fillable_only_when_a_demonstration_is_named"
+  ],
+  "tests/domain/test_organize_graph_peers.py": [
+   "test_every_graph_change_kind_has_a_shape",
+   "test_a_graph_change_reaches_exactly_the_issues_it_writes",
+   "test_changes_together_reach_every_issue_each_one_reaches"
   ],
   "tests/domain/test_organize_routing.py": [
    "test_unverifiable_requires_both_the_real_blocked_by_edge_and_scope_membership",
