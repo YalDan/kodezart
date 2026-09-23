@@ -543,8 +543,10 @@ async def test_cancelled_author_never_reaches_a_tracker_mutation(monkeypatch):
     task = asyncio.create_task(run_owner(owner))
     await asyncio.wait_for(entered.wait(), timeout=3)
     task.cancel()
+    # Bounded: a cancellation swallowed on the way out fails here rather
+    # than leaving the case waiting on the next session forever.
     with pytest.raises(asyncio.CancelledError):
-        await task
+        await asyncio.wait_for(task, timeout=10)
     assert not written(board)
     assert not board.grants()
 
