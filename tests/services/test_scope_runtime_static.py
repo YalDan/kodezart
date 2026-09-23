@@ -187,6 +187,18 @@ def test_every_forbidden_name_is_controlled() -> None:
     assert {name for name, _ in CONTROLS} == FORBIDDEN
 
 
+def test_a_submodule_imported_through_its_package_is_followed() -> None:
+    """The package-form arm of the import scan, on a one-line source.
+
+    No module in the scanned closure imports a submodule through its package,
+    so the surface cannot be this arm's control. The source names one
+    submodule, which is followed, and one package attribute, which is not a
+    module's file and is skipped.
+    """
+    source = "from kodezart.domain import lane_entry, LaneEntryError"
+    assert imported_modules(ast.parse(source)) == {"kodezart.domain.lane_entry"}
+
+
 def test_the_walker_names_no_checkpoint_read() -> None:
     walker = ast.parse(WALKER.read_text(encoding="utf-8"))
     scanned = [WALKER, *(path_of(module) for module in import_closure(walker))]
