@@ -742,6 +742,40 @@ def test_a_declaration_is_exact_in_both_directions(bucket):
         assert found.paths == (str(site),)
 
 
+TWO_WRITES_ONE_DECLARED = """
+from kodezart.core.protocols import TrackerPort
+from kodezart.domain.derived_writes import derived_writes
+
+
+class Writer:
+    def __init__(self, *, tracker: TrackerPort) -> None:
+        self._tracker = tracker
+
+    @derived_writes("post_comment")
+    async def publish(self) -> None:
+        await self._tracker.post_comment(issue_key="K", body="b")
+        await self._tracker.upsert_comment(issue_key="K", body="b")
+"""
+
+
+def test_a_declaration_holds_out_only_the_writes_it_names():
+    """A declaration is per method: the function's other write stays refused.
+
+    The planted function makes two writes and declares one of them, so the
+    declared write is held out and the undeclared one is the only write the
+    census refuses.
+    """
+    module = "planted/two_writes.py"
+    found = census((module, TWO_WRITES_ONE_DECLARED))
+    assert (
+        CallSite(module=module, function="Writer.publish", method="post_comment")
+        in found.held_out
+    )
+    assert found.unadopted == frozenset(
+        {CallSite(module=module, function="Writer.publish", method="upsert_comment")}
+    )
+
+
 WRAPPER = '''
 from kodezart.core.protocols import TrackerPort
 
