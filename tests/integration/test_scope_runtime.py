@@ -4415,10 +4415,19 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
             for call in merger.calls
             if call["method"] == "consolidate"
         ]
-        assert {record.branch, deliverable} <= associated_branches(record=record)
+        rows = {
+            (item.branch, item.role, item.derived_from, item.run_id)
+            for item in record.associations
+        }
+        stalled_loop = (record.branch, BranchRole.LOOP, deliverable, "only-job")
+        assert stalled_loop in rows
         # Nothing wrote or removed an artifact directory on either branch: no
         # persist and no clean is reached on this arm at all, and the walk over
-        # the sources is what keeps any other module from writing one.
+        # the sources is what keeps any other module from writing one
+        # (tests/test_artifact_directory_sites.py), as the native fire graph's
+        # node set keeps any ticket or criteria generation off this arm
+        # (tests/chains/test_native_fire.py::
+        # test_the_native_fire_graph_holds_no_ticket_or_criteria_generation_node).
         assert harness.artifacts.persist_calls == []
         assert harness.artifacts.clean_calls == []
         # The stall's own pull request is the do-not-merge one, and it says so
@@ -4466,6 +4475,16 @@ async def test_a_fire_that_closes_nothing_puts_the_issue_back_and_the_walk_goes_
         # The pull request the stall exit opened is the one that receives this
         # fire's work: nothing opened a second one for the lane.
         assert len(wire.creates) == 2
+        # The later process wrote the record, and every row the stalled run
+        # recorded is still there, the never-consolidated loop branch's first.
+        resumed = await lane_record(port, "A")
+        kept = {
+            (item.branch, item.role, item.derived_from, item.run_id)
+            for item in resumed.associations
+        }
+        assert resumed != record
+        assert stalled_loop in kept
+        assert rows <= kept
     finally:
         await forge.close()
 
