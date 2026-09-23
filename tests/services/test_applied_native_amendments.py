@@ -693,27 +693,44 @@ async def test_an_undemonstrable_criterion_stays_owed_while_a_lapsed_one_is_owed
     owes until a person cancels it with a supersession. The lapsed arm is moved:
     a criterion finished at one sha whose grading lapsed at the next goes back
     to the unstarted state, keeping the sha it was graded at, and is in the same
-    gap again. A criterion finished and touched by neither arm is the control
-    that the gap read is the open reading and not the roster.
+    gap again.
+
+    The undemonstrable arm is driven twice: once on a criterion that is still
+    unstarted, and once on a finished one. A lapse leaves an unstarted criterion
+    where it is, so only the finished one can show a refusal treated as a lapse:
+    it stays finished, its record unmoved but for its classification, and it
+    stays out of the gap. A lapse treated as a refusal leaves the lapsed
+    criterion finished and out of the gap. Beside both, the finished criterion
+    is also the control that the gap read is the open reading and not the
+    roster.
     """
     port = tracker()
     before = port.issues[DIRECT_OWED]
-    executor = Executor(
-        reproduced=True, claimed_capability="network", finding=UNVERIFIABLE_HERE
-    )
-    service, guard, workspace, _ = await build(
-        repository,
-        executor,
-        port=port,
-        runner_environment={CheckPrerequisite.NETWORK: False},
-    )
-    try:
-        events = await drive(service, guard, repository)
-        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
-        assert report.upheld[0].reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
-        assert not any(isinstance(e, ResultEvent) for e in events)
-    finally:
-        await cleanup(workspace)
+    before_done = port.issues[DIRECT_DONE]
+    for subject in (DIRECT_OWED, DIRECT_DONE):
+        executor = Executor(
+            reproduced=True,
+            subject={"kind": "criterion", "id": subject},
+            claimed_capability="network",
+            finding=UNVERIFIABLE_HERE,
+        )
+        service, guard, workspace, _ = await build(
+            repository,
+            executor,
+            port=port,
+            runner_environment={CheckPrerequisite.NETWORK: False},
+        )
+        try:
+            events = await drive(service, guard, repository)
+            report = next(
+                e.report for e in events if isinstance(e, NativeAmendmentEvent)
+            )
+            refusal = report.upheld[0]
+            assert refusal.claim.subject.id == subject
+            assert refusal.reason is UpheldReason.ENVIRONMENT_LACKS_CAPABILITY
+            assert not any(isinstance(e, ResultEvent) for e in events)
+        finally:
+            await cleanup(workspace)
 
     # The lapsed arm, over the same board, through the landed take-back.
     await lapse(
@@ -740,6 +757,21 @@ async def test_an_undemonstrable_criterion_stays_owed_while_a_lapsed_one_is_owed
     assert all(key != DIRECT_OWED for key, _ in port.workflow_writes)
     assert all(key != DIRECT_OWED for key, _ in port.restored_states)
 
+    # Undemonstrable on a finished criterion: recorded the same way, and not
+    # taken back as a lapse would take it.
+    done_archives = [
+        c
+        for c in port.comments
+        if c.issue_key == DIRECT_DONE and c.body.startswith("[fixture-amendment:")
+    ]
+    assert len(done_archives) == 1
+    assert '"claimedCapability":"network"' in done_archives[0].body
+    refused_done = port.issues[DIRECT_DONE]
+    assert refused_done.model_dump(exclude=unmoved) == before_done.model_dump(
+        exclude=unmoved
+    )
+    assert refused_done.state_kind is WorkflowStateKind.COMPLETED
+
     # Lapsed: moved back, keeping the sha its grading was taken at.
     lapsed = port.issues[NESTED_DONE]
     assert lapsed.state_kind is WorkflowStateKind.UNSTARTED
@@ -758,8 +790,8 @@ async def test_an_undemonstrable_criterion_stays_owed_while_a_lapsed_one_is_owed
         for issue in port.issues.values()
     )
 
-    # Both are owed, read off one subtree that still reads; the untouched
-    # finished criterion is not.
+    # Both are owed, read off one subtree that still reads; the finished
+    # criterion refused as undemonstrable is not, and neither is it moved.
     owed = {
         issue.issue_key
         for issue in SubtreeClosure(
