@@ -155,6 +155,24 @@ async def test_a_driven_write_path_passes_the_boot_check(
     }
 
 
+async def test_a_stale_declaration_boots(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A declaration whose function no longer writes is no write path.
+
+    The guard holds the census to no stale declaration; boot does not refuse
+    one, because nothing is written through it.
+    """
+    deployment(monkeypatch)
+    installed_with(monkeypatch, {"planted/stale.py": PLANTED["stale"]})
+
+    await boots(capsys)
+    assert "planted/stale.py::Writer.publish::post_comment" in {
+        str(site) for site in verify_write_adoption().stale
+    }
+
+
 def test_the_shipped_tree_passes_the_boot_check() -> None:
     """The installed tree boots, and says something in each direction."""
     passed = verify_write_adoption()
