@@ -1381,7 +1381,11 @@ class OrganizeOwner:
                         }
                         # A subject this round minted owes its marker to the
                         # round that declares its label set, which is the next
-                        # one: this round holds no address on it.
+                        # one: this round holds no address on it. Only organize
+                        # subjects receive the marker below, so only a minted
+                        # subject counts: a criterion child the criteria stage
+                        # minted is never marked, and holding the round open
+                        # for it would cost a round and protect no label set.
                         minted = {
                             revision.issue.issue_key
                             for revision in current
