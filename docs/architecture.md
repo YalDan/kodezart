@@ -610,11 +610,12 @@ stopped standing goes back to the session, because the loop can re-derive it; on
 resting on a performed observation is not re-derived at all, because the loop
 cannot perform the observation, and is taken back instead — and asked about,
 once. The class a grading declares is held by its criterion for the rest of the
-fire: a later iteration that re-derives the criterion and declares another class
-— a row that states none declares `cheap` — raises `StickyClassError` before
-anything of that iteration is written, and the walk records the lane failed. The
-fire keeps no memory of classes across fires, for the same reason it keeps none
-of its standing. What reaches the gate is still the whole roster: a withheld criterion
+loop run: a later iteration that re-derives the criterion and declares another
+class — a row that states none declares `cheap` — raises `StickyClassError`
+before anything of that iteration is written, and the walk records the lane
+failed. A remediation round runs the loop again with nothing standing, so it
+holds no class from the round before, and no class is kept across fires, for the
+same reason the loop keeps none of its standing. What reaches the gate is still the whole roster: a withheld criterion
 carries the row its standing grading earns, with the harness's own reason in
 place of a verdict nobody asked for, so the denominator does not move between
 iterations and the gate cannot clear over an outstanding lapse. Nothing persists
