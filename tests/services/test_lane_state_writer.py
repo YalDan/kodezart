@@ -1828,7 +1828,10 @@ async def test_one_grading_broken_twice_is_still_one_refutation():
     The move back is by hand because it writes no Evidence row. A pass at
     that head between the two breaks would restamp the row and be the
     history's last write, so the second break would be a row write of its
-    own and announced again (KOD-506), which the every-state case pins.
+    own and announced again (KOD-506). The every-state case below revisits
+    a commit across two heads only; the same-head pass between two breaks
+    is pinned by the same-head interleave case of
+    ``test_a_pass_and_a_refutation_at_one_head_are_each_a_row_write``.
     """
     port = criteria_board()
     lane_state = writer(port, lane_repo())
@@ -1843,6 +1846,72 @@ async def test_one_grading_broken_twice_is_still_one_refutation():
 
     assert port.issues[broken].state_kind is WorkflowStateKind.UNSTARTED
     assert [event.graded_sha for event in refutations(port)] == ["2" * 40]
+
+
+PASSED, REFUTED = RunEventKind.CRITERION_PASSED, RunEventKind.CRITERION_REFUTED
+
+
+@pytest.mark.parametrize(
+    "steps,expected",
+    [
+        pytest.param(
+            [("1", True), ("1", False)],
+            [(PASSED, "1"), (REFUTED, "1")],
+            id="pass-then-break-at-one-head",
+        ),
+        pytest.param(
+            [("1", True), ("2", False), ("2", True)],
+            [(PASSED, "1"), (REFUTED, "2"), (PASSED, "2")],
+            id="break-then-pass-at-one-head",
+        ),
+        pytest.param(
+            [("1", True), ("2", True), ("2", False), ("2", True), ("2", False)],
+            [
+                (PASSED, "1"),
+                (PASSED, "2"),
+                (REFUTED, "2"),
+                (PASSED, "2"),
+                (REFUTED, "2"),
+            ],
+            id="same-head-interleave",
+        ),
+    ],
+)
+async def test_a_pass_and_a_refutation_at_one_head_are_each_a_row_write(
+    steps, expected
+):
+    """The rule compares the kind of the last row write, not only its sha.
+
+    A pass and a refutation at the same head are two different writes of
+    the Evidence row: each restamps it with its own verdict, so each is an
+    entry of its own though both name one commit. The de-duplication rule
+    asks whether the criterion's last row write is already this entry, kind
+    and sha together (KOD-506); a rule that compared the sha alone would
+    read the second verdict at a head as a repeat of the first and leave
+    the history ending at a write the row no longer carries. After every
+    tick, the last commit the history names is the one the row names, and
+    the entries on the stream are exactly the row writes in order.
+    """
+    subject = CRITERIA[0]
+    port = criteria_board(keys=[subject])
+    lane_state = writer(port, lane_repo())
+
+    for digit, passing in steps:
+        await tick(
+            lane_state,
+            sha=digit * 40,
+            keys=[subject],
+            failed=[] if passing else [subject],
+        )
+        row = parse_criterion_evidence(port.issues[subject].body).graded_sha
+        history = evidence_row_history(events=stream(port), criterion_key=subject)
+        assert history[-1] == row
+
+    assert [
+        (event.kind, event.graded_sha)
+        for event in stream(port)
+        if event.subject_key == subject
+    ] == [(kind, digit * 40) for kind, digit in expected]
 
 
 async def test_a_criterion_this_fire_never_finished_is_not_taken_back():
