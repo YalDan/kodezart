@@ -1586,6 +1586,24 @@ class ScopePlanReader(
 
 
 @runtime_checkable
+class ScopeRosterReader(
+    ScopeFamilyReader,
+    PlanningIssueReader,
+    Protocol,
+):
+    """A scope's roster and each member's classification, read twice to agree."""
+
+
+@runtime_checkable
+class ScopeTallyReader(
+    ScopeRosterReader,
+    ScopeReadPreflight,
+    Protocol,
+):
+    """The roster a tally is counted over, behind the classification preflight."""
+
+
+@runtime_checkable
 class ScopeReadyReader(
     ScopePlanReader,
     ExecutionApprovalReader,
@@ -1829,15 +1847,6 @@ class RecordSignalReader(
     Protocol,
 ):
     """The criterion family and the lane record a barren tick is observed from."""
-
-
-@runtime_checkable
-class MandateGraphReader(
-    ScopeMemberReader,
-    TrackerCommentReader,
-    Protocol,
-):
-    """The scope family, its criteria and the records a lane's graph is read from."""
 
 
 @runtime_checkable

@@ -119,7 +119,9 @@ does not exist.
 | WorkRefRecorder | LinearMcpTracker | The ref record beside the ref read, taken by base resolution and the per-issue lifecycle writer |
 | SubjectCriteriaReader | LinearMcpTracker | A subject and its criterion family: the audit terminal reading's two reads |
 | ScopeMemberReader | LinearMcpTracker | The scope family and each member's criteria, which is what scope membership resolves |
-| ScopePlanReader | LinearMcpTracker | Everything a scope plan is read from, with no write in it: the plan, tally and delivery coordinator readings |
+| ScopePlanReader | LinearMcpTracker | Everything a scope plan is read from, with no write in it: the plan and delivery coordinator readings |
+| ScopeRosterReader | LinearMcpTracker | A scope's roster and each member's classification, which the scope tally reads twice to agree |
+| ScopeTallyReader | LinearMcpTracker | The roster the scope tally is counted over, behind the classification preflight |
 | ScopeReadyReader | LinearMcpTracker | The scope plan plus the approval an entry asks for: what the scope walker and the dispatcher read |
 | ScopeWalkTracker | LinearMcpTracker | What the scope walk reads and the one write it makes, the put-back; it carries no claim, lease or in-progress mark |
 | FireSubjectReader | LinearMcpTracker | The admitted subject of a fire over the family it is measured against: the criteria stage's reads |
@@ -134,8 +136,7 @@ does not exist.
 | LaneEscalationTracker | LinearMcpTracker | The escalation record a lane writes and the reads it is composed from |
 | AuditPublicationWriter | LinearMcpTracker | The record an audit publishes, under the lease publication holds |
 | EscalationSignalReader | LinearMcpTracker | The resolution and records an escalation's ageing is observed from |
-| RecordSignalReader | LinearMcpTracker | The criterion family and lane record a barren tick is observed from |
-| MandateGraphReader | LinearMcpTracker | The family, criteria and records a lane's mandate graph is read from |
+| RecordSignalReader | LinearMcpTracker | The criterion family and lane record a barren tick, and a lane's recorded ruling growth, are observed from |
 | OrganizeOwnerTracker | LinearMcpTracker | Everything the organize owner reads and every write it makes: the widest single consumer |
 | FireRulingTracker | LinearMcpTracker | The criterion reads and record writes a ruling round makes |
 | AmendmentWriteTracker | LinearMcpTracker | Every read the amendment write-back is composed from and every write it makes |

@@ -10,6 +10,7 @@ rather than scanned surfaces.
 import ast
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
@@ -43,18 +44,19 @@ RUN_RECORD_EXEMPTION = frozenset(
 EXEMPT_UNTIL_KOD_390 = frozenset({"read_surface_authorship"})
 
 
-#: The roles only a consumer nothing constructs takes. The run-shape reading
-#: and the three record signals over it are imported by no module the entry
-#: point reaches at this head, so the roles they take are named in their own
-#: modules and nowhere the run goes. Named rather than scanned: wiring one of
+#: The roles only a consumer nothing constructs takes. The run-shape reading,
+#: the record signals over it and the scope tally are imported by no module
+#: the entry point reaches at this head, so the roles they take are named in
+#: their own modules and nowhere the run goes. Named rather than scanned: wiring one of
 #: those consumers takes its role off the unreached list and reddens the
 #: reachability guard until the entry here goes too.
 UNWIRED_CONSUMER_ROLES = frozenset(
     {
         "EscalationResolutionReader",
         "EscalationSignalReader",
-        "MandateGraphReader",
         "RecordSignalReader",
+        "ScopeRosterReader",
+        "ScopeTallyReader",
     }
 )
 
@@ -421,62 +423,277 @@ def called_members(text: str) -> frozenset[str]:
     )
 
 
-@cache
-def handed_on(text: str) -> frozenset[str]:
-    """Every name or attribute *text* passes into a call as an argument."""
-    passed: set[str] = set()
-    for node in nodes(text):
-        if not isinstance(node, ast.Call):
-            continue
-        for value in [*node.args, *(keyword.value for keyword in node.keywords)]:
-            for part in ast.walk(value):
-                if isinstance(part, ast.Name):
-                    passed.add(part.id)
-                elif isinstance(part, ast.Attribute):
-                    passed.add(part.attr)
-    return frozenset(passed)
+def final_name(node: ast.expr) -> str | None:
+    """The name an expression ends on: a bare name or an attribute's last part."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def enclosing(text: str) -> dict[ast.AST, ast.AST]:
+    """Each node of *text* mapped to the node whose body holds it."""
+    return {
+        child: parent
+        for parent in nodes(text)
+        for child in ast.iter_child_nodes(parent)
+    }
+
+
+@dataclass(frozen=True)
+class Receiver:
+    """One parameter a callee takes, by name and by position."""
+
+    name: str
+    position: int | None
+    annotation: ast.expr | None
 
 
 @cache
-def kept_as(text: str) -> dict[str, frozenset[str]]:
-    """Every attribute a parameter is kept as, so a hand-off through it counts."""
-    found: dict[str, set[str]] = {}
-    for node in nodes(text):
-        pairs: list[tuple[ast.expr, ast.expr | None]] = []
-        if isinstance(node, ast.AnnAssign):
-            pairs = [(node.target, node.value)]
+def receivers(sources: tuple[tuple[str, str], ...]) -> dict[str, list[list[Receiver]]]:
+    """Every in-tree callee by the name it is called under, with what it takes.
+
+    A function or method is called by its own name; a class by its name,
+    taking its constructor's parameters or, for a class with none, its
+    annotated fields in order. A method's first parameter is its receiver
+    and is not one of them.
+    """
+    found: dict[str, list[list[Receiver]]] = {}
+    for _, text in sources:
+        parent = enclosing(text)
+        for node in nodes(text):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                arguments = node.args
+                positional = [*arguments.posonlyargs, *arguments.args]
+                if isinstance(parent.get(node), ast.ClassDef) and positional:
+                    positional = positional[1:]
+                taken = [
+                    Receiver(argument.arg, index, argument.annotation)
+                    for index, argument in enumerate(positional)
+                ] + [
+                    Receiver(argument.arg, None, argument.annotation)
+                    for argument in arguments.kwonlyargs
+                ]
+                found.setdefault(node.name, []).append(taken)
+                if node.name == "__init__" and isinstance(
+                    owner := parent.get(node), ast.ClassDef
+                ):
+                    found.setdefault(owner.name, []).append(taken)
+            elif isinstance(node, ast.ClassDef) and not any(
+                isinstance(item, ast.FunctionDef) and item.name == "__init__"
+                for item in node.body
+            ):
+                fields = [
+                    item
+                    for item in node.body
+                    if isinstance(item, ast.AnnAssign)
+                    and isinstance(item.target, ast.Name)
+                ]
+                found.setdefault(node.name, []).append(
+                    [
+                        Receiver(field.target.id, index, field.annotation)
+                        for index, field in enumerate(fields)
+                        if isinstance(field.target, ast.Name)
+                    ]
+                )
+    return found
+
+
+@dataclass(frozen=True)
+class Binding:
+    """A role a consumer holds: the names and attributes it is held under.
+
+    A parameter is held under its own name inside its function, and under
+    every attribute or local name it is assigned to; an attribute is read
+    anywhere in the class that holds it, or the module when no class does.
+    """
+
+    role: str
+    label: str
+    names: frozenset[str]
+    name_scope: ast.AST
+    attributes: frozenset[str]
+    attribute_scope: ast.AST
+
+
+def assigned_pairs(scope: ast.AST) -> list[tuple[ast.expr, ast.expr]]:
+    """Every target and the value assigned to it inside *scope*.
+
+    A tuple assigned from a tuple pairs element by element, so
+    ``self._a, self._b = a, b`` keeps each name as its own attribute.
+    """
+    pairs: list[tuple[ast.expr, ast.expr]] = []
+    for node in ast.walk(scope):
+        if isinstance(node, ast.AnnAssign) and node.value is not None:
+            pairs.append((node.target, node.value))
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Tuple) and isinstance(node.value, ast.Tuple):
                     pairs.extend(zip(target.elts, node.value.elts, strict=False))
                 else:
                     pairs.append((target, node.value))
-        for target, value in pairs:
-            if isinstance(target, ast.Attribute) and isinstance(value, ast.Name):
-                found.setdefault(value.id, set()).add(target.attr)
-    return {name: frozenset(kept) for name, kept in found.items()}
+    return pairs
+
+
+def bindings(text: str, known: frozenset[str]) -> list[Binding]:
+    """Every role-typed parameter and annotated field *text* declares."""
+    tree = nodes(text)[0]
+    parent = enclosing(text)
+
+    def owning_class(node: ast.AST) -> ast.AST:
+        while node in parent:
+            node = parent[node]
+            if isinstance(node, ast.ClassDef):
+                return node
+        return tree
+
+    found: list[Binding] = []
+    for node in nodes(text):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            owner = owning_class(node)
+            where = f"{owner.name}." if isinstance(owner, ast.ClassDef) else ""
+            for argument in parameters(node):
+                held = (
+                    names_in(argument.annotation) & known
+                    if argument.annotation is not None
+                    else frozenset()
+                )
+                if not held:
+                    continue
+                names, attributes = {argument.arg}, set()
+                for target, value in assigned_pairs(node):
+                    if not (isinstance(value, ast.Name) and value.id in names):
+                        continue
+                    if isinstance(target, ast.Name):
+                        names.add(target.id)
+                    elif isinstance(target, ast.Attribute):
+                        attributes.add(target.attr)
+                found.extend(
+                    Binding(
+                        role=role,
+                        label=f"{where}{node.name}({argument.arg})",
+                        names=frozenset(names),
+                        name_scope=node,
+                        attributes=frozenset(attributes),
+                        attribute_scope=owner,
+                    )
+                    for role in sorted(held)
+                )
+        elif isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if not (
+                    isinstance(item, ast.AnnAssign)
+                    and isinstance(item.target, ast.Name)
+                ):
+                    continue
+                found.extend(
+                    Binding(
+                        role=role,
+                        label=f"{node.name}.{item.target.id}",
+                        names=frozenset(),
+                        name_scope=node,
+                        attributes=frozenset({item.target.id}),
+                        attribute_scope=node,
+                    )
+                    for role in sorted(names_in(item.annotation) & known)
+                )
+    return found
+
+
+def credited(
+    binding: Binding,
+    text: str,
+    register: str,
+    known: frozenset[str],
+    callees: Mapping[str, list[list[Receiver]]],
+) -> frozenset[str]:
+    """The declaring roles *binding* is credited with, by a call or a hand-off.
+
+    A call credits the declaring role whose own members it names, when its
+    receiver is the binding: its name inside the function that takes it,
+    its attribute on ``self`` inside the class that keeps it, or the same
+    attribute read off another receiver anywhere in the module. A hand-off
+    of the binding credits the role the receiving parameter is annotated
+    with and every role that role composes, when the callee resolves in the
+    tree by name, a keyword matched by parameter name and a positional
+    argument by index; one that does not resolve credits nothing.
+    """
+    own = own_declarations(register)
+    inside = {id(node) for node in ast.walk(binding.name_scope)}
+    owned = {id(node) for node in ast.walk(binding.attribute_scope)}
+
+    def held(value: ast.expr) -> bool:
+        if isinstance(value, ast.Name):
+            return id(value) in inside and value.id in binding.names
+        if isinstance(value, ast.Attribute) and value.attr in binding.attributes:
+            on_self = isinstance(value.value, ast.Name) and value.value.id == "self"
+            return id(value) in owned or not on_self
+        return False
+
+    calls = [node for node in nodes(text) if isinstance(node, ast.Call)]
+    found: set[str] = set()
+    for call in calls:
+        if isinstance(call.func, ast.Attribute) and held(call.func.value):
+            found.update(
+                role for role, members in own.items() if call.func.attr in members
+            )
+        handed = [(index, None, value) for index, value in enumerate(call.args)] + [
+            (None, keyword.arg, keyword.value) for keyword in call.keywords
+        ]
+        for index, keyword, value in handed:
+            if not held(value):
+                continue
+            for taken in callees.get(final_name(call.func) or "", ()):
+                for receiver in taken:
+                    matches = (
+                        receiver.name == keyword
+                        if keyword is not None
+                        else receiver.position == index
+                    )
+                    if not matches or receiver.annotation is None:
+                        continue
+                    for role in names_in(receiver.annotation) & known:
+                        found.update({role, *composed(register, role)})
+    return frozenset(found)
+
+
+def carried(credit: frozenset[str], register: str) -> frozenset[str]:
+    """*credit* with every declaring role a credited declaring role composes.
+
+    A declaring role that composes another cannot be taken without it: the
+    ref record comes with the ref read beside it, so a module that records
+    a ref is not asked to read one as well.
+    """
+    declaring = declaring_roles(register)
+    return credit.union(
+        *(composed(register, role) for role in credit & declaring), frozenset()
+    )
 
 
 def uncredited_roles(sources: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
-    """Every consumer holding a role it neither calls a member of nor hands on."""
+    """Every consumer holding a declaring role it neither calls nor hands on.
+
+    Credit is per declaring role: a binding of role R owes a call or a
+    hand-off for R itself when R declares members, and for every declaring
+    role R composes, so a role wider than what the module uses is reported
+    for the part it does not use.
+    """
     register = port_module_text()
     known = roles(register)
+    declaring = declaring_roles(register)
+    callees = receivers(tuple(sorted(sources.items())))
     report: dict[str, tuple[str, ...]] = {}
     for path, text in sorted(sources.items()):
         if not consumer(path):
             continue
-        called, passed, kept = called_members(text), handed_on(text), kept_as(text)
         idle = sorted(
-            name
-            for name, holders in annotation_names(text).items()
-            if name in known
-            and not members_declared(register, name) & called
-            and not {
-                spelling
-                for holder in holders
-                for spelling in (holder, *kept.get(holder, ()))
-            }
-            & passed
+            f"{binding.label}: {role}"
+            for binding in bindings(text, known)
+            for role in (
+                ({binding.role} | composed(register, binding.role)) & declaring
+            )
+            - carried(credited(binding, text, register, known, callees), register)
         )
         if idle:
             report[path] = tuple(idle)

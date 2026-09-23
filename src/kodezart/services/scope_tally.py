@@ -1,6 +1,6 @@
 """Actual native roster and configured marker collection for scope observations."""
 
-from kodezart.core.protocols import ScopePlanReader
+from kodezart.core.protocols import ScopeRosterReader, ScopeTallyReader
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.organize import is_organize_subject
 from kodezart.domain.run_shape import tally_unmoved
@@ -31,7 +31,7 @@ def _refuse(scope: ScopeRef, reason: str) -> RunShapeReadError:
 
 
 async def _read_members(
-    *, tracker: ScopePlanReader, scope: ScopeRef
+    *, tracker: ScopeRosterReader, scope: ScopeRef
 ) -> dict[str, TrackerIssue]:
     facts: dict[str, TrackerIssue] = {}
     for issue in await tracker.scope_issues(ref=scope):
@@ -53,7 +53,7 @@ async def _read_members(
 
 async def observe_scope_tally(
     *,
-    tracker: ScopePlanReader,
+    tracker: ScopeTallyReader,
     operation: OperationConfig,
     scope: ScopeRef,
     phase: MandateKind,

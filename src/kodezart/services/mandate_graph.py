@@ -5,7 +5,12 @@ from collections.abc import Mapping
 from pydantic import ValidationError
 
 from kodezart.config.app import AppConfig
-from kodezart.core.protocols import MandateGraphReader
+from kodezart.core.protocols import (
+    RecordSignalReader,
+    ScopeFamilyReader,
+    TrackerCommentReader,
+    TrackerCriteriaReader,
+)
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.gap import compute_gap
 from kodezart.domain.mandate_graph import (
@@ -40,7 +45,7 @@ from kodezart.types.domain.tracker import TrackerIssue
 
 async def read_lane_rulings(
     *,
-    tracker: MandateGraphReader,
+    tracker: TrackerCommentReader,
     operation: OperationConfig,
     lane_key: str,
     issue_keys: tuple[str, ...],
@@ -87,7 +92,7 @@ async def read_lane_rulings(
 
 async def observe_recorded_ruling_growth(
     *,
-    tracker: MandateGraphReader,
+    tracker: RecordSignalReader,
     operation: OperationConfig,
     config: AppConfig,
     subject: AlarmSubject,
@@ -131,7 +136,7 @@ async def observe_recorded_ruling_growth(
 
 async def read_lane_graph(
     *,
-    tracker: MandateGraphReader,
+    tracker: ScopeFamilyReader,
     lane_key: str,
     fire_key: str,
     milestone: ScopeRef,
@@ -169,7 +174,7 @@ async def read_lane_graph(
 
 async def observe_structural_write(
     *,
-    tracker: MandateGraphReader,
+    tracker: ScopeFamilyReader,
     subject: AlarmSubject,
     previous: AlarmReading,
     fire_key: str,
@@ -203,7 +208,7 @@ async def observe_structural_write(
 
 async def observe_ruling_growth(
     *,
-    tracker: MandateGraphReader,
+    tracker: TrackerCriteriaReader,
     config: AppConfig,
     subject: AlarmSubject,
     baseline_rulings: AlarmReading,

@@ -24,8 +24,10 @@ test scaffolding would otherwise pass it.
 The third half is the dependency question. Every service and chain names
 the roles it takes in its annotations and nothing wider: the whole port is
 named only by the entry point and the composition root, which hold one
-adapter and hand it to role-typed parameters; a role a module takes is one
-it calls a member of or hands on as an argument; no role-typed parameter
+adapter and hand it to role-typed parameters; every role that declares a
+member, among those a module takes, is one it calls a member of on the
+binding it holds, or hands that binding to an in-tree callee whose own
+parameter takes it; no role-typed parameter
 has a default or a union beside it; no module outside the adapters and the
 root imports a vendor adapter; and every role is taken, itself or composed
 into another, by a module the entry point reaches, but for the authorship
@@ -57,6 +59,7 @@ from tests.tracker.role_register import (
     annotation_names,
     call_pattern,
     called_members,
+    composed,
     declared_bases,
     declaring_roles,
     defaulted_role_parameters,
@@ -416,7 +419,7 @@ PLANTED_CONSUMERS = {
     "the whole port": "def hold(port: {aggregate}) -> None:\n    print(port)\n",
     "a role it never uses": "def hold(reader: {role}) -> None:\n    return None\n",
     "a defaulted role": (
-        "def hold(reader: {role} | None = None) -> None:\n    print(reader)\n"
+        "def hold(reader: {role} | None = None) -> None:\n    reader.{member}()\n"
     ),
     "a vendor adapter import": "from {adapter} import {adapter_class}\n",
 }
@@ -426,12 +429,13 @@ PLANTED_CONSUMERS = {
 def test_a_consumer_that_takes_more_than_it_calls_is_reported(form):
     sources = source_tree()
     text = port_module_text()
-    role = min(roles(text))
+    role = min(declaring_roles(text))
     assert not members_declared(text, role) & {"print"}
     planted_path = "services/overreaching.py"
     sources[planted_path] = PLANTED_CONSUMERS[form].format(
         aggregate=AGGREGATE,
         role=role,
+        member=min(own_declarations(text)[role]),
         adapter=LinearMcpTracker.__module__,
         adapter_class=LinearMcpTracker.__name__,
     )
@@ -444,6 +448,86 @@ def test_a_consumer_that_takes_more_than_it_calls_is_reported(form):
     )
 
     assert [planted_path in report for report in reports].count(True) == 1
+
+
+def wider_role(text: str) -> tuple[str, str, str]:
+    """A role, a member of one role it composes, and a declaring role left idle.
+
+    Calling the member credits its declaring role and whatever that role
+    composes; the idle one is composed by the wider role and by neither.
+    """
+    own = own_declarations(text)
+    declaring = declaring_roles(text)
+    for wider in sorted(roles(text)):
+        parts = sorted(({wider} | composed(text, wider)) & declaring)
+        for part in parts:
+            carried = {part} | composed(text, part)
+            idle = sorted(set(parts) - carried)
+            if idle:
+                return wider, min(own[part]), idle[0]
+    raise AssertionError("no role composes two unrelated declaring roles")
+
+
+#: Each way a module can hold a role it does not use, and still look busy.
+PLANTED_CREDITS = {
+    "a wider role with one member called": (
+        "def hold(*, reader: {wider}) -> None:\n    reader.{member}()\n",
+        "hold(reader): {idle}",
+    ),
+    "an idle role beside a call to another's member": (
+        "def hold(*, reader: {idle}, other: {part_role}) -> None:\n"
+        "    other.{member}()\n",
+        "hold(reader): {idle}",
+    ),
+    "an idle role whose member is only spelled": (
+        "def hold(*, reader: {idle}) -> None:\n"
+        '    """Calls ``reader.{idle_member}()`` once."""\n'
+        "    # reader.{idle_member}()\n"
+        '    note = "reader.{idle_member}()"\n'
+        "    del note\n",
+        "hold(reader): {idle}",
+    ),
+    "an idle role under a name another function hands on": (
+        "def helper(*, tracker: {part_role}) -> None:\n    tracker.{member}()\n\n\n"
+        "def first(*, tracker: {part_role}) -> None:\n    helper(tracker=tracker)\n\n\n"
+        "def held(*, tracker: {idle}) -> {idle}:\n    return tracker\n",
+        "held(tracker): {idle}",
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(PLANTED_CREDITS))
+def test_a_role_the_module_does_not_use_is_reported_by_the_credit_clause(form):
+    sources = source_tree()
+    text = port_module_text()
+    wider, member, idle = wider_role(text)
+    (part_role,) = (
+        role for role, members in own_declarations(text).items() if member in members
+    )
+    planted, expected = PLANTED_CREDITS[form]
+    fields = {
+        "wider": wider,
+        "member": member,
+        "idle": idle,
+        "idle_member": min(own_declarations(text)[idle]),
+        "part_role": part_role,
+    }
+    planted_path = "services/idle_holder.py"
+    sources[planted_path] = planted.format(**fields)
+
+    reports = (
+        aggregate_annotations(sources),
+        tuple(uncredited_roles(sources)),
+        tuple(defaulted_role_parameters(sources)),
+        adapter_importers(sources),
+    )
+
+    assert [planted_path in report for report in reports].count(True) == 1
+    assert expected.format(**fields) in uncredited_roles(sources)[planted_path]
+    assert not any(
+        entry.startswith(("helper(", "first(", "hold(other)"))
+        for entry in uncredited_roles(sources)[planted_path]
+    )
 
 
 def test_a_role_nothing_in_the_run_takes_is_reported():
