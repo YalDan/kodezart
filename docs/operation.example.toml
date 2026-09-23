@@ -332,8 +332,10 @@ name = "Example Grooming Log"
 id = "example-grooming-log-destination-id"
 append_only = true
 
-# A declared knowledge fire destination additionally requires an explicit
-# outcome select mapping. Source-qualified keys preserve workflow semantics:
+# A declared knowledge fire destination with neither an outcome mapping nor
+# columns is written in v0.2's shape: one title-line row, no record clause.
+# A structured one requires an explicit outcome select mapping.
+# Source-qualified keys preserve workflow semantics:
 # [records.fire.outcome_mapping]
 # property = "Outcome"
 # [records.fire.outcome_mapping.options]
