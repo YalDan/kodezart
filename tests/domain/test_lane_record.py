@@ -355,15 +355,17 @@ def test_every_record_ends_with_the_fixed_truthful_role_aware_reentry(remote_hea
 Resume at the record's last commit act, the sha of its final commits row, and
 never at a remote tip the record does not name. Find the loop branch by the
 LOOP role and the record's branch field. When the remote holds it at that sha,
-check it out and continue it. When it stands anywhere else, cut a fresh loop
-branch from that sha and keep the old association; the old branch stays where
-it stands. When the remote no longer holds it, recover it before continuing:
-never mint a new branch in place of a recorded association. pushedHeadSha is
-where the remote held the loop branch when a commit last observed it, not the
-head to resume at. Follow the explicit roles and derivedFrom links to the
-deliverable, other loop and recovery branches; do not infer their roles from
-their names. Associations survive reaping, so verify current remote liveness
-before checkout.
+check it out and continue it. When it stands anywhere else, a lane that still
+owes criteria cuts a fresh loop branch from the record's last commit act and
+keeps the old association, and the old branch stays where it stands; a lane
+that owes nothing and carries no pull request is refused rather than delivered
+from a branch standing elsewhere. When the remote no longer holds it, recover
+it before continuing: never mint a new branch in place of a recorded
+association. pushedHeadSha is where the remote held the loop branch when a
+commit last observed it, not the head to resume at. Follow the explicit roles
+and derivedFrom links to the deliverable, other loop and recovery branches; do
+not infer their roles from their names. Associations survive reaping, so verify
+current remote liveness before checkout.
 
 Grade the existing commits against each criterion sub-issue's own Check and
 verification instructions, reading satisfaction and Evidence on that sub-issue.
@@ -391,9 +393,33 @@ Grade the existing commits against each criterion sub-issue's own Check and
 verification instructions, reading satisfaction and Evidence on that sub-issue.
 Let only failing criteria drive new work."""
 
+#: The re-entry section lane records were written with from cd4eb635
+#: (2026-09-23) until it stated which lanes cut a fresh loop branch and which
+#: are refused (2026-09-23), byte for byte.
+REENTRY_FROM_CD4EB635 = """## Re-entry
+
+Resume at the record's last commit act, the sha of its final commits row, and
+never at a remote tip the record does not name. Find the loop branch by the
+LOOP role and the record's branch field. When the remote holds it at that sha,
+check it out and continue it. When it stands anywhere else, cut a fresh loop
+branch from that sha and keep the old association; the old branch stays where
+it stands. When the remote no longer holds it, recover it before continuing:
+never mint a new branch in place of a recorded association. pushedHeadSha is
+where the remote held the loop branch when a commit last observed it, not the
+head to resume at. Follow the explicit roles and derivedFrom links to the
+deliverable, other loop and recovery branches; do not infer their roles from
+their names. Associations survive reaping, so verify current remote liveness
+before checkout.
+
+Grade the existing commits against each criterion sub-issue's own Check and
+verification instructions, reading satisfaction and Evidence on that sub-issue.
+Let only failing criteria drive new work."""
+
 #: Every re-entry section a record on a board may still end with, other than
 #: the one a writer renders today.
-EARLIER_REENTRY_SECTIONS = (REENTRY_UNTIL_CD4EB635,)
+EARLIER_REENTRY_SECTIONS = (REENTRY_UNTIL_CD4EB635, REENTRY_FROM_CD4EB635)
+#: Their names in a test id, in the same order.
+EARLIER_REENTRY_IDS = ("until-cd4eb635", "from-cd4eb635")
 
 PREFIXES = {"run_state": "fixture-record"}
 
@@ -406,7 +432,7 @@ def rendered_under(section: str) -> tuple[LaneRunState, str]:
     return record, current.removesuffix(REENTRY_SECTION) + section
 
 
-@pytest.mark.parametrize("section", EARLIER_REENTRY_SECTIONS)
+@pytest.mark.parametrize("section", EARLIER_REENTRY_SECTIONS, ids=EARLIER_REENTRY_IDS)
 def test_a_record_written_under_an_earlier_reentry_section_reads_the_same(section):
     """A comment already on a board stays this lane's record when the text moves.
 
