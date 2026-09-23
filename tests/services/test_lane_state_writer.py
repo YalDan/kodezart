@@ -65,7 +65,10 @@ from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.run_state import LaneBinding, LanePR
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerComment, WorkflowStateKind
-from tests.domain.test_lane_record import EARLIER_REENTRY_SECTIONS
+from tests.domain.test_lane_record import (
+    EARLIER_REENTRY_IDS,
+    EARLIER_REENTRY_SECTIONS,
+)
 from tests.fakes import FakeTrackerPort, PassThroughGate, make_tracker_issue
 from tests.lane_fixture import LaneGit, LaneRepo, LosingBoard, lane_operation
 
@@ -319,7 +322,7 @@ async def test_a_landing_is_a_row_on_the_record_and_skipped_where_there_is_none(
     ] == []
 
 
-@pytest.mark.parametrize("section", EARLIER_REENTRY_SECTIONS)
+@pytest.mark.parametrize("section", EARLIER_REENTRY_SECTIONS, ids=EARLIER_REENTRY_IDS)
 async def test_the_next_write_of_an_earlier_record_renders_the_current_reentry(
     section,
 ):

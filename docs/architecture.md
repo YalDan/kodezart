@@ -472,10 +472,12 @@ Counts remain independently recorded observations, so the consistency signal
 can still detect disagreement with commit rows. The re-entry text directs a
 resume at the record's last commit act, never at a remote tip the record does
 not name: the existing loop branch is checked out where the remote holds it at
-that sha, a fresh loop branch is cut from that sha beside the kept association
-where it stands anywhere else, and a branch the remote no longer holds is
-recovered rather than replaced. It treats absent or reaped remote refs
-explicitly. Satisfaction and Evidence remain on the criterion issues.
+that sha. Where it stands anywhere else, a lane that still owes criteria cuts a
+fresh loop branch from the record's last commit act beside the kept
+association, and a lane that owes nothing and carries no pull request is
+refused rather than delivered from a branch standing elsewhere. A branch the
+remote no longer holds is recovered rather than replaced. It treats absent or
+reaped remote refs explicitly. Satisfaction and Evidence remain on the criterion issues.
 
 The reader recognizes this declared format; old free-form manual comments need
 an explicit migration. The fixed re-entry section is read as the current text
