@@ -1,39 +1,33 @@
 """Verifying a scope composes nothing into the world, structurally.
 
 The union step is handed the tracker, the ref reader, the git port and the
-check-chain runner, each typed as a port, and every object it holds is one
-of those, one of its own parts, a record, or one of two registered parts:
-there is no object on it a push, a merge or a pull-request read could be
-asked of.  The audit terminal's read-only lifecycle reader is a separate
-port with no merge authority; the cases below assert the union step never
-reaches it either.
+check-chain runner, each typed as a port, and every object it holds, before
+it verifies and after, is one of those, one of its own parts, a record, or
+one of two registered parts (``tests.chains.union_holdings``): it holds no
+forge collaborator.  The git port it holds declares a push and a merge, so
+"publishes nothing" is not a holdings fact; it is witnessed at run time, by
+a port that records every publication it is asked for.  The audit
+terminal's read-only lifecycle reader is a separate port with no merge
+authority; the cases below assert the union step never reaches it either.
 """
 
 import ast
-import asyncio
+import functools
 import importlib
 import inspect
-from collections import deque
-from collections.abc import Callable, Collection, Iterator, Mapping
-from contextlib import suppress
-from datetime import date, time, timedelta
-from enum import Enum
+from collections import ChainMap, Counter, OrderedDict, UserDict, defaultdict, deque
+from collections.abc import Callable, Iterator
 from functools import partial
 from pathlib import Path
-from types import (
-    BuiltinFunctionType,
-    FunctionType,
-    MemberDescriptorType,
-    MethodType,
-    ModuleType,
-    SimpleNamespace,
-)
+from types import ModuleType, SimpleNamespace
 
 import pytest
+from pydantic import BaseModel, PrivateAttr
 
-import kodezart.types
 from kodezart.adapters.github.api import GitHubAPIClient
+from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
 from kodezart.chains import delivery_coordinator
+from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.composition.scope_runtime import build_scope_union
 from kodezart.config.app import AppConfig
 from kodezart.core import protocols
@@ -51,12 +45,26 @@ from tests.chains.test_union_exit_invariance import (
     CONFLICTING_EDITS,
     FAILING_CHECKS,
     INDEPENDENT_EDITS,
-    UNION_MODULES,
     RecordingPublisher,
     build_delivery,
+)
+from tests.chains.union_holdings import (
+    COLLECTIONS,
+    RECORD_PACKAGE,
+    REGISTERED_PARTS,
+    ROUTINES,
+    SCALARS,
+    STEP_PARTS,
+    STEP_PORTS,
+    UNION_MODULES,
+    allowed_as,
+    answers_by_hook,
     declared,
+    held_by,
     is_port,
-    ports_of,
+    public_callables,
+    refused,
+    written_surface,
 )
 from tests.fakes import (
     FakeCIMonitor,
@@ -82,36 +90,6 @@ FORGE_PORTS: tuple[type, ...] = tuple(
     and declared(port)
     and all(hasattr(GitHubAPIClient, member) for member in declared(port))
 )
-
-
-def public_callables(subject: object) -> frozenset[str]:
-    """Every public name *subject* answers to that can be called.
-
-    Read across the whole MRO of whatever is handed in and never off
-    ``vars``, which is one class body alone.  ``dir`` is complete only for a
-    class that answers no name through ``__getattr__``, ``__getattribute__``
-    or ``__dir__``, so the holdings rule and the query-double rows refuse
-    those first (``answers_by_hook``).
-    """
-    return frozenset(
-        name
-        for name in dir(subject)
-        if not name.startswith("_") and callable(getattr(subject, name, None))
-    )
-
-
-#: The methods that let a class answer a name ``dir`` does not report.
-ANSWERING_HOOKS: tuple[str, ...] = ("__getattr__", "__getattribute__", "__dir__")
-
-
-def answers_by_hook(cls: type) -> bool:
-    """Whether any class in *cls*'s MRO but ``object`` defines one of the hooks."""
-    return any(
-        hook in vars(base)
-        for base in cls.__mro__
-        if base is not object
-        for hook in ANSWERING_HOOKS
-    )
 
 
 #: Every question the forge answers, across all of those ports, read off
@@ -209,193 +187,6 @@ def dynamic_member_read_sites(module: ModuleType) -> frozenset[tuple[str, str]]:
 
     visit(ast.parse(inspect.getsource(module)), "<module>")
     return frozenset(found)
-
-
-#: The union step's own parts: every class its modules define, read off them.
-STEP_PARTS: tuple[type, ...] = tuple(
-    value
-    for name in UNION_MODULES
-    for value in vars(importlib.import_module(name)).values()
-    if isinstance(value, type) and value.__module__ == name
-)
-
-#: Every port a part is constructed with, read off the constructors' own
-#: annotations: the collaborators the step is typed to hold.
-STEP_PORTS: tuple[type, ...] = tuple(
-    dict.fromkeys(port for part in STEP_PARTS for port in ports_of(part).values())
-)
-
-#: Where the product's records are defined: a value of a class from this
-#: package is data the step carries, not a collaborator it can ask.
-RECORD_PACKAGE: str = kodezart.types.__name__
-
-#: The plain values a record is built from.
-SCALARS: tuple[type, ...] = (
-    type(None),
-    bool,
-    int,
-    float,
-    str,
-    bytes,
-    date,
-    time,
-    timedelta,
-)
-
-#: What holds a value without being one: each is walked into, never trusted.
-ROUTINES: tuple[type, ...] = (
-    FunctionType,
-    MethodType,
-    BuiltinFunctionType,
-    staticmethod,
-    classmethod,
-    property,
-    partial,
-)
-
-#: The modules whose container types count as collections.  A class written
-#: elsewhere that happens to iterate is judged as what else it is.
-COLLECTION_MODULES: frozenset[str] = frozenset({"builtins", "collections"})
-
-#: The packages whose class bodies the walk reads for class attributes: the
-#: code this repository writes.  A library class's own body is its own.
-OWN_PACKAGES: frozenset[str] = frozenset({"kodezart", "tests"})
-
-#: The two parts the step holds that are neither its own classes nor a port,
-#: keyed by type identity, each with its reason.  Both are still walked into.
-REGISTERED_PARTS: dict[type, str] = {
-    asyncio.Lock: "UnionTick serialises its ticks on one: scheduling state",
-    LaneRecordReader: (
-        "the shipped ref reader reads each lane's recorded refs through it"
-    ),
-}
-
-
-def is_record(value: object) -> bool:
-    """A scalar, or a value (or an Enum class) the records package defines."""
-    kind = value if isinstance(value, type) and issubclass(value, Enum) else type(value)
-    return isinstance(value, SCALARS) or (
-        kind.__module__ == RECORD_PACKAGE
-        or kind.__module__.startswith(f"{RECORD_PACKAGE}.")
-    )
-
-
-def _contents(value: object) -> list[object]:
-    """Every object *value* holds one step down, by each route Python stores one.
-
-    Instance attributes and ``__slots__``, other than dunder names, which
-    hold a routine's own metadata; class attributes across the MRO of
-    a class this repository writes, when the value is not a record; every item
-    and key of a collection; a bound method's ``__self__`` and ``__func__``; a
-    builtin's ``__self__``; a function's closure cells (not the ``__class__``
-    cell ``super()`` makes), defaults and keyword defaults; a static or class
-    method's function; a property's accessors; a partial's function, arguments
-    and keywords.  A class or a module is not walked into: a definition is not
-    a collaborator.  A function's globals are not walked: that is a stated
-    limit.
-    """
-    if isinstance(value, (*SCALARS, type, ModuleType)):
-        return []
-    found: list[object] = []
-    if isinstance(value, FunctionType):
-        cells = zip(value.__code__.co_freevars, value.__closure__ or (), strict=True)
-        for name, cell in cells:
-            if name != "__class__":
-                with suppress(ValueError):
-                    found.append(cell.cell_contents)
-        found.extend(value.__defaults__ or ())
-        found.extend((value.__kwdefaults__ or {}).values())
-    elif isinstance(value, MethodType):
-        found.extend((value.__self__, value.__func__))
-    elif isinstance(value, BuiltinFunctionType):
-        found.append(value.__self__)
-    elif isinstance(value, staticmethod | classmethod):
-        found.append(value.__func__)
-    elif isinstance(value, property):
-        found.extend((value.fget, value.fset, value.fdel))
-    elif isinstance(value, partial):
-        found.extend((value.func, *value.args, *value.keywords.values()))
-    if isinstance(value, Mapping):
-        found.extend((*value.keys(), *value.values()))
-    elif isinstance(value, Collection):
-        found.extend(value)
-    if hasattr(value, "__dict__"):
-        found.extend(
-            attribute
-            for name, attribute in vars(value).items()
-            if not (name.startswith("__") and name.endswith("__"))
-        )
-    if not is_record(value):
-        for base in type(value).__mro__:
-            if is_port(base) or base.__module__.split(".")[0] not in OWN_PACKAGES:
-                continue
-            for name, attribute in vars(base).items():
-                if isinstance(attribute, MemberDescriptorType):
-                    with suppress(AttributeError):
-                        found.append(attribute.__get__(value))
-                elif not (name.startswith("__") and name.endswith("__")):
-                    found.append(attribute)
-    return found
-
-
-def held_by(subject: object) -> list[object]:
-    """Every object the subject holds, transitively, itself included.
-
-    Bounded by the objects reachable from *subject* through ``_contents``,
-    each visited once.
-    """
-    found: list[object] = []
-    seen: set[int] = set()
-    pending: list[object] = [subject]
-    while pending:
-        value = pending.pop()
-        if id(value) in seen:
-            continue
-        seen.add(id(value))
-        found.append(value)
-        pending.extend(_contents(value))
-    return found
-
-
-def allowed_as(value: object) -> str | None:
-    """What the step may hold *value* as, or None when it may not hold it.
-
-    A record; a routine or a collection, which the walk looks inside; one of
-    the step's own parts; one of the registered parts; or an implementation
-    of a port the step is typed to hold, which answers nothing its ports do
-    not declare and answers no name ``dir`` cannot see.  Anything else is
-    refused whatever its members are called: a forge client or double, a
-    hand-built handle, a port implementation that grew a method, and a class
-    or a module, whose types answer names through ``__getattribute__``.
-    """
-    kind = type(value)
-    if is_record(value):
-        return "record"
-    if isinstance(value, ROUTINES):
-        return "routine"
-    if isinstance(value, Collection) and kind.__module__ in COLLECTION_MODULES:
-        return "collection"
-    if kind in STEP_PARTS:
-        return "part"
-    if kind in REGISTERED_PARTS:
-        return "registered"
-    ports = [port for port in STEP_PORTS if isinstance(value, port)]
-    if (
-        ports
-        and not answers_by_hook(kind)
-        and public_callables(value) <= frozenset().union(*map(declared, ports))
-    ):
-        return "port"
-    return None
-
-
-def refused(held: list[object]) -> list[str]:
-    """The class of everything in *held* the step may not hold."""
-    return [
-        f"{type(value).__module__}.{type(value).__qualname__}"
-        for value in held
-        if allowed_as(value) is None
-    ]
 
 
 class Collaborators:
@@ -577,6 +368,9 @@ async def test_verifying_leaves_every_open_pull_request_open(
     if checks is not None:
         fixture.with_checks(checks)
     forge = fixture.git.forge
+    # The forge this double carries is the read-back's harness, put there on
+    # purpose; everything else the step holds after verifying is judged.
+    fixture.harness.append(forge)
     coordinator = fixture.coordinator()
     first = await coordinator.verify() if reused else None
     before = await lifecycles(forge)
@@ -585,6 +379,7 @@ async def test_verifying_leaves_every_open_pull_request_open(
 
     after = await lifecycles(forge)
     assert fixture.undeclared_reads() == {}, name
+    assert fixture.refused_holdings() == [], name
     assert (result is first) is reused, name
     assert (result.checks is not None) is composed, name
     assert (result.merge_conflict is not None) is not composed, name
@@ -673,9 +468,12 @@ def test_the_forge_predicate_recognises_every_forge_double() -> None:
     recognise; these are the shapes it must not recognise.  Each forge double,
     a handle answering exactly one forge port, the spellings a list of verbs
     missed, a port double that grew a method or answers through a hook, a
-    handle that also iterates, a class and a module.  The last assertion is
-    the other direction: the step's own port double is recognised, so the
-    refusals are not a rule that refuses everything.
+    handle that also iterates, a handle deriving from ``str`` (a scalar is
+    one only as its exact type), the product's own forge implementations
+    (the records package is ``kodezart.types`` and nothing wider), a class and
+    a module.  The last assertion is the other direction: the step's own port
+    double is recognised, so the refusals are not a rule that refuses
+    everything.
     """
     doubles = (
         FakePRCreator(),
@@ -689,6 +487,15 @@ def test_the_forge_predicate_recognises_every_forge_double() -> None:
         GrownGit(),
         AnsweringGit(),
         IterableHandle(),
+        type(
+            "Label",
+            (str,),
+            dict.fromkeys(
+                ("open_pr_for_head", "merge_pull_request"), lambda *_, **__: None
+            ),
+        )("forge"),
+        NoForgeDeliveryProbe(),
+        GitHubAPIClient.__new__(GitHubAPIClient),
         pinned.ObservedGit,
         protocols,
     )
@@ -726,6 +533,38 @@ class IterableHandle(Handle):
 
     def __contains__(self, value: object) -> bool:
         return False
+
+
+class PrivateRecord(BaseModel):
+    """A record whose one value is private state, which ``vars()`` does not show.
+
+    Declared as the records package's own, so the walk judges it as a record
+    and still has to read its private state.
+    """
+
+    __module__ = f"{RECORD_PACKAGE}.fixture"
+
+    _held: object = PrivateAttr(default=None)
+
+
+def _privately(held: object) -> PrivateRecord:
+    record = PrivateRecord()
+    record._held = held
+    return record
+
+
+def _on_a_scalar_subclass(held: object) -> str:
+    label = type("Label", (str,), {})("scope")
+    label.forge = held
+    return label
+
+
+def _wrapping(held: Handle) -> Callable[[], None]:
+    @functools.wraps(held.merge_pull_request)
+    def merge() -> None:
+        return None
+
+    return merge
 
 
 class Slotted:
@@ -777,6 +616,14 @@ HOLDING_ROUTES: tuple[tuple[str, Callable[[object], object]], ...] = (
         "a property",
         lambda held: type("Holder", (), {"forge": property(_closing_over(held))})(),
     ),
+    ("a dunder-named attribute", lambda held: SimpleNamespace(__land__=held)),
+    (
+        "a dunder-named class attribute",
+        lambda held: type("Holder", (), {"__land__": held})(),
+    ),
+    ("a scalar subclass's attribute", _on_a_scalar_subclass),
+    ("a function's __wrapped__", _wrapping),
+    ("a record's private state", _privately),
 )
 
 
@@ -795,13 +642,215 @@ def test_the_holdings_walk_reaches_a_handle_by_every_route(
     assert allowed_as(handle) is None, route
 
 
-#: Every git double the runtime cases here and in the exit sibling actually
-#: hand the step.  The holdings claim is about the object the step is built
-#: with, so it is made over each of them rather than over whichever one a
-#: fixture happens to default to: a double that grew a method its port does
-#: not declare would otherwise be a collaborator no case looks at.
-#: ``ReachableForgeGit`` below is excluded on purpose — it carries a forge by
-#: design.
+def test_a_record_with_private_state_is_still_a_record() -> None:
+    """Guards the private-state row: its holder is judged as a record."""
+    assert allowed_as(PrivateRecord()) == "record"
+
+
+def test_a_container_counts_as_one_only_as_its_exact_type() -> None:
+    """A container whose state is more than its items is refused, not half read.
+
+    A ``defaultdict`` hands back what its factory makes, and a ``ChainMap``
+    reads through maps it does not list as items; a subclass of a builtin
+    container can carry anything besides.  None of them is a collection to
+    the rule, so none can carry a handle past it.
+    """
+    handle = Handle()
+    containers = (
+        defaultdict(lambda: handle),
+        ChainMap({}),
+        OrderedDict(),
+        Counter(),
+        UserDict(),
+        type("Roster", (list,), {})(),
+    )
+
+    assert [value for value in containers if allowed_as(value) is not None] == []
+    assert allowed_as([]) == "collection"
+
+
+def test_the_walk_reads_the_class_body_of_a_production_part(monkeypatch) -> None:
+    """A class attribute on a class this repository ships is held, by any name.
+
+    The route rows build their holders in this module; this one plants on the
+    union step's own class, so the walk must read class bodies written under
+    ``kodezart`` as well as under ``tests``.
+    """
+    plain, dunder = Handle(), Handle()
+    monkeypatch.setattr(ScopeUnionCoordinator, "forge", plain, raising=False)
+    monkeypatch.setattr(ScopeUnionCoordinator, "__land__", dunder, raising=False)
+
+    held = held_by(object.__new__(ScopeUnionCoordinator))
+
+    assert plain in held
+    assert dunder in held
+    assert refused(held) == [f"{Handle.__module__}.{Handle.__qualname__}"] * 2
+
+
+#: A handle only a function body reaches, by reading this module's globals
+#: when it runs.
+GLOBAL_HANDLE = Handle()
+
+
+def _reads_a_global() -> Handle:
+    return GLOBAL_HANDLE
+
+
+class AttachesWhenAsked:
+    """A holder that binds a handle to itself only when one of its methods runs."""
+
+    def attach(self, held: object) -> None:
+        self.forge = held
+
+
+def test_the_walk_does_not_see_what_is_bound_outside_what_it_walks() -> None:
+    """The walk's stated limits, held as unseen.
+
+    A value handed across a function boundary — here a module global a
+    function reads when it runs — is outside the walk.  A binding made only
+    when a function runs is outside it until that function has run, which
+    is why the exit and return scenarios walk the step after it verified.
+    """
+    handle = Handle()
+    holder = AttachesWhenAsked()
+
+    assert GLOBAL_HANDLE not in held_by(_reads_a_global)
+    assert handle not in held_by(holder)
+
+    holder.attach(handle)
+
+    assert handle in held_by(holder)
+
+
+async def everything_the_step_holds(delivery) -> list[object]:
+    """What the step a production call site builds holds once it has verified,
+    and what the composed step holds."""
+    step = delivery.coordinator()
+    await step.verify()
+    union_for = build_scope_union(
+        tracker=FakeTrackerPort(),
+        git=FakeGitService(),
+        cache=FakeRepoCache(),
+        records=LaneRecordReader(tracker=FakeTrackerPort(), operation=RECORD_OPERATION),
+        config=AppConfig(),
+    )
+    composed = await union_for(
+        ScopeUnionRequest(
+            scope=ScopeRef(kind=ScopeKind.PROJECT, key="project-one"),
+            repo=pinned.entry(),
+            repo_url="file:///fixture",
+            job_id="scope-job",
+        )
+    )
+    return [*held_by(step), *held_by(composed)]
+
+
+async def test_every_kind_the_rule_trusts_by_type_is_one_the_step_holds(
+    delivery,
+) -> None:
+    """Every entry the allow rule trusts by type is needed by something held.
+
+    Not parametrised, so an empty list fails here by itself, and an entry no
+    held value has — a widening nothing needs — fails too.
+    """
+    held = await everything_the_step_holds(delivery)
+    kinds = {type(value) for value in held}
+
+    for trusted in (SCALARS, ROUTINES, COLLECTIONS, tuple(REGISTERED_PARTS)):
+        assert trusted
+        assert [kind for kind in trusted if kind not in kinds] == []
+
+
+#: The methods this repository writes on every record, part and registered
+#: part the step holds that has any, by class.  The allow rule trusts those
+#: by type and does not measure them, so what each answers is pinned here: a
+#: method a record or a part grows, whatever it is called, fails below.
+WRITTEN_SURFACES: dict[str, frozenset[str]] = {
+    "kodezart.chains.delivery_coordinator.ScopeUnionCoordinator": frozenset(
+        {"__init__", "_lane_branch", "_roster", "verify"}
+    ),
+    "kodezart.services.union_tick.UnionTick": frozenset(
+        {"__init__", "_fetch", "_read_heads", "verify"}
+    ),
+    "kodezart.services.union_composition.UnionComposition": frozenset(
+        {"__init__", "_scratch_sha", "verify"}
+    ),
+    "kodezart.services.lane_records.LaneRecordReader": frozenset(
+        {"__init__", "_addressed", "_refusal", "find", "locate", "read"}
+    ),
+    "kodezart.types.domain.dispatch.SelfWriteLedger": frozenset(
+        {"__init__", "receipts", "record", "record_mutation", "wrote"}
+    ),
+    "kodezart.types.domain.union.UnionCompositionResult": frozenset(
+        {
+            "__hash__",
+            "_one_observation",
+            "_unique_lanes",
+            "composed_lane_heads",
+            "composition_order",
+            "outcome",
+        }
+    ),
+    "kodezart.types.domain.branch.WorkRef": frozenset({"__hash__", "identity"}),
+    **dict.fromkeys(
+        (
+            "kodezart.types.domain.check_chain.CheckChainResult",
+            "kodezart.types.domain.check_chain.CheckStepOutput",
+            "kodezart.types.domain.operation.CheckStep",
+            "kodezart.types.domain.operation.RepoEntry",
+            "kodezart.types.domain.scope.ScopeContainer",
+            "kodezart.types.domain.scope_address.ScopeRef",
+            "kodezart.types.domain.tracker.TrackerIssue",
+            "kodezart.types.domain.union.UnionLaneHead",
+            "kodezart.types.domain.union_tick.UnionTickContext",
+        ),
+        frozenset({"__hash__"}),
+    ),
+    **dict.fromkeys(
+        (
+            "kodezart.types.domain.branch.WorkRefLanding",
+            "kodezart.types.domain.branch.WorkRefRole",
+            "kodezart.types.domain.operation.ScopeLabel",
+            "kodezart.types.domain.scope_address.ScopeKind",
+            "kodezart.types.domain.tracker.IssuePriority",
+            "kodezart.types.domain.tracker.WorkflowStateKind",
+        ),
+        frozenset({"_generate_next_value_"}),
+    ),
+}
+
+
+async def test_every_record_and_part_the_step_holds_answers_what_is_pinned(
+    delivery,
+) -> None:
+    """The kinds trusted by type, each held to the methods it has today.
+
+    Not parametrised, so an empty pin fails here by itself.  Read over what
+    the step holds once it has verified, so a record it only comes to hold
+    by verifying is measured too.
+    """
+    held = await everything_the_step_holds(delivery)
+    trusted = {
+        type(value)
+        for value in held
+        if allowed_as(value) in {"record", "part", "registered"}
+    }
+
+    assert WRITTEN_SURFACES
+    assert {
+        f"{kind.__module__}.{kind.__qualname__}": written_surface(kind)
+        for kind in trusted
+        if written_surface(kind)
+    } == WRITTEN_SURFACES
+
+
+#: The git doubles a production call site is built with here, walked before
+#: the step verifies anything.  Every double an exit or return scenario hands
+#: the step is judged by that scenario itself, after it verified: the exit
+#: sibling requires ``allowed_as(fixture.git) == "port"`` and walks every
+#: step it built, so a double that grew a method its port does not declare
+#: fails on the row that hands it.  ``ReachableForgeGit`` above is excluded on
+#: purpose — it carries a forge by design.
 PRODUCTION_GIT_DOUBLES: tuple[type, ...] = (pinned.ObservedGit, RecordingPublisher)
 
 
