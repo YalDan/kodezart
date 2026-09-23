@@ -5476,7 +5476,7 @@
    "test_the_configured_convergence_bound_is_declared_once_and_read_in_the_loop",
    "test_the_halt_sites_live_in_the_convergence_loop_in_source_order",
    "test_the_detector_sees_each_duplicate_shape",
-   "test_a_method_and_a_module_function_of_one_name_are_two_symbols",
+   "test_a_method_and_a_module_function_of_one_name_are_two_sites_of_it",
    "test_the_guard_reddens_when_a_consumed_symbol_gains_a_second_home"
   ],
   "tests/test_organize_portability.py": [
