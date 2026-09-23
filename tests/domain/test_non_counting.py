@@ -2,11 +2,21 @@
 
 A criterion the board Canceled or closed as a Duplicate counts for nothing
 and refuses nothing (KOD-794).  Two readers that each decide that for
-themselves can part, so every criterion reader asks the one predicate.  What
-the scan below pins to one module is the Duplicate kind: no module outside
-the enum's own names it, in any spelling.  Canceled is not scanned, because
-it keeps readers of its own outside the criterion reading.  The scan derives
-the modules it reads rather than listing them.
+themselves can part, so the criterion readers ask the one predicate: the
+spec read, the native writer's authority read, ``existing_criterion`` and
+the criteria stage's ``needs_criteria``, and the gap and readiness read
+through ``is_open``, which closes the same kinds.  The organize readers in
+``domain/organize.py`` and ``services/organize_owner.py`` that still name
+Canceled themselves are the known exception.
+
+What the scan below pins to one module is the Duplicate kind, in the shapes
+it sees: the ``DUPLICATE`` attribute, or a subscript by the member's name,
+on the enum spelled by its own name, by a from-import alias or as a module
+attribute; and a string constant equal to the kind's value.  A name bound
+to the enum by assignment, and a name built at run time, are not seen.
+Canceled is not scanned, because it keeps readers of its own outside the
+criterion reading.  The scan derives the modules it reads rather than
+listing them.
 """
 
 import ast

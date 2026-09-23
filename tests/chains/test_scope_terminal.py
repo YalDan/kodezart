@@ -1092,6 +1092,11 @@ def terminal_input_modules() -> set[str]:
     Every ``kodezart`` module a class of ``terminal_input_classes`` lives in,
     and every ``kodezart`` module the terminal module imports directly,
     ``kodezart.core`` included, which the import closure does not follow.
+
+    Blind spots: an untyped method body, whose values no annotation names,
+    and anything this closure does not reach — a type named only in a
+    collaborator's method signatures rather than in a field, or an
+    annotation that is not a class (``Any``, a type variable).
     """
     seed = ast.parse(path_of(TERMINAL_SEED).read_text(encoding="utf-8"))
     return {
@@ -1108,6 +1113,9 @@ def test_no_module_of_the_terminal_reaches_a_union_value():
     the modules of every class its signatures take or give and of every class
     their fields reach: no module imports the union module or a module
     producing its values, and none names a union type or outcome value.
+
+    Not seen: an untyped method body, and anything the closure does not
+    reach, as ``terminal_input_modules`` states.
     """
     modules = terminal_modules() | terminal_input_modules()
     # One binding for the scan: the one that sees a union reading is the one

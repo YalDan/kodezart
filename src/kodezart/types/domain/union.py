@@ -107,8 +107,8 @@ class UnionRemediationEntry(CamelCaseModel):
 class UnionCompositionResult(UnionScratchObservation):
     """A public scope-grain check observation available to any consumer.
 
-    No lane outcome is inferred or changed by this value. Terminal and
-    grading consumers can retain the same complete captured observation.
+    No lane outcome is inferred or changed by this value. Grading consumers
+    can retain the same complete captured observation.
     """
 
     checks: CheckChainResult | None
