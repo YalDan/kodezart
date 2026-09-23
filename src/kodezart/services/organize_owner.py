@@ -1147,7 +1147,8 @@ class OrganizeOwner:
         """Run one phase's convergence rounds to their settlement.
 
         The bound is the configured one and it is read here, once. A round
-        that admits nobody, or that finds no subject, leaves the phase idle;
+        that admits nobody, or that finds no subject and carries no live
+        finding, leaves the phase idle;
         a round that settles writes the phase marker onto every admitted
         subject and stops. Every other exit is a report the caller returns
         at once, including the exhaustion of the bound.
@@ -1224,7 +1225,10 @@ class OrganizeOwner:
                 and admitted.get(issue.issue_key, False)
                 and (issue.issue_key in pending or issue.issue_key in finding_keys)
             ]
-            if not subjects:
+            # A live finding keeps the round going with no subject: the
+            # pass's own write can empty the roster (a cleared parent),
+            # and the finding then still needs its dry round.
+            if not subjects and not findings:
                 break
             work = {issue.issue_key for issue in gap}
             for issue in subjects:

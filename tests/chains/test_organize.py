@@ -2100,6 +2100,103 @@ async def test_an_empty_work_set_still_spends_its_dry_round_and_goes_round_again
     assert report.halt is None
 
 
+LEAVING_MEMBER = "leaving-member"
+DONE_SIBLING = "done-sibling"
+DONE_SIBLING_CHECK = "done-sibling-check"
+
+
+async def test_a_round_whose_own_write_empties_the_roster_still_spends_its_dry_round(
+    monkeypatch,
+):
+    """A finding left live when the pass's own write empties the roster halts.
+
+    The ticket stage's only unlabelled member is authored in round one, and
+    its proposal clears its parent, so it leaves the scope. The labelled
+    sibling's criterion child is named with a class once that member has
+    gone. Round two then has no subject, because a child's finding keeps no
+    subject of its own, yet the finding is live: the round still verifies,
+    the finding survives, and the pass halts at the convergence bound naming
+    it instead of completing the stage.
+    """
+    import re
+
+    h = owner_harness()
+    owner, board, executor = h.factory(
+        under_approval=True,
+        phases=h.ticket_only,
+        body=h.PREPARED_BODY,
+        convergence_bound=2,
+    )
+    board.server.issues[CLAIMED_ISSUE].labels.append("body complete")
+    board.server.issues[LEAVING_MEMBER] = FakeMcpIssue(
+        id=LEAVING_MEMBER,
+        parent_id=CLAIMED_ISSUE,
+        description="Missing specification",
+    )
+    board.server.issues[DONE_SIBLING] = FakeMcpIssue(
+        id=DONE_SIBLING,
+        parent_id=CLAIMED_ISSUE,
+        description=h.PREPARED_BODY,
+        labels=["body complete", "criteria complete"],
+    )
+    board.server.issues[DONE_SIBLING_CHECK] = FakeMcpIssue(
+        id=DONE_SIBLING_CHECK,
+        parent_id=DONE_SIBLING,
+        description=h.REFERENCING_BODY,
+        labels=["check"],
+    )
+    named = []
+    original = executor.stream
+
+    async def scripted(**kwargs):
+        title = kwargs["output_format"]["schema"].get("title")
+        keys = re.findall(r"<issue_key>(.*?)</issue_key>", kwargs["prompt"])
+        async for event in original(**kwargs):
+            if title == "OrganizeProposal" and keys[-1:] == [LEAVING_MEMBER]:
+                event = result(
+                    structured_output={
+                        "kind": "graph",
+                        "issue_id": LEAVING_MEMBER,
+                        "changes": [{"kind": "parent", "parent_id": None}],
+                    }
+                )
+            elif (
+                title == "AdmissionJudgment"
+                and keys[-1:] == [DONE_SIBLING_CHECK]
+                and h.VERIFY_OPENING in kwargs["prompt"]
+                and board.server.issues[LEAVING_MEMBER].parent_id is None
+            ):
+                named.append(DONE_SIBLING_CHECK)
+                event = result(
+                    structured_output={
+                        **event.structured_output,
+                        "findings": [
+                            {
+                                "issue_id": DONE_SIBLING_CHECK,
+                                "defect_class": h.REGROWTH_CLASS,
+                                "evidence": "The check reads a deliverable gone.",
+                                "role": "instance",
+                            }
+                        ],
+                    }
+                )
+            yield event
+
+    monkeypatch.setattr(executor, "stream", scripted)
+    report = await h.run_owner(owner)
+    assert board.server.issues[LEAVING_MEMBER].parent_id is None
+    assert named == [DONE_SIBLING_CHECK] * 2
+    halt = report.halt
+    assert halt is not None
+    assert halt.cause == "convergence_exhausted"
+    assert halt.bound.setting == "organize.max_convergence_rounds"
+    assert halt.bound.value == halt.bound.rounds_used == 2
+    assert [(f.issue_id, f.defect_class) for f in halt.surviving_findings] == [
+        (DONE_SIBLING_CHECK, h.REGROWTH_CLASS)
+    ]
+    assert report.completed_phases == ()
+
+
 def description_surface(key):
     return WritableSurface(
         kind=SurfaceKind.ISSUE_DESCRIPTION,
