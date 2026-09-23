@@ -5313,6 +5313,176 @@ class FakeTrackerPort(
     """
 
 
+class FakeAmendmentWriteTracker(
+    FakeClassificationWriter,
+    FakeCommentRecordWriter,
+    FakeModelMemberReader,
+    FakeTrackerArtifactReader,
+    FakeScopeReadPreflight,
+    FakeCriterionReopener,
+    FakeDescriptionWriter,
+    FakeSurfaceLeaseTracker,
+):
+    """The ``AmendmentWriteTracker`` role, composed of its role doubles."""
+
+
+class FakeAuditCandidateReader(
+    FakeTrackerCriteriaReader,
+    FakeScopeFamilyReader,
+    FakeStateHistoryReader,
+):
+    """The ``AuditCandidateReader`` role, composed of its role doubles."""
+
+
+class FakeAuditPublicationWriter(
+    FakeCommentRecordWriter,
+    FakeSurfaceLeaseTracker,
+):
+    """The ``AuditPublicationWriter`` role, composed of its role doubles."""
+
+
+class FakeBaseResolutionTracker(
+    FakeWorkRefRecorder,
+    FakeIssueReader,
+):
+    """The ``BaseResolutionTracker`` role, composed of its role doubles."""
+
+
+class FakeEscalationSignalReader(
+    FakeEscalationResolutionReader,
+    FakeTrackerCommentReader,
+):
+    """The ``EscalationSignalReader`` role, composed of its role doubles."""
+
+
+class FakeFireRulingTracker(
+    FakeTrackerArtifactReader,
+    FakeCommentRecordWriter,
+    FakeSurfaceLeaseTracker,
+):
+    """The ``FireRulingTracker`` role, composed of its role doubles."""
+
+
+class FakeLaneEscalationTracker(
+    FakeClassificationWriter,
+    FakeCommentRecordWriter,
+    FakePlanningIssueReader,
+    FakeScopeReadPreflight,
+    FakeSurfaceLeaseTracker,
+):
+    """The ``LaneEscalationTracker`` role, composed of its role doubles."""
+
+
+class FakeLaneStateTracker(
+    FakeCommentRecordWriter,
+    FakeCriterionReopener,
+    FakeDescriptionWriter,
+    FakeWorkflowStateWriter,
+    FakeIssueReader,
+    FakeLaneEventWriter,
+    FakeTrackerCommentReader,
+):
+    """The ``LaneStateTracker`` role, composed of its role doubles."""
+
+
+class FakeNativeAmendmentTracker(
+    FakeClassificationWriter,
+    FakeCommentRecordWriter,
+    FakeModelMemberReader,
+    FakeTrackerArtifactReader,
+    FakeScopeReadPreflight,
+    FakeCriterionReopener,
+    FakeDescriptionWriter,
+    FakeSurfaceLeaseTracker,
+    FakeScopeFamilyReader,
+):
+    """The ``NativeAmendmentTracker`` role, composed of its role doubles."""
+
+
+class FakeOrganizeAuthorReader(
+    FakeIssueRevisionReader,
+    FakeTrackerCriteriaReader,
+):
+    """The ``OrganizeAuthorReader`` role, composed of its role doubles."""
+
+
+class FakeRecordSignalReader(
+    FakeTrackerCommentReader,
+    FakeTrackerCriteriaReader,
+):
+    """The ``RecordSignalReader`` role, composed of its role doubles."""
+
+
+class FakeRequestRecordReader(
+    FakeTrackerCriteriaReader,
+    FakeScopeFamilyReader,
+    FakeStateHistoryReader,
+    FakeIssueReader,
+    FakeRecordedRepositoryReader,
+    FakeTrackerCommentReader,
+):
+    """The ``RequestRecordReader`` role, composed of its role doubles."""
+
+
+class FakeScopeMemberReader(
+    FakeTrackerCriteriaReader,
+    FakeScopeFamilyReader,
+):
+    """The ``ScopeMemberReader`` role, composed of its role doubles."""
+
+
+class FakeScopePlanReader(
+    FakeTrackerCriteriaReader,
+    FakeScopeFamilyReader,
+    FakePlanningIssueReader,
+    FakeScopeReadPreflight,
+):
+    """The ``ScopePlanReader`` role, composed of its role doubles."""
+
+
+class FakeScopeReadyReader(
+    FakeTrackerCriteriaReader,
+    FakeScopeFamilyReader,
+    FakePlanningIssueReader,
+    FakeScopeReadPreflight,
+    FakeExecutionApprovalReader,
+):
+    """The ``ScopeReadyReader`` role, composed of its role doubles."""
+
+
+class FakeScopeRosterReader(
+    FakeScopeFamilyReader,
+    FakePlanningIssueReader,
+):
+    """The ``ScopeRosterReader`` role, composed of its role doubles."""
+
+
+class FakeScopeTallyReader(
+    FakeScopeFamilyReader,
+    FakePlanningIssueReader,
+    FakeScopeReadPreflight,
+):
+    """The ``ScopeTallyReader`` role, composed of its role doubles."""
+
+
+class FakeScopeWalkTracker(
+    FakeTrackerCriteriaReader,
+    FakeScopeFamilyReader,
+    FakePlanningIssueReader,
+    FakeScopeReadPreflight,
+    FakeExecutionApprovalReader,
+    FakeStateRestorer,
+):
+    """The ``ScopeWalkTracker`` role, composed of its role doubles."""
+
+
+class FakeSubjectCriteriaReader(
+    FakeTrackerCriteriaReader,
+    FakeIssueReader,
+):
+    """The ``SubjectCriteriaReader`` role, composed of its role doubles."""
+
+
 class FakeScopeStatusWriter:
     """In-process ``ScopeStatusUpdates``: the container, posted to and read.
 

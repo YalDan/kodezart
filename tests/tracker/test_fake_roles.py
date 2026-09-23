@@ -37,12 +37,16 @@ from tests.tracker import test_lane_records as lane
 from tests.tracker.role_register import (
     class_per_role,
     classes_outside_one_role,
+    consumer_classes,
     declared_by_role,
+    declaring_roles,
     edge_report,
     implementation_classes,
+    port_module_text,
     roles_implemented_nowhere,
     roles_implemented_twice,
 )
+from tests.tracker.role_register import roles as register_roles
 
 #: The store every role class is built over: the base the composed double's
 #: resolution order ends on before ``object``.
@@ -53,6 +57,19 @@ MODULE_TEXT = Path(inspect.getsourcefile(FakeTrackerPort) or "").read_text()
 
 def role_classes(text: str = MODULE_TEXT) -> dict[str, frozenset[str]]:
     return implementation_classes(text, state=STATE.__name__, whole=WHOLE)
+
+
+def consumer_doubles(text: str = MODULE_TEXT) -> dict[str, str]:
+    """The docstring-only doubles, each with the consumer role it composes."""
+    return consumer_classes(text, state=STATE.__name__, whole=WHOLE)
+
+
+def double_per_role() -> dict[str, str]:
+    """The one double that answers for each role, declaring or consumer."""
+    return {
+        **class_per_role(role_classes()),
+        **{role: name for name, role in consumer_doubles().items()},
+    }
 
 
 def whole_body(text: str = MODULE_TEXT) -> list[ast.stmt]:
@@ -82,15 +99,21 @@ def whole_declares(text: str = MODULE_TEXT) -> frozenset[str]:
 
 def test_every_class_of_the_double_answers_for_exactly_one_role():
     classes = role_classes()
+    consumers = consumer_doubles()
+    register = port_module_text()
 
-    assert classes_outside_one_role(classes) == {}
+    assert classes_outside_one_role(classes, consumers) == {}
     assert roles_implemented_twice(classes) == {}
     assert roles_implemented_nowhere(classes) == frozenset()
+    assert sorted(consumers.values()) == sorted(
+        register_roles(register) - declaring_roles(register)
+    )
 
 
 def test_the_composed_double_declares_nothing_and_composes_every_role_class():
     assert whole_declares() == frozenset()
-    assert {cls.__name__ for cls in FakeTrackerPort.__mro__} == set(role_classes()) | {
+    declaring = set(role_classes()) - set(consumer_doubles())
+    assert {cls.__name__ for cls in FakeTrackerPort.__mro__} == declaring | {
         WHOLE,
         STATE.__name__,
         "object",
@@ -109,9 +132,9 @@ def test_the_store_declares_no_public_callable():
     assert [name for name, value in held.items() if callable(value)] == []
 
 
-@pytest.mark.parametrize("role", sorted(declared_by_role()))
+@pytest.mark.parametrize("role", sorted(register_roles(port_module_text())))
 def test_each_role_class_constructs_alone_and_satisfies_its_role(role):
-    double = getattr(fakes, class_per_role(role_classes())[role])()
+    double = getattr(fakes, double_per_role()[role])()
 
     assert isinstance(double, getattr(protocols, role))
     assert isinstance(double, STATE)
@@ -179,7 +202,7 @@ def test_a_double_that_leaves_its_roles_is_reported(form):
     classes = role_classes(text)
 
     reports = {
-        "outside": bool(classes_outside_one_role(classes)),
+        "outside": bool(classes_outside_one_role(classes, consumer_doubles(text))),
         "twice": bool(roles_implemented_twice(classes)),
         "whole": bool(whole_declares(text)),
     }
