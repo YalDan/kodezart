@@ -1659,11 +1659,11 @@ its own write.
 
 The holder is the writer's own identity — a run's queue job id, or a scheduled
 pass's own name — so every write of one scope invocation that supplies a
-holder supplies the same one. Independence between surfaces is therefore independence between
-addresses, never between the lanes of one walk: two lanes of the same
-invocation are one holder to the arbitration, and two criteria of one parent
-are two addresses because the vocabulary declares one surface per criterion
-sub-issue rather than one grant per subtree.
+holder supplies the same one. Independence between surfaces is therefore
+independence between addresses, never between the lanes of one walk: two
+lanes of the same invocation are one holder to the arbitration, and two
+criteria of one parent are two addresses because the vocabulary declares one
+surface per criterion sub-issue rather than one grant per subtree.
 
 Acquisition writes, then re-reads every target. The grant stands only where
 no other holder's live marker over a requested address was created no later
@@ -1674,13 +1674,19 @@ the read-back withdraws and refuses: a grant that cannot be verified is not a
 grant.
 
 Renewal reads before it writes. A holder without a live marker over the whole
-set extends nothing, and what it may take down is only its own marker standing
-for exactly that set on part of it: a half-standing grant is no hold, and
-leaving it would name the holder as writing what it does not hold whole, while
-a marker of the same holder for a different address set is another grant and
-is left alone. Otherwise the set is renewed one marker at a time, editing each
-in place — which is what preserves the order the grant was taken in — and
-reading each write back before the next is published.
+set extends nothing, and what it takes down is its own, in two cases. One is
+its marker standing for exactly that set on part of it: a half-standing grant
+is no hold, and leaving it would name the holder as writing what it does not
+hold whole. The other is its own marker over the whole set that has lapsed:
+the read does not test liveness, so the renewal edits that marker, reads it
+back as not in force, and takes it down. A marker of the same holder for a
+disjoint address set is another grant and is left alone. The read takes the
+holder's markers that cover the set, not only those equal to it, so renewing
+a subset of the holder's own grant over a larger set renews that marker down
+to the subset. Where the holder does hold the whole set, it is renewed one
+marker at a time, editing each in place — which is what preserves the order
+the grant was taken in — and reading each write back before the next is
+published.
 
 The deadline a renewal puts in force is decided from the backend's stamp on
 that write against the deadline the write was published against, never from
@@ -1688,15 +1694,21 @@ the holder's own clock, so neither skew nor the time a write took to land can
 move the fence. A renewal that lands late renews nothing and takes back only
 the deadlines it accounts for: a deadline carried past those was put there by
 a later grant of the same holder, whose ownership lives inside the marker this
-renewal was extending, so an earlier renewal's lapse never voids it. Release
-deletes only this holder's own markers, and expiry is read from the marker
-against the reader's clock, so a process that died renews nothing and its grant
-lapses on its own.
+renewal was extending, so an earlier renewal's lapse does not void it on the
+markers the late write never reached. The residual accepted under KOD-831: on
+a set spanning two targets, the marker the late write did reach is taken
+back, and the later grant keeps only the other half. After that, the same
+holder's re-acquisition of the set is refused once naming no current holder,
+and an identical second call is granted. Release deletes only this holder's
+own markers, and expiry is read from the marker against the reader's clock, so
+a process that died renews nothing and its grant lapses on its own.
 
 Two processes writing under one holder identity at once are outside the
 design: the arbitration is over the identity, so it cannot tell them apart.
-A restart re-entering under a reused holder acquires only after its
-predecessor's grant is released or has lapsed (KOD-832).
+That includes a restart: re-entering under a reused holder, it is granted
+while its predecessor's grant is still live, because a holder re-acquiring
+what it holds is not contention. Keeping one process per holder identity is
+an owed invariant (KOD-832).
 
 ### Owned resource operations
 
